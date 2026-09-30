@@ -29,6 +29,8 @@ USAGE:
   zcode-packaging verify --plan <plan.json> [--root <dir>]
   zcode-packaging gen-targets [--check]
   zcode-packaging inventory [--repo-root <dir>]
+  zcode-packaging sea-assets --target <os>-<arch|host> --out-manifest <file> --assets-out <file>
+                            [--repo-root <dir>] [--release-dir <dir>]
 
 SURFACES: desktop-agent | sea | dev
 TARGETS:  darwin-arm64 darwin-x64 linux-arm64 linux-x64 win32-arm64 win32-x64, or `host`
@@ -55,6 +57,7 @@ fn main() -> ExitCode {
         "verify" => cmd_verify(&args[1..]),
         "gen-targets" => cmd_gen_targets(&args[1..]),
         "inventory" => cmd_inventory(&args[1..]),
+        "sea-assets" => cmd_sea_assets(&args[1..]),
         "--help" | "-h" | "help" => {
             print!("{USAGE}");
             return ExitCode::SUCCESS;
@@ -374,6 +377,121 @@ fn cmd_verify(raw: &[String]) -> Result<(), Failure> {
         root.display()
     );
     Ok(())
+}
+
+/// Emits the SEA asset list and the manifest that makes runtime extraction verifiable.
+///
+/// A `.node` cannot be `require()`-d straight out of a SEA blob — the blob is reached via
+/// `sea.getRawAsset()`, not the filesystem. The runtime therefore extracts the bytes to a
+/// content-addressed cache before loading them, mirroring
+/// `apps/zcode-cli/packages/cli/src/sea-playwright-runtime.ts`. This command is the
+/// build-time half: the file list and every sha256 come from the verified plan (P1, P6).
+fn cmd_sea_assets(raw: &[String]) -> Result<(), Failure> {
+    let args = Args::parse(raw)?;
+    let manifest_out = PathBuf::from(args.require("out-manifest")?);
+    let assets_out = PathBuf::from(args.require("assets-out")?);
+
+    let repo_root = resolve_repo_root(&args)?;
+    let rust_root = inventory::find_rust_root(&repo_root)?;
+    let target = Target::resolve(args.require("target")?)
+        .map_err(|source| Failure::Usage(source.to_string()))?;
+
+    // The plan is built here rather than read from a path the caller had to construct.
+    // A caller-supplied plan path is exactly the seam where a stale or mismatched plan
+    // slips in, and the SEA build already knows its target — so it should not have to
+    // agree with a shell script about where the plan lives.
+    let release_dir = match args.get("release-dir") {
+        Some(explicit) => PathBuf::from(explicit),
+        None => default_release_dir(&rust_root, &target)?,
+    };
+    let inv = inventory::build(&repo_root)?;
+    let plan = plan::build_plan(&target, Surface::Sea, &inv, &release_dir)?;
+    if plan.entries.is_empty() {
+        return Err(Failure::Plan {
+            code: plan::exit::MISSING_ARTIFACT,
+            source: plan::PlanError::Verify {
+                problems: vec![
+                    "refusing to embed an empty native payload into a SEA blob".to_string(),
+                ],
+            },
+        });
+    }
+
+    let (files, manifest) = plan::build_sea_assets(&plan);
+
+    // The bytes to embed are the staged `.node` files (`build-native.sh` writes them to the
+    // dev surface root), not the cargo `.so`/`.dylib` the plan was built from. Re-verify
+    // each one against the plan before embedding: a stale plan must fail here rather than
+    // ship a blob whose payload no longer matches its own manifest.
+    let staged_root = Surface::Dev
+        .destination_root(&repo_root, &target)
+        .ok_or_else(|| {
+            Failure::Usage("the dev surface must have a destination root".to_string())
+        })?;
+    for entry in &plan.entries {
+        let path = staged_root.join(&entry.dest);
+        let actual = plan::sha256_file(&path)?;
+        if actual != entry.sha256 {
+            return Err(Failure::Plan {
+                code: plan::exit::COPY_MISMATCH,
+                source: plan::PlanError::CopyMismatch {
+                    dest: path,
+                    expected_sha256: entry.sha256.clone(),
+                    actual_sha256: actual,
+                },
+            });
+        }
+    }
+
+    // The assets map shape the SEA config's `assets` field expects: key -> source path.
+    let mut assets = serde_json::Map::new();
+    for file in &files {
+        assets.insert(
+            file.key.clone(),
+            serde_json::Value::String(staged_root.join(&file.name).display().to_string()),
+        );
+    }
+
+    write_json_file(&manifest_out, &manifest)?;
+    write_json_file(&assets_out, &serde_json::Value::Object(assets))?;
+
+    println!(
+        "[zcode-packaging] {} native asset(s) for {} -> {}",
+        files.len(),
+        plan.target,
+        manifest_out.display()
+    );
+    println!(
+        "[zcode-packaging] runtime cache key: {} (the extractor must create this directory)",
+        manifest.cache_key
+    );
+    Ok(())
+}
+
+/// Pretty-prints `value` to `path`, creating the parent directory.
+///
+/// The SEA staging directory is created by the caller, but the tool must not depend on
+/// that: writing into a directory that does not exist yet is the normal case for a fresh
+/// build, and failing with a bare `No such file or directory` would name neither the
+/// payload nor the tool.
+fn write_json_file<T: serde::Serialize>(
+    path: &Path,
+    value: &T,
+) -> Result<(), plan::PlanError> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|source| plan::PlanError::Io {
+            path: parent.to_path_buf(),
+            source,
+        })?;
+    }
+    let text = serde_json::to_string_pretty(value).map_err(|source| plan::PlanError::Json {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    std::fs::write(path, format!("{text}\n")).map_err(|source| plan::PlanError::Io {
+        path: path.to_path_buf(),
+        source,
+    })
 }
 
 fn cmd_gen_targets(raw: &[String]) -> Result<(), Failure> {

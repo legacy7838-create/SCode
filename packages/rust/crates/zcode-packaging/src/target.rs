@@ -79,15 +79,30 @@ impl Target {
             .ok_or_else(|| UnknownTarget(key.to_string()))
     }
 
-    /// Resolves a `--target` value, accepting the literal `host` for the build machine.
+    /// Resolves a `--target` value, accepting the literal `host` and the SEA spelling.
     ///
-    /// `build-native.sh` has no target flag of its own — it emits for whatever it is
-    /// running on — so `host` is what the reduced shim passes.
+    /// The SEA build uses `win-x64` where Node and this crate use `win32-x64`
+    /// (`apps/zcode-cli/packages/cli/scripts/sea-targets.mjs` maps between them). The
+    /// alias is resolved here rather than in a shell script, so the platform table stays in
+    /// one place (P4) and a seventh platform cannot be spelled two ways.
     pub fn resolve(raw: &str) -> Result<Self, UnknownTarget> {
-        if raw == "host" {
-            return Self::host();
+        match raw {
+            "host" => return Self::host(),
+            "win-x64" => return Self::by_key("win32-x64"),
+            "win-arm64" => return Self::by_key("win32-arm64"),
+            "windows-x64" => return Self::by_key("win32-x64"),
+            "windows-arm64" => return Self::by_key("win32-arm64"),
+            _ => {}
         }
         Self::by_key(raw)
+    }
+
+    /// The SEA release vocabulary for this target, as `sea-targets.mjs` spells it.
+    ///
+    /// Used when writing a plan file whose name is derived from the target, so the SEA
+    /// build finds it without either side re-deriving the mapping.
+    pub fn sea_key(&self) -> String {
+        self.key.replace("win32-", "win-")
     }
 
     /// The `${os}-${arch}` key of the host this process is running on.
@@ -226,6 +241,35 @@ mod tests {
         // P2: a near-miss must fail, not be coerced to the closest target.
         assert!(Target::resolve("darwin").is_err());
         assert!(Target::resolve("linux").is_err());
+        assert!(Target::resolve("win32").is_err());
+    }
+
+    /// The SEA build spells Windows targets `win-*`; the tool must accept that without a
+    /// second table existing anywhere in JavaScript.
+    #[test]
+    fn sea_spellings_resolve_to_the_same_target() {
+        for (sea, canonical) in [
+            ("win-x64", "win32-x64"),
+            ("win-arm64", "win32-arm64"),
+            ("windows-x64", "win32-x64"),
+            ("windows-arm64", "win32-arm64"),
+        ] {
+            assert_eq!(Target::resolve(sea).unwrap().key, canonical, "{sea}");
+        }
+        // Non-Windows targets keep their spelling on both sides.
+        assert_eq!(Target::resolve("linux-x64").unwrap().sea_key(), "linux-x64");
+    }
+
+    #[test]
+    fn sea_key_is_the_inverse_of_the_alias() {
+        for target in TARGETS {
+            let sea = target.sea_key();
+            assert_eq!(
+                Target::resolve(&sea).unwrap().key,
+                target.key,
+                "{sea} did not round-trip"
+            );
+        }
     }
 
     #[test]

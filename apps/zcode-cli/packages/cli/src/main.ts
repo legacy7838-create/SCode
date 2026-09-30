@@ -5,6 +5,7 @@ import { installStderrConsoleBoundary } from "./protocol-console.js";
 import { setCliProcessTitle } from "./process-name.js";
 import { applyCliRuntimeEnvSanitization } from "./env.js";
 import { ensureSeaRuntimeTools } from "./sea-runtime-tools.js";
+import { installSeaNativeRuntime } from "./sea-native-runtime.js";
 import { isPluginHostInvocation, runPluginHostCommand } from "./plugin-host-command.js";
 import { scheduleCliExitWatchdog } from "./shutdown.js";
 import { installCliProcessErrorBoundary } from "./process-errors.js";
@@ -12,11 +13,25 @@ import { installProtocolStderrBoundary } from "./protocol-stderr.js";
 import { createProtocolProcessLifecycle } from "./protocol-lifecycle.js";
 import { isProtocolServerInvocation } from "./arguments.js";
 
-// Node-only entrypoint: bind the RPC byte port (Rust CRC32) before any RPC traffic.
-installNativeRpcBytesPort();
-
+// Native payload bootstrap. Both calls below must run before ANY loadNative() consumer,
+// and they must run in this order:
+//
+//   1. installSeaNativeRuntime() — in a SEA binary there is no filesystem path to the
+//      compiled .node files, so they are extracted from the blob into a content-addressed
+//      cache and ZCODE_NATIVE_DIR is pointed at it. It is async because it does real disk
+//      IO (see ./sea-native-runtime.ts).
+//   2. installNativeRpcBytesPort() — binds the RPC byte port to the Rust CRC32. It calls
+//      loadNative() synchronously and throws when a binary is missing, which is exactly the
+//      "no JavaScript fallback" contract (docs/specs/rust-native-ports.md invariant 1).
+//
+// Every rpcBytesPort() call site is inside a function, so binding one microtask later than
+// module scope is safe: the only ordering requirement is "before any RPC traffic", and that
+// traffic starts further down in main(). Outside SEA step 1 is a no-op, because
+// node_modules/@zcode/rust already resolves the same binaries there.
 void main();
 async function main(): Promise<void> {
+  await installSeaNativeRuntime();
+  installNativeRpcBytesPort();
   const argv = process.argv.slice(2);
   // Storage mode can also run in Host Worker, and the process name of the entire Host cannot be modified.
   if (!argv.includes("--prepare-storage")) setCliProcessTitle();

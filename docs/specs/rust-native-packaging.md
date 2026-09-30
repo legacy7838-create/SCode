@@ -250,7 +250,7 @@ Three staging surfaces, each with its own destination root:
 | Surface | Destination root (relative) | Consumed by | Loader candidate |
 |---|---|---|---|
 | `desktop-agent` | `packages/desktop/bundled-agents/<os>-<arch>/native/` — **a sibling of `glm/`, not a child** | the agent bundle run by Electron's Node | `loader.ts:60` (`join(here, "..", "native", fileName)`) |
-| `sea` | the SEA asset tree assembled by `sea-tui-assets.mjs` | the single-file `zcode` binary | `loader.ts:60` after extraction |
+| `sea` | the SEA asset tree: binaries are **embedded**, not staged, and extracted at runtime | the single-file `zcode` binary | `loader.ts:56` (`ZCODE_NATIVE_DIR`) after `sea-native-runtime.ts` extraction |
 | `dev` | `packages/rust/` (in place) | local dev / `pnpm dev:desktop` | `loader.ts:58` (`join(here, "..", fileName)`) |
 
 **The `desktop-agent` destination is measured, not derived from the loader source.**
@@ -595,19 +595,31 @@ allowed in §9, D3), `desktop-native-package-policy.mjs`, `electron-builder.conf
 - **R7 — `zcode-events` is the largest binary (3 MB) and links bundled SQLite.** Packaging it into
   six platform artifacts grows the release matrix; confirm the download-size budget with whoever
   owns release before merge.
-- **R8 — the SEA surface is implemented but NOT wired; its destination is deliberately unknown.**
-  Node's SEA embeds the assets listed in the generated config's `assets` map
-  (`build-sea.mjs:182-200`) and extracts them **next to the executable**, not under
-  `apps/zcode-cli/packages/cli/dist/`, and the extraction is flat rather than a `native/`
-  subdirectory. The relationship between the bundle's `__filename` and the extracted assets is
-  therefore not derivable from the source, and `build-sea` was not run in this environment. So
-  `Surface::Sea::destination_root()` returns `None` and both `stage` and `verify` **require
-  `--dest`/`--root`** rather than guess (P2). Next step is the same experiment as D2: build the
-  blob, extract it, and read where the assets and the bundle actually land. Until then the CLI
-  distribution is unaffected (§1.5a) because it resolves through `node_modules`.
-- **R9 — `sea-tui-assets.mjs:288-291` still owns the workspace-package allowlist.** Unchanged in
-  this commit, because changing it without a measured destination (R8) would be a guess. It
-  remains a live risk for the SEA surface only; the desktop surface is independent of it.
+- **R8 — RESOLVED and implemented.** A SEA binary has no build-time directory to stage
+  into, and the question turned out to have a different answer than the desktop surface:
+  **a `.node` cannot be `require()`-d out of a blob at all.** The blob is reached through
+  `sea.getRawAsset()`, not the filesystem, and a napi addon needs a real path.
+
+  The in-repo precedent for native files in a SEA blob is
+  `apps/zcode-cli/packages/cli/src/sea-playwright-runtime.ts:43-78`: read the raw asset,
+  verify its sha256 against a manifest, write into a content-addressed cache directory,
+  and swap it in with an atomic `rename`. `sea-native-runtime.ts` follows that shape exactly,
+  and then points `ZCODE_NATIVE_DIR` at the extracted directory (loader.ts candidate 1) so
+  the synchronous `loadNative()` resolves on its first call.
+
+  The build-time half is `zcode-packaging sea-assets`, which owns the file list, every
+  sha256, and the content-addressed cache key. `build-sea.mjs` only embeds what the tool
+  named. Ordering in `main.ts` matters and is documented there: the async extraction must
+  run before `installNativeRpcBytesPort()`, which calls `loadNative()` synchronously.
+
+  No JS fallback: in a SEA binary the runtime either extracts a verified payload or throws
+  (`sea-native-runtime.ts` has no `try/catch` around extraction and no degraded branch).
+  Outside SEA the function is a no-op because `node_modules/@zcode/rust` already resolves
+  the same binaries (§1.5a) — a platform binding, not a fallback.
+- **R9 — `sea-tui-assets.mjs:288-291` still owns the workspace-package allowlist.** Unchanged,
+  and it no longer matters for the native payload: the binaries are embedded as explicit SEA
+  assets with their own `native/` key prefix, so the workspace-package filter never sees
+  them. The filter change described in §5.3 is therefore unnecessary and is not done.
 
 ---
 
@@ -631,6 +643,8 @@ acceptance checklist actually established — including the items that are **not
 | Desktop staging | `pnpm --filter @zcode/desktop prepare:rust-native` → 7 binaries in `bundled-agents/linux-x64/native/` |
 | `afterPack` hook is actually invoked | `assertPackagedRustNative()` imported and called at `electron-builder.config.js`, returns without throwing. Contrast: `verifyStagedKoffi` is imported at `:23` and never called |
 | **R1/R2 answered by experiment** | All 7 binaries `require()`-d successfully from the staged tree, exporting `levenshtein`/`structuredPatch`, `EventsStore`, `MarkdownParser`, `identity`/`statusSnapshot`, `prepareImageForModel`, `crc32Hex`, `mergeSessionEvents` |
+| **SEA manifest + assets** | `sea-assets --target linux-x64` → 7 assets, cache key `native-9a2c2ff5…`; sources verified against the staged `.node` before embedding |
+| **SEA extraction end to end** | Simulated the extractor against the real binaries: 7/7 `require()`-d from the extracted cache (`EventsStore`, `MarkdownParser`, `crc32Hex`, `levenshtein`, `statusSnapshot`, `prepareImageForModel`, `mergeSessionEvents`); a one-byte append was rejected by the hash check |
 | Repo's own gates | `pnpm typecheck` exit 0 · `pnpm lint` 0 errors / 72 warnings (unchanged) · `pnpm architecture:check --changed` 0 violations · `check-native-graph.mjs` OK (invariant 9 intact) |
 
 ### Bugs the tests caught during this implementation
@@ -657,14 +671,18 @@ Recorded because each was a real defect that would have shipped, not a test-auth
 
 ### Not done (deliberately, and not silently)
 
-- **Acceptance 10 (SEA chain) — not wired.** Blocked on R8: the SEA extraction layout is
-  unmeasured, so the tool requires `--dest` instead of guessing. `build-sea.mjs` and
-  `sea-tui-assets.mjs` are untouched. Not a regression: §1.5a shows the CLI distribution already
-  resolves its binaries through `node_modules`.
-- **Acceptance 11 (distribution smoke) — not wired.** The smoke test runs against the CLI
+- **Acceptance 10 (SEA chain) — now delivered** (R8 resolved). `zcode-packaging sea-assets`
+  emits the manifest + assets map; `sea-native-assets.mjs` embeds them; `sea-native-runtime.ts`
+  extracts, verifies and installs them. Verified by simulating the extractor against the real
+  staged binaries: **7/7 loaded** from the extracted cache with their real exports, and a
+  single appended byte was **rejected** by the hash check. `pnpm build:sea` itself was not run
+  in this environment (it builds a full SEA blob per target), so the blob-level wiring is
+  code-reviewed but not executed end to end.
+- **Acceptance 11 (distribution smoke) — still not wired.** The smoke test runs against the CLI
   tarball, which §1.5a shows was never broken, so this would be a new guard rather than a fix. It
-  is worth adding, but it should assert the `node_modules/@zcode/rust/*.node` route explicitly,
-  which is a different assertion from the desktop `native/` route and deserves its own check.
+  should assert the `node_modules/@zcode/rust/*.node` route explicitly, which is a different
+  assertion from the desktop `native/` route and the SEA extraction route, and deserves its own
+  check for each.
 - **Acceptance 4 (six-target parity) — partially done.** `gen-targets --check` proves the Rust
   table and the generated TS agree for all six targets, and `node_file_name_matches_the_loader_contract`
   pins the emitted names. A cross-host `nativePlatformTarget()` comparison for all six platforms

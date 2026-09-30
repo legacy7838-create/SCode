@@ -28,6 +28,7 @@ import { collectSeaRuntimeToolAssets } from "./sea-runtime-tool-assets.mjs";
 import { prepareSeaRuntimeToolAssets } from "./sea-runtime-tool-prepare.mjs";
 import { collectSeaPlaywrightAssets } from "./sea-playwright-assets.mjs";
 import { collectSeaProviderConfigAssets } from "./sea-provider-config-assets.mjs";
+import { prepareSeaNativeAssets } from "./sea-native-assets.mjs";
 
 export {
   adHocCodesignArgs,
@@ -173,6 +174,14 @@ const prepareSeaBlob = async (target, nodeVersion) => {
       target,
     });
   const providerConfigAssets = await collectSeaProviderConfigAssets({ root: repositoryRoot });
+
+  // The compiled .node binaries cannot be require()'d out of a blob, so they are embedded
+  // as raw assets plus a manifest carrying every sha256, and extracted to a
+  // content-addressed cache at startup (src/sea-native-runtime.ts). The file list and all
+  // hashes come from zcode-packaging, which owns the payload decision; this only embeds
+  // what it named. The assets map shape ({ "<key>": "<source path>" }) is emitted by the
+  // same tool so the two cannot drift.
+  const seaNativeAssets = prepareSeaNativeAssets({ dist, target, repoRoot: repositoryRoot });
   const nodeLicensePath = await stageNodeNotices(
     seaAssetStagingForTarget(`${target}-node`),
     nodeVersion,
@@ -190,6 +199,8 @@ const prepareSeaBlob = async (target, nodeVersion) => {
           ...runtimeToolAssets,
           ...playwrightAssets,
           ...providerConfigAssets,
+          ...seaNativeAssets.assets,
+          [seaNativeAssets.manifestKey]: seaNativeAssets.manifestPath,
           "zcode-node-license": nodeLicensePath,
         },
         disableExperimentalSEAWarning: true,

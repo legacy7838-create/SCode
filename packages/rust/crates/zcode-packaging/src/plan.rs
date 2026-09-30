@@ -460,19 +460,97 @@ pub fn verify(plan: &Plan, root: &Path) -> Result<(), PlanError> {
     }
 }
 
+/// One binary in a single-file (SEA) distribution.
+///
+/// A `.node` cannot be `require()`-d out of a SEA blob: the blob is reached through
+/// `sea.getRawAsset()`, not through the filesystem, and a napi addon needs a real path.
+/// The established in-repo pattern is `sea-playwright-runtime.ts:43-78` — read the raw
+/// asset, verify its sha256 against a manifest, write it into a content-addressed cache
+/// directory, and swap that directory in atomically.
+///
+/// So the build-time job is not "stage a directory" (as the desktop surface does) but
+/// "embed the bytes plus a manifest that makes the runtime extraction verifiable". This
+/// subcommand produces exactly that, and it is the Rust side of it: the file list and
+/// every hash come from the plan, which already recorded them (P1, P6).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SeaAsset {
+    /// Key the asset is stored under in the SEA config's `assets` map.
+    pub key: String,
+    /// Basename written to disk by the runtime extractor.
+    pub name: String,
+    pub bytes: u64,
+    pub sha256: String,
+}
+
+/// The manifest embedded alongside the binaries and read back at runtime.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SeaManifest {
+    pub version: u32,
+    /// `${os}-${arch}` the payload was built for.
+    pub target: String,
+    pub suffix: String,
+    /// Directory name for the content-addressed cache, e.g. `native-<hash>`.
+    pub cache_key: String,
+    pub files: Vec<SeaAsset>,
+}
+
+/// Manifest schema version, bumped on any shape change.
+pub const SEA_MANIFEST_VERSION: u32 = 1;
+
+/// Asset-key prefix for a native binary, mirroring the `ASSET_PREFIX` convention the
+/// playwright and runtime-tool extractors already use.
+pub const SEA_NATIVE_ASSET_PREFIX: &str = "native/";
+
+/// The manifest's own asset key.
+pub const SEA_MANIFEST_ASSET_KEY: &str = "native-manifest.json";
+
+/// Builds the SEA asset list and manifest from a verified plan.
+///
+/// The cache key is derived from the payload's own content, so a changed binary produces
+/// a new cache directory and the runtime's "is the cache current" check fails closed
+/// rather than loading stale bytes.
+pub fn build_sea_assets(plan: &Plan) -> (Vec<SeaAsset>, SeaManifest) {
+    let mut files: Vec<SeaAsset> = plan
+        .entries
+        .iter()
+        .map(|entry| SeaAsset {
+            key: format!("{SEA_NATIVE_ASSET_PREFIX}{}", entry.dest),
+            name: entry.dest.clone(),
+            bytes: entry.bytes,
+            sha256: entry.sha256.clone(),
+        })
+        .collect();
+    // Sorted so the cache key does not depend on the order the plan happened to list
+    // entries in. `build_plan` already emits sorted entries, but the cache key is a
+    // content identity and should not inherit an ordering guarantee from its caller.
+    files.sort_by(|a, b| a.name.cmp(&b.name));
+
+    // One hash over "name:sha256" lines, so reordering or renaming a binary changes the
+    // cache key even when every individual file hash is unchanged.
+    let mut hasher = Sha256::new();
+    for file in &files {
+        hasher.update(file.name.as_bytes());
+        hasher.update(b":");
+        hasher.update(file.sha256.as_bytes());
+        hasher.update(b"\n");
+    }
+    let cache_key = format!("native-{:x}", hasher.finalize());
+
+    let manifest = SeaManifest {
+        version: SEA_MANIFEST_VERSION,
+        target: plan.target.clone(),
+        suffix: plan.suffix.clone(),
+        cache_key,
+        files: files.clone(),
+    };
+    (files, manifest)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn entry(dest: &str, bytes: u64, sha256: &str) -> PlanEntry {
-        PlanEntry {
-            crate_name: "zcode-test".to_string(),
-            source: "libzcode_test.so".to_string(),
-            dest: dest.to_string(),
-            bytes,
-            sha256: sha256.to_string(),
-        }
-    }
 
     fn plan_with(entries: Vec<PlanEntry>) -> Plan {
         Plan {
@@ -484,6 +562,77 @@ mod tests {
             skipped: Vec::new(),
             consumers: BTreeMap::new(),
         }
+    }
+
+    /// An entry for the SEA asset tests, where the crate name is irrelevant.
+    fn entry(dest: &str, bytes: u64, sha256: &str) -> PlanEntry {
+        entry_for("zcode-test", dest, bytes, sha256)
+    }
+
+    fn entry_for(crate_name: &str, dest: &str, bytes: u64, sha256: &str) -> PlanEntry {
+        PlanEntry {
+            crate_name: crate_name.to_string(),
+            // The stage tests copy from a real file with this name, so it must match
+            // what `cargo` would emit for the crate rather than a placeholder.
+            source: "libzcode_test.so".to_string(),
+            dest: dest.to_string(),
+            bytes,
+            sha256: sha256.to_string(),
+        }
+    }
+
+    #[test]
+    fn assets_carry_the_prefix_the_extractor_expects() {
+        let (files, manifest) = build_sea_assets(&plan_with(vec![entry_for(
+            "zcode-git",
+            "zcode-git.linux-x64-gnu.node",
+            10,
+            "aa",
+        )]));
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].key, "native/zcode-git.linux-x64-gnu.node");
+        assert_eq!(files[0].name, "zcode-git.linux-x64-gnu.node");
+        assert_eq!(manifest.files, files);
+        assert_eq!(manifest.version, SEA_MANIFEST_VERSION);
+        assert_eq!(manifest.target, "linux-x64");
+    }
+
+    /// The cache key must change whenever any byte of the payload changes, otherwise a
+    /// user keeps loading stale binaries from a cache that still looks current.
+    #[test]
+    fn cache_key_tracks_payload_content() {
+        let (_, a) = build_sea_assets(&plan_with(vec![entry("z.node", 1, "aa")]));
+        let (_, b) = build_sea_assets(&plan_with(vec![entry("z.node", 1, "bb")]));
+        assert_ne!(a.cache_key, b.cache_key);
+    }
+
+    #[test]
+    fn cache_key_tracks_renames_not_just_hashes() {
+        let (_, a) = build_sea_assets(&plan_with(vec![
+            entry("z-one.node", 1, "aa"),
+            entry("z-two.node", 1, "bb"),
+        ]));
+        let (_, b) = build_sea_assets(&plan_with(vec![
+            entry("z-two.node", 1, "bb"),
+            entry("z-one.node", 1, "aa"),
+        ]));
+        // Order must not matter: the cache key is a content identity.
+        assert_eq!(a.cache_key, b.cache_key);
+        // …but a rename must not.
+        let (_, c) = build_sea_assets(&plan_with(vec![
+            entry("z-renamed.node", 1, "aa"),
+            entry("z-two.node", 1, "bb"),
+        ]));
+        assert_ne!(a.cache_key, c.cache_key);
+    }
+
+    #[test]
+    fn manifest_serialises_with_the_camel_case_wire_shape() {
+        let (_, manifest) = build_sea_assets(&plan_with(vec![entry("z.node", 1, "aa")]));
+        let text = serde_json::to_string(&manifest).unwrap();
+        assert!(text.contains("\"cacheKey\""), "{text}");
+        assert!(text.contains("\"target\""), "{text}");
+        assert!(!text.contains("cache_key"), "{text}");
     }
 
     fn temp_dir(name: &str) -> PathBuf {
