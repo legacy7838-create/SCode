@@ -1258,3 +1258,68 @@ Both are recorded because the same mistake twice is a pattern:
 
 The second one is the more useful lesson: a shared fixture that is *convenient* can quietly remove
 the very variation a test depends on, and the test still passes — against the wrong property.
+
+---
+
+## 25. Batch D, part 1: the write path
+
+`src/task_write.rs` — `writeRecord`, `deleteTaskGroupingReferencesReady`, the opening repair, and
+the five guarded transitions that do not need the sync merge: `seedTaskMetaIfMissing`,
+`clearTaskUnreadIfMatches`, `deleteArchivedTask`, `updateTaskState` and `applyAgentPatch`.
+
+**144 crate tests, up from 131. Zero build warnings.**
+
+### `searchable_text` is three-state, and that is the whole point
+
+`write_record` takes `Option<Option<String>>`: `None` leaves the stored value, `Some(None)` clears
+it, `Some(Some(text))` sets it truncated. The upsert is `ON CONFLICT … excluded.searchable_text`, so
+**without** the read-before-write an omitted value assigns `""` and wipes every task's indexed text.
+The list keeps working and search silently returns nothing. `None` is therefore a distinct case, not
+an absent field — and there is a test for exactly that.
+
+Truncation is by **characters**, not bytes, so a multi-byte document is not cut mid-codepoint.
+
+### `last_unread_at` is a watermark that never decreases
+
+The SQL takes `MAX(stored watermark, stored unread_at, incoming)`. Two logical reads of the same
+task can land on the same millisecond, and after `unread_at` is cleared, reading only the current
+value would re-issue the old version. A requested timestamp is pushed to at least
+`watermark + 1`; a test asks for `100` against a watermark of `900` and asserts it still moves
+forward.
+
+`unread_at` itself is written **only** when the caller says so, which is why the compare and the
+write have to be in one transaction: a mobile read request can arrive after the task's new final
+unread state.
+
+### Two simplifications I made deliberately, and why
+
+- **A transaction is opened unconditionally in `update_task_state`.** The original branched,
+  opening one only for a delete or an unread change. The branch is invisible from outside — a plain
+  title edit touches one row, and no reader can interleave inside a single statement — and paying
+  two extra statements removes a whole class of "was this path transactional by accident" question.
+- **`clear_task_unread_if_matches` has no `now` parameter.** Clearing unread does not change the
+  task, so `updated_at` must stay where it was. A caller that stamped the write would make every
+  read bump the task to the top of a recency-sorted list. The parameter was there and unused; it is
+  gone with the reason recorded, rather than renamed to `_now`.
+
+### `write_record` takes `&Connection`, not `&mut`
+
+`rusqlite::Transaction` derefs to `&Connection` **immutably**, so a `&mut Connection` signature
+cannot be called from inside a transaction the caller owns. The function only ever runs statements,
+so `&Connection` is both correct and what lets the transitions compose — the delete, the grouping
+cleanup and the tombstone are one transaction, and a delete that leaves a task's group membership
+behind leaves task visibility and group ownership permanently at odds.
+
+### `delete_grouping_references` matches both order-key forms
+
+The order row is deleted on `node_key = JSON([workspaceKey, taskId])` **or** `node_key =
+workspaceKey`. The second is what an older build stored. Matching only the current form would
+strand every node an earlier version created, and the grouped view would keep rendering them.
+
+### What is still missing from batch D
+
+`syncTaskMeta` / `syncTaskMetaAtGroupedTop` and the `enqueueWrite` per-task write chain. The merge
+itself is ported — `should_preserve_newer_terminal_status` and the monotonic `updatedAt` are here —
+but the surrounding admission and the serialisation are not. **The consumer switch therefore does
+not land yet**, for the same reason as batch A: switching with the sync family still on
+`node:sqlite` would put two languages on one file.

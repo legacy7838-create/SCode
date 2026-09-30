@@ -25,6 +25,7 @@ pub mod migrate;
 pub mod offpeak;
 pub mod read;
 pub mod task_read;
+pub mod task_write;
 
 pub use napi::TaskIndexStore;
 pub use automation::{
