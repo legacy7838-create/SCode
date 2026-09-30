@@ -86,6 +86,23 @@ not degrade — it fails at runtime on the first `git`, `diff`, `image`, `events
 `codec` call. The failure is late (user-visible, in the shipped app) and its message names a
 missing file rather than a build step, which is the worst possible diagnostic.
 
+**1.5a The break is narrower than the first draft of this spec assumed — desktop only.**
+While implementing, the CLI distribution path was checked and found to be **already correct**:
+
+- `@zcode/rust` is a runtime dependency of the CLI (`apps/zcode-cli/packages/cli/package.json:34`).
+- The distribution's package filter `shouldCopyPackagePath`
+  (`scripts/zcode-distribution/assets.mjs:68-75`) copies everything at a package root except
+  `node_modules` and `.git`, so `packages/rust/*.node` lands in the distribution's
+  `node_modules/@zcode/rust/`.
+- That satisfies `loader.ts` candidate 4
+  (`hostRequire().resolve("@zcode/rust/package.json")` → its directory → `join(fileName)`,
+  `:63-68`), which needs no staged directory at all.
+
+So the CLI tarball and the SEA blob resolve their binaries through the `node_modules` route, and
+only the **desktop** bundle — where `@zcode/rust` is inlined and there is no `node_modules` to
+resolve — was genuinely broken. This narrows §2.1's staging scope to the desktop surface and is
+why acceptance item 10 (SEA) is a *new capability* rather than a bug fix.
+
 **1.6 The distribution smoke test does not check for it.**
 `scripts/zcode-distribution-smoke.mjs:1` says it runs *"to avoid dev machine node_modules masking
 missing TUI/**native**/worker dependencies"* — but the word `native` appears nowhere else in the
@@ -232,11 +249,19 @@ Three staging surfaces, each with its own destination root:
 
 | Surface | Destination root (relative) | Consumed by | Loader candidate |
 |---|---|---|---|
-| `desktop-agent` | `packages/desktop/bundled-agents/<os>-<arch>/glm/native/` | the agent bundle run by Electron's Node | `loader.ts:60` (`join(here, "..", "native", fileName)`) |
+| `desktop-agent` | `packages/desktop/bundled-agents/<os>-<arch>/native/` — **a sibling of `glm/`, not a child** | the agent bundle run by Electron's Node | `loader.ts:60` (`join(here, "..", "native", fileName)`) |
 | `sea` | the SEA asset tree assembled by `sea-tui-assets.mjs` | the single-file `zcode` binary | `loader.ts:60` after extraction |
 | `dev` | `packages/rust/` (in place) | local dev / `pnpm dev:desktop` | `loader.ts:58` (`join(here, "..", fileName)`) |
 
-`dev` is the status quo and is verified but not rewritten.
+**The `desktop-agent` destination is measured, not derived from the loader source.**
+`zcode.cjs` is staged at `bundled-agents/<os>-<arch>/glm/zcode.cjs`
+(verified: `find packages/desktop/bundled-agents -name zcode.cjs`), `@zcode/rust` is
+*inlined* into that bundle rather than externalized
+(`apps/zcode-cli/packages/cli/scripts/build.mjs:19` lists only
+`["@zcode/tui", "playwright-core", "koffi"]`), so `hostModulePath()` returns the
+**bundle's** directory. `loader.ts:60` therefore probes
+`<glm>/../native/` = `bundled-agents/<os>-<arch>/native/`. Staging into `glm/native/`
+would never be found. See D2 and R1/R2.
 
 **The live set** is computed, not declared. `zcode-packaging plan` walks
 `packages/rust/package.json`'s `exports` subpaths, reads each subpath's wrapper, extracts the
@@ -445,23 +470,38 @@ allowed in §9, D3), `desktop-native-package-policy.mjs`, `electron-builder.conf
   are cheap to compile and their `cargo test` suites still run) but are not packaged. Deleting them
   is a separate invariant-2 change, because `zcode-rpc-server` and the Tauri host are entangled
   with the same family and a mistaken deletion is expensive to undo.
-- **D2 — the agent-bundle staging path is new.** `stageKoffiIntoBundledAgents` is exported and
-  never called (§3); there is no working in-repo precedent for staging into
-  `bundled-agents/<key>/glm/`. This port establishes that path for Rust. If it turns out
-  `bundled-agents` is not where the agent resolves `native/` from at runtime, the fix is a
-  destination-root change in the plan, not a code change — which is precisely why the destination
-  is plan data.
+- **D2 — the `desktop-agent` destination is a sibling of `glm/`, resolved by experiment.**
+  The first draft of this spec guessed `bundled-agents/<os>-<arch>/glm/native/`. That is
+  wrong and would have shipped a package that still throws. Measured answer:
+
+  1. `zcode.cjs` is staged at `bundled-agents/linux-x64/glm/zcode.cjs`.
+  2. `@zcode/rust` is inlined (not external) by both `build.mjs:19` and
+     `tsup.config.ts:169-172`, so `__filename` inside the loader is the bundle's path.
+  3. `loader.ts:60` probes `join(here, "..", "native", fileName)`, i.e. a sibling of the
+     directory holding the bundle.
+  4. Staging `zcode-diff.linux-x64-gnu.node` at `bundled-agents/linux-x64/native/` and
+     `require()`-ing it from that path succeeded, exporting
+     `levenshtein`, `lineSimilarity`, `structuredPatch`, `averageMiddleSimilarity`.
+
+  The destination is plan data, so this was a one-line correction rather than a code
+  change — which is the reason the destination lives in the plan at all.
 - **D3 — `ZCODE_NATIVE_DIR` stays.** It is a path override, not an implementation switch: it changes
   *where* the same bytes are read from, never *what* runs. The umbrella spec's ban is on
   `try { native } catch { legacy }` shapes, which this is not. It is documented here so its
   legality is a decision rather than an oversight. `dev-tauri.mjs:284-288` keeps using it.
 - **D4 — the plan is a new artifact.** `*.json` plan files appear in build temp directories. They
   are build output, not source, and must be gitignored (§10).
-- **D5 — textual liveness analysis.** §4.2 resolves consumers by string match, not module
-  resolution. A consumer reached only through a computed specifier
-  (`` `@zcode/rust/${name}` ``) would be missed and its crate would be dropped from the payload. No
-  such dynamic import exists today (verified across the tree), and the failure mode is a loud
-  `afterPack` assert rather than a silent regression.
+- **D5 — the liveness analysis is textual, but stricter than the first draft.** §4.2 resolves
+  consumers by string match, not module resolution. Three refinements were needed before the
+  live set matched reality, and all three are regression-tested:
+  1. `packages/rust` is excluded by path, or each wrapper marks its own crate live.
+  2. Comments are stripped, or `tsup.config.ts`'s `` // `@zcode/rust` must NOT stay external ``
+     note counts as a consumer.
+  3. A reference only counts in a module-specifier position (`… from "…"`, `import "…"`,
+     `import(`, `require(`), or the bundler's externals array entry `"@zcode/rust"` would too.
+
+  The failure mode of a residual false negative is a loud `afterPack` assert, not a silent
+  regression.
 
 ---
 
@@ -514,9 +554,9 @@ allowed in §9, D3), `desktop-native-package-policy.mjs`, `electron-builder.conf
 | File | Exact change | Why |
 |---|---|---|
 | `packages/rust/Cargo.toml` | **no change** — `members = ["crates/*"]` already picks up the new crate; no new `[workspace.dependencies]` entry (only `serde`/`serde_json`, both present at `:20-22`) | verified |
-| `packages/rust/package.json` | add `"build:packaging": "cargo build --release -p zcode-packaging"` and `"verify:packaging": "cargo run -p zcode-packaging -- verify …"`; `build:native` keeps its name | `PORT_STATUS.md` and `dev-tauri.mjs` reference `build:native`; do not rename |
+| `packages/rust/package.json` | **done** — added `build:packaging`, `gen:targets`, `check:targets`, `native:inventory`, `native:stage-desktop`, `native:verify-desktop`. `build:native` keeps its name (`PORT_STATUS.md`, `dev-tauri.mjs` and the README reference it) | verified |
 | root `package.json` | **no change** — `packages/rust` is already in the `typecheck` project list, and `build:bootstrap` already builds workspace packages | verified |
-| root `.gitignore` | add `packages/rust/target/` (present) and the plan-file pattern `*.native-plan.json` | D4 |
+| root `.gitignore` | add `*.native-plan.json` (the emitted plan documents) | D4. The plans are build output; `packages/rust/target/` is already ignored, and the desktop variant is written to `packages/rust/target/desktop-agent-plan.json` for exactly that reason. |
 | `architecture-policy.yaml` | **no change** — module `rust` already exists with `publicEntrypoints: [packages/rust/src/index.ts]`; the new crate is under that root and `forbidDeepImports` is global. If `index.ts` must re-export the generated table, that is a one-line addition. | verified |
 | `packages/desktop/electron-builder.config.js` | the `afterPack` addition in §5.3 | §1.1 |
 | `apps/zcode-cli/packages/cli/package.json` | **no change** — `zcode-packaging` is a build-time tool and is never bundled. Note that `resolveBuildExternal` (`build.mjs:19`) must keep **not** listing `@zcode/rust`: the inlining at `:14-18` is required, and this port does not change it (see R2). | verified |
@@ -526,29 +566,15 @@ allowed in §9, D3), `desktop-native-package-policy.mjs`, `electron-builder.conf
 
 ## 10. Risks / blockers
 
-- **R1 — the `bundled-agents` destination may be wrong (D2).** The agent bundle's runtime
-  resolution of `native/` has not been observed at runtime, because today nothing stages it. First
-  implementation step should be a scratch experiment that writes a file to
-  `bundled-agents/<key>/glm/native/` and confirms `loadNative()` finds it from the built
-  `zcode.cjs`. If it does not, the destination is plan data and the fix is cheap — but the spec
-  must be corrected before the code lands.
-- **R2 — `@zcode/rust` is deliberately INLINED, and that invalidates the obvious destination.**
-  `resolveBuildExternal` is exactly `["@zcode/tui", "playwright-core", "koffi"]`
-  (`apps/zcode-cli/packages/cli/scripts/build.mjs:19`) — `@zcode/rust` is **not** in it, and the
-  comment at `:14-18` says why: *"must NOT stay external: its package exports point at TypeScript
-  sources… The wrapper is inlined… while the compiled `.node` binary is still resolved at runtime by
-  `loadNative()` from the `@zcode/rust` package directory."* The same choice is made for the desktop
-  bundles (`tsup.config.ts:169-172`, `:232-234`, `:265`).
-
-  This means the `native/` candidate at `loader.ts:60` is resolved relative to the **bundle's**
-  `__dirname`, not to `packages/rust/`. `hostModulePath()` (`loader.ts:16-24`) exists precisely
-  because inlining breaks `import.meta.url`. So "stage into `bundled-agents/<key>/glm/native/`"
-  (§4.2) is correct only if that directory is an ancestor of the built `zcode.cjs`; otherwise the
-  `native/` candidate will never match and `loadNative()` will fall through to
-  `@zcode/rust/package.json` resolution, which does not exist in a package with no
-  `node_modules`. **R1 and R2 must both be answered by experiment before the destination is
-  hardcoded** — this is the single most likely reason a first implementation attempt ships a
-  package that still throws.
+- **R1 — RESOLVED (was: "the bundled-agents destination may be wrong").** Answered by the
+  experiment recorded in D2: `bundled-agents/<os>-<arch>/native/`, a sibling of `glm/`.
+  Implemented and verified.
+- **R2 — RESOLVED (was: "the destination is invalidated by inlining").** Inlining is
+  confirmed (`build.mjs:19`, `tsup.config.ts:169-172`) and is now accounted for: the loader's
+  `native/` candidate is relative to the bundle, which is exactly
+  `bundled-agents/<os>-<arch>/glm/`, so its `..` lands on `bundled-agents/<os>-<arch>/`.
+  All seven binaries were `require()`-d successfully from the staged tree. Implemented and
+  verified.
 - **R3 — Windows `.node` on the asar boundary.** electron-builder unpacks `.node` files out of
   asar automatically, but a `.node` inside a *nested* `native/` directory under `extraResources` or
   a bundle may not be detected by that heuristic. Verify with a real packaged build, not a
@@ -569,3 +595,82 @@ allowed in §9, D3), `desktop-native-package-policy.mjs`, `electron-builder.conf
 - **R7 — `zcode-events` is the largest binary (3 MB) and links bundled SQLite.** Packaging it into
   six platform artifacts grows the release matrix; confirm the download-size budget with whoever
   owns release before merge.
+- **R8 — the SEA surface is implemented but NOT wired; its destination is deliberately unknown.**
+  Node's SEA embeds the assets listed in the generated config's `assets` map
+  (`build-sea.mjs:182-200`) and extracts them **next to the executable**, not under
+  `apps/zcode-cli/packages/cli/dist/`, and the extraction is flat rather than a `native/`
+  subdirectory. The relationship between the bundle's `__filename` and the extracted assets is
+  therefore not derivable from the source, and `build-sea` was not run in this environment. So
+  `Surface::Sea::destination_root()` returns `None` and both `stage` and `verify` **require
+  `--dest`/`--root`** rather than guess (P2). Next step is the same experiment as D2: build the
+  blob, extract it, and read where the assets and the bundle actually land. Until then the CLI
+  distribution is unaffected (§1.5a) because it resolves through `node_modules`.
+- **R9 — `sea-tui-assets.mjs:288-291` still owns the workspace-package allowlist.** Unchanged in
+  this commit, because changing it without a measured destination (R8) would be a guess. It
+  remains a live risk for the SEA surface only; the desktop surface is independent of it.
+
+---
+
+## 13. Implementation status
+
+This section is written after the implementation, in the same commit, and records what the
+acceptance checklist actually established — including the items that are **not** done.
+
+### Delivered and verified
+
+| Item | Evidence |
+|---|---|
+| Crate builds, 41 tests pass | `cargo test -p zcode-packaging` → 36 unit + 5 integration, 0 failed |
+| Live set matches the hand-verified count | `inventory` → **7 shipping, 12 skipped**, identical to §1.4 |
+| Suffix table is single-source | `gen-targets` wrote `native-targets.generated.ts`; `loader.ts:33-52` now reads it and its own switch is gone, asserted by `loader_reads_the_generated_table_instead_of_a_switch` |
+| `build-native.sh` reduced | 46 → 25 lines; the host table, the `Cargo.toml` grep, and the copy loop are gone. Re-ran from a clean `packages/rust/*.node`: 7 staged, 11 skipped, byte-identical output |
+| `plan` → `stage` → `verify` round trip | 7 files / 15 MB staged into `/tmp`, verified, `stage` idempotent on re-run |
+| **Fail-loud proof 1** — missing artifact | `plan` **exit 2**, names the crate, the expected path, and the release dir listing |
+| **Fail-loud proof 2** — flipped byte | `verify` **exit 4**, `sha256-mismatch` with both hashes |
+| **Fail-loud proof 3** — smuggled dead crate | `verify` **exit 4**, `unexpected: zcode-projection…` + "no consumer must not ship" |
+| Desktop staging | `pnpm --filter @zcode/desktop prepare:rust-native` → 7 binaries in `bundled-agents/linux-x64/native/` |
+| `afterPack` hook is actually invoked | `assertPackagedRustNative()` imported and called at `electron-builder.config.js`, returns without throwing. Contrast: `verifyStagedKoffi` is imported at `:23` and never called |
+| **R1/R2 answered by experiment** | All 7 binaries `require()`-d successfully from the staged tree, exporting `levenshtein`/`structuredPatch`, `EventsStore`, `MarkdownParser`, `identity`/`statusSnapshot`, `prepareImageForModel`, `crc32Hex`, `mergeSessionEvents` |
+| Repo's own gates | `pnpm typecheck` exit 0 · `pnpm lint` 0 errors / 72 warnings (unchanged) · `pnpm architecture:check --changed` 0 violations · `check-native-graph.mjs` OK (invariant 9 intact) |
+
+### Bugs the tests caught during this implementation
+
+Recorded because each was a real defect that would have shipped, not a test-authoring artifact:
+
+1. **`Target::host()` never resolved.** `std::env::consts::ARCH` is `x86_64`, not Node's `x64`,
+   so the derived key was `linux-x86_64` and matched nothing. Every `build-native.sh` run on an
+   x86_64 machine would have failed. Fixed with an explicit arch translation; pinned by
+   `rust_arch_names_are_translated_to_node_names`.
+2. **The plan schema key was wrong.** serde emitted `schema_version`; the §4.4 wire shape is
+   `schemaVersion`. Fixed with `rename_all = "camelCase"` + `deny_unknown_fields`.
+3. **The live set over-counted to 13.** `packages/rust` was never actually excluded from the
+   importer scan (only its *name* patterns were), so each wrapper marked its own crate live; and
+   `tsup.config.ts`'s externals entry and `//` comment counted as consumers. Three fixes: exclude
+   by path, strip comments, require a module-specifier position.
+4. **A relative/absolute offset mix** in the specifier scanner sliced past the end of the string
+   on every multi-match source.
+5. **`repo_root` was derived from `cwd`.** `build-native.sh` runs with cwd `packages/rust`, so
+   `stage` computed `packages/rust/packages/rust/...` and the scan found zero importers. Fixed by
+   deriving the repo root from the located rust package, making the tool cwd-independent.
+6. **An empty plan was a silent success.** With zero live crates the tool staged 0 files and
+   exited 0. `plan` now refuses to write an empty payload.
+
+### Not done (deliberately, and not silently)
+
+- **Acceptance 10 (SEA chain) — not wired.** Blocked on R8: the SEA extraction layout is
+  unmeasured, so the tool requires `--dest` instead of guessing. `build-sea.mjs` and
+  `sea-tui-assets.mjs` are untouched. Not a regression: §1.5a shows the CLI distribution already
+  resolves its binaries through `node_modules`.
+- **Acceptance 11 (distribution smoke) — not wired.** The smoke test runs against the CLI
+  tarball, which §1.5a shows was never broken, so this would be a new guard rather than a fix. It
+  is worth adding, but it should assert the `node_modules/@zcode/rust/*.node` route explicitly,
+  which is a different assertion from the desktop `native/` route and deserves its own check.
+- **Acceptance 4 (six-target parity) — partially done.** `gen-targets --check` proves the Rust
+  table and the generated TS agree for all six targets, and `node_file_name_matches_the_loader_contract`
+  pins the emitted names. A cross-host `nativePlatformTarget()` comparison for all six platforms
+  was not run: only `linux-x64` binaries exist in this environment.
+- **R6 (CI Rust toolchain) — unaddressed.** `prepare:rust-native` now runs in the desktop
+  `localRuntimeScripts`, so that job needs `cargo`. This is a pipeline change for the main session.
+- **D1 (delete the 12 dead crates) — not done.** Intentional: they still build and test cheaply,
+  and the `zcode-rpc-server`/Tauri entanglement makes a wrong deletion expensive. The packaging
+  decision is what matters for payload size, and that is enforced.

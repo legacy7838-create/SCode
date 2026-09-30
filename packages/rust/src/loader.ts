@@ -9,6 +9,7 @@ import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { NATIVE_PLATFORM_SUFFIXES } from "./native-targets.generated.js";
 
 /**
  * Absolute path of the module that hosts this loader, resolved lazily.
@@ -29,25 +30,22 @@ function hostRequire(): NodeRequire {
   return createRequire(hostModulePath());
 }
 
-/** Maps the current process to a napi-style platform suffix (must match scripts/build-native.sh). */
+/**
+ * Maps the current process to a napi-style platform suffix.
+ *
+ * The table is generated from the packaging tool's Rust source of truth
+ * (`packages/rust/crates/zcode-packaging/src/target.rs`), so it cannot drift from
+ * `scripts/build-native.sh` or from the staged payload. This function used to spell out
+ * the same six rows itself; `cargo test -p zcode-packaging` now fails if that switch
+ * comes back (spec P4, docs/specs/rust-native-packaging.md).
+ */
 export function nativePlatformTarget(): string {
-  const arch = process.arch;
-  switch (`${process.platform}-${arch}`) {
-    case "linux-x64":
-      return "linux-x64-gnu";
-    case "linux-arm64":
-      return "linux-arm64-gnu";
-    case "darwin-x64":
-      return "darwin-x64";
-    case "darwin-arm64":
-      return "darwin-arm64";
-    case "win32-x64":
-      return "win32-x64-msvc";
-    case "win32-arm64":
-      return "win32-arm64-msvc";
-    default:
-      throw new Error(`[zcode-rust] unsupported platform ${process.platform}-${arch} for native binaries`);
+  const key = `${process.platform}-${process.arch}` as keyof typeof NATIVE_PLATFORM_SUFFIXES;
+  const suffix = NATIVE_PLATFORM_SUFFIXES[key];
+  if (!suffix) {
+    throw new Error(`[zcode-rust] unsupported platform ${key} for native binaries`);
   }
+  return suffix;
 }
 
 function candidatePaths(fileName: string): string[] {

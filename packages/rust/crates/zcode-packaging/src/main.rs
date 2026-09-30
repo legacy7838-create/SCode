@@ -1,0 +1,494 @@
+//! `zcode-packaging` — the sole decision owner for the `.node` payload.
+//!
+//! Spec: docs/specs/rust-native-packaging.md
+//!
+//! JavaScript and shell in the build chain may spawn this tool and move the files it
+//! names. They may not enumerate crates, compute a platform suffix, decide whether a
+//! binary ships, or decide whether a staged tree is acceptable (P1). If this tool
+//! fails, the build fails — there is no JavaScript path that takes over, because there
+//! is no JavaScript path that could (P2).
+
+mod inventory;
+mod plan;
+mod target;
+
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
+
+use inventory::Classification;
+use plan::Surface;
+use target::Target;
+
+const USAGE: &str = "\
+zcode-packaging — owner of the .node packaging contract
+
+USAGE:
+  zcode-packaging plan   --target <os>-<arch|host> --surface <surface> --out <plan.json>
+                          [--release-dir <dir>] [--repo-root <dir>]
+  zcode-packaging stage  --plan <plan.json> [--source-dir <dir>] [--dest <dir>]
+  zcode-packaging verify --plan <plan.json> [--root <dir>]
+  zcode-packaging gen-targets [--check]
+  zcode-packaging inventory [--repo-root <dir>]
+
+SURFACES: desktop-agent | sea | dev
+TARGETS:  darwin-arm64 darwin-x64 linux-arm64 linux-x64 win32-arm64 win32-x64, or `host`
+
+EXIT CODES:
+  0  success
+  1  unexpected failure
+  2  a live crate has no artifact for the target
+  3  a staged file did not match its source hash
+  4  a staged tree does not satisfy the plan
+ 64  bad arguments or unsupported target
+";
+
+fn main() -> ExitCode {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let Some(subcommand) = args.first().map(String::as_str) else {
+        eprint!("{USAGE}");
+        return ExitCode::from(plan::exit::USAGE as u8);
+    };
+
+    let result = match subcommand {
+        "plan" => cmd_plan(&args[1..]),
+        "stage" => cmd_stage(&args[1..]),
+        "verify" => cmd_verify(&args[1..]),
+        "gen-targets" => cmd_gen_targets(&args[1..]),
+        "inventory" => cmd_inventory(&args[1..]),
+        "--help" | "-h" | "help" => {
+            print!("{USAGE}");
+            return ExitCode::SUCCESS;
+        }
+        "--version" | "-V" => {
+            println!("zcode-packaging {}", env!("CARGO_PKG_VERSION"));
+            return ExitCode::SUCCESS;
+        }
+        other => {
+            eprintln!("[zcode-packaging] unknown subcommand `{other}`\n\n{USAGE}");
+            return ExitCode::from(plan::exit::USAGE as u8);
+        }
+    };
+
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(Failure::Usage(message)) => {
+            eprintln!("[zcode-packaging] {message}\n\n{USAGE}");
+            ExitCode::from(plan::exit::USAGE as u8)
+        }
+        Err(Failure::Inventory(source)) => {
+            eprintln!("[zcode-packaging] inventory error: {source}");
+            ExitCode::from(plan::exit::FAILURE as u8)
+        }
+        Err(Failure::Plan { code, source }) => {
+            eprintln!("[zcode-packaging] {source}");
+            ExitCode::from(code as u8)
+        }
+    }
+}
+
+/// A failure that already knows which exit code it maps to (§6).
+enum Failure {
+    Usage(String),
+    Inventory(inventory::InventoryError),
+    Plan {
+        code: i32,
+        source: plan::PlanError,
+    },
+}
+
+impl From<inventory::InventoryError> for Failure {
+    fn from(source: inventory::InventoryError) -> Self {
+        Failure::Inventory(source)
+    }
+}
+
+impl From<plan::PlanError> for Failure {
+    fn from(source: plan::PlanError) -> Self {
+        let code = match &source {
+            plan::PlanError::MissingArtifact { .. } => plan::exit::MISSING_ARTIFACT,
+            plan::PlanError::CopyMismatch { .. } => plan::exit::COPY_MISMATCH,
+            plan::PlanError::Verify { .. } => plan::exit::VERIFY_FAILED,
+            _ => plan::exit::FAILURE,
+        };
+        Failure::Plan { code, source }
+    }
+}
+
+/// Parses `--key value` pairs. Deliberately hand-rolled: a clap dependency would be
+/// the only new third-party crate in a tool whose whole point is to add none.
+struct Args {
+    values: Vec<(String, String)>,
+    flags: Vec<String>,
+}
+
+impl Args {
+    fn parse(raw: &[String]) -> Result<Self, Failure> {
+        let mut values = Vec::new();
+        let mut flags = Vec::new();
+        let mut index = 0;
+        while index < raw.len() {
+            let arg = &raw[index];
+            if !arg.starts_with("--") {
+                return Err(Failure::Usage(format!("unexpected argument `{arg}`")));
+            }
+            if let Some((key, value)) = arg.split_once('=') {
+                values.push((key.trim_start_matches('-').to_string(), value.to_string()));
+                index += 1;
+                continue;
+            }
+            let key = arg.trim_start_matches('-').to_string();
+            match raw.get(index + 1) {
+                Some(next) if !next.starts_with("--") => {
+                    values.push((key, next.clone()));
+                    index += 2;
+                }
+                _ => {
+                    flags.push(key);
+                    index += 1;
+                }
+            }
+        }
+        Ok(Args { values, flags })
+    }
+
+    fn get(&self, key: &str) -> Option<&str> {
+        self.values
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.as_str())
+    }
+
+    fn require(&self, key: &str) -> Result<&str, Failure> {
+        self.get(key)
+            .ok_or_else(|| Failure::Usage(format!("missing required flag `--{key}`")))
+    }
+
+    fn has(&self, flag: &str) -> bool {
+        self.flags.iter().any(|f| f == flag)
+    }
+}
+
+/// The repository root, inferred from `--repo-root` or by walking up from the cwd.
+///
+/// The walk-up matters: `scripts/build-native.sh` runs with the cwd set to
+/// `packages/rust`, and `stage` therefore has to find the *repository* root, not treat
+/// `packages/rust` as the root. Deriving it from the located rust package makes every
+/// surface path correct regardless of where the tool was invoked.
+fn resolve_repo_root(args: &Args) -> Result<PathBuf, Failure> {
+    if let Some(explicit) = args.get("repo-root") {
+        let path = PathBuf::from(explicit);
+        if !path.is_dir() {
+            return Err(Failure::Usage(format!(
+                "--repo-root {} is not a directory",
+                path.display()
+            )));
+        }
+        return Ok(path.canonicalize().unwrap_or(path));
+    }
+    let cwd = std::env::current_dir().map_err(|source| Failure::Plan {
+        code: plan::exit::FAILURE,
+        source: plan::PlanError::Io {
+            path: PathBuf::from("."),
+            source,
+        },
+    })?;
+    let rust_root = inventory::find_rust_root(&cwd).map_err(Failure::Inventory)?;
+    repo_root_from_rust_root(&rust_root)
+}
+
+/// `packages/rust` -> the directory that contains `packages/`.
+fn repo_root_from_rust_root(rust_root: &Path) -> Result<PathBuf, Failure> {
+    rust_root
+        .parent()
+        .and_then(Path::parent)
+        .map(Path::to_path_buf)
+        .ok_or_else(|| {
+            Failure::Usage(format!(
+                "cannot derive the repository root from {}",
+                rust_root.display()
+            ))
+        })
+}
+
+/// The cargo release directory holding a target's artifacts.
+///
+/// Cargo writes to `target/<triple>/release` for a cross build and to plain
+/// `target/release` for a native one. Both layouts exist in practice — `build-native.sh`
+/// read `target/release`, and a cross build needs the triple-scoped path — so both are
+/// probed, triple-scoped first.
+///
+/// This is layout resolution, not an artifact fallback: when neither directory exists,
+/// or when the chosen one lacks a live crate's `.so`, `plan` still fails (P2). Nothing is
+/// ever silently skipped to make a build pass.
+fn resolve_release_dir(rust_root: &Path, target: &Target) -> Result<PathBuf, plan::PlanError> {
+    let triple_scoped = rust_root.join("target").join(target.triple).join("release");
+    if triple_scoped.is_dir() {
+        return Ok(triple_scoped);
+    }
+    let native = rust_root.join("target").join("release");
+    if native.is_dir() {
+        return Ok(native);
+    }
+    Err(plan::PlanError::Io {
+        path: rust_root.join("target"),
+        source: std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!(
+                "no cargo release directory for {} (looked in {} and {})",
+                target.key,
+                triple_scoped.display(),
+                native.display()
+            ),
+        ),
+    })
+}
+
+/// Default cargo release directory for a target.
+fn default_release_dir(rust_root: &Path, target: &Target) -> Result<PathBuf, plan::PlanError> {
+    resolve_release_dir(rust_root, target)
+}
+
+fn cmd_plan(raw: &[String]) -> Result<(), Failure> {
+    let args = Args::parse(raw)?;
+    let target = Target::resolve(args.require("target")?)
+        .map_err(|source| Failure::Usage(source.to_string()))?;
+    let surface_raw = args.require("surface")?;
+    let surface = Surface::parse(surface_raw)
+        .ok_or_else(|| Failure::Usage(format!("unknown surface `{surface_raw}`")))?;
+    let out = PathBuf::from(args.require("out")?);
+
+    let repo_root = resolve_repo_root(&args)?;
+    let rust_root = inventory::find_rust_root(&repo_root)?;
+    let release_dir = match args.get("release-dir") {
+        Some(explicit) => PathBuf::from(explicit),
+        None => default_release_dir(&rust_root, &target)?,
+    };
+
+    let inv = inventory::build(&repo_root)?;
+    let plan = plan::build_plan(&target, surface, &inv, &release_dir)?;
+
+    // P2: an empty payload is never correct. Either every live crate lost its consumer
+    // in the same change that touched the build, or the importer scan failed to run from
+    // this cwd. Both must stop the build rather than emit a valid-looking empty plan.
+    if plan.entries.is_empty() {
+        return Err(Failure::Plan {
+            code: plan::exit::MISSING_ARTIFACT,
+            source: plan::PlanError::Verify {
+                problems: vec![
+                    "the live set is empty: no crate has an importer of its @zcode/rust \
+                     subpath. Refusing to write a plan that would package nothing."
+                        .to_string(),
+                ],
+            },
+        });
+    }
+
+    // Always print the decision, so a build log records what shipped and what did not.
+    println!(
+        "[zcode-packaging] plan {} / {} -> {}",
+        plan.target,
+        plan.surface.as_str(),
+        out.display()
+    );
+    for entry in &plan.entries {
+        println!(
+            "  ship   {:<24} {:>9} bytes  {}",
+            entry.crate_name, entry.bytes, entry.dest
+        );
+    }
+    for skip in &plan.skipped {
+        println!("  skip   {:<24} {}", skip.crate_name, skip.reason);
+    }
+    if !inv.cdylib_without_subpath.is_empty() {
+        println!(
+            "[zcode-packaging] note: cdylib crate(s) with no @zcode/rust subpath export: {}",
+            inv.cdylib_without_subpath.join(", ")
+        );
+    }
+
+    plan::write_plan(&plan, &out)?;
+    Ok(())
+}
+
+fn cmd_stage(raw: &[String]) -> Result<(), Failure> {
+    let args = Args::parse(raw)?;
+    let plan = plan::read_plan(&PathBuf::from(args.require("plan")?))?;
+
+    let repo_root = resolve_repo_root(&args)?;
+    let rust_root = inventory::find_rust_root(&repo_root)?;
+    // A plan always records a concrete `${os}-${arch}` key, so `host` never appears here.
+    let target = Target::by_key(&plan.target)
+        .map_err(|source| Failure::Usage(source.to_string()))?;
+
+    let source_dir = match args.get("source-dir") {
+        Some(explicit) => PathBuf::from(explicit),
+        None => default_release_dir(&rust_root, &target)?,
+    };
+    let dest = match args.get("dest") {
+        Some(explicit) => PathBuf::from(explicit),
+        None => plan.surface
+            .destination_root(&repo_root, &target)
+            .ok_or_else(|| {
+                Failure::Usage(format!(
+                    "the `{}` surface has no measured default destination; pass --dest <dir> \
+                     (see docs/specs/rust-native-packaging.md risk R8)",
+                    plan.surface.as_str()
+                ))
+            })?,
+    };
+
+    let written = plan::stage(&plan, &source_dir, &dest)?;
+    println!(
+        "[zcode-packaging] staged {} file(s) into {}",
+        written.len(),
+        dest.display()
+    );
+    Ok(())
+}
+
+fn cmd_verify(raw: &[String]) -> Result<(), Failure> {
+    let args = Args::parse(raw)?;
+    let plan = plan::read_plan(&PathBuf::from(args.require("plan")?))?;
+
+    let repo_root = resolve_repo_root(&args)?;
+    let target = Target::by_key(&plan.target)
+        .map_err(|source| Failure::Usage(source.to_string()))?;
+
+    let root = match args.get("root") {
+        Some(explicit) => PathBuf::from(explicit),
+        None => plan.surface
+            .destination_root(&repo_root, &target)
+            .ok_or_else(|| {
+                Failure::Usage(format!(
+                    "the `{}` surface has no measured default destination; pass --root <dir> \
+                     (see docs/specs/rust-native-packaging.md risk R8)",
+                    plan.surface.as_str()
+                ))
+            })?,
+    };
+
+    plan::verify(&plan, &root)?;
+    println!(
+        "[zcode-packaging] verified {} entr(ies) in {}",
+        plan.entries.len(),
+        root.display()
+    );
+    Ok(())
+}
+
+fn cmd_gen_targets(raw: &[String]) -> Result<(), Failure> {
+    let args = Args::parse(raw)?;
+    let rendered = target::render_generated_ts();
+    let out = PathBuf::from(
+        args.get("out")
+            .unwrap_or("packages/rust/src/native-targets.generated.ts"),
+    );
+
+    if args.has("check") {
+        let existing = std::fs::read_to_string(&out).map_err(|source| Failure::Plan {
+            code: plan::exit::FAILURE,
+            source: plan::PlanError::Io {
+                path: out.clone(),
+                source,
+            },
+        })?;
+        if existing != rendered {
+            eprintln!(
+                "[zcode-packaging] {} is stale.\n  run: cargo run -p zcode-packaging -- gen-targets",
+                out.display()
+            );
+            // Show the first differing line so the fix is obvious.
+            for (index, (want, have)) in rendered.lines().zip(existing.lines()).enumerate() {
+                if want != have {
+                    eprintln!("  line {}: expected `{want}`, found `{have}`", index + 1);
+                    break;
+                }
+            }
+            return Err(Failure::Plan {
+                code: plan::exit::VERIFY_FAILED,
+                source: plan::PlanError::Verify {
+                    problems: vec![format!("{} is out of date", out.display())],
+                },
+            });
+        }
+        println!("[zcode-packaging] {} is up to date", out.display());
+        return Ok(());
+    }
+
+    if let Some(parent) = out.parent() {
+        std::fs::create_dir_all(parent).map_err(|source| Failure::Plan {
+            code: plan::exit::FAILURE,
+            source: plan::PlanError::Io {
+                path: parent.to_path_buf(),
+                source,
+            },
+        })?;
+    }
+    std::fs::write(&out, &rendered).map_err(|source| Failure::Plan {
+        code: plan::exit::FAILURE,
+        source: plan::PlanError::Io {
+            path: out.clone(),
+            source,
+        },
+    })?;
+    println!("[zcode-packaging] wrote {}", out.display());
+    Ok(())
+}
+
+fn cmd_inventory(raw: &[String]) -> Result<(), Failure> {
+    let args = Args::parse(raw)?;
+    let repo_root = resolve_repo_root(&args)?;
+    let inv = inventory::build(&repo_root)?;
+
+    let live = inv.live_binaries();
+    println!(
+        "[zcode-packaging] {} crate(s), {} shipping",
+        inv.crates.len(),
+        live.len()
+    );
+    for crate_info in &inv.crates {
+        match inv.classifications.get(&crate_info.name) {
+            Some(Classification::Live { importers, .. }) => {
+                println!(
+                    "  ship   {:<24} {} importer(s): {}",
+                    crate_info.name,
+                    importers.len(),
+                    importers.join(", ")
+                );
+            }
+            Some(Classification::NoConsumer { subpath }) => {
+                println!(
+                    "  skip   {:<24} no importer of @zcode/rust/{subpath}  ({})",
+                    crate_info.name, crate_info.manifest
+                );
+            }
+            Some(Classification::NotCdylib) => {
+                println!(
+                    "  skip   {:<24} not a cdylib crate  ({})",
+                    crate_info.name, crate_info.manifest
+                );
+            }
+            Some(Classification::NoSubpath) => {
+                println!(
+                    "  skip   {:<24} no @zcode/rust subpath export  ({})",
+                    crate_info.name, crate_info.manifest
+                );
+            }
+            // Unreachable in practice: `build` classifies every workspace crate. Kept
+            // so a future crate kind shows up as a real line rather than vanishing.
+            None => {
+                println!(
+                    "  ??     {:<24} unclassified  ({})",
+                    crate_info.name, crate_info.manifest
+                );
+            }
+        }
+    }
+    if !inv.cdylib_without_subpath.is_empty() {
+        println!(
+            "[zcode-packaging] note: cdylib crate(s) reachable from TypeScript only if a subpath is added: {}",
+            inv.cdylib_without_subpath.join(", ")
+        );
+    }
+    Ok(())
+}

@@ -21,6 +21,7 @@ import {
   resolveDesktopProductIdentity,
 } from "./scripts/desktop-product-identity.mjs";
 import { verifyStagedKoffi } from "./scripts/koffi-package-assets.mjs";
+import { assertPackagedRustNative } from "./scripts/rust-native-package-verify.mjs";
 const ELECTRON_BUILDER_ARCH = {
   1: "x64",
   3: "arm64",
@@ -611,6 +612,7 @@ export default {
     runTimedSync("afterPack:assertPackagedNodePtyPrebuild", () =>
       assertPackagedNodePtyPrebuild(context),
     );
+    runTimedSync("afterPack:assertPackagedRustNative", () => assertPackagedRustNative());
     if (actualWindowsTarget) {
       await runTimedAsync("afterPack:writeWindowsInstallManifest", () =>
         writeWindowsInstallManifest(context),

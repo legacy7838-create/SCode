@@ -2626,6 +2626,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "zcode-packaging"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "zcode-profiles"
 version = "0.0.0"
 dependencies = [

@@ -4,10 +4,16 @@
 // Executed by the Electron Node runtime (ELECTRON_RUN_AS_NODE) built into the app, replacing the independent Node binary previously built into the package.
 //
 // Why do this:
-// - The agent does not have any native NAPI plug-ins (ripgrep is WASM, the rest is pure JS) and can run directly on Electron’s Node;
 // - Electron 41 has built-in Node 24.x, which is consistent with the target runtime of zcode-cli;
 // - The size of a single platform is reduced from ~180MB to ~16MB, and the same JS is universal across platforms;
 // - The app-server command path will not load @zcode/tui, so TUI is naturally not packaged here.
+//
+// Native addons: the agent DOES load napi binaries through @zcode/rust's loadNative() — zcode-git,
+// zcode-events, zcode-markdown, zcode-image, zcode-codec, zcode-diff and zcode-event-coalescer as of
+// docs/specs/rust-native-packaging.md §1.4. They are NOT bundled here (esbuild never inlines a .node);
+// prepare:rust-native stages them into bundled-agents/<platform>/native, a SIBLING of glm/ rather than a
+// child, because zcode.cjs is the file inside glm/ and the loader probes join(dirname(bundle), "..", "native").
+// The set is decided by zcode-packaging, which fails the build rather than shipping a partial payload.
 //
 // The remote end (SSH/WSL) does not have Electron and still uses the native binary of prepare:remote-assets, which does not affect each other.
 

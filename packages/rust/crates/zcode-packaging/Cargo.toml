@@ -1,0 +1,27 @@
+[package]
+name = "zcode-packaging"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Build-time tool that owns the .node packaging contract: target suffixes, crate inventory, live-set derivation, staging, and sha256 verification."
+
+# `bin`, NOT `cdylib`. This crate must never be emitted as a loadable .node by the
+# emission loop it replaces (docs/specs/rust-native-packaging.md §2.3). Declaring no
+# `[lib]` at all is the strongest form of that guarantee: cargo cannot produce a
+# shared object for it, so `build-native.sh` and `zcode-packaging stage` alike have
+# nothing to copy.
+[[bin]]
+name = "zcode-packaging"
+path = "src/main.rs"
+
+[dependencies]
+# Already a workspace dependency (packages/rust/Cargo.toml) for zcode-events'
+# migration checksums. Reused here for the P6 byte-identity verification; hand-rolling
+# SHA-256 in a packaging tool would be exactly the kind of home-grown crypto this
+# repo does not otherwise tolerate.
+sha2 = { workspace = true }
+# `preserve_order` keeps the emitted plan's key order stable, so a plan file diff is
+# meaningful in review and byte-identical across hosts (P7).
+serde = { workspace = true }
+serde_json = { workspace = true }

@@ -26,6 +26,12 @@
   },
   "scripts": {
     "build:native": "bash scripts/build-native.sh",
+    "build:packaging": "cargo build --release -p zcode-packaging",
+    "gen:targets": "cargo run -p zcode-packaging -- gen-targets",
+    "check:targets": "cargo run -p zcode-packaging -- gen-targets --check",
+    "native:inventory": "cargo run -p zcode-packaging -- inventory",
+    "native:stage-desktop": "cargo run -p zcode-packaging -- plan --target host --surface desktop-agent --out target/desktop-agent-plan.json && cargo run -p zcode-packaging -- stage --plan target/desktop-agent-plan.json",
+    "native:verify-desktop": "cargo run -p zcode-packaging -- verify --plan target/desktop-agent-plan.json",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix --fix-suggestions"
   },

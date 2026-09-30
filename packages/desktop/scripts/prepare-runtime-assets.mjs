@@ -24,10 +24,15 @@ const shouldPrepareWindowsBrowserImportHelper =
 const shouldPrepareMacosWindowBounds = target.os === "darwin";
 
 // The native desktop package has a built-in agent's JS bundle (prepare:agent-bundle), which is executed by the app's Electron Node runtime during runtime.
+// prepare:rust-native stages the .node binaries the bundle loads through loadNative(). The destination is
+// a sibling of glm/ (not a child): zcode.cjs is the file inside glm/, and loader.ts probes
+// join(dirname(zcode.cjs), "..", "native"). Ownership and the fail-loud contract live in
+// docs/specs/rust-native-packaging.md; this script only decides ordering.
 // The remote cross-platform native binary is still provided by prepare:remote-assets above.
 // The native-search archive is distributed with the warehouse. The preparation step only performs local unpacking and verification, and does not require any download source configuration.
 const localRuntimeScripts = [
   "prepare:agent-bundle",
+  "prepare:rust-native",
   ...(nativeSearchReleasePlan.enabled ? ["prepare:native-search"] : []),
   ...(shouldPrepareWindowsBrowserImportHelper ? ["prepare:browser-import-helper"] : []),
   ...(shouldPrepareMacosWindowBounds ? ["prepare:macos-window-bounds"] : []),
