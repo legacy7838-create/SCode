@@ -1200,3 +1200,61 @@ with it, admission happening once, and the three invisible cases plus the missin
 `create_task_group` takes the id as a parameter rather than minting one. The original used
 `randomUUID()`, which is fine for a product and useless for a test that needs to assert on the
 result. Moving the decision to the call site is what makes the batch-C fixture possible later.
+
+---
+
+## 24. Batch C: the grouped view
+
+`src/grouped_view.rs` — the two order keys, the three comparators, the workspace bootstrap, the two
+order normalisers, and the structure read. **131 Rust tests, up from 120.**
+
+### The two order keys, and why there are two
+
+A task's **membership key** is `workspaceKey\0taskId`; its **order key** is
+`JSON.stringify([workspaceKey, taskId])`. The second is not a style choice: SQLite TEXT cannot carry
+a NUL, so an order key built with `\0` is truncated on read and stops matching the grouped view
+after a sort is written back. The membership key is in-memory only and never persisted, which is
+where the NUL is safe — and what makes a two-field key unambiguous.
+
+### The tiebreaks are byte comparisons, not locale ones
+
+`compareGroupedNodes` breaks a tie on `group:<id>` / `task:<key>`, and `compareGroupTasks` on the
+node key. The original used `localeCompare`, which is **locale-dependent** over strings containing
+`\0` and `["…"]`, and the result is persisted — so the same data could order differently on two
+machines. A byte comparison is deterministic, and determinism matters more than linguistic nicety
+here.
+
+### The bootstrap marker is a constant, and an empty pass still records it
+
+`task_group_workspace_bootstraps` is written under a **constant** key, not a workspace key: a user
+who has seen a grouped sidebar once should not have one invented for every new workspace
+afterwards. The marker row is written even when there is nothing to group — an unrecorded empty
+pass would fire again on the next query. Both are tested.
+
+Three cleanups run at the end of the bootstrap, each for a visible symptom: empty groups are
+removed (a workspace whose tasks were all deleted would otherwise leave a group in the sidebar
+forever), dangling group order rows are removed (a node with no group renders as an empty entry),
+and a re-run does not push an existing group down the list.
+
+### Two dead statements I removed rather than shipped
+
+The first draft of the non-cron branch computed `left_added`/`added` and then discarded them with
+`let _ =`, because the real implementation — ordering members whose `sort_order IS NULL` by
+`addedAt` descending and **writing the orders back** — had not been written. A member with a NULL
+order is the "newly joined group" state the client backfills in memory; without the writeback every
+query re-derives it, and a task added a second later jumps ahead of one the user had already
+positioned. It is now `normalize_group_member_orders`, and the discard is gone.
+
+### Two test failures that were the fixtures, not the port
+
+Both are recorded because the same mistake twice is a pattern:
+
+- **A lower step is a higher position.** The bootstrap gives the *newest* task the *lowest* step.
+  My expectation had it inverted, and the code was right.
+- **The shared fixture pins `createdAt: 1`.** `test_support::meta_json` hardcodes it, so three cron
+  tasks tied on creation and the tiebreak — the node key — decided the order. The test was
+  exercising the tiebreak, not the comparator it claimed to test. It now writes the rows directly so
+  the dates actually vary.
+
+The second one is the more useful lesson: a shared fixture that is *convenient* can quietly remove
+the very variation a test depends on, and the test still passes — against the wrong property.

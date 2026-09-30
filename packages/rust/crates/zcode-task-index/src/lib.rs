@@ -15,6 +15,7 @@
 pub mod automation;
 pub mod napi;
 pub mod grouped;
+pub mod grouped_view;
 pub mod groups;
 #[cfg(test)]
 pub mod test_support;
