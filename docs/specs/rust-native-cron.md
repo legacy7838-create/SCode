@@ -548,15 +548,74 @@ weaken the suite.
   passes `None`. That is the §10 change request, and it is the last step of this wave. Until it
   lands the crate is used by Node only and the Tauri bug is fixed in capability but not in the
   Tauri binary.
-- **§6.2's differential cron corpus is not built.** The corpus is meant to compare the Rust
-  `cron` engine against *captured* `croner` output. `croner` is already deleted from
-  `package.json`, so the corpus has to be generated **before** that removal is finalised, or
-  from a scratch install of `croner@10.0.1`. As committed, the expression path is covered by
-  unit tests and the fixed-calendar/previous-run behaviour, but not by a generated
-  cross-engine differential. This is the largest remaining gap in invariant 3 and should be
-  closed before the Tauri wiring, since D1 is exactly where a silent divergence would live.
+- **§6.2's differential corpus — BUILT, and it paid for itself.** 530 rows captured from
+  `croner@10.0.1` (53 expressions x 10 anchors) and replayed against the Rust engine. The first
+  run failed with **44 divergences**; see §13.
 - **§10's other shared-file requests** (`apps/zcode-tauri/src-tauri/Cargo.toml`,
   `pnpm-lock.yaml` regeneration) are outstanding.
 - **No performance claim.** The spec is explicit that this is a capability port, not a speed
   port, and nothing here should be presented as a speedup. `compute_schedule_rule_next_run_at`
   runs at most once per automation per 20 s tick.
+
+---
+
+## 13. Differential results (§6.2, closing D1)
+
+The corpus is committed at `tests/fixtures/croner-corpus.json`, captured by
+`scripts/capture-croner-corpus.mjs` and replayed by `tests/differential.rs`. The test is
+hermetic and needs no npm package.
+
+**Result: 530 rows, 526 exact agreements, 4 enumerated divergences.** The test asserts the
+divergence set is *exactly* `KNOWN_DIVERGENCES`, so a new regression fails and a stale
+exemption also fails.
+
+### What the first run found — 44 divergences, three root causes
+
+1. **Day-of-week numbering differs between the engines (30 rows).** Measured:
+
+   | input | croner | `cron` crate |
+   |---|---|---|
+   | `0` | Sunday | **rejected** ("must be >= 1") |
+   | `1` | Monday | **Sunday** |
+   | `7` | Sunday (cron's 0-and-7 alias) | Saturday |
+
+   Untranslated, `0 0 * * 1-5` — "Monday to Friday", which the product accepts and users
+   write — silently becomes Sunday to Thursday, and `0 0 * * 0`, a valid Sunday schedule, is
+   rejected outright and reports "no future fire". Fixed by `translate_day_of_week`, which
+   renumbers 0-6 to the crate's 1-7, maps cron's `7` to the crate's `1` (both are Sunday),
+   and **expands step expressions** rather than shifting them: `*/2` is {0,2,4,6} in croner but
+   {1,3,5,7} in the crate, so the two sets differ and moving the base is not enough.
+
+2. **`@`-prefixed nicknames were a functional regression (10 rows).** `isValidCronExpr` was
+   implemented over croner, so a stored `@daily` both validated *and* scheduled; the crate
+   rejects it. Added `NICKNAMES` for `@yearly`/`@annually`/`@monthly`/`@weekly`/`@daily`/
+   `@midnight`/`@hourly`, matched case-insensitively.
+
+3. **Out-of-range and boundary day-of-week values (4 rows).** `0 0 * * 8` must be rejected in
+   both engines. `0 0 * * 7` is subtler: croner accepts it as Sunday, so it must map to the
+   crate's `1`, **not** pass through as `7` (which would select Saturday). A first attempt
+   rejected `7` outright on the wrong assumption that cron's range was strictly 0-6; the
+   corpus caught that across ten anchors immediately.
+
+### The 4 enumerated divergences
+
+| Expression | Anchor | Root cause |
+|---|---|---|
+| `0 0 29 2 *` | 2100-03-01 | The crate's search lattice has a **hard year ceiling**: from 2099-03-01 `0 0 1 1 *` resolves to 2100-01-01, but from 2100-03-01 it returns nothing while `* * * * *` still fires. A next fire in 2101+ reports "no future fire" |
+| `@annually` | 2100-03-01 | Same ceiling. The nickname itself agrees at every other anchor |
+| `0 0 */3 * *` | 2024-02-29T23:59 | `*/N` in **day-of-month** has a different base per engine: croner resolves `*/3` to 4 Mar, the crate to 1 Mar |
+| `0 0 */3 * *` | 2028-02-29T12:00 | Same, surfaced by a different anchor |
+
+The day-of-month step case is left divergent on purpose: the deleted `parseCronFields`
+explicitly disclaimed step syntax outside the minute field (`automationCron.ts:270-272`:
+*"ignore non-inumeric tokens (such as `*/2`)"*), and the only step form the product generates
+is `*/N * * * *` in the minute field, where both engines agree. Matching it would mean
+emulating croner's undocumented step anchor.
+
+### Corrections to my own expectations
+
+Three more hand-written expectations were wrong and were corrected against croner rather than
+against memory: `*/2` in day-of-week from a Wednesday resolves to **Thursday** (the next of
+{Sun,Tue,Thu,Sat}), not the following Sunday; `0 0 * * 7` is Sunday, not Saturday; and
+`0,7` must collapse to a *single* weekday, which is why deduplication happens after mapping
+rather than before.

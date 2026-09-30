@@ -13,6 +13,10 @@ description = "Automation schedule computation: cron-expression next-run and the
 #            `require()` a `.node` (same reason `zcode-rpc-server` is rlib-only)
 crate-type = ["cdylib", "rlib"]
 
+[features]
+# Exposes internals for the example probes and integration tests.
+test-hooks = []
+
 [dependencies]
 napi = { workspace = true }
 napi-derive = { workspace = true }

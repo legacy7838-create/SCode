@@ -15,16 +15,167 @@ use cron::Schedule;
 
 use crate::localtime::{from_millis, to_millis, Millis};
 
+/// The `@`-prefixed nicknames croner accepts, mapped to their 5-field equivalent.
+///
+/// Measured against `croner@10.0.1`: `@daily` from 2025-01-01 resolves to 2025-01-02, while
+/// the `cron` crate rejects the expression outright. That is a real functional regression,
+/// not a theoretical one — `isValidCronExpr` was implemented over `croner`, so a stored
+/// `@daily` validated, and `computeNextRunAt` scheduled it. Any automation created that way
+/// would have stopped firing.
+///
+/// `@every_second` and friends are deliberately absent: they have no meaning in a 5-field
+/// local-time contract, and `computeNextRunAt` never resolved sub-minute schedules anyway.
+const NICKNAMES: &[(&str, &str)] = &[
+    ("@yearly", "0 0 1 1 *"),
+    ("@annually", "0 0 1 1 *"),
+    ("@monthly", "0 0 1 * *"),
+    ("@weekly", "0 0 * * 0"),
+    ("@daily", "0 0 * * *"),
+    ("@midnight", "0 0 * * *"),
+    ("@hourly", "0 * * * *"),
+];
+
+/// Expands a `@` nickname to its 5-field form, or returns the input unchanged.
+fn expand_nickname(cron_expr: &str) -> String {
+    let trimmed = cron_expr.trim();
+    let lowered = trimmed.to_ascii_lowercase();
+    NICKNAMES
+        .iter()
+        .find(|(nickname, _)| *nickname == lowered)
+        .map(|(_, expansion)| (*expansion).to_string())
+        .unwrap_or_else(|| trimmed.to_string())
+}
+
 /// Parses a 5-field expression into a `Schedule`, returning `None` when the engine rejects it.
 fn parse(cron_expr: &str) -> Option<Schedule> {
     // `cron` expects seconds-first; the product contract is the standard 5-field form
     // (minute hour day-of-month month day-of-week), so a zero seconds field is prepended.
-    let trimmed = cron_expr.trim();
+    let expanded = expand_nickname(cron_expr);
+    let trimmed = expanded.trim();
     if trimmed.is_empty() {
         return None;
     }
+    let fields: Vec<&str> = trimmed.split_whitespace().collect();
+    if fields.len() < 5 {
+        return None;
+    }
+    // The day-of-week field must be renumbered before the crate sees it (see
+    // `translate_day_of_week`); everything else is already in the crate's numbering.
+    let mut normalised: Vec<String> = fields.iter().map(|f| (*f).to_string()).collect();
+    normalised[4] = translate_day_of_week(fields[4])?;
     use std::str::FromStr as _;
-    Schedule::from_str(&format!("0 {trimmed}")).ok()
+    Schedule::from_str(&format!("0 {}", normalised.join(" "))).ok()
+}
+
+/// Renumbers a day-of-week field from cron's 0-based convention to the `cron` crate's.
+///
+/// Returns `None` when the field is not a legal cron day-of-week at all, so the expression is
+/// rejected the way croner rejected it.
+///
+/// **This is not optional.** Measured against both engines:
+///
+/// | input | croner | `cron` crate |
+/// |---|---|---|
+/// | `0` | Sunday | **rejected** ("must be >= 1") |
+/// | `1` | Monday | **Sunday** |
+/// | `7` | **rejected** (range is 0-6) | Saturday |
+///
+/// So without the translation `0 0 * * 1-5` — "Monday to Friday", which the product accepts
+/// and users write — silently becomes Sunday to Thursday, `0 0 * * 0`, a perfectly valid
+/// Sunday schedule, is rejected outright, and `0 0 * * 7`, which croner refused, would be
+/// quietly accepted as Saturday. The differential corpus (`tests/differential.rs`) caught the
+/// first two across 30 rows; the third was found by an end-to-end probe afterwards, which is
+/// why the corpus now carries `0 0 * * 7` explicitly.
+///
+/// Step expressions are **expanded to an explicit list** rather than shifted. `*/2` means
+/// {0, 2, 4, 6} in croner but {1, 3, 5, 7} in the crate, so shifting the base is not enough —
+/// the two sets differ. The expansion is over at most seven values, so it costs nothing and
+/// removes the need to reason about the crate's step semantics over a shifted range.
+///
+/// Three-letter day names (`sun`, `mon`, …) are passed through untouched: the crate already
+/// resolves them to the same weekday.
+fn translate_day_of_week(field: &str) -> Option<String> {
+    if field == "*" || field == "?" {
+        return Some(field.to_string());
+    }
+    // An alphabetic field is a name list; both engines agree on the names.
+    if field.chars().any(|c| c.is_ascii_alphabetic()) {
+        return Some(field.to_string());
+    }
+
+    let mut days: Vec<u8> = Vec::new();
+    for part in field.split(',') {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+        let (range_part, step) = match part.split_once('/') {
+            Some((range, step)) => (range, step.parse::<u32>().ok().filter(|s| *s > 0)),
+            None => (part, None),
+        };
+
+        let (start, end) = if range_part == "*" {
+            (0u32, 6u32)
+        } else if let Some((low, high)) = range_part.split_once('-') {
+            match (low.parse::<u32>(), high.parse::<u32>()) {
+                (Ok(low), Ok(high)) => (low, high),
+                // A non-numeric bound is not a legal day field.
+                _ => return None,
+            }
+        } else {
+            match range_part.parse::<u32>() {
+                Ok(single) => (single, single),
+                Err(_) => return None,
+            }
+        };
+        // cron's day-of-week is 0-6, with 7 accepted as an alias for Saturday. The `cron`
+        // crate numbers 1-7 with 7 = Saturday, so 0-6 shift up by one and 7 is already
+        // correct in both. Anything beyond 7 is invalid input in both engines and is rejected
+        // here rather than translated, because the crate would read other values as weekdays
+        // and quietly fire.
+        if start > 7 || end > 7 || start > end {
+            return None;
+        }
+
+        match step {
+            Some(step) => {
+                let mut day = start;
+                while day <= end {
+                    days.push(day as u8);
+                    day += step;
+                }
+            }
+            None => {
+                for day in start..=end {
+                    days.push(day as u8);
+                }
+            }
+        }
+    }
+
+    if days.is_empty() {
+        return None;
+    }
+    // Deduplicate *after* mapping, not before: cron's 0 and 7 are the same weekday, so `0,7`
+    // must collapse to a single day rather than becoming `1,1`.
+    //
+    // +1 converts cron's 0=Sunday to the crate's 1=Sunday. Day 7 needs its own rule: cron
+    // treats 0 and 7 as the *same* weekday (both Sunday, the standard crontab convention),
+    // while the crate's 7 is Saturday. Verified against croner@10.0.1: `0 0 * * 7` from a
+    // Monday resolves to the following Sunday, not Saturday. So 7 maps to 1 like 0 does.
+    let mut mapped: Vec<u8> = days
+        .iter()
+        .map(|day| if *day == 7 { 1 } else { *day + 1 })
+        .collect();
+    mapped.sort_unstable();
+    mapped.dedup();
+    Some(
+        mapped
+            .iter()
+            .map(|day| day.to_string())
+            .collect::<Vec<_>>()
+            .join(","),
+    )
 }
 
 /// `computeNextRunAt` — next fire strictly later than `from`, in epoch ms.
@@ -248,4 +399,124 @@ mod tests {
         let at2 = crate::localtime::from_millis(millis);
         assert_eq!((year(at2), month0(at2), hour(at2), minute(at2)), (2025, 5, 9, 7));
     }
+
+    /// The day-of-week renumbering. Measured against both engines, because getting it wrong
+    /// silently shifts every weekday automation:
+    ///
+    /// | input | croner | `cron` crate |
+    /// |---|---|---|
+    /// | `0` | Sunday | **rejected** |
+    /// | `1` | Monday | **Sunday** |
+    /// | `7` | rejected | Saturday |
+    ///
+    /// The differential corpus caught 30 broken rows before this existed.
+    #[test]
+    fn day_of_week_is_renumbered_from_zero_based_to_one_based() {
+        let t = translate_day_of_week_for_tests;
+        // 0=Sunday becomes 1=Sunday.
+        assert_eq!(t("0").as_deref(), Some("1"));
+        assert_eq!(t("1").as_deref(), Some("2"));
+        assert_eq!(t("6").as_deref(), Some("7"));
+        // Ranges and lists shift with it, and are expanded so the order is stable.
+        assert_eq!(t("0-6").as_deref(), Some("1,2,3,4,5,6,7"));
+        assert_eq!(t("1-5").as_deref(), Some("2,3,4,5,6"));
+        assert_eq!(t("0,6").as_deref(), Some("1,7"));
+        assert_eq!(t("1,3,5").as_deref(), Some("2,4,6"));
+    }
+
+    /// A step must be **expanded**, not shifted: `*/2` is {0,2,4,6} in croner but {1,3,5,7}
+    /// in the crate, so moving the base by one is not enough — the two sets differ.
+    #[test]
+    fn day_of_week_steps_are_expanded_rather_than_shifted() {
+        let t = translate_day_of_week_for_tests;
+        assert_eq!(t("*/2").as_deref(), Some("1,3,5,7")); // croner {0,2,4,6}
+        assert_eq!(t("*/3").as_deref(), Some("1,4,7")); // croner {0,3,6}
+        assert_eq!(t("1-5/2").as_deref(), Some("2,4,6")); // croner {1,3,5}
+    }
+
+    /// Names and wildcards pass through: the crate already resolves `sun` to 1, i.e. Sunday,
+    /// which is the same meaning croner gives it.
+    #[test]
+    fn day_of_week_names_and_wildcards_pass_through() {
+        let t = translate_day_of_week_for_tests;
+        assert_eq!(t("*").as_deref(), Some("*"));
+        assert_eq!(t("?").as_deref(), Some("?"));
+        assert_eq!(t("sun").as_deref(), Some("sun"));
+        assert_eq!(t("mon,wed").as_deref(), Some("mon,wed"));
+    }
+
+    /// An out-of-range day is **rejected**, not passed through.
+    ///
+    /// `7` is the boundary and is deliberately *not* rejected: measured against `croner@10.0.1`,
+    /// it resolves to a Saturday, and so does the crate's 7. A first attempt rejected 7 on the
+    /// (wrong) assumption that cron's range was strictly 0-6, which the differential corpus
+    /// immediately caught across ten anchors.
+    #[test]
+    fn an_out_of_range_day_of_week_is_rejected() {
+        let t = translate_day_of_week_for_tests;
+        // 7 is cron's alias for Sunday (0), so it maps to the crate's 1 just like 0 does.
+        // Passing it through as 7 would select the crate's Saturday instead.
+        assert_eq!(t("7").as_deref(), Some("1"));
+        assert_eq!(t("0,7").as_deref(), Some("1"), "0 and 7 are the same weekday");
+        assert_eq!(t("0-7").as_deref(), Some("1,2,3,4,5,6,7"), "the full week is all seven days");
+        // Beyond 7 there is no Saturday left to mean.
+        assert_eq!(t("8"), None);
+        assert_eq!(t("0-9"), None);
+        assert_eq!(t("5-2"), None, "an inverted range is not a legal day field");
+        assert_eq!(t(""), None);
+        // And end to end: 7 must fire on a Sunday, not a Saturday. 2025-06-18 is a Wednesday;
+        // the next Sunday is the 22nd and the next Saturday is the 21st, so this pins the
+        // difference rather than just "some day in the week".
+        assert_eq!(
+            compute_next_run_at("0 0 * * 7", at(2025, 5, 18, 0, 0)),
+            Some(at(2025, 5, 22, 0, 0)),
+            "cron's 7 is Sunday, so it must not land on Saturday the 21st"
+        );
+        assert_eq!(compute_next_run_at("0 0 * * 8", at(2025, 5, 18, 0, 0)), None);
+    }
+
+    /// `@`-prefixed nicknames are a real functional surface, not a nicety: `isValidCronExpr`
+    /// was implemented over croner, so a stored `@daily` both validated and scheduled.
+    /// The crate rejects them outright, which would have silently stopped those automations.
+    #[test]
+    fn cron_nicknames_are_expanded() {
+        let from = at(2025, 0, 1, 0, 0);
+        // Verified against croner@10.0.1.
+        assert_eq!(compute_next_run_at("@daily", from), Some(at(2025, 0, 2, 0, 0)));
+        assert_eq!(compute_next_run_at("@yearly", from), Some(at(2026, 0, 1, 0, 0)));
+        assert_eq!(compute_next_run_at("@monthly", from), Some(at(2025, 1, 1, 0, 0)));
+        // Case-insensitive, as croner treats them.
+        assert_eq!(compute_next_run_at("@DAILY", from), Some(at(2025, 0, 2, 0, 0)));
+        // The aliases croner accepts.
+        assert_eq!(compute_next_run_at("@annually", from), Some(at(2026, 0, 1, 0, 0)));
+        assert_eq!(compute_next_run_at("@midnight", from), Some(at(2025, 0, 2, 0, 0)));
+        assert_eq!(compute_next_run_at("@hourly", from), Some(at(2025, 0, 1, 1, 0)));
+        assert_eq!(compute_next_run_at("@weekly", from), Some(at(2025, 0, 5, 0, 0)));
+        // An unknown nickname is still rejected.
+        assert_eq!(compute_next_run_at("@fortnightly", from), None);
+    }
+
+    /// The renumbering must hold end to end, not just in the helper: a Monday-to-Friday
+    /// schedule has to fire on weekdays, not Sunday-to-Thursday.
+    #[test]
+    fn a_weekday_range_fires_on_weekdays_after_renumbering() {
+        // 2025-06-16 is a Monday.
+        let monday = at(2025, 5, 16, 9, 0);
+        // From Monday 09:00, "0 0 * * 1-5" (Mon-Fri in croner) must next fire Tuesday, because
+        // Monday 00:00 has already passed.
+        assert_eq!(compute_next_run_at("0 0 * * 1-5", monday), Some(at(2025, 5, 17, 0, 0)));
+        // A Sunday-only schedule must fire on a Sunday, which the crate rejects outright
+        // without the renumbering.
+        let wednesday = at(2025, 5, 18, 0, 0);
+        assert_eq!(compute_next_run_at("0 0 * * 0", wednesday), Some(at(2025, 5, 22, 0, 0)));
+        // Every day of the week, which is `0-6` in croner and rejected by the crate.
+        assert!(compute_next_run_at("0 0 * * 0-6", wednesday).is_some());
+    }
+}
+
+/// Test-only re-export so the day-of-week translation can be probed directly, including for
+/// inputs that `parse` would reject before the translation ever runs.
+#[cfg(any(test, feature = "test-hooks"))]
+pub fn translate_day_of_week_for_tests(field: &str) -> Option<String> {
+    translate_day_of_week(field)
 }
