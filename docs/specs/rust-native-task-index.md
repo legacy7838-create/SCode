@@ -371,10 +371,11 @@ The acceptance core, mirroring `zcode-events` §6.
 
 ## 6. Decisions taken before implementation
 
-1. **The NUL workaround (§3.2) is dropped, not copied.** A Rust `TEXT` read does not truncate, so
-   the workaround's input encoding is removed. Asserted by a fixture that writes a task id
-   containing a NUL-adjacent sequence and reads it back whole. If any caller still *produces*
-   NUL-containing ids, that is a separate bug to fix, not a reason to keep the workaround.
+1. **The NUL form is confined to memory; the JSON form is preserved as the storage format
+   (§3.2).** The first draft of this spec said to drop the JSON form as a driver workaround;
+   reading the real database showed those keys are the user's live task ordering, so dropping it
+   would silently reorder every task list. The port reproduces the JSON form exactly and keys
+   its in-memory maps on a tuple, so it needs no separator at all.
 2. **The migration SQL stays in TypeScript** and is passed as JSON data, exactly as
    `zcode-events` §4.4 concluded. 4,895 lines already move; duplicating the SQL into Rust would
    add a checksum-drift surface for no gain, and the crate's `migrate_step` validates the id
@@ -422,8 +423,10 @@ rather than papered over.
 
 ## 9. Divergences
 
-- **D1 — the NUL workaround is removed (§6.1).** A behaviour *fix*, and the only intentional
-  divergence from the TypeScript's observable behaviour.
+- **D1 — none at the storage layer.** The first draft claimed the JSON key form was a
+  removable workaround; it is the on-disk format (§3.2), so it is preserved and this divergence
+  is withdrawn. The in-memory NUL key is replaced by a tuple key, which is invisible outside
+  the process.
 - **D2 — commit batching.** Four-plus commits per snapshot become one. At the row level
   "resolved ⇒ durable" still holds; no caller requires prefix-commit on failure.
 - **D3 — the Tauri host gains no new command surface in this wave** (§2.4). This is a Node-side
