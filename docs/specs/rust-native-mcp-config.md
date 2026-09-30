@@ -477,3 +477,105 @@ the right answer). `safeInvoke` is unchanged for the members whose fallback is a
 | `architecture:check` | 0 violations |
 | `check-native-graph` | OK |
 | `zcode-packaging` | still 8 shipping; `zcode-mcp-config` classified `not a cdylib crate` |
+
+---
+
+## 18. Closing the last JS fallback in this crate
+
+`packages/desktop/src/main/mcpUserDirectory/legacy.ts` — 243 lines of **complete JavaScript
+implementation**, living beside the 666-line Rust `legacy.rs` and still reachable from
+`desktopMainIpcPlatform.ts:209` and `index.ts:201`.
+
+That is invariant 1 and invariant 2 violated, in a crate this spec had already claimed as ported.
+
+### Why it happened
+
+§D2 of this spec decided `zcode-mcp-config` is `rlib`-only, on the grounds that "the consumer is
+the Tauri host". That was true **at the time** and false afterwards: Electron main is Node, and
+it is a first-class consumer of this exact function. An rlib cannot be `require()`d, so Node had
+no way to reach the port, and the honest options were (a) leave the JS in place, or (b) fix the
+packaging. Leaving the JS in place was the choice, and it should have been recorded as an open
+gap rather than quietly counted as "ported".
+
+**The correct decision is (b), and the general rule this yields:** *a crate with a Node consumer
+gets a cdylib.* Rlib-only is reserved for crates that genuinely have no Node surface. Deciding
+"rlib-only" at crate-creation time is how a crate silently grows a second implementation.
+
+### The port itself
+
+Nothing in the algorithm changes — the 666 Rust lines were already right. What this adds is the
+**reachability**:
+
+- `crate-type = ["cdylib", "rlib"]` with a `cdylib-name` of `zcode-mcp-config`, so the packaging
+  tool stages the same binary it already stages for the other eight crates.
+- `src/napi.rs` exposing one function, `migrateLegacyCommonMcp(requestJson) -> string`,
+  following the JSON-string boundary of §3.3.
+- `packages/rust/src/mcpConfig.ts` as the typed wrapper, and a `"./mcp-config"` subpath export.
+- `legacy.ts` **deleted**, not disabled. `mcpUserDirectory/index.ts` re-exports from the wrapper.
+
+### The four arguments, and why the boundary keeps four
+
+`migrate_legacy_common_mcp(legacy_storage_dir, local_app_data, app_data, home)` takes its
+environment as data precisely so the function stays pure and testable. The napi surface passes
+`std::env::var` in from the host, reproducing `process.env.LOCALAPPDATA ?? join(homedir(), ...)`
+at the boundary — including the `??` semantics for an **empty-but-present** variable, which
+`env::var` also returns as `Some("")`. Getting that wrong changes which files a misconfigured
+machine searches, so it is asserted rather than assumed.
+
+### `imported_count` / `skipped_count` stay 0
+
+Both are structurally 0 in the port: the legacy reader only ever *finds* configs, and writing
+them into the current file is the caller's next step. The fields remain because the wire shape is
+a public contract, not because anything sets them.
+
+---
+
+## 19. Implementation status
+
+`legacy.ts` is **deleted**. `git rm`, not a guard or a feature flag.
+
+| What | Where |
+|---|---|
+| The algorithm | `src/legacy.rs`, 666 lines, unchanged — it was already correct |
+| Reachability | `src/napi.rs` — one function, `AsyncTask`-backed |
+| Typed surface | `packages/rust/src/mcpConfig.ts` |
+| Call site | `packages/desktop/src/main/mcpUserDirectory/index.ts` imports the wrapper |
+| Packaging | `crate-type = ["cdylib", "rlib"]`; the live set went 8 → 9 |
+| Proof | `scripts/verify-mcp-config-native.mts` — 9 checks |
+
+`normalizeServerMap` in `utils.ts` went with it: `legacy.ts` was its only caller, so leaving it
+would have been dead code kept alive by nothing. `isRecord` and `readJsonObject` stay — `index.ts`
+uses them.
+
+### One real bug the end-to-end check found
+
+**"Nothing found" was sending `sourcePath: ""`.** The original returns an object with **no
+`sourcePath` key at all**, and `@zcode/shared` declares it `sourcePath?: string`. An empty string
+claims the servers were found at the empty path, which is a different statement from "not found",
+and it breaks `result.sourcePath === undefined`. The Tauri command already mapped empty → `None`;
+the napi path did not, because the shape was built by hand rather than derived. Now
+`Option<String>` with `skip_serializing_if`, and a test pins both the present and absent cases.
+
+This is the class of bug that only appears at a boundary: the Rust logic was right, the Tauri
+adaptor was right, and the napi adaptor was subtly wrong because there were three hand-written
+renderings of one contract.
+
+### Four failures that were the test's fault, and what they taught
+
+The first run of the check reported 5 failures. All five were wrong fixtures, and each one
+documented real behaviour rather than exposing a bug:
+
+1. **The environment was not redirected for the whole run.** On Linux neither `APPDATA` nor
+   `LOCALAPPDATA` is set, so the native call derived candidates under the real `$HOME` and never
+   saw the fixtures. Reported as "store.json wins" failing.
+2. **An explicit directory that only holds `store.json` finds nothing.** The dispatch is by
+   **suffix**: a path ending in `store.json` is read as a store file, anything else is treated as a
+   LevelDB directory. Passing a directory meant it was mined for `.ldb`/`.log` files, found none,
+   and fell through. Correct behaviour, wrong fixture — and a sharp edge worth documenting.
+3. **"Nothing found" needed a completely empty root**, not just a missing `legacyStorageDir`: an
+   absent explicit directory only removes the *first* candidate, and the derived LevelDB
+   candidates under `LOCALAPPDATA` are still searched.
+4. `sourcePath` was `""` where it should have been absent — the one genuine bug, above.
+
+The takeaway is the same one the task-index bridge produced: an end-to-end check is not a
+formality, but a failing one is a question about the fixture, not automatically about the port.

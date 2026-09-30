@@ -19,6 +19,7 @@ pub mod config;
 pub mod enabled;
 pub mod json;
 pub mod legacy;
+pub mod napi;
 pub mod servermap;
 
 pub use config::{

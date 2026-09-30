@@ -7,10 +7,18 @@ publish.workspace = true
 description = "MCP user-directory configuration: read, merge, migrate and atomically write the user's server config."
 
 [lib]
-# rlib only, like `zcode-rpc-server`: the consumer is the Tauri host, which is a Rust process
-# and cannot `require()` a `.node`. There is no Node consumer, so no cdylib is produced and
-# nothing is staged into the desktop or SEA payload (spec D2).
-crate-type = ["rlib"]
+# cdylib + rlib: rlib for the Tauri host, cdylib for Electron main (which is Node, and is a
+# first-class consumer of `migrate_legacy_common_mcp`).
+#
+# This was rlib-only under the original D2 decision, on the grounds that "the consumer is the
+# Tauri host". That was the root cause of the one JS fallback this crate had: with no cdylib,
+# Node could not reach the port, so `mcpUserDirectory/legacy.ts` stayed a complete second
+# implementation. See docs/specs/rust-native-mcp-config.md §18 — a crate with a Node consumer
+# gets a cdylib, decided at the point the consumer appears rather than at crate creation.
+crate-type = ["cdylib", "rlib"]
+# No `cdylib-name`: the lib target is already `zcode-mcp-config`, which is what the loader looks
+# for as `zcode-mcp-config.<platform>.node`. `zcode-packaging` does the `lib…so` -> that name
+# rename when it stages the payload.
 
 [dependencies]
 serde = { workspace = true }
@@ -19,3 +27,5 @@ serde = { workspace = true }
 # semantics match a JS object spread exactly — replacing a key keeps its position, a new key
 # appends. See docs/specs/rust-native-mcp-config.md §3.1.
 serde_json = { workspace = true }
+napi = { workspace = true }
+napi-derive = { workspace = true }

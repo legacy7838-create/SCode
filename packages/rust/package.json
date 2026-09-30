@@ -11,6 +11,7 @@
     "./codec": "./src/codec.ts",
     "./cron": "./src/cron.ts",
     "./task-index": "./src/taskIndex.ts",
+    "./mcp-config": "./src/mcpConfig.ts",
     "./events": "./src/events.ts",
     "./event-coalescer": "./src/eventCoalescer.ts",
     "./markdown": "./src/markdown.ts",

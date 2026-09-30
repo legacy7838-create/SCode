@@ -17,12 +17,14 @@ import type {
 } from "@zcode/shared";
 import type { McpConfigKeyName } from "./types.js";
 import { isRecord, readJsonObject, writeTextAtomic } from "./utils.js";
-import { migrateLegacyCommonMcp } from "./legacy.js";
+// The Rust implementation. `legacy.ts` used to live here as a second, full JavaScript
+// copy of the same algorithm; it is deleted (docs/specs/rust-native-mcp-config.md §18).
+import { migrateLegacyCommonMcp } from "@zcode/rust/mcp-config";
 
 // Re-export types and functions
 export type { McpConfigKeyName, McpSourceDescriptor } from "./types.js";
 export { MCP_SOURCE_DESCRIPTORS, getSourceDescriptor } from "./types.js";
-export { migrateLegacyCommonMcp } from "./legacy.js";
+export { migrateLegacyCommonMcp } from "@zcode/rust/mcp-config";
 
 interface DirectoryMcpDescriptor {
   source: CliMcpSource;
