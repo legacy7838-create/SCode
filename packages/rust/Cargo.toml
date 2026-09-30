@@ -32,6 +32,14 @@ sha2 = "0.10"
 # zcode-markdown: inline tokenization of independent blocks is data-parallel, so
 # rayon maps it over the libuv worker pool instead of lexing blocks serially.
 rayon = "1"
+# zcode-cron (docs/specs/rust-native-cron.md): `clock` supplies `Local`, which is what the legacy
+# `Date` local getters and `new Date(y, m, d, h, min)` constructions mean. No timezone parameter is
+# exposed — the schedule belongs to the host, and two callers in one process must not be able to
+# disagree (spec invariant 4).
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+# Replaces the `croner` npm dependency for the raw 5-field expression path. A different engine, so
+# the parity burden is real and is discharged by the differential corpus in the spec (§6.2).
+cron = "0.15"
 
 [profile.release]
 lto = "thin"

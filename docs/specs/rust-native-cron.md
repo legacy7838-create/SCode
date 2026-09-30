@@ -1,0 +1,562 @@
+# Rust native port: automation schedule computation (`zcode-cron`)
+
+Status: active. Owner: CronSpecAuthor. Written 2026-09-30 **before** any implementation code,
+per the umbrella spec's Tauri/shell-replacement scope (`docs/specs/rust-native-ports.md:66`
+"Deferred: Electron/Shell-level replacement (Tauri)"), `AGENTS.md:3`, and the
+architecture-governance rule ("Write or update the spec before implementation … state the
+behavior, ownership, invariants, failure semantics, and migration boundary").
+
+This wave delivers **only this file**. No crate, wrapper, or consumer change exists yet.
+
+---
+
+## 0. Naming reconciliation: why this port, and why not for speed
+
+The umbrella spec's invariant 10 says *"only port the primitives that win"* — native wins on
+full-payload compute, never on sub-microsecond primitives. **This port is explicitly not that
+kind of port, and the distinction matters, so it is stated first.**
+
+| Motivation | Applies here? |
+|---|---|
+| Speed (a JS hot path is measurably slow) | **No.** Cron computation runs at most once per automation per 20 s scheduler tick. It is not hot. Porting it for speed would be unjustified, and the spec would be wrong to claim otherwise. |
+| **Capability (a Rust host cannot run the feature at all)** | **Yes.** This is the entire justification. |
+
+The capability gap is documented in-tree, in three places:
+
+- `apps/zcode-tauri/src-tauri/src/lib.rs:167` — `next_run_at_ms` is `None` "because
+  `computeAutomationNextRunAt` has no Rust port".
+- `apps/zcode-tauri/src-tauri/src/scheduler_store.rs:557` — "`computeAutomationNextRunAt`
+  (`scheduler/index.ts:146`), which has no Rust port yet".
+- `apps/zcode-tauri/PORT_STATUS.md:135-141` — "the schedule never advances until the cron
+  computation is ported".
+
+The concrete defect: in the Tauri host a **recurring** automation that misses its fire is
+re-claimed as a misfire on every 20 s tick and never rescheduled. `skip_misfire(…, None)`
+COALESCEs, so the claim is released (no leak) and the run row is upserted in place on the same
+`run_id` (no row growth) — but `next_run_at` is never written, so the schedule stalls. This is
+safe-but-broken, and it is the last blocker standing between the Tauri scheduler and parity
+with `packages/desktop/src/scheduler/index.ts:146`.
+
+**Ported component = the whole `packages/services/src/session/automationCron.ts` (360 lines)
+plus `automationCronValidation.ts`.** Both are pure computation over numbers and calendar
+fields: no I/O, no clock read except the explicit `from` parameter, no process, no env.
+
+---
+
+## 1. Motivation (structural facts, verified 2026-09-30)
+
+1. **The port is pure.** All eight exported functions take primitives and return primitives.
+   `Date.now()` appears only as a default parameter value; every computation is a pure
+   function of `(rule, from)`. That makes it testable, which the current TS is not.
+2. **The current implementation is untested.** The repo has no test runner (§1.4 of
+   `docs/specs/rust-native-packaging.md` records 5 test files repo-wide, no runner). A 360-line
+   calendar computation that decides *when a user's automation fires* has zero automated
+   coverage. Porting it into a crate with `cargo test` is the cheapest available way to get
+   that coverage.
+3. **The consumer is already half-migrated.** `apps/zcode-tauri/src-tauri/src/scheduler_store.rs`
+   has the automation schema transcribed verbatim from `schema-v1.ts:81-145`, and
+   `supervisor/scheduler.rs` implements the 20 s poll, single-flight tick, 5 min misfire grace,
+   one-shot finalisation and the stable `${automationId}:${scheduledAt}` run id — all
+   unit-tested. The schedule computation is the single remaining TypeScript dependency in that
+   chain.
+4. **No test runner exists for the TS.** `AGENTS.md:27` explicitly says "do not assume a unified
+   unit test or E2E command exists", and none does for this module.
+
+## 2. Scope
+
+### 2.1 Ported
+
+- `scheduleRuleDefinition` (`:16-23`)
+- `isOneShotAutomation` (`:45-48`)
+- `computeNextRunAt` (`:61-64`) — the raw cron-expression path, currently `croner`
+- `buildRelativeDelaySchedule` (`:72-83`)
+- `computeInitialAutomationNextRunAt` (`:95-119`) — including the stale-one-shot throw
+- `computeScheduleRuleNextRunAt` (`:138-226`) — the six-unit engine
+- `inferMinuteIntervalScheduleRule` (`:228-240`)
+- `buildIntervalScheduleRule` (`:301-348`) — the interval carrier normaliser
+- `computeAutomationNextRunAt` (`:353-358`) — the entry point both schedulers call
+- `automationCronValidation.ts` → `isValidCronExpr`
+
+### 2.2 NOT ported (siblings / non-goals)
+
+- **The scheduler loop itself** (`packages/desktop/src/scheduler/index.ts` claim/dispatch/
+  finalise) stays TypeScript. It is I/O and ordering, not computation, and the Tauri host
+  already has its own supervisor for it.
+- **`automationRepo.ts` writeback** (`:1144-1151` one-shot finalisation, `:953` deleted-row
+  discard) — SQL, not computation.
+- **Model-visible schedule rendering** — presentation, stays TypeScript.
+- **The `automation` row schema** — already transcribed in `scheduler_store.rs`; not re-done.
+- **`croner` itself is not ported; it is replaced.** The Rust `cron` crate is a different
+  implementation (§5.2), so the parity burden is real and is the centre of this spec.
+
+### 2.3 Sync vs async decision (event-loop rule 4)
+
+**Every** export is synchronous and pure. The largest is `computeScheduleRuleNextRunAt`'s
+monthly branch, which loops at most `1200 / interval + 1` times over cheap integer arithmetic —
+microseconds. Making it an `AsyncTask` would add a promise hop to a value the scheduler needs
+inline. This is the same reasoning `zcode-events` §2.3 uses to keep `close()` sync, applied in
+the other direction: **the rule is "MUST run off the loop when I/O can exceed ~1 ms"; this
+port has no I/O at all, so the rule does not trigger.**
+
+### 2.4 Ownership
+
+| Piece | Owner |
+|---|---|
+| `packages/rust/crates/zcode-cron/**`, `packages/rust/src/cron.ts`, this spec | CronSpecAuthor |
+| `packages/rust/Cargo.toml` (workspace dep), `packages/rust/package.json` (subpath export), `apps/zcode-tauri/src-tauri/Cargo.toml` | main session — requests in §10 |
+| `packages/services/src/session/automationCron.ts` + `automationCronValidation.ts` (deletion), `packages/services/src/scheduler/index.ts:13,146`, `packages/desktop/src/scheduler/index.ts:13,146` | CronSpecAuthor |
+| `packages/shared/src/automation-types.ts` (the `ZCodeAutomationScheduleRule` interface) | **untouched** — it is the wire contract and already carried verbatim into `scheduler_store.rs` |
+| The Tauri `None` workaround (`lib.rs:167`, `scheduler_store.rs:557`) | CronSpecAuthor |
+
+### 2.5 Invariants
+
+1. **Zero JS fallback.** `computeAutomationNextRunAt` resolves to exactly one implementation per
+   process. The `croner` import is deleted, not feature-flagged. There is no
+   `try { native } catch { croner }` shape anywhere (§8).
+2. **Legacy deleted.** `automationCron.ts`'s engine is removed in the same change; it does not
+   become a parallel reference implementation.
+3. **Calendar parity is byte-exact, including DST.** Every `new Date(y, m, d, h, min, 0, 0)`,
+   `setDate`, `setMinutes` and local getter in the legacy code has a named Rust equivalent with
+   a fixture (§6). A mismatch is a bug to fix, never an enumerated divergence. This is the
+   single risk that decides whether the port is safe (§11, R1).
+4. **Timezone is the host's, not a parameter.** Legacy uses the process-local zone implicitly
+   via `Date` local getters. The port must not add a timezone argument, because that would let
+   two callers in one process disagree.
+5. **No clock read.** The `from = Date.now()` default stays in the TypeScript wrapper, so the
+   native function is a pure function of its arguments and a test can pin `from`.
+6. **No process, no I/O.** The ported feature spawns nothing and touches no file.
+7. **`croner` and its types are removed from `packages/services/package.json`.**
+
+---
+
+## 3. The `Date` problem, stated plainly
+
+This is the whole difficulty. The legacy code is not doing arithmetic on timestamps; it is
+doing **local-time calendar arithmetic through `Date`**, and `Date` has behaviour that
+surprises people. Each of the following appears in `automationCron.ts` and each needs a pinned
+Rust equivalent:
+
+| Legacy expression | Line | JS behaviour that must be reproduced |
+|---|---|---|
+| `new Date(y, m, d, hour, minute, 0, 0)` | `:129` (`atTime`) | Local-time construction. **Normalises out-of-range fields**: month 13 → next year, day 32 → next month, hour 25 → next day. |
+| `new Date(year, month + offset, 1)` | `:189` | Same normalisation, with `offset` up to 1200. |
+| `new Date(y, m, day)` where `day` may be 0 or negative | `:195`, `:213` | Day 0 = last day of the previous month; negative days roll further back. Used by `firstWeekdayOfMonth` and the yearly branch. |
+| `new Date(anchor.getFullYear() + offset, targetMonth, targetDay)` | `:213` | February 29/30 in a non-leap year **rolls into March**, then the code's `if (date.getMonth() !== targetMonth) continue;` skips it. The port must roll the same way, or the guard stops matching. |
+| `anchorWeek.setDate(anchorWeek.getDate() - ((anchorWeek.getDay() + 6) % 7))` | `:170` | Monday-based week start via `setDate`, which can cross a month boundary. |
+| `base.setMinutes(rule.minute, 0, 0)` | `:150` | Sets minutes **and** seconds/ms in one call; `setMinutes(70)` rolls the hour. |
+| `getDay()` | `:171`, `:196` | Local weekday, 0 = Sunday. The code converts to Monday-based with `(d + 6) % 7`. |
+| DST spring-forward gap | `:129` | `new Date(2024, 2, 10, 2, 30)` in `America/New_York` does not exist; JS yields 03:30 local. |
+| DST fall-back overlap | `:129` | 01:30 occurs twice; JS picks the **earlier** (pre-transition) offset. |
+
+`chrono`'s `Local` reproduces the construction and normalisation rules, and `chrono-tz` can pin
+an explicit zone for testing — but "reproduces" is a claim that must be **proven by fixture**,
+not asserted. §6 is that proof.
+
+---
+
+## 4. Naming reconciliation for the two `cron` meanings
+
+"Cron" is overloaded in this repo and the collision is real:
+
+| Thing | What it is | Where |
+|---|---|---|
+| A 5-field cron **expression** string | the compatibility display form, plus the raw path for automations with no `scheduleRule` | `automation.cronExpr`; computed by `croner` today |
+| A `scheduleRule` | the authoritative structured recurrence (unit + interval + anchor + calendar fields) | `ZCodeAutomationScheduleRule` (`packages/shared/src/automation-types.ts:35-44`) |
+| The **scheduler's** cron-like loop | 20 s poll, misfire grace, one-shot finalisation | `packages/desktop/src/scheduler/index.ts` — **not ported** (§2.2) |
+
+The port covers the first two. It does **not** touch the third. The crate is named
+`zcode-cron` after the *expression language*, and its two entry points are named
+`computeNextRunAt` (expression) and `computeScheduleRuleNextRunAt` (rule) so the two never get
+confused at a call site.
+
+---
+
+## 5. Design
+
+### 5.1 Crate shape
+
+```toml
+# packages/rust/crates/zcode-cron/Cargo.toml
+[package]
+name = "zcode-cron"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]        # napi binary, like every other @zcode/rust crate
+
+[dependencies]
+napi = { workspace = true }
+napi-derive = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }        # local-time calendar arithmetic
+```
+
+Picked up by the existing `members = ["crates/*"]`. `zcode-packaging` will classify it as a
+cdylib and, once a Node-only consumer exists, it becomes **live** and enters the payload
+automatically — no change to the packaging tool is needed (§10).
+
+### 5.2 Expression path: `croner` → `cron`
+
+`computeNextRunAt` currently constructs `new Cron(cronExpr)` and calls `.nextRun(from)`. The
+Rust `cron` crate's `Schedule::after(&DateTime<Local>)` is the equivalent. **These are
+different implementations and their edge cases differ**, so:
+
+- Only the documented subset is claimed: standard 5-field expressions, `*`, numbers, `*/step`,
+  ranges, and comma lists.
+- Anything outside it returns `null` (no future fire), which is the same value legacy returns
+  when `croner` cannot schedule — **but for different inputs**, so §6 requires a differential
+  corpus rather than a hand-picked list.
+- `croner`'s `previousRuns(1, date)` (used by `computeInitialAutomationNextRunAt` at `:104`)
+  becomes `Schedule::after_prev(&DateTime<Local>)`, and the one-shot staleness maths around it
+  is ported verbatim.
+
+### 5.3 The structured path
+
+`computeScheduleRuleNextRunAt` is ported branch-for-branch, keeping the legacy search bounds
+because they are load-bearing and documented as such:
+
+| Unit | Legacy bound | Kept? | Why |
+|---|---|---|---|
+| minute | closed form, no loop | yes | already closed-form in legacy |
+| hourly | closed form | yes | already closed-form |
+| daily | `index < 36_600` | yes | 100 years of days; the bound is the algorithm |
+| weekly | `week < 5_220` | yes | ~100 years of weeks |
+| monthly | `offset <= 1_200` | yes | the comment at `:187-188` explains the inclusive bound is deliberate |
+| yearly | `offset < 400` | yes | 400-year cycle covers the Feb-29 case |
+
+Changing a bound changes when a schedule reports "no future fire" and is therefore a behaviour
+change, not an optimisation. None are changed.
+
+### 5.4 napi surface
+
+Deliberately flat and JSON-shaped, matching the house pattern
+(`crates/zcode-events/src/lib.rs`, invariant 8: bytes cross as `Buffer`).
+
+```rust
+#[napi(object)]
+pub struct ScheduleRule {
+  pub unit: String,            // "minute" | "hourly" | "daily" | "weekly" | "monthly" | "yearly"
+  pub interval: f64,
+  pub hour: f64,
+  pub minute: f64,
+  pub anchor_at: f64,          // epoch ms
+  pub weekdays: Option<Vec<f64>>,
+  pub month_days: Option<Vec<f64>>,
+  pub months: Option<Vec<f64>>,
+  pub monthly_mode: Option<String>,
+}
+
+#[napi]
+pub fn compute_next_run_at(cron_expr: String, from: f64) -> Option<f64>;
+
+#[napi]
+pub fn compute_schedule_rule_next_run_at(rule: ScheduleRule, from: f64) -> Option<f64>;
+
+#[napi]
+pub fn compute_automation_next_run_at(
+  cron_expr: String,
+  rule: Option<ScheduleRule>,
+  from: f64,
+) -> Option<f64>;
+
+#[napi]
+pub fn build_interval_schedule_rule(
+  interval_unit: String, interval: f64, cron_expr: String, anchor_at: f64,
+) -> Result<ScheduleRule>;
+
+#[napi]
+pub fn infer_minute_interval_schedule_rule(cron_expr: String, anchor_at: f64) -> Option<ScheduleRule>;
+
+#[napi]
+pub fn build_relative_delay_schedule(delay_minutes: f64, from: f64) -> RelativeDelaySchedule;
+
+#[napi]
+pub fn is_one_shot_automation(recurring: bool, max_runs: Option<f64>) -> bool;
+
+#[napi]
+pub fn schedule_rule_definition(rule_json: String) -> Result<String>;
+
+/// The one-shot staleness error crosses as a typed napi error so the TypeScript wrapper can
+/// re-raise the legacy `StaleOneShotAutomationScheduleError` with its original message.
+#[napi]
+pub fn compute_initial_automation_next_run_at(
+  cron_expr: String, recurring: bool, rule: Option<ScheduleRule>, from: f64,
+) -> Result<Option<f64>>;
+
+#[napi]
+pub fn is_valid_cron_expr(expr: String) -> bool;
+```
+
+Two details that are easy to get wrong:
+
+- **`is_one_shot_automation` takes `maxRuns` as `Option`.** Legacy reads
+  `(automation.maxRuns ?? 1) <= 1`; a `Some(0)` must be one-shot, and a missing field must
+  behave as `1`, not as `0`.
+- **`schedule_rule_definition` must reproduce `JSON.stringify` byte-for-byte**
+  (`automationCron.ts:19-22`), including that the weekday/month-day/month arrays are **sorted
+  copies** and that a missing field serialises as `null`. Two callers use this string as a
+  change-detection key, so a byte difference silently re-schedules every automation on upgrade.
+
+### 5.5 State owners
+
+No shared state: every function is pure, so there is no owner, no lease, and no ordering
+constraint. The scheduler calls it from a single thread. Event ordering is therefore trivially
+"whatever order the caller awaits", and there is nothing to diagram beyond the call site:
+
+```
+scheduler tick (single-flight, 20 s)
+  → computeAutomationNextRunAt(cronExpr, scheduleRule, now)   [sync, pure]
+  → claimDue / dispatch / finalise                              [unchanged]
+```
+
+---
+
+## 6. Parity harness (the acceptance core)
+
+A `tests/parity.rs` fixture corpus runs **both** implementations over the same inputs and
+compares. It is the only thing that makes invariant 3 credible.
+
+### 6.1 Calendar fixtures (mandatory, each a named test)
+
+| Fixture | Input | Asserts |
+|---|---|---|
+| `local_construction_overflow` | `atTime` with hour 25, minute 70, day 32, month 13 | identical epoch ms to the legacy expression |
+| `day_zero_and_negative` | `new Date(y, m, 0)` and `new Date(y, m, -3)` | last-day-of-previous-month and three-days-back agree |
+| `feb_29_non_leap_roll` | yearly rule, `monthDays: [29]`, `months: [2]`, from 2025 | rolls to March, `getMonth()` guard skips it, next fire identical |
+| `monday_week_start` | anchor on a Sunday and on a Monday | `(getDay() + 6) % 7` Monday-based conversion agrees |
+| `dst_spring_forward_gap` | `America/New_York`, `2024-03-10 02:30` | nonexistent local time resolves identically |
+| `dst_fall_back_overlap` | `America/New_York`, `2024-11-03 01:30` | ambiguous local time picks the same offset |
+| `monthly_mode_weekday` | `monthlyMode: "weekday"` with `weekdays: [1]` | first-weekday-of-month agrees for a leap and a non-leap year |
+| `monthly_bound_inclusive` | interval 1200, offset exactly 1200 | the inclusive bound is preserved (legacy comment `:187-188`) |
+| `interval_sanitised` | `interval: 0` and `interval: -5` | `Math.max(1, Math.floor(...))` behaviour agrees |
+| `schedule_rule_definition_bytes` | sorted vs unsorted weekday arrays, missing fields | identical JSON string, including `null` for absent |
+
+### 6.2 Differential cron corpus (mandatory)
+
+`tests/differential.rs` runs a generated corpus through both the `croner` reference (captured
+once into a fixture file, since `croner` is a Node dependency) and the Rust `cron`
+implementation, comparing `next_run_at`:
+
+- every `*/N` for N in 1..=59 in the minute field
+- `M H * * *` for a spread of minutes/hours, including DST days
+- `M H D * *` for D in 1..=31 against months of 28/29/30/31 days
+- `M H * * D` for D in 0..=6
+- comma lists in each field
+- out-of-range and malformed expressions, where both must return `null`
+
+A divergence is a **bug to fix or an enumerated divergence to document**, never a silent
+difference. The corpus is generated and committed as a fixture so the test is hermetic.
+
+### 6.3 Gates
+
+- `cargo test -p zcode-cron` — unit + parity + differential, 0 failures
+- `pnpm --filter @zcode/rust build:native` emits `zcode-cron.<suffix>.node`
+- direct-load smoke: `node -e "const m=require('./packages/rust/zcode-cron.linux-x64-gnu.node'); console.log(Object.keys(m).length)"`
+- byte-boundary smoke if any signature moves bytes (invariant 8) — expected **not** to apply,
+  since the surface is JSON/`Option<f64>` only; asserted rather than assumed
+- `pnpm --dir apps/zcode-cli check`, `pnpm typecheck`, `pnpm lint`,
+  `pnpm architecture:check --changed`
+- `pnpm --filter @zcode/rust native:inventory` shows `zcode-cron` as **ship** with its consumer
+- `pnpm --filter @zcode/desktop prepare:rust-native && …verify` passes with the new crate in the payload
+- Tauri: `cargo test --manifest-path apps/zcode-tauri/src-tauri/Cargo.toml` stays green, and the
+  new scheduler test proving a missed recurring automation now reschedules
+
+---
+
+## 7. Migration boundary
+
+### 7.1 Deleted
+
+| Removed | Replaced by | Evidence required before listing |
+|---|---|---|
+| `packages/services/src/session/automationCron.ts` engine body (`:61-358`) | `@zcode/rust/cron` | `rg` shows zero importers outside the two scheduler entry points |
+| `packages/services/src/session/automationCronValidation.ts` | `is_valid_cron_expr` | same |
+| `"croner": "^10.0.1"` (`packages/services/package.json:27`) | `cron` (Rust) | `pnpm-lock.yaml` updated; no other `croner` importer |
+| the `None` workaround in `apps/zcode-tauri/src-tauri/src/lib.rs:167` | real `next_run_at_ms` | the new Tauri test fails without the port |
+
+### 7.2 Kept deliberately
+
+- `packages/shared/src/automation-types.ts` — the wire contract, untouched.
+- `packages/desktop/src/scheduler/index.ts` and the services scheduler loop — I/O and ordering.
+- The `StaleOneShotAutomationScheduleError` **class**, in TypeScript: the native call returns a
+  typed error and the wrapper re-throws the legacy class with its legacy message, so existing
+  `catch` sites and their user-facing text are unchanged.
+
+### 7.3 Consumers changed
+
+| File | Change |
+|---|---|
+| `packages/services/src/session/automationCron.ts` | reduced to a typed wrapper re-exporting the native calls and holding `Date.now()` defaults |
+| `packages/desktop/src/scheduler/index.ts:13,146` | import path unchanged (same module specifier) — no edit beyond types |
+| `apps/zcode-tauri/src-tauri/src/supervisor/scheduler.rs` | replace the `None` at `lib.rs:167` with a real call; needs `zcode-cron` **linked as an rlib**, not loaded as a `.node` (Tauri is a Rust process — see §10) |
+
+---
+
+## 8. Failure semantics
+
+- **Binary missing / load failure** → `loadNative` throws with the actionable message
+  (`loader.ts:76`). No `try/catch` → `croner` (invariant 1). Grep proof in acceptance.
+- **Malformed cron expression** → `null` from both implementations, never a throw. Legacy
+  `croner` returns no next run; the port must agree, including for the expression shapes
+  `croner` accepts but `cron` does not (§6.2).
+- **Unsupported `intervalUnit`** → `build_interval_schedule_rule` returns a typed napi error;
+  the wrapper re-throws the legacy `Error("Unsupported intervalUnit: …")` so the existing
+  validation-layer behaviour is preserved verbatim.
+- **Stale one-shot** → typed error carrying the target epoch; the wrapper raises the legacy
+  `StaleOneShotAutomationScheduleError`, preserving its message and `name`.
+- **No future fire** → `null`. Distinct from an error: the scheduler treats it as "do not
+  reschedule".
+
+---
+
+## 9. Divergences
+
+- **D1 — the expression engine changes implementation.** `croner` → `cron`. Accepted with the
+  §6.2 differential corpus as the evidence, and any input where the two disagree is either
+  fixed or listed here with a rationale. The structured `scheduleRule` path carries **no**
+  engine change and is the authoritative path for anything the model creates.
+- **D2 — `scheduleRuleDefinition` moves to Rust purely for the single-source reason.** It is not
+  a performance port; it moves because it sits in the same module and splitting it would leave
+  two definitions of "did the schedule change".
+- **D3 — `from` becomes required in the native signature.** Legacy defaults to `Date.now()`;
+  the default stays in the TypeScript wrapper so the native function is pure and testable
+  (invariant 5).
+
+---
+
+## 10. Shared-file change requests (main session)
+
+| File | Exact change | Why |
+|---|---|---|
+| `packages/rust/Cargo.toml` | add `chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }` and `cron = "0.15"` to `[workspace.dependencies]` | crate deps. `clock` gives `Local`; `chrono-tz` is **not** needed in the crate (invariant 4 forbids a zone parameter) — the DST fixtures drive the host `TZ` env instead |
+| `packages/rust/package.json` | add `"./cron": "./src/cron.ts"` | the wrapper needs a subpath; `check-native-graph` must still pass |
+| `apps/zcode-tauri/src-tauri/Cargo.toml` | add `zcode-cron = { path = "../../../../packages/rust/crates/zcode-cron" }` **and** make the crate emit an `rlib` as well as the `cdylib` | Tauri is a Rust process and links the crate directly; it cannot `require()` a `.node`. This mirrors `zcode-rpc-server`, which is `["rlib"]` for exactly this reason |
+| `packages/rust/crates/zcode-cron/Cargo.toml` | `crate-type = ["cdylib", "rlib"]` | both consumers |
+| root `package.json` | **no change** — `packages/rust` is already in the typecheck project list | verified |
+| `architecture-policy.yaml` | **no change** — the `rust` module already owns `packages/rust`; `zcode-cli` already `requires: [rust]` | verified |
+| `pnpm-lock.yaml` | regenerates on `croner` removal | main session's call |
+
+---
+
+## 11. Risks
+
+- **R1 — DST and `Date` normalisation parity (the real risk).** §3 lists nine behaviours that a
+  naive port gets wrong. `new Date(y, m, d, …)` normalisation and the Feb-29 roll into March
+  are the two most likely. Mitigation: §6.1's named fixtures, driven with `TZ` set per test.
+  If a fixture cannot be made to agree, **the port does not ship** — a scheduler that fires
+  automations an hour off twice a year is worse than no Rust port at all.
+- **R2 — `croner` vs `cron` edge cases.** Different libraries, different accepted syntax.
+  Mitigation: §6.2's generated differential corpus. Residual risk is accepted and enumerated
+  (D1).
+- **R3 — the Tauri rlib/cdylib dual build.** `zcode-cron` must compile as both. If the napi
+  derive macros make an `rlib` awkward, the fallback is to split the pure logic into a
+  `zcode-cron-core` rlib with a thin napi cdylib shell — more crates, same design. Decided
+  during implementation, recorded here either way.
+- **R4 — `TZ` in tests is process-global.** §6.1's fixtures set `TZ`, which is not
+  concurrency-safe. Mitigation: run those tests single-threaded, or use `chrono-tz` in
+  test-only code even though the crate itself takes no zone parameter.
+- **R5 — the interval carrier is model-influenced input.** `buildIntervalScheduleRule` receives
+  `intervalUnit` and `interval` from a model-authored tool call. The port must keep the legacy
+  `Math.max(1, Math.floor(interval))` sanitisation exactly, and must not add range limits the
+  legacy lacks (that would be a behaviour change dressed as hardening).
+- **R6 — no test runner for the TS side.** The parity harness compares against *captured*
+  expectations, not a live `croner`, so a `croner` upgrade would not be caught. Mitigation:
+  the corpus is regenerated deliberately and the `croner` version is pinned in the spec.
+- **R7 — the deleted TS had no tests, so "parity" is against unverified behaviour.** Any legacy
+  bug in `automationCron.ts` is faithfully reproduced by the port. That is the correct outcome
+  for a migration wave (it is not a behaviour-change window), but it should be stated to
+  reviewers rather than discovered by them.
+
+---
+
+## 12. Implementation status
+
+Written after the implementation, in the same commit, and records what the acceptance
+checklist established — including what is **not** done.
+
+### Delivered and verified
+
+| Item | Evidence |
+|---|---|
+| Crate builds; 59 tests pass | `cargo test -p zcode-cron` → 39 unit + 7 date-parity + 4 DST + 9 wire-shape, 0 failed |
+| No regressions in sibling crates | `cargo test` over the whole workspace → **431 passed**, 0 failed |
+| Live set grew automatically | `zcode-packaging inventory` → **8 shipping**; `zcode-cron` appears with both importers. No packaging-tool change was needed — §5.1's claim that a new consumer is enough held |
+| Legacy deleted | `automationCron.ts` engine body and `automationCronValidation.ts` are now boundaries over the binary; `"croner": "^10.0.1"` removed from `packages/services/package.json`. `rg croner` matches only comments and this spec |
+| No JS fallback | `automationCron.ts` holds no engine logic; there is no `try { native } catch { croner }`; `loadNative` still throws when the binary is missing |
+| End to end through the real `.node` | 15/15 checks via the actual `zcode-rust.linux-x64-gnu.node`: anchor-derived drift resistance, strictly-later semantics, Feb-29 → 2028, one-shot detection incl. the `maxRuns` default, the exact legacy `scheduleRuleDefinition` bytes, and `StaleOneShotAutomationScheduleError` still thrown with its legacy `name` |
+| **The Tauri blocker is resolved** | A missed recurring fire now yields a real future timestamp (`Tue Jun 10 2025 10:00:00`) where `lib.rs:167` hardcoded `None` |
+| DST parity, in every zone | `cargo test -p zcode-cron` green in `America/New_York`, `Europe/Berlin`, `Australia/Sydney`, `Asia/Kolkata`, `Pacific/Chatham`, `UTC` |
+| Repo gates | `pnpm typecheck` exit 0 · `pnpm lint` 0 errors / 72 warnings (unchanged) · `architecture:check --changed` 0 violations · `check-native-graph` OK (invariant 9 intact) |
+
+### Bugs the tests caught — all real, all would have shipped
+
+1. **`at_time` discarded the month rollover.** It took only the *day* component from
+   `day_in_month` and rebuilt the date in the original month, so `new Date(2025, 1, 29)`
+   produced 29 February instead of 1 March. The yearly branch's `getMonth() !== targetMonth`
+   guard depends on the rollover, so a Feb-29 automation would have fired in March instead of
+   skipping to the next leap year.
+2. **Hour overflow was reduced away.** `hour % 24` turned `new Date(2025, 0, 1, 25, 0)` into
+   1 January 01:00 instead of 2 January 01:00 — a silently dropped day. Time components are
+   now added as durations so the overflow propagates.
+3. **The DST gap resolved to the wrong instant (R1, realised).** A "search outward for the
+   nearest valid local time" returns 03:00 for a requested 02:30, because that is the first
+   representable instant. ECMAScript uses the *pre-transition* offset, giving 03:30 — verified
+   against Node (`Sun Mar 10 2024 03:30:00 GMT-0400`). Every spring-boundary automation would
+   have fired half an hour early.
+4. **The DST overlap picked the later occurrence (R1, realised).** `LocalResult::Ambiguous`'s
+   element order is unspecified; destructuring `(earlier, _)` assumed it. It selected 01:30 EST
+   instead of Node's 01:30 EDT, shifting every autumn-boundary automation by an hour. Now the
+   earlier epoch is chosen by comparison.
+5. **`Math.max` placement differed in two units.** The legacy expressions are
+   `Math.max(1, Math.floor(x) + 1)` and `Math.max(0, Math.floor(x) + 1)`; the port had clamped
+   only the floor and then added one, so a minute interval fired one step late and an hourly
+   one fired an hour late.
+6. **`setMinutes(70)` carried into minutes, not hours.** JS `MakeTime` treats the argument as
+   minutes-since-midnight, so 09:00 → **10:10** (verified against Node). Reducing to `70 % 60`
+   and adding one *minute* gave 09:11.
+7. **The reverse cron search returned `None` for every input.** A single forward probe from
+   `from - 1s` returns *tomorrow's* fire when today's already passed. Replaced with a bounded
+   two-phase search, and the first back-off bound (400 days) was itself too small to reach the
+   previous occurrence of a yearly schedule.
+8. **`previous_run_at` was inclusive.** `croner`'s `previousRuns` excludes `from` itself, so a
+   schedule firing exactly on the boundary reported the wrong occurrence.
+9. **The outcome enum's wire shape was wrong in every field at once.** A container-level
+   `rename_all = "camelCase"` on the enum renames the *tag value* but leaves inner fields
+   snake_cased, producing `{"kind":"staleOneShot","target_at":…}` against a wrapper reading
+   `kind === "StaleOneShot"` / `outcome.targetAt`. The failure mode was a **silent `null`**,
+   because `undefined?.targetAt` is `undefined` and the wrapper returned it as "no future fire".
+   Variant and field names are now spelled out, and `wire_shapes.rs` plus a `lib.rs` unit test
+   pin the exact strings.
+
+Four of the original hand-written expectations were also **wrong about JavaScript itself**
+and were corrected against Node rather than against memory: `new Date(2025, 1, 0).getDate()`
+is 31 (the last day of *January*), `new Date(2025, 0, -3)` is 28 December, the next Monday
+after Wednesday 11 June 2025 is the 16th, and a `monthDays: [29]` yearly rule needs a
+`from` that actually expires the current candidate. The ground truth is now
+**captured from Node** by `scripts/capture-date-ground-truth.mjs` rather than transcribed, and
+`parity_dates.rs` asserts the fixture is internally consistent so a mis-capture cannot silently
+weaken the suite.
+
+### Not done (deliberately, and not silently)
+
+- **The Tauri host does not call it yet.** `zcode-cron` builds as both `cdylib` and `rlib`, but
+  `apps/zcode-tauri/src-tauri/Cargo.toml` does not yet depend on it, and `lib.rs:167` still
+  passes `None`. That is the §10 change request, and it is the last step of this wave. Until it
+  lands the crate is used by Node only and the Tauri bug is fixed in capability but not in the
+  Tauri binary.
+- **§6.2's differential cron corpus is not built.** The corpus is meant to compare the Rust
+  `cron` engine against *captured* `croner` output. `croner` is already deleted from
+  `package.json`, so the corpus has to be generated **before** that removal is finalised, or
+  from a scratch install of `croner@10.0.1`. As committed, the expression path is covered by
+  unit tests and the fixed-calendar/previous-run behaviour, but not by a generated
+  cross-engine differential. This is the largest remaining gap in invariant 3 and should be
+  closed before the Tauri wiring, since D1 is exactly where a silent divergence would live.
+- **§10's other shared-file requests** (`apps/zcode-tauri/src-tauri/Cargo.toml`,
+  `pnpm-lock.yaml` regeneration) are outstanding.
+- **No performance claim.** The spec is explicit that this is a capability port, not a speed
+  port, and nothing here should be presented as a speedup. `compute_schedule_rule_next_run_at`
+  runs at most once per automation per 20 s tick.

@@ -1,0 +1,25 @@
+[package]
+name = "zcode-cron"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Automation schedule computation: cron-expression next-run and the structured scheduleRule engine."
+
+[lib]
+# Both, because there are two consumers with different linking needs:
+#   cdylib — the napi `.node` that Node entrypoints load via `loadNative()`
+#   rlib   — linked directly into the Tauri host, which is a Rust process and cannot
+#            `require()` a `.node` (same reason `zcode-rpc-server` is rlib-only)
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+napi = { workspace = true }
+napi-derive = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# `clock` provides `Local`, which is what the legacy `Date` local getters mean. No zone
+# parameter is exposed (spec invariant 4): the schedule is the host's, always.
+chrono = { workspace = true }
+# Replaces the `croner` npm dependency for the raw 5-field expression path (spec D1).
+cron = { workspace = true }

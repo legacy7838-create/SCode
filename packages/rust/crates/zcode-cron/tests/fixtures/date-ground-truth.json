@@ -1,0 +1,200 @@
+[
+  {
+    "name": "hour_overflow_rolls_day",
+    "input": {
+      "year": 2025,
+      "month0": 0,
+      "day": 1,
+      "hour": 25,
+      "minute": 0
+    },
+    "expect": {
+      "year": 2025,
+      "month0": 0,
+      "day": 2,
+      "hour": 1,
+      "minute": 0,
+      "epochMs": 1735779600000
+    }
+  },
+  {
+    "name": "minute_overflow_rolls_hour",
+    "input": {
+      "year": 2025,
+      "month0": 0,
+      "day": 1,
+      "hour": 0,
+      "minute": 70
+    },
+    "expect": {
+      "year": 2025,
+      "month0": 0,
+      "day": 1,
+      "hour": 1,
+      "minute": 10,
+      "epochMs": 1735693800000
+    }
+  },
+  {
+    "name": "feb29_non_leap_rolls_to_march",
+    "input": {
+      "year": 2025,
+      "month0": 1,
+      "day": 29,
+      "hour": 9,
+      "minute": 30
+    },
+    "expect": {
+      "year": 2025,
+      "month0": 2,
+      "day": 1,
+      "hour": 9,
+      "minute": 30,
+      "epochMs": 1740821400000
+    }
+  },
+  {
+    "name": "feb29_leap_stays",
+    "input": {
+      "year": 2024,
+      "month0": 1,
+      "day": 29,
+      "hour": 9,
+      "minute": 30
+    },
+    "expect": {
+      "year": 2024,
+      "month0": 1,
+      "day": 29,
+      "hour": 9,
+      "minute": 30,
+      "epochMs": 1709199000000
+    }
+  },
+  {
+    "name": "feb31_rolls_far",
+    "input": {
+      "year": 2025,
+      "month0": 1,
+      "day": 31,
+      "hour": 0,
+      "minute": 0
+    },
+    "expect": {
+      "year": 2025,
+      "month0": 2,
+      "day": 3,
+      "hour": 0,
+      "minute": 0,
+      "epochMs": 1740960000000
+    }
+  },
+  {
+    "name": "day_zero_feb_is_jan31",
+    "input": {
+      "year": 2025,
+      "month0": 1,
+      "day": 0,
+      "hour": 0,
+      "minute": 0
+    },
+    "expect": {
+      "year": 2025,
+      "month0": 0,
+      "day": 31,
+      "hour": 0,
+      "minute": 0,
+      "epochMs": 1738281600000
+    }
+  },
+  {
+    "name": "day_zero_mar_is_feb28",
+    "input": {
+      "year": 2025,
+      "month0": 2,
+      "day": 0,
+      "hour": 0,
+      "minute": 0
+    },
+    "expect": {
+      "year": 2025,
+      "month0": 1,
+      "day": 28,
+      "hour": 0,
+      "minute": 0,
+      "epochMs": 1740700800000
+    }
+  },
+  {
+    "name": "negative_day",
+    "input": {
+      "year": 2025,
+      "month0": 0,
+      "day": -3,
+      "hour": 0,
+      "minute": 0
+    },
+    "expect": {
+      "year": 2024,
+      "month0": 11,
+      "day": 28,
+      "hour": 0,
+      "minute": 0,
+      "epochMs": 1735344000000
+    }
+  },
+  {
+    "name": "month_overflow",
+    "input": {
+      "year": 2025,
+      "month0": 12,
+      "day": 1,
+      "hour": 0,
+      "minute": 0
+    },
+    "expect": {
+      "year": 2026,
+      "month0": 0,
+      "day": 1,
+      "hour": 0,
+      "minute": 0,
+      "epochMs": 1767225600000
+    }
+  },
+  {
+    "name": "leap_day_boundary",
+    "input": {
+      "year": 2000,
+      "month0": 1,
+      "day": 29,
+      "hour": 12,
+      "minute": 0
+    },
+    "expect": {
+      "year": 2000,
+      "month0": 1,
+      "day": 29,
+      "hour": 12,
+      "minute": 0,
+      "epochMs": 951825600000
+    }
+  },
+  {
+    "name": "non_leap_century",
+    "input": {
+      "year": 1900,
+      "month0": 1,
+      "day": 29,
+      "hour": 0,
+      "minute": 0
+    },
+    "expect": {
+      "year": 1900,
+      "month0": 2,
+      "day": 1,
+      "hour": 0,
+      "minute": 0,
+      "epochMs": -2203891200000
+    }
+  }
+]

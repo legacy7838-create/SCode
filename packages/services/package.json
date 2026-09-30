@@ -24,7 +24,6 @@
     "@zcode/rust": "workspace:*",
     "@zcode/shared": "workspace:*",
     "@zcode/zcode-cua": "workspace:*",
-    "croner": "^10.0.1",
     "ignore": "^5.3.2",
     "node-forge": "^1.4.0",
     "node-pty": "^1.0.0",

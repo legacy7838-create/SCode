@@ -10,6 +10,7 @@
     "./diff": "./src/diff.ts",
     "./codec": "./src/codec.ts",
     "./coalesce": "./src/coalesce.ts",
+    "./cron": "./src/cron.ts",
     "./projection": "./src/projection.ts",
     "./events": "./src/events.ts",
     "./reassembly": "./src/reassembly.ts",
