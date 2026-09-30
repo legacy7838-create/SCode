@@ -193,6 +193,19 @@ pub fn run_migrations(
         }
     }
 
+    // The ledger table must exist before it can be read. Without this, a **fresh** database fails
+    // with "no such table: tasks_schema_migration" — the first `ensureReady` on a new install never
+    // gets off the ground, because `read_ledger` below prepares a statement against a table that
+    // nothing has created yet.
+    //
+    // The existing tests all began from a database that already had the table (a copy of the real
+    // one, or a fixture built by hand), so this was invisible until the parity harness created a
+    // genuinely empty file — which is exactly what a new user's first run does.
+    conn.execute_batch(LEDGER_DDL).map_err(|source| MigrationError::Sql {
+        context: "cannot create the migration ledger table".into(),
+        source,
+    })?;
+
     let applied = read_ledger(conn)?;
     let mut newly_applied = Vec::new();
 
@@ -423,5 +436,55 @@ mod tests {
             )
             .unwrap();
         assert_eq!(table_exists, 0, "the partial migration must be rolled back");
+    }
+}
+
+#[cfg(test)]
+mod fresh_database_tests {
+    use super::*;
+
+    /// A brand-new file must get a ledger, not fail trying to read one.
+    ///
+    /// This is the first run on a machine with no `tasks-index.sqlite`, which is the common case
+    /// for a new user. Every other test in this file starts from a database that already has the
+    /// table, so before the fix this path was never exercised.
+    #[test]
+    fn a_fresh_database_gets_a_ledger_instead_of_failing_to_read_one() {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("in-memory");
+        let migrations = vec![Migration {
+            id: "0001_adopt_task_schema".to_string(),
+            sql: "CREATE TABLE tasks (task_id TEXT PRIMARY KEY)".to_string(),
+            checksum_input_json: "[\"seed\"]".to_string(),
+        }];
+        let applied = run_migrations(&mut conn, &migrations, 1_700_000_000_000).expect("migrate");
+        assert_eq!(applied, vec!["0001_adopt_task_schema".to_string()]);
+
+        // The table the migration created is there, and so is the ledger row describing it.
+        let task_table: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'tasks'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("query");
+        assert_eq!(task_table, 1);
+        let ledger = read_ledger(&conn).expect("read the ledger back");
+        assert_eq!(ledger.len(), 1);
+        assert_eq!(ledger[0].0, "0001_adopt_task_schema");
+        assert_eq!(ledger[0].1, migrations[0].checksum());
+    }
+
+    /// Running the same list twice is a no-op, not a checksum error.
+    #[test]
+    fn a_second_run_over_the_same_list_applies_nothing() {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("in-memory");
+        let migrations = vec![Migration {
+            id: "0001_adopt_task_schema".to_string(),
+            sql: "CREATE TABLE IF NOT EXISTS tasks (task_id TEXT PRIMARY KEY)".to_string(),
+            checksum_input_json: "[\"seed\"]".to_string(),
+        }];
+        run_migrations(&mut conn, &migrations, 1).expect("first run");
+        let second = run_migrations(&mut conn, &migrations, 2).expect("second run");
+        assert!(second.is_empty(), "nothing new to apply, got {second:?}");
     }
 }

@@ -164,18 +164,55 @@ interface NativeTaskIndexModule {
   TaskIndexStore: new (options: TaskIndexOpenOptions) => NativeStore;
 }
 
-interface NativeStore {
+/**
+ * The native handle, reachable from a sibling module.
+ *
+ * `offPeakRepository.ts` implements the off-peak methods as a class over the same binary, and napi
+ * puts them on the same native object — so the wrapper has to reach it. A `private` field cannot be
+ * read across modules, and a public accessor would put the raw binary on the public surface.
+ */
+export const NATIVE_STORE: unique symbol = Symbol("zcode.taskIndex.nativeStore");
+
+export interface NativeStore {
   ensureReady(migrationsJson: string, nowMs: number): Promise<void>;
   writeBatch(batchJson: string): Promise<number>;
   listTasks(queryJson: string): Promise<string>;
   offpeakClaimDue(nowMs: number): Promise<string>;
+  offpeakRecycleAwaitingApproval(now: number): Promise<number>;
   offpeakCountNonTerminal(): Promise<number>;
   offpeakCountActive(): Promise<number>;
+  /**
+   * `hasActiveBoundTask` — true when this workspace/session already has a non-terminal task.
+   *
+   * The native method exists and is exercised by the parity harness; it was simply never declared
+   * here, so `repo.offpeakHasActiveBoundTask` was `undefined` rather than the napi binding.
+   */
+  offpeakHasActiveBoundTask(workspaceKey: string, sessionId: string): Promise<boolean>;
   offpeakGet(offPeakTaskId: string): Promise<string | null>;
   automationClaimDue(nowMs: number): Promise<string>;
   automationReleaseClaim(automationId: string): Promise<boolean>;
   automationHasTaskBinding(automationId: string): Promise<boolean>;
   automationScheduledRunCount(automationId: string): Promise<number | null>;
+
+  // The off-peak repository. napi exports method names in camelCase regardless of the Rust
+  // spelling, so these are the camelCase forms of the `offpeak_*` methods in `src/napi.rs`.
+  offpeakCreate(paramsJson: string): Promise<string>;
+  offpeakList(requestJson: string): Promise<string>;
+  offpeakInvalidateModelSelection(requestJson: string): Promise<string>;
+  offpeakMarkHistoryDeleted(requestJson: string): Promise<string>;
+  offpeakUpdateEditableFields(requestJson: string): Promise<string>;
+  offpeakUpdateSchedulingSnapshot(requestJson: string): Promise<void>;
+  offpeakMarkRunning(requestJson: string): Promise<string>;
+  offpeakMarkTerminal(requestJson: string): Promise<string>;
+  offpeakSetPaused(requestJson: string): Promise<string>;
+  offpeakReleaseClaim(requestJson: string): Promise<void>;
+  offpeakRecoverInterrupted(now: number): Promise<number>;
+  offpeakRequeueForContinuation(requestJson: string): Promise<string>;
+  offpeakListNonTerminal(): Promise<string>;
+  offpeakListUnsettledTerminal(): Promise<string>;
+  offpeakMarkSettled(offPeakTaskId: string, settledAt: number): Promise<void>;
+  /** `delete` — in any state; the service layer settles server-side first. */
+  offpeakDelete(offPeakTaskId: string): Promise<void>;
   close(): void;
 }
 
@@ -198,6 +235,11 @@ export class TaskIndexStore {
 
   constructor(options: TaskIndexOpenOptions) {
     this.#store = new (module().TaskIndexStore)(options);
+  }
+
+  /** @internal For `offPeakRepository.ts`; not part of the repository's contract. */
+  get [NATIVE_STORE](): NativeStore {
+    return this.#store;
   }
 
   /** Opens the file, applies the pragmas and runs the migrations. */
@@ -231,6 +273,11 @@ export class TaskIndexStore {
     return this.#store.offpeakCountActive();
   }
 
+  /** The pre-create check; `idx_off_peak_bound_active` uses the same predicate. */
+  async offpeakHasActiveBoundTask(workspaceKey: string, sessionId: string): Promise<boolean> {
+    return this.#store.offpeakHasActiveBoundTask(workspaceKey, sessionId);
+  }
+
   async offpeakGet(offPeakTaskId: string): Promise<OffPeakRow | null> {
     const raw = await this.#store.offpeakGet(offPeakTaskId);
     return raw ? (JSON.parse(raw) as OffPeakRow) : null;
@@ -262,6 +309,21 @@ export class TaskIndexStore {
   close(): void {
     this.#store.close();
   }
+
+  // The off-peak repository's twenty methods live in `offPeakRepository.ts`, on a class over the
+  // same native handle. They are not methods here because the engine puts them on the same object,
+  // and splitting the wrapper the same way keeps the two files in step with `src/napi.rs`.
+}
+
+/**
+ * The off-peak repository, over the same connection the task index uses.
+ *
+ * The same store: the two facades share one sqlite connection and one migration ledger,
+ * which is the arrangement spec §4.4 chose over two connections in two languages. The methods
+ * live in `offPeakRepository.ts`, which extends this class at the module level.
+ */
+export function offPeakRepo(store: TaskIndexStore): TaskIndexStore {
+  return store;
 }
 
 /** Every export, for callers that want a single namespace object. */

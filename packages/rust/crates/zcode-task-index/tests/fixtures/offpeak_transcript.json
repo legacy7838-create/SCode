@@ -1,0 +1,1436 @@
+[
+  {
+    "label": "create.schedulable",
+    "value": {
+      "offPeakTaskId": "op-1",
+      "serverTicketId": "tk-1",
+      "title": "nightly",
+      "prompt": "do the thing",
+      "permissionMode": "default",
+      "modelSelection": {
+        "providerId": "p1",
+        "modelId": "m1",
+        "options": {
+          "reasoningLevel": "high"
+        }
+      },
+      "workspaceKey": "ws-a",
+      "workspacePath": "/ws/a",
+      "workspaceIdentity": "ws-a",
+      "status": "queued",
+      "queuedAt": 1000,
+      "schedulable": true,
+      "queuePosition": 1,
+      "createdAt": 1000,
+      "updatedAt": 1000
+    }
+  },
+  {
+    "label": "create.plain",
+    "value": {
+      "offPeakTaskId": "op-2",
+      "title": "not schedulable",
+      "prompt": "do the thing",
+      "permissionMode": "default",
+      "modelSelection": {
+        "providerId": "p1",
+        "modelId": "m2"
+      },
+      "workspaceKey": "ws-a",
+      "workspacePath": "/ws/a",
+      "workspaceIdentity": "ws-a",
+      "status": "queued",
+      "queuedAt": 2000,
+      "schedulable": false,
+      "createdAt": 2000,
+      "updatedAt": 2000
+    }
+  },
+  {
+    "label": "create.otherWorkspace",
+    "value": {
+      "offPeakTaskId": "op-3",
+      "title": "other workspace",
+      "prompt": "do the thing",
+      "permissionMode": "default",
+      "modelSelection": {
+        "providerId": "p2",
+        "modelId": "m1"
+      },
+      "workspaceKey": "ws-b",
+      "workspacePath": "/ws/b",
+      "workspaceIdentity": "ws-b",
+      "status": "queued",
+      "queuedAt": 3000,
+      "schedulable": true,
+      "createdAt": 3000,
+      "updatedAt": 3000
+    }
+  },
+  {
+    "label": "create.broken",
+    "value": {
+      "offPeakTaskId": "op-broken",
+      "title": "broken selection",
+      "prompt": "do the thing",
+      "permissionMode": "default",
+      "modelSelection": {
+        "providerId": "p1",
+        "modelId": "m3"
+      },
+      "workspaceKey": "ws-a",
+      "workspacePath": "/ws/a",
+      "workspaceIdentity": "ws-a",
+      "status": "queued",
+      "queuedAt": 4000,
+      "schedulable": true,
+      "createdAt": 4000,
+      "updatedAt": 4000
+    }
+  },
+  {
+    "label": "list.all",
+    "value": [
+      {
+        "offPeakTaskId": "op-broken",
+        "title": "broken selection",
+        "prompt": "do the thing",
+        "permissionMode": "default",
+        "modelSelection": {
+          "providerId": "p1",
+          "modelId": "m3"
+        },
+        "workspaceKey": "ws-a",
+        "workspacePath": "/ws/a",
+        "workspaceIdentity": "ws-a",
+        "status": "queued",
+        "queuedAt": 4000,
+        "schedulable": true,
+        "createdAt": 4000,
+        "updatedAt": 4000
+      },
+      {
+        "offPeakTaskId": "op-3",
+        "title": "other workspace",
+        "prompt": "do the thing",
+        "permissionMode": "default",
+        "modelSelection": {
+          "providerId": "p2",
+          "modelId": "m1"
+        },
+        "workspaceKey": "ws-b",
+        "workspacePath": "/ws/b",
+        "workspaceIdentity": "ws-b",
+        "status": "queued",
+        "queuedAt": 3000,
+        "schedulable": true,
+        "createdAt": 3000,
+        "updatedAt": 3000
+      },
+      {
+        "offPeakTaskId": "op-2",
+        "title": "not schedulable",
+        "prompt": "do the thing",
+        "permissionMode": "default",
+        "modelSelection": {
+          "providerId": "p1",
+          "modelId": "m2"
+        },
+        "workspaceKey": "ws-a",
+        "workspacePath": "/ws/a",
+        "workspaceIdentity": "ws-a",
+        "status": "queued",
+        "queuedAt": 2000,
+        "schedulable": false,
+        "createdAt": 2000,
+        "updatedAt": 2000
+      },
+      {
+        "offPeakTaskId": "op-1",
+        "serverTicketId": "tk-1",
+        "title": "nightly",
+        "prompt": "do the thing",
+        "permissionMode": "default",
+        "modelSelection": {
+          "providerId": "p1",
+          "modelId": "m1",
+          "options": {
+            "reasoningLevel": "high"
+          }
+        },
+        "workspaceKey": "ws-a",
+        "workspacePath": "/ws/a",
+        "workspaceIdentity": "ws-a",
+        "status": "queued",
+        "queuedAt": 1000,
+        "schedulable": true,
+        "queuePosition": 1,
+        "createdAt": 1000,
+        "updatedAt": 1000
+      }
+    ]
+  },
+  {
+    "label": "list.scoped",
+    "value": [
+      {
+        "offPeakTaskId": "op-broken",
+        "title": "broken selection",
+        "prompt": "do the thing",
+        "permissionMode": "default",
+        "modelSelection": {
+          "providerId": "p1",
+          "modelId": "m3"
+        },
+        "workspaceKey": "ws-a",
+        "workspacePath": "/ws/a",
+        "workspaceIdentity": "ws-a",
+        "status": "queued",
+        "queuedAt": 4000,
+        "schedulable": true,
+        "createdAt": 4000,
+        "updatedAt": 4000
+      },
+      {
+        "offPeakTaskId": "op-2",
+        "title": "not schedulable",
+        "prompt": "do the thing",
+        "permissionMode": "default",
+        "modelSelection": {
+          "providerId": "p1",
+          "modelId": "m2"
+        },
+        "workspaceKey": "ws-a",
+        "workspacePath": "/ws/a",
+        "workspaceIdentity": "ws-a",
+        "status": "queued",
+        "queuedAt": 2000,
+        "schedulable": false,
+        "createdAt": 2000,
+        "updatedAt": 2000
+      },
+      {
+        "offPeakTaskId": "op-1",
+        "serverTicketId": "tk-1",
+        "title": "nightly",
+        "prompt": "do the thing",
+        "permissionMode": "default",
+        "modelSelection": {
+          "providerId": "p1",
+          "modelId": "m1",
+          "options": {
+            "reasoningLevel": "high"
+          }
+        },
+        "workspaceKey": "ws-a",
+        "workspacePath": "/ws/a",
+        "workspaceIdentity": "ws-a",
+        "status": "queued",
+        "queuedAt": 1000,
+        "schedulable": true,
+        "queuePosition": 1,
+        "createdAt": 1000,
+        "updatedAt": 1000
+      }
+    ]
+  },
+  {
+    "label": "list.scopedOther",
+    "value": [
+      {
+        "offPeakTaskId": "op-3",
+        "title": "other workspace",
+        "prompt": "do the thing",
+        "permissionMode": "default",
+        "modelSelection": {
+          "providerId": "p2",
+          "modelId": "m1"
+        },
+        "workspaceKey": "ws-b",
+        "workspacePath": "/ws/b",
+        "workspaceIdentity": "ws-b",
+        "status": "queued",
+        "queuedAt": 3000,
+        "schedulable": true,
+        "createdAt": 3000,
+        "updatedAt": 3000
+      }
+    ]
+  },
+  {
+    "label": "get.op-1",
+    "value": {
+      "offPeakTaskId": "op-1",
+      "serverTicketId": "tk-1",
+      "title": "nightly",
+      "prompt": "do the thing",
+      "permissionMode": "default",
+      "modelSelection": {
+        "providerId": "p1",
+        "modelId": "m1",
+        "options": {
+          "reasoningLevel": "high"
+        }
+      },
+      "workspaceKey": "ws-a",
+      "workspacePath": "/ws/a",
+      "workspaceIdentity": "ws-a",
+      "status": "queued",
+      "queuedAt": 1000,
+      "schedulable": true,
+      "queuePosition": 1,
+      "createdAt": 1000,
+      "updatedAt": 1000
+    }
+  },
+  {
+    "label": "get.missing",
+    "value": null
+  },
+  {
+    "label": "listNonTerminal",
+    "value": [
+      {
+        "offPeakTaskId": "op-1",
+        "serverTicketId": "tk-1",
+        "title": "nightly",
+        "prompt": "do the thing",
+        "permissionMode": "default",
+        "modelSelection": {
+          "providerId": "p1",
+          "modelId": "m1",
+          "options": {
+            "reasoningLevel": "high"
+          }
+        },
+        "workspaceKey": "ws-a",
+        "workspacePath": "/ws/a",
+        "workspaceIdentity": "ws-a",
+        "status": "queued",
+        "queuedAt": 1000,
+        "schedulable": true,
+        "queuePosition": 1,
+        "createdAt": 1000,
+        "updatedAt": 1000
+      },
+      {
+        "offPeakTaskId": "op-2",
+        "title": "not schedulable",
+        "prompt": "do the thing",
+        "permissionMode": "default",
+        "modelSelection": {
+          "providerId": "p1",
+          "modelId": "m2"
+        },
+        "workspaceKey": "ws-a",
+        "workspacePath": "/ws/a",
+        "workspaceIdentity": "ws-a",
+        "status": "queued",
+        "queuedAt": 2000,
+        "schedulable": false,
+        "createdAt": 2000,
+        "updatedAt": 2000
+      },
+      {
+        "offPeakTaskId": "op-3",
+        "title": "other workspace",
+        "prompt": "do the thing",
+        "permissionMode": "default",
+        "modelSelection": {
+          "providerId": "p2",
+          "modelId": "m1"
+        },
+        "workspaceKey": "ws-b",
+        "workspacePath": "/ws/b",
+        "workspaceIdentity": "ws-b",
+        "status": "queued",
+        "queuedAt": 3000,
+        "schedulable": true,
+        "createdAt": 3000,
+        "updatedAt": 3000
+      },
+      {
+        "offPeakTaskId": "op-broken",
+        "title": "broken selection",
+        "prompt": "do the thing",
+        "permissionMode": "default",
+        "modelSelection": {
+          "providerId": "p1",
+          "modelId": "m3"
+        },
+        "workspaceKey": "ws-a",
+        "workspacePath": "/ws/a",
+        "workspaceIdentity": "ws-a",
+        "status": "queued",
+        "queuedAt": 4000,
+        "schedulable": true,
+        "createdAt": 4000,
+        "updatedAt": 4000
+      }
+    ]
+  },
+  {
+    "label": "listUnsettledTerminal",
+    "value": []
+  },
+  {
+    "label": "countNonTerminal",
+    "value": 4
+  },
+  {
+    "label": "countActive",
+    "value": 0
+  },
+  {
+    "label": "hasActiveBoundTask",
+    "value": false
+  },
+  {
+    "label": "hasActiveBoundTask.miss",
+    "value": false
+  },
+  {
+    "label": "claimDue.first",
+    "value": [
+      {
+        "offPeakTaskId": "op-1",
+        "serverTicketId": "tk-1",
+        "title": "nightly",
+        "prompt": "do the thing",
+        "permissionMode": "default",
+        "modelSelection": {
+          "providerId": "p1",
+          "modelId": "m1",
+          "options": {
+            "reasoningLevel": "high"
+          }
+        },
+        "workspaceKey": "ws-a",
+        "workspacePath": "/ws/a",
+        "workspaceIdentity": "ws-a",
+        "status": "queued",
+        "queuedAt": 1000,
+        "schedulable": true,
+        "queuePosition": 1,
+        "createdAt": 1000,
+        "updatedAt": 1000
+      },
+      {
+        "offPeakTaskId": "op-3",
+        "title": "other workspace",
+        "prompt": "do the thing",
+        "permissionMode": "default",
+        "modelSelection": {
+          "providerId": "p2",
+          "modelId": "m1"
+        },
+        "workspaceKey": "ws-b",
+        "workspacePath": "/ws/b",
+        "workspaceIdentity": "ws-b",
+        "status": "queued",
+        "queuedAt": 3000,
+        "schedulable": true,
+        "createdAt": 3000,
+        "updatedAt": 3000
+      },
+      {
+        "offPeakTaskId": "op-broken",
+        "title": "broken selection",
+        "prompt": "do the thing",
+        "permissionMode": "default",
+        "modelSelection": {
+          "providerId": "p1",
+          "modelId": "m3"
+        },
+        "workspaceKey": "ws-a",
+        "workspacePath": "/ws/a",
+        "workspaceIdentity": "ws-a",
+        "status": "queued",
+        "queuedAt": 4000,
+        "schedulable": true,
+        "createdAt": 4000,
+        "updatedAt": 4000
+      }
+    ]
+  },
+  {
+    "label": "claimDue.again",
+    "value": []
+  },
+  {
+    "label": "get.afterClaim",
+    "value": {
+      "offPeakTaskId": "op-1",
+      "serverTicketId": "tk-1",
+      "title": "nightly",
+      "prompt": "do the thing",
+      "permissionMode": "default",
+      "modelSelection": {
+        "providerId": "p1",
+        "modelId": "m1",
+        "options": {
+          "reasoningLevel": "high"
+        }
+      },
+      "workspaceKey": "ws-a",
+      "workspacePath": "/ws/a",
+      "workspaceIdentity": "ws-a",
+      "status": "queued",
+      "queuedAt": 1000,
+      "schedulable": true,
+      "queuePosition": 1,
+      "createdAt": 1000,
+      "updatedAt": 5000
+    }
+  },
+  {
+    "label": "setPaused.whileClaimed",
+    "value": null
+  },
+  {
+    "label": "setPaused.unclaimed",
+    "value": {
+      "offPeakTaskId": "op-2",
+      "title": "not schedulable",
+      "prompt": "do the thing",
+      "permissionMode": "default",
+      "modelSelection": {
+        "providerId": "p1",
+        "modelId": "m2"
+      },
+      "workspaceKey": "ws-a",
+      "workspacePath": "/ws/a",
+      "workspaceIdentity": "ws-a",
+      "status": "paused",
+      "queuedAt": 2000,
+      "schedulable": false,
+      "createdAt": 2000,
+      "updatedAt": 6100
+    }
+  },
+  {
+    "label": "setPaused.resume",
+    "value": {
+      "offPeakTaskId": "op-2",
+      "title": "not schedulable",
+      "prompt": "do the thing",
+      "permissionMode": "default",
+      "modelSelection": {
+        "providerId": "p1",
+        "modelId": "m2"
+      },
+      "workspaceKey": "ws-a",
+      "workspacePath": "/ws/a",
+      "workspaceIdentity": "ws-a",
+      "status": "queued",
+      "queuedAt": 2000,
+      "schedulable": false,
+      "createdAt": 2000,
+      "updatedAt": 6200
+    }
+  },
+  {
+    "label": "releaseClaim"
+  },
+  {
+    "label": "get.afterRelease",
+    "value": {
+      "offPeakTaskId": "op-1",
+      "serverTicketId": "tk-1",
+      "title": "nightly",
+      "prompt": "do the thing",
+      "permissionMode": "default",
+      "modelSelection": {
+        "providerId": "p1",
+        "modelId": "m1",
+        "options": {
+          "reasoningLevel": "high"
+        }
+      },
+      "workspaceKey": "ws-a",
+      "workspacePath": "/ws/a",
+      "workspaceIdentity": "ws-a",
+      "status": "queued",
+      "queuedAt": 1000,
+      "schedulable": true,
+      "queuePosition": 1,
+      "createdAt": 1000,
+      "updatedAt": 7000
+    }
+  },
+  {
+    "label": "claimDue.second",
+    "value": [
+      {
+        "offPeakTaskId": "op-1",
+        "serverTicketId": "tk-1",
+        "title": "nightly",
+        "prompt": "do the thing",
+        "permissionMode": "default",
+        "modelSelection": {
+          "providerId": "p1",
+          "modelId": "m1",
+          "options": {
+            "reasoningLevel": "high"
+          }
+        },
+        "workspaceKey": "ws-a",
+        "workspacePath": "/ws/a",
+        "workspaceIdentity": "ws-a",
+        "status": "queued",
+        "queuedAt": 1000,
+        "schedulable": true,
+        "queuePosition": 1,
+        "createdAt": 1000,
+        "updatedAt": 7000
+      }
+    ]
+  },
+  {
+    "label": "markRunning",
+    "value": {
+      "offPeakTaskId": "op-1",
+      "serverTicketId": "tk-1",
+      "title": "nightly",
+      "conversationId": "conv-1",
+      "sessionId": "sess-1",
+      "prompt": "do the thing",
+      "permissionMode": "default",
+      "modelSelection": {
+        "providerId": "p1",
+        "modelId": "m1",
+        "options": {
+          "reasoningLevel": "high"
+        }
+      },
+      "workspaceKey": "ws-a",
+      "workspacePath": "/ws/a",
+      "workspaceIdentity": "ws-a",
+      "status": "running",
+      "queuedAt": 1000,
+      "startedAt": 8000,
+      "schedulable": true,
+      "queuePosition": 1,
+      "createdAt": 1000,
+      "updatedAt": 8000
+    }
+  },
+  {
+    "label": "markRunning.again",
+    "value": null
+  },
+  {
+    "label": "markRunning.missing",
+    "value": null
+  },
+  {
+    "label": "markTerminal",
+    "value": {
+      "offPeakTaskId": "op-1",
+      "serverTicketId": "tk-1",
+      "title": "nightly",
+      "conversationId": "conv-1",
+      "sessionId": "sess-1",
+      "prompt": "do the thing",
+      "permissionMode": "default",
+      "modelSelection": {
+        "providerId": "p1",
+        "modelId": "m1",
+        "options": {
+          "reasoningLevel": "high"
+        }
+      },
+      "workspaceKey": "ws-a",
+      "workspacePath": "/ws/a",
+      "workspaceIdentity": "ws-a",
+      "status": "completed",
+      "queuedAt": 1000,
+      "startedAt": 8000,
+      "endedAt": 9000,
+      "filesChanged": 3,
+      "schedulable": false,
+      "queuePosition": 1,
+      "createdAt": 1000,
+      "updatedAt": 9000
+    }
+  },
+  {
+    "label": "markTerminal.again",
+    "value": null
+  },
+  {
+    "label": "get.afterTerminal",
+    "value": {
+      "offPeakTaskId": "op-1",
+      "serverTicketId": "tk-1",
+      "title": "nightly",
+      "conversationId": "conv-1",
+      "sessionId": "sess-1",
+      "prompt": "do the thing",
+      "permissionMode": "default",
+      "modelSelection": {
+        "providerId": "p1",
+        "modelId": "m1",
+        "options": {
+          "reasoningLevel": "high"
+        }
+      },
+      "workspaceKey": "ws-a",
+      "workspacePath": "/ws/a",
+      "workspaceIdentity": "ws-a",
+      "status": "completed",
+      "queuedAt": 1000,
+      "startedAt": 8000,
+      "endedAt": 9000,
+      "filesChanged": 3,
+      "schedulable": false,
+      "queuePosition": 1,
+      "createdAt": 1000,
+      "updatedAt": 9000
+    }
+  },
+  {
+    "label": "markSettled.terminal"
+  },
+  {
+    "label": "markSettled.nonTerminal"
+  },
+  {
+    "label": "get.afterSettled",
+    "value": {
+      "offPeakTaskId": "op-1",
+      "serverTicketId": "tk-1",
+      "title": "nightly",
+      "conversationId": "conv-1",
+      "sessionId": "sess-1",
+      "prompt": "do the thing",
+      "permissionMode": "default",
+      "modelSelection": {
+        "providerId": "p1",
+        "modelId": "m1",
+        "options": {
+          "reasoningLevel": "high"
+        }
+      },
+      "workspaceKey": "ws-a",
+      "workspacePath": "/ws/a",
+      "workspaceIdentity": "ws-a",
+      "status": "completed",
+      "queuedAt": 1000,
+      "startedAt": 8000,
+      "endedAt": 9000,
+      "filesChanged": 3,
+      "settledAt": 10000,
+      "schedulable": false,
+      "queuePosition": 1,
+      "createdAt": 1000,
+      "updatedAt": 10000
+    }
+  },
+  {
+    "label": "listUnsettledTerminal.after",
+    "value": []
+  },
+  {
+    "label": "markHistoryDeleted.started",
+    "value": {
+      "offPeakTaskId": "op-1",
+      "serverTicketId": "tk-1",
+      "title": "nightly",
+      "conversationId": "conv-1",
+      "sessionId": "sess-1",
+      "prompt": "do the thing",
+      "permissionMode": "default",
+      "modelSelection": {
+        "providerId": "p1",
+        "modelId": "m1",
+        "options": {
+          "reasoningLevel": "high"
+        }
+      },
+      "workspaceKey": "ws-a",
+      "workspacePath": "/ws/a",
+      "workspaceIdentity": "ws-a",
+      "status": "completed",
+      "queuedAt": 1000,
+      "startedAt": 8000,
+      "endedAt": 9000,
+      "filesChanged": 3,
+      "settledAt": 10000,
+      "historyDeletedAt": 11000,
+      "schedulable": false,
+      "queuePosition": 1,
+      "createdAt": 1000,
+      "updatedAt": 11000
+    }
+  },
+  {
+    "label": "markHistoryDeleted.idempotent",
+    "value": {
+      "offPeakTaskId": "op-1",
+      "serverTicketId": "tk-1",
+      "title": "nightly",
+      "conversationId": "conv-1",
+      "sessionId": "sess-1",
+      "prompt": "do the thing",
+      "permissionMode": "default",
+      "modelSelection": {
+        "providerId": "p1",
+        "modelId": "m1",
+        "options": {
+          "reasoningLevel": "high"
+        }
+      },
+      "workspaceKey": "ws-a",
+      "workspacePath": "/ws/a",
+      "workspaceIdentity": "ws-a",
+      "status": "completed",
+      "queuedAt": 1000,
+      "startedAt": 8000,
+      "endedAt": 9000,
+      "filesChanged": 3,
+      "settledAt": 10000,
+      "historyDeletedAt": 11000,
+      "schedulable": false,
+      "queuePosition": 1,
+      "createdAt": 1000,
+      "updatedAt": 11000
+    }
+  },
+  {
+    "label": "markHistoryDeleted.notStarted",
+    "value": {
+      "offPeakTaskId": "op-2",
+      "title": "not schedulable",
+      "prompt": "do the thing",
+      "permissionMode": "default",
+      "modelSelection": {
+        "providerId": "p1",
+        "modelId": "m2"
+      },
+      "workspaceKey": "ws-a",
+      "workspacePath": "/ws/a",
+      "workspaceIdentity": "ws-a",
+      "status": "queued",
+      "queuedAt": 2000,
+      "schedulable": false,
+      "createdAt": 2000,
+      "updatedAt": 6200
+    }
+  },
+  {
+    "label": "updateEditableFields",
+    "value": {
+      "offPeakTaskId": "op-2",
+      "title": "renamed",
+      "prompt": "do the thing",
+      "permissionMode": "default",
+      "modelSelection": {
+        "providerId": "p1",
+        "modelId": "m2",
+        "options": {
+          "reasoningLevel": "low"
+        }
+      },
+      "workspaceKey": "ws-a",
+      "workspacePath": "/ws/a",
+      "workspaceIdentity": "ws-a",
+      "status": "queued",
+      "queuedAt": 2000,
+      "schedulable": false,
+      "createdAt": 2000,
+      "updatedAt": 12000
+    }
+  },
+  {
+    "label": "updateEditableFields.nullSelection",
+    "value": null
+  },
+  {
+    "label": "updateEditableFields.terminal",
+    "value": null
+  },
+  {
+    "label": "updateEditableFields.missing",
+    "value": null
+  },
+  {
+    "label": "updateSchedulingSnapshot"
+  },
+  {
+    "label": "get.afterSnapshot",
+    "value": {
+      "offPeakTaskId": "op-2",
+      "title": "renamed",
+      "prompt": "do the thing",
+      "permissionMode": "default",
+      "modelSelection": {
+        "providerId": "p1",
+        "modelId": "m2",
+        "options": {
+          "reasoningLevel": "low"
+        }
+      },
+      "workspaceKey": "ws-a",
+      "workspacePath": "/ws/a",
+      "workspaceIdentity": "ws-a",
+      "status": "queued",
+      "queuedAt": 2000,
+      "schedulable": true,
+      "queuePosition": 9,
+      "nextPollAt": 13000,
+      "createdAt": 2000,
+      "updatedAt": 13100
+    }
+  },
+  {
+    "label": "updateSchedulingSnapshot.partial"
+  },
+  {
+    "label": "get.afterPartialSnapshot",
+    "value": {
+      "offPeakTaskId": "op-2",
+      "title": "renamed",
+      "prompt": "do the thing",
+      "permissionMode": "default",
+      "modelSelection": {
+        "providerId": "p1",
+        "modelId": "m2",
+        "options": {
+          "reasoningLevel": "low"
+        }
+      },
+      "workspaceKey": "ws-a",
+      "workspacePath": "/ws/a",
+      "workspaceIdentity": "ws-a",
+      "status": "queued",
+      "queuedAt": 2000,
+      "schedulable": true,
+      "queuePosition": 9,
+      "nextPollAt": 13000,
+      "createdAt": 2000,
+      "updatedAt": 13200
+    }
+  },
+  {
+    "label": "updateSchedulingSnapshot.missing"
+  },
+  {
+    "label": "invalidateModelSelection",
+    "value": {
+      "offPeakTaskId": "op-2",
+      "title": "renamed",
+      "prompt": "do the thing",
+      "permissionMode": "default",
+      "modelSelectionIssue": {
+        "code": "repair-required"
+      },
+      "workspaceKey": "ws-a",
+      "workspacePath": "/ws/a",
+      "workspaceIdentity": "ws-a",
+      "status": "queued",
+      "queuedAt": 2000,
+      "schedulable": false,
+      "queuePosition": 9,
+      "nextPollAt": 13000,
+      "createdAt": 2000,
+      "updatedAt": 14000
+    }
+  },
+  {
+    "label": "invalidateModelSelection.repaired",
+    "value": {
+      "offPeakTaskId": "op-2",
+      "title": "renamed",
+      "prompt": "do the thing",
+      "permissionMode": "default",
+      "modelSelectionIssue": {
+        "code": "repair-required"
+      },
+      "workspaceKey": "ws-a",
+      "workspacePath": "/ws/a",
+      "workspaceIdentity": "ws-a",
+      "status": "queued",
+      "queuedAt": 2000,
+      "schedulable": false,
+      "queuePosition": 9,
+      "nextPollAt": 13000,
+      "createdAt": 2000,
+      "updatedAt": 14100
+    }
+  },
+  {
+    "label": "invalidateModelSelection.missing",
+    "value": null
+  },
+  {
+    "label": "claimDue.skipsBroken",
+    "value": []
+  },
+  {
+    "label": "requeueForContinuation.notRunning",
+    "value": null
+  },
+  {
+    "label": "markRunning.op2",
+    "value": {
+      "offPeakTaskId": "op-2",
+      "title": "renamed",
+      "sessionId": "sess-1",
+      "prompt": "do the thing",
+      "permissionMode": "default",
+      "modelSelectionIssue": {
+        "code": "repair-required"
+      },
+      "workspaceKey": "ws-a",
+      "workspacePath": "/ws/a",
+      "workspaceIdentity": "ws-a",
+      "status": "running",
+      "queuedAt": 2000,
+      "startedAt": 16100,
+      "schedulable": false,
+      "queuePosition": 9,
+      "nextPollAt": 13000,
+      "createdAt": 2000,
+      "updatedAt": 16100
+    }
+  },
+  {
+    "label": "requeueForContinuation.running",
+    "value": {
+      "offPeakTaskId": "op-2",
+      "title": "renamed",
+      "sessionId": "sess-1",
+      "prompt": "do the thing",
+      "permissionMode": "default",
+      "modelSelectionIssue": {
+        "code": "repair-required"
+      },
+      "workspaceKey": "ws-a",
+      "workspacePath": "/ws/a",
+      "workspaceIdentity": "ws-a",
+      "status": "queued",
+      "queuedAt": 2000,
+      "startedAt": 16100,
+      "schedulable": false,
+      "nextPollAt": 13000,
+      "createdAt": 2000,
+      "updatedAt": 16200
+    }
+  },
+  {
+    "label": "get.afterRequeue",
+    "value": {
+      "offPeakTaskId": "op-2",
+      "title": "renamed",
+      "sessionId": "sess-1",
+      "prompt": "do the thing",
+      "permissionMode": "default",
+      "modelSelectionIssue": {
+        "code": "repair-required"
+      },
+      "workspaceKey": "ws-a",
+      "workspacePath": "/ws/a",
+      "workspaceIdentity": "ws-a",
+      "status": "queued",
+      "queuedAt": 2000,
+      "startedAt": 16100,
+      "schedulable": false,
+      "nextPollAt": 13000,
+      "createdAt": 2000,
+      "updatedAt": 16200
+    }
+  },
+  {
+    "label": "requeueForContinuation.terminal",
+    "value": null
+  },
+  {
+    "label": "releaseClaim.noError"
+  },
+  {
+    "label": "markRunning.op3",
+    "value": {
+      "offPeakTaskId": "op-3",
+      "title": "other workspace",
+      "sessionId": "sess-b",
+      "prompt": "do the thing",
+      "permissionMode": "default",
+      "modelSelection": {
+        "providerId": "p2",
+        "modelId": "m1"
+      },
+      "workspaceKey": "ws-b",
+      "workspacePath": "/ws/b",
+      "workspaceIdentity": "ws-b",
+      "status": "running",
+      "queuedAt": 3000,
+      "startedAt": 17100,
+      "schedulable": true,
+      "createdAt": 3000,
+      "updatedAt": 17100
+    }
+  },
+  {
+    "label": "countActive.beforeRecover",
+    "value": 1
+  },
+  {
+    "label": "get.beforeRecover",
+    "value": [
+      {
+        "offPeakTaskId": "op-broken",
+        "title": "broken selection",
+        "prompt": "do the thing",
+        "permissionMode": "default",
+        "modelSelection": {
+          "providerId": "p1",
+          "modelId": "m3"
+        },
+        "workspaceKey": "ws-a",
+        "workspacePath": "/ws/a",
+        "workspaceIdentity": "ws-a",
+        "status": "queued",
+        "queuedAt": 4000,
+        "schedulable": true,
+        "createdAt": 4000,
+        "updatedAt": 5000
+      },
+      {
+        "offPeakTaskId": "op-2",
+        "title": "renamed",
+        "sessionId": "sess-1",
+        "prompt": "do the thing",
+        "permissionMode": "default",
+        "modelSelectionIssue": {
+          "code": "repair-required"
+        },
+        "workspaceKey": "ws-a",
+        "workspacePath": "/ws/a",
+        "workspaceIdentity": "ws-a",
+        "status": "queued",
+        "queuedAt": 2000,
+        "startedAt": 16100,
+        "schedulable": false,
+        "nextPollAt": 13000,
+        "createdAt": 2000,
+        "updatedAt": 16200
+      },
+      {
+        "offPeakTaskId": "op-1",
+        "serverTicketId": "tk-1",
+        "title": "nightly",
+        "conversationId": "conv-1",
+        "sessionId": "sess-1",
+        "prompt": "do the thing",
+        "permissionMode": "default",
+        "modelSelection": {
+          "providerId": "p1",
+          "modelId": "m1",
+          "options": {
+            "reasoningLevel": "high"
+          }
+        },
+        "workspaceKey": "ws-a",
+        "workspacePath": "/ws/a",
+        "workspaceIdentity": "ws-a",
+        "status": "completed",
+        "queuedAt": 1000,
+        "startedAt": 8000,
+        "endedAt": 9000,
+        "filesChanged": 3,
+        "settledAt": 10000,
+        "historyDeletedAt": 11000,
+        "schedulable": false,
+        "queuePosition": 1,
+        "createdAt": 1000,
+        "updatedAt": 11000
+      }
+    ]
+  },
+  {
+    "label": "recoverInterrupted",
+    "value": 1
+  },
+  {
+    "label": "get.afterRecover",
+    "value": [
+      {
+        "offPeakTaskId": "op-broken",
+        "title": "broken selection",
+        "prompt": "do the thing",
+        "permissionMode": "default",
+        "modelSelection": {
+          "providerId": "p1",
+          "modelId": "m3"
+        },
+        "workspaceKey": "ws-a",
+        "workspacePath": "/ws/a",
+        "workspaceIdentity": "ws-a",
+        "status": "queued",
+        "queuedAt": 4000,
+        "schedulable": true,
+        "createdAt": 4000,
+        "updatedAt": 5000
+      },
+      {
+        "offPeakTaskId": "op-2",
+        "title": "renamed",
+        "sessionId": "sess-1",
+        "prompt": "do the thing",
+        "permissionMode": "default",
+        "modelSelectionIssue": {
+          "code": "repair-required"
+        },
+        "workspaceKey": "ws-a",
+        "workspacePath": "/ws/a",
+        "workspaceIdentity": "ws-a",
+        "status": "queued",
+        "queuedAt": 2000,
+        "startedAt": 16100,
+        "schedulable": false,
+        "nextPollAt": 13000,
+        "createdAt": 2000,
+        "updatedAt": 16200
+      },
+      {
+        "offPeakTaskId": "op-1",
+        "serverTicketId": "tk-1",
+        "title": "nightly",
+        "conversationId": "conv-1",
+        "sessionId": "sess-1",
+        "prompt": "do the thing",
+        "permissionMode": "default",
+        "modelSelection": {
+          "providerId": "p1",
+          "modelId": "m1",
+          "options": {
+            "reasoningLevel": "high"
+          }
+        },
+        "workspaceKey": "ws-a",
+        "workspacePath": "/ws/a",
+        "workspaceIdentity": "ws-a",
+        "status": "completed",
+        "queuedAt": 1000,
+        "startedAt": 8000,
+        "endedAt": 9000,
+        "filesChanged": 3,
+        "settledAt": 10000,
+        "historyDeletedAt": 11000,
+        "schedulable": false,
+        "queuePosition": 1,
+        "createdAt": 1000,
+        "updatedAt": 11000
+      }
+    ]
+  },
+  {
+    "label": "claimDue.forStale",
+    "value": [
+      {
+        "offPeakTaskId": "op-3",
+        "title": "other workspace",
+        "sessionId": "sess-b",
+        "prompt": "do the thing",
+        "permissionMode": "default",
+        "modelSelection": {
+          "providerId": "p2",
+          "modelId": "m1"
+        },
+        "workspaceKey": "ws-b",
+        "workspacePath": "/ws/b",
+        "workspaceIdentity": "ws-b",
+        "status": "queued",
+        "queuedAt": 3000,
+        "startedAt": 17100,
+        "schedulable": true,
+        "createdAt": 3000,
+        "updatedAt": 18000
+      }
+    ]
+  },
+  {
+    "label": "claimDue.pastStale",
+    "value": [
+      {
+        "offPeakTaskId": "op-3",
+        "title": "other workspace",
+        "sessionId": "sess-b",
+        "prompt": "do the thing",
+        "permissionMode": "default",
+        "modelSelection": {
+          "providerId": "p2",
+          "modelId": "m1"
+        },
+        "workspaceKey": "ws-b",
+        "workspacePath": "/ws/b",
+        "workspaceIdentity": "ws-b",
+        "status": "queued",
+        "queuedAt": 3000,
+        "startedAt": 17100,
+        "schedulable": true,
+        "createdAt": 3000,
+        "updatedAt": 19000
+      },
+      {
+        "offPeakTaskId": "op-broken",
+        "title": "broken selection",
+        "prompt": "do the thing",
+        "permissionMode": "default",
+        "modelSelection": {
+          "providerId": "p1",
+          "modelId": "m3"
+        },
+        "workspaceKey": "ws-a",
+        "workspacePath": "/ws/a",
+        "workspaceIdentity": "ws-a",
+        "status": "queued",
+        "queuedAt": 4000,
+        "schedulable": true,
+        "createdAt": 4000,
+        "updatedAt": 5000
+      }
+    ]
+  },
+  {
+    "label": "claimDue.fresh",
+    "value": []
+  },
+  {
+    "label": "delete"
+  },
+  {
+    "label": "get.afterDelete",
+    "value": null
+  },
+  {
+    "label": "delete.missing"
+  },
+  {
+    "label": "boundSessionConflict",
+    "value": true
+  },
+  {
+    "label": "final.list",
+    "value": [
+      {
+        "offPeakTaskId": "op-dup",
+        "title": "nightly",
+        "sessionId": "sess-dup",
+        "prompt": "do the thing",
+        "permissionMode": "default",
+        "modelSelection": {
+          "providerId": "p",
+          "modelId": "m"
+        },
+        "workspaceKey": "ws-a",
+        "workspacePath": "/ws/a",
+        "workspaceIdentity": "ws-a",
+        "status": "queued",
+        "queuedAt": 20100,
+        "schedulable": false,
+        "createdAt": 20100,
+        "updatedAt": 20100
+      },
+      {
+        "offPeakTaskId": "op-conflict",
+        "title": "nightly",
+        "prompt": "do the thing",
+        "permissionMode": "default",
+        "modelSelection": {
+          "providerId": "p",
+          "modelId": "m"
+        },
+        "workspaceKey": "ws-a",
+        "workspacePath": "/ws/a",
+        "workspaceIdentity": "ws-a",
+        "status": "queued",
+        "queuedAt": 20000,
+        "schedulable": false,
+        "createdAt": 20000,
+        "updatedAt": 20000
+      },
+      {
+        "offPeakTaskId": "op-broken",
+        "title": "broken selection",
+        "prompt": "do the thing",
+        "permissionMode": "default",
+        "modelSelection": {
+          "providerId": "p1",
+          "modelId": "m3"
+        },
+        "workspaceKey": "ws-a",
+        "workspacePath": "/ws/a",
+        "workspaceIdentity": "ws-a",
+        "status": "queued",
+        "queuedAt": 4000,
+        "schedulable": true,
+        "createdAt": 4000,
+        "updatedAt": 619001
+      },
+      {
+        "offPeakTaskId": "op-2",
+        "title": "renamed",
+        "sessionId": "sess-1",
+        "prompt": "do the thing",
+        "permissionMode": "default",
+        "modelSelectionIssue": {
+          "code": "repair-required"
+        },
+        "workspaceKey": "ws-a",
+        "workspacePath": "/ws/a",
+        "workspaceIdentity": "ws-a",
+        "status": "queued",
+        "queuedAt": 2000,
+        "startedAt": 16100,
+        "schedulable": false,
+        "nextPollAt": 13000,
+        "createdAt": 2000,
+        "updatedAt": 16200
+      },
+      {
+        "offPeakTaskId": "op-1",
+        "serverTicketId": "tk-1",
+        "title": "nightly",
+        "conversationId": "conv-1",
+        "sessionId": "sess-1",
+        "prompt": "do the thing",
+        "permissionMode": "default",
+        "modelSelection": {
+          "providerId": "p1",
+          "modelId": "m1",
+          "options": {
+            "reasoningLevel": "high"
+          }
+        },
+        "workspaceKey": "ws-a",
+        "workspacePath": "/ws/a",
+        "workspaceIdentity": "ws-a",
+        "status": "completed",
+        "queuedAt": 1000,
+        "startedAt": 8000,
+        "endedAt": 9000,
+        "filesChanged": 3,
+        "settledAt": 10000,
+        "historyDeletedAt": 11000,
+        "schedulable": false,
+        "queuePosition": 1,
+        "createdAt": 1000,
+        "updatedAt": 11000
+      }
+    ]
+  },
+  {
+    "label": "final.countNonTerminal",
+    "value": 4
+  },
+  {
+    "label": "final.countActive",
+    "value": 0
+  },
+  {
+    "label": "final.hasActiveBoundTask",
+    "value": true
+  }
+]

@@ -6,8 +6,14 @@ import {
   OFF_PEAK_SCHEMA,
   TASK_INDEX_SCHEMA,
 } from "#src/session/tasksDatabase/schema-v1.js";
-import { importLegacyAutomationSelections } from "#src/session/tasksDatabase/provider-selection-v2.js";
+import {
+  LEGACY_SELECTION_SOURCE_SQL,
+  importLegacyAutomationSelections,
+  legacySelectionSql,
+  type LegacySelectionRow,
+} from "#src/session/tasksDatabase/provider-selection-v2.js";
 import { OFFICIAL_GLM_SELECTION_MIGRATION_SQL } from "#src/session/tasksDatabase/official-glm-selection-v3.js";
+import type { TaskIndexMigration } from "@zcode/rust/task-index";
 
 // Frozen history column declaration cannot be replaced by real-time Repo/schema, otherwise the new version build will change the applied checksum.
 const columns = [
@@ -65,6 +71,128 @@ const definitions = [
     checksumInput: [OFFICIAL_GLM_SELECTION_MIGRATION_SQL],
   },
 ] as const;
+
+/**
+ * The migration list, in the shape `@zcode/rust/task-index` expects.
+ *
+ * `checksumInputJson` is the **already-stringified** `JSON.stringify(checksumInput)`, because the
+ * ledger checksum is `sha256(JSON.stringify(checksumInput))` and the serialisation must happen
+ * once, in the language whose `JSON.stringify` defined the format.
+ *
+ * `sql` is the migration's body, and it is **required** — the native runner applies exactly what it
+ * is given. These used to be empty strings, which recorded the ledger row and created nothing, so a
+ * store opened on a fresh file had a migration history and no schema (spec §19a).
+ *
+ * The payload is not part of `checksumInput`, so the three checksums the real ledger holds are
+ * unchanged by anything that happens here.
+ */
+export function tasksDatabaseMigrationsForNative(db?: DatabaseSync): TaskIndexMigration[] {
+  return definitions.map((migration) => ({
+    id: migration.id,
+    sql: migrationSqlForNative(migration.id, db),
+    checksumInputJson: JSON.stringify(migration.checksumInput),
+  }));
+}
+
+/**
+ * The body of one migration, at the frozen semantics the TypeScript runner applied.
+ *
+ * `0001` and `0002` are derived and `0003` is a frozen constant. The difference matters: `0001`'s
+ * `ALTER TABLE` list is the pre-`IF NOT EXISTS` form the migration actually ran, and
+ * `adoptTaskSchemaSql()` is the single description of it — `adoptSchema()` executes the same string
+ * after its own idempotence check.
+ */
+export function migrationSqlForNative(migrationId: string, db?: DatabaseSync): string {
+  switch (migrationId) {
+    case "0001_adopt_task_schema":
+      return adoptTaskSchemaSql();
+    case "0002_provider_selection":
+      // Frozen history. The decode depends on the rows that existed when `0002` first ran, so the
+      // emission reads the current rows once; the `IS`-guards make it a no-op everywhere else.
+      return legacySelectionSql(readLegacySelectionRows(db), readSelectionPreImage(db));
+    case "0003_official_glm_selection":
+      return OFFICIAL_GLM_SELECTION_MIGRATION_SQL;
+    default:
+      // No `""` default: a migration that declares no SQL would record a ledger row and create
+      // nothing, which is the bug this function exists to fix.
+      throw new Error(`no SQL declared for task database migration ${migrationId}`);
+  }
+}
+
+/**
+ * `0001`'s body: the three schemas, the frozen `ALTER TABLE` list, the indexes and the bound index.
+ *
+ * `columns` is declared as data because the checksum depends on it; here it is rendered into the
+ * statements the migration executed. Two of its rows — `tasks.title_overridden` and
+ * `tasks.last_unread_at` — are **already inside `TASK_INDEX_SCHEMA`**, so a literal `ALTER` list
+ * fails on a fresh file with `duplicate column name`. The live runner never hit that because
+ * `adoptSchema()` filters with `PRAGMA table_info`; the native runner receives plain SQL, so the
+ * filter has to be folded in here. Emitting `ADD COLUMN` only for the columns the schemas do not
+ * already create reproduces exactly what the JavaScript did on a fresh file, statically.
+ *
+ * The `scheduled_run_count` backfill stays attached to its `ALTER`, as in the migration, and is
+ * **not** produced when that column already exists (the live `adoptSchema()` branch would backfill
+ * again).
+ */
+function adoptTaskSchemaSql(): string {
+  const statements: string[] = [];
+  for (const [table, column, definition] of columns) {
+    if (schemaAlreadyDeclares(table, column)) continue;
+    statements.push(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition};`);
+    if (table === "automations" && column === "scheduled_run_count") {
+      statements.push("UPDATE automations SET scheduled_run_count=run_count;");
+    }
+  }
+  return `${schemaDdl()}\n${statements.join("\n")}\n${indexes}${boundIndex}`;
+}
+
+/**
+ * Whether `TASK_INDEX_SCHEMA`/`AUTOMATION_SCHEMA`/`OFF_PEAK_SCHEMA` already create this column.
+ *
+ * Matched inside the `CREATE TABLE <table> (` block, on a line whose first token is the column name,
+ * so a column named in another table's body or inside an index expression cannot match by accident.
+ * If it ever fails to match, the failure is a loud `duplicate column name` from sqlite — never a
+ * silently skipped column.
+ */
+function schemaAlreadyDeclares(table: string, column: string): boolean {
+  const marker = `CREATE TABLE IF NOT EXISTS ${table} (`;
+  const start = schemaDdl().indexOf(marker);
+  if (start < 0) return false;
+  const body = schemaDdl().slice(start + marker.length);
+  const end = body.indexOf("\n      )");
+  const block = end < 0 ? body : body.slice(0, end);
+  return block.split("\n").some((line) => line.trim().startsWith(`${column} `));
+}
+
+/** The legacy selection snapshot, read once and handed to the frozen `0002` rules. */
+function readLegacySelectionRows(db?: DatabaseSync): LegacySelectionRow[] {
+  if (!db) return [];
+  return db.prepare(LEGACY_SELECTION_SOURCE_SQL).all() as unknown as LegacySelectionRow[];
+}
+
+/**
+ * What each automation's `model_selection` already holds, so `0002` can skip an update that would
+ * write the value that is already there. Only rows whose legacy columns are present are needed —
+ * the `IS`-guard means an update for any other row could not take effect anyway.
+ */
+function readSelectionPreImage(db?: DatabaseSync): Map<string, string | null> {
+  const existing = new Map<string, string | null>();
+  if (!db) return existing;
+  const rows = db
+    .prepare(
+      `SELECT a.automation_id AS automation_id, a.model_selection AS model_selection
+       FROM automations a WHERE a.model IS NOT NULL`,
+    )
+    .all() as unknown as { automation_id: string; model_selection: string | null }[];
+  for (const row of rows) existing.set(row.automation_id, row.model_selection);
+  return existing;
+}
+
+/** The migration list, with a live connection so the frozen `0002` payload can read its rows. */
+export function tasksDatabaseMigrationsForNativeDatabase(db: DatabaseSync): TaskIndexMigration[] {
+  return tasksDatabaseMigrationsForNative(db);
+}
+
 
 export function runTasksDatabaseMigrations(
   db: DatabaseSync,
@@ -138,15 +266,19 @@ export function runTasksDatabaseMigrations(
 }
 
 function adoptSchema(db: DatabaseSync): void {
-  db.exec(TASK_INDEX_SCHEMA + AUTOMATION_SCHEMA + OFF_PEAK_SCHEMA);
+  // The DDL is built once, by the same function the native migration payload uses, so the two
+  // runners cannot drift into two descriptions of `0001`.
+  db.exec(schemaDdl());
+  const alters: string[] = [];
   for (const [table, column, definition] of columns) {
     const existing = db.prepare(`PRAGMA table_info(${table})`).all();
     if (existing.some((entry) => entry.name === column)) continue;
-    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    alters.push(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
     if (table === "automations" && column === "scheduled_run_count") {
-      db.exec("UPDATE automations SET scheduled_run_count=run_count");
+      alters.push(`UPDATE automations SET scheduled_run_count=run_count`);
     }
   }
+  if (alters.length) db.exec(`${alters.join(";\n")};`);
   db.exec(indexes);
   // Keep the old adjudicated duplicate binding retention policy, but no longer swallow real SQL errors like permissions/syntax/disk etc.
   const duplicate = db
@@ -154,6 +286,11 @@ function adoptSchema(db: DatabaseSync): void {
     GROUP BY workspace_key, session_id HAVING count(*)>1 LIMIT 1`)
     .get();
   if (!duplicate) db.exec(boundIndex);
+}
+
+/** `TASK_INDEX_SCHEMA + AUTOMATION_SCHEMA + OFF_PEAK_SCHEMA` — the DDL both runners start from. */
+export function schemaDdl(): string {
+  return TASK_INDEX_SCHEMA + AUTOMATION_SCHEMA + OFF_PEAK_SCHEMA;
 }
 
 /** Handover only reuses an already-completed initialization; every new connection still confirms against the frozen ledger — a replaced or emptied file must not fake ready. */

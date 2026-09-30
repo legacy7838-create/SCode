@@ -824,3 +824,198 @@ at all.
 is to ship only what is used. So the binary was built directly to prove the path, and it becomes
 **live the moment the first repository imports the wrapper** — which is the next step, and the
 one that finally removes `node:sqlite`.
+
+---
+
+## 19a. The migration payload — `sql` is data, and it was being sent empty
+
+The first end-to-end run of the off-peak parity harness failed with
+
+```text
+Error: GenericFailure, cannot access off_peak_tasks: no such table: off_peak_tasks
+```
+
+Every layer below the payload was working: `loadNative` resolved the binary, the napi boundary
+decoded the JSON, and the request reached Rust. The table simply did not exist, because the
+migration list was being handed to `ensureReady` with a `sql` of `""`.
+
+### The bug was in the harness, and it was a real one
+
+`tasksDatabaseMigrationsForNative()` was written to send the ledger only:
+
+```ts
+return definitions.map((migration) => ({ id, sql: "", checksumInputJson: … }));
+```
+
+That was defensible while the harness's job looked like *checksum parity* — the checksum is
+`sha256(JSON.stringify(checksumInput))`, so only the input array had to cross the boundary, and the
+end-to-end check that passed (`verify-task-index-native.mts`) opens a **copy of the real database**,
+which already has the tables. Nothing needed the DDL there, so the empty payload went unnoticed.
+
+The JavaScript runner it replaces never worked that way. `runTasksDatabaseMigrations` dispatches on
+the id and applies a body:
+
+| id | body |
+|---|---|
+| `0001_adopt_task_schema` | `adoptSchema(db)` — three schemas, the `ALTER TABLE` columns, indexes, bound index |
+| `0002_provider_selection` | `importLegacyAutomationSelections(db)` |
+| `0003_official_glm_selection` | `db.exec(OFFICIAL_GLM_SELECTION_MIGRATION_SQL)` |
+
+So on a **fresh** file the JS created nine tables and the Rust created none. The parity harness opens
+a fresh file, the off-peak facade's first call reads `off_peak_tasks`, and the store failed — correct
+failure semantics for a database that has no schema.
+
+### The fix: the SQL is data, so the caller sends it
+
+§3.4 already says migrations arrive as data; the payload was the part that had been left out. Each
+migration now carries the same body the JavaScript applied, built from the TS sources that remain the
+single source of truth:
+
+- **`0001` is derived, not copied.** It is assembled by `adoptTaskSchemaSql()` from
+  `TASK_INDEX_SCHEMA`, `AUTOMATION_SCHEMA`, `OFF_PEAK_SCHEMA`, the `columns` table (as literal
+  `ALTER TABLE` statements, then the `scheduled_run_count` backfill — frozen 0001 semantics, not the
+  live idempotent guard that `adoptSchema()` still uses for `ensureReady`), `indexes`, and
+  `boundIndex`. `adoptSchema()` itself calls the same builder and then `exec`s the result, so the
+  native path and the legacy path cannot drift into two descriptions of one migration.
+- **`0002` is frozen data SQL.** `importLegacyAutomationSelections` is a decoder: it read the legacy
+  `model`/`provider`/`thought_level` columns and wrote `model_selection`. That decode is a *frozen*
+  historical fact, so the equivalent `UPDATE` is emitted from the same frozen rules
+  (`decodeLegacySelection`, the escape order, the `NULL`-on-undecidable rule). The runtime helper is
+  restructured into those rules plus a thin loop that applies them, and **nothing on the live path
+  calls the rules-only function** — the decoder now exists solely to build the frozen DDL, and the
+  `grep` gate below keeps it that way. This does not change the live path: `0002` is already applied
+  on every existing install, and the `IS`-guarded updates are idempotent regardless.
+- **`0003` is the frozen constant**, verbatim.
+
+`sql` stays a required `String` on both sides of the boundary. Making it `Option` and skipping a
+missing payload would reproduce exactly this bug as a silent no-op: `0001`'s checksum matches, the
+ledger row is written, and the tables are still absent. A migration that declares no SQL is a
+programming error, and it must stay loud.
+
+### Checksums are untouched
+
+The payload is **not** part of `checksumInput`, so the three checksums the real ledger holds
+(`3e8337b0…`, `7244ef7c…`, `8987adb5…`) are unchanged, and the `0001` gate in
+`tests/real_database.rs` still compares against those exact values including their `sha256` prefix
+assertions. Only the body of `sql` changed.
+
+### What verifies it
+
+| Check | What it proves |
+|---|---|
+| `scripts/verify-offpeak-parity.mts` | 29 replays of the captured JS transcript — now on a **fresh** file, so it also proves `0001` created the schema the JS created |
+| `cargo test -p zcode-task-index` | the crate's own migration tests still apply, roll back and re-run correctly |
+| `real_database.rs` | a copy of the real file still opens with no `checksum_mismatch` |
+| `grep` gate | `importLegacyAutomationSelections` has no live-path caller |
+
+The lesson is the same one §17 records: three of those four bugs were only reachable through a real
+`require()`. This one was only reachable on a file that did not already have the schema — which is
+every new install, and which no existing test had opened.
+
+---
+
+## 20. Consumer switch, step 1: `offPeakTaskRepo`
+
+The three repositories are switched **smallest first**, and this section covers the first.
+
+### Why not `taskIndexRepo` first
+
+Measured, not assumed. `taskIndexRepo.ts` is 2,567 lines with **25 public methods**, and the crate
+covers **five** of them (`ensureReady`, `close`, `listTaskMetas`, `queryTaskList`,
+`applyGroupedTaskViewOrder`). The other twenty — `archiveStaleTasks`, `createTaskGroup`,
+`queryGroupedTaskView`, `applyAgentPatch` and the rest — are not wired, they are **unported**, and
+each is a few dozen lines of query and state logic. Switching it now would mean shipping a wrapper
+that delegates most of its surface somewhere it cannot reach, which is a fallback by another name.
+
+`offPeakTaskRepo.ts` is 839 lines over **one table**, and the crate's `offpeak.rs` already has
+`claim_due`, `count_non_terminal`, `count_active`, `has_active_bound_task`, `get` and `delete`.
+Fifteen methods need porting; none of them need designing. That is a complete repository, not a
+slice of one.
+
+### The port unit stays all three
+
+§4.4 is unchanged: all three share `~/.zcode/v2/tasks-index.sqlite` and one migration ledger. This
+step is a *sequencing* decision, not a narrowing of scope. Nothing is finished until all three are
+switched, and until the Electron cutover, nothing is deleted.
+
+### Ground truth is captured from the JavaScript before it is deleted
+
+The same discipline as the cron differential corpus: a harness drives **both** implementations
+through one scripted sequence of every state transition and records every return value and every
+resulting row. The captured JS output is committed as a fixture, and the Rust must reproduce it
+exactly.
+
+Asserting the Rust against itself proves nothing. The interesting bugs in this repo are the guard
+conditions —
+
+- `mark_terminal` refuses a second transition, but only from a **non-terminal** row
+- `set_paused` requires `claim_running = 0`, so an in-flight dispatch cannot be paused
+- `update_editable_fields` rejects `modelSelection: null` outright, before the status check
+- `mark_settled` only touches terminal rows
+- `invalidate_model_selection` returns the **current** row unchanged when another process already
+  repaired the selection, rather than overwriting it with the older observation
+
+— and a self-consistent implementation can get every one of them subtly wrong while still passing
+its own tests. The fixture is what catches that.
+
+---
+
+## 21. `offPeakTaskRepo` — switched and deleted
+
+The twenty methods are ported, the differential transcript matches **72 of 72**, and
+`offPeakTaskRepo.ts` is gone.
+
+### What the differential caught
+
+The transcript is 72 entries recorded from the JavaScript **before** it was removed, replayed
+against Rust. Four real differences, none of which any unit test in the crate could have found:
+
+1. **`claim_due` reported the wrong `updatedAt`.** The original returns
+   `rowToTask({ ...row, claim_running: 1, claimed_at: now })` — the row **as it was read**, with
+   only the two claim columns overlaid. Re-reading the row after the UPDATE reports the claim's own
+   `updated_at` instead, so every dispatched task looked like it had just changed. Fixed by
+   capturing the domain task *before* the write; `claim_due` now returns both shapes
+   (`ClaimedOffPeak { row, task }`) so no caller has to re-read.
+2. **`offpeakGet` and `offpeakClaimDue` returned the internal `OffPeakRow`.** That row carries
+   `claim_running` and `claimed_at` and lacks `title`, `permission_mode` and `model_selection`, and
+   it sends `null` where the domain type omits the key. Two getters over the same row is a smell,
+   but collapsing them would have changed the Tauri scheduler's contract for no benefit — the
+   distinction is "row as stored" versus "task as the repository publishes it".
+3. **A memberless `options` was written as `"options": {}`.** `serializeOffPeakModelSelection` drops
+   it (`Object.keys(options).length > 0 ? { options } : {}`), so a selection with no reasoning level
+   is stored as `{ providerId, modelId }`. Every subsequent read of such a row differed by exactly
+   that key.
+4. **`count_active` counted the wrong set.** It was
+   `schedulable = 1 AND status NOT IN (terminal)`; the original is `status = 'running'` and nothing
+   else. A `queued`-but-schedulable task is in the first set and not the second, and this number is
+   the criterion for the keep-awake power blocker — which must not stay awake for a task merely
+   waiting in the queue.
+
+### One bug the port found that had nothing to do with the off-peak repository
+
+`run_migrations` called `read_ledger` before creating the ledger table, so **a brand-new database
+failed outright** with "no such table: `tasks_schema_migration`". Every existing test began from a
+database that already had the table, so the path was never exercised — until the parity harness
+created a genuinely empty file, which is exactly what a new user's first run does. `LEDGER_DDL` was
+defined and used only by tests; the runtime never executed it.
+
+### Two harness bugs, worth recording because they looked like port bugs
+
+- **The capture forgot `await` on `create`.** Four entries recorded a `Promise`, and
+  `JSON.stringify` of a Promise is `{}` — so the transcript had four empty objects and the parity
+  check reported every key of the Rust result as "only in rust". The port was correct; the
+  evidence was not.
+- **Truncating both sides of a mismatch to 220 characters made every failure identical.** Two
+  900-character task objects share their first 220 characters, so the failures were unreadable. The
+  reporting is now a key-level diff, which is what turned "30 mismatches" into "every claimed
+  task's `updatedAt` is the claim time".
+
+Both are the same lesson the cron corpus taught: a differential check is only as good as the
+ground truth and the diff it prints.
+
+### Status
+
+`offPeakTaskRepo.ts` is deleted. `node:sqlite` is no longer imported by the off-peak path. Two
+repositories remain on it — `taskIndexRepo.ts` (2,567 lines, 25 methods, 5 of them ported) and
+`automationRepo.ts` (1,489 lines) — and until those are switched and the Electron cutover happens,
+the `node:sqlite` dependency is still in the codebase. This step is real progress, not the end.

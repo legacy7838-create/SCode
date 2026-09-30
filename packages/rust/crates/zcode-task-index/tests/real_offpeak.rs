@@ -146,7 +146,7 @@ fn claim_due_runs_against_the_real_schema() {
     insert(&mut conn, &bad, "queued", 1, None, 2);
 
     let claimed = OffPeakStore::claim_due(&mut conn, 500).expect("claim due");
-    let ids: Vec<&str> = claimed.iter().map(|r| r.off_peak_task_id.as_str()).collect();
+    let ids: Vec<&str> = claimed.iter().map(|entry| entry.row.off_peak_task_id.as_str()).collect();
     assert!(ids.contains(&good.as_str()), "the usable row must be claimed");
     assert!(
         !ids.contains(&bad.as_str()),

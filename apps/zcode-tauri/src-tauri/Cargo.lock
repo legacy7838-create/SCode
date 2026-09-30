@@ -6357,6 +6357,8 @@ dependencies = [
 name = "zcode-mcp-config"
 version = "0.0.0"
 dependencies = [
+ "napi",
+ "napi-derive",
  "serde",
  "serde_json",
 ]
