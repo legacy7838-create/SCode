@@ -14,11 +14,15 @@
 
 pub mod grouped;
 pub mod migrate;
+pub mod offpeak;
 
 pub use grouped::{
     apply_batch, by_node_type, normalize_grouped_top_node_orders, normalize_group_member_orders,
     parse_task_order_node_key, read_node_orders, task_order_node_key, GroupMemberOrder,
     SearchableTextMode, TaskWrite, ViewNodeOrder, WriteBatch, GROUPED_TASK_ORDER_STEP,
+};
+pub use offpeak::{
+    model_selection_is_valid, OffPeakRow, OffPeakStore, OFF_PEAK_CLAIM_STALE_MS, TERMINAL_STATUSES,
 };
 pub use migrate::{
     baseline_time_applied, is_valid_migration_id, read_ledger, run_migrations, Migration,

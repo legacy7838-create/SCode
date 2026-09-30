@@ -577,3 +577,69 @@ No consumer is switched. Per §7 that is deliberate at every step: the Electron 
 store in-process and remains the shipping product, so `taskIndexRepo.ts` stays until the
 cutover. Steps 3 (read path and `build_search_snippets`), 4 and 5 (the two sibling facades) and 6
 (deletion) remain.
+
+---
+
+## 14. Step 5 (partial) — the off-peak facade
+
+`src/offpeak.rs`: `OffPeakStore`, a facade over the same connection. This is the first of the
+two sibling repositories, and it establishes the pattern the second will follow.
+
+### What it proves about the "one file, one owner" claim
+
+`node:sqlite` had **three** independent `DatabaseSync` connections to `tasks-index.sqlite` —
+`taskIndexRepo.ts:524`, `automationRepo.ts:283`, `offPeakTaskRepo.ts:210`. After this, one of
+those three is gone; the crate owns the connection and the repositories are facades over it.
+`automationRepo` is the remaining one (step 4).
+
+### The claim is a compare-and-swap, and that is the load-bearing part
+
+`claimDue` (`offPeakTaskRepo.ts:562-610`) does not read-then-mark. Each row is taken with a
+guarded update and accepted **only when it changed exactly one row**:
+
+```sql
+UPDATE off_peak_tasks SET claim_running = 1, claimed_at = ?now, updated_at = ?now
+WHERE off_peak_task_id = ?id AND claim_running = 0
+```
+
+That guard is what makes two schedulers safe — the loser sees `changes == 0` and does not report
+the task. Batching the claims into one statement, or moving the check into the calling code
+instead of the SQL, would let both dispatchers run the same task. `a_claim_is_a_compare_and_swap_and_only_one_claimer_wins`
+proves the behaviour and `the_claim_statement_keeps_its_guard` pins the guard *in the statement*,
+so a later refactor cannot quietly drop it.
+
+Also preserved: the stale-claim release (without it a crashed scheduler holds a task forever,
+since `claim_running` stays 1 and nothing else can take it), the queue order, the skip-without-
+blocking rule for rows with no usable model selection, and the counters' terminal-status set.
+
+### One honest narrowing
+
+`model_selection_is_valid` decides only **parseable-and-nonempty**, which is the same
+accept/reject boundary the claim loop needs. The field-level `modelSelectionSchema` validation
+stays on the TypeScript side, because `ZCodeModelSelection` is a shared wire type this crate
+deliberately does not own — a second validator for it would be a place for the two to disagree.
+The one-way-import rule from the original comment is preserved: the old single `model` column
+has no provider family and cannot be migrated, so such rows are **skipped**, not repaired.
+
+### Verified against the real schema — 5 tests, none skipped
+
+`tests/real_offpeak.rs` runs on a copy of the live file, because the unit tests use a
+hand-transcribed schema, which is exactly what drifts.
+
+| Test | Result |
+|---|---|
+| the counters agree with a direct query on the real table | ✅ |
+| the claim runs and is a compare-and-swap on the real schema | ✅ |
+| `claim_due` runs against the real schema, skipping the unusable row without blocking the good one | ✅ |
+| `idx_off_peak_bound_active` behaves on the real schema | ✅ |
+| every `status` present in the live data is one the crate knows | ✅ |
+
+That last one is the guard against a silent drift: an unknown status would make the
+non-terminal count wrong, and the test fails rather than reporting a plausible number.
+
+### Still open
+
+- **Step 4 — `AutomationStore`** (1,489 lines), the last `node:sqlite` user of this file. Until
+  it moves, the file still has one TypeScript owner.
+- **Step 3 — the task-index read path** and `build_search_snippets`.
+- **Step 6 — deletion**, gated on the Electron cutover (§7).
