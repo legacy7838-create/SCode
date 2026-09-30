@@ -13,6 +13,19 @@
 import { NATIVE_STORE, type NativeStore, type TaskIndexStore } from "./taskIndex.js";
 
 /** The seven reads, over the same native handle the task index uses. */
+/**
+ * A workspace scope with the identity key already resolved.
+ *
+ * `workspaceIdentity` is **optional** rather than `null`-able: the Rust side distinguishes an
+ * absent identity from a path-derived one by the key, and sending an explicit `null` for "no
+ * identity" would be a second spelling of the same thing.
+ */
+export interface TaskEngineScope {
+  workspaceKey: string;
+  workspacePath: string;
+  workspaceIdentity?: string;
+}
+
 export class TaskReadRepository {
   /** One native object, so one connection and one migration ledger. */
   readonly #store: NativeStore;
@@ -74,7 +87,7 @@ export class TaskReadRepository {
   async queryTaskList(query: {
     workspaceKeys: string[];
     search?: string;
-    kind?: "pinned" | "archived" | "all";
+    kind?: "pinned" | "archived" | "timeline" | "active";
     provider?: string;
     limit?: number;
     sortBy?: "created" | "updated";
@@ -107,6 +120,72 @@ export class TaskReadRepository {
     provider?: string;
   }): Promise<unknown[]> {
     return JSON.parse(await this.#store.archiveStaleTasks(JSON.stringify(request)));
+  }
+
+
+  // -------------------------------------------------------------------------
+  // The grouped view. On `TaskIndexStore` rather than here, because the grouped view needs the
+  // mutable handle — it runs the bootstrap and the order writeback, both of which write.
+  // -------------------------------------------------------------------------
+
+  /**
+   * The joined grouped view, with the workspace bootstrap and the order writeback.
+   *
+   * The writeback is not a cache: it is what turns "sorted by `createdAt` for this query" into a
+   * stable order the user can then drag.
+   */
+  async queryGroupedTaskView(query: {
+    workspaceScopes: TaskEngineScope[];
+    includeAllWorkspaces?: boolean;
+    provider?: string;
+    now?: number;
+  }): Promise<unknown[]> {
+    return JSON.parse(
+      await this.#store.queryGroupedTaskView(
+        JSON.stringify({
+          workspaceScopes: query.workspaceScopes,
+          includeAllWorkspaces: query.includeAllWorkspaces ?? false,
+          provider: query.provider ?? null,
+          now: query.now ?? Date.now(),
+        }),
+      ),
+    );
+  }
+
+  /** The order save, in one transaction. Returns the view as it now reads. */
+  async applyGroupedTaskViewOrder(params: {
+    workspaceScopes: TaskEngineScope[];
+    topLevelNodes: unknown[];
+    groups: Array<[string, unknown[]]>;
+    provider?: string;
+    now?: number;
+  }): Promise<unknown[]> {
+    return JSON.parse(
+      await this.#store.applyGroupedTaskViewOrder(
+        JSON.stringify({
+          workspaceScopes: params.workspaceScopes,
+          topLevelNodes: params.topLevelNodes,
+          groups: params.groups,
+          provider: params.provider ?? null,
+          now: params.now ?? Date.now(),
+        }),
+      ),
+    );
+  }
+
+  /**
+   * The **structure** read: groups, members and top-level orders, with no join to `tasks` and no
+   * writeback. The task content comes from sessions-index and the client joins it, so this stays
+   * cheap and mutates nothing.
+   */
+  async queryGroupedTaskViewStructure(params: {
+    workspaceScopes: TaskEngineScope[];
+  }): Promise<unknown> {
+    return JSON.parse(
+      await this.#store.queryGroupedTaskViewStructure(
+        JSON.stringify({ workspaceScopes: params.workspaceScopes }),
+      ),
+    );
   }
 }
 

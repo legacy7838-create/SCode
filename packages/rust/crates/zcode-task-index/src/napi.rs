@@ -210,6 +210,98 @@ impl TaskIndexStore {
     }
 
     // -----------------------------------------------------------------------
+    // The write path — `taskIndexRepo`'s batch D.
+    //
+    // Spec §25. `syncTaskMeta` and its grouped-top variant are here, plus the four transitions that
+    // change `unread_at` or the deleted flag and therefore need the mutable handle.
+    // -----------------------------------------------------------------------
+
+    /// `queryGroupedTaskView` — the joined view, with the bootstrap and the order writeback.
+    #[napi(ts_return_type = "Promise<string>")]
+    pub fn query_grouped_task_view(&self, request_json: String) -> AsyncTask<GroupedViewTask> {
+        AsyncTask::new(GroupedViewTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            request_json,
+            apply: false,
+        })
+    }
+
+    /// `queryGroupedTaskViewStructure` — groups, members and orders, with no join and no writeback.
+    #[napi(ts_return_type = "Promise<string>")]
+    pub fn query_grouped_task_view_structure(&self, request_json: String) -> AsyncTask<GroupedStructureTask> {
+        AsyncTask::new(GroupedStructureTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            request_json,
+        })
+    }
+
+    /// `applyGroupedTaskViewOrder` — the drag-and-drop save, in one transaction.
+    #[napi(ts_return_type = "Promise<string>")]
+    pub fn apply_grouped_task_view_order(&self, request_json: String) -> AsyncTask<GroupedViewTask> {
+        AsyncTask::new(GroupedViewTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            request_json,
+            apply: true,
+        })
+    }
+
+    /// `syncTaskMeta` — the merge, and nothing else.
+    #[napi(ts_return_type = "Promise<string>")]
+    pub fn sync_task_meta(&self, request_json: String) -> AsyncTask<SyncMetaTask> {
+        AsyncTask::new(SyncMetaTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            request_json,
+            admit: false,
+        })
+    }
+
+    /// `syncTaskMetaAtGroupedTop` — the merge and the top-level admission, in one transaction.
+    #[napi(ts_return_type = "Promise<string>")]
+    pub fn sync_task_meta_at_grouped_top(&self, request_json: String) -> AsyncTask<SyncMetaTask> {
+        AsyncTask::new(SyncMetaTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            request_json,
+            admit: true,
+        })
+    }
+
+    /// `seedTaskMetaIfMissing` — the read and the write are one transaction.
+    #[napi(ts_return_type = "Promise<string>")]
+    pub fn seed_task_meta_if_missing(&self, request_json: String) -> AsyncTask<SeedTask> {
+        AsyncTask::new(SeedTask { inner: std::sync::Arc::clone(&self.inner), request_json })
+    }
+
+    /// `clearTaskUnreadIfMatches` — compare-and-clear, so a late read cannot clear a newer mark.
+    #[napi(ts_return_type = "Promise<string>")]
+    pub fn clear_task_unread_if_matches(&self, request_json: String) -> AsyncTask<ClearUnreadTask> {
+        AsyncTask::new(ClearUnreadTask { inner: std::sync::Arc::clone(&self.inner), request_json })
+    }
+
+    /// `deleteArchivedTask` — the archive check and the tombstone are one transaction.
+    #[napi(ts_return_type = "Promise<string>")]
+    pub fn delete_archived_task(&self, request_json: String) -> AsyncTask<DeleteTaskTask> {
+        AsyncTask::new(DeleteTaskTask { inner: std::sync::Arc::clone(&self.inner), request_json })
+    }
+
+    /// `updateTaskState` — always transactional, so the compare and the write cannot interleave.
+    #[napi(ts_return_type = "Promise<string>")]
+    pub fn update_task_state(&self, request_json: String) -> AsyncTask<StateTask> {
+        AsyncTask::new(StateTask { inner: std::sync::Arc::clone(&self.inner), request_json })
+    }
+
+    /// `applyAgentPatch` — `null` for a task that is gone, which is normal and not a fault.
+    #[napi(ts_return_type = "Promise<string>")]
+    pub fn apply_agent_patch(&self, request_json: String) -> AsyncTask<AgentPatchTask> {
+        AsyncTask::new(AgentPatchTask { inner: std::sync::Arc::clone(&self.inner), request_json })
+    }
+
+    /// The opening repair: drop the grouping rows of every deleted task.
+    #[napi]
+    pub fn cleanup_deleted_grouping_references(&self) -> AsyncTask<GroupingRepairTask> {
+        AsyncTask::new(GroupingRepairTask { inner: std::sync::Arc::clone(&self.inner) })
+    }
+
+    // -----------------------------------------------------------------------
     // Task groups — `taskIndexRepo`'s batch B.
     //
     // Spec §23. `create` takes the id from the caller rather than minting one, so a test can use a
@@ -870,7 +962,9 @@ pub fn to_json<T: Serialize>(value: &T) -> std::result::Result<String, Error> {
 /// them through one module rather than four.
 pub use crate::grouped::GroupMemberOrder;
 pub use crate::groups::TaskGroup;
+use crate::grouped_view;
 use crate::groups;
+use crate::task_write;
 pub use crate::offpeak::OffPeakRow;
 use crate::meta::TaskMeta;
 use crate::task_read;
@@ -1316,6 +1410,373 @@ impl Task for OffPeakRecycleTask {
             OffPeakStore::recycle_awaiting_approval(conn, self.now)
         })
         .map(|recycled| recycled as i64)
+    }
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct GroupedViewRequest {
+    workspace_scopes: Vec<grouped_view::WorkspaceScope>,
+    provider: Option<String>,
+    #[serde(default)]
+    include_all_workspaces: bool,
+    now: i64,
+    /// Present only on the order save.
+    #[serde(default)]
+    top_level_nodes: Vec<grouped_view::TopLevelNode>,
+    #[serde(default)]
+    groups: Vec<(String, Vec<grouped_view::GroupedTaskRef>)>,
+}
+
+pub struct GroupedViewTask {
+    inner: std::sync::Arc<Inner>,
+    request_json: String,
+    /// Whether this is the order save rather than a read.
+    apply: bool,
+}
+
+impl Task for GroupedViewTask {
+    type Output = Vec<grouped_view::GroupedNode>;
+    type JsValue = String;
+
+    fn resolve(
+        &mut self,
+        _env: Env,
+        output: Self::Output,
+    ) -> std::result::Result<Self::JsValue, Error> {
+        to_json(&output)
+    }
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        with_connection_mut(&self.inner, |conn| {
+            let request: GroupedViewRequest = decode(&self.request_json)?;
+            if self.apply {
+                grouped_view::apply_grouped_task_view_order(
+                    conn,
+                    &request.workspace_scopes,
+                    request.provider.as_deref(),
+                    &request.top_level_nodes,
+                    &request.groups,
+                    request.now,
+                )
+            } else {
+                grouped_view::query_grouped_task_view(
+                    conn,
+                    &grouped_view::GroupedViewQuery {
+                        workspace_scopes: request.workspace_scopes,
+                        include_all_workspaces: request.include_all_workspaces,
+                        provider: request.provider,
+                    },
+                    request.now,
+                )
+            }
+            .map_err(store_error)
+        })
+    }
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct GroupedStructureRequest {
+    workspace_scopes: Vec<grouped_view::WorkspaceScope>,
+}
+
+pub struct GroupedStructureTask {
+    inner: std::sync::Arc<Inner>,
+    request_json: String,
+}
+
+impl Task for GroupedStructureTask {
+    type Output = grouped_view::GroupedStructure;
+    type JsValue = String;
+
+    fn resolve(
+        &mut self,
+        _env: Env,
+        output: Self::Output,
+    ) -> std::result::Result<Self::JsValue, Error> {
+        to_json(&output)
+    }
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        with_connection(&self.inner, |conn| {
+            let request: GroupedStructureRequest = decode(&self.request_json)?;
+            grouped_view::query_grouped_task_view_structure(conn, &request.workspace_scopes)
+                .map_err(store_error)
+        })
+    }
+}
+
+// ---- the write path: request shapes and task bodies ------------------------
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct SyncMetaRequest {
+    meta: TaskMeta,
+    pinned: Option<bool>,
+    archived: Option<bool>,
+    deleted: Option<bool>,
+    title_overridden: Option<bool>,
+    searchable_text: Option<String>,
+    now: i64,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct TaskRefWithTime {
+    workspace_key: String,
+    task_id: String,
+    now: i64,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ClearUnreadRequest {
+    workspace_key: String,
+    task_id: String,
+    expected_unread_at: i64,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct StateRequest {
+    workspace_key: String,
+    task_id: String,
+    #[serde(flatten)]
+    patch: task_write::StatePatch,
+    now: i64,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct SeedRequest {
+    workspace_key: String,
+    meta: TaskMeta,
+}
+
+pub struct SyncMetaTask {
+    inner: std::sync::Arc<Inner>,
+    request_json: String,
+    /// Whether the grouped-top admission runs, in the same transaction as the write.
+    admit: bool,
+}
+
+impl Task for SyncMetaTask {
+    type Output = task_write::SyncResult;
+    type JsValue = String;
+
+    fn resolve(
+        &mut self,
+        _env: Env,
+        output: Self::Output,
+    ) -> std::result::Result<Self::JsValue, Error> {
+        to_json(&output)
+    }
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        with_connection_mut(&self.inner, |conn| {
+            let request: SyncMetaRequest = decode(&self.request_json)?;
+            let flags = task_write::SyncFlags {
+                pinned: request.pinned,
+                archived: request.archived,
+                deleted: request.deleted,
+                title_overridden: request.title_overridden,
+                searchable_text: request.searchable_text,
+            };
+            if self.admit {
+                task_write::sync_task_meta_at_grouped_top(conn, &request.meta, &flags, request.now)
+            } else {
+                task_write::sync_task_meta(conn, &request.meta, &flags, request.now)
+            }
+            .map_err(store_error)
+        })
+    }
+}
+
+pub struct SeedTask {
+    inner: std::sync::Arc<Inner>,
+    request_json: String,
+}
+
+impl Task for SeedTask {
+    type Output = TaskMeta;
+    type JsValue = String;
+
+    fn resolve(
+        &mut self,
+        _env: Env,
+        output: Self::Output,
+    ) -> std::result::Result<Self::JsValue, Error> {
+        to_json(&output)
+    }
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        with_connection_mut(&self.inner, |conn| {
+            let request: SeedRequest = decode(&self.request_json)?;
+            task_write::seed_task_meta_if_missing(conn, &request.workspace_key, &request.meta)
+                .map_err(store_error)
+        })
+    }
+}
+
+pub struct ClearUnreadTask {
+    inner: std::sync::Arc<Inner>,
+    request_json: String,
+}
+
+impl Task for ClearUnreadTask {
+    type Output = task_write::ClearUnreadResult;
+    type JsValue = String;
+
+    fn resolve(
+        &mut self,
+        _env: Env,
+        output: Self::Output,
+    ) -> std::result::Result<Self::JsValue, Error> {
+        to_json(&output)
+    }
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        with_connection_mut(&self.inner, |conn| {
+            let request: ClearUnreadRequest = decode(&self.request_json)?;
+            task_write::clear_task_unread_if_matches(
+                conn,
+                &request.workspace_key,
+                &request.task_id,
+                request.expected_unread_at,
+            )
+            .map_err(store_error)
+        })
+    }
+}
+
+pub struct DeleteTaskTask {
+    inner: std::sync::Arc<Inner>,
+    request_json: String,
+}
+
+impl Task for DeleteTaskTask {
+    type Output = Option<TaskMeta>;
+    type JsValue = String;
+
+    fn resolve(
+        &mut self,
+        _env: Env,
+        output: Self::Output,
+    ) -> std::result::Result<Self::JsValue, Error> {
+        to_json(&output)
+    }
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        with_connection_mut(&self.inner, |conn| {
+            let request: TaskRefWithTime = decode(&self.request_json)?;
+            task_write::delete_archived_task(
+                conn,
+                &request.workspace_key,
+                &request.task_id,
+                request.now,
+            )
+            .map_err(store_error)
+        })
+    }
+}
+
+pub struct StateTask {
+    inner: std::sync::Arc<Inner>,
+    request_json: String,
+}
+
+impl Task for StateTask {
+    type Output = TaskMeta;
+    type JsValue = String;
+
+    fn resolve(
+        &mut self,
+        _env: Env,
+        output: Self::Output,
+    ) -> std::result::Result<Self::JsValue, Error> {
+        to_json(&output)
+    }
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        with_connection_mut(&self.inner, |conn| {
+            let request: StateRequest = decode(&self.request_json)?;
+            task_write::update_task_state(
+                conn,
+                &request.workspace_key,
+                &request.task_id,
+                &request.patch,
+                request.now,
+            )
+            .map_err(store_error)
+        })
+    }
+}
+
+pub struct AgentPatchTask {
+    inner: std::sync::Arc<Inner>,
+    request_json: String,
+}
+
+impl Task for AgentPatchTask {
+    type Output = Option<TaskMeta>;
+    type JsValue = String;
+
+    fn resolve(
+        &mut self,
+        _env: Env,
+        output: Self::Output,
+    ) -> std::result::Result<Self::JsValue, Error> {
+        to_json(&output)
+    }
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        with_connection_mut(&self.inner, |conn| {
+            let request: AgentPatchRequest = decode(&self.request_json)?;
+            task_write::apply_agent_patch(
+                conn,
+                &request.workspace_key,
+                &request.task_id,
+                request.title.as_deref(),
+                request.status,
+                request.last_error.clone(),
+                request.target.clone(),
+                request.updated_at,
+            )
+            .map_err(store_error)
+        })
+    }
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AgentPatchRequest {
+    workspace_key: String,
+    task_id: String,
+    title: Option<String>,
+    status: Option<crate::meta::PersistStatus>,
+    last_error: Option<Option<crate::meta::LastError>>,
+    target: Option<Option<crate::meta::TaskGoal>>,
+    updated_at: Option<i64>,
+}
+
+pub struct GroupingRepairTask {
+    inner: std::sync::Arc<Inner>,
+}
+
+impl Task for GroupingRepairTask {
+    type Output = i64;
+    type JsValue = i64;
+
+    fn resolve(&mut self, _env: Env, output: Self::Output) -> std::result::Result<Self::JsValue, Error> {
+        Ok(output)
+    }
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        with_connection(&self.inner, |conn| {
+            task_write::cleanup_deleted_grouping_references(conn)
+        })
+        .map(|cleaned| cleaned as i64)
     }
 }
 

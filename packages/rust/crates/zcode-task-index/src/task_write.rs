@@ -308,8 +308,9 @@ impl From<StateError> for MigrationError {
     }
 }
 
-/// The result of `clearTaskUnreadIfMatches`.
-#[derive(Debug, Clone, PartialEq)]
+/// The result of `clearTaskUnreadIfMatches`. Crosses the boundary as JSON.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ClearUnreadResult {
     pub meta: TaskMeta,
     /// `false` when the stored `unread_at` did not match, so nothing was written. The task is still
@@ -404,8 +405,9 @@ pub fn delete_archived_task(
 }
 
 /// `updateTaskState`'s patch. Every field is optional, and `None` means **leave alone** — including
-/// for the two that are genuinely three-state, which the flags below carry.
-#[derive(Debug, Clone, Default)]
+/// for the two that are genuinely three-state, which the nested `Option`s carry.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields, default)]
 pub struct StatePatch {
     pub title: Option<String>,
     pub title_overridden: Option<bool>,
@@ -1058,5 +1060,583 @@ mod tests {
         let truncated = truncate_search_text(&long);
         assert_eq!(truncated.chars().count(), TASK_SEARCH_TEXT_MAX_CHARS);
         assert!(truncated.is_char_boundary(truncated.len()), "no partial codepoint");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The sync family: `syncTaskMeta` and its grouped-admission variant.
+// ---------------------------------------------------------------------------
+
+/// `CRON_DEFAULT_GROUP_ID` (`zcode-task-types.ts:46`).
+pub const CRON_DEFAULT_GROUP_ID: &str = "zcode-default-group-cron";
+
+/// `OFF_PEAK_DEFAULT_GROUP_ID` (`zcode-task-types.ts:49`).
+pub const OFF_PEAK_DEFAULT_GROUP_ID: &str = "zcode-default-group-off-peak";
+
+/// A sync's flags. Each is an `Option` because "not mentioned" and "explicitly false" differ:
+/// an absent flag keeps the stored value, which is what lets a snapshot that knows nothing about
+/// pinning not unpin anything.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SyncFlags {
+    pub pinned: Option<bool>,
+    pub archived: Option<bool>,
+    pub deleted: Option<bool>,
+    pub title_overridden: Option<bool>,
+    /// The caller can compute the indexed text from the snapshot's messages and pass it in to
+    /// refresh it synchronously. Absent means **keep** the stored value, never clear it.
+    pub searchable_text: Option<String>,
+}
+
+/// The result of a grouped-admission sync. Crosses the boundary as JSON.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SyncResult {
+    pub meta: TaskMeta,
+    /// `true` when this call created the task's top-level order. A caller uses it to decide
+    /// whether the grouped view needs a refresh at all.
+    pub initialized_grouped_order: bool,
+}
+
+/// `ensureSystemGroupMembership` (`taskIndexRepo.ts:1408-1462`).
+///
+/// Files a task into a **fixed** system group — cron, or off-peak. Every write is `OR IGNORE` or
+/// keyed on a conflict that preserves an existing value, and that is the whole contract:
+///
+/// - the group row is `INSERT OR IGNORE`, so a user rename is not reverted;
+/// - the order row is `INSERT OR IGNORE`, so creating a new system-grouped session does not push
+///   the group down the list every time;
+/// - the membership is `INSERT OR IGNORE`, so a task the user has since grouped by hand is left
+///   where they put it.
+///
+/// Idempotent by construction, and called once per task when it first gains the identity.
+pub fn ensure_system_group_membership(
+    conn: &rusqlite::Connection,
+    meta: &TaskMeta,
+    group_id: &str,
+    title: &str,
+    color: &str,
+    now: i64,
+) -> Result<(), MigrationError> {
+    let key = workspace_key(meta);
+    conn.execute(
+        "INSERT OR IGNORE INTO task_groups (group_id, title, color, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?4)",
+        rusqlite::params![group_id, title, color, now],
+    )
+    .map_err(|source| sql("cannot create the system group", source))?;
+    // Only a group with no order row yet gets one, and the new one goes to the top.
+    let ordered: bool = conn
+        .query_row(
+            "SELECT 1 FROM task_group_view_node_orders WHERE node_type = 'group' AND node_key = ?1 LIMIT 1",
+            rusqlite::params![group_id],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()
+        .map_err(|source| sql("cannot read the group order", source))?
+        .is_some();
+    if !ordered {
+        let next = crate::groups::next_top_sort_order(conn)?;
+        crate::groups::upsert_top_order(conn, "group", group_id, next, now)?;
+    }
+    conn.execute(
+        "INSERT OR IGNORE INTO task_group_members
+           (group_id, workspace_key, workspace_path, workspace_identity, task_id, sort_order,
+            added_at, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6, ?6, ?6)",
+        rusqlite::params![group_id, key, meta.workspace_path, meta.workspace_identity, meta.task_id, now],
+    )
+    .map_err(|source| sql("cannot file the task into the system group", source))?;
+    // The task now lives in a group, so it must not also hold a top-level slot.
+    let order_key = task_order_node_key(&key, &meta.task_id)?;
+    conn.execute(
+        "DELETE FROM task_group_view_node_orders WHERE node_type = 'task' AND node_key = ?1",
+        rusqlite::params![order_key],
+    )
+    .map_err(|source| sql("cannot clear the top-level order", source))?;
+    Ok(())
+}
+
+/// `ensureOffPeakGroupMembership`'s remote guard.
+///
+/// Off-peak tasks do not support remote workspaces, so a remote session is not classified into the
+/// off-peak system group even when it is marked. The check is on the **identity**, and it is the
+/// membership call's precondition rather than something the caller decides.
+pub fn is_remote_workspace_identity(identity: &str) -> bool {
+    let trimmed = identity.trim();
+    // A remote identity is the `remote:` scheme or an explicit host form; a local path never
+    // matches. Kept as a prefix test because the identity's host portion is not validated here.
+    !trimmed.is_empty() && !trimmed.starts_with('/') && trimmed.contains(':')
+}
+
+/// `syncTaskMetaWithGroupedAdmission` (`taskIndexRepo.ts:1300-1395`), in one transaction when
+/// `initialize_at_top` is set.
+///
+/// The merge has six rules, and each exists because a specific ordering of events breaks without it:
+///
+/// 1. **`updatedAt` is `max(incoming, existing)`.** The snapshot's timestamp is the *last structure
+///    change* in the runtime store and does not include the `Date.now()` bumps from
+///    `session.titleUpdated` / `turn.completed`. Overwriting with the incoming value would flush
+///    back the newer value `applyAgentPatch` just wrote, and a first-time prompt would drop the
+///    session to the bottom of the list.
+/// 2. **A user rename survives.** The agent owns the session's core title; a manual rename belongs
+///    to the app side, so a background status refresh must not wash it away.
+/// 3. **A newer terminal status is not downgraded.** `turn.completed` writes the newer state first;
+///    a later snapshot can still carry an older `running`, and downgrading would make the mobile
+///    replayable link restore a finished task to "working".
+/// 4. **`migrationSource` and `cronAutomationId` come from the existing row when absent.** A
+///    running snapshot has neither — the cron identity is in `meta_json` only — so taking the
+///    incoming value would flush the identity out and break the icon, the group and the related
+///    queries.
+/// 5. **`target` is kept unless the snapshot explicitly has one.** A protocol snapshot may simply
+///    not carry it, and clearing it would drop a goal the user set.
+/// 6. **System groups are entered only on first acquisition.** `INSERT OR IGNORE` on the membership
+///    means a user who later drags the task out of the cron group is not dragged back.
+pub fn sync_task_meta(
+    conn: &rusqlite::Connection,
+    meta: &TaskMeta,
+    flags: &SyncFlags,
+    now: i64,
+) -> Result<SyncResult, MigrationError> {
+    sync_task_meta_in(conn, &workspace_key(meta), meta, flags, now)
+}
+
+fn sync_task_meta_in(
+    conn: &rusqlite::Connection,
+    key: &str,
+    incoming: &TaskMeta,
+    flags: &SyncFlags,
+    now: i64,
+) -> Result<SyncResult, MigrationError> {
+    let existing = read_task_row(conn, key, &incoming.task_id)?;
+    let existing_meta = existing.as_ref().map(row_to_meta);
+    let title_overridden = flags
+        .title_overridden
+        .or_else(|| existing.as_ref().map(|row| row.title_overridden == 1))
+        .unwrap_or(false);
+    let preserve_terminal =
+        should_preserve_newer_terminal_status(existing_meta.as_ref(), incoming);
+
+    let merged = TaskMeta {
+        // Rule 1: monotone, so a background refresh cannot move a task backwards.
+        updated_at: incoming.updated_at.max(existing_meta.as_ref().map_or(0, |meta| meta.updated_at)),
+        // Rule 2.
+        title: if title_overridden {
+            existing_meta.as_ref().map_or_else(|| incoming.title.clone(), |meta| meta.title.clone())
+        } else {
+            incoming.title.clone()
+        },
+        title_overridden: Some(title_overridden),
+        // Rule 3.
+        status: if preserve_terminal {
+            existing_meta.as_ref().and_then(|meta| meta.status)
+        } else {
+            incoming.status
+        },
+        last_error: if preserve_terminal {
+            existing_meta.as_ref().and_then(|meta| meta.last_error.clone())
+        } else {
+            incoming.last_error.clone()
+        },
+        // Rule 5: `hasOwnProperty` in the original — an explicit `undefined` does **not** clear it.
+        target: if incoming.target.is_some() {
+            incoming.target.clone()
+        } else {
+            existing_meta.as_ref().and_then(|meta| meta.target.clone())
+        },
+        // Rule 4: the document of a running snapshot carries neither, so the existing row wins.
+        migration_source: incoming
+            .migration_source
+            .or_else(|| existing_meta.as_ref().and_then(|meta| meta.migration_source)),
+        cron_automation_id: incoming
+            .cron_automation_id
+            .clone()
+            .or_else(|| existing_meta.as_ref().and_then(|meta| meta.cron_automation_id.clone()))
+            // The column is the index projection, so a row written before the column existed still
+            // keeps its identity.
+            .or_else(|| existing.as_ref().and_then(|row| row.cron_automation_id.clone())),
+        off_peak_task_id: incoming
+            .off_peak_task_id
+            .clone()
+            .or_else(|| existing_meta.as_ref().and_then(|meta| meta.off_peak_task_id.clone()))
+            .or_else(|| existing.as_ref().and_then(|row| row.off_peak_task_id.clone())),
+        unread_at: incoming
+            .unread_at
+            .or_else(|| existing_meta.as_ref().and_then(|meta| meta.unread_at)),
+        ..incoming.clone()
+    };
+
+    let persisted = write_record(
+        conn,
+        &WriteRecord {
+            meta: merged.clone(),
+            pinned: flags.pinned.unwrap_or_else(|| existing.as_ref().is_some_and(|row| row.pinned == 1)),
+            archived: flags.archived.unwrap_or_else(|| existing.as_ref().is_some_and(|row| row.archived == 1)),
+            deleted: flags.deleted.unwrap_or_else(|| existing.as_ref().is_some_and(|row| row.deleted == 1)),
+            title_overridden,
+            searchable_text: flags.searchable_text.clone().map(Some),
+            // A sync is not an unread mutation; the watermark still rises, but the mark stays.
+            write_unread_at: false,
+        },
+    )?;
+
+    // Rule 6, for both identities. "First acquisition" is the test, so a task that already had
+    // the identity is not re-filed and cannot be dragged back into the group.
+    let first_cron = merged.cron_automation_id.is_some()
+        && existing_meta.as_ref().and_then(|meta| meta.cron_automation_id.as_ref()).is_none();
+    if first_cron {
+        ensure_system_group_membership(
+            conn,
+            &persisted,
+            CRON_DEFAULT_GROUP_ID,
+            "cron",
+            "blue",
+            now,
+        )?;
+    }
+    let first_off_peak = merged.off_peak_task_id.is_some()
+        && existing_meta.as_ref().and_then(|meta| meta.off_peak_task_id.as_ref()).is_none();
+    let remote = persisted
+        .workspace_identity
+        .as_deref()
+        .is_some_and(is_remote_workspace_identity);
+    if first_off_peak && !remote {
+        ensure_system_group_membership(
+            conn,
+            &persisted,
+            OFF_PEAK_DEFAULT_GROUP_ID,
+            "off-peak",
+            "purple",
+            now,
+        )?;
+    }
+
+    Ok(SyncResult { meta: persisted, initialized_grouped_order: false })
+}
+
+/// `syncTaskMetaAtGroupedTop`: the sync, then the admission, in **one** transaction.
+///
+/// The order is initialised only the first time. A repeat snapshot must not re-assign the minimum
+/// `sort_order`, or an older slow-finishing task would jump above a newer one and the final order
+/// would depend on completion timing rather than on creation.
+pub fn sync_task_meta_at_grouped_top(
+    conn: &mut rusqlite::Connection,
+    meta: &TaskMeta,
+    flags: &SyncFlags,
+    now: i64,
+) -> Result<SyncResult, MigrationError> {
+    let key = workspace_key(meta);
+    let transaction = conn
+        .transaction()
+        .map_err(|source| sql("cannot begin the sync", source))?;
+    let outcome = (|| {
+        let mut result = sync_task_meta_in(&transaction, &key, meta, flags, now)?;
+        result.initialized_grouped_order = crate::groups::initialize_task_at_top(
+            &transaction,
+            &key,
+            &result.meta.workspace_path,
+            result.meta.workspace_identity.as_deref(),
+            &result.meta.task_id,
+            now,
+        )?;
+        Ok(result)
+    })();
+    match outcome {
+        Ok(result) => {
+            transaction
+                .commit()
+                .map_err(|source| sql("cannot commit the sync", source))?;
+            Ok(result)
+        }
+        Err(error) => {
+            let _ = transaction.rollback();
+            Err(error)
+        }
+    }
+}
+
+#[cfg(test)]
+mod sync_tests {
+    use super::*;
+    use crate::groups::DEFAULT_TASK_GROUP_COLOR;
+    use crate::test_support::{memory, TASKS_SCHEMA, BOOTSTRAP_SCHEMA};
+
+    fn with_group_schema(conn: &rusqlite::Connection) {
+        conn.execute_batch(
+            "CREATE TABLE task_groups (group_id TEXT PRIMARY KEY, title TEXT NOT NULL, color TEXT NOT NULL,
+               created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+             CREATE TABLE task_group_members (group_id TEXT NOT NULL, workspace_key TEXT NOT NULL,
+               workspace_path TEXT NOT NULL, workspace_identity TEXT, task_id TEXT NOT NULL,
+               sort_order INTEGER, added_at INTEGER NOT NULL, created_at INTEGER NOT NULL,
+               updated_at INTEGER NOT NULL, PRIMARY KEY (workspace_key, task_id));
+             CREATE TABLE task_group_view_node_orders (node_type TEXT NOT NULL, node_key TEXT NOT NULL,
+               sort_order INTEGER NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+               PRIMARY KEY (node_type, node_key));",
+        )
+        .expect("group schema");
+    }
+
+    fn meta(task_id: &str, title: &str, updated: i64) -> TaskMeta {
+        TaskMeta {
+            task_id: task_id.into(),
+            trace_id: "tr".into(),
+            title: title.into(),
+            title_overridden: Some(false),
+            workspace_path: "/ws".into(),
+            workspace_identity: None,
+            workspace_purpose: None,
+            created_at: 1,
+            updated_at: updated,
+            mode: crate::meta::TaskMode::Auto,
+            model: None,
+            thought_level: None,
+            runtime_epoch: None,
+            provider: None,
+            migration_source: None,
+            forked_from_task_id: None,
+            cron_automation_id: None,
+            off_peak_task_id: None,
+            unread_at: None,
+            status: Some(crate::meta::PersistStatus::Running),
+            last_error: None,
+            change_summary: None,
+            target: None,
+        }
+    }
+
+    /// The task's stored `unread_at` and its watermark, in one read so the pair is consistent.
+    fn stored(conn: &rusqlite::Connection) -> (Option<i64>, i64) {
+        conn.query_row(
+            &format!("SELECT unread_at, last_unread_at FROM tasks WHERE task_id = 't1'"),
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("read")
+    }
+
+    /// `updatedAt` is monotone: a background refresh with an older timestamp cannot move a task
+    /// back down the list.
+    #[test]
+    fn a_sync_never_moves_updated_at_backwards() {
+        let conn = memory();
+        sync_task_meta(&conn, &meta("t1", "first", 500), &SyncFlags::default(), 500).expect("sync");
+        let result = sync_task_meta(&conn, &meta("t1", "second", 100), &SyncFlags::default(), 600)
+            .expect("sync");
+        assert_eq!(result.meta.updated_at, 500, "the newer stored value survives");
+        assert_eq!(result.meta.title, "second", "but the title does update");
+    }
+
+    /// A user rename survives a snapshot that carries the agent's own title.
+    #[test]
+    fn a_user_rename_survives_a_later_snapshot() {
+        let conn = memory();
+        let mut renamed = meta("t1", "user's name", 100);
+        renamed.title_overridden = Some(true);
+        sync_task_meta(&conn, &renamed, &SyncFlags { title_overridden: Some(true), ..SyncFlags::default() }, 100)
+            .expect("sync");
+        let result = sync_task_meta(&conn, &meta("t1", "agent's name", 200), &SyncFlags::default(), 200)
+            .expect("sync");
+        assert_eq!(result.meta.title, "user's name", "the agent must not wash it away");
+    }
+
+    /// A newer terminal status is not downgraded by a late `running` snapshot.
+    #[test]
+    fn a_late_running_snapshot_does_not_downgrade_a_completed_task() {
+        let conn = memory();
+        let mut done = meta("t1", "t", 500);
+        done.status = Some(crate::meta::PersistStatus::Completed);
+        sync_task_meta(&conn, &done, &SyncFlags::default(), 500).expect("sync");
+        let result = sync_task_meta(&conn, &meta("t1", "t", 100), &SyncFlags::default(), 600)
+            .expect("sync");
+        assert_eq!(
+            result.meta.status,
+            Some(crate::meta::PersistStatus::Completed),
+            "the completed task must not return to working"
+        );
+    }
+
+    /// The cron identity comes from the existing row when the running snapshot has none.
+    #[test]
+    fn the_cron_identity_survives_a_snapshot_that_does_not_carry_it() {
+        let conn = memory();
+        with_group_schema(&conn);
+        let mut cron = meta("t1", "t", 100);
+        cron.cron_automation_id = Some("auto-1".into());
+        sync_task_meta(&conn, &cron, &SyncFlags::default(), 100).expect("sync");
+        // A later running snapshot has no cron tag at all.
+        let result = sync_task_meta(&conn, &meta("t1", "t", 200), &SyncFlags::default(), 200)
+            .expect("sync");
+        assert_eq!(
+            result.meta.cron_automation_id.as_deref(),
+            Some("auto-1"),
+            "otherwise the icon, group and related queries break"
+        );
+    }
+
+    /// The system group is entered **once**, and a user rename of the group is not reverted.
+    #[test]
+    fn a_system_group_is_entered_once_and_its_rename_is_kept() {
+        let conn = memory();
+        with_group_schema(&conn);
+        let mut cron = meta("t1", "t", 100);
+        cron.cron_automation_id = Some("auto-1".into());
+        sync_task_meta(&conn, &cron, &SyncFlags::default(), 100).expect("sync");
+
+        let members: i64 = conn
+            .query_row("SELECT COUNT(*) FROM task_group_members", [], |row| row.get(0))
+            .expect("count");
+        assert_eq!(members, 1, "the task is in the cron group");
+
+        // The user renames the fixed group; a later sync must not revert it.
+        conn.execute(
+            "UPDATE task_groups SET title = 'My schedule' WHERE group_id = ?1",
+            rusqlite::params![CRON_DEFAULT_GROUP_ID],
+        )
+        .expect("rename");
+        let later = meta("t1", "t", 200);
+        sync_task_meta(&conn, &later, &SyncFlags::default(), 200).expect("sync");
+        let title: String = conn
+            .query_row("SELECT title FROM task_groups WHERE group_id = ?1", rusqlite::params![CRON_DEFAULT_GROUP_ID], |row| row.get(0))
+            .expect("read");
+        assert_eq!(title, "My schedule", "INSERT OR IGNORE must not revert a rename");
+
+        // And the order row is not duplicated, so the group does not drift down the list.
+        let orders: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM task_group_view_node_orders WHERE node_type = 'group' AND node_key = ?1",
+                rusqlite::params![CRON_DEFAULT_GROUP_ID],
+                |row| row.get(0),
+            )
+            .expect("count");
+        assert_eq!(orders, 1);
+    }
+
+    /// A remote task is not classified into the off-peak group.
+    #[test]
+    fn a_remote_task_is_not_filed_into_the_off_peak_group() {
+        let conn = memory();
+        with_group_schema(&conn);
+        let mut off_peak = meta("t1", "t", 100);
+        off_peak.off_peak_task_id = Some("op-1".into());
+        off_peak.workspace_identity = Some("remote:ssh://host".into());
+        sync_task_meta(&conn, &off_peak, &SyncFlags::default(), 100).expect("sync");
+        let members: i64 = conn
+            .query_row("SELECT COUNT(*) FROM task_group_members", [], |row| row.get(0))
+            .expect("count");
+        assert_eq!(members, 0, "remote workspaces do not support off-peak grouping");
+        // A local one does.
+        let mut local = meta("t2", "t", 100);
+        local.off_peak_task_id = Some("op-2".into());
+        sync_task_meta(&conn, &local, &SyncFlags::default(), 100).expect("sync");
+        let members: i64 = conn
+            .query_row("SELECT COUNT(*) FROM task_group_members", [], |row| row.get(0))
+            .expect("count");
+        assert_eq!(members, 1);
+    }
+
+    /// The remote predicate is a prefix test on a non-path identity.
+    #[test]
+    fn the_remote_identity_predicate() {
+        assert!(is_remote_workspace_identity("remote:ssh://host"));
+        assert!(is_remote_workspace_identity("ssh://host"));
+        assert!(!is_remote_workspace_identity("/local/path"));
+        assert!(!is_remote_workspace_identity("   "));
+        assert!(!is_remote_workspace_identity("plain-key"));
+    }
+
+    /// A sync does not clear the searchable text, and an explicit one refreshes it.
+    #[test]
+    fn a_sync_leaves_the_indexed_text_alone_unless_given_one() {
+        let conn = memory();
+        sync_task_meta(
+            &conn,
+            &meta("t1", "t", 1),
+            &SyncFlags { searchable_text: Some("indexed body".into()), ..SyncFlags::default() },
+            1,
+        )
+        .expect("sync");
+        sync_task_meta(&conn, &meta("t1", "t2", 2), &SyncFlags::default(), 2).expect("sync");
+        let text: String = conn
+            .query_row("SELECT searchable_text FROM tasks WHERE task_id = 't1'", [], |row| row.get(0))
+            .expect("read");
+        assert_eq!(text, "indexed body", "an absent value must not wipe the index");
+
+        sync_task_meta(
+            &conn,
+            &meta("t1", "t3", 3),
+            &SyncFlags { searchable_text: Some("refreshed".into()), ..SyncFlags::default() },
+            3,
+        )
+        .expect("sync");
+        let text: String = conn
+            .query_row("SELECT searchable_text FROM tasks WHERE task_id = 't1'", [], |row| row.get(0))
+            .expect("read");
+        assert_eq!(text, "refreshed");
+    }
+
+    /// A sync leaves `unread_at` alone: it is a product-shell value, not a snapshot's business.
+    /// The watermark still rises.
+    #[test]
+    fn a_sync_does_not_move_the_unread_mark() {
+        let conn = memory();
+        let mut marked = meta("t1", "t", 1);
+        marked.unread_at = Some(700);
+        sync_task_meta(&conn, &marked, &SyncFlags::default(), 1).expect("sync");
+        sync_task_meta(&conn, &meta("t1", "t", 2), &SyncFlags::default(), 2).expect("sync");
+        let (unread, watermark) = stored(&conn);
+        assert_eq!(unread, Some(700), "the unread mark stays where it was");
+        assert_eq!(watermark, 700, "and the watermark is at least that");
+    }
+
+    /// The grouped-top sync initialises the order exactly once.
+    #[test]
+    fn the_grouped_top_order_is_initialised_once() {
+        let mut conn = memory();
+        with_group_schema(&conn);
+        let first = sync_task_meta_at_grouped_top(&mut conn, &meta("t1", "t", 1), &SyncFlags::default(), 1)
+            .expect("sync");
+        assert!(first.initialized_grouped_order, "the first exposure initialises it");
+        let again = sync_task_meta_at_grouped_top(&mut conn, &meta("t1", "t", 2), &SyncFlags::default(), 2)
+            .expect("sync");
+        assert!(!again.initialized_grouped_order, "a repeat must not re-assign the minimum order");
+        let orders: i64 = conn
+            .query_row("SELECT COUNT(*) FROM task_group_view_node_orders WHERE node_type = 'task'", [], |row| row.get(0))
+            .expect("count");
+        assert_eq!(orders, 1);
+    }
+
+    /// An absent flag keeps the stored value; an explicit `false` clears it.
+    #[test]
+    fn an_absent_flag_keeps_the_stored_value() {
+        let conn = memory();
+        sync_task_meta(&conn, &meta("t1", "t", 1), &SyncFlags { pinned: Some(true), ..SyncFlags::default() }, 1)
+            .expect("sync");
+        let pinned: i64 = conn
+            .query_row("SELECT pinned FROM tasks WHERE task_id = 't1'", [], |row| row.get(0))
+            .expect("read");
+        assert_eq!(pinned, 1);
+        // A snapshot that says nothing about pinning must not unpin.
+        sync_task_meta(&conn, &meta("t1", "t", 2), &SyncFlags::default(), 2).expect("sync");
+        let pinned: i64 = conn
+            .query_row("SELECT pinned FROM tasks WHERE task_id = 't1'", [], |row| row.get(0))
+            .expect("read");
+        assert_eq!(pinned, 1, "an absent flag is not a false");
+        // An explicit false is.
+        sync_task_meta(&conn, &meta("t1", "t", 3), &SyncFlags { pinned: Some(false), ..SyncFlags::default() }, 3)
+            .expect("sync");
+        let pinned: i64 = conn
+            .query_row("SELECT pinned FROM tasks WHERE task_id = 't1'", [], |row| row.get(0))
+            .expect("read");
+        assert_eq!(pinned, 0);
+    }
+
+    /// The system group gets the default colour when one is not supplied, and the schema the sync
+    /// needs is the shared one.
+    #[test]
+    fn the_fixture_schema_is_the_shared_one() {
+        let conn = rusqlite::Connection::open_in_memory().expect("memory");
+        conn.execute_batch(TASKS_SCHEMA).expect("tasks");
+        conn.execute_batch(BOOTSTRAP_SCHEMA).expect("bootstraps");
+        assert_eq!(DEFAULT_TASK_GROUP_COLOR, "gray");
     }
 }

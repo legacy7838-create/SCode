@@ -178,6 +178,21 @@ export interface NativeStore {
   writeBatch(batchJson: string): Promise<number>;
   listTasks(queryJson: string): Promise<string>;
   offpeakClaimDue(nowMs: number): Promise<string>;
+  // The grouped view — batch C's napi surface.
+  queryGroupedTaskView(requestJson: string): Promise<string>;
+  queryGroupedTaskViewStructure(requestJson: string): Promise<string>;
+  applyGroupedTaskViewOrder(requestJson: string): Promise<string>;
+
+  // The write path — `taskIndexRepo` batch D.
+  syncTaskMeta(requestJson: string): Promise<string>;
+  syncTaskMetaAtGroupedTop(requestJson: string): Promise<string>;
+  seedTaskMetaIfMissing(requestJson: string): Promise<string>;
+  clearTaskUnreadIfMatches(requestJson: string): Promise<string>;
+  deleteArchivedTask(requestJson: string): Promise<string>;
+  updateTaskState(requestJson: string): Promise<string>;
+  applyAgentPatch(requestJson: string): Promise<string>;
+  cleanupDeletedGroupingReferences(): Promise<number>;
+
   // Task groups — `taskIndexRepo` batch B.
   createTaskGroup(requestJson: string): Promise<string>;
   renameTaskGroup(requestJson: string): Promise<string>;

@@ -91,8 +91,9 @@ pub fn workspace_group_color(workspace_key: &str) -> String {
     WORKSPACE_BOOTSTRAP_TASK_GROUP_COLORS[index].to_string()
 }
 
-/// One `task_group_members` row.
-#[derive(Debug, Clone, PartialEq)]
+/// One `task_group_members` row. Crosses the boundary as JSON for the structure read.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GroupMember {
     pub group_id: String,
     pub workspace_key: String,
@@ -127,10 +128,14 @@ pub struct NodeOrder {
     pub sort_order: i64,
 }
 
-/// A top-level node of the grouped view.
-#[derive(Debug, Clone, PartialEq)]
+/// A top-level node of the grouped view, as the published shape: `type` plus the payload and an
+/// **absent** `sortOrder` when the node has none.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", tag = "type")]
 pub enum GroupedNode {
+    #[serde(rename_all = "camelCase")]
     Group { group: TaskGroup, tasks: Vec<TaskMeta>, sort_order: Option<i64> },
+    #[serde(rename_all = "camelCase")]
     Task { task: TaskMeta, sort_order: Option<i64> },
 }
 
@@ -814,15 +819,17 @@ pub fn query_grouped_task_view_structure(
     Ok(GroupedStructure { groups, members, top_level_orders })
 }
 
-/// A top-level order from the structure read.
-#[derive(Debug, Clone, PartialEq)]
+/// A top-level order from the structure read, tagged by `type` the way the client expects.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", tag = "type")]
 pub enum TopOrder {
     Group { group_id: String, sort_order: i64 },
     Task { workspace_key: String, task_id: String, sort_order: i64 },
 }
 
 /// The structure read's result.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GroupedStructure {
     pub groups: Vec<TaskGroup>,
     pub members: Vec<GroupMember>,
@@ -1148,5 +1155,297 @@ mod tests {
             "another workspace's bootstrap group is not visible here"
         );
         assert!(structure.members.is_empty(), "and its members follow the same scope");
+    }
+}
+
+/// `applyGroupedTaskViewOrder` (`taskIndexRepo.ts:2365-2553`): the drag-and-drop save.
+///
+/// Two validations run **before** anything is written, and they are the whole reason this is not a
+/// blind write:
+///
+/// - a task outside the current scope, or one that is deleted/archived/pinned, is an **error**;
+/// - a task whose stored provider differs is **skipped**, not an error. Grouped is written back
+///   into the package with no provider boundary in front of it, so refusing would strand a whole
+///   workspace; skipping treats the old gemini/codex/claude references as invisible legacy data.
+///
+/// The write is one transaction and the order is submitted **once**, rather than per group: a
+/// partial write leaves the grouped view showing a menu edit or an ungrouping that was never saved.
+pub fn apply_grouped_task_view_order(
+    conn: &mut rusqlite::Connection,
+    workspace_scopes: &[WorkspaceScope],
+    provider: Option<&str>,
+    top_level_nodes: &[TopLevelNode],
+    groups: &[(String, Vec<GroupedTaskRef>)],
+    now: i64,
+) -> Result<Vec<GroupedNode>, MigrationError> {
+    let workspace_keys: BTreeSet<String> = workspace_scopes
+        .iter()
+        .map(|scope| scope.workspace_key.clone())
+        .collect();
+
+    let known_groups: BTreeSet<String> = read_all(
+        conn,
+        "SELECT group_id FROM task_groups",
+        |row| row.get::<_, String>(0),
+    )?
+    .into_iter()
+    .collect();
+
+    // A node the caller sent that names a group which does not exist is a hard error: silently
+    // dropping it would leave the user having dragged a card into nothing.
+    for node in top_level_nodes {
+        if let TopLevelNode::Group { group_id } = node {
+            if !known_groups.contains(group_id) {
+                return Err(sql(
+                    "grouped task order contains a group that does not exist",
+                    rusqlite::Error::InvalidQuery,
+                ));
+            }
+        }
+    }
+    for (group_id, _) in groups {
+        if !known_groups.contains(group_id) {
+            return Err(sql(
+                "grouped task order contains a group that does not exist",
+                rusqlite::Error::InvalidQuery,
+            ));
+        }
+    }
+
+    let validate = |task: &GroupedTaskRef| -> Result<Option<String>, MigrationError> {
+        if !workspace_keys.contains(&task.workspace_key) {
+            return Err(sql(
+                "grouped task order contains a task outside the current scope",
+                rusqlite::Error::InvalidQuery,
+            ));
+        }
+        let Some(row) = read_task_row(conn, &task.workspace_key, &task.task_id)? else {
+            return Err(sql(
+                "grouped task order contains an invisible task",
+                rusqlite::Error::InvalidQuery,
+            ));
+        };
+        if row.deleted == 1 || row.archived == 1 || row.pinned == 1 {
+            return Err(sql(
+                "grouped task order contains an invisible task",
+                rusqlite::Error::InvalidQuery,
+            ));
+        }
+        // Not an error: legacy provider references are skipped rather than blocking the save.
+        if let Some(provider) = provider {
+            if row.provider.as_deref() != Some(provider) {
+                return Ok(None);
+            }
+        }
+        Ok(Some(task.workspace_key.clone()))
+    };
+
+    let mut top_level_task_keys: BTreeSet<String> = BTreeSet::new();
+    let mut visible_top_level: Vec<TopLevelNode> = Vec::new();
+    for node in top_level_nodes {
+        match node {
+            TopLevelNode::Group { .. } => visible_top_level.push(node.clone()),
+            TopLevelNode::Task { task } => {
+                if validate(task)?.is_some() {
+                    top_level_task_keys.insert(task_node_key(&task.workspace_key, &task.task_id));
+                    visible_top_level.push(node.clone());
+                }
+            }
+        }
+    }
+
+    let mut grouped_task_keys: BTreeSet<String> = BTreeSet::new();
+    let mut visible_groups: Vec<(String, Vec<GroupedTaskRef>)> = Vec::new();
+    for (group_id, task_refs) in groups {
+        let mut visible: Vec<GroupedTaskRef> = Vec::new();
+        for task_ref in task_refs {
+            if validate(task_ref)?.is_none() {
+                continue;
+            }
+            let key = task_node_key(&task_ref.workspace_key, &task_ref.task_id);
+            if !grouped_task_keys.insert(key) {
+                return Err(sql(
+                    "grouped task order cannot put the same task into multiple groups",
+                    rusqlite::Error::InvalidQuery,
+                ));
+            }
+            visible.push(task_ref.clone());
+        }
+        visible_groups.push((group_id.clone(), visible));
+    }
+
+    // Every task in scope, so their top-level orders can be cleared. Scoped on purpose: clearing
+    // every task would delete the mixed ordering of a remote or unexpanded workspace.
+    let mut scoped_task_order_keys: Vec<String> = Vec::new();
+    if !workspace_keys.is_empty() {
+        let placeholders = vec!["?"; workspace_keys.len()].join(", ");
+        let sql_text = format!(
+            "SELECT workspace_key, task_id FROM tasks WHERE workspace_key IN ({placeholders})"
+        );
+        let args: Vec<Box<dyn rusqlite::ToSql>> = workspace_keys
+            .iter()
+            .map(|key| Box::new(key.clone()) as Box<dyn rusqlite::ToSql>)
+            .collect();
+        let arg_refs: Vec<&dyn rusqlite::ToSql> = args.iter().map(|value| value.as_ref()).collect();
+        let mut statement = conn.prepare(&sql_text).map_err(|source| sql("cannot read the scoped tasks", source))?;
+        let rows = statement
+            .query_map(arg_refs.as_slice(), |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|source| sql("cannot read the scoped tasks", source))?;
+        for row in rows {
+            let (workspace_key, task_id) = row.map_err(|source| sql("cannot read a scoped task", source))?;
+            scoped_task_order_keys.push(task_node_key(&workspace_key, &task_id));
+        }
+    }
+
+    let transaction = conn
+        .transaction()
+        .map_err(|source| sql("cannot begin the order save", source))?;
+    let outcome = (|| -> Result<(), MigrationError> {
+        // Once the user has saved an order, the workspace bootstrap must not fire again for a new
+        // workspace — otherwise their arrangement is undone behind their back.
+        transaction
+            .execute(
+                "INSERT INTO task_group_workspace_bootstraps (workspace_key, group_id, created_at, updated_at)
+                 VALUES (?1, NULL, ?2, ?2)
+                 ON CONFLICT(workspace_key) DO UPDATE SET updated_at = excluded.updated_at",
+                rusqlite::params![GROUPED_WORKSPACE_BOOTSTRAP_ONCE_KEY, now],
+            )
+            .map_err(|source| sql("cannot disable the workspace bootstrap", source))?;
+
+        // A task that is now top-level loses whatever group it was in.
+        for key in &top_level_task_keys {
+            let (workspace_key, task_id) = key
+                .split_once('\u{0}')
+                .ok_or_else(|| sql("grouped task order has an invalid top-level task key", rusqlite::Error::InvalidQuery))?;
+            transaction
+                .execute(
+                    "DELETE FROM task_group_members WHERE workspace_key = ?1 AND task_id = ?2",
+                    rusqlite::params![workspace_key, task_id],
+                )
+                .map_err(|source| sql("cannot clear the membership", source))?;
+        }
+        for (group_id, task_refs) in &visible_groups {
+            for (index, task_ref) in task_refs.iter().enumerate() {
+                transaction
+                    .execute(
+                        "INSERT INTO task_group_members
+                           (group_id, workspace_key, workspace_path, workspace_identity, task_id,
+                            sort_order, added_at, created_at, updated_at)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?7)
+                         ON CONFLICT(workspace_key, task_id) DO UPDATE SET
+                           group_id = excluded.group_id,
+                           workspace_path = excluded.workspace_path,
+                           workspace_identity = excluded.workspace_identity,
+                           sort_order = excluded.sort_order,
+                           updated_at = excluded.updated_at",
+                        rusqlite::params![
+                            group_id,
+                            task_ref.workspace_key,
+                            task_ref.workspace_path,
+                            task_ref.workspace_identity,
+                            task_ref.task_id,
+                            (index as i64 + 1) * GROUPED_TASK_ORDER_STEP,
+                            now
+                        ],
+                    )
+                    .map_err(|source| sql("cannot write the membership", source))?;
+            }
+        }
+
+        // Submitted once: the whole order, not one group at a time.
+        transaction
+            .execute("DELETE FROM task_group_view_node_orders WHERE node_type = 'group'", [])
+            .map_err(|source| sql("cannot clear the group orders", source))?;
+        for key in &scoped_task_order_keys {
+            let Some((workspace_key, task_id)) = key.split_once('\u{0}') else { continue };
+            let order_key = task_order_node_key(workspace_key, task_id)?;
+            transaction
+                .execute(
+                    "DELETE FROM task_group_view_node_orders
+                     WHERE node_type = 'task' AND (node_key = ?1 OR node_key = ?2)",
+                    rusqlite::params![order_key, workspace_key],
+                )
+                .map_err(|source| sql("cannot clear the task orders", source))?;
+        }
+        for (index, node) in visible_top_level.iter().enumerate() {
+            let (node_type, node_key) = match node {
+                TopLevelNode::Group { group_id } => ("group", group_id.clone()),
+                TopLevelNode::Task { task } => ("task", task_order_node_key(&task.workspace_key, &task.task_id)?),
+            };
+            transaction
+                .execute(
+                    "INSERT INTO task_group_view_node_orders
+                       (node_type, node_key, sort_order, created_at, updated_at)
+                     VALUES (?1, ?2, ?3, ?4, ?4)",
+                    rusqlite::params![node_type, node_key, (index as i64 + 1) * GROUPED_TASK_ORDER_STEP, now],
+                )
+                .map_err(|source| sql("cannot write the order", source))?;
+        }
+        Ok(())
+    })();
+
+    match outcome {
+        Ok(()) => {
+            transaction
+                .commit()
+                .map_err(|source| sql("cannot commit the order save", source))?;
+        }
+        Err(error) => {
+            let _ = transaction.rollback();
+            return Err(error);
+        }
+    }
+
+    // The caller gets the view as it now reads, so it renders what was saved rather than what it
+    // hoped for.
+    query_grouped_task_view(
+        conn,
+        &GroupedViewQuery {
+            workspace_scopes: workspace_scopes.to_vec(),
+            include_all_workspaces: false,
+            provider: provider.map(str::to_string),
+        },
+        now,
+    )
+}
+
+/// A task reference as the order save receives it.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GroupedTaskRef {
+    pub workspace_key: String,
+    pub workspace_path: String,
+    pub workspace_identity: Option<String>,
+    pub task_id: String,
+}
+
+/// A top-level node as the order save receives it.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub enum TopLevelNode {
+    #[serde(rename = "group")]
+    Group { group_id: String },
+    #[serde(rename = "task")]
+    Task { task: GroupedTaskRef },
+}
+
+fn read_task_row(
+    conn: &rusqlite::Connection,
+    workspace_key: &str,
+    task_id: &str,
+) -> Result<Option<TaskRow>, MigrationError> {
+    let mut statement = conn
+        .prepare(&format!(
+            "SELECT {TASK_COLUMNS} FROM tasks WHERE workspace_key = ?1 AND task_id = ?2"
+        ))
+        .map_err(|source| sql("cannot prepare the task read", source))?;
+    let mut rows = statement
+        .query_map(rusqlite::params![workspace_key, task_id], TaskRow::from_sql_row)
+        .map_err(|source| sql("cannot read the task", source))?;
+    match rows.next() {
+        Some(row) => Ok(Some(row.map_err(|source| sql("cannot read the task", source))?)),
+        None => Ok(None),
     }
 }

@@ -1323,3 +1323,59 @@ itself is ported — `should_preserve_newer_terminal_status` and the monotonic `
 but the surrounding admission and the serialisation are not. **The consumer switch therefore does
 not land yet**, for the same reason as batch A: switching with the sync family still on
 `node:sqlite` would put two languages on one file.
+
+---
+
+## 26. `taskIndexRepo` — switched. 2,567 → 553 lines, zero SQL
+
+`packages/services/src/session/taskIndexRepo.ts` is a **wrapper**, and the file contains **no SQL
+at all**. The whole repository — the schema, the guarded writes, the grouped view, the
+`meta_json` document, the bootstrap, the claims — is `zcode-task-index`.
+
+What remains in the file is exactly what cannot move: the `ensureReady` handshake, the per-task
+**write chain**, the identity rule, the `Date.now()` defaults, and the class name and method
+signatures the service layer already imports. **No call site changed.**
+
+The scope helpers went to `taskIndexScope.ts` for the line budget, and that split is worth more
+than the budget: the identity rule is the one piece of this file a reader must be able to check
+against §Workspace Identity, and it now has a file of its own with the reasoning attached.
+
+### Why the switch could land only now, and not at batch A
+
+Switching the reads at batch A would have left a JavaScript **write** path and a Rust **read** path
+over one file: two connections in two languages, both running the same migration ledger, with 23
+statement sites still on `node:sqlite`. A Rust read could have observed a `node:sqlite` write that
+had not committed, and neither the busy timeout nor the ledger would have had a single owner. The
+same reasoning withheld the switch after batch B and after batch C. This is the arrangement §4.4
+exists to prevent, and it would have been introduced by the very change meant to remove it.
+
+### What is verified, and how much
+
+| Check | Result |
+|---|---|
+| `verify-task-read-parity` | 46/46 against a transcript captured from the deleted TypeScript |
+| `verify-offpeak-parity` | 72/72, same discipline |
+| `verify-task-index-native` | 10/10 against a **copy of the real** database |
+| `verify-mcp-config-native` | 9/9 |
+| Rust tests | 504, zero build warnings |
+| Tauri tests | 142 |
+
+The read transcript is the one that matters for this switch: 46 entries recorded from the
+JavaScript *before* it was removed, covering the cases where a read silently returns the wrong
+thing — a deleted task reading as live, an absent filter narrowing, a `kind` that is not the closed
+set it looks like, a `hasMore` comparing the page against itself, a search matching the body but
+not the title.
+
+**What is not verified the same way, stated plainly:** the write path and the grouped view have unit
+tests (the merge rules, the unread watermark, the bootstrap, the comparators) but **no differential
+transcript**. The batch-B attempt was abandoned because the grouped view's workspace bootstrap fires
+on the first read and made every captured result a harness artefact; the same obstacle applies here
+and would need a fixture built without it. That is the weakest part of this port and it is not
+hidden.
+
+### Remaining `node:sqlite` consumers
+
+`automationRepo.ts` (1,489 lines) is the last repository on it, plus `tasksDatabase/*` — which is
+the **migration source**, deliberately still in TypeScript, because the ledger checksum is
+`sha256(JSON.stringify(checksumInput))` and the serialisation must happen in the language whose
+`JSON.stringify` defined the format. The crate applies the list it is given; it does not own it.
