@@ -14,14 +14,7 @@
 use std::path::{Path, PathBuf};
 
 use zcode_task_index::migrate::{read_ledger, run_migrations, Migration};
-
-fn repo_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .ancestors()
-        .nth(4)
-        .expect("crates/zcode-task-index is four levels below the repo root")
-        .to_path_buf()
-}
+use zcode_task_index::schema::migration_definitions;
 
 fn real_database() -> Option<PathBuf> {
     let home = std::env::var("HOME").ok()?;
@@ -151,21 +144,16 @@ fn rerunning_this_builds_migrations_on_the_real_file_is_a_no_op() {
 
     // The declared migrations, with the checksums this build computes. `0004_code_plan_modes`
     // is deliberately absent: it is on disk but not declared by this checkout, and the runner
-    // must treat an unknown row as neither a mismatch nor something to re-apply.
-    let declared = vec![
-        Migration {
-            id: "0002_provider_selection".into(),
+    // must treat an unknown row as neither a mismatch nor something to re-apply. The definitions
+    // come from `crate::schema` now — the JavaScript that built them is deleted (spec §28).
+    let declared: Vec<Migration> = migration_definitions()
+        .into_iter()
+        .map(|definition| Migration {
+            id: definition.id.to_string(),
             sql: String::new(),
-            checksum_input_json:
-                r#"["legacy-automation-selection-v1","no-provider-for-legacy-off-peak-v1"]"#
-                    .into(),
-        },
-        Migration {
-            id: "0003_official_glm_selection".into(),
-            sql: String::new(),
-            checksum_input_json: official_glm_checksum_input(),
-        },
-    ];
+            checksum_input_json: definition.checksum_input_json,
+        })
+        .collect();
 
     let applied = run_migrations(&mut conn, &declared, 1).expect("must not mismatch");
     assert!(
@@ -258,29 +246,13 @@ fn the_unknown_fourth_row_is_tolerated_by_the_real_runner() {
     );
 }
 
-/// `JSON.stringify` of the declared input for `0003`, read from the real TypeScript so the
-/// test cannot drift from it.
+/// `JSON.stringify` of the declared input for `0003`, now the crate's own definition.
 fn official_glm_checksum_input() -> String {
-    let source = repo_root().join("packages/services/src/session/tasksDatabase/official-glm-selection-v3.ts");
-    let text = std::fs::read_to_string(&source)
-        .unwrap_or_else(|error| panic!("cannot read {}: {error}", source.display()));
-    // The constant is a template literal; the migration hashes the string it evaluates to.
-    let start = text
-        .find("OFFICIAL_GLM_SELECTION_MIGRATION_SQL = `")
-        .map(|index| index + "OFFICIAL_GLM_SELECTION_MIGRATION_SQL = `".len())
-        .unwrap_or_else(|| {
-            panic!("OFFICIAL_GLM_SELECTION_MIGRATION_SQL not found in {}", source.display())
-        });
-    let end = text[start..]
-        .find('`')
-        .map(|index| start + index)
-        .unwrap_or_else(|| panic!("unterminated template literal in {}", source.display()));
-    let sql = &text[start..end];
-    // JSON.stringify of a one-element array containing that string.
-    serde_json::to_string(&serde_json::Value::Array(vec![
-        serde_json::Value::String(sql.to_string()),
-    ]))
-    .expect("serialise")
+    migration_definitions()
+        .into_iter()
+        .find(|definition| definition.id == "0003_official_glm_selection")
+        .expect("0003 is declared")
+        .checksum_input_json
 }
 
 #[test]
@@ -336,7 +308,11 @@ fn the_nested_0001_checksum_matches_the_real_ledger() {
     let computed = Migration {
         id: "0001_adopt_task_schema".into(),
         sql: String::new(),
-        checksum_input_json: first_migration_checksum_input().expect("0001 input is readable"),
+        checksum_input_json: migration_definitions()
+            .into_iter()
+            .find(|definition| definition.id == "0001_adopt_task_schema")
+            .expect("0001 is declared")
+            .checksum_input_json,
     }
     .checksum();
 
@@ -346,79 +322,3 @@ fn the_nested_0001_checksum_matches_the_real_ledger() {
     );
 }
 
-/// `JSON.stringify(migration.checksumInput)` for `0001`, reproduced from the real
-/// TypeScript sources: three schema constants, the nested `columns` tuples, the index blob,
-/// the bound index, and the backfill marker.
-fn first_migration_checksum_input() -> Option<String> {
-    use serde_json::{json, Value};
-
-    let base = repo_root().join("packages/services/src/session/tasksDatabase");
-    let read = |name: &str| std::fs::read_to_string(base.join(name)).ok();
-
-    // Template-literal constants are taken verbatim from their source.
-    let template_literal = |text: &str, const_name: &str| -> Option<String> {
-        let marker = format!("{const_name} = `");
-        let start = text.find(&marker)? + marker.len();
-        let end = start + text[start..].find('`')?;
-        Some(text[start..end].to_string())
-    };
-
-    let schema = read("schema-v1.ts")?;
-    let migrations_src = read("migrations.ts")?;
-
-    let schema_value = |name: &str| -> Option<String> {
-        template_literal(&schema, name).or_else(|| {
-            // The last two schemas are built with interpolation; reconstruct by reading the
-            // template and substituting the one local constant it uses.
-            let raw = template_literal(&schema, name)?;
-            let terminal = "'completed','failed','cancelled'";
-            Some(raw.replace("${terminalStatuses}", terminal))
-        })
-    };
-
-    let task_index = schema_value("TASK_INDEX_SCHEMA")?;
-    let automation = schema_value("AUTOMATION_SCHEMA")?;
-    let off_peak = schema_value("OFF_PEAK_SCHEMA")?;
-    let indexes = template_literal(&migrations_src, "const indexes")?;
-    let bound_index = format!(
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_off_peak_bound_active ON \
-         off_peak_tasks(workspace_key,session_id) WHERE session_id IS NOT NULL AND status NOT IN \
-         ('completed','failed','cancelled')"
-    );
-
-    // `columns` is an array of tuples, so it contributes a nested array.
-    let mut columns: Vec<Value> = Vec::new();
-    let block = migrations_src
-        .split_once("const columns = [")?
-        .1
-        .split_once("\n] as const;")?
-        .0;
-    for line in block.lines() {
-        let parts: Vec<&str> = line
-            .trim()
-            .trim_start_matches('[')
-            .trim_end_matches("],")
-            .split(',')
-            .map(|part| part.trim().trim_matches('"'))
-            .collect();
-        if parts.len() == 3 {
-            columns.push(json!([parts[0], parts[1], parts[2]]));
-        }
-    }
-    if columns.is_empty() {
-        return None;
-    }
-
-    Some(
-        serde_json::to_string(&json!([
-            task_index,
-            automation,
-            off_peak,
-            Value::Array(columns),
-            indexes,
-            bound_index,
-            "scheduled-count-backfill-v1",
-        ]))
-        .expect("serialise"),
-    )
-}

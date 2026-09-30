@@ -1373,9 +1373,236 @@ on the first read and made every captured result a harness artefact; the same ob
 and would need a fixture built without it. That is the weakest part of this port and it is not
 hidden.
 
-### Remaining `node:sqlite` consumers
+### Remaining `node:sqlite` consumers (at the time of §26)
 
-`automationRepo.ts` (1,489 lines) is the last repository on it, plus `tasksDatabase/*` — which is
-the **migration source**, deliberately still in TypeScript, because the ledger checksum is
-`sha256(JSON.stringify(checksumInput))` and the serialisation must happen in the language whose
-`JSON.stringify` defined the format. The crate applies the list it is given; it does not own it.
+`automationRepo.ts` (1,489 lines) was the last repository on it, plus `tasksDatabase/*` — which was
+the **migration source**. Both are gone now: §27 switched the repository, §28 moved the migration
+source and the startup orchestrator into the crate. After §28 there is **no `node:sqlite` under
+`packages/services`**.
+
+---
+
+## 27. `automationRepo` — switched. 1,489 → 610 lines, zero SQL
+
+`packages/services/src/session/automationRepo.ts` is now a **wrapper**, and the file contains **no
+SQL at all**. The whole repository — the `automations` / `automation_runs` schema access, the
+guarded writes, the scheduling state machine, the run ledger, the `rowToAutomation` / `rowToRun`
+projections and the zod re-validation that used to sit at the persistence boundary — is
+`zcode-task-index`.
+
+The split is deliberate and lives on the Rust side: `src/automation.rs` keeps the low-level claim
+primitives (`release_expired`, `release_zombie_claims`, `list_due`, `claim`, `claim_due`) that the
+Tauri scheduler and `real_automation.rs` already exercised; `src/automation_repo.rs` is the full
+repository, transcribed method-for-method from the deleted TypeScript and reusing those primitives
+so the backoff guard has **one owner**.
+
+What remains in `automationRepo.ts` is exactly what cannot move:
+
+* the `ensureReady` handshake;
+* the identity rule (`workspaceIdentity?.trim() || workspacePath`), resolved **here** so the
+  wrapper and every other repository agree on a scope;
+* the `Date.now()` defaults (the native side stays pure);
+* the id minting (`automation-<uuid>`, `<automationId>:manual:<uuid>`), because the crate does not
+  own randomness;
+* the `AutomationRepo` **name and method signatures** — 31 of them — so no call site changed.
+
+### The parts that are easy to get wrong, and were reproduced
+
+* **Backoff is not bypassed.** `claim_due` retires expired rows first, reclaims zombie claims,
+  then takes each due row with a `running = 0` compare-and-swap in the SQL. A retry keeps
+  `next_run_at`, so the run id is stable and the retry upserts its run row rather than creating a
+  second one.
+* **`enabled` is derived from `lifecycle_status`** on update, but only when the caller changes the
+  lifecycle. Retaining the old value on `completed` / `failed` is the stored bug the original
+  comment records.
+* **`mark_run_outcome` never regresses a settled result to `running`.** Both `CASE` branches read
+  the old `outcome` column, which SQLite provides during an UPDATE.
+* **`mark_manual_run_dispatched` is idempotent at `dispatched`.** A direct host, a scheduler crash
+  recovery and a late report can all settle the same run; only the first increments `run_count`.
+* **`claimManualRuns` will not re-claim a fresh `runNow`.** `runNow` writes `attempts = 1`,
+  because the run was already handed to the direct dispatcher; the scheduler's `(attempts = 0 OR
+  updated_at <= stale)` predicate is the crash-recovery window, not a normal dispatch. The unit
+  test pins both sides of that boundary.
+* **The tri-state edit.** `undefined` leaves a field alone, `null` clears it, a value sets it. At
+  the boundary this is `JSON.stringify`, which drops `undefined` keys and keeps `null`; in Rust it
+  is `Option<Option<T>>` with a `double_option` deserialiser. Collapsing those is a silent
+  data-loss bug, so `update_clears_and_keeps_fields_by_tri_state` pins it.
+* **The creation ceiling is a transaction.** `SELECT COUNT(*)` and the `INSERT` are one
+  `BEGIN IMMEDIATE`, so two windows creating at once cannot both pass the old count. The error
+  carries `[AUTOMATION_CREATE_LIMIT_REACHED]`, and the wrapper re-throws it as
+  `AutomationCreateLimitError`.
+
+### One packaging fix the switch forced
+
+`zcode-packaging`'s inventory required every `@zcode/rust` subpath wrapper to contain its own
+`loadNative("…")` call. The shared-store refactor had already made `offPeakRepository.ts`,
+`taskReadRepository.ts`, `taskWriteRepository.ts` and `taskGroupRepository.ts` delegate to
+`taskIndex.ts` through the `NATIVE_STORE` symbol, so `build:native` was failing before this change.
+`find_delegated_load_native` now follows a companion wrapper's relative imports to the module that
+owns the call, which keeps the live-set derivation honest and lets the binary stage.
+
+### Verified
+
+| Check | Result |
+|---|---|
+| `cargo test -p zcode-task-index` | 145 lib + 25 integration, 0 failed |
+| direct-load smoke | create / list / claimDue / runNow / selection / binding / listRuns through the staged `.node` |
+| `pnpm typecheck` | 0 errors |
+| `pnpm lint` | 0 errors / 72 warnings — exactly the baseline |
+| `pnpm architecture:check --changed` | 0 new violations |
+| `node packages/shared/scripts/check-native-graph.mjs` | OK |
+| `pnpm --filter @zcode/rust build:native` | stages `zcode-task-index.linux-x64-gnu.node` |
+
+**What is not verified differentially:** like the task-index write path, this port has unit tests
+(the claim CAS, the backoff guard, the terminal-at-cap rule, the idempotent manual settlement, the
+tri-state edit) but **no captured transcript**, because `automationRepo.ts`'s write path had none
+to capture against in this change. That is the honest state of the evidence.
+
+### Remaining `node:sqlite` consumers (at the time of §27)
+
+After this switch the task-index file has **one owner in one language**. The remaining
+`node:sqlite` users were `packages/services/src/session/tasksDatabase/*` — the **migration source**
+and the startup orchestrator — and `packages/desktop/src/main/chromeCookieManager.ts`, which reads
+Chromium's cookie database and is unrelated to the task index. **§28 removes the former**; the
+latter stays, because it is a different database owned by Chromium.
+
+---
+
+## 28. The migration source and the startup orchestrator — moved into the crate. Zero `node:sqlite`, zero JS fallback
+
+Spec §26 recorded the honest caveat this section removes:
+
+> `tasksDatabase/*` — which is the **migration source**, deliberately still in TypeScript, because
+> the ledger checksum is `sha256(JSON.stringify(checksumInput))` and the serialisation must happen
+> in the language whose `JSON.stringify` defined the format.
+
+That deferral is over. The invariant the whole port is held to (`docs/specs/rust-native-ports.md`
+invariant 1: **zero JS fallback**, invariant 2: **legacy paths are deleted, not disabled**) leaves
+no room for a JavaScript module that owns a persisted file's schema, its migration ledger and its
+startup lock. After this change `packages/services/src/session/tasksDatabase/` **no longer exists**,
+and no file under `packages/services` imports `node:sqlite`.
+
+### What moved, and why each piece can move
+
+| JavaScript today | Where it went | Why it can leave JS |
+|---|---|---|
+| `schema-v1.ts` (three DDL template literals) | `crate::schema` constants | DDL is data. The only variable is `${terminalStatuses}`, substituted once in Rust. |
+| `migrations.ts` `columns` / `indexes` / `boundIndex` | `crate::schema` constants | Data, and it feeds the checksum. |
+| `migrations.ts` `adoptTaskSchemaSql()` | `crate::schema::adopt_task_schema_sql()` | Pure string assembly; the `schemaAlreadyDeclares` filter is a substring scan, not IO. |
+| `provider-selection-v2.ts` decoder + SQL emitter | `crate::schema::legacy_selection_*` | Pure decode + string assembly. The live rows are read by `import_legacy_automation_selections`, which already has the connection in Rust. |
+| `official-glm-selection-v3.ts` SQL | `crate::schema::OFFICIAL_GLM_SELECTION_SQL` | A frozen constant. |
+| the `checksumInput` serialisation | `crate::schema::MIGRATIONS` | See "The checksum contract, satisfied in Rust" below. |
+| `startup.ts` lock-wait + progress + pragmas | `napi::TaskIndexStore::prepare_storage` | The connection, the `PRAGMA`s and the `BEGIN IMMEDIATE` are all in Rust already. |
+| `prepared.ts` process-level handover set | deleted | It was a `Set<string>` of paths guarded by a re-read of the ledger. `ensure_ready` re-reads the ledger every time; the set only skipped a check that is now a single native call. |
+| `migrations.ts` `runTasksDatabaseMigrations` / `areTasksDatabaseMigrationsApplied` / `inspectTasksMigrationKind` | `crate::migrate` + `crate::schema` | The runner already exists in Rust; `inspectTasksMigrationKind` becomes `crate::schema::inspect_kind`. |
+
+### The checksum contract, satisfied in Rust
+
+The ledger checksum is `sha256(JSON.stringify(checksumInput))`. The reason the previous change kept
+the input in TypeScript was **serialisation risk**: reproducing `JSON.stringify` byte-for-byte
+(nested arrays, `\"` and `\\` escaping, control characters, raw non-ASCII) is a class of silent
+divergence whose failure mode is a `checksum_mismatch` on every existing install.
+
+The removal is safe because the inputs are **frozen constants**, not computed values, and the
+serialisation is now pinned by a real-ledger test rather than trusted:
+
+* `0001`'s input is `[TASK_INDEX_SCHEMA, AUTOMATION_SCHEMA, OFF_PEAK_SCHEMA, columns, indexes,
+  boundIndex, "scheduled-count-backfill-v1"]` — three strings, a `string[][]`, two strings, one
+  string. Rust builds the `serde_json::Value` and serialises it. `serde_json` emits non-ASCII raw
+  and escapes `"`/`\`/control characters exactly as `JSON.stringify` does; the test asserts the
+  resulting hex against the **real ledger row** (`3e8337b0…`), so a divergence is a red test, never
+  a user's failed launch.
+* `0002` and `0003` are one-element string arrays. Their checksums are asserted against the real
+  ledger values (`7244ef7c…`, `8987adb5…`).
+* The `0001` payload's `columns` is the nested `string[][]`, which is the case that distinguishes
+  this store from the events port's `sha256(trimmed SQL)` rule; the same test covers it.
+
+The three checksums are additionally asserted as **literals** in a unit test that does not need a
+real database, so CI on a machine without `~/.zcode` still catches a serialisation change.
+
+### The startup orchestrator
+
+`prepareTasksIndexStorage(path, onProgress)` had four jobs:
+
+1. open the file, apply `busy_timeout` / `foreign_keys` / `journal_mode=WAL` / `synchronous=NORMAL`;
+2. wait for the write lock asynchronously (retry on SQLITE_BUSY, up to `LOCK_WAIT_MS`), reporting
+   `waiting_for_lock`;
+3. run the migrations inside one `BEGIN IMMEDIATE`, reporting `migrating` / `committing`;
+4. construct the three repositories, call `ensureReady` on each, close them, report `ready`.
+
+Jobs 2–4 are native now:
+
+```
+prepareStorage(
+  nowMs: number,
+  lockWaitMs?: number,             // 60 min default
+  onProgress: ThreadsafeFunction<String>,  // JSON of StorageProgress
+): Promise<MigrationFacts>
+```
+
+* `StorageProgress` is `{ phase, migration: { kind, executedCount, committedCount,
+  lastAppliedMigrationId } }`, exactly the `DatabaseMigrationFacts` shape the desktop worker
+  forwards to the renderer. The callback is a `ThreadsafeFunction<String>` (JSON) with
+  `CalleeHandled = false`, so the payload is the **first** argument rather than the Node
+  error-first `null`. `compute` runs on a libuv threadpool thread and emits without touching the
+  event loop.
+* `ready` is the one phase the **wrapper** emits, synchronously after the native call resolves and
+  before its promise returns. A worker-thread emit would be queued behind the promise's own
+  microtask, so the desktop worker could post `done` before the last progress frame. The phase is
+  a UI contract, not a storage fact, so it belongs to the caller.
+* `migrate` gains the busy-retry: `wait_for_lock` takes the write lock with `BEGIN IMMEDIATE` and
+  retries on SQLITE_BUSY, reporting `waiting_for_lock` through the same hook. The startup store is
+  opened with `busy_timeout = 25` (as the deleted `startup.ts` did), so a held lock fails fast and
+  the phase is reported on the first attempt; the asynchronous wait is the retry loop, not the busy
+  timeout. An expired wait throws with `kind: "lock_timeout"` and the extended `errcode` (5).
+* The progress frames and the returned facts carry the **real** `kind` / `executedCount` /
+  `committedCount` / `lastAppliedMigrationId`: the baseline is the newest ledger row read before
+  the run (the same value the deleted runner used), and the kind flips `none → upgrade` only when a
+  migration was actually applied.
+* Native errors use the same JSON envelope as `zcode-events`
+  (`{"z":1,"m":…,"k":…,"c":…,"i":…,"sm":…}`), decoded by
+  `packages/rust/src/nativeError.ts::fromNativeError`. That is what makes the desktop classification
+  work: `classifyDatabaseStartupError` reads `error.kind` / `error.errcode`, **not** the message — a
+  plain-text error would classify every native failure as `sql_failed`. `sm` is the facts at the
+  moment of failure, which `tasksStorageWorker.ts` reads back as `error.startupMigration`.
+
+`ensure_ready` (the constructor path the three repositories use) now takes **no migration
+argument**: the crate runs its own list. This deletes `tasksDatabaseMigrationsForNative()` from the
+three `ensureReady` call sites and from the two parity harnesses.
+
+### What stays in TypeScript, and why it is not a fallback
+
+* `packages/desktop/src/host/tasksStorageWorker.ts` — the worker *shell*: it owns `workerData`,
+  `parentPort` and the progress `postMessage`. It forwards the callback; it does not own a
+  connection. This is a platform boundary (Electron worker), not a SQL path.
+* `packages/services/src/storage-startup.ts` — the re-export barrel named by the desktop host. It
+  now re-exports the native `prepareTasksIndexStorage` facade and nothing else.
+* `tasksStorageWorker`'s failure classification (`classifyDatabaseStartupError`) reads the error's
+  `kind`/`errcode`; `@zcode/rust/task-index` rebuilds those properties from the native envelope
+  (see above), so the classification is unchanged without parsing any message text.
+
+### The deletion list (invariant 2)
+
+Removed in this change, not disabled:
+
+* `packages/services/src/session/tasksDatabase/schema-v1.ts`
+* `packages/services/src/session/tasksDatabase/migrations.ts`
+* `packages/services/src/session/tasksDatabase/provider-selection-v2.ts`
+* `packages/services/src/session/tasksDatabase/official-glm-selection-v3.ts`
+* `packages/services/src/session/tasksDatabase/startup.ts`
+* `packages/services/src/session/tasksDatabase/prepared.ts`
+
+`packages/services/src/session/tasksDatabase/` is an empty directory afterwards and is removed.
+
+### Acceptance
+
+* `rg "node:sqlite|DatabaseSync" packages/services` → zero hits.
+* `cargo test -p zcode-task-index` — including the new real-ledger checksum assertions and the
+  `0002` decode parity vectors transcribed from the deleted TypeScript.
+* `packages/rust/crates/zcode-task-index/tests/real_database.rs` — every existing assertion plus
+  the three checksum literals.
+* `verify-task-read-parity.mts` / `verify-offpeak-parity.mts` — 46/46 and 72/72, now calling the
+  native `ensureReady()` with no argument.
+* `pnpm typecheck`, `pnpm lint`, `pnpm architecture:check --changed`, `check-native-graph.mjs`.
+* A fresh-database smoke: the `.node` opens an empty file, applies `0001`–`0003`, and the ledger
+  checksums equal the three literals.

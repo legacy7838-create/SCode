@@ -19,7 +19,6 @@ import { copyFileSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { tasksDatabaseMigrationsForNative } from "../packages/services/src/session/tasksDatabase/migrations.ts";
 import { TaskIndexStore } from "../packages/rust/src/taskIndex.ts";
 import { TaskReadRepository } from "../packages/rust/src/taskReadRepository.ts";
 
@@ -43,7 +42,7 @@ const dbPath = join(workspace, "tasks-index.sqlite");
 copyFileSync(join(fixtures, "task_read_seed.sqlite"), dbPath);
 
 const store = new TaskIndexStore({ path: dbPath });
-await store.ensureReady(tasksDatabaseMigrationsForNative(), 0);
+await store.ensureReady(0);
 const reads = new TaskReadRepository(store);
 
 let compared = 0;

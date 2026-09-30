@@ -22,26 +22,25 @@
 //! 0003_official_glm_selection 8987adb50ae412a4…  == ledger
 //! ```
 //!
-//! ## Why the TypeScript passes the *stringified* input, not the array
+//! ## Where the serialisation happens now
 //!
-//! Re-serialising a parsed JSON value in Rust would have to reproduce `JSON.stringify`
-//! byte-for-byte — nested arrays, `\"` and `\\` escaping, control characters as `\n`/`\uXXXX`,
-//! and **non-ASCII emitted raw as UTF-8 rather than `\u` escaped**. `serde_json::to_string`
-//! happens to agree on all of those, but "happens to" is not a contract.
+//! `Migration::checksum_input_json` is an opaque string; this runner only hashes its bytes.
+//! Since spec §28 that string is produced by [`crate::schema::migration_definitions`], which
+//! builds a `serde_json::Value` from the frozen constants and serialises it with `serde_json`.
+//! The earlier design kept the serialisation in TypeScript because reproducing `JSON.stringify`
+//! byte-for-byte is a silent-divergence risk; §28 removed that deferral because the inputs are
+//! constants and the result is pinned against the three real ledger checksums
+//! (`schema::tests::the_three_checksums_are_the_real_ledger_values`, `tests/real_database.rs`).
 //!
-//! So the boundary takes the **already-stringified** `JSON.stringify(checksumInput)` as an
-//! opaque string and hashes its bytes. The serialisation therefore happens exactly once, in
-//! the one language whose `JSON.stringify` defined the format. The only thing left to verify
-//! is the hash, which is unambiguous.
-//!
-//! The cost is that the TypeScript side must pass the string rather than the array. That is a
-//! one-line change at the call site and it removes an entire class of silent divergence.
+//! The cost paid earlier — the TypeScript side passing the stringified input — is gone: the
+//! crate owns the list and no call site builds one.
 
 use std::fmt;
 
 use sha2::{Digest, Sha256};
 
-/// One migration, as supplied by the TypeScript side.
+/// One migration, in the shape the crate's own [`crate::schema::migration_definitions`]
+/// produces. Tests build these by hand.
 #[derive(Debug, Clone)]
 pub struct Migration {
     /// Ledger id. Validated against the same shape as the session store's
@@ -162,6 +161,43 @@ pub fn baseline_time_applied(conn: &rusqlite::Connection) -> Result<Option<i64>,
         "SELECT time_applied FROM tasks_schema_migration ORDER BY id DESC LIMIT 1",
         [],
         |row| row.get::<_, i64>(0),
+    )
+    .map(Some)
+    .or_else(|error| match error {
+        rusqlite::Error::QueryReturnedNoRows => Ok(None),
+        other => Err(MigrationError::Sql {
+            context: "cannot read the migration baseline".into(),
+            source: other,
+        }),
+    })
+}
+
+/// The newest applied migration id, the ledger's trusted baseline.
+///
+/// `None` when the ledger table does not exist yet (a fresh file) or holds no rows. This is the
+/// value the deleted runner read inside its transaction as `databaseMigrationIdSchema`-checked
+/// `baseline.id`, and it is what a `DatabaseMigrationFacts` carries as `lastAppliedMigrationId`.
+pub fn baseline_id(conn: &rusqlite::Connection) -> Result<Option<String>, MigrationError> {
+    let has_table: bool = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='tasks_schema_migration'",
+            [],
+            |_| Ok(true),
+        )
+        .or_else(|error| match error {
+            rusqlite::Error::QueryReturnedNoRows => Ok(false),
+            other => Err(MigrationError::Sql {
+                context: "cannot inspect the migration ledger".into(),
+                source: other,
+            }),
+        })?;
+    if !has_table {
+        return Ok(None);
+    }
+    conn.query_row(
+        "SELECT id FROM tasks_schema_migration ORDER BY id DESC LIMIT 1",
+        [],
+        |row| row.get::<_, String>(0),
     )
     .map(Some)
     .or_else(|error| match error {
@@ -373,6 +409,20 @@ mod tests {
     }
 
     #[test]
+    fn the_baseline_id_is_the_newest_ledger_row_or_none() {
+        // A file with no ledger table at all (the very first open).
+        let fresh = rusqlite::Connection::open_in_memory().expect("in-memory");
+        assert_eq!(baseline_id(&fresh).unwrap(), None);
+
+        let mut conn = memory();
+        assert_eq!(baseline_id(&conn).unwrap(), None, "an empty ledger has no baseline");
+        run_migrations(&mut conn, &[migration("0001_a", "[\"a\"]")], 1).unwrap();
+        assert_eq!(baseline_id(&conn).unwrap().as_deref(), Some("0001_a"));
+        run_migrations(&mut conn, &[migration("0002_b", "[\"b\"]")], 1).unwrap();
+        assert_eq!(baseline_id(&conn).unwrap().as_deref(), Some("0002_b"));
+    }
+
+    #[test]
     fn a_changed_checksum_is_a_mismatch_not_a_silent_reapply() {
         let mut conn = memory();
         run_migrations(&mut conn, &[migration("0001_x", "[\"v1\"]")], 100).unwrap();
@@ -486,5 +536,26 @@ mod fresh_database_tests {
         run_migrations(&mut conn, &migrations, 1).expect("first run");
         let second = run_migrations(&mut conn, &migrations, 2).expect("second run");
         assert!(second.is_empty(), "nothing new to apply, got {second:?}");
+    }
+}
+
+#[cfg(test)]
+mod lock_probe_tests {
+    use rusqlite::Connection;
+
+    #[test]
+    fn a_second_connection_cannot_take_the_write_lock() {
+        let dir = std::env::temp_dir().join(format!("zcode-lock-{}.sqlite", std::process::id()));
+        let _ = std::fs::remove_file(&dir);
+        let a = Connection::open(&dir).unwrap();
+        a.execute_batch(
+            "PRAGMA journal_mode = WAL; CREATE TABLE t (x); BEGIN IMMEDIATE; INSERT INTO t VALUES (1);",
+        )
+        .unwrap();
+        let b = Connection::open(&dir).unwrap();
+        b.execute_batch("PRAGMA busy_timeout = 0").unwrap();
+        let result = b.execute_batch("BEGIN IMMEDIATE");
+        let _ = std::fs::remove_file(&dir);
+        assert!(result.is_err(), "the second connection must not acquire the write lock: {result:?}");
     }
 }

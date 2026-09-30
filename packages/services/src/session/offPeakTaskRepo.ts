@@ -23,7 +23,6 @@ import type { ZCodeOffPeakTask, ZCodeOffPeakTaskCreateParams } from "@zcode/shar
 import { OFF_PEAK_TERMINAL_STATUSES, resolveWorkspaceKey } from "@zcode/shared";
 
 import { getTasksIndexDatabasePath } from "#src/paths.js";
-import { tasksDatabaseMigrationsForNative } from "#src/session/tasksDatabase/migrations.js";
 import { TaskIndexStore } from "@zcode/rust/task-index";
 import { OffPeakRepository, type OffPeakTask } from "@zcode/rust/off-peak-repository";
 
@@ -112,11 +111,11 @@ export class OffPeakTaskRepo {
   #openedPath: string | null = null;
 
   async #initialize(path: string): Promise<void> {
-    // The migrations are **data**: the ledger checksum is `sha256(JSON.stringify(checksumInput))`,
-    // so the serialisation happens once, in the language whose `JSON.stringify` defined the
-    // format, and the crate only hashes the bytes it is given.
+    // The migrations are the **crate's**: the ledger checksum is
+    // `sha256(JSON.stringify(checksumInput))`, and the schema, the three frozen payloads and the
+    // checksum inputs live in `crate::schema` (spec §28). `ensureReady` takes no migration list.
     const store = new TaskIndexStore({ path, busyTimeoutMs: this.#startupBusyTimeoutMs });
-    await store.ensureReady(tasksDatabaseMigrationsForNative(), Date.now());
+    await store.ensureReady(Date.now());
     this.#store = store;
     this.#repo = new OffPeakRepository(store);
     this.#openedPath = path;

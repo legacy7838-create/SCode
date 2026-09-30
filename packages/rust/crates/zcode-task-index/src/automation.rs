@@ -303,15 +303,21 @@ impl AutomationStore {
     }
 
     /// `releaseClaim` (`:1066`).
+    ///
+    /// The original also clears `dispatch_status` back to `idle` and stamps `updated_at`; the
+    /// earlier partial port omitted both, so a released claim kept `dispatchStatus = 'claimed'`
+    /// in the read model even though the row was free again.
     pub fn release_claim(
         conn: &rusqlite::Connection,
         automation_id: &str,
+        now: i64,
     ) -> Result<bool, MigrationError> {
         let changed = conn
             .execute(
-                "UPDATE automations SET running = 0, claimed_at = NULL
+                "UPDATE automations
+                 SET running = 0, claimed_at = NULL, dispatch_status = 'idle', updated_at = ?2
                  WHERE automation_id = ?1 AND running = 1",
-                [automation_id],
+                rusqlite::params![automation_id, now],
             )
             .map_err(|source| MigrationError::Io {
                 path: "automations".into(),
@@ -560,8 +566,8 @@ mod tests {
     fn release_reports_whether_a_claim_existed() {
         let conn = memory();
         insert(&conn, "held", Some(1), None, 1, 1, None);
-        assert!(AutomationStore::release_claim(&conn, "held").expect("release"));
-        assert!(!AutomationStore::release_claim(&conn, "held").expect("release again"));
+        assert!(AutomationStore::release_claim(&conn, "held", 7).expect("release"));
+        assert!(!AutomationStore::release_claim(&conn, "held", 7).expect("release again"));
     }
 
     #[test]

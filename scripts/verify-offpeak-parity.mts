@@ -22,7 +22,6 @@ import { join } from "node:path";
 
 import { TaskIndexStore } from "../packages/rust/src/taskIndex.ts";
 import { OffPeakRepository } from "../packages/rust/src/offPeakRepository.ts";
-import { tasksDatabaseMigrationsForNative } from "../packages/services/src/session/tasksDatabase/migrations.ts";
 
 const STALE = 10 * 60_000;
 
@@ -48,7 +47,7 @@ const dbPath = join(workspace, "tasks-index.sqlite");
 
 const store = new TaskIndexStore({ path: dbPath });
 // The same migration list the JavaScript ran, with the checksum inputs already stringified.
-await store.ensureReady(tasksDatabaseMigrationsForNative(), Date.now());
+await store.ensureReady(Date.now());
 // One native handle, one connection, one ledger: the repository wraps the same store.
 const repo = new OffPeakRepository(store);
 

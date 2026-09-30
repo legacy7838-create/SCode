@@ -13,6 +13,7 @@
 //! nothing else may start until the file itself is proven readable.
 
 pub mod automation;
+pub mod automation_repo;
 pub mod napi;
 pub mod grouped;
 pub mod grouped_view;
@@ -22,6 +23,8 @@ pub mod test_support;
 
 pub mod meta;
 pub mod migrate;
+pub mod provider_selection;
+pub mod schema;
 pub mod offpeak;
 pub mod read;
 pub mod task_read;
@@ -30,6 +33,13 @@ pub mod task_write;
 pub use napi::TaskIndexStore;
 pub use automation::{
     build_run_id, resolve_scheduled_at, AutomationRow, AutomationStore, CLAIM_STALE_MS,
+};
+pub use automation_repo::{
+    assert_valid_mode, compute_retry_at, is_valid_task_mode, normalize_mode, Automation,
+    AutomationError, AutomationRecord, AutomationRepository, AutomationRun, AutomationRunRecord,
+    BotDeliveryTarget, ClaimedManualAutomationRun, AUTOMATION_CREATE_LIMIT,
+    AUTOMATION_CREATE_LIMIT_ERROR_CODE, DISPATCH_MAX_ATTEMPTS, DISPATCH_RETRY_BASE_MS,
+    DISPATCH_RETRY_CAP_MS, TASK_MODES,
 };
 pub use read::{
     build_search_snippets, list_tasks, list_tasks_with_snippets, normalize_search_snippet_text,
@@ -46,8 +56,8 @@ pub use offpeak::{
     model_selection_is_valid, OffPeakRow, OffPeakStore, OFF_PEAK_CLAIM_STALE_MS, TERMINAL_STATUSES,
 };
 pub use migrate::{
-    baseline_time_applied, is_valid_migration_id, read_ledger, run_migrations, Migration,
-    MigrationError, LEDGER_DDL,
+    baseline_id, baseline_time_applied, is_valid_migration_id, read_ledger, run_migrations,
+    Migration, MigrationError, LEDGER_DDL,
 };
 
 /// The pragmas the TypeScript sets on open (`taskIndexRepo.ts:527-530`).

@@ -60,7 +60,7 @@ coordination:
 | Native OS commands | `commands/native.rs` (523 lines) | `pick_directory`, `pick_file`, `save_file`, `open_external` (scheme allowlist), `open_in_file_manager`, `show_notification` |
 | Window surface | `commands/surface.rs` | `set/get_desktop_zoom` (main-side registry), `set_window_title`, `get/set_window_bounds` (atomic JSON persistence) |
 | Tray | `tray.rs` | `build_tray` — icon, Show/Quit menu, left-click reveal, quit path |
-| Scheduler store | `scheduler_store.rs` (1580 lines) | `rusqlite` claim/settle with `BEGIN IMMEDIATE`, schema transcribed verbatim from `schema-v1.ts:81-145` |
+| Scheduler store | `scheduler_store.rs` (1580 lines) | `rusqlite` claim/settle with `BEGIN IMMEDIATE`, schema transcribed verbatim from `AUTOMATION_SCHEMA` in `packages/rust/crates/zcode-task-index/src/schema.rs` |
 | TS adapter + renderer | `platform/*.ts`, `main.tsx` | Typed wrappers for all 11 commands plus a panel that exercises each one |
 
 Also fixed in this pass:

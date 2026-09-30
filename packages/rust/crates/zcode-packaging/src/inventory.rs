@@ -233,11 +233,11 @@ pub fn read_subpath_exports(
             path: wrapper.clone(),
             source,
         })?;
-        let binary_name = find_load_native_call(&source).ok_or_else(|| {
-            InventoryError::WrapperWithoutLoadNative {
+        let binary_name = find_load_native_call(&source)
+            .or_else(|| find_delegated_load_native(&wrapper, 4))
+            .ok_or_else(|| InventoryError::WrapperWithoutLoadNative {
                 wrapper: wrapper.clone(),
-            }
-        })?;
+            })?;
         // Store the repo-relative form so plans and errors name a path a reader can open.
         let wrapper_display = wrapper
             .strip_prefix(repo_root)
@@ -252,6 +252,61 @@ pub fn read_subpath_exports(
     }
     out.sort_by(|a, b| a.subpath.cmp(&b.subpath));
     Ok(out)
+}
+
+/// Follows a companion wrapper's relative imports to the module that owns the `loadNative`
+/// call.
+///
+/// `offPeakRepository.ts`, `taskReadRepository.ts`, `taskWriteRepository.ts` and
+/// `taskGroupRepository.ts` do not call `loadNative` themselves: they share the one native
+/// object `taskIndex.ts` opens, through the `NATIVE_STORE` symbol. That is the single
+/// connection / one migration ledger arrangement spec §4.4 chose, so those subpaths still
+/// belong to the `zcode-task-index` crate — and the inventory has to say so rather than
+/// failing the build.
+fn find_delegated_load_native(wrapper: &Path, depth: usize) -> Option<String> {
+    if depth == 0 {
+        return None;
+    }
+    let source = fs::read_to_string(wrapper).ok()?;
+    if let Some(binary) = find_load_native_call(&source) {
+        return Some(binary);
+    }
+    let directory = wrapper.parent()?;
+    for import in relative_imports(&source) {
+        // Source imports are written with the emitted `.js` extension; the file on disk is
+        // `.ts`. Try the literal target first, then the source forms.
+        let base = directory.join(&import);
+        let mut candidates = vec![base.clone()];
+        if base.extension().and_then(|ext| ext.to_str()) == Some("js") {
+            if let Some(stem) = base.file_stem().and_then(|stem| stem.to_str()) {
+                candidates.push(directory.join(format!("{stem}.ts")));
+                candidates.push(directory.join(format!("{stem}.tsx")));
+            }
+        }
+        for candidate in candidates {
+            if candidate.is_file() {
+                if let Some(binary) = find_delegated_load_native(&candidate, depth - 1) {
+                    return Some(binary);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// The `./x.js`-style module specifiers a TypeScript file imports.
+fn relative_imports(source: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for (index, _) in source.match_indices("from \"") {
+        let rest = &source[index + "from \"".len()..];
+        if let Some(end) = rest.find('"') {
+            let specifier = &rest[..end];
+            if specifier.starts_with("./") || specifier.starts_with("../") {
+                out.push(specifier.to_string());
+            }
+        }
+    }
+    out
 }
 
 /// Extracts the first `loadNative<…>("name")` / `loadNative("name")` literal.
@@ -677,6 +732,51 @@ mod tests {
     fn a_non_zcode_argument_is_not_accepted() {
         // Guards against silently classifying a wrapper by an unrelated string.
         assert_eq!(find_load_native_call(r#"loadNative("some-lib")"#), None);
+    }
+
+    #[test]
+    fn relative_imports_are_extracted() {
+        let imports = relative_imports(
+            r#"import { a } from "./taskIndex.js";
+import type { B } from "../shared/x.js";
+import { c } from "@zcode/shared";"#,
+        );
+        assert_eq!(
+            imports,
+            vec!["./taskIndex.js".to_string(), "../shared/x.js".to_string()]
+        );
+    }
+
+    /// The shared-store facades do not call `loadNative` themselves; the inventory has to follow
+    /// their relative import to the module that owns the call, or `build:native` fails on a
+    /// repository whose only "error" is the one-connection design.
+    #[test]
+    fn a_companion_wrapper_inherits_the_binary_from_its_relative_import() {
+        let dir = std::env::temp_dir().join(format!(
+            "zcode-inventory-delegation-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("temp dir");
+        let owner = dir.join("taskIndex.ts");
+        fs::write(
+            &owner,
+            r#"const m = loadNative<NativeTaskIndexModule>("zcode-task-index");"#,
+        )
+        .expect("owner wrapper");
+        let companion = dir.join("offPeakRepository.ts");
+        fs::write(&companion, r#"import { NATIVE_STORE } from "./taskIndex.js";"#)
+            .expect("companion wrapper");
+
+        assert_eq!(
+            find_delegated_load_native(&companion, 4).as_deref(),
+            Some("zcode-task-index")
+        );
+        // A cycle must terminate rather than recurse forever.
+        fs::write(&companion, r#"import { NATIVE_STORE } from "./offPeakRepository.js";"#)
+            .expect("self import");
+        assert_eq!(find_delegated_load_native(&companion, 4), None);
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

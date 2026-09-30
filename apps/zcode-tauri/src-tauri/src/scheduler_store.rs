@@ -78,7 +78,7 @@ pub const CLAIM_STALE_MS: i64 = 10 * 60_000;
 pub const MISFIRE_SKIP_REASON: &str = "computer_asleep_or_app_not_running";
 
 /// Schema for `automations` and `automation_runs`, transcribed verbatim from
-/// `packages/services/src/session/tasksDatabase/schema-v1.ts:81-145`.
+/// `AUTOMATION_SCHEMA` in `packages/rust/crates/zcode-task-index/src/schema.rs`.
 /// Every statement is `IF NOT EXISTS`, so re-running it is a no-op.
 const SCHEMA_SQL: &str = "
 CREATE TABLE IF NOT EXISTS automations (
@@ -931,8 +931,8 @@ mod tests {
     }
 
     /// Manual default: the schema's `recurring` default is `1`
-    /// (`schema-v1.ts:97`), so a plain `#[derive(Default)]` would seed
-    /// one-shots instead of the usual recurring automations.
+    /// (`AUTOMATION_SCHEMA` in the `zcode-task-index` crate), so a plain `#[derive(Default)]`
+    /// would seed one-shots instead of the usual recurring automations.
     impl Default for Seed {
         fn default() -> Self {
             Self {

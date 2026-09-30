@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import {
@@ -64,32 +63,24 @@ test("current Project Memory catalog and files remain readable", async () => {
   }
 });
 
-test("opening the task index leaves retired ACP IDs and user rows untouched", async () => {
+test("reopening the task index preserves an existing task row", async () => {
   const dir = await mkdtemp(join(tmpdir(), "zcode-acp-index-"));
   const path = join(dir, "tasks.sqlite");
   const repo = new TaskIndexRepo(path);
   try {
     await repo.syncTaskMeta({ meta });
     repo.close();
-    const database = new DatabaseSync(path);
-    try {
-      database.exec("ALTER TABLE tasks ADD COLUMN acp_session_id TEXT");
-      database
-        .prepare("UPDATE tasks SET acp_session_id = ? WHERE task_id = ?")
-        .run("session-example", meta.taskId);
-    } finally {
-      database.close();
-    }
+    // The retired-ACP tolerance — a foreign `acp_session_id` column and its rows surviving a
+    // reopen — is a schema/migration guarantee owned by `zcode-task-index` and asserted there
+    // (`schema::tests::a_foreign_column_and_its_rows_survive_a_reopen`). This test covers the
+    // repository wrapper across the same reopen, without a second SQL implementation in services.
     await repo.ensureReady();
-    repo.close();
-    const reopened = new DatabaseSync(path);
-    try {
-      const row = reopened.prepare("SELECT task_id, acp_session_id FROM tasks").get();
-      assert.equal(row?.task_id, meta.taskId);
-      assert.equal(row?.acp_session_id, "session-example");
-    } finally {
-      reopened.close();
-    }
+    const reopened = await repo.getTaskMeta({
+      workspacePath: meta.workspacePath,
+      taskId: meta.taskId,
+    });
+    assert.equal(reopened?.taskId, meta.taskId);
+    assert.equal(reopened?.title, meta.title);
   } finally {
     repo.close();
     await rm(dir, { recursive: true, force: true });

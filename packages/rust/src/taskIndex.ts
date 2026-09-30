@@ -15,24 +15,20 @@
  * with a store that silently behaves differently. A task index that half-works is worse than
  * one that refuses to open.
  */
+import { fromNativeError } from "./nativeError.js";
 import { loadNative } from "./loader.js";
 
-/** One migration, as the store's ledger defines it. */
+/**
+ * One migration, as the store's ledger defines it.
+ *
+ * The ledger checksum is `sha256(JSON.stringify(checksumInput))` — not `sha256(trimmed SQL)` as
+ * the session store's runner does. The crate owns the list now (spec §28), so this shape is only
+ * used by tests that build a ledger by hand.
+ */
 export interface TaskIndexMigration {
   id: string;
   sql: string;
-  /**
-   * `JSON.stringify(checksumInput)`, **already serialised**.
-   *
-   * The ledger checksum is `sha256(JSON.stringify(checksumInput))` — not
-   * `sha256(trimmed SQL)` as the session store's runner does. Verified against the real
-   * ledger: all three declared checksums reproduce exactly.
-   *
-   * It is passed as a string rather than an array so the serialisation happens once, in the
-   * language whose `JSON.stringify` defined the format. Re-serialising in Rust would require
-   * reproducing nested arrays, quote and backslash escaping, and raw non-ASCII exactly, and
-   * being wrong costs every existing install a `checksum_mismatch` on first launch.
-   */
+  /** The already-serialised `JSON.stringify(checksumInput)`. */
   checksumInputJson: string;
 }
 
@@ -140,19 +136,6 @@ export interface OffPeakRow {
   modelSelection?: string | null;
 }
 
-export interface AutomationRow {
-  automationId: string;
-  workspaceKey: string;
-  nextRunAt?: number | null;
-  retryAt?: number | null;
-  endAt?: number | null;
-  enabled: number;
-  running: number;
-  claimedAt?: number | null;
-  scheduledRunCount: number;
-  runCount: number;
-}
-
 /**
  * The module `loadNative` returns.
  *
@@ -173,8 +156,36 @@ interface NativeTaskIndexModule {
  */
 export const NATIVE_STORE: unique symbol = Symbol("zcode.taskIndex.nativeStore");
 
+/** The `DatabaseMigrationFacts` shape, matching `@zcode/shared`. */
+export interface MigrationFacts {
+  kind: "none" | "initialize" | "upgrade";
+  executedCount: number;
+  committedCount: number;
+  lastAppliedMigrationId?: string | null;
+}
+
+/** A startup phase; mirrors the deleted `TasksStoragePhase`. */
+export type StoragePhase =
+  | "checking"
+  | "waiting_for_lock"
+  | "migrating"
+  | "maintaining"
+  | "committing"
+  | "ready";
+
+/** One progress event, forwarded to the desktop worker's `postMessage`. */
+export interface StorageProgress {
+  phase: StoragePhase;
+  migration: MigrationFacts;
+}
+
 export interface NativeStore {
-  ensureReady(migrationsJson: string, nowMs: number): Promise<void>;
+  ensureReady(nowMs: number): Promise<void>;
+  prepareStorage(
+    nowMs: number,
+    lockWaitMs: number | null,
+    onProgress: (eventJson: string) => void,
+  ): Promise<MigrationFacts>;
   writeBatch(batchJson: string): Promise<number>;
   listTasks(queryJson: string): Promise<string>;
   offpeakClaimDue(nowMs: number): Promise<string>;
@@ -220,10 +231,41 @@ export interface NativeStore {
    */
   offpeakHasActiveBoundTask(workspaceKey: string, sessionId: string): Promise<boolean>;
   offpeakGet(offPeakTaskId: string): Promise<string | null>;
+
+  // The automation repository — every method of `automationRepo.ts`. Each request is a JSON
+  // body, except the two claim passes, which take the current time. `automationGetRun` takes
+  // the id directly for symmetry with `getRun`.
+  automationCreate(requestJson: string): Promise<string>;
+  automationList(requestJson: string): Promise<string>;
+  automationGet(requestJson: string): Promise<string>;
+  automationGetModelSelectionForDispatch(requestJson: string): Promise<string>;
+  automationGetBotDeliveryTarget(requestJson: string): Promise<string>;
+  automationHasTaskBinding(requestJson: string): Promise<boolean>;
+  automationGetScheduledRunCount(requestJson: string): Promise<number | null>;
+  automationUpdate(requestJson: string): Promise<string>;
+  automationDelete(requestJson: string): Promise<boolean>;
+  automationSetEnabled(requestJson: string): Promise<void>;
+  automationRestart(requestJson: string): Promise<void>;
+  automationRunNow(requestJson: string): Promise<string>;
   automationClaimDue(nowMs: number): Promise<string>;
-  automationReleaseClaim(automationId: string): Promise<boolean>;
-  automationHasTaskBinding(automationId: string): Promise<boolean>;
-  automationScheduledRunCount(automationId: string): Promise<number | null>;
+  automationClaimManualRuns(nowMs: number): Promise<string>;
+  automationMarkDispatched(requestJson: string): Promise<void>;
+  automationMarkDispatchFailed(requestJson: string): Promise<void>;
+  automationReleaseClaim(requestJson: string): Promise<boolean>;
+  automationReleaseManualClaim(requestJson: string): Promise<void>;
+  automationTouchManualClaim(requestJson: string): Promise<void>;
+  automationSkipAndReschedule(requestJson: string): Promise<void>;
+  automationEnsureRunClaimed(requestJson: string): Promise<void>;
+  automationUpsertRunClaimed(requestJson: string): Promise<void>;
+  automationFixRunModelSelection(requestJson: string): Promise<string>;
+  automationMarkRunDispatch(requestJson: string): Promise<void>;
+  automationMarkManualRunDispatched(requestJson: string): Promise<boolean>;
+  automationMarkRunOutcome(requestJson: string): Promise<void>;
+  automationRecordSkippedRun(requestJson: string): Promise<void>;
+  automationListRuns(requestJson: string): Promise<string>;
+  automationGetRun(runId: string): Promise<string>;
+  automationDeleteRun(requestJson: string): Promise<void>;
+  automationPruneRuns(requestJson: string): Promise<number>;
 
   // The off-peak repository. napi exports method names in camelCase regardless of the Rust
   // spelling, so these are the camelCase forms of the `offpeak_*` methods in `src/napi.rs`.
@@ -273,12 +315,41 @@ export class TaskIndexStore {
     return this.#store;
   }
 
-  /** Opens the file, applies the pragmas and runs the migrations. */
-  async ensureReady(
-    migrations: readonly TaskIndexMigration[],
+  /**
+   * Opens the file, applies the pragmas and runs the migrations.
+   *
+   * The migration list is the **crate's**, not the caller's: the schema, the three frozen
+   * payloads and the checksum inputs live in `crate::schema`. The JavaScript that used to build
+   * them — and serialise each `JSON.stringify(checksumInput)` — is deleted (spec §28).
+   */
+  async ensureReady(now: number = Date.now()): Promise<void> {
+    await this.#store.ensureReady(now).catch((error: unknown) => {
+      throw fromNativeError(error);
+    });
+  }
+
+  /**
+   * The startup orchestrator: pragmas, the busy-lock wait, the migrations and the three
+   * post-migration repairs, with progress. It **closes** the connection before resolving, so the
+   * window that opens next is not blocked by a write handle.
+   */
+  async prepareStorage(
     now: number = Date.now(),
-  ): Promise<void> {
-    await this.#store.ensureReady(JSON.stringify(migrations), now);
+    lockWaitMs: number | null = null,
+    onProgress?: (event: StorageProgress) => void,
+  ): Promise<MigrationFacts> {
+    const facts = await this.#store
+      .prepareStorage(now, lockWaitMs, (eventJson) => {
+        onProgress?.(JSON.parse(eventJson) as StorageProgress);
+      })
+      .catch((error: unknown) => {
+        throw fromNativeError(error);
+      });
+    // `ready` is emitted here, synchronously before this promise resolves. In Rust it would be a
+    // worker-thread `ThreadsafeFunction` call queued behind this very microtask, so the desktop
+    // worker could post `done` before the last progress frame. The phase belongs to the caller.
+    onProgress?.({ phase: "ready", migration: facts });
+    return facts;
   }
 
   /** Applies a batch in one transaction. Resolves to the number of task rows written. */
@@ -312,28 +383,6 @@ export class TaskIndexStore {
   async offpeakGet(offPeakTaskId: string): Promise<OffPeakRow | null> {
     const raw = await this.#store.offpeakGet(offPeakTaskId);
     return raw ? (JSON.parse(raw) as OffPeakRow) : null;
-  }
-
-  /**
-   * The automation claim. A row in backoff becomes due on `retry_at`, not on `next_run_at` —
-   * consuming `next_run_at` too would bypass the backoff and retry every tick, and would move
-   * `scheduled_at`, so the retry would stop reusing its run id.
-   */
-  async automationClaimDue(now: number = Date.now()): Promise<AutomationRow[]> {
-    return JSON.parse(await this.#store.automationClaimDue(now)) as AutomationRow[];
-  }
-
-  async automationReleaseClaim(automationId: string): Promise<boolean> {
-    return this.#store.automationReleaseClaim(automationId);
-  }
-
-  /** A deleted automation reads as `false`, not as a storage fault. */
-  async automationHasTaskBinding(automationId: string): Promise<boolean> {
-    return this.#store.automationHasTaskBinding(automationId);
-  }
-
-  async automationScheduledRunCount(automationId: string): Promise<number | null> {
-    return this.#store.automationScheduledRunCount(automationId);
   }
 
   /** Marks the store closed and releases the connection. Safe to call twice. */

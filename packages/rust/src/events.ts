@@ -17,6 +17,7 @@
  *
  * This module is contract-free by design (typing lives in adapters).
  */
+import { fromNativeError } from "./nativeError.js";
 import { loadNative } from "./loader.js";
 
 export interface NativeStoreOp {
@@ -59,41 +60,7 @@ export function loadEvents(): NativeEventsModule {
   return loadNative<NativeEventsModule>("zcode-events");
 }
 
-interface NativeErrorEnvelope {
-  z?: number;
-  m?: string;
-  k?: string;
-  c?: number;
-  i?: string;
-  d?: string;
-}
-
-/**
- * Native errors arrive with a JSON envelope message carrying `kind`/`errcode`/
- * `migrationId`/`dbPath` so the legacy classification
- * (`@zcode/shared` `classifyDatabaseStartupError` / `databaseStartupErrorDetails`)
- * and `isSqliteBusyError` keep working unchanged. Rebuild a readable Error with
- * those properties attached; the raw native error stays as `cause`.
- */
-export function fromNativeError(error: unknown): Error {
-  if (error instanceof Error) {
-    try {
-      const parsed = JSON.parse(error.message) as NativeErrorEnvelope;
-      if (parsed && parsed.z === 1 && typeof parsed.m === "string") {
-        const rebuilt = new Error(parsed.m, { cause: error });
-        if (typeof parsed.k === "string") Object.assign(rebuilt, { kind: parsed.k });
-        if (typeof parsed.c === "number") Object.assign(rebuilt, { errcode: parsed.c });
-        if (typeof parsed.i === "string") Object.assign(rebuilt, { migrationId: parsed.i });
-        if (typeof parsed.d === "string") Object.assign(rebuilt, { dbPath: parsed.d });
-        return rebuilt;
-      }
-    } catch {
-      // Not an envelope (plain JS error) — fall through.
-    }
-    return error;
-  }
-  return new Error(String(error));
-}
+export { fromNativeError };
 
 function storeClosedError(): Error {
   return Object.assign(

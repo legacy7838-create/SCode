@@ -15,6 +15,7 @@
     "./task-read-repository": "./src/taskReadRepository.ts",
     "./task-group-repository": "./src/taskGroupRepository.ts",
     "./task-write-repository": "./src/taskWriteRepository.ts",
+    "./automation-repository": "./src/automationRepository.ts",
     "./mcp-config": "./src/mcpConfig.ts",
     "./events": "./src/events.ts",
     "./event-coalescer": "./src/eventCoalescer.ts",

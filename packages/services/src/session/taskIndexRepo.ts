@@ -64,7 +64,6 @@ export interface TaskIndexStatePatch {
 }
 
 import { getTasksIndexDatabasePath } from "#src/paths.js";
-import { tasksDatabaseMigrationsForNative } from "#src/session/tasksDatabase/migrations.js";
 import { TaskIndexStore } from "@zcode/rust/task-index";
 import { TaskGroupRepository, DEFAULT_TASK_GROUP_COLOR } from "@zcode/rust/task-group-repository";
 import { TaskReadRepository } from "@zcode/rust/task-read-repository";
@@ -134,11 +133,11 @@ export class TaskIndexRepo {
 
   async #initialize(path: string): Promise<void> {
     await mkdir(dirname(path), { recursive: true });
-    // The migrations are **data**: the ledger checksum is `sha256(JSON.stringify(checksumInput))`,
-    // so the serialisation happens once, in the language whose `JSON.stringify` defined the
-    // format, and the crate only hashes the bytes it is given.
+    // The migrations are the **crate's**: the ledger checksum is
+    // `sha256(JSON.stringify(checksumInput))`, and the schema, the three frozen payloads and the
+    // checksum inputs live in `crate::schema` (spec §28). `ensureReady` takes no migration list.
     const store = new TaskIndexStore({ path, busyTimeoutMs: this.#startupBusyTimeoutMs });
-    await store.ensureReady(tasksDatabaseMigrationsForNative(), Date.now());
+    await store.ensureReady(Date.now());
     this.#store = store;
     this.#reads = new TaskReadRepository(store);
     this.#writes = new TaskWriteRepository(store);

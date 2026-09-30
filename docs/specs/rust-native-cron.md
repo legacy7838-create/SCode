@@ -54,7 +54,8 @@ fields: no I/O, no clock read except the explicit `from` parameter, no process, 
    coverage. Porting it into a crate with `cargo test` is the cheapest available way to get
    that coverage.
 3. **The consumer is already half-migrated.** `apps/zcode-tauri/src-tauri/src/scheduler_store.rs`
-   has the automation schema transcribed verbatim from `schema-v1.ts:81-145`, and
+   has the automation schema transcribed verbatim from `AUTOMATION_SCHEMA`
+   (`packages/rust/crates/zcode-task-index/src/schema.rs`), and
    `supervisor/scheduler.rs` implements the 20 s poll, single-flight tick, 5 min misfire grace,
    one-shot finalisation and the stable `${automationId}:${scheduledAt}` run id — all
    unit-tested. The schedule computation is the single remaining TypeScript dependency in that

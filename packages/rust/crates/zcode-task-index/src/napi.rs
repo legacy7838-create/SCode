@@ -16,27 +16,43 @@
 //! `AsyncTask` and runs on the libuv threadpool. The two exceptions are the constructor and
 //! `close`, which do no IO.
 //!
-//! # Migrations arrive as data, not as code
+//! # Migrations are the crate's, not the caller's
 //!
-//! `open` takes the migration list as JSON, including each migration's **already-stringified**
-//! `JSON.stringify(checksumInput)`. That is deliberate and was verified against the real
-//! ledger: the checksum is `sha256(JSON.stringify(checksumInput))`, so the TypeScript side
-//! serialises once, in the language whose `JSON.stringify` defined the format, and the crate
-//! hashes bytes. Re-serialising here would require reproducing `JSON.stringify` exactly.
+//! `ensure_ready` takes **no migration argument**: the schema, the ledger and the three frozen
+//! payloads are `crate::schema` (spec §28). The JavaScript that used to build the list — and
+//! serialise each `JSON.stringify(checksumInput)` — is deleted; the crate reproduces the three
+//! real ledger checksums exactly, pinned by `schema::tests` and `tests/real_database.rs`.
+//!
+//! `prepare_storage` is the startup orchestrator: pragmas, the busy-lock wait, the migrations
+//! and the three post-migration repairs, reporting progress through a `ThreadsafeFunction` so a
+//! libuv worker thread can emit `waiting_for_lock` / `migrating` / `committing` without touching
+//! the event loop.
 
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use napi::bindgen_prelude::*;
+use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
 use serde::{Deserialize, Serialize};
 
-use crate::automation::AutomationStore;
+use crate::automation_repo::{
+    AutomationError, AutomationRepository, AutomationListRequest, AutomationScopeRequest,
+    CreateAutomationRequest, DeleteRunRequest, DispatchSelectionRequest, EnsureRunClaimedRequest,
+    FixRunModelSelectionRequest, HasTaskBindingRequest, ListRunsRequest,
+    MarkDispatchFailedRequest, MarkDispatchedRequest, MarkManualRunDispatchedRequest,
+    MarkRunDispatchRequest, MarkRunOutcomeRequest, PruneRunsRequest, RecordSkippedRunRequest,
+    ReleaseClaimRequest, ReleaseManualClaimRequest, RestartRequest, RunNowRequest,
+    SetEnabledRequest, SkipAndRescheduleRequest, TouchManualClaimRequest, UpdateAutomationRequest,
+    UpsertRunClaimedRequest,
+};
 pub use crate::grouped::{TaskWrite, ViewNodeOrder, WriteBatch};
 pub use crate::offpeak::{
     CreateParams, EditablePatch, ModelSelection, SchedulingSnapshot,
 };
 use crate::offpeak::Task as OffPeakTask;
-use crate::migrate::{run_migrations, Migration};
+use crate::migrate::{baseline_id, run_migrations, MigrationError};
+use crate::schema::{build_migrations, inspect_kind};
 use crate::offpeak::OffPeakStore;
 use crate::read::{list_tasks_with_snippets, ListQuery};
 use crate::StoreError;
@@ -62,24 +78,27 @@ pub struct OpenOptions {
 
 const DEFAULT_BUSY_TIMEOUT_MS: i64 = 5_000;
 
-/// One migration, as supplied by the TypeScript side.
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct MigrationJson {
-    id: String,
-    sql: String,
-    /// `JSON.stringify(checksumInput)`, already serialised. See the module docs.
-    checksum_input_json: String,
+/// The `DatabaseMigrationFacts` a progress callback receives. A `#[napi(object)]` so the
+/// TypeScript side gets a plain object, matching what `worker.postMessage` forwarded before.
+#[napi(object)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MigrationFacts {
+    /// `"none" | "initialize" | "upgrade"`.
+    pub kind: String,
+    pub executed_count: i64,
+    pub committed_count: i64,
+    pub last_applied_migration_id: Option<String>,
 }
 
-impl From<MigrationJson> for Migration {
-    fn from(value: MigrationJson) -> Self {
-        Migration {
-            id: value.id,
-            sql: value.sql,
-            checksum_input_json: value.checksum_input_json,
-        }
-    }
+/// One progress event: the phase plus the facts at that time.
+#[napi(object)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StorageProgress {
+    /// `"checking" | "waiting_for_lock" | "migrating" | "maintaining" | "committing" | "ready"`.
+    pub phase: String,
+    pub migration: MigrationFacts,
 }
 
 /// The store's shared state.
@@ -101,6 +120,119 @@ struct Inner {
 /// constructors are generic over `AsRef<str>` and inference gets ambiguous otherwise.
 fn to_napi_error(message: impl AsRef<str>) -> Error {
     Error::from_reason(message.as_ref())
+}
+
+/// A startup failure with the structured fields the desktop classification reads.
+///
+/// The napi message is a JSON envelope (`{"z":1,...}`) that `@zcode/rust/task-index`'s
+/// `fromNativeError` decodes back into a real `Error` carrying
+/// `kind`/`errcode`/`migrationId`/`startupMigration`. A plain-text message would silently
+/// classify every startup failure as `sql_failed`, because `classifyDatabaseStartupError` reads
+/// `error.kind`, never the message (spec §28).
+#[derive(Debug)]
+struct StartupError {
+    message: String,
+    kind: Option<&'static str>,
+    errcode: Option<i32>,
+    migration_id: Option<String>,
+}
+
+/// The extended SQLite result code, where one exists.
+fn sqlite_code(error: &rusqlite::Error) -> Option<i32> {
+    match error {
+        rusqlite::Error::SqliteFailure(failure, _) => Some(failure.extended_code),
+        _ => None,
+    }
+}
+
+impl StartupError {
+    /// The JSON envelope the napi error carries. Kept separate from [`Self::envelope`] so it can
+    /// be asserted in a unit test without a Node runtime.
+    fn envelope_json(&self, startup_migration: Option<&MigrationFacts>) -> String {
+        let mut value = serde_json::Map::new();
+        value.insert("z".to_string(), serde_json::Value::from(1));
+        value.insert("m".to_string(), serde_json::Value::from(self.message.clone()));
+        if let Some(kind) = self.kind {
+            value.insert("k".to_string(), serde_json::Value::from(kind));
+        }
+        if let Some(errcode) = self.errcode {
+            value.insert("c".to_string(), serde_json::Value::from(errcode));
+        }
+        if let Some(id) = &self.migration_id {
+            value.insert("i".to_string(), serde_json::Value::from(id.clone()));
+        }
+        if let Some(facts) = startup_migration {
+            value.insert(
+                "sm".to_string(),
+                serde_json::to_value(facts).unwrap_or(serde_json::Value::Null),
+            );
+        }
+        serde_json::Value::Object(value).to_string()
+    }
+
+    /// Renders the error as the napi envelope. `startup_migration` is the facts at the moment of
+    /// failure, so `tasksStorageWorker.ts` can forward the migration state the wrapper lost.
+    fn envelope(&self, startup_migration: Option<&MigrationFacts>) -> Error {
+        Error::new(
+            napi::Status::GenericFailure,
+            self.envelope_json(startup_migration),
+        )
+    }
+}
+
+impl From<StoreError> for StartupError {
+    fn from(error: StoreError) -> Self {
+        match error {
+            StoreError::Open { path, source } => StartupError {
+                message: format!("cannot open the task index at {path}: {source}"),
+                kind: Some("open_failed"),
+                errcode: sqlite_code(&source),
+                migration_id: None,
+            },
+            StoreError::Query { context, source } => StartupError {
+                message: format!("{context}: {source}"),
+                kind: None,
+                errcode: sqlite_code(&source),
+                migration_id: None,
+            },
+            StoreError::Migration(MigrationError::ChecksumMismatch {
+                id,
+                applied,
+                computed,
+            }) => StartupError {
+                message: format!(
+                    "migration {id:?} was already applied with checksum {applied} but this build computes {computed}; the database was written by a different version"
+                ),
+                kind: Some("checksum_mismatch"),
+                errcode: None,
+                migration_id: Some(id),
+            },
+            StoreError::Migration(MigrationError::Sql { context, source }) => StartupError {
+                message: format!("{context}: {source}"),
+                kind: None,
+                errcode: sqlite_code(&source),
+                migration_id: None,
+            },
+            StoreError::Migration(MigrationError::Io { path, source }) => StartupError {
+                message: format!("cannot access {path}: {source}"),
+                kind: None,
+                errcode: sqlite_code(&source),
+                migration_id: None,
+            },
+            StoreError::Migration(other) => StartupError {
+                message: other.to_string(),
+                kind: None,
+                errcode: None,
+                migration_id: None,
+            },
+            StoreError::Closed => StartupError {
+                message: "the task index store is closed".to_string(),
+                kind: None,
+                errcode: None,
+                migration_id: None,
+            },
+        }
+    }
 }
 
 /// The task index store.
@@ -133,18 +265,36 @@ impl TaskIndexStore {
         }
     }
 
-    /// Opens the file, applies the pragmas and runs the migrations. The one IO-bearing call
-    /// the caller makes explicitly.
+    /// Opens the file, applies the pragmas and runs the crate's own migrations. The one
+    /// IO-bearing call the caller makes explicitly.
     #[napi]
-    pub fn ensure_ready(
-        &self,
-        migrations_json: String,
-        now_ms: f64,
-    ) -> AsyncTask<EnsureReadyTask> {
+    pub fn ensure_ready(&self, now_ms: f64) -> AsyncTask<EnsureReadyTask> {
         AsyncTask::new(EnsureReadyTask {
             inner: std::sync::Arc::clone(&self.inner),
-            migrations_json,
             now_ms: now_ms as i64,
+            lock_wait_ms: None,
+        })
+    }
+
+    /// The startup orchestrator (`prepareTasksIndexStorage`).
+    ///
+    /// Opens the file, applies the pragmas, waits asynchronously for the write lock
+    /// (`lock_wait_ms`, default 60 minutes), runs the migrations inside one `BEGIN IMMEDIATE`,
+    /// then applies the three post-migration repairs and closes. Progress is reported through
+    /// `on_progress` as `{ phase, kind, lastAppliedMigrationId, executedCount, committedCount }`,
+    /// matching `DatabaseMigrationFacts`.
+    #[napi(ts_return_type = "Promise<object>")]
+    pub fn prepare_storage(
+        &self,
+        now_ms: f64,
+        lock_wait_ms: Option<f64>,
+        on_progress: ThreadsafeFunction<String, (), String, napi::Status, false>,
+    ) -> AsyncTask<PrepareStorageTask> {
+        AsyncTask::new(PrepareStorageTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            now_ms: now_ms as i64,
+            lock_wait_ms: lock_wait_ms.map(|value| value as i64),
+            progress: on_progress,
         })
     }
 
@@ -429,47 +579,489 @@ impl TaskIndexStore {
     }
 
     // -----------------------------------------------------------------------
-    // The automation facade.
+    // The automation repository.
     //
-    // Spec §15. The four task types below already existed with their `compute` implementations —
-    // only the `#[napi]` methods were missing, so they were dead code and the wrapper's
-    // `automationClaimDue`/`automationReleaseClaim`/`automationHasTaskBinding`/
-    // `automationScheduledRunCount` were `undefined` at runtime.
+    // Spec §15, §27. Every method of `automationRepo.ts` is here; the request JSON is decoded
+    // into the typed shapes in `automation_repo.rs`, which own the SQL and the state machine.
     // -----------------------------------------------------------------------
 
-    /// `claimDue` — automations whose `next_run_at`/`retry_at` has arrived, with the backoff rule.
+    /// `create` — the count guard and the insert are one transaction.
     #[napi(ts_return_type = "Promise<string>")]
-    pub fn automation_claim_due(&self, now_ms: i64) -> AsyncTask<AutomationClaimDueTask> {
-        AsyncTask::new(AutomationClaimDueTask {
+    pub fn automation_create(&self, request_json: String) -> AsyncTask<AutomationJsonTask> {
+        AsyncTask::new(AutomationJsonTask {
             inner: std::sync::Arc::clone(&self.inner),
-            now_ms,
+            run: std::sync::Arc::new(move |conn: &mut rusqlite::Connection| {
+                let request: CreateAutomationRequest = decode(&request_json)?;
+                let automation =
+                    AutomationRepository::create(conn, &request).map_err(automation_error)?;
+                json(&automation)
+            }),
         })
     }
 
-    /// `releaseClaim` — clears the claim; `false` when there was nothing to release.
+    /// `list` — the workspace-scoped list, newest first.
+    #[napi(ts_return_type = "Promise<string>")]
+    pub fn automation_list(&self, request_json: String) -> AsyncTask<AutomationJsonTask> {
+        AsyncTask::new(AutomationJsonTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            run: std::sync::Arc::new(move |conn: &mut rusqlite::Connection| {
+                let request: AutomationListRequest = decode(&request_json)?;
+                let automations = AutomationRepository::list(conn, request.workspace_key.as_deref())
+                    .map_err(automation_error)?;
+                json(&automations)
+            }),
+        })
+    }
+
+    /// `get` — one automation, or `null`.
+    #[napi(ts_return_type = "Promise<string>")]
+    pub fn automation_get(&self, request_json: String) -> AsyncTask<AutomationJsonTask> {
+        AsyncTask::new(AutomationJsonTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            run: std::sync::Arc::new(move |conn: &mut rusqlite::Connection| {
+                let request: AutomationScopeRequest = decode(&request_json)?;
+                let automation = AutomationRepository::get(
+                    conn,
+                    &request.automation_id,
+                    request.workspace_key.as_deref(),
+                )
+                .map_err(automation_error)?;
+                json(&automation)
+            }),
+        })
+    }
+
+    /// `getModelSelectionForDispatch` — the three-way decision, never a silent default.
+    #[napi(ts_return_type = "Promise<string>")]
+    pub fn automation_get_model_selection_for_dispatch(
+        &self,
+        request_json: String,
+    ) -> AsyncTask<AutomationJsonTask> {
+        AsyncTask::new(AutomationJsonTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            run: std::sync::Arc::new(move |conn: &mut rusqlite::Connection| {
+                let request: DispatchSelectionRequest = decode(&request_json)?;
+                let selection = AutomationRepository::get_model_selection_for_dispatch(
+                    conn,
+                    &request.automation_id,
+                    &request.workspace_key,
+                )
+                .map_err(automation_error)?;
+                json(&selection)
+            }),
+        })
+    }
+
+    /// `getBotDeliveryTarget` — the internal source, never part of the display model.
+    #[napi(ts_return_type = "Promise<string>")]
+    pub fn automation_get_bot_delivery_target(
+        &self,
+        request_json: String,
+    ) -> AsyncTask<AutomationJsonTask> {
+        AsyncTask::new(AutomationJsonTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            run: std::sync::Arc::new(move |conn: &mut rusqlite::Connection| {
+                let request: AutomationScopeRequest = decode(&request_json)?;
+                let target = AutomationRepository::get_bot_delivery_target(
+                    conn,
+                    &request.automation_id,
+                    request.workspace_key.as_deref(),
+                )
+                .map_err(automation_error)?;
+                json(&target)
+            }),
+        })
+    }
+
+    /// `hasTaskBinding` — the authorization criterion itself, scoped by workspace.
     #[napi(ts_return_type = "Promise<boolean>")]
-    pub fn automation_release_claim(&self, automation_id: String) -> AsyncTask<AutomationReleaseClaimTask> {
-        AsyncTask::new(AutomationReleaseClaimTask {
+    pub fn automation_has_task_binding(&self, request_json: String) -> AsyncTask<AutomationBoolTask> {
+        AsyncTask::new(AutomationBoolTask {
             inner: std::sync::Arc::clone(&self.inner),
-            automation_id,
+            run: std::sync::Arc::new(move |conn: &mut rusqlite::Connection| {
+                let request: HasTaskBindingRequest = decode(&request_json)?;
+                AutomationRepository::has_task_binding(
+                    conn,
+                    &request.workspace_key,
+                    &request.target_task_id,
+                )
+                .map_err(automation_error)
+            }),
         })
     }
 
-    /// `hasTaskBinding` — a deleted automation reads as `false`, not as a storage fault.
-    #[napi(ts_return_type = "Promise<boolean>")]
-    pub fn automation_has_task_binding(&self, automation_id: String) -> AsyncTask<AutomationBindingTask> {
-        AsyncTask::new(AutomationBindingTask {
-            inner: std::sync::Arc::clone(&self.inner),
-            automation_id,
-        })
-    }
-
-    /// `scheduledRunCount` — `null` when the automation is gone.
+    /// `getScheduledRunCount` — `null` when the automation is gone.
     #[napi(ts_return_type = "Promise<number | null>")]
-    pub fn automation_scheduled_run_count(&self, automation_id: String) -> AsyncTask<AutomationRunCountTask> {
-        AsyncTask::new(AutomationRunCountTask {
+    pub fn automation_get_scheduled_run_count(
+        &self,
+        request_json: String,
+    ) -> AsyncTask<AutomationOptNumberTask> {
+        AsyncTask::new(AutomationOptNumberTask {
             inner: std::sync::Arc::clone(&self.inner),
-            automation_id,
+            run: std::sync::Arc::new(move |conn: &mut rusqlite::Connection| {
+                let request: AutomationScopeRequest = decode(&request_json)?;
+                AutomationRepository::scheduled_run_count(
+                    conn,
+                    &request.automation_id,
+                    request.workspace_key.as_deref(),
+                )
+                .map_err(automation_error)
+            }),
+        })
+    }
+
+    /// `update` — the tri-state edit, with `enabled` derived from the lifecycle.
+    #[napi(ts_return_type = "Promise<string>")]
+    pub fn automation_update(&self, request_json: String) -> AsyncTask<AutomationJsonTask> {
+        AsyncTask::new(AutomationJsonTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            run: std::sync::Arc::new(move |conn: &mut rusqlite::Connection| {
+                let request: UpdateAutomationRequest = decode(&request_json)?;
+                let automation =
+                    AutomationRepository::update(conn, &request).map_err(automation_error)?;
+                json(&automation)
+            }),
+        })
+    }
+
+    /// `delete` — `true` when a row was removed.
+    #[napi(ts_return_type = "Promise<boolean>")]
+    pub fn automation_delete(&self, request_json: String) -> AsyncTask<AutomationBoolTask> {
+        AsyncTask::new(AutomationBoolTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            run: std::sync::Arc::new(move |conn: &mut rusqlite::Connection| {
+                let request: AutomationScopeRequest = decode(&request_json)?;
+                AutomationRepository::delete(conn, &request.automation_id, request.workspace_key.as_deref())
+                    .map_err(automation_error)
+            }),
+        })
+    }
+
+    /// `setEnabled` — pause / resume, keeping the schedule.
+    #[napi]
+    pub fn automation_set_enabled(&self, request_json: String) -> AsyncTask<AutomationVoidTask> {
+        AsyncTask::new(AutomationVoidTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            run: std::sync::Arc::new(move |conn: &mut rusqlite::Connection| {
+                let request: SetEnabledRequest = decode(&request_json)?;
+                AutomationRepository::set_enabled(
+                    conn,
+                    &request.automation_id,
+                    request.enabled,
+                    request.workspace_key.as_deref(),
+                    request.now,
+                )
+                .map_err(automation_error)
+            }),
+        })
+    }
+
+    /// `restart` — back to active, counters and retry state cleared.
+    #[napi]
+    pub fn automation_restart(&self, request_json: String) -> AsyncTask<AutomationVoidTask> {
+        AsyncTask::new(AutomationVoidTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            run: std::sync::Arc::new(move |conn: &mut rusqlite::Connection| {
+                let request: RestartRequest = decode(&request_json)?;
+                AutomationRepository::restart(
+                    conn,
+                    &request.automation_id,
+                    request.next_run_at,
+                    request.workspace_key.as_deref(),
+                    request.now,
+                )
+                .map_err(automation_error)
+            }),
+        })
+    }
+
+    /// `runNow` — the manual run, taking the single-flight lock.
+    #[napi(ts_return_type = "Promise<string>")]
+    pub fn automation_run_now(&self, request_json: String) -> AsyncTask<AutomationJsonTask> {
+        AsyncTask::new(AutomationJsonTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            run: std::sync::Arc::new(move |conn: &mut rusqlite::Connection| {
+                let request: RunNowRequest = decode(&request_json)?;
+                let claimed =
+                    AutomationRepository::run_now(conn, &request).map_err(automation_error)?;
+                json(&claimed)
+            }),
+        })
+    }
+
+    /// `claimDue` — the backoff-aware claim, in one transaction.
+    #[napi(ts_return_type = "Promise<string>")]
+    pub fn automation_claim_due(&self, now_ms: i64) -> AsyncTask<AutomationJsonTask> {
+        AsyncTask::new(AutomationJsonTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            run: std::sync::Arc::new(move |conn: &mut rusqlite::Connection| {
+                let claimed =
+                    AutomationRepository::claim_due(conn, now_ms).map_err(automation_error)?;
+                json(&claimed)
+            }),
+        })
+    }
+
+    /// `claimManualRuns` — the manual-run queue.
+    #[napi(ts_return_type = "Promise<string>")]
+    pub fn automation_claim_manual_runs(&self, now_ms: i64) -> AsyncTask<AutomationJsonTask> {
+        AsyncTask::new(AutomationJsonTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            run: std::sync::Arc::new(move |conn: &mut rusqlite::Connection| {
+                let claimed = AutomationRepository::claim_manual_runs(conn, now_ms)
+                    .map_err(automation_error)?;
+                json(&claimed)
+            }),
+        })
+    }
+
+    /// `markDispatched` — the successful-dispatch settlement.
+    #[napi]
+    pub fn automation_mark_dispatched(&self, request_json: String) -> AsyncTask<AutomationVoidTask> {
+        AsyncTask::new(AutomationVoidTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            run: std::sync::Arc::new(move |conn: &mut rusqlite::Connection| {
+                let request: MarkDispatchedRequest = decode(&request_json)?;
+                AutomationRepository::mark_dispatched(conn, &request).map_err(automation_error)
+            }),
+        })
+    }
+
+    /// `markDispatchFailed` — transient backoff and the terminal give-up.
+    #[napi]
+    pub fn automation_mark_dispatch_failed(
+        &self,
+        request_json: String,
+    ) -> AsyncTask<AutomationVoidTask> {
+        AsyncTask::new(AutomationVoidTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            run: std::sync::Arc::new(move |conn: &mut rusqlite::Connection| {
+                let request: MarkDispatchFailedRequest = decode(&request_json)?;
+                AutomationRepository::mark_dispatch_failed(conn, &request).map_err(automation_error)
+            }),
+        })
+    }
+
+    /// `releaseClaim` — clears the claim; `true` when there was one.
+    #[napi(ts_return_type = "Promise<boolean>")]
+    pub fn automation_release_claim(&self, request_json: String) -> AsyncTask<AutomationBoolTask> {
+        AsyncTask::new(AutomationBoolTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            run: std::sync::Arc::new(move |conn: &mut rusqlite::Connection| {
+                let request: ReleaseClaimRequest = decode(&request_json)?;
+                AutomationRepository::release_claim(conn, &request.automation_id, request.now)
+                    .map_err(automation_error)
+            }),
+        })
+    }
+
+    /// `releaseManualClaim` — releases the lock only, leaving the schedule untouched.
+    #[napi]
+    pub fn automation_release_manual_claim(
+        &self,
+        request_json: String,
+    ) -> AsyncTask<AutomationVoidTask> {
+        AsyncTask::new(AutomationVoidTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            run: std::sync::Arc::new(move |conn: &mut rusqlite::Connection| {
+                let request: ReleaseManualClaimRequest = decode(&request_json)?;
+                AutomationRepository::release_manual_claim(conn, &request).map_err(automation_error)
+            }),
+        })
+    }
+
+    /// `touchManualClaim` — renews the lease for a long manual run.
+    #[napi]
+    pub fn automation_touch_manual_claim(
+        &self,
+        request_json: String,
+    ) -> AsyncTask<AutomationVoidTask> {
+        AsyncTask::new(AutomationVoidTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            run: std::sync::Arc::new(move |conn: &mut rusqlite::Connection| {
+                let request: TouchManualClaimRequest = decode(&request_json)?;
+                AutomationRepository::touch_manual_claim(conn, &request).map_err(automation_error)
+            }),
+        })
+    }
+
+    /// `skipAndReschedule` — the missed-fire-window compensation.
+    #[napi]
+    pub fn automation_skip_and_reschedule(
+        &self,
+        request_json: String,
+    ) -> AsyncTask<AutomationVoidTask> {
+        AsyncTask::new(AutomationVoidTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            run: std::sync::Arc::new(move |conn: &mut rusqlite::Connection| {
+                let request: SkipAndRescheduleRequest = decode(&request_json)?;
+                AutomationRepository::skip_and_reschedule(conn, &request).map_err(automation_error)
+            }),
+        })
+    }
+
+    /// `ensureRunClaimed` — the fallback row, without bumping `attempts`.
+    #[napi]
+    pub fn automation_ensure_run_claimed(
+        &self,
+        request_json: String,
+    ) -> AsyncTask<AutomationVoidTask> {
+        AsyncTask::new(AutomationVoidTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            run: std::sync::Arc::new(move |conn: &mut rusqlite::Connection| {
+                let request: EnsureRunClaimedRequest = decode(&request_json)?;
+                AutomationRepository::ensure_run_claimed(conn, &request).map_err(automation_error)
+            }),
+        })
+    }
+
+    /// `upsertRunClaimed` — the claim upsert; a retry reuses its run row.
+    #[napi]
+    pub fn automation_upsert_run_claimed(
+        &self,
+        request_json: String,
+    ) -> AsyncTask<AutomationVoidTask> {
+        AsyncTask::new(AutomationVoidTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            run: std::sync::Arc::new(move |conn: &mut rusqlite::Connection| {
+                let request: UpsertRunClaimedRequest = decode(&request_json)?;
+                AutomationRepository::upsert_run_claimed(conn, &request).map_err(automation_error)
+            }),
+        })
+    }
+
+    /// `fixRunModelSelection` — pins the selection on first submit.
+    #[napi(ts_return_type = "Promise<string>")]
+    pub fn automation_fix_run_model_selection(
+        &self,
+        request_json: String,
+    ) -> AsyncTask<AutomationJsonTask> {
+        AsyncTask::new(AutomationJsonTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            run: std::sync::Arc::new(move |conn: &mut rusqlite::Connection| {
+                let request: FixRunModelSelectionRequest = decode(&request_json)?;
+                let selection = AutomationRepository::fix_run_model_selection(conn, &request)
+                    .map_err(automation_error)?;
+                json(&selection)
+            }),
+        })
+    }
+
+    /// `markRunDispatch` — the dispatch result onto the run row.
+    #[napi]
+    pub fn automation_mark_run_dispatch(
+        &self,
+        request_json: String,
+    ) -> AsyncTask<AutomationVoidTask> {
+        AsyncTask::new(AutomationVoidTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            run: std::sync::Arc::new(move |conn: &mut rusqlite::Connection| {
+                let request: MarkRunDispatchRequest = decode(&request_json)?;
+                AutomationRepository::mark_run_dispatch(conn, &request).map_err(automation_error)
+            }),
+        })
+    }
+
+    /// `markManualRunDispatched` — idempotent at the first `dispatched`.
+    #[napi(ts_return_type = "Promise<boolean>")]
+    pub fn automation_mark_manual_run_dispatched(
+        &self,
+        request_json: String,
+    ) -> AsyncTask<AutomationBoolTask> {
+        AsyncTask::new(AutomationBoolTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            run: std::sync::Arc::new(move |conn: &mut rusqlite::Connection| {
+                let request: MarkManualRunDispatchedRequest = decode(&request_json)?;
+                AutomationRepository::mark_manual_run_dispatched(conn, &request)
+                    .map_err(automation_error)
+            }),
+        })
+    }
+
+    /// `markRunOutcome` — the session runtime's write-back, guarded against `running` regressions.
+    #[napi]
+    pub fn automation_mark_run_outcome(&self, request_json: String) -> AsyncTask<AutomationVoidTask> {
+        AsyncTask::new(AutomationVoidTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            run: std::sync::Arc::new(move |conn: &mut rusqlite::Connection| {
+                let request: MarkRunOutcomeRequest = decode(&request_json)?;
+                AutomationRepository::mark_run_outcome(conn, &request).map_err(automation_error)
+            }),
+        })
+    }
+
+    /// `recordSkippedRun` — a skipped row, without touching the counters.
+    #[napi]
+    pub fn automation_record_skipped_run(
+        &self,
+        request_json: String,
+    ) -> AsyncTask<AutomationVoidTask> {
+        AsyncTask::new(AutomationVoidTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            run: std::sync::Arc::new(move |conn: &mut rusqlite::Connection| {
+                let request: RecordSkippedRunRequest = decode(&request_json)?;
+                AutomationRepository::record_skipped_run(conn, &request).map_err(automation_error)
+            }),
+        })
+    }
+
+    /// `listRuns` — the run history, newest first.
+    #[napi(ts_return_type = "Promise<string>")]
+    pub fn automation_list_runs(&self, request_json: String) -> AsyncTask<AutomationJsonTask> {
+        AsyncTask::new(AutomationJsonTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            run: std::sync::Arc::new(move |conn: &mut rusqlite::Connection| {
+                let request: ListRunsRequest = decode(&request_json)?;
+                let runs = AutomationRepository::list_runs(
+                    conn,
+                    &request.automation_id,
+                    request.workspace_key.as_deref(),
+                )
+                .map_err(automation_error)?;
+                json(&runs)
+            }),
+        })
+    }
+
+    /// `getRun` — one run, or `null`.
+    #[napi(ts_return_type = "Promise<string>")]
+    pub fn automation_get_run(&self, run_id: String) -> AsyncTask<AutomationJsonTask> {
+        AsyncTask::new(AutomationJsonTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            run: std::sync::Arc::new(move |conn: &mut rusqlite::Connection| {
+                let run = AutomationRepository::get_run(conn, &run_id).map_err(automation_error)?;
+                json(&run)
+            }),
+        })
+    }
+
+    /// `deleteRun` — scoped by workspace when one is given.
+    #[napi]
+    pub fn automation_delete_run(&self, request_json: String) -> AsyncTask<AutomationVoidTask> {
+        AsyncTask::new(AutomationVoidTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            run: std::sync::Arc::new(move |conn: &mut rusqlite::Connection| {
+                let request: DeleteRunRequest = decode(&request_json)?;
+                AutomationRepository::delete_run(
+                    conn,
+                    &request.run_id,
+                    request.workspace_key.as_deref(),
+                )
+                .map_err(automation_error)
+            }),
+        })
+    }
+
+    /// `pruneRuns` — the retention sweep; returns how many rows it dropped.
+    #[napi]
+    pub fn automation_prune_runs(&self, request_json: String) -> AsyncTask<AutomationNumberTask> {
+        AsyncTask::new(AutomationNumberTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            run: std::sync::Arc::new(move |conn: &mut rusqlite::Connection| {
+                let request: PruneRunsRequest = decode(&request_json)?;
+                AutomationRepository::prune_runs(conn, request.max_age_ms, request.now)
+                    .map_err(automation_error)
+            }),
         })
     }
 
@@ -695,8 +1287,165 @@ where
 
 pub struct EnsureReadyTask {
     inner: std::sync::Arc<Inner>,
-    migrations_json: String,
     now_ms: i64,
+    lock_wait_ms: Option<i64>,
+}
+
+/// Opens the file, applies the pragmas and runs the crate's migrations.
+///
+/// `on_progress` is `Some` only for `prepare_storage`; `ensure_ready` passes `None` and takes the
+/// whole wait silently.
+fn open_and_migrate(
+    inner: &Inner,
+    now_ms: i64,
+    lock_wait_ms: Option<i64>,
+    on_progress: Option<&ThreadsafeFunction<String, (), String, napi::Status, false>>,
+    facts: &mut MigrationFacts,
+) -> std::result::Result<rusqlite::Connection, StartupError> {
+    // The historical default: the desktop worker waited up to an hour for the write lock.
+    const DEFAULT_LOCK_WAIT_MS: i64 = 60 * 60_000;
+    let path = inner.path.clone();
+    let mut connection = rusqlite::Connection::open(&path).map_err(|error| {
+        StartupError::from(StoreError::Open { path: path.clone(), source: error })
+    })?;
+    if !inner.read_only {
+        // The same four pragmas as the legacy open, in the same order, with the caller's
+        // `busy_timeout` rather than a hardcoded one.
+        connection
+            .execute_batch(&format!(
+                "PRAGMA busy_timeout = {};\nPRAGMA foreign_keys = ON;\nPRAGMA journal_mode = WAL;",
+                inner.busy_timeout_ms
+            ))
+            .map_err(|error| {
+                StartupError::from(StoreError::Open { path: path.clone(), source: error })
+            })?;
+    }
+
+    // The migration list is compiled from the live connection (the frozen `0002` decode reads
+    // current rows), so it is built after the pragmas and before the transaction.
+    let migrations = build_migrations(&connection).map_err(|error| {
+        StartupError::from(StoreError::Migration(MigrationError::Sql {
+            context: "cannot build the task database migrations".into(),
+            source: error,
+        }))
+    })?;
+
+    // Pre-check for the display kind, then wait for the lock with the same retry the JavaScript
+    // used. `busy_timeout` alone is not enough: the JS waited *asynchronously* (reporting
+    // `waiting_for_lock`) rather than failing after 5 s.
+    let kind = inspect_kind(&connection)
+        .map_err(|error| StartupError::from(StoreError::Migration(error)))?;
+    facts.kind = kind.as_str().to_string();
+    facts.executed_count = 0;
+    facts.committed_count = 0;
+    // The trusted baseline is the newest ledger row *before* this run: `null` on a fresh file,
+    // the last applied id on an existing one. Same value the deleted runner read inside its
+    // transaction.
+    facts.last_applied_migration_id = baseline_id(&connection)
+        .map_err(|error| StartupError::from(StoreError::Migration(error)))?;
+    if let Some(callback) = on_progress {
+        emit_progress(callback, "checking", facts);
+    }
+
+    let lock_wait_ms = lock_wait_ms.unwrap_or(DEFAULT_LOCK_WAIT_MS);
+    if !inner.read_only {
+        wait_for_lock(&connection, lock_wait_ms, on_progress, facts)?;
+    }
+    // The same phase sequence the deleted runner reported: `migrating` before the pending
+    // migrations run, `committing` before the per-migration transactions are recorded, then
+    // `maintaining` for the post-migration repairs.
+    let pending = kind.as_str() != "none";
+    if pending {
+        if let Some(callback) = on_progress {
+            emit_progress(callback, "migrating", facts);
+        }
+    }
+    let applied = run_migrations(&mut connection, &migrations, now_ms)
+        .map_err(|error| StartupError::from(StoreError::Migration(error)))?;
+    facts.executed_count = applied.len() as i64;
+    facts.committed_count = applied.len() as i64;
+    // The kind flips to `upgrade` only when a fresh migration was actually applied on a file
+    // that was otherwise `none`.
+    if kind.as_str() == "none" && !applied.is_empty() {
+        facts.kind = "upgrade".to_string();
+    }
+    if pending {
+        if let Some(callback) = on_progress {
+            emit_progress(callback, "committing", facts);
+        }
+    }
+
+    if let Some(callback) = on_progress {
+        emit_progress(callback, "maintaining", facts);
+    }
+    Ok(connection)
+}
+
+/// Emits one progress event. A closed channel is not an error: the caller may have stopped
+/// listening, and the work must continue.
+fn emit_progress(
+    callback: &ThreadsafeFunction<String, (), String, napi::Status, false>,
+    phase: &str,
+    facts: &MigrationFacts,
+) {
+    let event = StorageProgress {
+        phase: phase.to_string(),
+        migration: facts.clone(),
+    };
+    let payload = serde_json::to_string(&event).unwrap_or_else(|_| "{}".to_string());
+    let _ = callback.call(payload, ThreadsafeFunctionCallMode::NonBlocking);
+}
+
+/// Waits for the write lock by attempting `BEGIN IMMEDIATE`, retrying on SQLITE_BUSY.
+///
+/// This is the JavaScript's `acquire()` loop: attempt, and on `(errcode & 0xff) == 5` sleep
+/// 100 ms and retry until the deadline. An expired wait is a **failure** (`lock_timeout`), not a
+/// silent skip, exactly as the deleted implementation threw.
+fn wait_for_lock(
+    connection: &rusqlite::Connection,
+    lock_wait_ms: i64,
+    on_progress: Option<&ThreadsafeFunction<String, (), String, napi::Status, false>>,
+    facts: &MigrationFacts,
+) -> std::result::Result<(), StartupError> {
+    let deadline = Instant::now() + Duration::from_millis(lock_wait_ms.max(0) as u64);
+    let mut waiting = false;
+    loop {
+        match connection.execute_batch("BEGIN IMMEDIATE") {
+            Ok(()) => {
+                // Release it immediately: `run_migrations` takes its own transactions per
+                // migration. Holding it here would nest transactions and fail.
+                let _ = connection.execute_batch("COMMIT");
+                return Ok(());
+            }
+            Err(error) => {
+                let code = sqlite_code(&error);
+                let busy = code.is_some_and(|code| (code & 0xff) == 5);
+                if !busy {
+                    return Err(StartupError::from(StoreError::Query {
+                        context: "cannot acquire the task storage write lock".into(),
+                        source: error,
+                    }));
+                }
+                if Instant::now() >= deadline {
+                    // `kind: "lock_timeout"` is what the desktop's
+                    // `classifyDatabaseStartupError` reads.
+                    return Err(StartupError {
+                        message: "Task storage lock wait expired".to_string(),
+                        kind: Some("lock_timeout"),
+                        errcode: code,
+                        migration_id: None,
+                    });
+                }
+                if !waiting {
+                    waiting = true;
+                    if let Some(callback) = on_progress {
+                        emit_progress(callback, "waiting_for_lock", facts);
+                    }
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        }
+    }
 }
 
 impl Task for EnsureReadyTask {
@@ -708,29 +1457,17 @@ impl Task for EnsureReadyTask {
     }
 
     fn compute(&mut self) -> Result<Self::Output> {
-        let path = self.inner.path.clone();
-        let migrations: Vec<MigrationJson> =
-            serde_json::from_str(&self.migrations_json).map_err(|error| to_napi_error(error.to_string()))?;
-        let migrations: Vec<Migration> = migrations.into_iter().map(Into::into).collect();
-
-        let mut connection = rusqlite::Connection::open(&path).map_err(|error| {
-            to_napi_error(StoreError::Open { path: path.clone(), source: error }.to_string())
-        })?;
-        if !self.inner.read_only {
-            // The same four pragmas as the legacy open, in the same order, with the caller's
-            // `busy_timeout` rather than a hardcoded one.
-            connection
-                .execute_batch(&format!(
-                    "PRAGMA busy_timeout = {};\nPRAGMA foreign_keys = ON;\nPRAGMA journal_mode = WAL;",
-                    self.inner.busy_timeout_ms
-                ))
-                .map_err(|error| {
-                    to_napi_error(StoreError::Open { path: path.clone(), source: error }.to_string())
-                })?;
-        }
-        run_migrations(&mut connection, &migrations, self.now_ms)
-            .map_err(|error| to_napi_error(StoreError::Migration(error).to_string()))?;
-
+        // `ensure_ready` reports no progress; the facts exist only because `open_and_migrate`
+        // accumulates them.
+        let mut facts = MigrationFacts {
+            kind: "none".to_string(),
+            executed_count: 0,
+            committed_count: 0,
+            last_applied_migration_id: None,
+        };
+        let connection =
+            open_and_migrate(&self.inner, self.now_ms, self.lock_wait_ms, None, &mut facts)
+                .map_err(|error| error.envelope(None))?;
         let mut guard = self
             .inner
             .connection
@@ -738,6 +1475,57 @@ impl Task for EnsureReadyTask {
             .map_err(|_| to_napi_error("the task index store lock is poisoned"))?;
         *guard = Some(connection);
         Ok(())
+    }
+}
+
+/// The startup orchestrator's task. It is the only caller that wants progress, and the only one
+/// that **closes** the connection afterwards: it runs before the window opens its own store, and
+/// holding a write connection would block it.
+pub struct PrepareStorageTask {
+    inner: std::sync::Arc<Inner>,
+    now_ms: i64,
+    lock_wait_ms: Option<i64>,
+    progress: ThreadsafeFunction<String, (), String, napi::Status, false>,
+}
+
+impl Task for PrepareStorageTask {
+    type Output = MigrationFacts;
+    type JsValue = MigrationFacts;
+
+    fn resolve(&mut self, _env: Env, output: Self::Output) -> std::result::Result<Self::JsValue, Error> {
+        Ok(output)
+    }
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        let mut facts = MigrationFacts {
+            kind: "none".to_string(),
+            executed_count: 0,
+            committed_count: 0,
+            last_applied_migration_id: None,
+        };
+        let connection = open_and_migrate(
+            &self.inner,
+            self.now_ms,
+            self.lock_wait_ms,
+            Some(&self.progress),
+            &mut facts,
+        )
+        .map_err(|error| error.envelope(Some(&facts)))?;
+
+        // The post-migration repairs the three repositories ran on `ensureReady`. They are
+        // idempotent startup repairs, not part of the migration transaction.
+        crate::task_write::cleanup_deleted_grouping_references(&connection)
+            .map_err(|error| StartupError::from(StoreError::Migration(error)).envelope(None))?;
+        let now = self.now_ms;
+        crate::offpeak::OffPeakStore::recycle_awaiting_approval(&connection, now)
+            .map_err(|error| StartupError::from(StoreError::Migration(error)).envelope(None))?;
+        let _ = connection.execute_batch("PRAGMA optimize");
+        drop(connection);
+
+        // `ready` is emitted by the TypeScript wrapper, synchronously before its returned promise
+        // resolves. A worker-thread `ThreadsafeFunction` call is queued behind the promise's own
+        // microtask, so emitting it here would deliver `ready` **after** `done`.
+        Ok(facts)
     }
 }
 
@@ -871,12 +1659,31 @@ impl Task for OffPeakGetTask {
     }
 }
 
-pub struct AutomationClaimDueTask {
-    inner: std::sync::Arc<Inner>,
-    now_ms: i64,
+/// Runs an automation task body against the connection.
+///
+/// A dedicated helper rather than `with_connection_mut`, because these bodies already return a
+/// napi `Result`; `with_connection_mut` maps a generic `E: Display`, and `napi::Error` does not
+/// satisfy that bound.
+fn with_automation_connection<T>(
+    inner: &Inner,
+    operation: impl FnOnce(&mut rusqlite::Connection) -> Result<T>,
+) -> Result<T> {
+    let mut guard = inner
+        .connection
+        .lock()
+        .map_err(|_| to_napi_error("the task index store lock is poisoned"))?;
+    let connection = guard
+        .as_mut()
+        .ok_or_else(|| to_napi_error("the task index store is closed"))?;
+    operation(connection)
 }
 
-impl Task for AutomationClaimDueTask {
+pub struct AutomationJsonTask {
+    inner: std::sync::Arc<Inner>,
+    run: std::sync::Arc<dyn Fn(&mut rusqlite::Connection) -> std::result::Result<String, Error> + Send + Sync>,
+}
+
+impl Task for AutomationJsonTask {
     type Output = String;
     type JsValue = String;
 
@@ -885,19 +1692,17 @@ impl Task for AutomationClaimDueTask {
     }
 
     fn compute(&mut self) -> Result<Self::Output> {
-        let claimed = with_connection_mut(&self.inner, |connection| {
-            AutomationStore::claim_due(connection, self.now_ms)
-        })?;
-        serde_json::to_string(&claimed).map_err(|error| to_napi_error(error.to_string()))
+        let run = std::sync::Arc::clone(&self.run);
+        with_automation_connection(&self.inner, |connection| run(connection))
     }
 }
 
-pub struct AutomationReleaseClaimTask {
+pub struct AutomationBoolTask {
     inner: std::sync::Arc<Inner>,
-    automation_id: String,
+    run: std::sync::Arc<dyn Fn(&mut rusqlite::Connection) -> std::result::Result<bool, Error> + Send + Sync>,
 }
 
-impl Task for AutomationReleaseClaimTask {
+impl Task for AutomationBoolTask {
     type Output = bool;
     type JsValue = bool;
 
@@ -906,38 +1711,17 @@ impl Task for AutomationReleaseClaimTask {
     }
 
     fn compute(&mut self) -> Result<Self::Output> {
-        with_connection(&self.inner, |connection| {
-            AutomationStore::release_claim(connection, &self.automation_id)
-        })
+        let run = std::sync::Arc::clone(&self.run);
+        with_automation_connection(&self.inner, |connection| run(connection))
     }
 }
 
-pub struct AutomationBindingTask {
+pub struct AutomationOptNumberTask {
     inner: std::sync::Arc<Inner>,
-    automation_id: String,
+    run: std::sync::Arc<dyn Fn(&mut rusqlite::Connection) -> std::result::Result<Option<i64>, Error> + Send + Sync>,
 }
 
-impl Task for AutomationBindingTask {
-    type Output = bool;
-    type JsValue = bool;
-
-    fn resolve(&mut self, _env: Env, output: Self::Output) -> std::result::Result<Self::JsValue, Error> {
-        Ok(output)
-    }
-
-    fn compute(&mut self) -> Result<Self::Output> {
-        with_connection(&self.inner, |connection| {
-            AutomationStore::has_task_binding(connection, &self.automation_id)
-        })
-    }
-}
-
-pub struct AutomationRunCountTask {
-    inner: std::sync::Arc<Inner>,
-    automation_id: String,
-}
-
-impl Task for AutomationRunCountTask {
+impl Task for AutomationOptNumberTask {
     type Output = Option<i64>;
     type JsValue = Option<i64>;
 
@@ -946,10 +1730,57 @@ impl Task for AutomationRunCountTask {
     }
 
     fn compute(&mut self) -> Result<Self::Output> {
-        with_connection(&self.inner, |connection| {
-            AutomationStore::scheduled_run_count(connection, &self.automation_id)
-        })
+        let run = std::sync::Arc::clone(&self.run);
+        with_automation_connection(&self.inner, |connection| run(connection))
     }
+}
+
+pub struct AutomationNumberTask {
+    inner: std::sync::Arc<Inner>,
+    run: std::sync::Arc<dyn Fn(&mut rusqlite::Connection) -> std::result::Result<i64, Error> + Send + Sync>,
+}
+
+impl Task for AutomationNumberTask {
+    type Output = i64;
+    type JsValue = i64;
+
+    fn resolve(&mut self, _env: Env, output: Self::Output) -> std::result::Result<Self::JsValue, Error> {
+        Ok(output)
+    }
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        let run = std::sync::Arc::clone(&self.run);
+        with_automation_connection(&self.inner, |connection| run(connection))
+    }
+}
+
+pub struct AutomationVoidTask {
+    inner: std::sync::Arc<Inner>,
+    run: std::sync::Arc<dyn Fn(&mut rusqlite::Connection) -> std::result::Result<(), Error> + Send + Sync>,
+}
+
+impl Task for AutomationVoidTask {
+    type Output = ();
+    type JsValue = ();
+
+    fn resolve(&mut self, _env: Env, output: Self::Output) -> std::result::Result<Self::JsValue, Error> {
+        Ok(output)
+    }
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        let run = std::sync::Arc::clone(&self.run);
+        with_automation_connection(&self.inner, |connection| run(connection))
+    }
+}
+
+/// Serialises a repository value to the JSON string the boundary carries.
+fn json<T: Serialize>(value: &T) -> Result<String> {
+    serde_json::to_string(value).map_err(|error| to_napi_error(error.to_string()))
+}
+
+/// Lifts a repository error to a napi error, keeping the message the TypeScript side would see.
+fn automation_error(error: AutomationError) -> Error {
+    Error::from_reason(error.to_string())
 }
 
 /// Serialises a value the way the boundary does, for tests and for the TypeScript wrapper's
@@ -2165,5 +2996,82 @@ impl Task for OffPeakBoundTask {
         with_connection(&self.inner, |conn| {
             OffPeakStore::has_active_bound_task(conn, &self.workspace_key, &self.session_id)
         })
+    }
+}
+
+#[cfg(test)]
+mod startup_error_tests {
+    use super::*;
+
+    fn facts() -> MigrationFacts {
+        MigrationFacts {
+            kind: "upgrade".to_string(),
+            executed_count: 2,
+            committed_count: 2,
+            last_applied_migration_id: Some("0002_provider_selection".to_string()),
+        }
+    }
+
+    /// The desktop classification reads `error.kind`, never the message, so a checksum mismatch
+    /// must arrive as `k` and `i` in the envelope or it is classified `sql_failed`.
+    #[test]
+    fn a_checksum_mismatch_carries_kind_and_migration_id() {
+        let error = StartupError::from(StoreError::Migration(MigrationError::ChecksumMismatch {
+            id: "0001_adopt_task_schema".to_string(),
+            applied: "applied".to_string(),
+            computed: "computed".to_string(),
+        }));
+        let parsed: serde_json::Value =
+            serde_json::from_str(&error.envelope_json(None)).expect("envelope is JSON");
+        assert_eq!(parsed["z"], 1);
+        assert_eq!(parsed["k"], "checksum_mismatch");
+        assert_eq!(parsed["i"], "0001_adopt_task_schema");
+        assert!(parsed["m"].as_str().is_some_and(|m| m.contains("checksum")));
+    }
+
+    /// A busy lock must be `lock_timeout`, with the SQLite code so
+    /// `classifyDatabaseStartupError` can mask it.
+    #[test]
+    fn a_lock_timeout_carries_the_kind() {
+        let error = StartupError {
+            message: "Task storage lock wait expired".to_string(),
+            kind: Some("lock_timeout"),
+            errcode: Some(5),
+            migration_id: None,
+        };
+        let parsed: serde_json::Value =
+            serde_json::from_str(&error.envelope_json(None)).expect("envelope is JSON");
+        assert_eq!(parsed["k"], "lock_timeout");
+        assert_eq!(parsed["c"], 5);
+    }
+
+    /// The facts at the moment of failure ride along as `sm`, which is what
+    /// `tasksStorageWorker.ts` reads as `error.startupMigration`.
+    #[test]
+    fn the_failure_envelope_carries_the_startup_migration_facts() {
+        let error = StartupError {
+            message: "migration 0002_provider_selection failed".to_string(),
+            kind: None,
+            errcode: None,
+            migration_id: None,
+        };
+        let parsed: serde_json::Value =
+            serde_json::from_str(&error.envelope_json(Some(&facts()))).expect("envelope is JSON");
+        assert_eq!(parsed["sm"]["kind"], "upgrade");
+        assert_eq!(parsed["sm"]["executedCount"], 2);
+        assert_eq!(parsed["sm"]["committedCount"], 2);
+        assert_eq!(parsed["sm"]["lastAppliedMigrationId"], "0002_provider_selection");
+    }
+
+    /// A plain open failure must classify as `open_failed`, not fall through to `sql_failed`.
+    #[test]
+    fn an_open_failure_carries_the_kind() {
+        let error = StartupError::from(StoreError::Open {
+            path: "/data/tasks-index.sqlite".to_string(),
+            source: rusqlite::Error::InvalidPath("/data/tasks-index.sqlite".into()),
+        });
+        let parsed: serde_json::Value =
+            serde_json::from_str(&error.envelope_json(None)).expect("envelope is JSON");
+        assert_eq!(parsed["k"], "open_failed");
     }
 }
