@@ -252,6 +252,11 @@ pub fn run() {
             commands::surface::get_window_bounds,
             commands::surface::set_window_bounds,
             commands::rpc::get_rpc_endpoint,
+            commands::urls::decide_external_open,
+            commands::urls::decide_navigation,
+            commands::urls::is_coding_plan_webview,
+            commands::urls::is_payment_callback,
+            commands::urls::is_trusted_webview_origin,
         ])
         .build(tauri::generate_context!())
         .expect("failed to build zcode-tauri")

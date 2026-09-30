@@ -40,6 +40,11 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 # Replaces the `croner` npm dependency for the raw 5-field expression path. A different engine, so
 # the parity burden is real and is discharged by the differential corpus in the spec (§6.2).
 cron = "0.15"
+# zcode-url-guard: URL parsing for the Coding Plan navigation and payment-callback
+# allowlists. Already vendored transitively by the Tauri tree (url 2.5.8), so this pins an
+# existing version. Hand-rolling WHATWG URL semantics for a security decision is not
+# acceptable — docs/specs/rust-native-url-guard.md §3.3.
+url = "2"
 
 [profile.release]
 lto = "thin"

@@ -1,0 +1,20 @@
+[package]
+name = "zcode-url-guard"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "External-navigation and payment-callback allowlists for the Coding Plan webview."
+
+[lib]
+# rlib only: the consumer is the Tauri host, a Rust process, so there is no Node consumer,
+# no `.node` is produced, and nothing is staged into the desktop or SEA payload.
+crate-type = ["rlib"]
+
+[dependencies]
+# URL parsing, percent-decoding and origin canonicalisation. Hand-rolling a parser for a
+# security decision is not acceptable; see docs/specs/rust-native-url-guard.md §3.3.
+# Already vendored transitively by the Tauri dependency tree (url 2.5.8), so this pins an
+# existing version rather than introducing a new one.
+url = "2"
+serde_json = { workspace = true }

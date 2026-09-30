@@ -30,6 +30,11 @@ zcode-cron = { path = "../../../packages/rust/crates/zcode-cron" }
 # server config. rlib-only, for the same reason. Replaces 751 lines of Electron-main
 # TypeScript that the Tauri host could not serve. See docs/specs/rust-native-mcp-config.md.
 zcode-mcp-config = { path = "../../../packages/rust/crates/zcode-mcp-config" }
+# External-navigation and payment-callback allowlists. In Electron these read
+# event.senderFrame.url, which is unforgeable; Tauri has no equivalent, so the decision is
+# resolved here instead of above a renderer-supplied URL (PORT_STATUS.md:161).
+# See docs/specs/rust-native-url-guard.md.
+zcode-url-guard = { path = "../../../packages/rust/crates/zcode-url-guard" }
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-fs = "2"
 tauri-plugin-os = "2"

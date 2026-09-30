@@ -16,6 +16,7 @@ pub mod mcp_config;
 pub mod native;
 pub mod rpc;
 pub mod surface;
+pub mod urls;
 pub mod window;
 
 use serde::{Deserialize, Serialize};

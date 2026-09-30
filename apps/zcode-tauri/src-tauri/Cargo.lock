@@ -6408,6 +6408,15 @@ dependencies = [
  "zcode-cron",
  "zcode-mcp-config",
  "zcode-rpc-server",
+ "zcode-url-guard",
+]
+
+[[package]]
+name = "zcode-url-guard"
+version = "0.0.0"
+dependencies = [
+ "serde_json",
+ "url",
 ]
 
 [[package]]
