@@ -1,0 +1,21 @@
+[package]
+name = "zcode-mcp-config"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "MCP user-directory configuration: read, merge, migrate and atomically write the user's server config."
+
+[lib]
+# rlib only, like `zcode-rpc-server`: the consumer is the Tauri host, which is a Rust process
+# and cannot `require()` a `.node`. There is no Node consumer, so no cdylib is produced and
+# nothing is staged into the desktop or SEA payload (spec D2).
+crate-type = ["rlib"]
+
+[dependencies]
+serde = { workspace = true }
+# `preserve_order` is load-bearing here, not a preference: this crate rewrites a config file the
+# user edits by hand, and a BTreeMap would re-sort every key on first save. IndexMap's `insert`
+# semantics match a JS object spread exactly — replacing a key keeps its position, a new key
+# appends. See docs/specs/rust-native-mcp-config.md §3.1.
+serde_json = { workspace = true }

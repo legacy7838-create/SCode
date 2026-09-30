@@ -32,7 +32,10 @@ import {
   type DesktopCommandId,
   type DesktopWindowChromeState,
   type IPlatformService,
+  type LoadCliMcpFromUserDirectoryRequest,
+  type LoadCliMcpFromUserDirectoryResult,
   type RemoteTarget,
+  type SaveCliMcpToUserDirectoryRequest,
   type SaveFileRequest,
   type SaveFileResult,
   type TaskNotificationPayload,
@@ -217,10 +220,34 @@ export function createTauriPlatform(options: CreateTauriPlatformOptions = {}): I
     onRemoteSessionClosed: () => () => {},
     onBotRemoteWorkspaceReconnected: () => () => {},
 
-    // --- MCP native directory (no Rust command yet) ---------------------------
-    loadMcpFromUserDirectory: () => Promise.resolve({ servers: [] }),
-    saveMcpToUserDirectory: () =>
-      Promise.resolve({ success: false, error: "MCP native directory management is not wired yet" }),
+    // --- MCP native directory -------------------------------------------------
+    // Backed by `zcode-mcp-config` (docs/specs/rust-native-mcp-config.md). The previous
+    // entries here were web-shaped fallbacks that silently returned an empty server list and
+    // a "not wired yet" failure, which is a wrong answer rather than a degraded one.
+    async loadMcpFromUserDirectory(
+      request?: LoadCliMcpFromUserDirectoryRequest,
+    ): Promise<LoadCliMcpFromUserDirectoryResult> {
+      return safeInvoke<LoadCliMcpFromUserDirectoryResult>(
+        "load_mcp_from_user_directory",
+        { request: request ?? null },
+        { servers: [] },
+      );
+    },
+    async saveMcpToUserDirectory(
+      payload: SaveCliMcpToUserDirectoryRequest,
+    ): Promise<{ success: boolean; error?: string }> {
+      // The Rust side returns the same `{ success, error }` envelope the Electron handler
+      // returned, because the renderer branches on `success`.
+      return safeInvoke<{ success: boolean; error?: string }>(
+        "save_mcp_to_user_directory",
+        { payload },
+        { success: false, error: "MCP user-directory save is only available in the desktop app" },
+      );
+    },
+    // Still a web-shaped fallback: the legacy storage *import* (mcpUserDirectory/legacy.ts)
+    // is not ported. Recording it as unimplemented is deliberate — the previous version of
+    // this command was a read-path sweep under the same name, which would have been a
+    // silently different feature.
     migrateLegacyCommonMcp: () =>
       Promise.resolve({ servers: {}, totalCount: 0, importedCount: 0, skippedCount: 0 }),
 

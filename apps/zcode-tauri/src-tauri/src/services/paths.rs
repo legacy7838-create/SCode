@@ -17,7 +17,7 @@ const DATA_BASE_DIR_ENV_KEY: &str = "ZCODE_DATA_BASE_DIR";
 /// TypeScript side. An empty `HOME` must not become a relative path: the result
 /// would be a `.zcode` directory in whatever directory the process happened to
 /// start in.
-fn homedir() -> String {
+pub fn homedir() -> String {
     std::env::var("HOME")
         .ok()
         .map(|value| value.trim().to_owned())

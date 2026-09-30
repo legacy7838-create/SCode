@@ -12,6 +12,7 @@
 
 pub mod app;
 pub mod fs;
+pub mod mcp_config;
 pub mod native;
 pub mod rpc;
 pub mod surface;

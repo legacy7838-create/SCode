@@ -2823,6 +2823,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "zcode-mcp-config"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "zcode-packaging"
 version = "0.0.0"
 dependencies = [

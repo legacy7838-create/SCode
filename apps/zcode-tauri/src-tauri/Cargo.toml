@@ -26,6 +26,10 @@ zcode-rpc-server = { path = "../../../packages/rust/crates/zcode-rpc-server" }
 # automation re-claimed as a misfire on every 20 s tick and never rescheduled.
 # See docs/specs/rust-native-cron.md.
 zcode-cron = { path = "../../../packages/rust/crates/zcode-cron" }
+# MCP user-directory configuration: read, merge, migrate and atomically write the user's
+# server config. rlib-only, for the same reason. Replaces 751 lines of Electron-main
+# TypeScript that the Tauri host could not serve. See docs/specs/rust-native-mcp-config.md.
+zcode-mcp-config = { path = "../../../packages/rust/crates/zcode-mcp-config" }
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-fs = "2"
 tauri-plugin-os = "2"
