@@ -88,16 +88,52 @@ does not have to infer it.
 - The grouped task-view **read** path and `buildSearchSnippets` (`:312`), which is what the UI
   calls per task-list render.
 
+### 2.2a The three repos share one file — the port unit is all three
+
+Correcting §2.2 after verifying the real schema. `automationRepo.ts:222` states it outright:
+*"sharing tasks-index.sqlite with the task index (WAL, multi-process safe)"*, and
+`offPeakTaskRepo.ts:9`: *"It shares tasks-index.sqlite and the Repo pattern with automation."*
+The live database confirms it — `automations`, `automation_runs` and `off_peak_tasks` are tables
+in `tasks-index.sqlite` itself, not separate files.
+
+The first draft of this spec treated them as separable. That would have produced **two languages
+owning one persisted file**:
+
+- three independent connections become a Rust one plus two `node:sqlite` ones, each with its own
+  pragma set;
+- **the migration ledger** (`tasks_schema_migration`, 4 rows on the real file) would be written by
+  whichever repo opened the file first, and the other two would read a ledger they did not write;
+- a `BEGIN IMMEDIATE` in the Rust store could not see or coordinate with a `node:sqlite` one, so a
+  snapshot touching `tasks` and a cron-group write touching `task_group_members` would no longer
+  be able to be made atomic together — which they cannot be today either, but today at least both
+  sides are the same engine with the same semantics.
+
+So **invariant 1 settles the boundary**: one file, one implementation. The port is:
+
+| Repo | Lines | In scope |
+|---|---|---|
+| `taskIndexRepo.ts` | 2,567 | ✅ |
+| `automationRepo.ts` | 1,489 | ✅ |
+| `offPeakTaskRepo.ts` | 839 | ✅ |
+| **total** | **4,895** | one `zcode-task-index` crate, one connection owner, three facades |
+
+This is larger than the `zcode-events` port and is the largest single wave in the programme. It is
+split into ordered, separately-mergeable steps in §4.5 so the parity surface stays auditable
+rather than one 4,895-line change.
+
 ### 2.2 NOT ported (siblings / non-goals)
 
-- **`automationRepo.ts` (1,489) and `offPeakTaskRepo.ts` (839)** — two sibling databases in the
-  same directory. Same shape and the same playbook, but they are separate stores with separate
-  owners; bundling three ports into one change would make the parity surface unauditable.
-  Sequenced after this one (§11 R5).
+- ~~**`automationRepo.ts` (1,489) and `offPeakTaskRepo.ts` (839)** — two sibling databases.~~
+  **This was wrong, and is corrected in §2.2a.** They are not separate stores: all three repos
+  open the **same file**, `~/.zcode/v2/tasks-index.sqlite`, and that database's real schema
+  contains `automations`, `automation_runs` and `off_peak_tasks` alongside the task tables.
+  They are now **in scope**.
 - **`InMemorySessionEventStore`** — stays TS, exactly as in `zcode-events` §0: a per-runtime `Map`
   with zero I/O, where porting buys nothing.
 - **The syncer** (`zcodeTaskIndexSyncer.ts`, 1,972 lines) — orchestration and broadcast, not
-  computation.
+  computation. It becomes a *consumer*, switching import to the crate; its own logic stays TS.
+- **The `automations` / `off_peak_tasks` *scheduling* semantics** — cron computation is already
+  `zcode-cron`; the claim/retry state machines move, the scheduling policy does not.
 - **`zcodeTaskServiceAdapter` / `zcodeAgentService`** — RPC surface and glue.
 - **The renderer-facing projection** — presentation.
 
@@ -124,9 +160,11 @@ Two exceptions, both I/O-free, mirroring `zcode-events` §2.3:
 
 ### 2.5 Invariants
 
-1. **Zero JS fallback.** `zcode-events` §2.5 invariant 1 applies verbatim: one implementation per
-   process, no `try { native } catch { node:sqlite }`, no env flag, no degraded mode. The
-   `node:sqlite` import is deleted in the same change.
+1. **Zero JS fallback, and for this database that means all three repos together.**
+   `zcode-events` §2.5 invariant 1 applies verbatim: one implementation per process, no
+   `try { native } catch { node:sqlite }`, no env flag, no degraded mode. Because all three repos
+   share one file (§2.2a), a partial port would leave the file owned by two languages — the
+   `node:sqlite` imports are deleted only when the last of the three moves.
 2. **Legacy deleted, not disabled** — but see §7's deletion condition, which is stricter here
    because the store is shared with the still-shipping Electron app.
 3. **The database file is the contract.** This is a *persisted* store, unlike
@@ -243,6 +281,21 @@ per tool call to 1, and this store has the same shape.
 
 Ordering is preserved and the batch is atomic: either the whole snapshot lands or none of it, so
 the grouped view can never be left half-written.
+
+### 4.5 Ordered steps, each separately mergeable
+
+| Step | Content | Why it is a safe boundary |
+|---|---|---|
+| **1** | Crate skeleton, schema DDL, migration runner, `ensure_ready`, `close` | Opens a copy of the **real** database and asserts the schema and ledger match. Nothing else can start until this passes, so it is the natural gate |
+| **2** | `TaskIndexStore`: `write_key`, `write_record`, `get_task_row`, grouped-order normalisation, write batching | The measured win (§1.1). Switches `zcodeTaskIndexSyncer` — the only per-snapshot writer |
+| **3** | Read path: `list_grouped_tasks`, `search`, `build_search_snippets` | The UI's path. Switches the task-list surface |
+| **4** | `AutomationStore` facade over the same connection | Same file, same migration, no new schema |
+| **5** | `OffPeakStore` facade over the same connection | As above |
+| **6** | Delete `taskIndexRepo.ts`, `automationRepo.ts`, `offPeakTaskRepo.ts` | Only legal once Electron no longer calls them (§7) |
+
+Steps 1–3 are the task index proper and complete the invariant-1 story for two of the three
+repos. Steps 4–5 finish it. If the wave is cut short after step 3, the correct outcome is that
+`taskIndexRepo.ts` stays — **not** a half-migrated file.
 
 ### 4.4 State owners
 
