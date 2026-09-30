@@ -12,7 +12,10 @@ import { ToolLayout } from "../ToolLayout.js";
 import { WorkflowRunCompactCard } from "./workflow-run-compact-card.js";
 import type { ToolCallBlockRenderContext } from "../shared.js";
 
-/** 紧凑 run 态卡的图标与 CreateWorkflow 同一枚（族内一致）；折叠态保留 RotateCcw 讲「恢复」。 */
+/**
+ * The compact run-state card uses the same icon as CreateWorkflow (consistent within the family);
+ * the collapsed state keeps RotateCcw to say "resume".
+ */
 const RESUME_WORKFLOW_RUN_TOOL_ICON = (
   <Workflow className="size-4 shrink-0 text-foreground-subtle" />
 );
@@ -20,20 +23,26 @@ const RESUME_WORKFLOW_RUN_FALLBACK_ICON = (
   <RotateCcw className="size-4 shrink-0 text-foreground-subtle" />
 );
 
-/** 无 display 时的纯文本面板高度（照 get-workflow-run 的输出面板量级）。 */
+/**
+ * Height of the plain-text panel when there is no display (matched to the scale of the
+ * get-workflow-run output panel).
+ */
 const FALLBACK_OUTPUT_MAX_HEIGHT_CLASS = "max-h-60";
 
 /**
- * ResumeWorkflowRun 的聊天卡。
+ * The chat card for ResumeWorkflowRun.
  *
- * 两态：
- * - **run 已联接**（宿主按 display.runId 联接 workflowRuns 投影，`workflowRunCardJoin` 的
- *   byRunId 表）→ 复用 CreateWorkflow 的紧凑可点卡（`WorkflowRunCompactCard`），标签换
- *   「工作流实例已恢复」，状态点词/步数实时驱动，整卡点击打开侧栏 run 视图——tab 身份
- *   runId 键，与原始 create 卡打开的是同一个 tab。
- * - **未联接**（display 缺席的老会话 / 失败路径 / 投影尚未就绪）→ ToolLayout 折叠卡：
- *   runId（mono）+「后台运行中」状态点词（run 状态词汇表 running 档）+ 展开的本地化续跑
- *   说明；无 display 时有界纯文本面板，绝不 raw JSON dump。
+ * Two states:
+ * - **run joined** (the host joins the workflowRuns projection by display.runId, the byRunId table
+ *   of `workflowRunCardJoin`) → reuse CreateWorkflow's compact clickable card
+ *   (`WorkflowRunCompactCard`), with the label switched to "Workflow instance resumed"; the status
+ *   dot word and step count are driven live, and clicking anywhere on the card opens the run view
+ *   in the sidebar — the tab identity is keyed on runId, so it opens the same tab as the original
+ *   create card.
+ * - **not joined** (old sessions with no display / failure paths / projection not ready yet) → a
+ *   ToolLayout collapsed card: runId (mono) + the "Running in background" status dot word (the
+ *   `running` tier of the run status vocabulary) + an expanded localized resume description; with
+ *   no display at all, a bounded plain-text panel — never a raw JSON dump.
  */
 export function ResumeWorkflowRunToolCallBlock(context: ToolCallBlockRenderContext) {
   const { intl } = useZCodeIntl();
@@ -65,7 +74,7 @@ export function ResumeWorkflowRunToolCallBlock(context: ToolCallBlockRenderConte
 
   const onOpenWorkflowRun = context.onOpenWorkflowRun;
 
-  // —— run 态：紧凑可点卡（与 CreateWorkflow 共享组件，语义见组件头注释）——
+  // —— run state: compact and clickable (shared components with CreateWorkflow, see component header comments for semantics) ——
   if (context.workflowRun !== undefined) {
     const runStatusLabel = intl.formatMessage({
       id: `chat.toolCall.workflow.run.status.${context.workflowRun.status}`,
@@ -91,7 +100,7 @@ export function ResumeWorkflowRunToolCallBlock(context: ToolCallBlockRenderConte
     );
   }
 
-  // —— 折叠态：ToolLayout + 状态点词 + 展开说明 ——
+  // —— Folded state: ToolLayout + status keyword + expansion description ——
   const runId = runDisplay?.runId;
 
   const primaryText = useMemo(
@@ -104,8 +113,8 @@ export function ResumeWorkflowRunToolCallBlock(context: ToolCallBlockRenderConte
     [runId],
   );
 
-  // 状态词永远在圆点旁边：状态绝不只靠颜色或动画表达（DESIGN.md 可访问性规则）。
-  // display 只在成功输出上构造，失败路径走 showFailureStatus + 文本面板。
+  // Status words are always next to dots: status is never expressed solely by color or animation (DESIGN.md accessibility rules).
+  // display is only constructed on successful output, and the failure path is showFailureStatus + text panel.
   const statusLabel = useMemo(
     () =>
       runDisplay === undefined ? undefined : (
@@ -122,8 +131,8 @@ export function ResumeWorkflowRunToolCallBlock(context: ToolCallBlockRenderConte
 
   const renderContent = useCallback(() => {
     if (runDisplay === undefined) {
-      // 无 display 的老会话 / 失败路径：formatModelContent 的文本投影也是有界信息，直接给
-      // 面板，不做 JSON dump。
+      // Old session/failure path without display: The text projection of formatModelContent is also bounded information, directly given
+      // Panel, does not do JSON dump.
       const fallbackText =
         typeof toolCall.output === "string" && toolCall.output.trim().length > 0
           ? toolCall.output

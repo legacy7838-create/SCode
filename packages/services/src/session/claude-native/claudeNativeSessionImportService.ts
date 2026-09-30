@@ -35,7 +35,7 @@ async function cleanupCreatedArtifacts(paths: readonly string[]): Promise<void> 
     try {
       await rm(path, { force: true });
     } catch {
-      // 清理失败不阻断主流程
+      // Failure to clean up does not block the main process
     }
   }
 }
@@ -59,7 +59,7 @@ export async function importClaudeNativeSessions(params: {
 
   logger.info(
     undefined,
-    `开始导入 Claude 原生 session workspaceFilter=${params.workspacePath ?? "all"} count=${normalizedSessionIds.length}`,
+    `importing Claude native sessions workspaceFilter=${params.workspacePath ?? "all"} count=${normalizedSessionIds.length}`,
   );
 
   for (const sessionId of normalizedSessionIds) {
@@ -142,8 +142,8 @@ export async function importClaudeNativeSessions(params: {
             workspaceIdentity: targetWorkspaceIdentity ?? meta.workspaceIdentity,
           },
           searchableText: buildSearchableTextFromMessages(sessionFile.messages),
-          // 已导入会话被删除/归档后再次导入，不能继承旧行隐藏状态，
-          // 否则导入结果成功但 active 列表查不到对应会话。
+          // After the imported session is deleted/archived and then imported again, the hidden status of the old row cannot be inherited.
+          // Otherwise, the import result is successful but the corresponding session cannot be found in the active list.
           archived: false,
           deleted: false,
         });
@@ -166,7 +166,7 @@ export async function importClaudeNativeSessions(params: {
     } catch (error) {
       await cleanupCreatedArtifacts(createdOutputPaths);
       const reason = error instanceof Error ? error.message : String(error);
-      logger.warn(undefined, `导入 Claude 原生 session 失败 session=${sessionId}`, error);
+      logger.warn(undefined, `failed to import Claude native session session=${sessionId}`, error);
       result.failed.push({
         provider: "claude",
         sessionId,
@@ -178,7 +178,7 @@ export async function importClaudeNativeSessions(params: {
 
   logger.info(
     undefined,
-    `Claude 原生 session 导入完成 imported=${result.imported.length} skipped=${result.skipped.length} failed=${result.failed.length}`,
+    `Claude native session import completed imported=${result.imported.length} skipped=${result.skipped.length} failed=${result.failed.length}`,
   );
   return result;
 }

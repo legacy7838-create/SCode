@@ -68,7 +68,7 @@ function DiffViewerComponent(props: DiffViewerProps) {
       "--diffs-bg": "var(--color-background)",
       "--diffs-light-bg": "var(--color-background)",
       "--diffs-dark-bg": "var(--color-background)",
-      // 完整 diff 运行在 @pierre/diffs Shadow DOM 中，不会自动继承外层 font-mono class。
+      // Full diff runs in @pierre/diffs Shadow DOM and does not automatically inherit the outer font-mono class.
       "--diffs-font-family": "var(--font-mono)",
       "--diffs-font-size": `${fontSizePx}px`,
       ...style,
@@ -80,14 +80,14 @@ function DiffViewerComponent(props: DiffViewerProps) {
       diffStyle: "unified",
       diffIndicators: "bars",
       disableFileHeader: true,
-      // PatchDiff 只有 patch 里的局部上下文，未包含完整 before/after 内容。
-      // 使用 simple 避免展示无法点击展开的 “unmodified lines”；MultiFileDiff 保留可展开提示。
+      // PatchDiff only has the local context in the patch and does not include the complete before/after content.
+      // Use simple to avoid showing "unmodified lines" that cannot be clicked to expand; MultiFileDiff retains expandable hints.
       hunkSeparators: rendersPatch ? "simple" : "line-info",
       lineDiffType: "word-alt",
       overflow: "scroll",
       unsafeCSS: DIFF_VIEWER_UNSAFE_CSS,
-      // @pierre/diffs 的 code 节点在 Shadow DOM 内，外层 Tailwind class 无法命中；
-      // 需要覆盖其内部样式时走 unsafeCSS 注入，且只做最小覆盖，不做大范围样式重写。
+      // The code node of @pierre/diffs is in the Shadow DOM, and the outer Tailwind class cannot be hit;
+      // Use unsafeCSS injection when you need to overwrite its internal styles, and only do minimal coverage without extensive style rewriting.
       theme:
         lightTheme && darkTheme
           ? {

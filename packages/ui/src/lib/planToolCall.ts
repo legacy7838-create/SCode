@@ -61,7 +61,7 @@ export function extractPlanToolCallContent(
       const content = extractPlanMarkdown(JSON.parse(toolCall.inputText), workspacePath);
       if (content.markdown) return content;
     } catch {
-      // 流式 inputText 可能暂时不是完整 JSON；继续走 legacy raw fallback。
+      // The streaming inputText may not be complete JSON for the time being; continue with the legacy raw fallback.
     }
   }
 
@@ -87,7 +87,7 @@ export function extractPlanToolCallContent(
 const MARKDOWN_H1_PATTERN = /^\s{0,3}#(?!#)\s+(.+?)\s*#*\s*$/m;
 const MARKDOWN_LEADING_DECORATION = /^\s{0,3}(?:#{1,6}\s+|>\s*|[-*+]\s+)/;
 
-/** 计划目录标题取首个 H1，否则取首个非空文本行。 */
+/** The plan outline title takes the first H1, otherwise the first non-empty text line. */
 export function getPlanDirectoryTitle(markdown: string): string | undefined {
   const h1 = MARKDOWN_H1_PATTERN.exec(markdown)?.[1]?.trim();
   if (h1) return h1;

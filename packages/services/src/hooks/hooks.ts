@@ -5,18 +5,18 @@ import { createServiceDescriptor } from "../descriptors.js";
 
 export interface IHooksService {
   /**
-   * 加载 workspace 的 hooks 配置
+   * Load the hooks configuration of the workspace
    */
   loadHooks(params: { workspaceIdentity?: string; workspacePath: string }): Promise<{
     hooks: Hook[];
     hooksEnabled: boolean;
     workspaceHookSnapshot?: WorkspaceHookBundleSnapshotData;
-    /** trust store 文件损坏/不可读时为 true（fail-closed：全部 hook 按未持久信任处理） */
+    /** True when the trust store file is damaged/unreadable (fail-closed: all hooks are treated as non-persistent trust) */
     trustStoreCorrupt?: boolean;
   }>;
 
   /**
-   * 保存 hooks 配置
+   * Save hooks configuration
    */
   saveHooks(params: {
     workspaceIdentity?: string;
@@ -25,8 +25,8 @@ export interface IHooksService {
   }): Promise<void>;
 
   /**
-   * 无 task/session 的 Workspace Hook 预信任。
-   * 实现必须转发到 Agent authority 重新发现 canonical snapshot，禁止 service/UI 直接写 store。
+   * Workspace Hook without task/session pre-trust.
+   * The implementation must forward to the Agent authority to rediscover the canonical snapshot, and prohibit service/UI from directly writing to the store.
    */
   grantWorkspaceHookTrust?(params: {
     workspaceIdentity?: string;

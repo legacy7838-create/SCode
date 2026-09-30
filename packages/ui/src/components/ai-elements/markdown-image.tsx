@@ -40,8 +40,9 @@ const markdownImageOnlyLinePattern = /^\s*!\[[^\]]*]\([^\n]+\)\s*$/;
 const markdownFenceLinePattern = /^( {0,3})(`{3,}|~{3,})(.*)$/;
 
 /**
- * Streamdown 会在 rehype 前按空行拆块。仅移除连续纯图片行之间的空行，让同组图片进入
- * 同一个 Markdown 块；代码围栏里的相似文本必须保持原样。
+ * Streamdown splits blocks on blank lines before rehype. Only the blank lines between consecutive
+ * image-only lines are removed, so a group of images lands in the same Markdown block; similar text
+ * inside code fences must be left exactly as it is.
  */
 export function normalizeConsecutiveMarkdownImageBlocks(markdown: string): string {
   const lines = markdown.split("\n");
@@ -94,8 +95,9 @@ export function normalizeConsecutiveMarkdownImageBlocks(markdown: string): strin
 }
 
 /**
- * Streamdown 的 harden 会过滤 rehype 自定义属性，因此在 React component mapping
- * 层识别纯图片段落，确保画廊标记和响应式 class 不会被安全层剥离。
+ * Streamdown's harden pass filters rehype custom attributes, so image-only paragraphs are
+ * recognized at the React component mapping layer to make sure gallery markers and responsive
+ * classes are not stripped by the sanitizing layer.
  */
 export function MarkdownImageParagraph({
   children,
@@ -190,7 +192,7 @@ export function MarkdownImage({
       .catch((error) => {
         if (disposed) return;
         setLocalImageFailed(true);
-        logger.warn("[MarkdownImage] markdown 本地图片预览失败", {
+        logger.warn("[MarkdownImage] markdown local image preview failed", {
           path: localImageLink.path,
           error: error instanceof Error ? error.message : String(error),
         });
@@ -202,8 +204,8 @@ export function MarkdownImage({
 
   useEffect(
     () => () => {
-      // 关闭预览后的异步焦点恢复可能晚于消息节点卸载，
-      // 必须取消旧任务，避免焦点落到已脱离文档的图片按钮。
+      // Asynchronous focus restoration after closing preview may occur later than message node unloading,
+      // Old tasks must be canceled to avoid focus falling on image buttons that are no longer in the document.
       if (focusTimerRef.current !== null) {
         window.clearTimeout(focusTimerRef.current);
       }
@@ -237,7 +239,7 @@ export function MarkdownImage({
       .catch((error) => {
         if (disposed) return;
         setArtifactImageFailed(true);
-        logger.warn("[MarkdownImage] assistant artifact 图片预览失败", {
+        logger.warn("[MarkdownImage] assistant artifact image preview failed", {
           sessionId,
           error: error instanceof Error ? error.message : String(error),
         });
@@ -309,8 +311,8 @@ export function MarkdownImage({
   const handlePreviewOpenChange = (open: boolean) => {
     setPreviewOpen(open);
     if (!open) {
-      // Dialog 关闭后手动将焦点归还图片触发按钮，避免焦点落到 body，
-      // 让键盘用户能够从原图继续浏览消息。
+      // After the Dialog is closed, manually return the focus to the picture trigger button to avoid the focus falling on the body.
+      // Allows keyboard users to continue browsing messages from the original image.
       if (focusTimerRef.current !== null) {
         window.clearTimeout(focusTimerRef.current);
       }
@@ -330,8 +332,8 @@ export function MarkdownImage({
         className={cn(
           imageThumbnailTriggerClassName,
           effectiveImageStatus === "loading" &&
-            // 画廊父级的响应式 w-auto/h-44 选择器优先级高于普通尺寸类，
-            // 加载态内部又是绝对定位，导致按钮宽度塌缩；仅在加载期间强制固定方形。
+            // Gallery parent's responsive w-auto/h-44 selector takes precedence over normal size classes,
+            // The inside of the loading state is absolute positioning, causing the button width to collapse; the square shape is forced to be fixed only during loading.
             "relative !h-44 !w-44 !max-w-full cursor-default",
         )}
         data-image-thumbnail-trigger=""
@@ -350,8 +352,8 @@ export function MarkdownImage({
           </span>
         ) : null}
         <img
-          // React 复用同一 img 时，旧资源的异步事件可能命中新 src 的处理器。
-          // 按资源重建节点，确保 load/error 只更新触发该事件的图片状态。
+          // When React reuses the same img, asynchronous events from the old resource may hit the handler of the new src.
+          // Rebuild the node by resource and ensure that load/error only updates the image state that triggered the event.
           key={displaySrc}
           alt={imageAlt}
           className={cn(
@@ -364,10 +366,10 @@ export function MarkdownImage({
           draggable={false}
           loading="lazy"
           onError={(event) => {
-            // 远程 Markdown 图片不能直接交给浏览器渲染：加载失败时既没有状态，
-            // 也没有运行时轨迹，用户只能看到空白区域。
+            // Remote Markdown images cannot be directly rendered by the browser: there is no status when loading fails.
+            // There is also no runtime trace, and the user only sees empty space.
             setBrowserImageState({ source: displaySrc ?? "", status: "error" });
-            logger.warn("[MarkdownImage] markdown 图片加载失败", {
+            logger.warn("[MarkdownImage] markdown image failed to load", {
               source: sanitizeImageSourceForLog(displaySrc ?? ""),
             });
             onError?.(event);

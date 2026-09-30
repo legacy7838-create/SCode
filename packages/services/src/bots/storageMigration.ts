@@ -12,10 +12,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** 只在 v3 文件不存在时调用；不是当前 Bot Options 的兼容读取器。 */
+/** Only called if the v3 file does not exist; not a compatible reader for the current Bot Options. */
 function migrateSelection(options: Record<string, unknown>): ModelSelection | undefined {
   if (Object.hasOwn(options, "modelSelection")) {
-    // Bug 根因：旧 thoughtLevel 曾覆盖已保存的新档位；新字段存在时禁止回读旧字段。
+    // Bug root cause: the old thoughtLevel has overwritten the saved new level; reading back the old field is prohibited when the new field exists.
     const parsed = modelSelectionSchema.safeParse(options.modelSelection);
     if (!parsed.success) return undefined;
     const selection = parsed.data;
@@ -37,8 +37,8 @@ function migrateSelection(options: Record<string, unknown>): ModelSelection | un
   const modelId = custom?.modelName ?? (separator > 0 ? value.slice(separator + 1) : undefined);
   if (!oldProviderId || !modelId) return undefined;
   const providerId = migrateLegacyModelProviderId(oldProviderId);
-  // 仅接受明确身份，不再按模型名唯一匹配其他供应商，也不把裸模型名解释为 Agent Provider。
-  // Bug 根因：候选为空时曾把明确旧选择永久写空到 v3；迁移只搬意图，不能检查当前可用性。
+  // Only explicit identities are accepted, no more unique matching of other providers by model name, and no interpretation of naked model names as Agent Providers.
+  // Bug root cause: When the candidate was empty, the clear old selection was permanently written to v3; migration only moved the intention and could not check the current availability.
   if (!providerId) return undefined;
   const reasoningLevel =
     typeof options.thoughtLevel === "string" ? options.thoughtLevel.trim() : "";

@@ -1,13 +1,13 @@
 // ============================================================
-// AgentRuntime-backed WorkflowDriver：typed 结果的提交桥接（submit_result）
+// AgentRuntime-backed WorkflowDriver: submission bridge for typed results (submit_result)
 // ============================================================
-// 修复原因：workflow-driver.ts 又顶到 oxlint max-lines 上限（400 行），把会话级 submit 端口拆到
-// 本文件成自由函数，与隔壁的升级桥接（workflow-driver-escalation.ts 的 `makeSessionEscalatePort`）
-// 逐条对称——两者本就是同一副形状的两条时序（mid-turn 阻塞 → 上报 → 引擎回裁决 → 解开 deferred）。
-// 公开面不变，driver 类上只剩一处调用。
+// Reason for repair: workflow-driver.ts has reached the upper limit of oxlint max-lines (400 lines), and the session-level submit port has been removed.
+// This file becomes a free function and is connected to the upgrade bridge next door (`makeSessionEscalatePort` of workflow-driver-escalation.ts)
+// Symmetrical one by one - the two are originally two sequences of the same shape (mid-turn blocking → reporting → engine response → unblocking deferred).
+// The public side remains unchanged, there is only one call left on the driver class.
 //
-// 对 driver 状态的全部触碰都经 {@link SubmitBridgeHost} 显式递进来（会话表 + 向上回报面），
-// 本文件不持有任何自己的状态——原方法体逐字保留，只把 `this.` 换成 `host.`。
+// All touches to driver state are passed in explicitly via {@link SubmitBridgeHost} (session table + reporting upward),
+// This file does not hold any state of its own - the original method body is retained verbatim, just replacing `this.` with `host.`.
 
 import type {
   SessionId,
@@ -20,9 +20,9 @@ import { defer, rejectWith } from "./workflow-driver-helpers.js";
 import type { SessionState } from "./workflow-driver-types.js";
 
 /**
- * driver 交给提交桥接的宿主面。两样都是 driver 私有状态的**引用**（不是副本）：`sessions` 就是
- * 类里那张会话表，`sink` 是 Boundary B 的向上回报面（`askSubmitAttempted` 在本调用栈内被引擎
- * 同步回裁决，所以这两者必须是同一世的那一对）。
+ * The host surface the driver hands to the submit bridge. Both are **references** to driver-private state (not copies): `sessions` is
+ * the session table inside the class, and `sink` is Boundary B's upward reporting surface (`askSubmitAttempted` is resolved synchronously
+ * by the engine within this call stack, so these two must be the matching pair of the very same generation).
  */
 export interface SubmitBridgeHost {
   readonly sessions: ReadonlyMap<string, SessionState>;
@@ -30,9 +30,9 @@ export interface SubmitBridgeHost {
 }
 
 /**
- * 造一个会话级 submit 端口：`submit_result` handler mid-turn 调用它并阻塞等裁决。
+ * Builds a session-level submit port: the `submit_result` handler calls it mid-turn and blocks waiting for the verdict.
  *
- * closure 绑定本会话，模型无法覆盖路由身份（instance 取自 `currentInstance`）。
+ * The closure binds this session, so the model cannot override the routing identity (the instance is taken from `currentInstance`).
  */
 export function makeSessionSubmitPort(
   host: SubmitBridgeHost,
@@ -43,11 +43,11 @@ export function makeSessionSubmitPort(
       const state = host.sessions.get(sessionId);
       const instance = state?.currentInstance;
       if (state === undefined || instance === undefined) {
-        // 无在飞 ask 却收到 submit：不路由到引擎，直接拒绝（避免悬挂）。
+        // Wu Zaifei asked but received submit: not routed to the engine, rejected directly (to avoid hanging).
         return Promise.resolve(rejectWith("no active ask is awaiting a submitted result"));
       }
-      // 未声明结果类型的 ask 可能仍注册了 submit_result；这里立即拒绝提交并提示使用普通回复。
-      // 不能把它交给引擎后等待裁决：引擎对 untyped ask 不处理 submit，等待中的 deferred 将无法结束。
+      // An ask that does not declare a result type may still register submit_result; here the submission is immediately rejected and a normal reply is prompted.
+      // You cannot hand it over to the engine and then wait for a decision: the engine does not handle submit for untyped ask, and the pending deferred will not end.
       if (!state.currentTyped) {
         return Promise.resolve(
           rejectWith(
@@ -55,13 +55,13 @@ export function makeSessionSubmitPort(
           ),
         );
       }
-      // 当前实例不变式：至多一个挂起 deferred。若已有（不应发生），先拒旧的避免泄漏。
+      // Current instance invariant: at most one pending deferred. If there is already (should not happen), reject the old one first to avoid leakage.
       state.pendingSubmit?.reject(
         new WorkflowError("DriverError", "This submit was superseded by a newer submit."),
       );
       const deferred = defer<ContractsSubmitVerdict>();
       state.pendingSubmit = deferred;
-      // 同步上报：引擎在本调用栈内校验并经 respondToSubmit 回裁决（同步解开 deferred）。
+      // Synchronous reporting: The engine verifies in this call stack and returns the decision via respondToSubmit (synchronously unlocking the deferred).
       host.sink.askSubmitAttempted(instance, request.result);
       return deferred.promise;
     },

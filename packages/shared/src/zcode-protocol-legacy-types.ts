@@ -1,9 +1,9 @@
-/* oxlint-disable eslint(max-lines) -- re-home 产物：旧协议消息/会话承重类型集中迁移，保持单文件契约面。 */
-// re-home 迁移产物（为删除旧协议树铺路）。
-// 本文件承载旧 ZCode Protocol 中仍被存活栈（validation/background-task-notifications/
-// v4 投影等）消费的承重类型与 schema：ZCodeSessionInfo / ZCodeMessageWithParts /
-// ZCodePermissionResponse / ZCodeInteractionRequestOrigin 及其依赖闭包。
-// 旧协议死亡（zcode-protocol/index.ts 删除）后，这是该协议面的唯一幸存面。
+/* oxlint-disable eslint(max-lines) -- A re-home artifact: the load-bearing legacy protocol message/session types are migrated in one place, keeping the contract surface in a single file. */
+// re-home migration artifact (paving the way for deleting the old protocol tree).
+// This file hosts the surviving stack in the old ZCode Protocol (validation/background-task-notifications/
+// v4 projection, etc.) The load-bearing type and schema consumed are: ZCodeSessionInfo / ZCodeMessageWithParts /
+// ZCodePermissionResponse / ZCodeInteractionRequestOrigin and their dependent closures.
+// After the death of the old protocol (zcode-protocol/index.ts was deleted), this is the only surviving side of the protocol.
 
 import { z } from "zod";
 import { modelSelectionSchema } from "./model-selection.js";
@@ -22,12 +22,12 @@ export const zcodeSyntheticUserMessageSourceSchema = z.enum([
   "rewind",
   "selection_side_chat",
   "subagent",
-  // child 回复会作为 model-only synthetic user message 持久化；
-  // app/agent 共用的承重消息 schema 必须与 CLI contracts 使用同一来源词表。
+  // Child replies will be persisted as model-only synthetic user messages;
+  // The load-bearing messaging schema shared by the app/agent must use the same source vocabulary as the CLI contracts.
   "subagent_message",
   "todo_reminder",
-  // 中枢直接启动工作流的启动轮 source；与 contracts 的
-  // SYNTHETIC_USER_MESSAGE_SOURCES 保持同一词表，否则 v3 mapper 收窄该 source 会 tsc 失败。
+  // The hub directly starts the workflow's startup wheel source; with contracts
+  // SYNTHETIC_USER_MESSAGE_SOURCES maintains the same vocabulary, otherwise v3 mapper narrows the source and tsc fails.
   "workflow_launch",
   "shared_context",
 ]);
@@ -44,9 +44,9 @@ export const zcodePermissionRuleBehaviorSchema = z.enum(["allow", "deny", "ask"]
 /** Backward-compatible wire/storage key interpreted only for trusted official CUA tools. */
 export const OFFICIAL_CUA_PERMISSION_RULE_TOOL_NAME = "zcode:permission-capability:official_cua";
 /**
- * workflow 运行确认窗第三选项「Refine」（拒绝并附修改意见）的稳定 optionId。
- * CLI 侧 v4 投影合成选项、broker 应答映射与 GUI 特判共用同一常量；
- * 该选项只在 v4 链路投放。
+ * The stable optionId of the third option "Refine" in the workflow run confirmation dialog (deny and attach revision comments).
+ * The v4 projection's synthesized option on the CLI side, the broker answer mapping and the GUI special case all share this one constant;
+ * this option is only offered on the v4 path.
  */
 export const WORKFLOW_REFINE_PERMISSION_OPTION_ID = "workflowRefine";
 export const zcodePermissionRuleValueSchema = z
@@ -94,8 +94,8 @@ export const zcodeSessionGoalSchema = z
     sessionId: nonEmptyString,
     targetId: nonEmptyString,
     objective: nonEmptyString,
-    // 旧版持久化 session target 不包含 summaryTitle。
-    // 协议读取历史 snapshot 时补 null，避免老会话恢复失败。
+    // Legacy persistent session targets do not contain summaryTitle.
+    // The protocol adds null when reading the historical snapshot to avoid failure to restore old sessions.
     summaryTitle: z.string().min(1).nullable().default(null),
     status: z.enum(["active", "paused", "budget_limited", "complete"]),
     tokenBudget: z.number().int().positive().nullable(),
@@ -216,7 +216,7 @@ export const zcodeUserMessageInfoSchema = z
     role: z.literal("user"),
     time: messageTimeSchema,
     agent: nonEmptyString,
-    // 旧消息或未绑定会话的合成消息可能没有请求来源；不借默认模型补写。
+    // Old messages or synthetic messages that are not bound to a session may not have a request source; they are not overwritten by the default model.
     model: modelSelectionSchema.optional(),
     system: z.string().optional(),
     tools: z.record(z.string(), z.boolean()).optional(),

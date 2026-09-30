@@ -53,8 +53,8 @@ export function resolveServerLayout(serverRoot = getDefaultServerDataRoot()): Se
 export async function resolveCanonicalServerRoot(
   serverRoot = getDefaultServerDataRoot(),
 ): Promise<string> {
-  // 安装前 server root 可能尚不存在；向上找到最近的存在祖先做 realpath，再拼回缺失段，
-  // 这样既能收敛已有符号链接，也不会因为 ENOENT 让首次安装失效。
+  // The server root may not exist before installation; find the nearest existing ancestor and make realpath, then put back the missing segment.
+  // This will not only converge existing symbolic links, but also will not invalidate the first installation due to ENOENT.
   let candidate = assertServerDataRoot(serverRoot);
   const missingSegments: string[] = [];
   while (true) {
@@ -82,7 +82,7 @@ function inferDataBaseDir(serverRoot: string): string {
   if (basename(serverRoot) === "server" && basename(parent) === ".zcode") {
     return dirname(parent);
   }
-  // 非标准的显式 server root 仍保持隔离，不向其父目录扩散 Agent/SQLite 数据。
+  // Non-standard explicit server roots remain isolated and do not propagate Agent/SQLite data to their parent directories.
   return serverRoot;
 }
 

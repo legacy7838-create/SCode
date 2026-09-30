@@ -2,11 +2,13 @@ import {
   isTasksStorageMigrated,
   isTasksStoragePrepared,
 } from "#src/session/tasksDatabase/prepared.js";
-/* eslint-disable max-lines -- 与 automationRepo 同理：off-peak 仓库集中维护 off_peak_tasks 的
-   sqlite schema、状态机守卫写入与调度认领，稳定后再按读写职责拆分。 */
-/* off-peak 任务仓库：off_peak_tasks 的 sqlite schema、状态机守卫写入与调度认领。
-   与 automation 共用 tasks-index.sqlite 与 Repo 模式，但表/状态机/常量全部独立，
-   禁止往 automations 表或 ZCodeAutomation 类型上加字段。 */
+/* eslint-disable max-lines -- for the same reason as automationRepo: the off-peak repo centrally
+   maintains the sqlite schema of off_peak_tasks, the state machine guarded writes and the scheduling
+   claims; it will be split by read/write responsibility once things stabilize. */
+/* off-peak task repository: the sqlite schema of off_peak_tasks, state machine guarded writes and
+   scheduling claims. It shares tasks-index.sqlite and the Repo pattern with automation, but its
+   tables/state machine/constants are entirely independent; never add fields to the automations
+   table or to the ZCodeAutomation types. */
 import { mkdir } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname } from "node:path";
@@ -27,11 +29,12 @@ const require = createRequire(import.meta.url);
 const { DatabaseSync } = require("node:sqlite") as typeof import("node:sqlite");
 type DatabaseSyncInstance = InstanceType<typeof DatabaseSync>;
 
-/** 认领超时回收：claim_running=1 超过该时长仍未结算，视为持有者已崩溃，允许重新认领。
-    独立于 automation 的 CLAIM_STALE_MS（语义相同、常量独立一份，勿互相引用）。 */
+/** Stale claim reclamation: a claim_running=1 row that is still unsettled after this long is treated
+    as a crashed holder and may be claimed again. Independent of automation's CLAIM_STALE_MS (same
+    semantics, its own constant — do not cross-reference them). */
 export const OFF_PEAK_CLAIM_STALE_MS = 10 * 60_000;
 
-/** 终态 SQL IN 片段；OFF_PEAK_TERMINAL_STATUSES 的单一来源投影。 */
+/** Terminal-state SQL IN fragment; the single-source projection of OFF_PEAK_TERMINAL_STATUSES. */
 const TERMINAL_SQL_LIST = OFF_PEAK_TERMINAL_STATUSES.map((s) => `'${s}'`).join(", ");
 
 interface OffPeakTaskRow {
@@ -40,7 +43,7 @@ interface OffPeakTaskRow {
   title: string;
   conversation_id: string | null;
   session_id: string | null;
-  /** list() 联查 tasks-index 得到的绑定会话标题；单行读取不带该列。 */
+  /** The bound session title obtained by list() joining tasks-index; single-row reads do not carry this column. */
   session_title?: string | null;
   prompt: string;
   permission_mode: string;
@@ -115,10 +118,10 @@ function readOffPeakModelSelection(row: OffPeakTaskRow): ZCodeOffPeakTask["model
       const parsed = modelSelectionSchema.safeParse(JSON.parse(row.model_selection));
       if (parsed.success) return parsed.data;
     } catch {
-      // 继续尝试已发布旧列的单向导入。
+      // Continue to attempt a one-way import of old published columns.
     }
   }
-  // 旧单列没有 Provider Family，不能安全迁移到任一新 Off-Peak Provider。
+  // The old single column does not have a Provider Family and cannot be safely migrated to any of the new Off-Peak Providers.
   return null;
 }
 
@@ -136,13 +139,14 @@ function serializeOffPeakModelSelection(
 }
 
 /**
- * 闲时任务存储仓库（tasks-index.sqlite，WAL、多进程安全）。
+ * Off-peak task storage repository (tasks-index.sqlite, WAL, multi-process safe).
  *
- * 仓库只做存储与原子状态迁移，守卫两条不变量：
- * 终态不可逆出；单任务认领 single-flight（任务间并发不设本地上限）。
- * 排队/晋级语义在服务端，仓库不感知——schedulable 只是 host 轮询写回的快照。
+ * The repository only does storage and atomic state transitions, guarding two invariants:
+ * a terminal state is irreversible; a single task's claim is single-flight (no local cap on
+ * concurrency between tasks). Queueing/promotion semantics live on the server and the repository is
+ * unaware of them — schedulable is just a snapshot the host writes back while polling.
  */
-/** INSERT 撞上 idx_off_peak_bound_active（并发双创建的失败方）。 */
+/** The INSERT hit idx_off_peak_bound_active (the losing side of a concurrent double create). */
 export function isOffPeakBoundSessionConflict(error: unknown): boolean {
   return (
     error instanceof Error &&
@@ -156,9 +160,9 @@ export class OffPeakTaskRepo {
   private db: DatabaseSyncInstance | null = null;
   private dbPath: string | null = null;
   private initializePromise: Promise<void> | null = null;
-  // 同 AutomationRepo，db 路径不能依赖进程级全局 _dataBaseDir：
-  // vitest threads 并发跑测试文件时全局值被互相覆盖，存在写进真实库的窗口。
-  // 改为构造期固定 dbPath，测试通过依赖注入传入临时库路径，生产路径不传则回退默认。
+  // Same as AutomationRepo, the db path cannot rely on the process-level global _dataBaseDir:
+  // When vitest threads run test files concurrently, global values are overwritten by each other, and there is a window for writing into the real library.
+  // The dbPath is fixed during the construction period. The temporary library path is passed in during the test through dependency injection. If the production path is not passed, the default will be returned.
   private readonly resolvedDbPath: string | null;
 
   constructor(
@@ -209,11 +213,11 @@ export class OffPeakTaskRepo {
       this.db.exec("PRAGMA journal_mode = WAL");
       this.db.exec("PRAGMA synchronous = NORMAL");
     }
-    // Worker 已完成该路径的原始准备，业务连接不再重复全表修复。
+    // The worker has completed the original preparation of the path, and the business connection no longer needs to repeat the full table repair.
     if (isTasksStoragePrepared(path, this.db)) return;
     if (!isTasksStorageMigrated(path, this.db)) runTasksDatabaseMigrations(this.db);
-    // 早期预留了 awaiting_approval，但生产链路从未写入，UI 却把它包装成可用能力。
-    // 当前确认只走普通 session；迁移遗留行回 running，随后由启动回收按真实进程状态处理。
+    // awaiting_approval was reserved early, but the production link was never written and the UI wrapped it into available capacity.
+    // Currently, only ordinary sessions are confirmed; the remaining rows are migrated back to running, and then are processed according to the real process status by startup recycling.
     this.getDatabase()
       .prepare(
         `UPDATE off_peak_tasks
@@ -225,7 +229,7 @@ export class OffPeakTaskRepo {
 
   private getDatabase(): DatabaseSyncInstance {
     if (!this.db) {
-      throw new Error("OffPeakTaskRepo 未初始化：请先 await ensureReady()");
+      throw new Error("OffPeakTaskRepo is not initialized: await ensureReady() first");
     }
     return this.db;
   }
@@ -245,23 +249,24 @@ export class OffPeakTaskRepo {
     return row ?? null;
   }
 
-  // ---- 管理 CRUD ----
+  // ----Manage CRUD ----
 
   /**
-   * 创建即入队（status=queued）。取号在 service 层先行（POST /ticket 成功才落库），
-   * 取号结果经 options 一并写入；mock 先行阶段允许不带服务端字段。
+   * Creating the task also enqueues it (status=queued). The ticket is taken in the service layer
+   * first (the row is only persisted after POST /ticket succeeds), and the ticket result is written
+   * along with the options; the mock-first stage may omit the server-side fields.
    */
   async create(
     params: ZCodeOffPeakTaskCreateParams,
     options?: {
-      /** 测试注入用；缺省 Date.now()。 */
+      /** For test injection; defaults to Date.now(). */
       now?: number;
-      /** service 层先取号后落库时外部指定主键（取号需先有 task_id）；缺省内部生成。 */
+      /** Externally supplied primary key when the service layer takes the ticket before persisting (taking a ticket needs a task_id first); defaults to internal generation. */
       offPeakTaskId?: string;
       serverTicketId?: string;
       queuePosition?: number;
       registeredAt?: number;
-      /** 取号即 ready（低峰空闲时服务端可直接晋级）时随建随派。 */
+      /** Dispatch straight after creation when the ticket comes back ready (the server can promote directly while off-peak is idle). */
       schedulable?: boolean;
     },
   ): Promise<ZCodeOffPeakTask> {
@@ -292,7 +297,7 @@ export class OffPeakTaskRepo {
         off_peak_task_id: offPeakTaskId,
         server_ticket_id: options?.serverTicketId ?? null,
         title: params.title,
-        // 会话内创建绑定当前会话；conversation_id 仍等首跑回填（非空 = 已跑过）。
+        // Create within the session and bind the current session; conversation_id is still waiting to be backfilled by the first run (non-empty = has been run).
         session_id: params.boundSessionId ?? null,
         prompt: params.prompt,
         permission_mode: params.permissionMode,
@@ -322,7 +327,7 @@ export class OffPeakTaskRepo {
           workspaceIdentity: scope.workspaceIdentity,
         })
       : null;
-    // 绑定会话标题联查 tasks-index 同库 tasks 表（卡片展示）；独立库（测试/迁移前）无该表则不联。
+    // Bind the session title to join the tasks-index task table (card display) in the same library; if the independent library (before testing/migration) does not have this table, there will be no connection.
     const withSessionTitle = this.hasTasksIndexTable();
     const rows = this.getDatabase()
       .prepare(
@@ -346,8 +351,10 @@ export class OffPeakTaskRepo {
   }
 
   /**
-   * Registry 变化使已保存 Selection 失效时，保留原模型与档位供用户修复或后续可靠恢复，
-   * 同时清空正式 Selection 并撤销可调度状态，避免旧配置继续被 scheduler 认领。
+   * When a Registry change invalidates the saved Selection, the original model and level are kept so
+   * the user can repair them or a later reliable restore can use them, while the official Selection
+   * is cleared and the schedulable state revoked, so the scheduler cannot keep claiming the stale
+   * configuration.
    */
   async invalidateModelSelection(
     offPeakTaskId: string,
@@ -370,7 +377,7 @@ export class OffPeakTaskRepo {
           currentSelection.modelId !== modelSelection.modelId ||
           currentSelection.options?.reasoningLevel !== modelSelection.options?.reasoningLevel)
       ) {
-        // 另一进程已完成用户修复，以更新后的值为准，不能用旧 Registry 观察覆盖它。
+        // Another process has completed the user fix to the updated value and it cannot be overwritten with the old Registry observation.
         db.exec("COMMIT");
         return rowToTask(current);
       }
@@ -394,7 +401,7 @@ export class OffPeakTaskRepo {
     }
   }
 
-  /** 卡片 Delete：任何状态均可删（非终态删除的服务端核销由 service 层先行取消处理）。 */
+  /** Card Delete: deletable in any state (deleting a non-terminal task is settled server-side first, by the service layer cancelling it). */
   async delete(offPeakTaskId: string): Promise<void> {
     await this.ensureReady();
     this.getDatabase()
@@ -403,8 +410,9 @@ export class OffPeakTaskRepo {
   }
 
   /**
-   * 仅隐藏 History 行：任务必须已经实际启动；重复调用幂等。
-   * 不修改状态、session、started/ended/filesChanged 或服务端核销字段。
+   * Only hides the History row: the task must have actually started; repeated calls are idempotent.
+   * Does not modify the status, session, started/ended/filesChanged or the server-side settlement
+   * fields.
    */
   async markHistoryDeleted(
     offPeakTaskId: string,
@@ -425,7 +433,7 @@ export class OffPeakTaskRepo {
     return rowToTask(this.getRow(offPeakTaskId)!);
   }
 
-  /** 创建上限的本地预判用（权威是服务端取号 429/3103）。 */
+  /** Used for the local pre-check of the creation ceiling (the authority is the server-side ticket take 429/3103). */
   async countNonTerminal(): Promise<number> {
     await this.ensureReady();
     const row = this.getDatabase()
@@ -436,7 +444,7 @@ export class OffPeakTaskRepo {
     return row.n;
   }
 
-  /** 本会话是否已有未终态绑定任务（创建前预检；索引 idx_off_peak_bound_active 同条件）。 */
+  /** Whether this session already has a non-terminal bound task (pre-create check; index idx_off_peak_bound_active uses the same condition). */
   async hasActiveBoundTask(workspaceKey: string, sessionId: string): Promise<boolean> {
     await this.ensureReady();
     const row = this.getDatabase()
@@ -450,7 +458,7 @@ export class OffPeakTaskRepo {
     return row !== undefined;
   }
 
-  /** 执行中计数：keep-awake powerSaveBlocker 判据。 */
+  /** In-flight count: the criterion for the keep-awake powerSaveBlocker. */
   async countActive(): Promise<number> {
     await this.ensureReady();
     const row = this.getDatabase()
@@ -460,8 +468,9 @@ export class OffPeakTaskRepo {
   }
 
   /**
-   * 编辑窗口期字段：仅 queued/paused 可编辑；票只锁队列身份，prompt 派发时才读。
-   * modelSelection 只能替换为另一份明确 Selection；undefined = 不改。
+   * Edits the fields in the editable window: only queued/paused are editable; the ticket only locks the
+   * queue identity and is read at dispatch time. modelSelection can only be replaced with another
+   * explicit Selection; undefined = unchanged.
    */
   async updateEditableFields(
     offPeakTaskId: string,
@@ -480,10 +489,10 @@ export class OffPeakTaskRepo {
     if (params.modelSelection === null) return null;
     const nextModelSelection = params.modelSelection ?? readOffPeakModelSelection(row);
     if (!nextModelSelection) {
-      throw new Error(`Off-Peak task 缺少有效 ModelSelection: ${offPeakTaskId}`);
+      throw new Error(`Off-Peak task has no valid ModelSelection: ${offPeakTaskId}`);
     }
-    // 旧列是已发布版本的回滚快照，不能因普通编辑被清空；本更新只改 model_selection，
-    // 不反向改写旧身份/档位，也不为新记录伪造旧值。
+    // The old column is a rollback snapshot of the published version and cannot be cleared due to ordinary editing; this update only changes model_selection.
+    // No reverse overwriting of old identities/grades, nor falsification of old values for new records.
     this.getDatabase()
       .prepare(
         `UPDATE off_peak_tasks SET
@@ -502,9 +511,9 @@ export class OffPeakTaskRepo {
     return rowToTask(this.getRow(offPeakTaskId)!);
   }
 
-  // ---- 服务端同步快照（host offPeakTaskSync 写 / scheduler 读）----
+  // ---- Server synchronization snapshot (host offPeakTaskSync write / scheduler read) ----
 
-  /** 轮询/重新取号写回：仅覆盖显式传入的字段。 */
+  /** Poll/re-take write-back: only the explicitly passed fields are overwritten. */
   async updateSchedulingSnapshot(
     offPeakTaskId: string,
     patch: {
@@ -542,12 +551,13 @@ export class OffPeakTaskRepo {
       });
   }
 
-  // ---- 调度状态机 ----
+  // ---- Scheduling state machine ----
 
   /**
-   * single-flight 认领可派发任务：status=queued 且 schedulable=1 且无在途认领，
-   * 原子 claim_running 0→1。FIFO 序按 queued_at（权威序由服务端取号顺序保证）。
-   * 同时回收认领超时（claimed_at 过期）的僵尸认领。
+   * Single-flight claims dispatchable tasks: status=queued and schedulable=1 and no in-flight claim,
+   * atomically claim_running 0→1. FIFO order follows queued_at (the authoritative order is
+   * guaranteed by the server's ticket-take order). It also reclaims zombie claims whose claim timed
+   * out (claimed_at expired).
    */
   async claimDue(now: number): Promise<ZCodeOffPeakTask[]> {
     await this.ensureReady();
@@ -573,8 +583,8 @@ export class OffPeakTaskRepo {
         WHERE off_peak_task_id = @id AND claim_running = 0`,
       );
       for (const row of dueRows) {
-        // 历史行可能没有 Provider 身份；它们必须留在列表等待修复，但不能被
-        // scheduler 认领。逐行跳过还能保证一条旧记录不阻塞后续健康任务。
+        // History rows may not have Provider status; they must remain in the list awaiting repair, but cannot be
+        // Scheduler claims. Skipping row by row also ensures that an old record does not block subsequent health tasks.
         if (!readOffPeakModelSelection(row)) continue;
         const res = claim.run({ id: row.off_peak_task_id, now });
         if (res.changes === 1) {
@@ -590,9 +600,11 @@ export class OffPeakTaskRepo {
   }
 
   /**
-   * 派发成功（网关 admitted）：queued→running，回填首跑产生的 conversation/session 与
-   * 本段 ticket，释放认领。守卫：仅 queued 可入 running（终态不可逆出；paused 竞态下
-   * 派发结果作废，返回 null 由调用方处理）。续跑段保留首段 started_at（用户视角单任务）。
+   * Successful dispatch (gateway admitted): queued→running, backfilling the conversation/session
+   * produced by the first run and this segment's ticket, and releasing the claim. Guard: only queued
+   * may enter running (a terminal state is irreversible; under a paused race the dispatch result is
+   * void and null is returned for the caller to handle). A continuation segment keeps the first
+   * segment's started_at (one task from the user's perspective).
    */
   async markRunning(
     offPeakTaskId: string,
@@ -629,8 +641,10 @@ export class OffPeakTaskRepo {
   }
 
   /**
-   * 终态落库（completed/failed/cancelled）。守卫：终态不可逆出——已终态的行拒绝二次迁移，
-   * 返回 null（OffPeakRunResult 迟到兜底时调用方据此丢弃）。settled_at 由核销单独回填。
+   * Persists the terminal state (completed/failed/cancelled). Guard: a terminal state is
+   * irreversible — a row already in a terminal state refuses a second transition and null is
+   * returned (the caller discards it that way when a late OffPeakRunResult arrives). settled_at is
+   * backfilled separately by the settlement.
    */
   async markTerminal(
     offPeakTaskId: string,
@@ -639,7 +653,7 @@ export class OffPeakTaskRepo {
       endedAt: number;
       failureReason?: string;
       filesChanged?: number;
-      /** scheduler 派发阶段的确定性错误；存在时原子累计一次派发尝试并留 last_error。 */
+      /** A deterministic error from the scheduler's dispatch phase; when present, one dispatch attempt is atomically accumulated and last_error kept. */
       dispatchError?: string;
     },
   ): Promise<ZCodeOffPeakTask | null> {
@@ -672,9 +686,10 @@ export class OffPeakTaskRepo {
   }
 
   /**
-   * 用户 Pause / Continue：queued ⇄ paused。
-   * Pause 只停本地派发（票留服务端队列）；Continue 的票有效性判断与重取号在 service 层。
-   * 已被认领派发在途（claim_running=1）的任务不可 Pause，返回 null。
+   * User Pause / Continue: queued ⇄ paused.
+   * Pause only stops local dispatch (the ticket stays in the server queue); the ticket validity check
+   * for Continue and the re-take live in the service layer. A task whose dispatch is already claimed
+   * and in flight (claim_running=1) cannot be paused; null is returned.
    */
   async setPaused(
     offPeakTaskId: string,
@@ -699,8 +714,10 @@ export class OffPeakTaskRepo {
   }
 
   /**
-   * 释放认领（派发失败/关机退出）：复位 single-flight 锁；带 error 时累计 attempt_count
-   * 并记 last_error（供派发退避与诊断）。不改 status——任务留在 queued 等下轮认领（无 skip）。
+   * Releases the claim (dispatch failure / shutdown exit): resets the single-flight lock; when an error
+   * is passed, attempt_count is accumulated and last_error recorded (for dispatch backoff and
+   * diagnostics). The status is not changed — the task stays queued waiting for the next claim round
+   * (no skip).
    */
   async releaseClaim(
     offPeakTaskId: string,
@@ -725,10 +742,12 @@ export class OffPeakTaskRepo {
   }
 
   /**
-   * 启动回收（app 级启动时调用一次，先于任何派发）：进程死亡时残留的
-   * running 置回 queued（保留 queued_at，天然仍在队首附近；保留 session_id 供 resume
-   * 续跑），并清理超时认领。返回回收的任务数。
-   * ⚠ 调用方必须保证调用时无在跑 off-peak loop（属主应为 app 单例进程，非每个 host）。
+   * Startup reclamation (called once at app-level startup, before any dispatch): puts the running rows
+   * left behind by a dead process back to queued (keeping queued_at, so they naturally sit near the
+   * head of the queue; keeping session_id for a resumed continuation run) and cleans up timed-out
+   * claims. Returns the number of reclaimed tasks.
+   * ⚠ The caller must guarantee that no off-peak loop is running at call time (the owner should be
+   * the app singleton process, not every host).
    */
   async recoverInterrupted(now: number): Promise<number> {
     await this.ensureReady();
@@ -756,9 +775,10 @@ export class OffPeakTaskRepo {
   }
 
   /**
-   * 3h 时间盒到期 / ready 废票的续跑回队：running → queued，保留
-   * session/conversation/started_at 供 resume 接续；清 schedulable 与位次等待重新取号后由轮询刷新。
-   * 终态/paused 不可回队，返回 null（如用户已抢先取消）。
+   * Requeue for a continuation run when the 3h time box expires / the ready ticket is voided:
+   * running → queued, keeping session/conversation/started_at so a resume can continue it; schedulable
+   * and the queue position are cleared and refreshed by the poll after a new ticket is taken.
+   * Terminal/paused tasks cannot requeue and null is returned (e.g. the user cancelled first).
    */
   async requeueForContinuation(
     offPeakTaskId: string,
@@ -777,7 +797,7 @@ export class OffPeakTaskRepo {
     return rowToTask(this.getRow(offPeakTaskId)!);
   }
 
-  /** 全部非终态任务（offPeakTaskSync 轮询输入：有非终态才轮）。 */
+  /** All non-terminal tasks (the poll input of offPeakTaskSync: it only polls when non-terminal tasks exist). */
   async listNonTerminal(): Promise<ZCodeOffPeakTask[]> {
     await this.ensureReady();
     const rows = this.getDatabase()
@@ -790,9 +810,9 @@ export class OffPeakTaskRepo {
     return rows.map(rowToTask);
   }
 
-  // ---- 终态核销 outbox----
+  // ---- Final write-off outbox----
 
-  /** settle 服务端 ack 后回填；仅终态行可核销（幂等，重复回填覆盖为最新 ack 时间）。 */
+  /** Backfilled after the settle server ack; only terminal rows can be settled (idempotent — a repeated backfill overwrites with the latest ack time). */
   async markSettled(offPeakTaskId: string, settledAt: number): Promise<void> {
     await this.ensureReady();
     this.getDatabase()
@@ -804,7 +824,7 @@ export class OffPeakTaskRepo {
       .run({ id: offPeakTaskId, settled_at: settledAt });
   }
 
-  /** 未核销的终态任务：poll 周期捎带补报 + host 启动扫描（不新增计时器）。 */
+  /** Terminal tasks that are not settled yet: reported along as a side effect of the poll cycle + a host startup scan (no extra timer). */
   async listUnsettledTerminal(): Promise<ZCodeOffPeakTask[]> {
     await this.ensureReady();
     const rows = this.getDatabase()

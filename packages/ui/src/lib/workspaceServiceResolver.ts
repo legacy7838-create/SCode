@@ -28,10 +28,10 @@ export function resolveWorkspaceRemoteSessionId<TServices>(
   const candidateSessionIds = [
     target.remoteSessionId,
     workspaceIdentity ? state.sessionIdByWorkspaceIdentity[workspaceIdentity] : undefined,
-    // 同一路径可能同时存在于多个 SSH/WSL/Docker endpoint。已有 identity 时若
-    // 精确绑定尚未恢复，按 path fallback 会借用另一 endpoint 的 services，导致 sessions-index、
-    // provider 和 task RPC 串到错误 Host。identity 缺失时保持 remote-waiting；只有旧版无
-    // identity 的 remote tab 才继续使用 path 兼容恢复。
+    // The same path may exist in multiple SSH/WSL endpoints at the same time. If there is already an identity
+    // Precise binding has not been restored. Pressing the path fallback will borrow services from another endpoint, resulting in sessions-index,
+    // provider and task RPC string to wrong Host. Maintain remote-waiting when identity is missing; only old versions have no
+    // The remote tab of identity will continue to use path compatible recovery.
     !workspaceIdentity && target.remoteTarget
       ? state.sessionIdByWorkspacePath[target.workspacePath]
       : undefined,
@@ -57,9 +57,9 @@ export function resolveWorkspaceServices(
   const remoteSessionId = resolveWorkspaceRemoteSessionId(target, state);
   const isRemoteWorkspace = isRemoteWorkspaceTarget(target, remoteSessionId);
 
-  // 远端历史恢复时 tab 可能先只有 workspaceIdentity，remoteSessionId 稍后才回填。
-  // 这种状态不能落回 baseServices，否则会用本机 sqlite 查询远端 workspace 并缓存空结果；
-  // 这里统一要求远端目标必须解析到远端 session 后才返回 services。
+  // When the remote history is restored, the tab may only have the workspaceIdentity at first, and the remoteSessionId will be backfilled later.
+  // This state cannot fall back to baseServices, otherwise the local sqlite will be used to query the remote workspace and cache empty results;
+  // It is uniformly required here that the remote target must resolve to the remote session before returning services.
   if (isRemoteWorkspace) {
     const services = remoteSessionId ? state.sessionsById[remoteSessionId]?.services : undefined;
     return services

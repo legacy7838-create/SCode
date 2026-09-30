@@ -3,7 +3,10 @@ import type { PluginStoreOrder } from "@zcode/shared";
 import { useServices } from "@/hooks/useServices.js";
 import { logger } from "@/logger.js";
 
-/** 只持有当前页面投影；请求合并与 TTL 统一归 Host 配置服务管理。 */
+/**
+ * Holds only the current page's projection; request coalescing and TTL are left entirely to the
+ * Host config service.
+ */
 export function usePluginStoreOrder(enabled = true) {
   const { clientConfigService: service } = useServices();
   const [snapshot, setSnapshot] = useState<{
@@ -19,7 +22,7 @@ export function usePluginStoreOrder(enabled = true) {
         if (generation.current === current) setSnapshot({ service, order });
       } catch {
         if (generation.current === current) {
-          logger.warn("[PluginStoreOrder] 配置读取失败，保留当前排序");
+          logger.warn("[PluginStoreOrder] failed to read config, keeping the current order");
         }
       }
     },

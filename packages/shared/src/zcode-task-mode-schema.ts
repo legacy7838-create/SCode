@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-// 该 schema 同时被 validation 聚合入口和 legacy protocol 使用，必须放在无反向依赖的叶子模块。
-// 根因：protocol 从 validation 导入它，而 validation 又导入 protocol 的资源采样 schema，
-// ESM/Jiti 在 clean Docker 中会先读到尚未初始化的 binding，导致 `.optional()` 启动即崩溃。
+// This schema is used by both the validation aggregation entry and the legacy protocol, so it must be placed in a leaf module with no reverse dependencies.
+// Root cause: protocol imports it from validation, and validation imports protocol's resource sampling schema,
+// ESM/Jiti in a clean environment would first read the not-yet-initialized binding, causing `.optional()` to crash at startup.
 export const zcodeTaskModeSchema = z.enum(["yolo", "plan", "edit", "auto", "autoEdit", "build"]);

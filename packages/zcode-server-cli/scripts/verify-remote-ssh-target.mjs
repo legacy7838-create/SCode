@@ -14,9 +14,3 @@ export function resolveVerificationTarget(explicitTarget, architecture = process
   }
   return `linux-${architecture}`;
 }
-
-export function dockerPlatformForTarget(target) {
-  const architecture = target === "linux-x64" ? "amd64" : target === "linux-arm64" ? "arm64" : null;
-  if (!architecture) throw new Error(`Unsupported Linux verification target: ${target}`);
-  return `linux/${architecture}`;
-}

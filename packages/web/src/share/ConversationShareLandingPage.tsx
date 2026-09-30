@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- share 公开页的状态文案、Row allow-list 和登录态需保持同一安全边界。 */
+/* eslint-disable max-lines -- the share public page's status copy, Row allow-list, and login state must stay on one shared security boundary. */
 import {
   useCallback,
   useEffect,
@@ -23,13 +23,13 @@ import {
 } from "./conversationSharePreviewClient.js";
 import { resolveShareHeaderView, type ShareHeaderView } from "./shareHeaderLayout.js";
 
-/** 登录入口的展示顺序，与桌面端登录卡片一致（z.ai 在上）。 */
+/** The display order of the login portal is consistent with the login card on the desktop (z.ai is on top). */
 const SHARE_LOGIN_PROVIDERS: readonly WebOAuthProviderId[] = [
   ZAI_PROVIDER_ID,
   BIGMODEL_PROVIDER_ID,
 ];
 
-type ConversationShareLandingLocale = "zh-CN" | "en-US";
+type ConversationShareLandingLocale = "en-US";
 type ConversationShareLandingState =
   | { kind: "loading" }
   | { kind: "login_required" }
@@ -58,7 +58,7 @@ interface Copy {
   loginTitle: string;
   loginDescription: string;
   login: string;
-  /** 每个 provider 的登录按钮文案与区域徽标，对齐桌面端 login.oauth.* 口径。 */
+  /** Each provider's login button copy and region logo are aligned with the desktop login.oauth.* caliber. */
   loginWith: Record<WebOAuthProviderId, string>;
   loginRegion: Record<WebOAuthProviderId, string>;
   expiredTitle: string;
@@ -82,52 +82,15 @@ interface Copy {
   continueHelp: string;
   downloadZCode: string;
   retryOpen: string;
-  /** 结果物计数；{count} 占位。中文无复数，英文分单复数。 */
+  /** Result count; {count} placeholder. There is no plural in Chinese, but singular and plural in English. */
   artifactCountOne: string;
   artifactCountOther: string;
 }
 
-// 站点首页本身就是下载入口，没有 /download 这个 path（单独的下载链接会 404）。
+// The homepage of the site itself is the download entrance, and there is no /download path (a separate download link will result in 404).
 const ZCODE_DOWNLOAD_URL = "https://zcode.z.ai";
 
 const COPY: Record<ConversationShareLandingLocale, Copy> = {
-  "zh-CN": {
-    brand: "ZCode 会话分享",
-    loading: "正在加载分享内容",
-    loadingDescription: "请稍候，我们正在验证分享链接。",
-    loginTitle: "登录后查看分享",
-    loginDescription: "请登录后确认你是否有权限查看这个分享。",
-    login: "登录",
-    loginWith: {
-      zai: "连接 Z.ai 继续使用",
-      bigmodel: "连接 BigModel 继续使用",
-    },
-    loginRegion: { zai: "全球", bigmodel: "中国" },
-    expiredTitle: "分享已过期",
-    expiredDescription: "这个分享链接已经过期，请让分享者重新生成链接。",
-    notFoundTitle: "找不到分享内容",
-    notFoundDescription: "链接可能无效、分享已被移除，或当前登录账号无法访问。",
-    notFoundAccountHint:
-      "Z.ai 与 BigModel 的账号数据不互通。请检查是否选错了登录平台或使用了其他账号。",
-    backToHome: "回到首页",
-    networkTitle: "暂时无法加载分享",
-    networkDescription: "请检查网络后重试。",
-    invalidTitle: "分享格式无效",
-    invalidDescription: "服务返回的分享内容无法通过安全校验。",
-    outdatedTitle: "需要更新 ZCode",
-    outdatedDescription: "这个分享由更新版本的 ZCode 创建，请升级后再查看。",
-    unavailableTitle: "分享不可访问",
-    unavailableDescription: "当前账号没有权限，或者分享内容已不存在。",
-    retry: "重试",
-    continueInZCode: "去 ZCode 继续",
-    switchToDarkTheme: "切换到深色主题",
-    switchToLightTheme: "切换到浅色主题",
-    continueHelp: "如果没有自动打开 ZCode，请先下载客户端，或再次尝试打开。",
-    downloadZCode: "下载 ZCode",
-    artifactCountOne: "{count} 个结果物",
-    artifactCountOther: "{count} 个结果物",
-    retryOpen: "再次打开",
-  },
   "en-US": {
     brand: "ZCode Conversation Share",
     loading: "Loading shared conversation",
@@ -171,8 +134,7 @@ const COPY: Record<ConversationShareLandingLocale, Copy> = {
 };
 
 function localeOf(locale?: ConversationShareLandingLocale): ConversationShareLandingLocale {
-  if (locale) return locale;
-  return /^zh(?:-|$)/iu.test(globalThis.navigator?.language ?? "") ? "zh-CN" : "en-US";
+  return locale ?? "en-US";
 }
 
 function formatDate(timestamp: number, locale: ConversationShareLandingLocale): string {
@@ -273,7 +235,7 @@ export function ConversationShareLandingPage({
   const resolvedLocale = localeOf(locale);
   const copy = COPY[resolvedLocale];
   const activeTheme = theme ?? "zai-light";
-  // preview 到手后把会话标题写进浏览器标签；main.tsx 只能先给一个语言正确的兜底标题。
+  // After the preview is obtained, write the session title into the browser tag; main.tsx can only give a bottom-up title in the correct language first.
   const shareTitle = preview.share.title;
   useEffect(() => {
     document.title = `${shareTitle} · ${copy.brand}`;
@@ -283,8 +245,8 @@ export function ConversationShareLandingPage({
     preview.share.access_mode === "public_importable" || preview.share.access_mode === "private"
       ? buildShareImportDeepLink(shareCode)
       : null;
-  // 结果物数量只统计时间线实际展示的 artifact Row；preview.artifacts 还包含 userInput
-  // 附件的下载 manifest，不能直接拿 manifest 数量当作结果物数量。
+  // The number of results only counts the artifact Row actually displayed in the timeline; preview.artifacts also contains userInput
+  // For the download manifest of the attachment, the manifest quantity cannot be directly used as the result quantity.
   const artifactCount = preview.rows.filter((row) => row.kind === "artifact").length;
   const artifactCountLabel = (
     artifactCount === 1 ? copy.artifactCountOne : copy.artifactCountOther
@@ -520,15 +482,15 @@ export function ConversationShareLandingPage({
           >
             <span>{formatDate(preview.share.created_at, resolvedLocale)}</span>
             {artifactCount ? (
-              // 这里原本硬编码英文 artifact/artifacts 且手写复数，中文页会渲染成
-              // 「2026年9月3日 11:55 · 1 artifact」这种中英混排。
+              // Here, the English artifact/artifacts were originally hard-coded and the plural was handwritten. The Chinese page would be rendered as
+              // "September 3, 2026 11:55 · 1 artifact" is a mix of Chinese and English.
               <span aria-label={artifactCountLabel}>· {artifactCountLabel}</span>
             ) : null}
           </div>
         </ShareContentInset>
         {importLink && showContinueHelp ? (
-          // 这块原本是 ShareContentRail 的直接子元素，没套 ShareContentInset，
-          // 因此缺了 inset 的 px-4 / @md:px-6，横幅比上方时间行和下方正文都宽出一截。
+          // This element was originally a direct child element of ShareContentRail and did not include ShareContentInset.
+          // Therefore, the px-4 / @md:px-6 of inset is missing, and the banner is wider than the upper time line and lower text.
           <ShareContentInset>
             <div
               className="mb-6 flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-ui-sm text-foreground-subtle"
@@ -612,10 +574,10 @@ export function ConversationShareLandingStatus({
     (state.kind === "error" && state.error === "authentication_required");
   const isNotFound = state.kind === "error" && state.error === "not_found";
   /**
-   * 只在「重发同一个请求有可能得到不同结果」时给重试。
+   * Only retry when "resending the same request may result in different results".
    *
-   * 需要登录时该做的是登录，重发未授权请求结果不变；已过期不会自己变回未过期；载荷版本
-   * 高于本 build 得升级客户端。这几种给重试等于给一个必然无效的动作。
+   * What you need to do when you need to log in is to log in. The result of resending the unauthorized request will not change; expired will not change back to unexpired; payload version
+   * Higher than this build, you need to upgrade the client. These types of retries are equivalent to giving an action that is bound to be invalid.
    */
   const canRetry =
     Boolean(onRetry) &&
@@ -631,16 +593,16 @@ export function ConversationShareLandingStatus({
         <div className="mb-4 text-ui-sm font-medium text-brand">{copy.brand}</div>
         <h1 className="text-ui-xl font-semibold">{content.title}</h1>
         <p className="mt-3 text-ui-base leading-6 text-foreground-subtle">{content.description}</p>
-        {/* 服务端会隐匿无权限分享的存在性，账号提示仅作排查建议，不能断言用户登录错了。 */}
+        {/* The server will hide the existence of unauthorized sharing. The account prompts are only for troubleshooting suggestions and cannot be used to conclude that the user logged in incorrectly. */}
         {isNotFound ? (
           <p className="mt-4 text-ui-base leading-6 text-foreground-subtle">
             {copy.notFoundAccountHint}
           </p>
         ) : null}
         {/*
-          两个 provider 竖排全宽，对齐桌面端登录卡片（图标 + 文案 + 区域徽标）。
-          必须两个都给：private 分享的 owner 身份是 provider 特定的，页面无法预先知道
-          这份分享属于哪一边——猜错就等于把用户挡在自己的分享外面。
+          The two providers are arranged vertically and full width, aligned with the desktop login card (icon + copy + regional logo).
+          Both must be given: the owner identity shared by private is provider-specific and cannot be known by the page in advance.
+          Which side does this share belong to - guessing wrong means blocking the user from your own share.
         */}
         {showLogin && onLogin ? (
           <div className="mt-5 space-y-2">
@@ -722,9 +684,9 @@ export function ConversationShareLandingLoader({
   }, [activeTheme]);
   const load = useCallback(async () => {
     setState({ kind: "loading" });
-    // 有登录态就第一次直接带上：private 分享匿名请求必然被服务端按存在性隐匿判 404，
-    // 先发一次注定失败的匿名请求只是白跑一个往返。没有登录态时仍然匿名试——公开分享
-    // 不需要登录，不能因为没 token 就先弹登录。
+    // If you are logged in, bring it directly for the first time: private sharing anonymous request will inevitably be judged as 404 by the server based on existential concealment.
+    // Sending an anonymous request first that is doomed to fail is just a round trip in vain. Try anonymously when not logged in - share publicly
+    // There is no need to log in. You cannot log in first just because you don’t have a token.
     const initialToken = getAccessToken?.() ?? null;
     try {
       const preview = await client.getPreview(shareCode, initialToken ?? undefined);
@@ -736,8 +698,8 @@ export function ConversationShareLandingLoader({
           : "network";
       logPreviewLoadFailure(initialToken ? "authenticated" : "anonymous", error, kind);
       if (kind === "authentication_required" || kind === "not_found") {
-        // 带过 token 还失败就没有第二次机会了：要么本地登录态已失效（让宿主清理并重新登录），
-        // 要么服务端确实不认这个访问者。
+        // If you fail after bringing the token, there will be no second chance: either the local login state has expired (let the host clean up and log in again),
+        // Either the server does not recognize this visitor.
         if (initialToken) {
           setState({ kind: "error", error: kind });
           if (kind === "authentication_required") onLogout?.();

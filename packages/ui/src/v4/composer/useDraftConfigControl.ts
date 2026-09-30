@@ -1,10 +1,12 @@
 import { applyComposerPermissionGrant } from "@/v4/composer/composerPermissionGrant.js";
-/* eslint-disable max-lines -- Composer 草稿 owner 同时收口选择、正文与提交生命周期，保持单一状态边界。 */
-// Composer 的模式/模型选择与正文使用同一 scope 草稿；Session 只提供一次初始化种子。
-// 菜单点击立即保存 Renderer 意图，Prewarm 与 Submission 只消费它，不反向覆盖。
+/* eslint-disable max-lines -- The composer draft owner closes over selection, body, and submission
+ * lifecycle at once, keeping a single state boundary.
+ */
+// Composer's mode/model selection uses the same scope draft as the body; Session only provides an initialization seed once.
+// Clicking the menu immediately saves the Renderer intent. Prewarm and Submission only consume it and do not overwrite it in reverse.
 //
-// Workspace presentation 水合只提供 mode 与 slash commands；模型候选、能力和首选值
-// 统一来自目标 Host ModelSelectionView。
+// Workspace presentation Hydration only provides mode and slash commands; model candidates, capabilities and preferred values
+// Unified from target Host ModelSelectionView.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ZCODE_AGENT_PROVIDER, resolveExecutionState } from "@zcode/shared";
 import { applyComposerPlanTransition } from "@/v4/composer/composerPlanTransition.js";
@@ -38,7 +40,10 @@ import { resolveAppFollowupMode } from "@/v4/composer/followupModeSettings.js";
 import { logger } from "@/logger.js";
 import { useZCodeSessionStore } from "@/store/zcodeSessionStore.js";
 
-/** 目录水合单飞（per workspaceKey）：draft、已有 session 和严格模式双挂载共享一次 RPC。 */
+/**
+ * Single-flight catalog hydration (per workspaceKey): the draft, an existing session, and a
+ * strict-mode double mount share one RPC.
+ */
 const workspaceCatalogHydrationFlights = new Map<string, Promise<void>>();
 
 function applyDraftModelSelection(
@@ -55,8 +60,8 @@ function applyDraftModelSelection(
     provider: model.providerId,
     model: model.modelId,
   };
-  // thought 是模型的附属配置。切模型后保留源 thought 会让首发前配置屏障
-  // 在目标模型已切成功后把它当成“同模型显式切 thought”再次写入，必须先清除。
+  // thought is a subsidiary configuration of the model. Keeping the source after cutting the model will allow the barrier to be configured before the launch.
+  // After the target model has been successfully cut, it will be written again as "same model explicit cut thought" and must be cleared first.
   delete next.thought;
   return next;
 }
@@ -69,27 +74,42 @@ function shouldHydrateWorkspaceCatalog(params: {
   const hasModePresentation = params.configOptions.some(
     (option) => option.category === "mode" && option.type === "select",
   );
-  // slashCommands 属于 workspace identity，不会随已有 session projection 恢复。
-  // 因此已有 session 只要目录为空也必须独立水合；mode 目录也不再借模型目录间接提供。
+  // slashCommands belong to the workspace identity and will not be restored with the existing session projection.
+  // Therefore, existing sessions must be hydrated independently as long as the directory is empty; the mode directory is no longer provided indirectly through the model directory.
   return params.slashCommands.length === 0 || !hasModePresentation;
 }
 
 interface DraftConfigControl {
   modelSelectionRead: ModelSelectionRead;
-  /** Renderer 下一次提交的配置；Session 只在 scope 首次初始化时提供种子。 */
+  /**
+   * The config the Renderer submits next; Session only provides a seed when the scope is
+   * initialized for the first time.
+   */
   draftConfig: Partial<SessionConfigState>;
-  /** 草稿已选 config（partial）；createSession 时经 buildDraftCreateConfigPayload 携带。 */
+  /**
+   * The config already selected in the draft (partial); carried through
+   * buildDraftCreateConfigPayload at createSession time.
+   */
   draftConfigRef: React.RefObject<Partial<SessionConfigState>>;
-  /** 当前草稿生命周期冻结的初始化 config；只供 prewarm/createSession 建立时使用。 */
+  /**
+   * The initialization config frozen for the current draft lifecycle; used only when
+   * prewarm/createSession is set up.
+   */
   resolveInitialDraftConfig: () => Partial<SessionConfigState> | undefined;
   composerDraft: V4ComposerDraft;
   updateComposerContent: (
     content: Pick<V4ComposerDraft, "text" | "editorStateJson" | "mention">,
   ) => void;
   replaceComposerDraft: (draft: Omit<V4ComposerDraft, "updatedAt">) => void;
-  /** 新任务被接纳后，把当前完整 Root Draft 原子式转移到真实 Session scope。 */
+  /**
+   * Once a new task is accepted, atomically transfer the current complete Root Draft into the real
+   * Session scope.
+   */
   promoteComposerDraft: (createdSessionId: string) => void;
-  /** 在提交前捕获原意图；只在权威 accepted 后调用返回函数。 */
+  /**
+   * Captures the original intent before submission; the returned function is called only after an
+   * authoritative accepted.
+   */
   captureAcceptedModelSelection: (
     selection: ModelSelection,
     expectedSelection?: ModelSelection,
@@ -103,11 +123,20 @@ export function useDraftConfigControl(params: {
   workspacePath: string;
   workspaceIdentity?: string;
   provider?: ZCodeProvider;
-  /** 会话切换读取对应 scope；已有空选择也必须保留。 */
+  /**
+   * A session switch reads the corresponding scope; an already empty selection must still be
+   * preserved.
+   */
   sessionId: string | null;
-  /** 仅匹配当前 Session 的首份投影可用作初始化；null 表示还没恢复完成。 */
+  /**
+   * Only the first projection matching the current Session may be used for initialization; null
+   * means restoration has not finished yet.
+   */
   sessionConfig?: Partial<SessionConfigState> | null;
-  /** provider registry 已通过 renderer readiness 门禁后才允许拉起 Agent。 */
+  /**
+   * An Agent may only be started after the provider registry has passed the renderer readiness
+   * gate.
+   */
   agentStartupAllowed?: boolean;
   modelSelectionService: IModelSelectionService | null;
 }): DraftConfigControl {
@@ -153,9 +182,9 @@ export function useDraftConfigControl(params: {
   const initializeAsNewTask = sessionId === null || draft.initializeFromNewTask === true;
   if (!draft.mode && (initializeAsNewTask ? modelSelectionView !== null : sessionConfig != null)) {
     const mode = submissionModeSchema.safeParse(sessionConfig?.mode);
-    // Recent 是初始化原意图，不先按旧 Provider 是否仍在候选中删掉；下一次输入读取
-    // 由同一解析入口对应当前账号，或暂时留空。否则冷启动会绕过统一账号对应规则。
-    // mode 是已初始化标记：历史恢复给出的空选择也是确定结果，后续 Snapshot 不得填满。
+    // Recent is to initialize the original intention. If the old Provider is not still among the candidates, it will be deleted first. The next input will be read.
+    // The same parsing entry corresponds to the current account, or it can be left blank temporarily. Otherwise, cold start will bypass the unified account corresponding rules.
+    // mode is an initialized flag: an empty selection given by historical recovery is also a definite result and must not be filled by subsequent Snapshots.
     draft =
       initializeAsNewTask && modelSelectionView
         ? initializeNewTaskDraft(draft, workspacePath, workspaceIdentity, modelSelectionView)
@@ -174,8 +203,8 @@ export function useDraftConfigControl(params: {
   if (currentState !== storedState) setStoredState(currentState);
   const stateRef = useRef(currentState);
   stateRef.current = currentState;
-  // 原因：按 revision 清草稿会把短暂不可用永久写成空选择。这里只派生当前结果，
-  // 正文/模式自动保存继续保存 draft 中的原意图；读取未就绪时保留展示，提交由 View 门禁阻断。
+  // Reason: Pressing revision to clear the draft will permanently write an empty selection if it is temporarily unavailable. Only the current result is derived here,
+  // Text/mode auto-save continues to save the original intent in the draft; display is retained when the read is not ready, and submission is blocked by View access.
   const effectiveSelection = modelSelectionView
     ? (modelSelectionView.effectiveSelection ?? undefined)
     : draft.modelSelection;
@@ -206,7 +235,7 @@ export function useDraftConfigControl(params: {
   }, [draft, scopeKey]);
   const updateComposerDraft = useCallback(
     (update: (current: V4ComposerDraft) => V4ComposerDraft) => {
-      // 旧 scope 的延迟编辑器回调不能写入刚切换到的会话。
+      // Delayed editor callbacks from the old scope cannot write to the session just switched to.
       if (stateRef.current.scopeKey !== scopeKey) return;
       const previous = stateRef.current.draft;
       const next = update(previous);
@@ -238,7 +267,7 @@ export function useDraftConfigControl(params: {
         ...current,
         mode: mode.success ? mode.data : current.mode,
         modelSelection: next.modelSelection,
-        // 用户已经显式改选，不能再由导入时等待的默认初始化覆盖。
+        // This has been explicitly changed by the user and can no longer be overridden by the default initialization awaited on import.
         ...(current.initializeFromNewTask
           ? { mode: mode.success ? mode.data : "build", initializeFromNewTask: undefined }
           : {}),
@@ -250,7 +279,7 @@ export function useDraftConfigControl(params: {
     (selection: ModelSelection, expectedSelection: ModelSelection = selection): (() => void) => {
       const original = stateRef.current.draft.modelSelection;
       const effective = draftConfigRef.current.modelSelection;
-      // 对象键顺序不是选择身份；协议重建同一选择时不能因此丢掉 accepted 写回。
+      // Object key order is not selection identity; the protocol cannot therefore throw away accepted writebacks when reconstructing the same selection.
       if (
         effective?.providerId !== expectedSelection.providerId ||
         effective.modelId !== expectedSelection.modelId ||
@@ -258,7 +287,7 @@ export function useDraftConfigControl(params: {
       )
         return () => {};
       return () => {
-        // 自动对应只在本次提交被接纳后固定；旧 ACK 不得覆盖期间的新意图或新 scope。
+        // Automatic mapping is only fixed after this submission is accepted; old ACKs must not overwrite new intents or new scopes in the meantime.
         if (
           stateRef.current.scopeKey !== scopeKey ||
           stateRef.current.draft.modelSelection !== original
@@ -291,7 +320,7 @@ export function useDraftConfigControl(params: {
   );
   const replaceComposerDraft = useCallback(
     (replacement: Omit<V4ComposerDraft, "updatedAt">) => {
-      // 撤回编辑替换正文/配置，但不能忘记已经消费的授权，否则旧快照会再次覆盖新选择。
+      // Undo the edit and replace the text/configuration, but do not forget the authorization that has been consumed, otherwise the old snapshot will overwrite the new selection again.
       updateComposerDraft((current) => ({
         ...replacement,
         lastPermissionGrantId: current.lastPermissionGrantId,
@@ -306,8 +335,8 @@ export function useDraftConfigControl(params: {
       if (stateRef.current.scopeKey !== scopeKey || scopeId !== V4_DRAFT_SCOPE_ROOT) return;
       const targetSessionId = createdSessionId.trim();
       if (!targetSessionId) return;
-      // 首发成功曾直接删除 Root scope，真实 Session 没有 Composer Draft，
-      // 重挂载后又从 Snapshot 初始化。先写目标、再删来源，保留完整正文/模式/选择。
+      // The Root scope was deleted directly after the initial launch, and the real Session did not have Composer Draft.
+      // After remounting, initialize from Snapshot again. Write the target first, then delete the source, leaving the text/pattern/selection intact.
       const written = persistV4ComposerDraft(
         workspacePath,
         workspaceIdentity,
@@ -320,16 +349,16 @@ export function useDraftConfigControl(params: {
     [scopeId, scopeKey, workspaceIdentity, workspacePath],
   );
 
-  // ── workspace 目录水合（见文件头说明）──
-  // 目录已 ready（reload/广播/上次水合写过）则跳过；否则读取最小 workspace presentation。
+  // ── workspace directory hydration (see file header description)──
+  // If the directory is ready (reload/broadcast/last hydration written), it will be skipped; otherwise, the minimum workspace presentation will be read.
   useEffect(() => {
     const isDraft = sessionId === null;
     const store = useZCodeSessionStore.getState();
     const workspaceState = store.getWorkspaceState(workspacePath, workspaceIdentity);
     if (!agentStartupAllowed) {
-      // V4 目录水合曾在无模型时直接进入 RPC，虽然 Host 不会启动 CLI，
-      // renderer 仍会把正常等待态记成 hydration error。readiness 未通过时保持 idle；
-      // registry 就绪后依赖变化会自动重新进入本 effect。
+      // V4 directory hydration used to RPC directly without a model, although the Host would not launch the CLI,
+      // The renderer will still record normal wait states as hydration errors. Remain idle when readiness fails;
+      // After the registry is ready, dependency changes will automatically re-enter this effect.
       store.setConfigOptionsStatus(workspacePath, "idle", workspaceIdentity);
       return;
     }
@@ -391,7 +420,7 @@ export function useDraftConfigControl(params: {
         useZCodeSessionStore
           .getState()
           .setConfigOptionsStatus(workspacePath, "error", workspaceIdentity);
-        logger.warn(`[v4-workspace-catalog] workspace 目录水合失败: ${String(error)}`);
+        logger.warn(`[v4-workspace-catalog] workspace catalog hydration failed: ${String(error)}`);
       })
       .finally(() => {
         workspaceCatalogHydrationFlights.delete(workspaceKey);
@@ -411,7 +440,7 @@ export function useDraftConfigControl(params: {
     (modelProvider: string, model: string) => {
       const modelId = modelProvider ? `${modelProvider}/${model}` : model;
       const parsedSelection = parseModelPickerValue(modelId);
-      // 用户点击模型只确定模型身份；Reasoning 没有默认值，保持为空并等待用户选择。
+      // The user clicks on the model only to determine the model identity; Reasoning has no default value and remains empty and waits for user selection.
       const modelSelection = modelSelectionView
         ? (completeNewModelSelection(modelSelectionView, parsedSelection) ?? parsedSelection)
         : parsedSelection;
@@ -468,7 +497,7 @@ export function useDraftConfigControl(params: {
         }));
         return;
       }
-      // 模式与模型同属当前 scope；不再写全局偏好，避免别的任务反向覆盖。
+      // The mode and model belong to the current scope; global preferences are no longer written to avoid reverse overwriting by other tasks.
       const parsed = submissionModeSchema.safeParse(mode);
       if (parsed.success)
         updateComposerDraft((current) => ({
@@ -496,7 +525,10 @@ export function useDraftConfigControl(params: {
   };
 }
 
-/** createSession payload 的草稿 config 片段（无选择时返回空对象，不携带 config 键）。 */
+/**
+ * The draft config fragment of the createSession payload (returns an empty object with no config
+ * key when nothing is selected).
+ */
 export function buildDraftCreateConfigPayload(
   draftConfig: Partial<SessionConfigState>,
   appFollowupMode?: SessionConfigState["followupMode"] | null,

@@ -4,21 +4,11 @@ export function normalizeSettingsPatch(patch: Partial<AppSettings>): Partial<App
   const normalizedPatch = { ...patch };
 
   if (
-    "locale" in normalizedPatch &&
-    !("localePreference" in normalizedPatch) &&
-    typeof normalizedPatch.locale === "string"
-  ) {
-    // locale 现在只表示已解析后的实际语言，localePreference 才表示用户偏好。
-    // 兼容旧调用只写 locale 的路径，把它视为用户显式选择固定语言，避免下一次启动又回到 system。
-    normalizedPatch.localePreference = normalizedPatch.locale;
-  }
-
-  if (
     "terminalFontFamily" in normalizedPatch &&
     typeof normalizedPatch.terminalFontFamily === "string"
   ) {
-    // 终端字体覆盖需要支持清空后回到系统 profile 自动探测。
-    // RPC 传输会吞掉 undefined，这里把空串归一成 undefined，避免旧字体一直残留。
+    // Terminal font overlay needs to support automatic detection after clearing and returning to the system profile.
+    // RPC transmission will swallow undefined. Here, the empty string is normalized to undefined to prevent the old font from remaining.
     const trimmedTerminalFontFamily = normalizedPatch.terminalFontFamily.trim();
     normalizedPatch.terminalFontFamily =
       trimmedTerminalFontFamily.length > 0 ? trimmedTerminalFontFamily : undefined;
@@ -27,7 +17,7 @@ export function normalizeSettingsPatch(patch: Partial<AppSettings>): Partial<App
   if ("integratedTerminalShell" in normalizedPatch) {
     const selection = normalizedPatch.integratedTerminalShell;
     if (selection?.mode === "auto") {
-      // 设置页的“自动选择”表示移除用户覆盖，让 Bash 执行层继续使用当前平台的自动探测。
+      // "Auto-select" on the settings page means to remove the user override and let the Bash execution layer continue to use the automatic detection of the current platform.
       normalizedPatch.integratedTerminalShell = undefined;
     } else if (selection?.mode === "shell") {
       normalizedPatch.integratedTerminalShell = {
@@ -40,8 +30,8 @@ export function normalizeSettingsPatch(patch: Partial<AppSettings>): Partial<App
   }
 
   if ("httpProxy" in normalizedPatch && typeof normalizedPatch.httpProxy === "string") {
-    // 清空代理现在表示显式直连，不再回退用户 shell 环境变量。
-    // RPC 会吞掉 undefined，这里把空串归一成 undefined，避免旧代理继续留在 setting.json。
+    // Clearing the proxy now represents an explicit direct connection and no longer falls back on user shell environment variables.
+    // RPC will swallow undefined. Here, the empty string is converted to undefined to prevent the old proxy from remaining in setting.json.
     const trimmedHttpProxy = normalizedPatch.httpProxy.trim();
     normalizedPatch.httpProxy = trimmedHttpProxy.length > 0 ? trimmedHttpProxy : undefined;
   }
@@ -50,8 +40,8 @@ export function normalizeSettingsPatch(patch: Partial<AppSettings>): Partial<App
     "httpProxyNoProxy" in normalizedPatch &&
     typeof normalizedPatch.httpProxyNoProxy === "string"
   ) {
-    // No Proxy 是代理策略的一部分，清空时必须删除旧值，
-    // 否则下次启动 agent/renderer 仍会绕过显式代理。
+    // No Proxy is part of the proxy policy, and the old value must be deleted when clearing.
+    // Otherwise, the explicit proxy will still be bypassed next time the agent/renderer is started.
     const trimmedHttpProxyNoProxy = normalizedPatch.httpProxyNoProxy.trim();
     normalizedPatch.httpProxyNoProxy =
       trimmedHttpProxyNoProxy.length > 0 ? trimmedHttpProxyNoProxy : undefined;
@@ -61,8 +51,8 @@ export function normalizeSettingsPatch(patch: Partial<AppSettings>): Partial<App
     "httpProxyCaCertPath" in normalizedPatch &&
     typeof normalizedPatch.httpProxyCaCertPath === "string"
   ) {
-    // 自定义 CA 必须来自设置页显式路径；清空输入时要删除旧值，
-    // 否则重启后 agent 还会继续注入 NODE_EXTRA_CA_CERTS。
+    // The custom CA must come from an explicit path on the settings page; old values are deleted when clearing the input.
+    // Otherwise, the agent will continue to inject NODE_EXTRA_CA_CERTS after restarting.
     const trimmedHttpProxyCaCertPath = normalizedPatch.httpProxyCaCertPath.trim();
     normalizedPatch.httpProxyCaCertPath =
       trimmedHttpProxyCaCertPath.length > 0 ? trimmedHttpProxyCaCertPath : undefined;
@@ -72,7 +62,7 @@ export function normalizeSettingsPatch(patch: Partial<AppSettings>): Partial<App
     "zcodeEndpointOrigin" in normalizedPatch &&
     typeof normalizedPatch.zcodeEndpointOrigin === "string"
   ) {
-    // 非生产 endpoint override 需要支持 Reset 清空；RPC/JSON 对 undefined 不稳定时，用空串也能回到默认生产域。
+    // Non-production endpoint override needs to support Reset clearing; when RPC/JSON is unstable to undefined, you can use an empty string to return to the default production domain.
     const trimmedZCodeEndpointOrigin = normalizedPatch.zcodeEndpointOrigin.trim();
     normalizedPatch.zcodeEndpointOrigin =
       trimmedZCodeEndpointOrigin.length > 0 ? trimmedZCodeEndpointOrigin : undefined;
@@ -82,8 +72,8 @@ export function normalizeSettingsPatch(patch: Partial<AppSettings>): Partial<App
     "providerFamilyDomain" in normalizedPatch &&
     typeof normalizedPatch.providerFamilyDomain === "string"
   ) {
-    // 退出/解绑当前 provider family 时需要清空运行域。
-    // RPC 传输会吞掉 undefined，这里把空串归一成 undefined，避免旧选择继续影响 registry 过滤。
+    // When exiting/unbinding the current provider family, you need to clear the running domain.
+    // RPC transmission will swallow undefined. Here, the empty string is normalized to undefined to prevent the old selection from continuing to affect the registry filtering.
     const trimmedProviderFamilyDomain = normalizedPatch.providerFamilyDomain.trim();
     normalizedPatch.providerFamilyDomain =
       trimmedProviderFamilyDomain.length > 0 ? normalizedPatch.providerFamilyDomain : undefined;

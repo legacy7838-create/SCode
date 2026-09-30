@@ -1,11 +1,11 @@
 import type { SessionTaskType } from "@zcode/contracts";
 
 /**
- * 左侧任务列表的 session 类型投影。
+ * Session-type projection for the left task list.
  *
- * 列表可见性不能用 `parent_id is null` 的层级查询代替：显式 fork
- * 这类有 parent 的主任务会在 CLI 重启后被冷启动种子过滤。可见性必须由 taskType 决定，
- * 而辅助对话、subagent 与 workflow child 继续由各自专用投影承载。
+ * List visibility cannot be substituted with a hierarchical query on `parent_id is null`: primary
+ * tasks that have a parent, such as an explicit fork, would be filtered out by the cold-start seeding after a CLI restart. Visibility has to
+ * be decided by taskType, while side conversations, subagents and workflow children keep being carried by their own dedicated projections.
  */
 export const TASK_LIST_SESSION_TYPES = [
   "interactive",

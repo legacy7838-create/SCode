@@ -1,9 +1,12 @@
 /**
- * ChatEmptyState — 对话为空时的空态展示组件
+ * ChatEmptyState — the empty-state display for an empty conversation
  *
- * 从 ChatView.tsx 拆出的 workspace 路径工具函数和空态下拉菜单组件。
+ * Workspace path helpers and the empty-state dropdown menu components split out of ChatView.tsx.
  */
-/* eslint-disable max-lines -- 空态工作区菜单集中维护本地、远程与会话 workspace 的筛选和切换交互，局部样式扩展需保持同一套语义。 */
+/* eslint-disable max-lines -- The empty-state workspace menu keeps the filtering and switching
+ * interactions for local, remote, and session workspaces in one place; the local style overrides
+ * have to stay on the same semantics.
+ */
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button.js";
@@ -53,7 +56,7 @@ export {
 } from "@/ChatEmptyScratchWorkspaceDialog.js";
 
 // ---------------------------------------------------------------------------
-// Workspace 路径工具函数
+// Workspace path tool function
 // ---------------------------------------------------------------------------
 
 function inferWorkspaceHomePath(path: string) {
@@ -137,10 +140,10 @@ function filterVisibleWorkspaceMenuTabs({
         hasRemoteWorkspaceIdentity(workspaceTab) && !workspaceTab.remoteSessionId,
       );
 
-      // 空态菜单的 workspace 列表是给“立即切换可用上下文”用的。
-      // 断连 remote workspace 继续出现在这里时，用户点进去只会得到一条当前不可用的上下文，
-      // 和左侧 sidebar 的“保留断连项以便重连”职责不同。这里把断连 remote 从菜单列表里排除，
-      // 仅保留可直接进入的 workspace；底部的固定入口保持不变。
+      // The workspace list of the empty menu is used for "immediately switching available contexts".
+      // When the disconnected remote workspace continues to appear here, the user will only get a context that is currently unavailable.
+      // It is different from the left sidebar's responsibility of "preserving disconnected items for reconnection". Here, the disconnected remote is excluded from the menu list.
+      // Only directly accessible workspaces remain; the fixed entrance at the bottom remains unchanged.
       return !isDisconnectedRemoteWorkspace;
     })
     .filter((workspaceTab) => {
@@ -163,7 +166,7 @@ function filterVisibleWorkspaceMenuTabs({
 }
 
 // ---------------------------------------------------------------------------
-// 空态组件
+// Empty component
 // ---------------------------------------------------------------------------
 
 export function ChatEmptyWorkspacePreviewMenu({
@@ -191,7 +194,10 @@ export function ChatEmptyWorkspacePreviewMenu({
   isWindowsDesktop?: boolean;
   workspaceTabs: ReadonlyArray<ChatEmptyWorkspaceMenuTab>;
   allowConversationWorkspaceSelection?: boolean;
-  /** 是否显示项目 chip 的快捷脱离按钮；默认跟随非项目工作区选择能力。 */
+  /**
+   * Whether to show the project chip's quick detach button; by default it follows the non-project
+   * workspace selection capability.
+   */
   allowConversationWorkspaceDetach?: boolean;
   onSelectWorkspace: (workspaceTab: ChatEmptyWorkspaceMenuTab) => void;
   onSelectConversationWorkspace: () => void | Promise<void>;
@@ -206,19 +212,28 @@ export function ChatEmptyWorkspacePreviewMenu({
     localWorkspacePath?: string,
   ) => Promise<void>;
   onCancelRemoteProject: (sessionId: string) => Promise<void>;
-  /** 调用方局部调整 workspace chip 外层视觉，不改变普通会话默认样式。 */
+  /**
+   * Callers adjust the outer visuals of the workspace chip locally, without changing the default
+   * styling of a plain session.
+   */
   containerClassName?: string;
-  /** 调用方局部调整 workspace trigger 视觉，不改变普通会话默认样式。 */
+  /**
+   * Callers adjust the visuals of the workspace trigger locally, without changing the default
+   * styling of a plain session.
+   */
   triggerClassName?: string;
-  /** 调用方局部替换尾部 indicator；普通会话继续使用默认 Lucide chevron。 */
+  /**
+   * Callers substitute the trailing indicator locally; a plain session keeps using the default
+   * Lucide chevron.
+   */
   triggerIndicator?: ReactNode;
 }) {
   const { intl } = useZCodeIntl();
   const [sshDialogOpen, setSshDialogOpen] = useState(false);
   const [workspaceSearchQuery, setWorkspaceSearchQuery] = useState("");
   const showRemoteConnectionEntry = useRemoteConnectionEntryVisibility();
-  // Web 普通模式没有完整远程 workspace 会话链路，不能只依赖全局 feature visibility。
-  // 这里叠加壳层能力开关，确保本地 Web 模式的空态菜单不会露出必然失败的远程连接入口。
+  // Web normal mode does not have a complete remote workspace session link and cannot rely solely on global feature visibility.
+  // The shell capability switch is superimposed here to ensure that the empty menu in local Web mode does not expose the remote connection entry that is bound to fail.
   const canUseRemoteWorkspace = allowRemoteWorkspace && showRemoteConnectionEntry;
   const currentWorkspaceTab =
     workspaceTabs.find((workspaceTab) =>
@@ -311,8 +326,8 @@ export function ChatEmptyWorkspacePreviewMenu({
             <CurrentWorkspaceIcon
               className={cn(
                 "size-4 text-foreground-subtle transition-opacity",
-                // 关闭按钮和项目图标占用同一位置。只有允许脱离项目时才隐藏底层图标，
-                // 否则 X 会直接叠在图标上；定时任务禁用该能力时则让项目图标保持可见。
+                // The close button and the project icon occupy the same position. The underlying icon is only hidden when leaving the project is allowed.
+                // Otherwise the
                 canDetachProject &&
                   "group-hover/workspace-chip:opacity-0 group-focus-within/workspace-chip:opacity-0",
               )}
@@ -401,8 +416,8 @@ export function ChatEmptyWorkspacePreviewMenu({
             <DropdownMenuItem
               data-testid={TID_COMPOSER_REMOTE_CONNECTION}
               onSelect={() => {
-                // 打开远程弹窗时必须让 DropdownMenu 执行默认关闭流程。
-                // 阻止默认 select 会让父菜单与 modal 同时保持打开，浮层层级调整后父菜单会覆盖弹窗。
+                // When opening a remote pop-up window, DropdownMenu must execute the default closing process.
+                // Preventing the default select will keep the parent menu and modal open at the same time. After the floating layer level is adjusted, the parent menu will cover the pop-up window.
                 logger.info(
                   `[ChatEmptyWorkspacePreviewMenu] open remote dialog from workspace menu workspace=${workspacePath}`,
                 );

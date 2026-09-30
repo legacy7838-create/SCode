@@ -1,8 +1,8 @@
 // ============================================================
-// Dynamic Workflow Run 的观察面辅助（run service 的只读半身）
+// Observation surface assistance of Dynamic Workflow Run (read-only half of run service)
 // ============================================================
-// 快照/列表/详情的合成规则。从 dynamic-workflow-run-service.ts 拆出：服务文件承载入口与门，
-// 本文件承载「registry + journal → 对外读面」的纯合成规则（无 I/O、无状态）。
+// Composition rules for snapshots/lists/details. Unpacked from dynamic-workflow-run-service.ts: the service file carries the entrance and gate,
+// This file carries the pure synthesis rules of "registry + journal → external reading" (no I/O, no state).
 
 import type { DwfRunListItem, DwfRunSessionListItem } from "@zcode/adapters/storage";
 import {
@@ -35,91 +35,91 @@ import type { ActorSessionQuiescence } from "./workflow-driver-quiescence.js";
 import type { WorkflowRunControl } from "./workflow-run-control.js";
 
 /**
- * 产物归并住在 dynamic-workflow-run-artifact-projection.ts（本文件顶到 oxlint 的 400 行上限）。
- * 原样再导出而不是让四个调用点各改 import：它们找的是「观察面」，而这次拆分是行数约束的结果、
- * 不是边界的变化——把它变成一次跨模块改名，只会让 git blame 指向一个与意图无关的提交。
+ * Artifact merging lives in dynamic-workflow-run-artifact-projection.ts (this file is up against oxlint's 400-line cap).
+ * Re-exported as-is rather than making each of the four call sites change its import: what they are looking for is "the observation surface", while this split is a result of the line-count constraint, not a change of boundary -- turning it into a cross-module rename would only make git blame point at a commit unrelated to the intent.
  */
 export { artifactsOf };
 
-/** 注册表条目：一个在飞或近期结算的 run。 */
+/** A registry entry: a run that is in flight or settled recently. */
 export interface RunRegistryEntry {
   controller: AbortController;
   startedAt: Date;
   toolCallId?: string;
   parentSessionId?: string;
   /**
-   * 三个 submit 时元数据的内存副本，只服务于 **submit → createRun 的微任务间隙**：那一刻
-   * journal 里还没有行，而枚举面必须能把这个 run 按项目过滤（cwd）并给出标签（name /
-   * 脚本首行）。行一旦出现，journal 就是这三者的权威，内存副本不再被读。
+   * In-memory copies of three pieces of submit-time metadata, serving only the **submit -> createRun microtask gap**: at that
+   * moment the journal has no row yet, while the enumeration surface must be able to filter this run by project (cwd) and derive a label (name /
+   * the script's first line). Once the row appears, the journal is authoritative for all three and the in-memory copies are no longer read.
    */
   cwd: string;
   name?: string;
   scriptText: string;
   /**
-   * 本 run 实际生效的并发上界（`dwf_run.caps_max_concurrency` 的内存副本，同一条间隙论证）。
-   * submit / amend 落值，**resume 不落**——那条路沿用 journal 记录里的 caps，而它的行早就在了。
+   * The concurrency ceiling actually in effect for this run (an in-memory copy of `dwf_run.caps_max_concurrency`, argued the same gap way).
+   * submit / amend write the value, **resume does not** -- that path reuses the caps recorded in the journal, and its row was there long ago.
    */
   maxConcurrency?: number;
   /**
-   * 本 run 的活体控制面。与
-   * {@link controller} 并列而非合并：那个是「停下这个 run」的唯一通道，这个是「改这个 run 的一项
-   * 设置」的唯一通道，两者的收件人（harness 的 signal / 引擎与座位闸门）也不是同一个。
+   * The live control surface of this run. It sits alongside
+   * {@link controller} rather than merging with it: that one is the only channel for "stop this run", this one is the only channel for "change one
+   * setting of this run", and their recipients (the harness's signal / the engine and the seat gate) are not even the same.
    *
-   * 三条建条目的路都造一个（submit / amend / resume），launch 把它的两端接上。条目在、句柄的
-   * `setMaxConcurrency` 却回 false，就是「run 在这两步之间结算了」——`retuneConcurrency` 据此
-   * 回 `not_live`。
+   * All three entry-creating paths create one (submit / amend / resume), and launch connects both of its ends. The entry is present, yet the handle's
+   * `setMaxConcurrency` returns false, which means "the run settled between those two steps" -- `retuneConcurrency` accordingly
+   * returns `not_live`.
    */
   control?: WorkflowRunControl;
   /**
-   * 本 run 的子代理模型（`run-launched` 事件上那个规范 picker 串
-   * `providerId/modelId[$reasoningLevel]` 的内存副本）。
-   * 同一条间隙论证：`AmendWorkflow` 的 resolveInput 读快照判「沿用什么」，而修订一个刚起步的
-   * run 恰好落在 submit → 引擎记事件的那几个微任务里。
+   * The subagent model of this run (an in-memory copy of the canonical picker string on the `run-launched` event,
+   * `providerId/modelId[$reasoningLevel]`).
+   * The same gap argument: `AmendWorkflow`'s resolveInput reads the snapshot to decide "what to keep using", while amending a run that
+   * has just started happens to land in those few microtasks between submit and the engine recording the event.
    *
-   * **三条建条目的路都落值**：submit / amend 用刚归一出来的那个串，resume 读一次事件头抄过来。
-   * 值在建 run 那一世写死、本 run 余生不变，所以副本与事件不可能分叉——读面因此只剩一条规则：
-   * 有条目就读条目，只有冷行（本进程没有条目）才去扫事件。缺席即子代理跑在会话模型上。
+   * **All three entry-creating paths write the value**: submit / amend use the string just normalized, resume copies it over from the event header once.
+   * The value is frozen in the generation that created the run and never changes for the rest of its life, so the copy and the event cannot
+   * diverge -- the reading surface is therefore left with a single rule: if there is an entry, read the entry; only a cold row (this process
+   * has no entry) scans the events. Absent means the subagent runs on the session model.
    */
   subagentModel?: string;
   /**
-   * 本 run 的脚本文件（`run-launched` 事件上那个绝对路径的内存副本）。与 {@link subagentModel} 逐条同规：
-   * 三条建条目的路都落值（submit / amend 用入参给的那一个，resume 读一次事件头抄过来），
-   * 值在建 run 那一世写死、余生不变，所以副本与事件不可能分叉。缺席即这个 run 没有文件。
+   * The script file of this run (an in-memory copy of that absolute path on the `run-launched` event). It follows exactly the same rules line by line as {@link subagentModel}:
+   * all three entry-creating paths write the value (submit / amend use the one given in the arguments, resume copies it over from the event header once),
+   * the value is frozen in the generation that created the run and never changes afterwards, so the copy and the event cannot diverge. Absent means this run has no file.
    */
   scriptPath?: string;
-  /** 修订 run 的前驱（`dwf_run.resumed_from` 的内存副本，journal 行出现之前枚举面唯一能读到的地方）。 */
+  /** The predecessor of an amended run (an in-memory copy of `dwf_run.resumed_from`, the only place the enumeration surface can read it before the journal row appears). */
   resumedFrom?: string;
   /**
-   * 本 run 的用量起点（前驱结算后的 `spentTokens`）。同一条间隙论证：行落库之前两条读面只能从条目读用量，而修订
-   * 一个刚起步的 run 恰好落在那几个微任务里。**只有 amend 路落值**：全新 submit 从零起账，
-   * resume 的行早就在了。
+   * The usage starting point of this run (`spentTokens` after the predecessor settled). The same gap argument: before the row is persisted, both reading surfaces can only read usage from the entry, while amending
+   * a run that has just started happens to land in those few microtasks. **Only the amend path writes the value**: a fresh submit starts the account at zero,
+   * and resume's row was there long ago.
    */
   inheritedTokens?: number;
   /**
-   * 本 run 的 driver 交出来的**会话静默探针**（workflow-driver-quiescence.ts）。driver 构造时
-   * 回填，所以刚建好的条目上还没有——那个间隙里这个 run 连一个 actor 会话都还没建，问它也无话可说。
+   * The **session quiescence probe** this run's driver handed over (workflow-driver-quiescence.ts). It is filled in when the driver is
+   * constructed, so a freshly created entry does not have it yet -- in that gap this run has not even created a single actor session, so there is nothing to ask it about.
    *
-   * 唯一的读者是 amend：取代一个在飞前驱之后，它要先确认那些会话已经写完，才谈得上接续那条
-   * 未完的 ask（`inFlight`）。探针的所有权就在这个条目上——一个 run 一份，随 driver 生灭，
-   * 不另立进程级注册表。
+   * The only reader is amend: after superseding an in-flight predecessor it first has to confirm that those sessions have finished writing before it can
+   * pick up that unfinished ask (`inFlight`). The probe's ownership lives on this entry -- one per run, born and dying with the driver,
+   * with no separate process-level registry.
    */
   quiescence?: ActorSessionQuiescence;
-  /** 结算 promise；waitForTask 等它。fire-and-forget 的那条链就挂在这里。 */
+  /** The settlement promise; waitForTask awaits it. That is where the fire-and-forget chain hangs. */
   settlement: Promise<RunSettlement>;
-  /** 已结算时的终态（产物/错误只在这里，journal 不存脚本返回值）。 */
+  /** The terminal state once settled (artifacts/errors live only here; the journal does not store the script's return value). */
   terminal?: RunSettlement;
   completedAt?: Date;
   /**
-   * 已经为这个条目记过一次「journal 行是外来终态」的日志（见 {@link synthesizeRunStatus} 的
-   * 优先级说明）。追踪器每秒轮询一次，不记这个标记就会每秒一条同样的 warn。
+   * We have already logged once for this entry that "the journal row is a foreign terminal state" (see the priority note in {@link synthesizeRunStatus}).
+   * The tracker polls once per second; without this flag the same warn would be emitted once per second.
    */
   foreignTerminalLogged?: true;
 }
 
 /**
- * run 的终态集（不含 pending / running）。
- * 这里是「什么算终态」的**唯一权威**：journal 侧的 SQL 只做索引友好的预筛，收敛前按本集合
- * 再判一次，好让将来新增一个非终态状态时只有这一处要改。
+ * The set of terminal states of a run (excluding pending / running).
+ * This is the **single authority** on "what counts as terminal": the SQL on the journal side only does an index-friendly pre-filter, and before
+ * convergence it judges once more against this set, so that when a non-terminal state is added in the future only this place has to change.
  */
 export const TERMINAL_RUN_STATUSES: ReadonlySet<RunStatus> = new Set<RunStatus>([
   "completed",
@@ -128,13 +128,13 @@ export const TERMINAL_RUN_STATUSES: ReadonlySet<RunStatus> = new Set<RunStatus>(
 ]);
 
 /**
- * 由 journal 记录 + 活注册表合成快照。两者都没有该 run 时返回 undefined（上层归一成 lost）。
+ * Synthesizes a snapshot from the journal record + the live registry. Returns undefined when neither has that run (the layer above normalizes that to lost).
  *
- * `pendingQuestions` 由调用方从**内存的**升级停驻表投影好再传进来（本文件的纪律是无 I/O、
- * 无状态）。传空数组即「此刻没有待答问题」，字段整个缺席——不发空数组。
+ * `pendingQuestions` is projected by the caller from the **in-memory** escalation park table and passed in (this file's discipline is no I/O,
+ * no state). Passing an empty array means "there are no questions awaiting an answer right now" and the field is absent entirely -- an empty array is never sent.
  *
- * `concurrencyCeiling` 同理由调用方给（读它要探进程核数 = I/O）：缺席即「本次读不判天花板」，
- * `maxConcurrency` 整字段不出——见 {@link runConcurrencyField}。
+ * `concurrencyCeiling` is likewise supplied by the caller (reading it probes the process's core count = I/O): absent means "this read does not
+ * judge a ceiling", and `maxConcurrency` is left out as a whole -- see {@link runConcurrencyField}.
  */
 export function snapshotOf(
   taskId: string,
@@ -147,31 +147,31 @@ export function snapshotOf(
   const record = journal.getRun(taskId);
   if (entry === undefined && record === undefined) return undefined;
 
-  // 状态合成的唯一实现（见 {@link synthesizeRunStatus}）。快照面的词汇表没有 pending，
-  // 所以在最后一步折叠：runStatusToTaskStatus 把 pending 与 running 一起报成 running——
-  // 这正是"在注册表里就是在跑"的既有行为（缺了它，刚 submit 的 run 第一次轮询就被判成 lost）。
+  // The only implementation of state synthesis (see {@link synthesizeRunStatus}). The vocabulary of the snapshot surface is not pending.
+  // So fold in the last step: runStatusToTaskStatus reports pending and running together as running——
+  // This is exactly the existing behavior of "running in the registry" (without it, the run that was just submitted will be judged as lost in the first poll).
   const status: DynamicWorkflowRunSnapshot["status"] = runStatusToTaskStatus(
     synthesizeRunStatus(entry, record?.status),
   );
 
-  // 节点行只扫**一次**，reports 与 artifacts 共用（两者都只在终态取数，见各自的注释）。
-  // 分别 listNodes 就是把一个 256 节点 run 的全表解码做两遍。
+  // The node line is scanned only once, and reports and artifacts are shared (both only take the count in the final state, see their respective comments).
+  // Respectively, listNodes means decoding the entire list of a 256-node run twice.
   const nodes = status === "running" ? undefined : journal.listNodes(taskId);
 
-  // lineage 的活动时长：
-  // 与 nodes 同一道终态闸门、同一条论证——它的唯一消费者是终态通知，而快照被后台追踪器反复轮询。
+  // activity duration of lineage:
+  // Same finality gate, same argument as nodes - its only consumer is finality notifications, and snapshots are polled repeatedly by background trackers.
   const activeDurationMs = status === "running" ? undefined : runLineageActiveMs(journal, taskId);
 
-  // 真实终态词 + 停止原因 + 结构化失败：快照基类的
-  // `status` 是后台任务追踪器的通用词汇（stopped 折成 cancelled、errored 折成 failed），通知
-  // 要说真话只能读这三个字段。终态之前不带（还没有可说的终局）。
+  // true final state + stop reason + structured failure: Snapshot base class
+  // `status` is a common vocabulary for background task trackers (stopped is folded into canceled, errored is folded into failed), notification
+  // To tell the truth, you can only read these three fields. It is not taken before the final state (there is no ending to say yet).
   const runStatus = synthesizeRunStatus(entry, record?.status);
   const terminal = TERMINAL_RUN_STATUSES.has(runStatus);
   const stopReason = terminal ? stopReasonOf(entry, record) : undefined;
   const failure = terminal ? terminalErrorField(runStatus, entry, record).error : undefined;
   const error = failure?.message;
-  // 归属：AmendWorkflow 的
-  // resolveInput 读快照判「是不是本会话的 run」；lineage 两端指针见 lineageFields。
+  // Attribution: AmendWorkflow
+  // resolveInput reads the snapshot to determine "whether it is the run of this session"; see lineageFields for pointers at both ends of lineage.
   const parentSessionId = entry?.parentSessionId ?? record?.parentSessionId;
 
   return {
@@ -183,21 +183,21 @@ export function snapshotOf(
     ...(stopReason === undefined ? {} : { stopReason }),
     ...(parentSessionId === undefined ? {} : { parentSessionId }),
     ...lineageFields(entry?.resumedFrom ?? record?.resumedFrom, supersededByOf(entry, record)),
-    // 内存副本优先于 journal，与上面每一个间隙字段同规：submit → createRun 的那几个微任务里
-    // 行还不存在，而 AmendWorkflow 的 resolveInput 恰好会在那时读这张快照。
+    // The memory copy takes precedence over the journal, which is the same as for each gap field above: in the microtasks of submit → createRun
+    // The row doesn't exist yet, and AmendWorkflow's resolveInput happens to read this snapshot at that time.
     ...runConcurrencyField(
       entry?.maxConcurrency ?? record?.caps.maxConcurrency,
       concurrencyCeiling,
     ),
-    // 子代理模型：**有条目就读条目**（三条建条目的路都落值，见 RunRegistryEntry.subagentModel），
-    // 只有冷行——本进程没有条目——才去扫一次事件头（八条的有界扫描，不是整条 journal）。
-    // 它没有并发上界那道「值不值得一提」的判据：只在用户显式设过时才存在，在场本身就是全部
-    // 的信息。缺席即跑在会话模型上。
+    // Subagent model: **If there is an entry, read the entry** (the three paths to create an entry are all invalid, see RunRegistryEntry.subagentModel),
+    // Only cold runs—this process has no entries—scan the event header (a bounded scan of eight entries, not the entire journal).
+    // It does not have the criterion of "whether it is worth mentioning" like the concurrency upper bound: it only exists when the user explicitly sets it, and the presence itself is everything.
+    // information. Absent is running on the session model.
     ...runSubagentModelField(
       entry === undefined ? readRunSubagentModel(journal, taskId) : entry.subagentModel,
     ),
-    // 脚本文件：与子代理模型逐条同规（有条目就读条目，只有冷行才扫一次事件头），同样
-    // 「记过才在场」。终态通知据它把下一步说成「就地编辑那个文件」，所以快照必须带上它。
+    // Script file: It is the same as the sub-agent model one by one (if there is an entry, read the entry, and only scan the event header once when it is cold), the same
+    // "Only present if you have a demerit." The final notification says the next step is to "edit that file in place", so the snapshot must take it with it.
     ...runScriptPathField(
       entry === undefined ? readRunScriptPath(journal, taskId) : entry.scriptPath,
     ),
@@ -205,17 +205,17 @@ export function snapshotOf(
     ...(activeDurationMs === undefined ? {} : { activeDurationMs }),
     ...(entry?.completedAt === undefined ? {} : { completedAt: entry.completedAt }),
     ...(error === undefined ? {} : { error }),
-    // 零条时整字段缺席（与 reports 同规）：读侧据此让整块 pending 区消失，不渲染空节。
+    // When there are zero entries, the entire field is absent (same as reports): The reading side makes the entire pending area disappear based on this, and does not render empty sections.
     ...(pendingQuestions.length === 0 ? {} : { pendingQuestions }),
     ...reportsOf(nodes),
-    // 用户面产物。⚠ 与紧邻的 `output`
-    // （`entry.terminal.artifact` = 脚本顶层返回值，引擎内部也叫 artifact）是**两件不同的东西**：
-    // 这里是脚本经 `artifact.*` 发布给用户看的产出，那里是给模型看的返回值。
+    // User-facing products. ⚠ with the immediate `output`
+    // (`entry.terminal.artifact` = the top-level return value of the script, also called artifact inside the engine) are **two different things**:
+    // Here is the output of the script via `artifact.*` for the user to see, and there is the return value for the model to see.
     ...(nodes === undefined ? {} : artifactsOf(taskId, journal, nodes)),
     ...(entry?.terminal?.status === "completed"
       ? { output: entry.terminal.artifact }
-      : // 重启后本进程的注册表是空的，产物只能从 journal 记录取（journal 行的
-        // result_json）。内存终态在上一支里优先——它是本进程刚从引擎手里接过的原值。
+      : // After restarting, the registry of this process is empty, and the products can only be obtained from the journal record (journal line
+        // result_json). The memory final state takes priority in the previous one - it is the original value that this process just took over from the engine.
         record?.status === "completed" && record.result !== undefined
         ? { output: record.result }
         : {}),
@@ -223,13 +223,13 @@ export function snapshotOf(
 }
 
 /**
- * 两条读面（`getTask` 快照与 `getRunDetail` 详情）上的 `maxConcurrency`
+ * `maxConcurrency` on the two reading surfaces (the `getTask` snapshot and the `getRunDetail` detail view)
  *
- * **只在低于当前天花板时在场**：跑在天花板上的 run 没有可说的——它就是默认行为，而每一行都带
- * 一个等于默认值的数，只会让模型把「没设限」读成「设了个限」。天花板缺席（调用方没给）时同样
- * 整字段不出：判据都没有，报一个数就是在猜。
+ * **Present only when it is below the current ceiling**: a run running at the ceiling has nothing to say -- it simply is the default behavior, and giving every row
+ * a number equal to the default would only make the model read "no limit was set" as "a limit was set". When the ceiling is absent (the caller did not supply one) the
+ * field is likewise left out entirely: with no criterion at all, reporting a number is guessing.
  *
- * 一处实现供两条读面共用：两处各判一次，「等于天花板算不算在场」迟早会在某一次调参时分叉。
+ * One implementation shared by both reading surfaces: if each judged on its own, "does equality with the ceiling count as present" would eventually diverge during some future tuning pass.
  */
 export function runConcurrencyField(
   applied: number | undefined,
@@ -240,13 +240,13 @@ export function runConcurrencyField(
 }
 
 /**
- * 两条读面（`getTask` 快照与 `getRunDetail` 详情）上的 `subagentModel`
+ * `subagentModel` on the two reading surfaces (the `getTask` snapshot and the `getRunDetail` detail view)
  *
- * 规则只有一条：**设过才在场**。与 {@link runConcurrencyField} 不同，这里没有可比的默认值——
- * 「跑在会话模型上」不是一个能写进这个字段的字符串，而把当前会话模型填进去会让读侧把「没设」
- * 读成「设了，正好等于会话模型」，两者在 amend 的三态里是不同的意思。
+ * The rule is a single one: **present only if it was set**. Unlike {@link runConcurrencyField}, there is no comparable default here --
+ * "runs on the session model" is not a string that can be written into this field, and filling in the current session model would make the reading side
+ * read "not set" as "set, and it happens to equal the session model", and those two mean different things in amend's tri-state.
  *
- * 一处实现供两条读面共用，与并发上界同一条论证。
+ * One implementation shared by both reading surfaces, argued exactly the same way as the concurrency ceiling.
  */
 export function runSubagentModelField(subagentModel: string | undefined): {
   subagentModel?: string;
@@ -255,59 +255,59 @@ export function runSubagentModelField(subagentModel: string | undefined): {
 }
 
 /**
- * 两条读面上的 `scriptPath`。规则与
- * {@link runSubagentModelField} 逐字相同：**记过才在场**，没有可比的默认值——「这个 run 没有
- * 脚本文件」不是一个能写进这个字段的路径，而填一个猜出来的路径会让模型去编辑一个与本 run
- * 无关的文件。一处实现供两条读面共用。
+ * `scriptPath` on the two reading surfaces. The rule is word for word the same as
+ * {@link runSubagentModelField}: **present only if it was recorded**, and there is no comparable default -- "this run has no
+ * script file" is not a path that can be written into this field, and filling in a guessed path would send the model off to edit a file unrelated to this
+ * run. One implementation shared by both reading surfaces.
  */
 export function runScriptPathField(scriptPath: string | undefined): { scriptPath?: string } {
   return scriptPath === undefined ? {} : { scriptPath };
 }
 
 /**
- * 终态快照上的 `reports`：journal 里 `kind = "report"` 的节点行（一次写入、恒 `completed`、
- * 被报告的 item 就在 `result` 上），按插入顺序 = 报告顺序。
+ * `reports` on a terminal snapshot: the journal's `kind = "report"` node rows (written once, always `completed`,
+ * with the reported item right on `result`), in insertion order = reporting order.
  *
- * 为什么从 journal 读而不是从投影读：`workflowRuns.reports` 是有界的 memory-only 展示面
- * （冷恢复后为空），而这些行是那些条目的**持久家**。完成通知要在 failed / cancelled 上
- * 一样携带产物——一个死在第 12 个 ask 上的 run 仍然做完了 11 个 ask 的活，捞回它正是
- * `report` 存在的理由——所以它读的必须是持久那一份。
+ * Why read from the journal instead of the projection: `workflowRuns.reports` is a bounded memory-only display surface
+ * (empty after cold recovery), whereas these rows are the **durable home** of those entries. Completion notifications have to carry artifacts on failed / cancelled too --
+ * a run that died on the 12th ask still did the work of 11 asks, and retrieving them is exactly the reason `report`
+ * exists -- so what it reads must be the durable copy.
  *
- * 只在**终态**读：`getTask` 会被后台追踪器反复轮询，而 `listNodes` 是一次全表扫（一个
- * 256 节点的 run 每次轮询都要解码 256 行）。唯一的消费者是终态通知与终态 TaskOutput，
- * 在飞时读它没有读者，只有成本。这条判据现在由调用方执行——`nodes` 缺席即「在飞，别读」，
- * 好让同一次扫描同时喂 {@link artifactsOf}。
+ * Read only in a **terminal** state: `getTask` is polled repeatedly by the background tracker, and `listNodes` is a full table scan (a run with
+ * 256 nodes has to decode 256 rows on every poll). The only consumers are the terminal notification and the terminal TaskOutput;
+ * reading it while in flight has no reader, only cost. That criterion is enforced by the caller now -- `nodes` absent means "in flight, do not read" --
+ * so that the same scan can also feed {@link artifactsOf}.
  */
 function reportsOf(nodes: readonly NodeRecord[] | undefined): { reports?: readonly unknown[] } {
   if (nodes === undefined) return {};
   const items = nodes.filter((node) => node.kind === "report").map((node) => node.result);
-  // 零条时整字段缺席：通知端据此让整节 `<reports>` 消失，不发空节。
+  // When there are zero entries, the entire field is absent: the notification end makes the entire section `<reports>` disappear accordingly and does not send empty sections.
   return items.length === 0 ? {} : { reports: items };
 }
 
 /**
- * **状态真相合成的唯一实现**，优先级四档：
- *   内存终态 > 活条目（journal 状态只在非终态时采信）> journal 状态 > 「在注册表里但还没有行」。
+ * The **only implementation that synthesizes status truth**, with four levels of priority:
+ *   in-memory terminal state > live entry (the journal status is only trusted when it is not terminal) > journal status > "in the registry but no row yet".
  *
- * 本进程引擎仍存活时，journal 中的终态行可能来自另一实例的孤儿收敛，不能据此结束本地追踪。
- * 本地已结算时优先使用内存终态；第二档处理尚未结算的活条目，忽略外部终态行并等待引擎结算，
- * 避免提前通知模型、标完任务后丢弃真正的完成结果。
+ * While this process's engine is still alive, a terminal row in the journal may come from another instance's orphan convergence and must not be used to end local tracking.
+ * Once local settlement is done, the in-memory terminal state wins; the second level handles live entries that have not settled yet, ignoring foreign terminal rows and waiting for the engine to settle,
+ * so the model is not notified early and the real completion result is not thrown away after the task has been marked done.
  *
- * 三个读面（快照、列表、详情）共用它。之所以返回 journal 的 {@link RunStatus} 词汇表而不是
- * 快照的：那一档最细——`pending`（已提交、引擎还没建行）在内省面上是模型看得懂的区别，而
- * 快照面把它折进 `running` 只是它自己的词汇表限制（{@link runStatusToTaskStatus} 负责折叠）。
- * 反过来（先折叠再想办法还原）就得在下游猜"这个 running 到底是哪一种"。
+ * All three reading surfaces (snapshot, list, detail) share it. The reason it returns the journal's {@link RunStatus} vocabulary rather than the
+ * snapshot's: that level is the finest-grained one -- `pending` (submitted, the engine has not created a row yet) is a distinction the model can understand on the introspection surface, while
+ * the snapshot surface folds it into `running` purely because of its own vocabulary limit ({@link runStatusToTaskStatus} does the folding).
+ * The other way round (fold first and then try to recover it) would force downstream code to guess "which kind of running is this?".
  */
 function synthesizeRunStatus(
   entry: RunRegistryEntry | undefined,
   journalStatus: RunStatus | undefined,
 ): RunStatus {
-  // 内存终态优先：本进程刚从引擎手里接过的结算，比 journal 行（可能还没写完）更新。
+  // Memory final state priority: The settlement that this process has just received from the engine is newer than the journal line (which may not be finished yet).
   if (entry?.terminal !== undefined) return terminalRunStatus(entry.terminal);
-  // 走到这里 `entry !== undefined` 即「本服务持有的活 run」：行上的终态只可能是外来写入，
-  // 忽略它、照实说在跑。非终态的行（pending / running）照常采信——它们本就是引擎自己写的。
-  // 刻意只拦终态：`journalStatus` 缺席的间隙仍要落到下面的 `pending`（那一档更细，
-  // 且内省面把它当成模型看得懂的区别）。
+  // Go here `entry !== undefined`, that is, "live run held by this service": the final state on the line can only be external writing,
+  // Ignore it and run as it is. Non-final lines (pending/running) are accepted as usual - they are written by the engine itself.
+  // Deliberately block only the final status: `journalStatus`. The gap of absence still has to fall into the `pending` below (that level is finer,
+  // And introspection treats it as a model that can understand the difference).
   if (
     entry !== undefined &&
     journalStatus !== undefined &&
@@ -316,8 +316,8 @@ function synthesizeRunStatus(
     return "running";
   }
   if (journalStatus !== undefined) return journalStatus;
-  // 注册表有、journal 无：submit → createRun 的微任务间隙。`pending` 是这一刻**唯一诚实**的
-  // 状态——run 已被接受，但引擎还没落下任何一行。
+  // Registry exists, journal does not exist: submit → createRun microtask gap. `pending` is the **only honest** at this moment
+  // Status - The run has been accepted, but the engine has not yet dropped a line.
   return "pending";
 }
 
@@ -333,9 +333,9 @@ function terminalRunStatus(settlement: RunSettlement): RunStatus {
 }
 
 /**
- * 逻辑终态 → 后台任务追踪器的通用词汇。追踪器（与 bash / subagent 任务共用）不认识
- * stopped / errored：stopped 折成 `cancelled`、errored 折成 `failed`；真实词经快照的
- * `runStatus` / `stopReason` 另行透出。
+ * Logical terminal state -> the common vocabulary of the background task tracker. The tracker (shared with bash / subagent tasks) does not know
+ * stopped / errored: stopped folds into `cancelled` and errored into `failed`; the real words are exposed separately through the snapshot's
+ * `runStatus` / `stopReason`.
  */
 function runStatusToTaskStatus(status: RunStatus): DynamicWorkflowRunSnapshot["status"] {
   switch (status) {
@@ -345,19 +345,19 @@ function runStatusToTaskStatus(status: RunStatus): DynamicWorkflowRunSnapshot["s
       return "failed";
     case "stopped":
       return "cancelled";
-    // pending / running 都还在跑。
+    // pending / running are still running.
     default:
       return "running";
   }
 }
 
 /**
- * 停止原因：内存终态优先（本进程刚从引擎手里接过的结算），其次 journal 行。只对 stopped 有意义；
- * 其余状态返回 undefined。
+ * Stop reason: the in-memory terminal state wins (a settlement this process just received from the engine), then the journal row. It is only meaningful for stopped;
+ * every other state returns undefined.
  *
- * 与 {@link synthesizeRunStatus} 同一条优先级：**活条目下没有停止原因**。行上写着一个，只能是
- * 外来写入，而三个读面必须给出同一个答案——状态说「在跑」、
- * 原因却说「被打断了」，比两者都错更难查。
+ * The same priority as {@link synthesizeRunStatus}: **a live entry has no stop reason**. A reason written on the row can only be a
+ * foreign write, and the three reading surfaces have to give the same answer -- the status saying "running"
+ * while the reason says "it was interrupted" is harder to debug than both of them being wrong.
  */
 function stopReasonOf(
   entry: RunRegistryEntry | undefined,
@@ -372,10 +372,10 @@ function stopReasonOf(
 }
 
 /**
- * journal 行（+ 可选的内存条目）→ 列表与详情的共同截面。
+ * A journal row (+ an optional in-memory entry) -> the common cross-section of the list and detail surfaces.
  *
- * 时间戳**直读 journal 行**，刻意绕开 {@link snapshotOf} 的 `new Date(0)` 兜底：内存条目被
- * 逐出后那个起始时间是假的，而内省面的时间是模型据以判断"多久以前"的依据。
+ * The timestamps are **read straight off the journal row**, deliberately bypassing {@link snapshotOf}'s `new Date(0)` fallback: once the in-memory entry has been
+ * evicted that start time is fake, and the introspection surface's times are what the model judges "how long ago" from.
  */
 export function journalRunSummary(
   row: DwfRunListItem,
@@ -383,9 +383,9 @@ export function journalRunSummary(
   ownerSessionId: string,
 ): DynamicWorkflowRunSummary {
   const ownedByThisSession = entry !== undefined || row.parentSessionId === ownerSessionId;
-  // 读的是 **journal 的** status 而不是合成后的：语义就是「journal 说它还没结束，而本会话
-  // 无法证实」。（这个分支上两者必然相等——非本会话、不在注册表，就没有内存终态可以覆盖
-  // journal——按字面写是为了将来新增真相源时这条断言依然成立。）
+  // What is read is the status of **journal instead of the synthesized one: the semantics is "journal says it is not over yet, and this conversation
+  // Unable to confirm". (The two must be equal on this branch - if it is not in this session or in the registry, there is no memory final state that can be overwritten.
+  // journal - written literally so that this assertion will still hold when new sources of truth are added in the future. )
   const possiblyInterrupted = !TERMINAL_RUN_STATUSES.has(row.status) && !ownedByThisSession;
   const stopReason = stopReasonOf(entry, row);
   return {
@@ -399,7 +399,7 @@ export function journalRunSummary(
     ...(stopReason === undefined ? {} : { stopReason }),
     ...lineageFields(entry?.resumedFrom ?? row.resumedFrom, supersededByOf(entry, row)),
     ownedByThisSession,
-    // 为真时才在场：缺席读作「没有这个疑虑」，而 `false` 会让每一行都带一个噪音字段。
+    // Only present if true: absence reads "no such doubt", while `false` causes each line to have a noise field.
     ...(possiblyInterrupted ? { possiblyInterrupted: true } : {}),
     createdAt: row.timeCreated,
     updatedAt: row.timeUpdated,
@@ -407,11 +407,11 @@ export function journalRunSummary(
 }
 
 /**
- * 只有内存条目的 run（submit → createRun 的微任务间隙）→ 共同截面。
+ * A run that only has an in-memory entry (the microtask gap between submit -> createRun) -> the common cross-section.
  *
- * 归属恒为真（它就在本会话的注册表里），因此也永远不带 `possiblyInterrupted`。时间戳取自
- * 注册时刻——这不是兜底猜测，而是这个 run 真实的提交时间（journal 行落下时写的是同一毫秒级
- * 的 `Date.now()`）。
+ * Ownership is always true (it is right there in this session's registry), so it also never carries `possiblyInterrupted`. The timestamp comes from
+ * the moment of registration -- that is not a fallback guess but the run's real submission time (the journal row records the same millisecond-scale
+ * `Date.now()` when it lands).
  */
 export function registryRunSummary(
   runId: string,
@@ -434,12 +434,12 @@ export function registryRunSummary(
 }
 
 /**
- * completed 的 run 才带产物，且 `undefined` 产物 = **整字段缺席**（与完成通知同规）。
+ * Only a completed run carries artifacts, and an `undefined` artifact means **the whole field is absent** (same rule as the completion notification).
  *
- * 优先级同 {@link snapshotOf}：内存终态的 artifact 是本进程刚从引擎手里接过的**原值**，
- * journal 的 result_json 是它经过一次 JSON 往返后的形态；条目被逐出后才退到后者。
- * 值本身**原样交出、不序列化**——面向模型的文本投影在 core 有唯一实现，端口再做一次就会
- * 出现「同一个产物在通知里和在工具里长得不一样」。
+ * The priority is the same as {@link snapshotOf}: the artifact in the in-memory terminal state is the **original value** this process just received from the engine,
+ * while the journal's result_json is its shape after a JSON round trip; only after the entry is evicted does it fall back to the latter.
+ * The value itself is **handed over as-is, not serialized** -- the model-facing text projection has a single implementation in core, and having the port do it a second time would
+ * produce "the same artifact looks different in the notification than in the tool".
  */
 export function terminalResultField(
   status: RunStatus,
@@ -450,16 +450,16 @@ export function terminalResultField(
   if (entry?.terminal?.status === "completed" && entry.terminal.artifact !== undefined) {
     return { result: entry.terminal.artifact };
   }
-  // `result: null` 是合法产物（`ask<T | null>` 会返回它），所以判据是 `!== undefined`
-  // 而不是真值性——解码侧同样只在列非 NULL 时才写出这个键。
+  // `result: null` is a legal product (`ask<T | null>` will return it), so the criterion is `!== undefined`
+  // Instead of truthfulness - the decoding side also only writes out the key if the column is non-NULL.
   return row?.result === undefined ? {} : { result: row.result };
 }
 
 /**
- * errored 恒带失败；stopped 只对 provider / interrupted 带（user / model 停下没有失败可言）。
- * journal 的 `failure_json` 是**权威**：它带结构化 code，`Interrupted`（进程死了）、
- * `ProviderStop`（模型侧确定性错误）与 `DriverError`（脚本真失败）因此可以被模型分辨——所以
- * 这里原样透出 code，绝不折叠成一个通用失败；`ProviderStop` 的结构化明细一并透出。
+ * errored always carries a failure; stopped only does so for provider / interrupted (a user / model stop has no failure to speak of).
+ * The journal's `failure_json` is the **authority**: it carries a structured code, so `Interrupted` (the process died),
+ * `ProviderStop` (a deterministic error on the model side) and `DriverError` (the script genuinely failed) can be told apart by the model -- so
+ * the code is exposed as-is here and never folded into one generic failure; `ProviderStop`'s structured detail is exposed along with it.
  */
 export function terminalErrorField(
   status: RunStatus,
@@ -467,8 +467,8 @@ export function terminalErrorField(
   row?: { failure?: WorkflowErrorJson },
 ): { error?: DynamicWorkflowRunError } {
   if (status !== "errored" && status !== "stopped") return {};
-  // 内存终态优先：本进程刚从引擎手里接过的结算带原值（ProviderStop 明细齐全），journal 行是
-  // 它经一次 JSON 往返后的形态；条目被逐出后才退到后者。
+  // Memory final state priority: The settlement zone that this process just took over from the engine has the original value (ProviderStop details are complete), and the journal line is
+  // Its state after a JSON round trip; the entry is evicted before falling back to the latter.
   const memoryError =
     entry?.terminal?.status === "errored"
       ? entry.terminal.error
@@ -476,9 +476,9 @@ export function terminalErrorField(
         ? entry.terminal.error
         : undefined;
   if (memoryError !== undefined) {
-    // 引擎构造之前就失败的路径（子进程无法 spawn、构造抛错）在注册表里放的是一个包装过的
-    // 普通 Error——运行时可能没有 code。归到 DriverError 而不是编一个新码：那条路径的失败
-    // 确实来自引擎之外的驱动层。
+    // The path that failed before the engine was constructed (the child process cannot spawn, the construction throws an error) has a wrapped one in the registry.
+    // Common Error - There may be no code at runtime. Return DriverError instead of coding a new one: failure of that path
+    // It really comes from the driver layer outside of the engine.
     const code = typeof memoryError.code === "string" ? memoryError.code : "DriverError";
     const providerStop = (memoryError as { providerStop?: WorkflowErrorJson["providerStop"] })
       .providerStop;
@@ -505,12 +505,12 @@ export function terminalErrorField(
 }
 
 /**
- * 一条 journal 里的 `log` 事件 → 端口的 logTail 项。
+ * A `log` event in the journal -> a logTail entry of the port.
  *
- * 消息经 {@link boundDynamicWorkflowRunEventPayload} 有界化而不是自己 slice：字符串上限
- * （2048）与代理项安全的截断规则已经在端口那一侧写过一遍，抄第二遍就会在某次调参时分叉。
- * 查询已按 `type='log'` 下推过滤，所以非 log 事件只可能来自实现漂移——此时给空消息而不是
- * 崩掉整个详情面。
+ * The message is bounded by {@link boundDynamicWorkflowRunEventPayload} instead of being sliced here: the string cap
+ * (2048) and the proxy-item-safe truncation rule have already been written once on the port side, and copying them a second time would let them diverge during some future tuning pass.
+ * The query already pushes `type='log'` down as a filter, so a non-log event can only come from implementation drift -- in that case give an empty message rather than
+ * crashing the entire detail surface.
  */
 export function toLogTailEntry(stored: StoredEvent): DynamicWorkflowRunLogEntry {
   const message = stored.event.type === "log" ? stored.event.message : "";
@@ -518,12 +518,12 @@ export function toLogTailEntry(stored: StoredEvent): DynamicWorkflowRunLogEntry 
   return {
     sequence: stored.sequence,
     message: typeof payload.message === "string" ? payload.message : "",
-    // 落库时刻原样过界；没有这一列的老 journal 上缺席（读侧据此不给年龄）。
+    // The drop-in time has crossed the boundary as it is; there is no old journal with this column (the age will not be given on the reading side accordingly).
     ...(stored.timeCreated === undefined ? {} : { at: stored.timeCreated }),
   };
 }
 
-/** 等结算，但尊重调用方的 signal（等待被打断不等于 run 被取消）。 */
+/** Awaits settlement but respects the caller's signal (being interrupted while waiting is not the same as the run being cancelled). */
 export async function settleOrAbort(
   settlement: Promise<unknown>,
   signal?: AbortSignal,
@@ -550,35 +550,35 @@ export async function settleOrAbort(
 }
 
 /**
- * 孤儿收敛写入的失败编码（宿主级成员，引擎自身永不产出）。随 `stopped(interrupted)` 一起落库：
- * status + stopReason 已经说明「进程死亡打断」，这条 code 是同一事实的第二证据（老行只有它）。
+ * The failure code written by orphan convergence (a host-level member the engine itself never produces). It lands in the journal together with `stopped(interrupted)`:
+ * status + stopReason already say "interrupted by process death", and this code is a second piece of evidence for the same fact (older rows have only it).
  */
 export const INTERRUPTED_FAILURE_CODE: WorkflowErrorCode = "Interrupted";
 
 /**
- * resume 门的唯一谓词：**stopped 即可恢复**，
- * 除了 `superseded`——它的未完结工作已归后继所有，重放等于对着后继正在改的工作区把同一件事做两遍；
- * errored / completed 不可。{@link DynamicWorkflowRunSessionSummary.resumable} 用同一个——
- * UI 若自行按 status 重新推导，两处谓词总有一天不一致：按钮亮着但命令被拒。
+ * The resume gate's only predicate: **stopped is resumable**,
+ * except for `superseded` -- its unfinished work already belongs to the successor, and replaying it would mean doing the same thing twice against the workspace the successor is editing;
+ * errored / completed are not resumable. {@link DynamicWorkflowRunSessionSummary.resumable} uses the same one --
+ * if the UI re-derives it from status on its own, the two predicates will disagree one day: the button lights up but the command is rejected.
  */
 export function isResumableRecord(record: Pick<RunRecord, "status" | "stopReason">): boolean {
   return isResumableSettlement(record.status, record.stopReason);
 }
 
 /**
- * 同一个谓词的「结算事实」形态：`run-settled` 载荷上的 `resumable` 位由它算（live 由
- * toProgressPayload 按引擎事件算，冷回放由补种按 journal 行算），reducer 只搬运。
+ * The "settled fact" shape of that same predicate: the `resumable` bit on the `run-settled` payload is computed by it (live is computed by
+ * toProgressPayload from the engine events, cold replay is computed by the backfill from the journal row), and the reducer only carries it.
  */
 export function isResumableSettlement(status: RunStatus, stopReason?: RunStopReason): boolean {
   return status === "stopped" && stopReason !== "superseded";
 }
 
 /**
- * 枚举行 → 会话枚举摘要。三件事都刻意与别处同源：
- *   - `resumable` 用 resume 门的同一个谓词（{@link isResumableRecord}）；
- *   - `label` 用两条读面共用的那条派生链（{@link resolveDynamicWorkflowRunLabel}）——枚举面
- *     自己拼一次兜底，同一个 run 就会在 `/dwf list` 与工具卡上显示不同的名字；
- *   - `updatedAt` 直读 journal 行的 `timeUpdated`（`RunRecord` 不带时间，故入参是枚举行）。
+ * An enumeration row -> the session enumeration summary. All three things are deliberately sourced from elsewhere:
+ *   - `resumable` uses the resume gate's very same predicate ({@link isResumableRecord});
+ *   - `label` uses the derivation chain shared by the two reading surfaces ({@link resolveDynamicWorkflowRunLabel}) -- if the enumeration surface
+ *     rolled its own fallback, the same run would show up under different names in `/dwf list` and on the tool card;
+ *   - `updatedAt` is read straight off the journal row's `timeUpdated` (`RunRecord` carries no time, hence the input is the enumeration row).
  */
 export function toSessionSummary(
   row: DwfRunSessionListItem,
@@ -589,9 +589,9 @@ export function toSessionSummary(
     ...(row.name === undefined ? {} : { name: row.name }),
     ...(row.scriptText === undefined ? {} : { scriptText: row.scriptText }),
   });
-  // 第四条读面也走同一条优先级（{@link synthesizeRunStatus}）：活条目下行上的终态是外来写入，
-  // 状态报 running，停止原因与失败一并不出。少了这一支，会话列表会独自显示一个已经「停下」的
-  // run，而快照 / 列表 / 详情三处都说它在跑。
+  // The fourth reading plane also follows the same priority ({@link synthesizeRunStatus}): the final state on the downstream side of the live entry is external writing.
+  // The status is reported as running, but the reason for the stop and the failure are not displayed. Without this one, the conversation list will show only one that has been "stopped"
+  // run, and the snapshot/list/details all say it is running.
   const status = synthesizeRunStatus(entry, row.status);
   const stopReason = stopReasonOf(entry, row);
   const live = entry !== undefined && entry.terminal === undefined;

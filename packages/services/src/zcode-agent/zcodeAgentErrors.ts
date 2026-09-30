@@ -1,5 +1,5 @@
-// 原始 -32602 文案来自旧 Agent schema，跨 RPC 后 UI 不能靠易变字符串识别能力缺失。
-// ChannelClient 会保留 error.code，因此用稳定 code 驱动设置页停止 status-only 轮询。
+// The original -32602 copy comes from the old Agent schema, and the UI cannot rely on volatile string recognition capabilities after cross-RPC.
+// ChannelClient will retain error.code, so use the stable code driver settings page to stop status-only polling.
 export const ZCODE_AGENT_MCP_STATUS_MODE_UNSUPPORTED_ERROR_CODE =
   "ZCODE_AGENT_MCP_STATUS_MODE_UNSUPPORTED";
 

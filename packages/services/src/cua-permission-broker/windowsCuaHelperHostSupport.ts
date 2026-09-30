@@ -24,7 +24,7 @@ export interface WindowsCuaChild {
 }
 
 export interface WindowsCuaChildProcessAdapter {
-  /** command 是运行时 Node/Electron，argv[0] 是 Helper entry。 */
+  /** command is the runtime Node/Electron, argv[0] is the Helper entry. */
   fork(command: string, argv: string[], options: ForkOptions): WindowsCuaChild;
 }
 
@@ -37,7 +37,7 @@ export interface WindowsCuaHelperHostOptions {
   startupTimeoutMs?: number;
   shutdownTimeoutMs?: number;
   logger?: ServiceLogger;
-  /** Ready Helper 意外退出后通知生命周期 owner，仅触发 Helper recovery。 */
+  /** Ready Helper notifies the life cycle owner after unexpected exit, and only triggers Helper recovery. */
   onUnexpectedExit?: (info: { generation: number; pid: number | undefined }) => void;
 }
 
@@ -72,7 +72,7 @@ export class WindowsCuaChildLifecycle {
       generation.removeMainListeners();
       return;
     }
-    // 先挂 wait listener 再发送 shutdown/kill，避免进程在 signal 的同一同步轮次退出而漏观测。
+    // Hang wait listener first and then send shutdown/kill to avoid missing observations due to the process exiting in the same synchronization round of signal.
     const firstExit = this.waitForExit(generation, "first-wait", timeoutMs);
     this.sendShutdown(generation, context);
     if (await firstExit) {
@@ -175,8 +175,8 @@ export class WindowsCuaChildLifecycle {
       timer.unref?.();
       if (!this.on(generation.child, "exit", onExit, generation.id, `${errorClass}-on`))
         finish(false);
-      // send() 后、临时 listener 注册前 child 可能已经触发主 exit listener；再次读取
-      // generation 事实，避免把已退出 H1 错当成超时并留下不存在的 termination blocker。
+      // After send(), before the temporary listener is registered, the child may have triggered the main exit listener; read again
+      // generation fact to avoid mistaking exiting H1 as a timeout and leaving a non-existent termination blocker.
       else if (generation.exitObserved) finish(true);
     });
   }

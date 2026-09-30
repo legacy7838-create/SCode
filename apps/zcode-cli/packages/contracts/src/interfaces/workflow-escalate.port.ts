@@ -1,59 +1,59 @@
 // ============================================================
-// Workflow Escalate Port - actor 向主代理升级阻塞问题的边界
+// Workflow Escalate Port - Actor escalation boundaries for blocking issues to the master agent
 // ============================================================
-// 与 {@link WorkflowSubmitPort} 完全同构且刻意分开：
-// submit 结算的是**这次 ask 的结果**（引擎裁决），escalate 结算的是**一次问答**（主代理作答），
-// 两者的对端、生命周期与失败形态都不同，合并成一个端口只会让两条时序互相解释不清。
+// Completely isomorphic and deliberately separate from {@link WorkflowSubmitPort}:
+// Submit settles **the result of this ask** (engine decision), escalate settles **a question and answer** (the main agent answers),
+// The two endpoints, life cycles, and failure modes are different. Merging them into one port will only make the two timings unclear to each other.
 
 import type { TraceContext } from "../tracing/tracer.js";
 import type { ToolCallId } from "./shared.js";
 
 export interface EscalateQuestionRequest {
-  /** 发起 `escalate` 调用的 actor 子会话内的 tool call id。 */
+  /** The tool call id inside the actor child session that initiated the `escalate` call. */
   toolCallId: ToolCallId | string;
-  /** 阻塞点本身：一个聚焦的、可用一句话回答的问题。 */
+  /** The blocking point itself: a focused question that can be answered in one sentence. */
   question: string;
-  /** 可选的补充上下文（actor 已经试过什么、卡在哪一行）。 */
+  /** Optional extra context (what the actor already tried, which line it is stuck on). */
   context?: string;
   trace: TraceContext;
 }
 
 /**
- * 一次升级的结局。**两支都是普通的工具结果**，不是错误：预算耗尽时返回
- * 「自行推进」的正常结果，而不是抛错（错误会让模型把它当成可重试的故障，反复撞同一堵墙）。
+ * The outcome of one escalation. **Both branches are ordinary tool results**, not errors: when the
+ * budget is exhausted a normal "proceed on your own" result is returned instead of throwing (an error
+ * would make the model treat it as a retryable failure and keep hitting the same wall).
  *
- * 用判别式而不是纯文本，是因为调用方（core 的工具处理器）要据此决定渲染成什么样的
- * tool_result（house rule：错误码而非错误文本做流程判断）。
+ * A discriminated union rather than plain text, because the caller (core's tool handler) uses it to decide what kind of tool_result to render (house rule: flow decisions are made by error code, not by error text).
  */
 export type WorkflowEscalateOutcome =
   | {
       kind: "answered";
-      /** 主代理经 `ResolveWorkflowQuestion` 给出的答案文本，原样成为工具结果。 */
+      /** The answer text the main agent gives through `ResolveWorkflowQuestion`, becoming the tool result verbatim. */
       answer: string;
-      /** 本次问答的全局唯一 id（供日志与人类追溯；模型不需要读它）。 */
+      /** The globally unique id of this question (for logs and human tracing; the model does not need to read it). */
       qid: string;
     }
   | {
       kind: "refused";
       /**
-       * `budget_exhausted`：本次 ask 的升级次数已用尽（per-ask 上限，与 nudge 预算同族）。
-       * `no_active_ask`：本会话此刻没有在飞的 ask，问题无处停驻（不应发生，但绝不悬挂）。
+       * `budget_exhausted`: this ask's escalations are used up (the per-ask ceiling, of the same family as the nudge budget).
+       * `no_active_ask`: this session has no in-flight ask at this moment, so the question has nowhere to park (it should not happen, but it must never hang).
        */
       reason: "budget_exhausted" | "no_active_ask";
-      /** 面向模型的文案，陈述现状与下一步。 */
+      /** Text for the model's benefit, stating the situation and the next step. */
       message: string;
     };
 
 export interface WorkflowEscalatePort {
   /**
-   * 升级一个阻塞问题并**阻塞**等待主代理作答。
+   * Escalate a blocking question and **block** waiting for the main agent's answer.
    *
-   * 与 {@link WorkflowSubmitPort.respond} 同一条纪律：resolve 可能耗时任意长（按设计不设
-   * 超时——「超时后自行判断」恰恰重新引入本特性要消灭的投机绕过）。逃生舱是既有的取消：
-   * driver 的 `cancelAsk` 会连同停驻中的升级 deferred 一起拒绝，于是 run cancel 与进程亡故
-   * 的行为与今天完全一致。
+   * The same discipline as {@link WorkflowSubmitPort.respond}: a resolve can take an arbitrarily long time (by design there is
+   * no timeout — "after the timeout, judge for yourself" is exactly the speculative bypass this feature exists to eliminate).
+   * The escape hatch is the existing cancellation: the driver's `cancelAsk` rejects together with the parked escalation
+   * deferred, so run cancellation and process death behave exactly as they do today.
    *
-   * 路由身份（run/actor/session/instance）由端口 closure 绑定，模型无法覆盖。
+   * Routing identity (run/actor/session/instance) is bound by the port closure and the model cannot override it.
    */
   escalate(request: EscalateQuestionRequest): Promise<WorkflowEscalateOutcome>;
 }

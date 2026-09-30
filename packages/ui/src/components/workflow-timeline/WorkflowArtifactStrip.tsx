@@ -10,16 +10,16 @@ import {
 } from "./WorkflowArtifactPill.js";
 
 /**
- * 产物条：一行产物药丸，至多三枚，
- * 其余折成等宽的 `+N`。时间线下（工具卡、轮尾摘要）、完成通知的折叠头部、中枢的运行历史行与
- * 「最近产物」条都是它——同一个产物在四处必须长得一样。全量清单在 run 侧板。
+ * Product strip: one row of product pills, at most three.
+ * Fold the rest into `+N` of equal width. Under the timeline (tool card, wheel summary), the folded header of the completion notification, the running history line of the hub and
+ * The "Recent Products" bar is all about it - the same product must look the same everywhere. Full inventory is on the run side panel.
  *
- * ⚠ 术语：artifact = 脚本经 `artifact.*` 发布给用户看的产出。
+ * ⚠ Terminology: artifact = the output of a script published to users via `artifact.*`.
  *
- * 事件只替**药丸**止步：条常坐在别的可点区域里（通知行的折叠开关、轮尾
- * 摘要的整块开关、中枢的历史行），药丸是一颗按钮而不是那块区域的一部分——**包括禁用的**：禁用
- * 只让打开变成空操作，不该顺带把外面那块点开（浏览器对禁用控件不派发 click，jsdom 会派到祖先；
- * 这里两边一致）。条的空白与 `+N` 则**是**那块区域的一部分：点它们冒泡给宿主，轮尾摘要因此切换。
+ * The event only stops for **Pill**: the bar often sits in other clickable areas (the folding switch of the notification line, the tail of the wheel
+ * summary of the entire switch, the hub's history row), the pill is a button and not part of that area - **Including disabled ones**: Disabled
+ * Just make opening a no-op, and you should not click on the outside part by the way (the browser does not send clicks to disabled controls, jsdom will send them to ancestors;
+ * Both sides are consistent here). Bars with white space and `+N` are part of that area: clicking on them bubbles up to the host, and the tail summary is switched accordingly.
  */
 function hitsPill(target: EventTarget | null): boolean {
   return target instanceof Element && target.closest("button") !== null;
@@ -39,9 +39,9 @@ export function WorkflowArtifactStrip({
   variant?: "pill" | "link";
   artifacts: readonly ArtifactPillData[];
   size?: ArtifactPillSize;
-  /** 缺席即药丸全部禁用（回调的存在即门控）。 */
+  /** Absence means the pill is all disabled (presence of the callback means gating). */
   onOpenArtifact?: (artifactId: string) => void;
-  /** 发射侧砍过（超上界或被过滤）——`+N` 因此可能少报，用 `…` 而不是数字。 */
+  /** Emitting side chopped (over the upper bound or filtered) - `+N` so may be underreported, use `…` instead of a number. */
   truncated?: boolean;
   testId?: string;
   pillTestId?: string;

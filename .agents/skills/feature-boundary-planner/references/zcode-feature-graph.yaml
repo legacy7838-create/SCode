@@ -32,9 +32,9 @@ nodes:
       - select model
       - model switch
       - model picker
-      - 选择模型
-      - 模型选择
-      - 切换模型
+      - select model
+      - model selection
+      - switch model
     codeSeeds:
       - file: packages/provider/src/facades.ts
         symbol: ModelSelectionFacade
@@ -106,8 +106,8 @@ nodes:
       - automation
       - scheduled task
       - cron
-      - 自动化
-      - 定时任务
+      - automation
+      - scheduled task
     codeSeeds:
       - file: packages/services/src/session/automationService.ts
         symbol: AutomationService
@@ -135,8 +135,8 @@ nodes:
     aliases:
       - subagent
       - agent profile
-      - 子代理
-      - 智能体配置
+      - subagent
+      - agent profile
     codeSeeds:
       - file: packages/ui/src/settings/SubagentsSection.tsx
         symbol: SubagentsSection
@@ -174,10 +174,10 @@ nodes:
       - turn steer
       - guide
       - follow-up queue
-      - 对话
-      - 会话
-      - 引导
-      - 消息队列
+      - conversation
+      - session
+      - steer
+      - message queue
     codeSeeds:
       - file: apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/v4-gateway.ts
         symbol: ConversationV4Gateway
@@ -200,8 +200,7 @@ nodes:
       - remote workspace
       - SSH
       - WSL
-      - Docker
-      - 工作区隔离
+      - workspace isolation
     codeSeeds:
       - file: packages/ui/src/lib/remoteWorkspaceHistory.ts
         symbol: buildRemoteWorkspaceIdentity
@@ -259,8 +258,8 @@ nodes:
       - composer prefix routing
       - mention panel routing
       - "@ and slash picker"
-      - 输入框候选分组
-      - 输入框触发器
+      - composer candidate grouping
+      - composer trigger
     codeSeeds:
       - symbol: extractActivePromptInputTrigger
         file: packages/ui/src/lib/promptInputTriggers.ts
@@ -271,7 +270,7 @@ nodes:
     label: Composer @ context picker (Plugins, files, sessions, Whiteboards)
     aliases:
       - "@ context picker"
-      - "@ 面板"
+      - "@ panel"
     codeSeeds:
       - symbol: MentionPlugin
         file: packages/ui/src/mentions/MentionPlugin.tsx
@@ -286,7 +285,7 @@ nodes:
     label: Composer slash picker (commands, Skills, Subagents)
     aliases:
       - slash capability picker
-      - / 面板
+      - / panel
     codeSeeds:
       - symbol: SlashCommandPlugin
         file: packages/ui/src/SlashCommandPlugin.tsx
@@ -299,8 +298,8 @@ nodes:
     label: Composer compatible Skill picker ($ and Yen aliases)
     aliases:
       - $ Skills picker
-      - $ 面板
-      - ¥ 技能面板
+      - $ panel
+      - ¥ skill panel
     codeSeeds:
       - symbol: MentionPlugin
         file: packages/ui/src/mentions/MentionPlugin.tsx
@@ -321,8 +320,8 @@ nodes:
     aliases:
       - busy input
       - running input
-      - 命令接纳
-      - 输入队列
+      - command admission
+      - input queue
   - id: state.conversation-product-projection
     kind: state-owner
     label: CLI authoritative projection of runtime events

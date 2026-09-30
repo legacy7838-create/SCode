@@ -1,8 +1,8 @@
 /*
- * Plugin `.mcp.json` 里 `auth: { type: "zcode_official" }` 的严格解析与 provenance 生成。
+ * Strict parsing of `auth: { type: "zcode_official" }` in a plugin `.mcp.json`, plus provenance generation.
  *
- * 单独成文件而不是留在 mcp.ts：官方鉴权的解析规则覆盖 http 与 stdio 两种传输方式，
- * 且与模板变量解析、传输层字段解析没有耦合——放一起只会让 mcp.ts 继续膨胀（它已到 max-lines 上限）。
+ * Its own file rather than staying in mcp.ts: the official auth parsing rules cover both the http and stdio transports,
+ * and are not coupled to template variable parsing or to transport field parsing -- putting them together would only keep mcp.ts bloating (it has already hit the max-lines limit).
  */
 import type { McpOfficialProvenance, ZCodeOfficialMcpAuthConfig } from "@zcode/contracts";
 
@@ -11,8 +11,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * 严格解析 `auth`。未声明返回 undefined（走普通 MCP 路径）；声明了但形状不合法一律抛错，
- * 不做宽容降级——降级会让"看起来配了官方鉴权、实际匿名请求"的配置静默上线。
+ * Strictly parse `auth`. An absent declaration returns undefined (the plain MCP path); a declared but structurally invalid one always throws,
+ * with no lenient degradation -- degrading would silently ship a configuration that "looks like official auth is configured but actually issues anonymous requests".
  */
 export function parseZCodeOfficialAuth(
   value: unknown,
@@ -22,7 +22,7 @@ export function parseZCodeOfficialAuth(
   if (!isRecord(value)) {
     throw new Error(`MCP server ${mcpKey}: auth must be an object`);
   }
-  // 精确值匹配，区分大小写；zcode-official、zcode_official_auth 等别名一律拒绝。
+  // Exact value matching is case-sensitive; aliases such as zcode-official and zcode_official_auth are rejected.
   if (value.type !== "zcode_official") {
     throw new Error(`MCP server ${mcpKey}: unsupported auth type: ${String(value.type)}`);
   }
@@ -33,8 +33,8 @@ export function parseZCodeOfficialAuth(
 }
 
 /**
- * 宿主生成的运行时 provenance。`.mcp.json` 里写了 `official` 字段也会被它覆盖——
- * 官方身份不能由被审查方自己声明。
+ * Host-generated runtime provenance. An `official` field written in `.mcp.json` is overwritten by it too --
+ * an official identity must not be self-declared by the party under review.
  */
 export function buildOfficialProvenance(identity: {
   mcpKey: string;

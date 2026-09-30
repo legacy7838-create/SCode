@@ -42,11 +42,11 @@ const PARTIAL_JSON_STRING_FIELD_KEYS = [
   "title",
   "pattern",
   "replacement",
-  // ExitPlanMode 的正文位于 plan 字段。把它纳入半截 JSON 预览后，计划卡片与
-  // 侧边详情才能从首个流式 chunk 开始更新，而不是等 input_end 才突然出现。
+  // The body of ExitPlanMode is in the plan field. After incorporating it into the half-JSON preview, the schedule card matches
+  // The side details can be updated starting from the first streaming chunk, instead of waiting for input_end to appear suddenly.
   "plan",
-  // CreateWorkflow 的脚本与名字：流式草稿
-  // 要在模型还在写脚本时就把站扫出来，半截 script 必须从首个 chunk 起就进预览。
+  // CreateWorkflow script and name: Streaming Draft
+  // To scan out the site while the model is still writing scripts, half of the script must be previewed from the first chunk.
   "name",
   "script",
 ] as const;
@@ -107,8 +107,8 @@ export function shouldMaterializeZCodeStreamingToolInputPreview(
   }
   const lastPreviewAt = state.lastPreviewAt ?? 0;
   if (isZCodeFileStreamingToolInputPreviewTool(options.toolName)) {
-    // 性能修复：Write/Edit 的半截 JSON 会触发全量内容恢复和行级 diff。
-    // 大字节 chunk 不能绕过一秒窗口，否则模型输出越快，UI 反而更新越频繁。
+    // Performance fix: Half-JSON in Write/Edit will trigger full content recovery and row-level diff.
+    // Large-byte chunks cannot bypass the one-second window, otherwise the faster the model outputs, the more frequently the UI will be updated.
     return (
       (options.now ?? Date.now()) - lastPreviewAt >=
       ZCODE_FILE_STREAMING_TOOL_INPUT_PREVIEW_MIN_INTERVAL_MS
@@ -125,8 +125,8 @@ export function shouldMaterializeZCodeStreamingToolInputPreview(
   if (!intervalElapsed) {
     return false;
   }
-  // 性能修复：大 Write/Edit 参数通常会被 provider 以 4KB 左右的慢速 chunk 推送。
-  // 若只按时间预算，active 任务仍会每个 chunk 解析累计 JSON；超过小输入范围后改由 raw growth 控制。
+  // Performance fix: Large Write/Edit parameters are often pushed by the provider in slow chunks around 4KB.
+  // If only based on time budget, the active task will still parse the accumulated JSON for each chunk; after exceeding the small input range, it will be controlled by raw growth.
   return state.rawInput.length <= ZCODE_ACTIVE_STREAMING_TOOL_INPUT_TIME_BUDGET_MAX_RAW_INPUT;
 }
 

@@ -24,8 +24,8 @@ function isAbortError(error: unknown): boolean {
 }
 
 /**
- * 远程 workspace 的 eager staging 实现。记录只存在当前 workspace host，
- * relay/main 不持有附件进度或暂存生命周期。
+ * Eager staging implementation for remote workspaces. The record only lives in the current
+ * workspace host; relay/main hold no attachment progress or staging lifecycle.
  */
 export function createRemotePromptAttachmentTransferService(
   backend: Pick<IRemoteBackend, "exec" | "upload">,
@@ -87,8 +87,8 @@ export function createRemotePromptAttachmentTransferService(
         const materialized = await materializeRemotePromptAttachments(
           {
             taskId: params.sessionId,
-            // 暂存目录同时带 workspace identity 与 remote session 维度，避免同一路径、
-            // 不同远端身份或 attached session 的 eager attachment 互相覆盖。
+            // The temporary directory has both workspace identity and remote session dimensions to avoid the same path,
+            // Eager attachments of different remote identities or attached sessions overwrite each other.
             traceId: `${workspaceKey}\u0000${params.remoteSessionId ?? ""}\u0000${params.operationId}`,
             content: "",
             attachments: [attachment],

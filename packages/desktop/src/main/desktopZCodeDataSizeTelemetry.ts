@@ -221,8 +221,8 @@ function createZCodeDataSizeTelemetryScheduler(
   async function reserveReport(reservedAt: number): Promise<ZCodeDataSizeTelemetryState | null> {
     const previousState = persistedState;
     const reservation = { ...previousState, reportReservedAt: reservedAt };
-    // Bug 根因：旧实现先发送再落盘，落盘失败后重启会再次发送，绕过 24 小时限流。
-    // 发送前先原子写入 reservation；即使进程随后退出，也只会少一个样本，不会重复上报。
+    // Root cause of the bug: The old implementation sent the data first and then placed it on the disk. After the disk placement failed, it would be sent again after restarting, bypassing the 24-hour current limit.
+    // The reservation is written atomically before sending; even if the process exits later, there will only be one less sample and will not be reported repeatedly.
     await dependencies.writeState(reservation);
     persistedState = reservation;
     return previousState;
@@ -246,8 +246,8 @@ function createZCodeDataSizeTelemetryScheduler(
     activityTimer = setInterval(
       () => {
         if (collectionEligibilityLost(relaxedIdle)) {
-          // 修复原因：开始扫描后用户可能恢复操作或新任务开始；仅在启动前检查会让 30 秒扫描
-          // 继续和用户工作争抢 IO，因此直接终止 Worker 并延后重试。
+          // Reason for fix: User may resume operations or start a new task after starting a scan; only checking before startup makes the scan take 30 seconds
+          // Continue to compete with user work for IO, so terminate the Worker directly and postpone retry.
           abortController.abort();
         }
       },
@@ -261,8 +261,8 @@ function createZCodeDataSizeTelemetryScheduler(
         return;
       }
       if (abortController.signal.aborted || collectionEligibilityLost(relaxedIdle)) {
-        // Bug 根因：Worker 可能在下一次 activity poll 前结束；若任务恰在这个窗口启动，
-        // 旧实现会跳过 busy 检查直接上报。发送前同步复查，关闭该 TOCTOU 窗口。
+        // Bug root cause: Worker may end before the next activity poll; if the task happens to be started in this window,
+        // The old implementation will skip the busy check and report directly. Synchronize review before sending and close the TOCTOU window.
         abortController.abort();
         throw new DOMException("ZCode data size scan eligibility lost", "AbortError");
       }
@@ -338,8 +338,8 @@ function createZCodeDataSizeTelemetryScheduler(
     try {
       state = await dependencies.readState();
     } catch (error) {
-      // Bug 根因：状态读取失败不等于没有历史状态；按首次启动继续采集会绕过持久化限流。
-      // 无法确认配额时保持 fail-closed，并且只重试状态读取，不进入采集调度。
+      // Bug root cause: Failure in status reading does not mean that there is no historical status; continuing to collect according to the first startup will bypass the persistence current limit.
+      // When the quota cannot be confirmed, it remains fail-closed and only retries status reading without entering collection scheduling.
       dependencies.logger.warn("[zcode-data-size] failed to read report state", error);
       schedule(timing.failureRetryMs, initializeFromPersistedState);
       return;
@@ -356,8 +356,8 @@ function createZCodeDataSizeTelemetryScheduler(
     );
     if (Number.isFinite(rateLimitAnchor)) {
       const baseDueAt = rateLimitAnchor + timing.dailyIntervalMs;
-      // Bug 根因：旧实现先用未加 jitter 的 baseDueAt 判断是否到期；应用在 jitter
-      // 窗口内重启时会改走 startup jitter，破坏跨重启的稳定错峰。
+      // Bug root cause: The old implementation first uses baseDueAt without jitter to determine whether it is expired; apply it to jitter
+      // When restarting within the window, the startup jitter will be redirected, destroying the stable peak stagger across restarts.
       const dueAt =
         baseDueAt + stableJitterMs(dependencies.deviceMid, baseDueAt, timing.dailyJitterMaxMs);
       if (dueAt > now) {

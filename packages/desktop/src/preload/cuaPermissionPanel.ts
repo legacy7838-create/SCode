@@ -1,11 +1,13 @@
 /**
- * CUA 权限拖拽浮窗的 preload。
+ * The preload for the CUA permission drag overlay.
  *
- * 只暴露这个浮窗真正需要的三件事，不复用主窗口那个庞大的 preload —— 浮窗是个浮在系统设置之上
- * 的无焦点窗口，攻击面越小越好。
+ * It exposes only the three things this overlay genuinely needs instead of reusing the main window's
+ * heavyweight preload — the overlay is an unfocused window floating above System Settings, and the
+ * smaller its attack surface the better.
  *
- * `startDrag` 必须是 send 而不是 invoke：Electron 要求在 dragstart 事件链路里同步发起原生拖拽，
- * invoke 的 Promise 往返会错过 OS 的拖拽手势窗口，表现为「按住拖动但什么都没被拖出来」。
+ * `startDrag` has to be a send rather than an invoke: Electron requires the native drag to start
+ * synchronously within the dragstart event chain, and the promise round trip of an invoke misses
+ * the OS drag gesture window, showing up as "you press and drag but nothing gets dragged out".
  */
 import { contextBridge, ipcRenderer } from "electron";
 import { PlatformChannels, type CuaPermissionKind, type Locale } from "@zcode/shared";
@@ -14,20 +16,20 @@ const CUA_PERMISSION_PANEL_STATE_CHANNEL = "zcode:cua-permission-panel-state";
 
 interface CuaPermissionPanelState {
   permission: CuaPermissionKind;
-  /** main 进程维护的 ZCode 当前界面语言；浮窗不得另读系统语言或 localStorage。 */
+  /** The current interface language of ZCode maintained by the main process; the floating window must not read the system language or localStorage. */
   locale: Locale;
-  /** 真实 ZCode 图标（data URL）；读不到时为 null，页面保留占位图形。 */
+  /** The real ZCode icon (data URL); if it cannot be read, it is null, and the page retains the placeholder graphic. */
   iconDataUrl: string | null;
 }
 
 contextBridge.exposeInMainWorld("cuaPermissionPanel", {
-  /** 挂载时预热已验证的 Helper 路径 + 指纹，让后续 dragstart 能同步 startDrag。 */
+  /** Preheat the verified Helper path + fingerprint when mounting, so that subsequent dragstart can synchronize startDrag. */
   prepareDrag: () => ipcRenderer.invoke(PlatformChannels.PrepareCuaHelperPermissionDrag),
-  /** 同步发起原生文件拖拽。必须在 dragstart 处理器里直接调用。 */
+  /** Synchronously initiate native file drag and drop. Must be called directly in the dragstart handler. */
   startDrag: () => ipcRenderer.send(PlatformChannels.StartCuaHelperPermissionDrag),
-  /** 拖拽手势结束，浮窗可以收走了。 */
+  /** When the drag gesture ends, the floating window can be closed. */
   notifyDragEnded: () => ipcRenderer.send(PlatformChannels.NotifyCuaHelperPermissionDragEnded),
-  /** 接收 main 推送的当前权限阶段与应用图标，用于切换文案和 tile 图标。 */
+  /** Receives the current permission stage and application icon pushed by main, which is used to switch copywriting and tile icons. */
   onState: (callback: (state: CuaPermissionPanelState) => void) => {
     const listener = (_event: unknown, payload: CuaPermissionPanelState) => callback(payload);
     ipcRenderer.on(CUA_PERMISSION_PANEL_STATE_CHANNEL, listener);

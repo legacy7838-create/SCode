@@ -1,8 +1,9 @@
 /**
- * 进程角色的有界聚合窗口。
+ * Bounded aggregation window for process roles.
  *
- * 所有来源（Chromium 体系、Node 自采、CLI、MCP）都把"某角色在某一刻的瞬时事实"喂进来，
- * flush 时每个窗口投影成一条 `perf_process_window`。纯内存、有界、无队列、无重试。
+ * Every source (Chromium family, Node's own sampling, CLI, MCP) feeds in "an instant of a role at
+ * a single moment", and on flush each window projects into one `perf_process_window`. Purely
+ * in-memory, bounded, with no queue and no retry.
  */
 
 import type { ProcessResourceRole, ProcessResourceRuntimeSurface } from "@zcode/shared";
@@ -12,18 +13,18 @@ import {
   roundMetric,
 } from "./resourceMetricsStats.js";
 
-/** 每角色每序列的样本上限（5 分钟 @10 秒 = 30，留 2 个容忍定时器漂移）。 */
+/** Per-role, per-series sample cap (5 minutes @ 10s = 30, with 2 slots of slack for timer drift). */
 export const PROCESS_RESOURCE_MAX_SAMPLES_PER_WINDOW = 32;
 /**
- * 同时存在的窗口上限（内存有界）。
- * 角色、运行环境、硬件与 MCP ID 会分别开窗；多远端环境共用 64 个窗口预算，
- * 超出后新窗口直接丢弃，不排队、不持久化。
+ * The upper limit of simultaneous windows (memory bounded).
+ * Roles, operating environments, hardware and MCP IDs will open windows separately; multiple remote environments share 64 window budgets.
+ * After exceeding the limit, the new window is directly discarded without queuing or persistence.
  */
 const PROCESS_RESOURCE_MAX_WINDOWS = 64;
 
 type ProcessResourceScene = "foreground" | "background";
 
-/** 该角色实际运行的机器；缺省时由出口补桌面机的值。 */
+/** The machine this role actually runs on; when absent, the egress fills in the desktop machine's value. */
 export interface ProcessResourceHardware {
   platform: NodeJS.Platform;
   arch: string;
@@ -32,26 +33,28 @@ export interface ProcessResourceHardware {
 }
 
 /**
- * 样本自报的运行机信息，可能只有一部分字段（旧 CLI 不带 `totalMemoryGb`）。
- * 出口按字段逐项覆盖桌面机默认值，不是整体二选一。
+ * Running-machine information reported by the sample itself, which may only fill in some of the
+ * fields (older CLIs carry no `totalMemoryGb`).
+ * The egress overrides the desktop-machine defaults field by field rather than picking one side
+ * wholesale.
  */
 export type ProcessResourceHardwareOverride = Partial<ProcessResourceHardware>;
 
-/** 一个角色在某一刻的瞬时事实。 */
+/** One instant of a role at a single moment. */
 export interface ProcessRoleSample {
   role: ProcessResourceRole;
-  /** Host 注入的运行环境哈希，仅用于内存分组，不投影到事件属性。 */
+  /** Environment hash injected by the Host; used only for in-memory grouping and never projected onto event properties. */
   environmentKey?: string;
-  /** 角色内全部进程的 CPU 之和（整机归一化百分比）。 */
+  /** Summed CPU of every process in the role (whole-machine normalized percentage). */
   cpuPercent: number;
   rssKbTotal: number;
   rssKbMaxProcess: number;
   processCount: number;
   uptimeMinutes: number;
-  /** 仅 Node 角色与 renderer_main；缺省表示该次采样没有 heap 读数。 */
+  /** Node roles and renderer_main only; absent means this sample carries no heap reading. */
   heapUsedKb?: number;
   runtimeSurface?: ProcessResourceRuntimeSurface;
-  /** 仅 mcp 角色。 */
+  /** mcp roles only. */
   mcpId?: string;
   hardware?: ProcessResourceHardwareOverride;
 }
@@ -89,9 +92,12 @@ interface ProcessRoleWindow {
 }
 
 /**
- * 硬件维度指纹只描述规格，不代表机器身份。环境身份由 Host 单独注入窗口 key，
- * 避免同规格远端环境的 CPU/RSS 被相加；硬件指纹仍隔离同环境内不同规格的读数。
- * 本机角色不带 hardware，指纹为空串，窗口 key 与只有角色时完全一致。
+ * The hardware-dimension fingerprint describes specifications only, never machine identity.
+ * Environment identity is injected by the Host as a separate window key, so that CPU/RSS from
+ * remote environments of the same spec are not added together; the hardware fingerprint still
+ * separates readings of differing specs within the same environment. Local roles carry no
+ * hardware, so the fingerprint is an empty string and the window key is exactly the same as when
+ * only the role is present.
  */
 export function processResourceHardwareKey(hardware?: ProcessResourceHardwareOverride): string {
   if (!hardware) {
@@ -120,7 +126,7 @@ export class ProcessResourceWindowAggregator {
   private sceneTicks = 0;
   private backgroundTicks = 0;
 
-  /** main 每个 10 秒 tick 记录一次前后台；窗口内的比例给所有角色事件共用。 */
+  /** main records foreground/background once per 10-second tick; the ratio within the window is shared by every role event. */
   recordScene(scene: ProcessResourceScene): void {
     this.sceneTicks += 1;
     if (scene === "background") {
@@ -150,7 +156,7 @@ export class ProcessResourceWindowAggregator {
       this.windows.set(key, window);
     }
 
-    // 运行环境和硬件维度均进入窗口 key，同一窗口无需覆盖维度。
+    // Both the operating environment and hardware dimensions enter the window key, and there is no need to cover dimensions in the same window.
     window.cpuPercent = appendBounded(window.cpuPercent, sample.cpuPercent);
     window.rssKbTotal = appendBounded(window.rssKbTotal, sample.rssKbTotal);
     window.rssKbMaxProcess = appendBounded(window.rssKbMaxProcess, sample.rssKbMaxProcess);
@@ -162,15 +168,16 @@ export class ProcessResourceWindowAggregator {
   }
 
   /**
-   * 窗口内的后台 tick 占比。
-   * 角色事件与设备级 `perf_system_window` 共用这一个数，因此 scene 计数只有这一份；
-   * 注意 `drain()` 会清零计数，设备事件要在 drain 之前取值。
+   * Share of background ticks within the window.
+   * Role events and the device-level `perf_system_window` share this one number, so there is only
+   * this one set of scene counts; note that `drain()` zeroes them, so the device event must read
+   * the value before draining.
    */
   get backgroundRatio(): number {
     return this.sceneTicks > 0 ? roundMetric(this.backgroundTicks / this.sceneTicks) : 0;
   }
 
-  /** 取出并清空全部窗口；`sample_count` 如实反映窗口内的样本数（含残窗）。 */
+  /** Takes and clears every window; `sample_count` faithfully reflects the number of samples in the window (including truncated windows). */
   drain(): ProcessRoleWindowReport[] {
     const backgroundRatio = this.backgroundRatio;
     const reports = [...this.windows.values()]
@@ -188,8 +195,8 @@ export class ProcessResourceWindowAggregator {
 }
 
 /**
- * 溢出时丢最旧的样本：上限只会在定时器漂移（一个窗口挤进 30 个以上 tick）时触碰，
- * 此时窗口末尾的读数才是要上报的那段时间的事实。
+ * Drop oldest samples on overflow: the upper limit is only hit when the timer drifts (more than 30 ticks squeezed into a window),
+ * The reading at the end of the window at this time is the fact for that period of time to be reported.
  */
 function appendBounded(bucket: number[], value: number): number[] {
   return appendBoundedSamples(bucket, value, PROCESS_RESOURCE_MAX_SAMPLES_PER_WINDOW);

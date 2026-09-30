@@ -9,7 +9,10 @@ export interface ComposerSubmissionConfig {
   planEnabled: boolean;
 }
 
-/** 在点击提交的瞬间，把 Composer 意图冻结成本次 Submission 的执行配置。 */
+/**
+ * At the instant submit is clicked, freeze the Composer intent into the execution config for this
+ * Submission.
+ */
 export function createComposerSubmissionConfig(
   composer:
     | { mode?: string; planEnabled?: boolean; modelSelection?: ModelSelection }
@@ -17,8 +20,8 @@ export function createComposerSubmissionConfig(
     | undefined,
   view: ModelSelectionView | null,
 ): ComposerSubmissionConfig | null {
-  // 只读子会话和未挂载 Composer 的 SessionPane 不提供草稿；这类场景没有可提交配置，
-  // 不能因为渲染提交门禁而读取 undefined 并让整个会话区域崩溃。
+  // Read-only sub-session and SessionPane without Composer mounted do not provide drafts; there is no committable configuration in such scenarios.
+  // You can't read undefined and crash the entire session area because of a render commit gate.
   if (!composer) {
     return null;
   }
@@ -31,7 +34,7 @@ export function createComposerSubmissionConfig(
       ?.models.find((candidate) => candidate.modelId === selection.modelId);
   if (!mode.success || !selection || !model || !validateModelSelectionOptions(model, selection).ok)
     return null;
-  // 不读取 Session 或显示别名；复制所有选择叶子，防止 await 后用户切模改变本次请求。
+  // Do not read the Session or display aliases; copy all selection leaves to prevent the user from changing this request after await.
   return Object.freeze({
     mode: mode.data === "plan" ? "build" : mode.data,
     planEnabled: resolveExecutionState(composer).planEnabled,

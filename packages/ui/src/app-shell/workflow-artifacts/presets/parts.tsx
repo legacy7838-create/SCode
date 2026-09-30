@@ -1,32 +1,42 @@
 /**
- * 四个预置渲染器共用的小零件：labels 契约、空态、字段标签、揭示动画的类名。
+ * Small parts shared by the four preset renderers: the `labels` contract, empty states, field
+ * labels, and the reveal-animation class names.
  *
- * 这些组件**一律不碰 i18n**：run 侧板与 `workflow-artifact` tab 各自持有 intl，
- * 把已翻译的文案经 `labels` 传进来。理由是渲染器要能被侧板、tab、（将来的）中枢详情页
- * 三处复用，谁在什么语境下叫什么由调用方决定；组件自己去查 message id 会把这三处焊死。
+ * These components **never touch i18n**: the run side panel and the `workflow-artifact` tab each
+ * hold their own intl and pass already-translated copy in through `labels`. The reason is that a
+ * renderer has to be reusable from the side panel, the tab and the (future) hub detail page; what
+ * each context calls something is the caller's decision, whereas a component that looks up message
+ * ids itself would weld those three call sites together.
  */
 
 import type { ReactNode } from "react";
 import { cn } from "@/components/lib/utils.js";
 
-/** 调用方必须提供的三句译文（其余文案全部来自 spec 里作者自己写的 label / title）。 */
+/**
+ * The three translated strings the caller must supply (every other string comes from the label /
+ * title the author wrote in the spec).
+ */
 export type PresetLabels = {
-  /** 看板里承接「未在 columns 里列出的 status」的那一列的名字。 */
+  /** The name of the board column that catches “statuses not listed in columns”. */
   otherColumn: string;
-  /** 一条数据都还没到时的提示。 */
+  /** The message shown when not a single row of data has arrived yet. */
   empty: string;
-  /** 「N 条」——表格行数、看板卡片数。 */
+  /** “N items” — table row count, board card count. */
   itemsCount: (count: number) => string;
 };
 
 /**
- * 新元素的揭示动画。稳定 React key + 只在**挂载**时播一次，所以老点不会随着新点到达重播；
- * `motion-reduce` 下整个关掉。
+ * The reveal animation for a new element. A stable React key plus playing it only once on
+ * **mount**, so existing points do not replay as new ones arrive; under `motion-reduce` it is
+ * turned off entirely.
  */
 export const REVEAL_ANIMATION_CLASS =
   "animate-in fade-in duration-300 ease-out motion-reduce:animate-none";
 
-/** 一条数据都没有时的占位。压到最低存在感：看板本身在运行期就是会先空着的。 */
+/**
+ * Placeholder for when there is no data at all. Kept at the lowest possible presence: a board is
+ * empty at first during its run anyway.
+ */
 export function PresetEmpty({ label, compact }: { label: string; compact?: boolean }) {
   return (
     <div
@@ -41,14 +51,19 @@ export function PresetEmpty({ label, compact }: { label: string; compact?: boole
   );
 }
 
-/** 字段名 + 单位的统一写法：单位跟在标签后面的括号里，不重复到每一个值上（dataviz 惯例）。 */
+/**
+ * The one way to write a field name + unit: the unit goes in parentheses after the label instead of
+ * being repeated on every value (dataviz convention).
+ */
 export function fieldHeading(label: string, unit?: string): string {
   return unit ? `${label} (${unit})` : label;
 }
 
 /**
- * 全尺寸形态的标题条：spec 的 title / description 由作者用用户语言写好，这里原样呈现。
- * 三样都没有时整块**缺席**（连外边距一起消失）——所以外边距由这里带，而不是调用方包一层 div。
+ * The title bar in its full-size form: the spec's title / description are written by the author in
+ * the user's language and are rendered here as-is. When none of the three exist the whole block is
+ * **absent** (its margin disappears too) — so the margin is carried here rather than by the caller
+ * wrapping an extra div.
  */
 export function PresetHeading({
   title,

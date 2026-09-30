@@ -153,7 +153,7 @@ function killPid(
   try {
     kill(pid, signal);
   } catch {
-    // 进程可能已经被 SDK close 或前一轮信号回收；关闭路径要求幂等。
+    // The process may have been closed by SDK or recycled by a previous round of signals; the closing path requires idempotence.
   }
 }
 
@@ -166,7 +166,7 @@ function killProcessGroup(
   try {
     kill(-pid, signal);
   } catch {
-    // SDK 当前没有 detached spawn，进程组可能不存在；保留兼容未来 launcher 的能力。
+    // The SDK currently does not have detached spawn, and the process group may not exist; compatibility with future launchers is retained.
   }
 }
 

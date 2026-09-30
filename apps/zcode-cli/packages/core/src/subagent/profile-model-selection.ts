@@ -1,6 +1,6 @@
 import { parseSubagentMarkdownSelection, type ModelSelection } from "@zcode/shared";
 
-/** Host/Agent 共用正式 Markdown codec；Provider 迁移必须先在用户存储边界完成。 */
+/** Host/Agent share the official Markdown codec; a Provider migration must first be completed at the user storage boundary. */
 export function resolveProfileModelSelection(
   frontmatter: Record<string, unknown>,
 ): ModelSelection | undefined {

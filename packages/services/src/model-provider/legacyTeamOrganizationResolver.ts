@@ -10,7 +10,7 @@ import type {
   RemoteEnvelope,
 } from "#src/model-provider/accountProviderApiTypes.js";
 
-/** 仅供旧连接导入：只读 OAuth 用户信息，不依赖当前 Provider，也不申请团队 Key。退役旧版后删除。 */
+/** Legacy-connection import only: reads OAuth user info, depends on no current Provider and requests no team key. Delete once the legacy version is retired. */
 export function createLegacyTeamOrganizationResolver(dependencies: {
   apiClient: ApiClient;
   loadOAuthTokenSet: (
@@ -30,14 +30,14 @@ export function createLegacyTeamOrganizationResolver(dependencies: {
       {
         method: "GET",
         timeoutMs: 15_000,
-        // 两个业务域都使用原始 OAuth token；不能添加 Bearer 或使用模型 API Key。
+        // Both business domains use raw OAuth tokens; you cannot add Bearers or use model API keys.
         headers: { Authorization: token, "Content-Type": "application/json" },
       },
     );
     if (!response.ok) return null;
     const payload = (await response.json()) as RemoteEnvelope<RemoteCustomerInfo>;
     if (payload.code !== undefined && payload.code !== 0 && payload.code !== 200) return null;
-    // 账号切换使旧查询失去权威，即使项目 ID 碰巧相同也不能把组织写给新账号。
+    // Account switching makes the old query lose its authority and prevents organizations from being written to the new account even if the project ID happens to be the same.
     if ((await dependencies.loadOAuthTokenSet(family))?.accessToken.trim() !== token) return null;
     const organizations = new Set(
       (payload.data?.organizations ?? [])

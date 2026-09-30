@@ -63,8 +63,9 @@ function clampViewportSize(size: BrowserViewportSize): BrowserViewportSize {
 }
 
 /**
- * 保持同一层 DOM 包装，仅切换 frame 的 CSS 尺寸，避免开关自由尺寸时重建 Electron guest。
- * 尺寸只属于当前 Browser tab 的 React 实例，不写入跨端 store 或持久化状态。
+ * Keep the same single layer of DOM wrapper and only switch the frame's CSS size, so toggling free
+ * sizing does not rebuild the Electron guest. The size belongs only to the React instance of the
+ * current Browser tab, and is never written to a cross-platform store or to persisted state.
  */
 export function ResponsiveBrowserViewport({
   active,
@@ -96,9 +97,9 @@ export function ResponsiveBrowserViewport({
   const visualScale = active
     ? resolveBrowserViewportScale({ canvasSize, desktopZoomFactor, viewportSize, zoom })
     : 1;
-  // Electron 的应用全局 zoom 会继续乘到自由尺寸 frame 的 CSS transform 上，
-  // 导致 100%/固定比例与拖拽换算随应用一起变化。frame 使用倒数抵消父 zoom，
-  // guest CSS viewport 仍由 width/height 单独控制，不把视觉补偿写回 Browser Use。
+  // Electron's application global zoom will continue to be multiplied by the CSS transform of the free-size frame.
+  // Causes 100%/fixed scale and drag scaling to vary with the app. frame offsets the parent zoom using the reciprocal,
+  // The guest CSS viewport is still controlled by width/height alone and does not write visual compensation back to Browser Use.
   const rendererScale = active
     ? resolveBrowserViewportRendererScale({ desktopZoomFactor, visualScale })
     : 1;
@@ -126,7 +127,7 @@ export function ResponsiveBrowserViewport({
     (requestedSize: BrowserViewportSize) => {
       pendingViewportSizeRef.current = clampViewportSize(requestedSize);
       if (resizeAnimationFrameRef.current !== 0) return;
-      // pointermove 频率可能高于刷新率；每帧只提交最后一组尺寸，避免无效 React render。
+      // The pointermove frequency may be higher than the refresh rate; only the last set of dimensions is submitted each frame to avoid invalid React renders.
       resizeAnimationFrameRef.current = window.requestAnimationFrame(() => {
         resizeAnimationFrameRef.current = 0;
         const pendingSize = pendingViewportSizeRef.current;
@@ -154,9 +155,9 @@ export function ResponsiveBrowserViewport({
           drag.captureTarget.releasePointerCapture(drag.pointerId);
         }
       } catch {
-        // capture 可能已被系统或浏览器撤销；状态已先清理，lostpointercapture 重入不会续拖。
+        // The capture may have been revoked by the system or browser; the status has been cleared first, and lostpointercapture will not continue to be dragged after reentry.
       }
-      logger.debug("[browser-use] 结束自由尺寸拖拽", {
+      logger.debug("[browser-use] finished free-size drag", {
         pointerId: drag.pointerId,
         reason,
       });
@@ -173,7 +174,7 @@ export function ResponsiveBrowserViewport({
       try {
         event.currentTarget.setPointerCapture(event.pointerId);
       } catch {
-        // 自动化合成事件可能没有活跃 pointer；同一节点上的 move 仍可验证尺寸逻辑。
+        // Automated composition events may not have an active pointer; a move on the same node can still verify the size logic.
       }
       dragRef.current = {
         ...directions,
@@ -191,15 +192,15 @@ export function ResponsiveBrowserViewport({
     (event: ReactPointerEvent<HTMLDivElement>) => {
       const drag = dragRef.current;
       if (!drag || drag.pointerId !== event.pointerId) return;
-      // mousemove 的 buttons 是浏览器对当前物理按键的事实来源；即使窗口 blur 被系统截图层吞掉，
-      // 松开主键后的第一帧也必须终止旧手势，不能继续相信 pointerdown 时留下的 dragRef。
+      // The buttons of mousemove are the browser’s source of fact for the current physical buttons; even if the window blur is swallowed by the system screenshot layer,
+      // The old gesture must also be terminated on the first frame after releasing the main key, and the dragRef left during pointerdown cannot be trusted anymore.
       if (event.pointerType === "mouse" && (event.buttons & 1) === 0) {
         finishResize("mouse-button-released", event.pointerId);
         return;
       }
       event.preventDefault();
-      // frame 使用 CSS transform 缩放后，pointer delta 是视觉像素；若直接累加，
-      // 50%/200% 下同样的拖动距离会错误地产生相同 CSS viewport 变化。
+      // After the frame is scaled using CSS transform, pointer delta is the visual pixel; if added directly,
+      // The same drag distance at 50%/200% will incorrectly produce the same CSS viewport change.
       const scale = rendererScaleRef.current > 0 ? rendererScaleRef.current : 1;
       const widthDelta = (event.clientX - drag.startClientX) / scale;
       const heightDelta = (event.clientY - drag.startClientY) / scale;
@@ -256,9 +257,9 @@ export function ResponsiveBrowserViewport({
     if (!canvas) return;
 
     const updateCanvasSize = (size: BrowserViewportSize) => {
-      // inactive tab 的 display:none 会让 ResizeObserver 回报 0×0；若清掉最后有效画布，
-      // 切回首帧 Fit 会先回退为 1，下一帧才缩小。
-      // 非正尺寸不具备布局权威；重新 composed 时由 layout effect 在首绘前重测。
+      // The display:none of inactive tab will cause ResizeObserver to return 0×0; if the last valid canvas is cleared,
+      // When switching back to the first frame, Fit will first go back to 1 and then shrink in the next frame.
+      // Non-positive sizes do not have layout authority; when recomposed, the layout effect retests before first drawing.
       if (size.width <= 0 || size.height <= 0) return;
       setCanvasSize((previous) =>
         previous?.width === size.width && previous.height === size.height ? previous : size,
@@ -266,7 +267,7 @@ export function ResponsiveBrowserViewport({
     };
     const rect = canvas.getBoundingClientRect();
     updateCanvasSize({ width: rect.width, height: rect.height });
-    logger.debug("[browser-use] 重测自由尺寸 Fit 画布", {
+    logger.debug("[browser-use] remeasured free-size Fit canvas", {
       desktopZoomFactor,
       height: rect.height,
       width: rect.width,
@@ -288,8 +289,8 @@ export function ResponsiveBrowserViewport({
       finishResize("mode-inactive", undefined, false);
       return;
     }
-    // 系统截图、应用切换等会让窗口在 pointerup 前失焦，原 handle
-    // 收不到结束事件，pointer capture 与 dragRef 因而残留；重新聚焦后的普通移动会继续 resize。
+    // System screenshots, application switching, etc. will cause the window to be out of focus in front of pointerup. The original handle
+    // The end event is not received, so pointer capture and dragRef remain; normal movement after refocusing will continue to resize.
     const handleWindowBlur = () => finishResize("window-blur");
     window.addEventListener("blur", handleWindowBlur);
     return () => {

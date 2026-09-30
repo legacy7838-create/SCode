@@ -62,7 +62,7 @@ export function scopeConversationShareServiceForAttachment(
     onDynamicPublishProgress: () => RpcEvent.None,
     importShare: rejectMobileShare,
     onDynamicImportProgress: () => RpcEvent.None,
-    // 手机远控没有本地 workspace 副本，直接返回 null 即可（不渲染只读块）。
+    // Mobile phone remote control does not have a local workspace copy, so just return null directly (read-only blocks will not be rendered).
     getImportedConversation: async () => null,
     getPreview: (shareCode: string) => service.getPreview(shareCode),
     getContinuation: rejectMobileShare,

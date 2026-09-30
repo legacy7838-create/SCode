@@ -1,12 +1,12 @@
 /**
- * 日志格式化工具
+ * Log formatting utilities
  *
- * 提供统一的时间戳和日志前缀格式化，供所有进程（main/host/server/renderer）使用。
- * 纯函数，无 Node.js 专有 API 依赖，浏览器环境安全。
+ * Provide uniform timestamp and log prefix formatting for every process (main/host/server/renderer).
+ * Pure functions with no Node.js-specific API dependencies, safe in browser environments.
  */
 
 /**
- * 格式化时间戳为 "YYYY-MM-DD HH:mm:ss.mmm"
+ * Formats a timestamp as "YYYY-MM-DD HH:mm:ss.mmm"
  */
 export function formatTimestamp(date: Date = new Date()): string {
   const y = date.getFullYear();
@@ -20,11 +20,11 @@ export function formatTimestamp(date: Date = new Date()): string {
 }
 
 /**
- * 生成日志前缀，统一格式：
- * 有 PID: "[YYYY-MM-DD HH:mm:ss.mmm] [pid:12345] [source]"
- * 无 PID: "[YYYY-MM-DD HH:mm:ss.mmm] [source]"
+ * Builds a log prefix in a uniform format:
+ * with PID: "[YYYY-MM-DD HH:mm:ss.mmm] [pid:12345] [source]"
+ * without PID: "[YYYY-MM-DD HH:mm:ss.mmm] [source]"
  *
- * Node.js 进程传入 process.pid，浏览器端不传。
+ * Node.js processes pass process.pid; the browser side omits it.
  */
 export function formatLogPrefix(source: string, pid?: number): string {
   const ts = formatTimestamp();

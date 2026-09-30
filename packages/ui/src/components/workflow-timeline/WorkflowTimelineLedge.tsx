@@ -14,17 +14,24 @@ import { LEDGE_PITCH, LEDGE_LAMP, ledgeLamps, railKey, scrollbarThumb } from "./
 import type { TimelineViewport } from "./use-timeline-viewport.js";
 
 /**
- * 边檐与滚动条。
+ * Ledge and scrollbar.
  *
- * 边檐：折叠到视口一侧的站，画成一排同一枚 10px 灯（16px 一枚），之间是那条边的墨色小轨道段，
- * 靠内容的一端一段短轨道接到第一个开着的站，远端是超出五枚时的 `+n`。每枚灯是按钮：点一下，
- * 镜头把那一站带回来。折叠的站在内容里不画——檐上那枚灯**就是**它。
+ * Ledge: the stops collapsed to one side of the viewport, drawn as a row of identical 10px lamps
+ * (16px each), with ink-colored rail segments of that edge in between; on the content side a short
+ * rail segment reaches the first open stop, and the far end shows `+n` once there are more than
+ * five. Every lamp is a button: one click brings that stop back into view. Collapsed stops are not
+ * drawn in the content — the lamp on the ledge **is** them.
  *
- * 滚动条：时间线底部 2px 一根，轨道 border 色、拇指 foreground-subtlest；静止时 opacity 0，指针在
- * 卡上或正在滚时露出，悬停轨道加粗到 4px；拇指可拖，点轨道翻页。原生滚动条隐藏。
+ * Scrollbar: one 2px bar at the bottom of the timeline, track in the border color and thumb in
+ * foreground-subtlest; opacity 0 at rest, revealed while the pointer is over the card or while
+ * scrolling, and the track thickens to 4px on hover; the thumb is draggable and clicking the track
+ * pages. The native scrollbar is hidden.
  */
 
-/** 站灯：`STATUS_DOT` 词汇表，running 外加 3px 光晕（呼吸）——它是画面上唯一发光的东西。 */
+/**
+ * Stop lamp: the `STATUS_DOT` vocabulary, plus a 3px glow (breathing) on running — it is the only
+ * thing on screen that glows.
+ */
 export function stationLampClass(status: StepRunStatus | undefined): string {
   const resolved = status ?? "pending";
   return cn(
@@ -42,10 +49,10 @@ export function prefersReducedMotion(): boolean {
   );
 }
 
-// 补线需与静态主轨道同为 1px，避免滚动边缘出现粗细接缝。
-// 双线段：檐上两站并行时不是一条线，
-// 而是两条 1px、相距 2px——檐把带压扁了，分叉与汇合画不下，两条并排的线是这里唯一还说得出
-// 「同时」的记号。
+// The patch line needs to be 1px the same as the static main track to avoid thick and thin seams at the scrolling edge.
+// Double line segment: When two stations on the eaves run parallel, they are not a line.
+// Instead, they are two lines 1px apart and 2px apart - the eaves flatten the band, and the bifurcation and merging cannot be drawn. Two side by side lines are the only thing that can be said here.
+// The sign of "simultaneously".
 function Segment({ rail, width }: { rail: TimelineRail | undefined; width: number }) {
   if (rail?.kind === "twin") {
     return (
@@ -91,14 +98,17 @@ export function WorkflowLedge({
   top,
 }: {
   side: "left" | "right";
-  /** 折叠到这一侧的站（升序）。 */
+  /** Stops collapsed onto this side (ascending). */
   indexes: readonly number[];
   stations: readonly TimelineStation[];
-  /** 相邻站之间的轨道段，按**一对站**索引（`railKey`）：带里一站会长出好几条段。 */
+  /**
+   * Rail segment between two adjacent stops, indexed by a **pair of stops** (`railKey`): a single
+   * stop inside a band can grow several segments.
+   */
   rails: ReadonlyMap<string, TimelineRail>;
-  /** 檐到第一个开着的站之间那段短轨道的宽；0 = 不画。 */
+  /** Width of the short rail segment between the ledge and the first open stop; 0 = not drawn. */
   stubWidth: number;
-  /** 轨道行的顶（檐与灯同高）。 */
+  /** Top of the rail row (same height as the ledge and the lamps). */
   top: number;
   nameOf: (index: number) => string;
   onSelect: (index: number) => void;
@@ -173,9 +183,11 @@ export function WorkflowLedge({
 }
 
 /**
- * 拖完拇指或点完轨道，浏览器还会补发一次 click，它会沿着 DOM 冒到宿主卡片——轮尾摘要卡把
- * 「空白处点一下」当成折叠 / 展开，而它的子控件谓词只认 button / a / 表单件，不认 scrollbar。
- * 用户拖一下滑块，卡片就折起来了。滚动条的点击到此为止：它已经把这次交互消费掉了。
+ * After the thumb is dragged or the track is clicked, the browser still fires one extra click that
+ * bubbles up the DOM to the host card — the end-of-turn summary card treats a click on empty space
+ * as collapse / expand, and its child-control predicate only recognizes button / a / form elements,
+ * not a scrollbar. The user drags the slider once and the card folds itself away. Clicks on the
+ * scrollbar stop there: it has already consumed that interaction.
  */
 function stopClick(event: ReactMouseEvent<HTMLDivElement>) {
   event.stopPropagation();

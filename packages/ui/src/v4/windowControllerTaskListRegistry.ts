@@ -28,7 +28,10 @@ interface WindowControllerTaskListRegistry {
 export interface WindowControllerTaskListVersion {
   controllerRevision: number;
   taskListVersionSignature: string;
-  /** 只用于让连接前缓存随 remote session 换代失效，不参与 workspace identity。 */
+  /**
+   * Only used to invalidate the pre-connection cache when the remote session rotates; it takes no
+   * part in workspace identity.
+   */
   workspaceSourceGenerationSignature?: string;
   manualRefreshSerial?: number;
 }
@@ -54,9 +57,9 @@ function queryContainsWorkspace(
 }
 
 function cacheVersionKey(version: WindowControllerTaskListVersion): string {
-  // Controller frame 只负责触发 hook 重读；具体 query 是否失效由 delta scope/membership 决定。
-  // 若把全局 controllerRevision 放进缓存 key，一个 timeline live delta 仍会让 pinned/archived
-  // 全部 miss，重新制造每个 frame 多轮 Host RPC。legacy/manual 版本继续保留强制刷新语义。
+  // The Controller frame is only responsible for triggering hook rereading; whether the specific query fails is determined by delta scope/membership.
+  // If you put the global controllerRevision into the cache key, a timeline live delta will still make pinned/archived
+  // All misses, remaking each frame multiple rounds of Host RPC. The legacy/manual version continues to retain forced refresh semantics.
   return JSON.stringify({
     taskListVersionSignature: version.taskListVersionSignature,
     workspaceSourceGenerationSignature: version.workspaceSourceGenerationSignature,
@@ -64,7 +67,7 @@ function cacheVersionKey(version: WindowControllerTaskListVersion): string {
   });
 }
 
-/** 一个 Controller proxy 对应一个共享观察器；所有列表 hook 只消费其 revision。 */
+/** One Controller proxy maps to one shared observer; every list hook only consumes its revision. */
 export function getWindowControllerTaskListRegistry(
   controller: IWindowControllerService,
 ): WindowControllerTaskListRegistry {
@@ -136,7 +139,7 @@ export function getWindowControllerTaskListRegistry(
             forceSnapshot: true,
           })
           .catch((error) =>
-            logger.warn("[windowControllerTaskListRegistry] Controller gap resync 失败", error),
+            logger.warn("[windowControllerTaskListRegistry] Controller gap resync failed", error),
           );
         return;
       }
@@ -146,7 +149,7 @@ export function getWindowControllerTaskListRegistry(
         seq: frame.toSeq,
       });
       if (frame.topic === CONTROLLER_WORKSPACES_TOPIC) {
-        // workspace facts 不出现在 task list result；source 上下线/移除会另发 tasks-index delta。
+        // Workspace facts do not appear in the task list result; when the source is offline/removed, another tasks-index delta will be issued.
         return;
       }
       const taskFrame = frame as WindowHostControllerTaskFrame;
@@ -168,9 +171,9 @@ export function getWindowControllerTaskListRegistry(
           for (const [queryKey, cached] of queryCache) {
             const touchesWorkspace = queryContainsWorkspace(cached.query, address);
             if (!touchesWorkspace) continue;
-            // 以前任意 task delta 都 clear 全部 query。只有明确掌握旧 row 时，
-            // 才按变更前后 membership 精确失效；缺少旧 row 时无法排除它曾属于其他 kind，
-            // 因此对当前 workspace 保守失效，避免 timeline/active 留下陈旧项。
+            // In the past, any task delta cleared all queries. Only when the old row is explicitly grasped,
+            // The membership will be invalid before and after the change; when the old row is missing, it cannot be ruled out that it once belonged to another kind.
+            // Therefore, the current workspace is conservatively invalidated to prevent timeline/active from leaving stale items.
             if (
               !previous ||
               matchesTaskListMembershipKind(previous.membership, cached.query.kind) ||
@@ -181,7 +184,7 @@ export function getWindowControllerTaskListRegistry(
           }
         }
       }
-      // 同一 JavaScript 调度周期内的连续 task frame 合并成一个 renderer revision。
+      // Consecutive task frames within the same JavaScript scheduling cycle are merged into one renderer revision.
       notifyOnce();
     });
     void Promise.all(
@@ -199,7 +202,7 @@ export function getWindowControllerTaskListRegistry(
         subscriptionIds.add(result.ack.subscriptionId);
       }),
     ).catch((error) =>
-      logger.warn("[windowControllerTaskListRegistry] Controller subscribe 失败", error),
+      logger.warn("[windowControllerTaskListRegistry] Controller subscribe failed", error),
     );
   };
 

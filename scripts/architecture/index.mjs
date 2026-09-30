@@ -62,7 +62,7 @@ function cycleViolations(edges, policy, modulesByFile) {
         file,
         detail,
         module: modulesByFile.get(file),
-        message: `检测到循环依赖：${cycle.map((item) => posix(item)).join(" -> ")}`,
+        message: `Cyclic dependency detected: ${cycle.map((item) => posix(item)).join(" -> ")}`,
         global: true,
       }),
     );
@@ -95,7 +95,7 @@ export async function checkArchitecture({ cwd = process.cwd(), changedFiles = nu
           rule: "expired-exception",
           file: path.join(cwd, "architecture-policy.yaml"),
           detail: exception.id ?? exception.rule,
-          message: `例外 ${exception.id ?? exception.rule} 已于 ${exception.expires} 过期`,
+          message: `Exception ${exception.id ?? exception.rule} expired at ${exception.expires}`,
           global: true,
         }),
       );
@@ -120,7 +120,7 @@ export async function checkArchitecture({ cwd = process.cwd(), changedFiles = nu
             file,
             detail: artifact,
             module,
-            message: `模块 ${module.id} 缺少 ${artifact}`,
+            message: `Module ${module.id} is missing ${artifact}`,
           }),
         );
       }
@@ -139,7 +139,7 @@ export async function checkArchitecture({ cwd = process.cwd(), changedFiles = nu
           file,
           detail: String(lines),
           module,
-          message: `文件 ${lines} 行，超过上限 ${policy.global.maxFileLines} 行`,
+          message: `File ${lines} lines, exceeding limit ${policy.global.maxFileLines} lines`,
         }),
       );
     }
@@ -150,7 +150,7 @@ export async function checkArchitecture({ cwd = process.cwd(), changedFiles = nu
           file,
           detail: String(lines),
           module,
-          message: `契约 ${lines} 行，超过上限 ${policy.global.maxContractLines} 行`,
+          message: `Contract ${lines} lines, exceeds limit ${policy.global.maxContractLines} lines`,
         }),
       );
     }
@@ -164,7 +164,7 @@ export async function checkArchitecture({ cwd = process.cwd(), changedFiles = nu
           file,
           detail: String(disableCount),
           module,
-          message: `文件包含 ${disableCount} 条 lint disable`,
+          message: `The file contains ${disableCount} lint disable`,
         }),
       );
     }
@@ -178,7 +178,7 @@ export async function checkArchitecture({ cwd = process.cwd(), changedFiles = nu
           file,
           detail: String(countPublicMethods(source)),
           module,
-          message: `契约公开方法超过上限 ${policy.global.maxPublicMethods}`,
+          message: `The contract public method exceeds the upper limit ${policy.global.maxPublicMethods}`,
         }),
       );
     }
@@ -195,7 +195,7 @@ export async function checkArchitecture({ cwd = process.cwd(), changedFiles = nu
             file,
             detail: specifier,
             module,
-            message: "domain 层不能依赖 IO、进程、网络或定时器",
+            message: "The domain layer cannot rely on IO, processes, networks or timers",
           }),
         );
       }
@@ -218,7 +218,7 @@ export async function checkArchitecture({ cwd = process.cwd(), changedFiles = nu
               file,
               detail: target,
               module,
-              message: `层 ${importerLayer} 不能依赖更高层 ${targetLayer}`,
+              message: `Layer ${importerLayer} cannot depend on higher layer ${targetLayer}`,
             }),
           );
         }
@@ -230,7 +230,7 @@ export async function checkArchitecture({ cwd = process.cwd(), changedFiles = nu
             file,
             detail: target,
             module,
-            message: "UI 层不能直接依赖 Repo、Runtime 或 Service 实现",
+            message: "The UI layer cannot directly rely on Repo, Runtime or Service implementation",
           }),
         );
       }
@@ -245,7 +245,7 @@ export async function checkArchitecture({ cwd = process.cwd(), changedFiles = nu
             file,
             detail: target,
             module,
-            message: `模块 ${module.id} 未声明依赖 ${targetModule.id}`,
+            message: `Module ${module.id} does not declare dependency ${targetModule.id}`,
           }),
         );
       }
@@ -259,7 +259,7 @@ export async function checkArchitecture({ cwd = process.cwd(), changedFiles = nu
               file,
               detail: target,
               module,
-              message: `跨模块只能通过公开入口访问 ${targetRelative}`,
+              message: `Cross-modules can only access ${targetRelative} through public entrances`,
             }),
           );
         }
@@ -272,7 +272,7 @@ export async function checkArchitecture({ cwd = process.cwd(), changedFiles = nu
           file,
           detail: "runtime-call",
           module,
-          message: "domain 层不能依赖 IO、进程、网络或定时器",
+          message: "The domain layer cannot rely on IO, processes, networks or timers",
         }),
       );
     }
@@ -325,7 +325,7 @@ export async function changedFilesFromGit(cwd = process.cwd()) {
 export async function generateContext({ cwd = process.cwd(), moduleId }) {
   const policy = await loadPolicy(cwd);
   const module = policy.modules.find((item) => item.id === moduleId);
-  if (!module) throw new Error(`未知模块: ${moduleId}`);
+  if (!module) throw new Error(`Unknown module: ${moduleId}`);
   const files = await discoverFiles(policy);
   const moduleFiles = files.filter((file) => moduleForFile(file, policy)?.id === moduleId);
   const manifest = moduleFiles.find((file) => path.basename(file) === "module.ts");

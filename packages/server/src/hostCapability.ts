@@ -14,7 +14,7 @@ export interface HostCapabilityStore {
   consume(capability: string | undefined): boolean;
 }
 
-/** 短期、一次性 desktop host capability；只在 HTTP server 进程内存中存在。 */
+/** Short-lived, single-use desktop host capability; it exists only in the HTTP server process's memory. */
 export function createHostCapabilityStore(
   options: HostCapabilityStoreOptions = {},
 ): HostCapabilityStore {
@@ -43,8 +43,8 @@ export function createHostCapabilityStore(
       if (!capability) return false;
       const consumedAt = now();
       const expiresAt = expiresByCapability.get(capability);
-      // 旧 mode header 是可重放的长期提权声明。ticket 无论成功、过期
-      // 还是重放都先删除，只有首次且 TTL 内的消费能获得 trusted-host role。
+      // The old mode header is a replayable long-term privilege escalation declaration. The ticket, whether successful, expired,
+      // or replayed, is deleted first; only the first consumption within the TTL can obtain the trusted-host role.
       expiresByCapability.delete(capability);
       purgeExpired(consumedAt);
       return expiresAt !== undefined && expiresAt > consumedAt;

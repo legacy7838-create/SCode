@@ -185,7 +185,7 @@ async function serve(options) {
       ZCODE_SERVER_HOST: options.host,
       ZCODE_SERVER_WORKSPACE: options.workspace,
       ZCODE_WEB_STATIC_ROOT: webRoot,
-      // 显式关闭 token 时必须清空继承值，否则 --no-token 仍会开启后端鉴权。
+      // When explicitly disabling token, must clear inherited value, otherwise --no-token still enables backend auth.
       ZCODE_SERVER_AUTH_TOKEN: token,
     },
     stdio: ["ignore", "pipe", "pipe"],
@@ -262,7 +262,7 @@ try {
     if (argv.length === 1 && ["--help", "-h"].includes(argv[0])) {
       console.log("Web mode: zcode --web [options] (zcode --web --help for details)\n");
     }
-    // CLI 自启动子进程依赖 argv[1]；统一指向真正的 Agent 入口，保留 TTY 与所有原始参数。
+    // CLI self-spawning subprocess depends on argv[1]; unify to point to the real Agent entry, preserving TTY and all original arguments.
     process.argv[1] = agentEntry;
     await import(pathToFileURL(agentEntry).href);
   }

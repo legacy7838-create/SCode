@@ -1,29 +1,29 @@
 import { redactTelemetryText, redactTelemetryUrl } from "@zcode/shared";
 
 /**
- * ARMS SDK 自动采集事件离开本机前的脱敏收口。
+ * ARMS SDK automatically collects the desensitization closure before the event leaves the machine.
  *
- * SDK collector 决定采集哪些字段，其原始内容可能包含用户界面文本（click）、本机路径与堆栈
- * （exception）以及完整 URL（api / resource）。`appARMSBootstrap.beforeReport` 是唯一能在上报前
- * 改写整批事件的位置，因此规则集中在这里，不分散到各 collector 配置。
+ * The SDK collector determines which fields to collect. Its original content may include user interface text (click), local path and stack
+ * (exception) and the full URL (api/resource). `appARMSBootstrap.beforeReport` is the only method that can be used before reporting
+ * Rewrite the location of the entire batch of events, so the rules are concentrated here and not scattered among various collector configurations.
  *
- * 脱敏只改写上报
- * 副本：网络聚合已在本函数之前完成 ingest，本地日志、错误展示与崩溃归档继续使用原值。
+ * Desensitize and only rewrite and report
+ * Copy: Network aggregation has completed ingest before this function, and local logs, error displays, and crash archives continue to use the original values.
  */
 
-/** exception 的 message 上限：与依赖补丁里 console 归一化的 2000 字符口径保持一致。 */
+/** The upper limit of exception message: consistent with the normalized 2000-character limit of the console in the dependency patch. */
 const EXCEPTION_MESSAGE_MAX_LENGTH = 2_000;
 
-/** stack / snapshots 上限：保证最近的抛错帧一定上得去，同时不把整段正文送进 ARMS。 */
+/** The upper limit of stack / snapshots: ensure that the most recent error frame must be uploaded, and at the same time, the entire text will not be sent to ARMS. */
 const EXCEPTION_STACK_MAX_LENGTH = 4_000;
 
 /**
- * Browser SDK 的 click name 形如 `click on <type-><tag>: <innerText 前 20 字符>...`。
- * 只保留到 tag 为止；`: ` 之后是元素文本，在 ZCode 里可能是会话标题、文件名或消息正文。
+ * The click name of Browser SDK is in the form of `click on <type-><tag>: <first 20 characters of innerText>...`.
+ * Only retained up to tag; `: ` is followed by the element text, which in ZCode may be the session title, file name or message body.
  */
 const CLICK_NAME_PATTERN = /^(click on [a-z0-9-]+)(?::[\s\S]*)?$/iu;
 
-/** 不符合预期形态的 name 不原样透传，退化为固定桶，保持事件可计数但不带内容。 */
+/** Names that do not conform to the expected form are not transparently transmitted as they are and degenerate into fixed buckets, keeping events countable but without content. */
 const CLICK_NAME_FALLBACK = "click";
 
 function isClickEvent(event: Record<string, unknown>): boolean {
@@ -35,8 +35,8 @@ function isExceptionEvent(event: Record<string, unknown>): boolean {
 }
 
 function isNativeDumpEvent(event: Record<string, unknown>): boolean {
-  // 原生 dump 由 crash collector 解析产生，其 binary_images / threads 已是结构化取证数据，
-  // 且 filterAndEnrichNativeCrashEvents 依赖 binary_images 判定产品二进制，不能在这里改写。
+  // The native dump is parsed by the crash collector, and its binary_images/threads are already structured forensic data.
+  // And filterAndEnrichNativeCrashEvents relies on binary_images to determine the product binary and cannot be rewritten here.
   return event.type === "crash" && event.source === "crashReporter";
 }
 
@@ -67,7 +67,7 @@ function redactClickEvent(event: Record<string, unknown>): void {
     typeof name === "string"
       ? (CLICK_NAME_PATTERN.exec(name)?.[1] ?? CLICK_NAME_FALLBACK)
       : CLICK_NAME_FALLBACK;
-  // snapshots 的 href / src 可能是本地文件路径，id / className 对诊断没有增量价值。
+  // The href/src of snapshots may be a local file path, and the id/className has no incremental value for diagnosis.
   delete event.snapshots;
 }
 
@@ -77,8 +77,8 @@ function redactExceptionEvent(event: Record<string, unknown>): void {
   }
   redactTextField(event, "message", EXCEPTION_MESSAGE_MAX_LENGTH);
   redactTextField(event, "stack", EXCEPTION_STACK_MAX_LENGTH);
-  // 修复原因：jsError collector 把 ErrorEvent.filename 写进 file；Windows 安装版脚本位于
-  // C:\Users\<用户名>\AppData\...，与 stack 同规则处理，line / column 等结构化字段不动。
+  // Reason for repair: jsError collector writes ErrorEvent.filename into file; the Windows installation version script is located in
+  // C:\Users\<username>\AppData\..., processed according to the same rules as stack, structured fields such as line / column are unchanged.
   redactTextField(event, "file", EXCEPTION_MESSAGE_MAX_LENGTH);
   redactTextField(event, "snapshots", EXCEPTION_STACK_MAX_LENGTH);
 }
@@ -90,10 +90,10 @@ function redactResourceEvent(event: Record<string, unknown>): void {
 }
 
 /**
- * 就地脱敏整批 SDK 自动采集事件，返回同一批次以便在 `beforeReport` 里链式使用。
+ * Redacts a whole batch of SDK auto-collected events in place and returns that same batch so it can be chained inside `beforeReport`.
  *
- * 只处理 click / exception / api-resource 三类自动采集事件；自定义事件（`perf_*` 等）由各自的
- * 构造处负责脱敏，不在这里二次改写，避免同一字段被两套规则处理后失去可读性。
+ * Only the three auto-collected event kinds are handled: click / exception / api-resource. Custom events (`perf_*` and friends) are redacted where they are
+ * constructed and are not rewritten a second time here, because two rule sets handling the same field would leave it unreadable.
  */
 export function redactArmsEventBatch(
   events: Array<Record<string, unknown>>,

@@ -38,7 +38,7 @@ export interface GitRepositorySummary {
   workspacePath: string;
   repoRoot: string;
   workspaceInRepoPath: string;
-  /** Git 元数据 watcher 边界；workspace 内容 watcher 由 UI 按 workspace Host 平台决定。 */
+  /** Git metadata watcher boundaries; workspace content watchers are determined by the UI by the workspace Host platform. */
   autoRefreshWatchPaths: GitRepositoryAutoRefreshWatchPath[];
   branchName: string | null;
   trackingBranchName: string | null;

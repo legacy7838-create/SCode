@@ -8,8 +8,8 @@ export function useWorkspaceFileTreeRowDragState() {
       return;
     }
 
-    // Electron/浏览器在拖拽离开窗口时不一定向源行派发 dragend。
-    // 同时监听全局结束信号，避免竖线在一次异常拖拽后永久隐藏。
+    // Electron/browsers do not necessarily dispatch the dragend to the source line when dragging out of the window.
+    // At the same time, monitor the global end signal to prevent the vertical line from being permanently hidden after an abnormal drag.
     const resetDragging = () => setIsDragging(false);
     window.addEventListener("dragend", resetDragging);
     window.addEventListener("drop", resetDragging);

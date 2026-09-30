@@ -27,8 +27,9 @@ function resolveModelDisplayValue(
 }
 
 /**
- * 把 v4 session 权威配置叠到 workspace 完整目录，供 task → draft 继承使用。
- * 目录项和候选列表保持原引用语义，仅替换 model/mode/thought 的 currentValue。
+ * Overlays the authoritative v4 session config onto the workspace's full catalogue, for task →
+ * draft to inherit. Catalogue entries and the candidate list keep their original reference
+ * semantics; only the currentValue of model/mode/thought is replaced.
  */
 export function projectSessionConfigToTaskConfigOptions(
   options: readonly ZCodeConfigOption[],

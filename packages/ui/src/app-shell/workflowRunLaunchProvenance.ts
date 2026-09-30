@@ -1,11 +1,11 @@
 import type { ConversationRow, WorkflowLaunchMeta } from "@zcode/shared/zcode-protocol-v4";
 
 /**
- * 直接启动的来龙去脉：作用域、说明、实参与
- * 「由你从工作流中枢启动」的时刻。只有中枢启动的 run 才有——它挂在启动轮 turnHeader / userInput 行的
- * `workflowLaunch` 元数据上（同一个 toolCallId）；工具路径发起的 run 在行窗口里找不到这一份，返回
- * undefined，侧板便没有这一节。turnHeader 优先（活投影权威，`startedAt` 就是启动时刻），回落到用户
- * 可见行上的同一份（冷恢复 hydration 也写在 userInput 行）。
+ * The ins and outs of direct launch: scope, description, actual participation
+ * "You start from the workflow hub" moment. Only the hub-started run has it - it hangs on the start wheel turnHeader / userInput line
+ * `workflowLaunch` metadata (same toolCallId); the run initiated by the tool path cannot find this copy in the line window and returns
+ * undefined, the side panel does not have this section. turnHeader takes priority (live projection authority, `startedAt` is the starting time), falls back to the user
+ * The same copy on the visible line (cold recovery hydration is also written on the userInput line).
  */
 interface WorkflowLaunchProvenance {
   meta: WorkflowLaunchMeta;

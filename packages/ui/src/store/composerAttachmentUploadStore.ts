@@ -13,8 +13,9 @@ export type ComposerAttachmentUploadStatus =
 
 export interface ComposerAttachmentUploadItem extends ChatComposerAttachment {
   /**
-   * composer-owned 仍处于上传/暂存生命周期；session-owned 是从权威 queue 撤回的既有 ref。
-   * 后者已经由 session 接管，runtime restart、cleanup 和 resend 都不能再次处理引用所有权。
+   * composer-owned is still in the upload/staging lifecycle; session-owned is an existing ref
+   * withdrawn from the authoritative queue. The latter has already been taken over by the session,
+   * so runtime restart, cleanup, and resend must not process reference ownership again.
    */
   referenceOwnership: "composer" | "session";
   uploadStatus: ComposerAttachmentUploadStatus;
@@ -25,8 +26,9 @@ export interface ComposerAttachmentUploadItem extends ChatComposerAttachment {
   operationId: string;
   autoRetryCount: number;
   /**
-   * 因 runtime 换代触发的重传次数，与上传失败重试分开计。
-   * 换代不是「上传失败」，共用计数器会让一次换代就烧掉用户可见的重试配额。
+   * The number of re-transmissions triggered by a runtime generation change is counted separately
+   * from upload-failure retries. A generation change is not an “upload failure”; sharing one
+   * counter would let a single generation change burn the user-visible retry quota.
    */
   runtimeRebuildRetryCount: number;
   staged: boolean;
@@ -40,8 +42,9 @@ interface ComposerAttachmentUploadStoreState {
 }
 
 /**
- * renderer 内存态：File/object URL 不落盘，但 task/composer 切换或局部卸载不会丢失。
- * 上传控制器仍由发起该 operation 的 hook 闭包持有，relay/main 不保存业务状态。
+ * In-memory renderer state: File/object URLs never touch disk, but they survive switching the
+ * task/composer or a partial unmount. The upload controller is still held by the closure of the
+ * hook that started the operation; relay/main keeps no business state.
  */
 export const useComposerAttachmentUploadStore = create<ComposerAttachmentUploadStoreState>()(
   () => ({ scopes: {} }),
@@ -55,7 +58,7 @@ declare global {
 }
 
 if (shouldExposeE2EStoreBridge()) {
-  // E2E 只暴露当前唯一附件 owner，供 scope 切换用例准备状态；不再把附件塞回旧 Session Store。
+  // E2E only exposes the current unique attachment owner for the scope to switch the use case preparation state; attachments are no longer stuffed back into the old Session Store.
   window.__zcodeComposerAttachmentUploadStoreE2E = useComposerAttachmentUploadStore;
 }
 

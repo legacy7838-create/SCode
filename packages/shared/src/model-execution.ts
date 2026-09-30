@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-/** 文本与附件发送共用执行约束，凭据只属于单次执行，不进入 Session 配置。 */
+/** Text and attachment sending share the same execution constraints; credentials belong to a single execution only and never enter Session configuration. */
 export const modelExecutionSchema = z
   .object({
     memoryExtraction: z.literal("skip").optional(),

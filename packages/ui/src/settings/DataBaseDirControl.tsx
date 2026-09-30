@@ -46,9 +46,9 @@ export function DataBaseDirControl({
         return;
       }
 
-      // 之前这里允许手输任意字符串，用户填错路径后仍会触发整份数据复制。
-      // 这里改成只接受系统目录弹窗返回的真实文件夹路径，先更新草稿值，再由“保存”统一触发迁移，
-      // 避免把“浏览目录”和“执行数据迁移”这两个风险不同的动作混在一起。
+      // Previously, hand input of any string was allowed, but if the user filled in the wrong path, the entire data would still be copied.
+      // This is changed to only accept the real folder path returned by the system directory pop-up window. The draft value is updated first, and then the migration is triggered by "Save".
+      // Avoid mixing "browse directories" and "perform data migration", two actions with different risks.
       setLocalDataBaseDir(selectedDir);
       if (saveState !== "idle") {
         setSaveState("idle");

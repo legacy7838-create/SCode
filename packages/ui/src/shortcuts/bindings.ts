@@ -1,9 +1,13 @@
 /**
- * 快捷键执行内核 —— 匹配、录制、生效表与冲突检测的唯一实现。
+ * Shortcut execution kernel —— the single implementation of matching, capture, the effective table
+ * and conflict detection.
  *
- * - 键位知识（格式解析、平台修饰键语义、保留键）只允许存在于此模块与 shared/shortcutCommands.ts；
- * - 全部为纯函数，DOM 事件以结构化参数传入，便于单测覆盖组合键边界；
- * - IME 组合中（isComposing / Process / Dead / keyCode 229）与长按 repeat 一律不匹配、不录制。
+ * - Key knowledge (format parsing, platform modifier semantics, reserved keys) may exist only in
+ *   this module and in shared/shortcutCommands.ts;
+ * - Everything is a pure function, with DOM events passed in as structured arguments so unit tests
+ *   can cover the chord boundaries;
+ * - IME composition (isComposing / Process / Dead / keyCode 229) and long-press repeat never match
+ *   and are never captured.
  */
 import {
   type ParsedShortcutBinding,
@@ -18,7 +22,10 @@ import {
 } from "@/lib/keyboardShortcuts.js";
 import { logger } from "@/logger.js";
 
-/** 匹配/录制所需的键盘事件结构（KeyboardEvent 的子集，测试可构造）。 */
+/**
+ * The keyboard event shape needed for matching/capture (a subset of KeyboardEvent that tests can
+ * construct).
+ */
 export interface ShortcutBindingEvent {
   key: string;
   code?: string;
@@ -28,15 +35,18 @@ export interface ShortcutBindingEvent {
   altKey: boolean;
   repeat?: boolean;
   isComposing?: boolean;
-  /** 兼容旧事件模型；中文等 IME 组合中 Chromium 报 keyCode 229。 */
+  /**
+   * For the legacy event model; during IME composition with Chinese and other IMEs, Chromium
+   * reports keyCode 229.
+   */
   keyCode?: number;
 }
 
 // ============================================================================
-// 噪声过滤（IME / 长按）
+// Noise filtering (IME / long press)
 // ============================================================================
 
-/** 判断事件是否为 IME 组合态事件（isComposing / Process / Dead / keyCode 229）。 */
+/** Whether an event is an IME-composition event (isComposing / Process / Dead / keyCode 229). */
 function isImeEvent(event: ShortcutBindingEvent): boolean {
   return (
     event.isComposing === true ||
@@ -46,13 +56,16 @@ function isImeEvent(event: ShortcutBindingEvent): boolean {
   );
 }
 
-/** 判断事件是否为不应触发快捷键的噪声：长按 repeat、IME 组合中、死键。 */
+/**
+ * Whether an event is noise that must not trigger a shortcut: long-press repeat, IME composition,
+ * dead keys.
+ */
 function isShortcutEventNoise(event: ShortcutBindingEvent): boolean {
   return event.repeat === true || isImeEvent(event);
 }
 
 // ============================================================================
-// event.code → 规范键名映射（键盘布局差异下的可靠来源）
+// event.code → canonical keyname mapping (reliable source for keyboard layout differences)
 // ============================================================================
 
 const CODE_TO_KEY: Readonly<Record<string, string>> = {
@@ -81,7 +94,7 @@ const CODE_TO_KEY: Readonly<Record<string, string>> = {
   ArrowDown: "ArrowDown",
   ArrowLeft: "ArrowLeft",
   ArrowRight: "ArrowRight",
-  // Enter 供 composer 作用域命令录制/匹配；NumpadEnter 不映射（保持未定义行为）
+  // Enter for composer scoped commands to record/match; NumpadEnter is not mapped (leaving undefined behavior)
   Enter: "Enter",
   Home: "Home",
   End: "End",
@@ -91,23 +104,29 @@ const CODE_TO_KEY: Readonly<Record<string, string>> = {
   Insert: "Insert",
 };
 
-/** 规范键名 → 期望的 event.code（现有 keyboardShortcuts.getExpectedShortcutCode 的扩展版）。 */
+/**
+ * Canonical key name → the expected event.code (an extended version of the existing
+ * keyboardShortcuts.getExpectedShortcutCode).
+ */
 const KEY_TO_CODE: Readonly<Record<string, string>> = Object.fromEntries(
   Object.entries(CODE_TO_KEY).map(([code, key]) => [key, code]),
 );
 
 // ============================================================================
-// 通用匹配器
+// universal matcher
 // ============================================================================
 
 /**
- * 通用匹配：binding（规范序列化串）与键盘事件是否命中。
+ * General matching: whether a binding (canonical serialized string) hits a keyboard event.
  *
- * 修饰键为精确匹配：事件实际按下的修饰键必须与 binding 声明完全一致，
- * 多余修饰键（如 Cmd+Ctrl+K 命中 CmdOrCtrl+K）不算命中。
- * - CmdOrCtrl：macOS = meta 且无 ctrl；Windows/Linux = ctrl 且无 meta（平台隔离沿用 keyboardShortcuts.ts）；
- * - Ctrl：显式 Ctrl；在 Windows/Linux 上与 CmdOrCtrl 同义（录制在这些平台只会产出 CmdOrCtrl）；
- * - AltGr：Windows/Linux 上物理 AltGr 被 Chromium 报为 ctrl+alt 同按。
+ * Modifiers are matched exactly: the modifiers actually held down by the event must match the
+ * binding's declaration completely; an extra modifier (e.g. Cmd+Ctrl+K hitting CmdOrCtrl+K) does
+ * not count as a hit.
+ * - CmdOrCtrl: macOS = meta and no ctrl; Windows/Linux = ctrl and no meta (platform isolation is
+ *   reused from keyboardShortcuts.ts);
+ * - Ctrl: an explicit Ctrl; on Windows/Linux it is synonymous with CmdOrCtrl (capture only ever
+ *   produces CmdOrCtrl on those platforms);
+ * - AltGr: on Windows/Linux the physical AltGr is reported by Chromium as ctrl+alt held together.
  */
 export function matchesShortcutBinding(
   event: ShortcutBindingEvent,
@@ -136,14 +155,14 @@ function modifiersMatch(
 ): boolean {
   const { metaKey: meta, ctrlKey: ctrl, altKey: alt, shiftKey: shift } = event;
 
-  // AltGr 与 Ctrl+Alt 物理不可区分（Windows/Linux 的 Ctrl+Alt+B 等现有绑定就是同按），
-  // 因此 AltGr 绑定与 cmdOrCtrl/ctrl + Alt 绑定匹配同一物理组合，不做独占判定。
+  // AltGr and Ctrl+Alt are physically indistinguishable (existing bindings such as Windows/Linux's Ctrl+Alt+B are the same press),
+  // Therefore, the AltGr binding matches the same physical combination as the cmdOrCtrl/ctrl + Alt binding, and no exclusive determination is made.
   const wantPrimaryOrCtrl = parsed.altGr || parsed.cmdOrCtrl || (!isApple && parsed.ctrl);
   const wantCtrl = !parsed.altGr && !parsed.cmdOrCtrl && parsed.ctrl && isApple;
   const wantAlt = parsed.altGr || parsed.alt;
 
-  // 裸键绑定（Enter/F5/方向键等无主修饰键）必须要求主修饰键抬起，
-  // 否则 Cmd+Enter 会误命中裸 Enter 绑定——命令表全带主修饰键时该缺口潜伏，Enter 入表后致命。
+  // Naked key bindings (Enter/F5/arrow keys without main modifier keys) must require the main modifier key to be raised.
+  // Otherwise, Cmd+Enter will accidentally hit the naked Enter binding - this gap is latent when the command list is full of primary modifier keys, and Enter will be fatal after entering the list.
   if (!wantPrimaryOrCtrl && !wantCtrl && (meta || ctrl)) {
     return false;
   }
@@ -155,7 +174,7 @@ function modifiersMatch(
     }
   }
   if (wantCtrl) {
-    // macOS 显式 Ctrl（系统 Emacs 编辑保留区，用户显式绑定才生效）。
+    // macOS explicit Ctrl (system Emacs editing reserved area, user explicit binding will take effect).
     if (!ctrl || meta) {
       return false;
     }
@@ -167,9 +186,10 @@ function modifiersMatch(
 }
 
 /**
- * 纯 Shift+可打印单字符绑定（如 Shift+f）判定。
- * 这类绑定与「输入大写字母」是同一物理事件；事件目标是可编辑元素时
- * 命中它必须放行，否则用户在输入框打不出该大写字母（按键被 preventDefault 吞掉并触发命令）。
+ * Whether a binding is purely Shift plus a printable single character (e.g. Shift+f). Such a
+ * binding is the same physical event as “typing an uppercase letter”; when the event target is an
+ * editable element it must be let through, otherwise the user cannot type that uppercase letter in
+ * a text field (the keystroke is swallowed by preventDefault and triggers the command instead).
  */
 export function isShiftOnlyPrintableBinding(binding: string): boolean {
   const parsed = parseShortcutBinding(binding);
@@ -187,9 +207,9 @@ export function isShiftOnlyPrintableBinding(binding: string): boolean {
 }
 
 /**
- * 快捷键事件的目标是否为可编辑元素（input/textarea/select 或 contenteditable）。
- * 与 isShiftOnlyPrintableBinding 配套：可编辑目标内跳过纯 Shift 可打印键绑定。
- * 无 DOM 环境（node 单测）下恒为 false。
+ * Whether the target of a shortcut event is an editable element (input/textarea/select or
+ * contenteditable). Pairs with isShiftOnlyPrintableBinding: pure Shift printable-key bindings are
+ * skipped inside editable targets. Always false in a DOM-less environment (node unit tests).
  */
 export function isEditableShortcutEventTarget(target: EventTarget | null): boolean {
   if (typeof HTMLElement === "undefined" || !(target instanceof HTMLElement)) {
@@ -202,7 +222,10 @@ export function isEditableShortcutEventTarget(target: EventTarget | null): boole
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
 }
 
-/** 键匹配：event.key 小写比较优先，event.code 兜底（macOS Option 改写、非 US 布局）。 */
+/**
+ * Key matching: a lowercased event.key comparison first, event.code as the fallback (macOS Option
+ * rewriting, non-US layouts).
+ */
 function eventMatchesKey(event: Pick<ShortcutBindingEvent, "key" | "code">, key: string): boolean {
   if (event.key === key) {
     return true;
@@ -217,7 +240,7 @@ function eventMatchesKey(event: Pick<ShortcutBindingEvent, "key" | "code">, key:
 }
 
 // ============================================================================
-// 录制器
+// recorder
 // ============================================================================
 
 type ShortcutRecordResult =
@@ -237,17 +260,22 @@ function isModifierOnlyKey(key: string): boolean {
 }
 
 /**
- * 录制键盘事件为规范绑定串。
+ * Capture a keyboard event as a canonical binding string.
  *
- * - pending：纯修饰键按下 / 无可反查 code 的 IME 噪声 —— 继续等待用户按出完整组合；
- * - binding：合法组合（主修饰键平台归一：mac 的 Cmd、win/linux 的 Ctrl → CmdOrCtrl；mac 显式 Ctrl 保留为 Ctrl）；
- * - invalid：无修饰键的普通键（F 键与方向键除外）或不支持的键。
+ * - pending: a bare modifier key press / IME noise with no reverse-lookupable code — keep waiting
+ *   for the user to press the full combination;
+ * - binding: a valid combination (the primary modifier is normalized per platform: Cmd on mac, Ctrl
+ *   on win/linux → CmdOrCtrl; an explicit Ctrl on mac stays Ctrl);
+ * - invalid: a plain key with no modifier (F-keys and arrow keys excepted) or an unsupported key.
  *
- * 键名提取优先 event.code 反查物理基键（Shift+7 在任何布局都录出 "7" 而非 "&"），
- * event.key 仅作 fallback。IME 组合事件（isComposing/Process/229）的 key 不可信，但
- * event.code 仍是物理键 —— 录制是点击录制按钮后的显式意图，中文输入法开启时焦点若在
- * 可编辑元素里，Shift+字母 会被 IME 吞成组合输入，此时仍按 code 录制（匹配侧照旧过滤，
- * 见 isShortcutEventNoise）。Escape / Backspace 的录制态语义（取消/清除）由设置页 UI 处理。
+ * Key-name extraction prefers reverse-looking-up the physical base key from event.code (Shift+7
+ * records “7” rather “&” on any layout), with event.key only as a fallback. The key of an IME
+ * composition event (isComposing/Process/229) is untrustworthy, but event.code is still the
+ * physical key — capture is an explicit intent following a click on the capture button; with a
+ * Chinese IME on, if the focus sits in an editable element, Shift+letter is swallowed by the IME
+ * into composition input, and it is still recorded by code (the matching side keeps filtering as
+ * before, see isShortcutEventNoise). The capture-state semantics of Escape / Backspace (cancel /
+ * clear) are handled by the settings page UI.
  */
 export function recordShortcutBinding(
   event: ShortcutBindingEvent,
@@ -275,7 +303,10 @@ export function recordShortcutBinding(
   return buildRecordedBinding(event, key, platformInfo);
 }
 
-/** 录制尾部：修饰键校验 + 平台归一 + 序列化（键名已由调用方提取）。 */
+/**
+ * The tail of capture: modifier validation + platform normalization + serialization (the key name
+ * is already extracted by the caller).
+ */
 function buildRecordedBinding(
   event: ShortcutBindingEvent,
   key: string,
@@ -283,14 +314,14 @@ function buildRecordedBinding(
 ): ShortcutRecordResult {
   const isApple = isAppleKeyboardPlatform(platformInfo);
   const hasModifier = event.metaKey || event.ctrlKey || event.altKey || event.shiftKey;
-  // F 键 / 方向键等命名键（多字符）允许无修饰单键；普通字符键必须至少一个修饰键。
+  // Named keys (multi-character) such as F keys/arrow keys allow unmodified single keys; ordinary character keys must have at least one modifier key.
   const namedKey = key.length > 1;
   if (!hasModifier && !namedKey) {
     return { kind: "invalid", reason: "no-modifier" };
   }
 
   const parsed: ParsedShortcutBinding = {
-    // AltGr 与 Ctrl+Alt 物理不可区分，录制统一产出 CmdOrCtrl+Alt（用户心智里按的就是 Ctrl+Alt）。
+    // AltGr and Ctrl+Alt are physically indistinguishable, and recording uniformly outputs CmdOrCtrl+Alt (what the user presses mentally is Ctrl+Alt).
     cmdOrCtrl: isApple ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey,
     ctrl: isApple ? event.ctrlKey && !event.metaKey : false,
     alt: event.altKey,
@@ -299,10 +330,10 @@ function buildRecordedBinding(
     key,
   };
 
-  // mac 的 Cmd+Ctrl+组合、win/linux 的纯 Meta（Win 键）组合经平台归一后
-  // cmdOrCtrl/ctrl 双双归 false，而上面 hasModifier 用原始事件校验已放行，序列化产物会变成
-  // 裸单键（如 "k"）——不在保留黑名单、不触发冲突检测，落盘后全应用每次裸按该键都命中
-  // 命令并吞掉输入。序列化前校验主修饰键没有在归一中丢失。
+  // The Cmd+Ctrl+ combination of mac and the pure Meta (Win key) combination of win/linux are normalized by the platform
+  // cmdOrCtrl/ctrl both return false, and the hasModifier above uses the original event to verify that it has been released, and the serialized product will become
+  // Naked single key (such as "k") - no longer retains the blacklist, does not trigger conflict detection, and will be hit every time the key is pressed naked after the disk is placed.
+  // command and swallow the input. Verify that the primary modifier key is not lost during normalization before serialization.
   if ((event.metaKey || event.ctrlKey) && !parsed.cmdOrCtrl && !parsed.ctrl) {
     return { kind: "invalid", reason: "unsupported-key" };
   }
@@ -314,7 +345,10 @@ function buildRecordedBinding(
   return { kind: "binding", binding };
 }
 
-/** event.key → 规范键名（仅 fallback 路径）：单字符小写化，命名键原样。 */
+/**
+ * event.key → canonical key name (fallback path only): single characters lowercased, named keys
+ * left as-is.
+ */
 function normalizeEventKey(rawKey: string): string | null {
   if (rawKey.length === 1) {
     return /^[a-zA-Z0-9[\]=\-,./;'\\`]$/.test(rawKey) ? rawKey.toLowerCase() : null;
@@ -323,17 +357,20 @@ function normalizeEventKey(rawKey: string): string | null {
 }
 
 // ============================================================================
-// 录制态抑制
+// recording state suppression
 // ============================================================================
 
 let shortcutRecordingActive = false;
 
 /**
- * 设置页进入快捷键录制态时置 true。
- * 录制监听与 useAppKeyboard 同为 window capture 监听，但注册更晚（点击录制按钮才挂），
- * 同阶段先注册先执行——录制按下的组合会先触发原命令再进入录制处理，改键永远不成功。
- * useAppKeyboard 分发前检查此标记短路；menu 通道由 platform.setShortcutRecordingActive
- * 通知 main 暂时摘除菜单 accelerator（macOS 系统菜单会先于 renderer 吃掉按键）。
+ * Set to true when the settings page enters the shortcut capture state. The capture listener and
+ * useAppKeyboard are both window capture listeners, but capture registers later (it is only
+ * attached on clicking the capture button), and within the same phase the earlier registration runs
+ * first — the combination pressed during capture would trigger the original command before reaching
+ * the capture handler, so rebinding would never succeed. useAppKeyboard checks this flag and
+ * short-circuits before dispatching; the menu channel is notified via
+ * platform.setShortcutRecordingActive so main can temporarily drop the menu accelerator (on macOS
+ * the system menu would otherwise eat the keystrokes before the renderer sees them).
  */
 export function setShortcutRecordingActive(active: boolean): void {
   shortcutRecordingActive = active;
@@ -344,15 +381,17 @@ export function isShortcutRecordingActive(): boolean {
 }
 
 // ============================================================================
-// 生效表
+// Effective table
 // ============================================================================
 
 export type EffectiveShortcutBindings = Readonly<Record<ShortcutCommandId, readonly string[]>>;
 
 /**
- * 计算生效表：命令表默认绑定 + 用户覆盖（整组替换）。
- * 显式空数组 = 用户清除为「未设置」（生效表为空，不回退默认——抢绑会把被抢命令清到这个状态）；
- * 全部条目非法时回退默认（手改 setting.json 写入非法条目不得让快捷键整体失效）。
+ * Compute the effective table: the command table's default bindings + user overrides (whole-group
+ * replacement). An explicit empty array = the user cleared it to “not set” (the effective table is
+ * empty, with no fallback to the defaults — a takeover clears the taken-over command into exactly
+ * this state); when every entry is invalid, fall back to the defaults (hand-editing setting.json
+ * with invalid entries must not break shortcuts as a whole).
  */
 export function resolveEffectiveShortcutBindings(
   overrides?: Record<string, readonly string[]>,
@@ -369,12 +408,18 @@ export function resolveEffectiveShortcutBindings(
     }
     const valid = override.filter((binding) => parseShortcutBinding(binding) !== null);
     if (override.length > 0 && valid.length === 0) {
-      logger.warn("[shortcuts] 覆盖绑定全部非法，回退默认", { commandId: entry.id, override });
+      logger.warn("[shortcuts] all override bindings invalid, falling back to defaults", {
+        commandId: entry.id,
+        override,
+      });
       effective[entry.id] = entry.defaultBindings;
       continue;
     }
     if (valid.length !== override.length) {
-      logger.warn("[shortcuts] 忽略非法覆盖条目", { commandId: entry.id, override });
+      logger.warn("[shortcuts] ignoring invalid override entries", {
+        commandId: entry.id,
+        override,
+      });
     }
     effective[entry.id] = valid;
   }

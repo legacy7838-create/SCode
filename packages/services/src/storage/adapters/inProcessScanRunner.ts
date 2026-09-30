@@ -1,6 +1,6 @@
 /**
- * 进程内扫描 runner：walker + domain 累加器 + 卷探测。
- * Worker 入口（desktop main）与单测都调用这里的 runStorageScan，保证只有一条扫描路径。
+ * In-process scan runner: walker + domain accumulator + volume probe.
+ * The Worker entry point (desktop main) and the unit tests both call runStorageScan here, guaranteeing there is only one scan path.
  */
 import type { StorageScanProgress, VolumeProbePort } from "../app/ports.js";
 import type { StoragePathError, StorageRootSpec, StorageRootUsage } from "@zcode/shared";
@@ -13,7 +13,7 @@ interface RunStorageScanOptions {
   signal: AbortSignal;
   onProgress: (progress: StorageScanProgress) => void;
   volumeProbe?: VolumeProbePort;
-  /** 上报进度的最小间隔；runner 自己也节流，避免 Worker 向主线程刷消息。默认 300ms。 */
+  /** The minimum interval between progress reports; the runner throttles itself too, so the Worker does not flood the main thread with messages. Defaults to 300ms. */
   progressIntervalMs?: number;
   concurrency?: number;
   now?: () => number;

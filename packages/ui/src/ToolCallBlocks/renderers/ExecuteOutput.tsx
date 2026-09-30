@@ -14,7 +14,7 @@ export function ExecuteOutput({ text, running }: { text: string; running: boolea
     if (running) hasStreamed.current = true;
     if (!hasStreamed.current || !following || !scroll.current) return;
     scroll.current.scrollTop = scroll.current.scrollHeight;
-    // 程序吸底后记录浏览器实际位置，避免尾窗变短时把程序滚动误判为上滚。
+    // After the program bottoms out, it records the actual position of the browser to avoid misjudging the program scrolling as scrolling up when the tail window becomes shorter.
     previousTop.current = scroll.current.scrollTop;
   }, [display, following, running]);
 
@@ -23,7 +23,7 @@ export function ExecuteOutput({ text, running }: { text: string; running: boolea
       ref={scroll}
       data-testid="bash-output-scroll"
       data-following={following}
-      // 原预览与结果的高度上限不同且不吸底；共用五行上限，短内容自适应，结束时保留阅读状态。
+      // The height limit of the original preview and the result are different and they do not absorb the bottom; they share the five-line upper limit, the short content is adaptive, and the reading status is retained at the end.
       className="min-w-0 max-w-full max-h-[5lh] flex-none overflow-auto leading-5"
       tabIndex={0}
       onScroll={(event) => {

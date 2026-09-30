@@ -1,6 +1,7 @@
 /**
- * 身份/隔离语义统一使用 workspaceIdentity，旧本地调用没有 identity 时回退路径。
- * 不包含 remoteSessionId：它描述连接实例，不改变 workspace 身份。
+ * Identity / isolation semantics uniformly use workspaceIdentity, with a fallback path for legacy
+ * local calls that have no identity. remoteSessionId is not included: it describes the connection
+ * instance and does not change the workspace identity.
  */
 export function getWorkspaceKey(workspacePath: string, workspaceIdentity?: string | null): string {
   return workspaceIdentity?.trim() || workspacePath;

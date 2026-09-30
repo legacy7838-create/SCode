@@ -10,64 +10,66 @@ import { ServiceChannels } from "@zcode/shared";
 import { createServiceDescriptor } from "../descriptors.js";
 
 /**
- * OAuth 认证服务
+ * OAuth authentication service
  *
- * 在 host process 中运行，负责 OAuth 流程的全部业务逻辑：
- * provider 管理、state 生命周期、token 交换、凭据存储。
+ * Runs in the host process and owns all the OAuth flow business logic:
+ * provider management, state lifecycle, token exchange, credential storage.
  */
 export interface IOAuthService {
-  /** 获取可用 provider 列表（仅返回 enabled=true） */
+  /** Gets the list of available providers (only those with enabled=true are returned) */
   getProviders(): Promise<OAuthProviderMeta[]>;
 
-  /** 获取当前 active provider */
+  /** Gets the current active provider */
   getActiveProvider(): Promise<OAuthProviderId | null>;
 
-  /** 启动时从本地缓存恢复会话展示态：成功返回用户信息，不做远端 token 校验 */
+  /** On startup, restores the session display state from the local cache: returns the user info on success, with no remote token validation */
   restoreCachedSession(): Promise<UserInfo | null>;
 
-  /** 恢复本地展示态，并区分从未登录与 JWT 过期后需要重新认证。 */
+  /** Restores the local display state and distinguishes "never signed in" from "JWT expired, needs re-authentication". */
   restoreCachedSessionState(): Promise<OAuthCachedSessionRestoreResult>;
 
-  /** 显式校验当前 provider 会话：成功返回用户信息，失败或过期返回 null */
+  /** Explicitly validates the current provider session: returns the user info on success, null on failure or expiry */
   restoreSession(): Promise<UserInfo | null>;
 
   /**
-   * 发起 OAuth：指定 provider，生成 state，返回 authorize URL
-   * state 由 renderer 上报给 main process 用于 deep link 路由
+   * Starts OAuth: takes the provider, generates the state, and returns the authorize URL
+   * The renderer reports the state to the main process for deep link routing
    */
   startOAuth(provider: OAuthProviderId): Promise<OAuthStartResponse>;
 
-  /** 使用后端短期 flow 发起 OAuth；当前仅 Z.AI 支持，其他 provider 保持原流程。 */
+  /** Starts OAuth through the backend short-lived flow; currently only Z.AI supports it, other providers keep the original flow. */
   startOAuthWithPolling(provider: OAuthProviderId): Promise<OAuthStartResponse>;
 
-  /** 查询当前后端 OAuth flow；未到查询时间、仍 pending 或没有 flow 时返回 null。 */
+  /** Queries the current backend OAuth flow; returns null before the query time, while still pending, or when there is no flow. */
   pollPendingOAuth(): Promise<OAuthCallbackResult | null>;
 
   /**
-   * 处理 OAuth 回调：校验 state；带 code 时换 token 并存凭据，只带归因参数时持久化归因信息
-   * 已接收回调因取消或新 flow 失效时返回 null，由调用方静默忽略。
-   * @param url - 完整 deep link URL
+   * Handles the OAuth callback: validates the state; with a code it exchanges the token and stores the
+   * credential, with only attribution parameters it persists the attribution info. When an already
+   * received callback is invalidated by a cancellation or a new flow it returns null, and the caller
+   * silently ignores it.
+   * @param url - The full deep link URL
    */
   handleCallback(url: string): Promise<OAuthCallbackResult | null>;
 
   /**
-   * 刷新 token
-   * @param provider - 可选；不传时使用 active provider
+   * Refreshes the token
+   * @param provider - Optional; when omitted the active provider is used
    */
   refreshToken(provider?: OAuthProviderId): Promise<void>;
 
   /**
-   * 登出 provider
-   * @param provider - 可选；不传时登出 active provider
+   * Logs out the provider
+   * @param provider - Optional; when omitted the active provider is logged out
    */
   logout(provider?: OAuthProviderId): Promise<void>;
 
-  /** 登出所有 provider */
+  /** Logs out every provider */
   logoutAll(): Promise<void>;
 
   /**
-   * 取消 pending OAuth
-   * @param provider - 可选；不传时取消当前 pending
+   * Cancels the pending OAuth
+   * @param provider - Optional; when omitted the current pending one is cancelled
    */
   cancelPending(provider?: OAuthProviderId): Promise<void>;
 }

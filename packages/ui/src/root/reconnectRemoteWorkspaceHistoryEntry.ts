@@ -17,7 +17,10 @@ import {
 import { refreshRemotePinnedTasksForSession } from "@/store/remotePinnedTaskStore.js";
 import { refreshRemoteTimelineTasksForSession } from "@/store/remoteTimelineTaskStore.js";
 
-/** 把 UI 最终确定的 canonical workspacePath/workspaceIdentity 绑定回 main/host 的 logical session。 */
+/**
+ * Binds the canonical workspacePath/workspaceIdentity finally settled by the UI back to the logical
+ * session in main/host.
+ */
 export type BindRemoteWorkspaceSessionContextFn = (params: {
   sessionId: string;
   workspacePath: string;
@@ -74,9 +77,15 @@ export interface ReconnectRemoteWorkspaceOptions {
   showErrorToast?: boolean;
   requestId?: string;
   throwOnFailure?: boolean;
-  /** 共享 Host ready 后，sibling 复用 initiator 凭据附着，禁止再次读取各自历史凭据。 */
+  /**
+   * After the shared Host is ready, siblings attach by reusing the initiator's credentials; reading
+   * their own stored credentials again is forbidden.
+   */
   sshCredentialsOverride?: SshReconnectCredentials;
-  /** logical connect 已返回，表示共享 SSH Host ready；workspace 初始化仍可能继续或失败。 */
+  /**
+   * logical connect has returned, which means the shared SSH Host is ready; workspace
+   * initialization may still proceed or fail.
+   */
   onSshHostReady?: (credentials: SshReconnectCredentials) => void;
 }
 
@@ -135,8 +144,8 @@ export async function reconnectRemoteWorkspaceHistoryEntry({
       connectTrigger: "reconnect",
     });
     if (reconnectTarget.kind === "ssh") {
-      // Host ready 与 provider/task 等 workspace 初始化必须分阶段通知。
-      // sibling 从此刻即可复用 initiator credential 创建 attachment，无需等待或重复读取凭据。
+      // Workspace initialization such as Host ready and provider/task must be notified in stages.
+      // Sibling can reuse the initiator credential to create attachments from now on, without waiting or re-reading the credential.
       options?.onSshHostReady?.(sshCredentials);
     }
     resolvedWorkspacePath = await resolveRemoteWorkspaceCanonicalPath(
@@ -152,12 +161,12 @@ export async function reconnectRemoteWorkspaceHistoryEntry({
       resolvedWorkspacePath !== sessionEntry.workspacePath ||
       resolvedWorkspaceIdentity !== fallbackWorkspaceIdentity
     ) {
-      // connect 只携带历史记录里的 path/identity，main 的 logical session descriptor 也停在这组值上；
-      // realpath 归一化后若结果不同，tab 会用新值而 descriptor 仍是旧值，
-      // 手机远控桥接按 tab 的 path/identity 比对 descriptor 时就会被 REMOTE_WORKSPACE_IDENTITY_MISMATCH 拒绝。
-      // 绑定失败说明 session 与 tab 无法对齐：回收 session 并走失败落库，不留下半连接 workspace。
-      // 这次 await 必须放在下方保留校验之前：校验与 upsertWorkspaceTab 之间不能再有异步间隙，
-      // 否则用户在 bind 等待 ready ACK 期间移除 tab，校验结果已过期，workspace 会被重新加回来。
+      // connect only carries the path/identity in the history record, and the logical session descriptor of main also stops at this set of values;
+      // If the results of realpath normalization are different, tab will use the new value and descriptor will still be the old value.
+      // When the mobile phone remote control bridge compares the descriptor with the path/identity of the tab, it will be rejected by REMOTE_WORKSPACE_IDENTITY_MISMATCH.
+      // Binding failure indicates that the session and tab cannot be aligned: the session is recycled and the failure library is exited, leaving no semi-connected workspace.
+      // This time await must be placed before the reserved verification below: there can be no asynchronous gap between the verification and upsertWorkspaceTab.
+      // Otherwise, if the user removes the tab while bind is waiting for ready ACK, the verification result has expired, and the workspace will be added back.
       try {
         await bindRemoteWorkspaceSessionContext({
           sessionId,
@@ -170,8 +179,8 @@ export async function reconnectRemoteWorkspaceHistoryEntry({
       }
     }
 
-    // 手动重连过程中，用户可能先点重连再立即把该远端 tab 移除。
-    // 如果这里不在成功落库前再做一次保留校验，会把用户刚移除的 workspace 又重新加回来。
+    // During the manual reconnection process, the user may click Reconnect and then immediately remove the remote tab.
+    // If the retention verification is not performed again before the database is successfully dropped, the workspace just removed by the user will be added back.
     if (
       shouldKeepReconnectedWorkspace &&
       !shouldKeepReconnectedWorkspace({
@@ -179,9 +188,12 @@ export async function reconnectRemoteWorkspaceHistoryEntry({
         workspaceIdentity: resolvedWorkspaceIdentity,
       })
     ) {
-      logger.warn("[Root] 远程 workspace 在重连过程中已被移除，跳过恢复并回收 session", {
-        workspacePath: resolvedWorkspacePath,
-      });
+      logger.warn(
+        "[Root] remote workspace was removed during reconnect, skipping restore and disposing session",
+        {
+          workspacePath: resolvedWorkspacePath,
+        },
+      );
       await disposeRemoteWorkspaceSession(sessionId);
       return;
     }
@@ -194,9 +206,9 @@ export async function reconnectRemoteWorkspaceHistoryEntry({
       localWorkspacePath: sessionEntry.localWorkspacePath,
     });
     if (activateWorkspaceAfterReconnect) {
-      // 侧栏重连过去会先激活只有 identity、尚无 remoteSessionId 的断连 tab，
-      // conversation provider 因 remote-waiting 返回 null，导致连接期间右侧整块黑屏。
-      // 必须先绑定 services 并静默回填 tab 的 session 元数据，再一次性激活 tab 与草稿。
+      // In the past, sidebar reconnection would first activate the disconnected tab with only identity and no remoteSessionId.
+      // The conversation provider returned null due to remote-waiting, resulting in a black screen on the right side during the connection.
+      // You must first bind services and silently backfill the tab's session metadata, and then activate the tab and draft at once.
       const activated = activateTabByPath(resolvedWorkspacePath, {
         workspaceIdentity: resolvedWorkspaceIdentity,
       });
@@ -232,7 +244,7 @@ export async function reconnectRemoteWorkspaceHistoryEntry({
     ]);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    logger.warn("[Root] 手动重连远程 workspace 失败", {
+    logger.warn("[Root] failed to manually reconnect remote workspace", {
       workspacePath: resolvedWorkspacePath,
       error: message,
     });
@@ -251,8 +263,8 @@ export async function reconnectRemoteWorkspaceHistoryEntry({
       toast(message);
     }
     if (options?.throwOnFailure) {
-      // 桌面端重连按钮需要吞掉异常并通过 toast/状态落库反馈，
-      // 但手机端 Web 远控是 RPC 语义，必须把失败明确回传给手机端。
+      // The reconnect button on the desktop needs to swallow exceptions and provide feedback through toast/status drop.
+      // However, web remote control on the mobile phone uses RPC semantics, and the failure must be clearly returned to the mobile phone.
       throw error;
     }
   } finally {

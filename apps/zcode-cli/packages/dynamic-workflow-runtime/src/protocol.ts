@@ -1,32 +1,38 @@
 /**
- * NDJSON 线协议（Boundary A 的传输编码）。
+ * The NDJSON wire protocol (Boundary A's transport encoding).
  *
- * 沙箱子进程与父进程 harness 之间通过 stdio 上的换行分隔 JSON 通信。本模块是**唯一真源**，
- * 描述每种消息的种类与字段；子进程源码（child-source.ts 的内嵌字符串）里以纯手写方式镜像这些
- * 形状——它无法 import 本模块（经 `toString()` 内嵌进入口文件运行），故两处必须一起改。父进程侧则直接
- * import 这些类型，保证桥接代码有严格类型。
+ * The sandbox child process and the parent-side harness communicate over newline-delimited
+ * JSON on stdio. This module is the **single source of truth**, describing the kind and
+ * fields of every message; the child source (the inline string in child-source.ts) mirrors
+ * these shapes by hand — it cannot import this module (it runs inlined into the entry file
+ * via `toString()`), so both places have to change together. The parent side imports these
+ * types directly, which keeps the bridging code strictly typed.
  *
- * 方向约定：
- *   child → parent：create-actor（即发即忘）/ request（ask/world-read/publish-artifact，需应答）/
- *                   event（log、report、declare-artifact）/ complete
- *   parent → child：response（应答 request，并搭载最新预算快照）
+ * Direction convention:
+ *   child → parent: create-actor (fire-and-forget) / request (ask/world-read/publish-artifact,
+ *                   needs a response) / event (log, report, declare-artifact) / complete
+ *   parent → child: response (answers a request and carries the latest budget snapshot)
  *
- * 为何 create-actor 不走 request/response：Boundary A 要求 `createActor` **同步**返回句柄。子进程无法为同步返回等待一次 round-trip，故它同步造一个
- * child-local 句柄（`local#N`）并即发即忘一条 create-actor，父进程据 stdio 的 FIFO 顺序在处理
- * 任何引用该句柄的 ask 之前完成 local→engine ActorId 的映射（父进程的 create-actor 处理是纯同步的）。
+ * Why create-actor does not use request/response: Boundary A requires `createActor` to return
+ * a handle **synchronously**. The child cannot wait for a round-trip on behalf of a
+ * synchronous return, so it synchronously builds a child-local handle (`local#N`) and fires a
+ * create-actor off without waiting; the parent uses stdio's FIFO order to complete the
+ * local→engine ActorId mapping before handling any ask that references that handle (the
+ * parent's create-actor handling is purely synchronous).
  */
 
 import type { ArtifactContentOp, ArtifactPresetOp, WorldReadOp } from "@zcode/dynamic-workflow";
 
 // ————————————————————————————————————————————————————————————————
-// 结构化错误的线形态
+// Wrong structured line pattern
 // ————————————————————————————————————————————————————————————————
 
 /**
- * 跨边界的错误形态。ask 的拒绝（WorkflowError）以此过界，子进程据此在沙箱内重建一个带
- * `code`/`violations`/`finalText` 的 Error，使脚本的 try/catch 能按结构处理。
- * 模型侧错误不再过界：它们要么在 runtime 内重试，
- * 要么让整个 run 停下，脚本永远看不到。
+ * The shape of an error crossing the boundary. An ask rejection (WorkflowError) crosses as
+ * this, and the child rebuilds inside the sandbox an Error carrying
+ * `code`/`violations`/`finalText` so the script's try/catch can handle it structurally.
+ * Model-side errors no longer cross: they are either retried inside the runtime or stop the
+ * whole run, and the script never sees them.
  */
 export interface WireError {
   name: string;
@@ -41,7 +47,7 @@ export interface WireError {
 // child → parent
 // ————————————————————————————————————————————————————————————————
 
-/** 同步创建 actor：即发即忘，父进程据 FIFO 在后续 ask 之前建立 local→ActorId 映射。 */
+/** Create an actor synchronously: fire-and-forget, with the parent establishing the local→ActorId mapping via FIFO before any subsequent ask. */
 export interface CreateActorMessage {
   kind: "create-actor";
   localId: string;
@@ -51,46 +57,54 @@ export interface CreateActorMessage {
 }
 
 /**
- * 需应答的 host 调用：ask、world-read，或**内容产物的发布**。
+ * A host call that needs a response: ask, world-read, or the **publication of a content
+ * artifact**.
  *
- * 产物的两族在这里分道：内容成员（`file`/`markdown`）是
- * 效应，脚本 await 它、要能 catch 它的拒绝，所以走 request/response；预置成员是声明，返回
- * void，走下面的事件通道。
+ * The two families of artifact members diverge here: content members (`file`/`markdown`) are
+ * effects, the script awaits them and has to be able to catch their rejections, so they travel
+ * request/response; declared members are declarations, return void, and travel the event
+ * channel below.
  */
 export interface RequestMessage {
   kind: "request";
   id: string;
   type: "ask" | "world-read" | "publish-artifact";
   siteId: string;
-  /** ask 专属：child-local actor 句柄。 */
+  /** ask only: the child-local actor handle. */
   actor?: string;
-  /** ask 专属：指令正文。 */
+  /** ask only: the instruction text. */
   instructions?: string;
-  /** world-read 专属：op（词汇表由 world-read 注册表推导，加原语不改本文件）。 */
+  /** world-read only: op (the vocabulary is derived from the world-read registry, so adding a primitive does not change this file). */
   op?: WorldReadOp;
   /**
-   * publish-artifact 专属：内容成员的 op。**刻意与 `op` 分成两个字段**而不是把 `op` 加宽成
-   * 两个词汇表的联合：加宽之后父进程分派时拿到的就是一个必须再窄化一次的值，而窄化的依据
-   * 只有 `type`——那正好是两个字段各自表达的东西。两张注册表、两个字段，谁也不必猜。
+   * publish-artifact only: the op of a content member. It is **deliberately a separate field
+   * from `op`** rather than widening `op` into a union of two vocabularies: after widening,
+   * what the parent holds at dispatch time is a value that has to be narrowed again, and the
+   * only basis for narrowing is `type` — which is exactly what the two fields each express on
+   * their own. Two registries, two fields, nobody has to guess.
    */
   artifactOp?: ArtifactContentOp;
   /**
-   * world-read 专属：**位置实参数组**。lowering 原样打包脚本调用点的实参，本层原样透传，
-   * 元数与校验都归 driver。
-   * 单实参的 `arg?: string` 撑不住多参/无参的 op（`files.grep(pattern, glob?)`、`git.status()`）。
+   * world-read only: the **positional argument array**. Lowering packs the arguments at the
+   * script's call site verbatim and this layer passes them through as-is; arity and validation
+   * both belong to the driver. A single `arg?: string` cannot carry the multi-argument and
+   * zero-argument ops (`files.grep(pattern, glob?)`, `git.status()`).
    */
   args?: unknown[];
 }
 
 /**
- * 即发即忘的事件，按 `type` 判别。三种都不需要应答，但**耐久性不同**：`log` 丢了只是丢一行
- * 闲话，`report` 丢了是丢一条发现（父进程会把它落 journal），所以事件通道的 FIFO 顺序对
- * report 是承重的——父进程 journal 的就是到达的东西。
+ * Fire-and-forget events, discriminated by `type`. None of the three needs a response, but
+ * their **durability differs**: losing a `log` only loses a line of chatter, whereas losing a
+ * `report` loses a finding (the parent journals it), so the event channel's FIFO order is
+ * load-bearing for report — what the parent journals is exactly what arrived.
  *
- * `declare-artifact` 与 report 同在这条通道上，而且**必须**如此：一条打了标签的 report 只有在
- * 它的预置声明已经到达父进程之后才合法（否则引擎以 `ArtifactUndeclared` 失败整个 run）。
- * 脚本里声明在前、report 在后，而同一条 FIFO 保证父进程也按这个顺序看到它们。把声明改成
- * 需应答的 request 并不能改善这一点，只会让一个同步返回 void 的 facade 成员凭空多出一次等待。
+ * `declare-artifact` shares this channel with report, and **must**: a tagged report is only
+ * legal once its declaration has already reached the parent (otherwise the engine fails the
+ * whole run with `ArtifactUndeclared`). In the script the declaration comes first and the
+ * report after, and the same FIFO guarantees the parent sees them in that order too. Turning
+ * the declaration into an answered request would not improve that — it would only add a
+ * wait out of thin air for a facade member that returns void synchronously.
  */
 export type EventMessage =
   | LogEventMessage
@@ -99,17 +113,19 @@ export type EventMessage =
   | PhaseEnteredEventMessage;
 
 /**
- * 控制流经过了一个 `phase("…")` 标记。走事件通道：脚本从不 await 它；无站点、不落 journal，父进程只让引擎发一条
- * `phase-entered`。到达顺序照样承重——「先进 B 再派发 B 里的 ask」是时间线点灯的依据。
+ * Control flow passed through a `phase("…")` marker. It travels the event channel: the script
+ * never awaits it; it has no site and lands in no journal, and the parent only has the
+ * engine emit a `phase-entered`. Arrival order is load-bearing here too — "enter B first,
+ * then dispatch the ask inside B" is what lights up the timeline.
  */
 export interface PhaseEnteredEventMessage {
   kind: "event";
   type: "phase-entered";
-  /** 作者的原词，lowering 已去两端空白。 */
+  /** The author's own wording, with the two ends trimmed by lowering. */
   name: string;
 }
 
-/** 进度消息：无站点、不落 journal。 */
+/** A progress message: no site, not journaled. */
 export interface LogEventMessage {
   kind: "event";
   type: "log";
@@ -117,8 +133,9 @@ export interface LogEventMessage {
 }
 
 /**
- * 一条中间结果。走事件通道而不是 request/response，因为脚本从不 await 它；但与 `log` 不同，
- * 父进程会按 `siteId` × ordinal 把它落成一行 `dwf_node`。
+ * One intermediate result. It travels the event channel instead of request/response because
+ * the script never awaits it, but unlike `log` the parent journals it as a `dwf_node` row
+ * keyed by `siteId` × ordinal.
  */
 export interface ReportEventMessage {
   kind: "event";
@@ -126,27 +143,30 @@ export interface ReportEventMessage {
   siteId: string;
   item: unknown;
   /**
-   * 产物标签（`report(item, "perf")`）：这条 item 同时喂给哪个预置产物。缺席即无标签
-   * （JSON.stringify 会把 undefined 整个键丢掉，所以线上就是"没有这个键"）。
+   * The artifact tag (`report(item, "perf")`): which declared artifact this item also feeds.
+   * Absent means no tag (JSON.stringify drops an undefined key entirely, so on the wire it
+   * really is "no such key").
    */
   artifactId?: string;
 }
 
 /**
- * 一次**预置产物的声明**（`artifact.chart` 等）。走事件通道而不是 request/response，因为
- * facade 成员同步返回 void——脚本从不 await 它。父进程按 `siteId` × ordinal 落一行
- * `dwf_node`（幂等重复声明除外），所以本条消息的到达顺序同样是承重的（见 {@link EventMessage}）。
+ * One **declaration of a declared artifact** (`artifact.chart` and friends). It travels the
+ * event channel instead of request/response because the facade member returns void
+ * synchronously — the script never awaits it. The parent journals a `dwf_node` row by
+ * `siteId` × ordinal (except for idempotent duplicate declarations), so this message's
+ * arrival order is load-bearing too (see {@link EventMessage}).
  */
 export interface DeclareArtifactEventMessage {
   kind: "event";
   type: "declare-artifact";
   siteId: string;
   op: ArtifactPresetOp;
-  /** 位置实参数组（`[id, spec]`），lowering 原样打包、本层原样透传。 */
+  /** The positional argument array (`[id, spec]`), packed verbatim by lowering and passed through as-is. */
   args: unknown[];
 }
 
-/** 脚本执行终结：顶层 artifact 或抛错。 */
+/** Script execution finished: a top-level artifact or a thrown error. */
 export interface CompleteMessage {
   kind: "complete";
   ok: boolean;
@@ -154,14 +174,14 @@ export interface CompleteMessage {
   error?: WireError;
 }
 
-/** child → parent 的全部消息。 */
+/** Every child → parent message. */
 export type ChildMessage = CreateActorMessage | RequestMessage | EventMessage | CompleteMessage;
 
 // ————————————————————————————————————————————————————————————————
 // parent → child
 // ————————————————————————————————————————————————————————————————
 
-/** 对一次 request 的应答。 */
+/** The response to one request. */
 export interface ResponseMessage {
   kind: "response";
   id: string;
@@ -170,30 +190,34 @@ export interface ResponseMessage {
   error?: WireError;
 }
 
-/** parent → child 的全部消息。 */
+/** Every parent → child message. */
 export type ParentMessage = ResponseMessage;
 
 /**
- * 子进程的初始 payload。作为 JSON 字面量内嵌在入口文件里（child-source.ts 的 `renderChildEntry`），
- * 不再经 argv / base64：Windows 命令行上限 32,767 字符。
+ * The child process's initial payload. Embedded as a JSON literal in the entry file
+ * (`renderChildEntry` in child-source.ts), no longer via argv / base64: the Windows command
+ * line limit is 32,767 characters.
  */
 export interface ChildPayload {
-  /** lowered 脚本的 async 函数体（自由标识符仅 `__host`）。 */
+  /** The async function body of the lowered script (the only free identifier is `__host`). */
   lowered: string;
   /**
-   * 本次 run 的实参，注入沙箱成为**冻结**的 `args` 全局（lowering 把脚本里的 `args` 读
-   * 改写成 `__host.args`）。
+   * This run's arguments, injected into the sandbox as the **frozen** `args` global (lowering
+   * rewrites the script's reads of `args` into `__host.args`).
    *
-   * 只在 spawn 时过界一次，此后不再更新——实参在 run 的整个生命周期里是常量。缺席解读为
-   * `{}`：内联 run 与老 journal
-   * 行都走这条路，脚本里的 `args.x` 因此永远是一次合法的属性读而不是一次崩溃。
+   * They cross the boundary once at spawn and are never updated afterwards — the arguments are
+   * a constant for the whole lifetime of the run. Absence is read as `{}`: both inline runs
+   * and old journal rows go this way, so `args.x` in a script is always a legal property read
+   * rather than a crash.
    */
   args?: Record<string, unknown>;
   /**
-   * 堆上限（MB）。**只在 argsPrefix（SEA 自 re-exec）路径生效**：那条路上传不了
-   * `--max-old-space-size`，入口文件在 `execArgv` 里看不到旗标时自己 `v8.setFlagsFromString`
-   * best-effort。缺省路径由真正的 Node 旗标生效，入口文件看到旗标就跳过本字段。
-   * 效果不保证（V8 对已在启动期消费的旗标可能不再理会），记为 SEA 限制。
+   * The heap ceiling (MB). It **only takes effect on the argsPrefix (SEA self-re-exec) path**:
+   * `--max-old-space-size` cannot be passed there, so when the entry file does not see the flag
+   * in `execArgv` it applies it best-effort via `v8.setFlagsFromString`. On the default path a
+   * real Node flag does the work and the entry file skips this field when it sees the flag.
+   * The effect is not guaranteed (V8 may ignore a flag already consumed during startup); this
+   * is recorded as a SEA limitation.
    */
   maxOldSpaceSizeMb?: number;
 }

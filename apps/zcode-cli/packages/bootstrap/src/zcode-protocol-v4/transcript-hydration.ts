@@ -1,14 +1,14 @@
-// Transcript → SessionEvent 合成（「reduce(transcript) ≡ reduce(events)」）。
+// Transcript → SessionEvent synthesis ("reduce(transcript) ≡ reduce(events)").
 //
-// 动机：v4 投影是事件溯源，但部分历史突变（纯对话 fork 复制 message 不复制 event、
-// rewind 截断只动 message 库）会让 session 的事件日志无法覆盖可见 transcript。冷订阅
-// hydration 从事件日志重建拿不到这些历史（「fork-child 历史」）。
+// Motivation: v4 projection is event sourcing, but some historical mutations (pure dialogue fork copies message but does not copy event,
+// Rewind truncates only the message library) so that the session's event log cannot cover the visible transcript. cold subscription
+// Hydration cannot get this history ("fork-child history") from event log reconstruction.
 //
-// 本模块把 message 库的 transcript 反向合成为 reducer 能消费的 SessionEvent 序列——
-// 从而复用整套 ProductProjection 归约逻辑，不必再写一份 message→row 的平行归约器。
-// 合成事件是「视图重建」用途：只需产出与真实事件流「归约等价」的最小序列。
-// v4 冷恢复只能重放 ProductProjection 认识的事件；如果 transcript 里的
-// tool/reasoning/subagent/compact part 不反向合成，重启后历史可见运行态会从快照里消失。
+// This module reversely synthesizes the transcript of the message library into a SessionEvent sequence that can be consumed by the reducer——
+// This reuses the entire set of ProductProjection reduction logic and eliminates the need to write a message→row parallel reducer.
+// Synthetic events are used for "view reconstruction": they only need to produce the smallest sequence that is "reduction equivalent" to the real event stream.
+// v4 cold recovery can only replay events recognized by ProductProjection; if the events in transcript
+// tool/reasoning/subagent/compact part does not reverse synthesis, and the historical visible running state will disappear from the snapshot after restarting.
 import type {
   AssistantErrorInfo,
   BackgroundResultOriginMeta,
@@ -83,21 +83,24 @@ interface ParsedSubagentOutput {
 interface SynthesizeOptions {
   sessionId: string;
   /**
-   * 当前 session 实际选中模型的权威上下文窗口。
-   * transcript 只持久化 token 用量，不持久化模型能力，必须由当前 workspace registry 注入。
+   * The authoritative context window of the model the session has actually selected.
+   * The transcript persists only token usage and never model capabilities, so this must be injected from the
+   * current workspace registry.
    */
   contextWindow?: number;
-  /** 合成基准时间戳（确定性：不用 Date.now，由调用方传入首条消息时间兜底）。 */
+  /** Synthetic baseline timestamp (determinism: no Date.now; the caller passes the first message's time as the fallback). */
   baseTimestampMs?: number;
   /**
-   * session_entry legacy 源的 goal verify 事实：
-   * 有 anchor 的按 anchorAssistantMessageId 落到对应 assistant 之后，
-   * 无 anchor/anchor 失配的落到已知时间线末尾；与 timeline part 按 key 去重。
+   * The goal verify facts of the session_entry legacy source:
+   * those with an anchor land after the corresponding assistant by anchorAssistantMessageId,
+   * those without an anchor or with a mismatched anchor land at the end of the known timeline; deduplicated by
+   * key against timeline parts.
    */
   goalVerificationEntries?: readonly HydratedGoalVerificationEntry[];
   /**
-   * workspace checkpoint artifact 按真实 user messageId 重建出的单轮摘要。
-   * transcript 没有该字段，必须显式注入合成 ModelComplete 才能保持 live/cold 等价。
+   * The single-turn summary reconstructed from a workspace checkpoint artifact by real user messageId.
+   * The transcript has no such field, so a synthetic ModelComplete must be injected explicitly to keep
+   * live/cold equivalence.
    */
   fileChangeSummariesByMessageId?: ReadonlyMap<string, TurnFileChangeSummary>;
 }
@@ -107,12 +110,15 @@ function isRealUserTurnStarter(message: MessageWithParts): boolean {
 }
 
 /**
- * 中枢直接启动工作流的启动轮消息。核心持久化时写
- * `source: "workflow_launch"` + `metadata.workflowLaunch`（冷恢复的权威来源）。它是 synthetic
- * 但语义上属于用户真实动作的可见消息，共享投影 policy 会把 synthetic user 归成 hiddenSynthetic，
- * 因此 `isConversationRealUserTurnStarter` 认不出它；冷路径据本判据在 real-user 分支之前显式重建
- * 与活投影同形的 controlOnly 启动轮（TurnStarted{inputSource, workflowLaunch, executionKind} +
- * TurnComplete），而不是被当作隐藏 synthetic 跳过。畸形 / 缺席元数据回 null（退回既有跳过语义）。
+ * The launch-turn message of a workflow started directly from the hub. Core writes
+ * `source: "workflow_launch"` + `metadata.workflowLaunch` at persistence time (the authoritative source for
+ * cold recovery). It is synthetic but semantically a visible message belonging to a real user action; the
+ * shared projection policy classifies a synthetic user as hiddenSynthetic, so `isConversationRealUserTurnStarter`
+ * does not recognize it. The cold path therefore uses this criterion to explicitly rebuild, before the
+ * real-user branch, a controlOnly launch turn shaped exactly like the live projection
+ * (TurnStarted{inputSource, workflowLaunch, executionKind} +
+ * TurnComplete), instead of skipping it as a hidden synthetic. Malformed / absent metadata returns null
+ * (falling back to the existing skip semantics).
  */
 function workflowLaunchOfMessage(message: MessageWithParts): WorkflowLaunchMeta | null {
   if (message.info.role !== "user") return null;
@@ -166,8 +172,8 @@ function partEndAtMs(part: MessagePart): number | undefined {
 
 function messageEndAtMs(message: MessageWithParts): number | undefined {
   const time = message.info.time;
-  // 冷恢复会同时处理 user/assistant message；user 只有 created，
-  // assistant 才可能有 completed，所以这里必须按字段存在性收窄后再取结束时间。
+  // Cold recovery will process user/assistant messages at the same time; user only has created,
+  // Only assistant may have completed, so the end time must be obtained after narrowing the field existence.
   let end =
     ("completed" in time ? finiteTimeMs(time.completed) : undefined) ?? finiteTimeMs(time.created);
   for (const part of message.parts) {
@@ -222,13 +228,13 @@ function isPersistedAssistantCancellation(error: AssistantErrorInfo): boolean {
     error.name === "Error" &&
     data?.message === LEGACY_PROTOCOL_SESSION_STOPPED_MESSAGE
   ) {
-    // 旧 session/stop 使用普通 Error 作为 AbortSignal.reason，transcript 又未持久化
-    // cancelled result；冷恢复若只认 AbortError，会把用户停止重新合成为 TurnError 和错误 Banner。
+    // Old session/stop uses normal Error as AbortSignal.reason, and the transcript is not persisted
+    // canceled result; if cold recovery only recognizes AbortError, the user stop will be re-synthesized into TurnError and error Banner.
     return true;
   }
 
-  // 旧 transcript 的 AiSdkModelAdapterError 没有持久化 model error code，
-  // 只能用 ZCode 自身生成的标准 name/message 二元组兼容恢复；不泛化匹配 provider 文案。
+  // AiSdkModelAdapterError of old transcript does not persist model error code,
+  // Can only be restored compatible with the standard name/message tuples generated by ZCode itself; does not generalize matching provider copy.
   return (
     code === undefined &&
     error.name === "AiSdkModelAdapterError" &&
@@ -237,10 +243,12 @@ function isPersistedAssistantCancellation(error: AssistantErrorInfo): boolean {
 }
 
 /**
- * stream recovery 把作废的半截 assistant 持久化成带 error 的消息，随后从锚点
- * 重发并正常完成；live 投影只把它收口为 interrupted 行，不产生 TurnError。旧冷恢复却把
- * 任何带 error 的 assistant 都当本轮失败，重开会话后凭空弹出「Partial assistant output
- * was discarded」的错误 Banner。这个标记只服务压缩/fork 边界隔离，对本轮结果必须透明。
+ * stream recovery persists a voided half-finished assistant as a message carrying an error and then resends
+ * from the anchor and completes normally; the live projection only settles it into an interrupted row and
+ * produces no TurnError. The old cold recovery, however, treated any assistant carrying an error as a
+ * failure of the current turn, so reopening the session popped a "Partial assistant output
+ * was discarded" error banner out of nowhere. This flag serves only compression/fork boundary isolation and
+ * must be transparent to this turn's result.
  */
 function isPersistedStreamRecoveryDiscard(error: AssistantErrorInfo): boolean {
   return error.name === STREAM_RECOVERY_DISCARDED_ERROR_NAME;
@@ -391,8 +399,8 @@ function inputIntentOfMessage(message: MessageWithParts): TurnInputIntentMetadat
       queueItemId: value.queueItemId,
       clientId: value.clientId,
       kind: value.kind,
-      // 可见 text 是展示事实；goal 的 canonical objective 只能读取持久 intent.text，
-      // 禁止从 `/goal replace ...` 文案再做大小写/关键字解析。
+      // It can be seen that text is to display the fact; the canonical objective of the goal can only read the persistent intent.text.
+      // It is forbidden to do case/keyword parsing from the `/goal replace...` copy.
       text: value.text,
       ...(value.modelSelection ? { modelSelection: value.modelSelection } : {}),
       ...(value.mode ? { mode: value.mode } : {}),
@@ -412,7 +420,7 @@ function inputIntentOfMessage(message: MessageWithParts): TurnInputIntentMetadat
     };
   }
 
-  // 兼容之前只持久化 metadata seed 的 transcript；新写入一律走上面的完整事实。
+  // Compatible with transcripts that only persisted metadata seed before; new writes will always use the above complete facts.
   const value = message.info.metadata?.inputIntent;
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const intent = value as Record<string, unknown>;
@@ -442,8 +450,9 @@ function executionKindOfMessage(message: MessageWithParts): "agent" | "controlOn
 }
 
 /**
- * 引擎附加文本的起点：热路径它在 TurnStarted 上，
- * 冷路径从用户消息 metadata 读回同一个字段。只认非负整数——别的形状按缺席处理（宁可多显示）。
+ * Where the engine-attached text starts: on the hot path it is on TurnStarted,
+ * and on the cold path the same field is read back from the user message metadata. Only non-negative integers
+ * are recognized; any other shape is treated as absent (better to show too much).
  */
 function epilogueStartOfMessage(message: MessageWithParts): number | undefined {
   const value = message.info.metadata?.epilogueStart;
@@ -488,8 +497,8 @@ function subagentInfoFromToolPart(
     childSessionId:
       stringField(output, "childSessionId") ??
       stringField(metadata, "childSessionId") ??
-      // 后台 Agent 的持久化 tool output 是人类可读文本而非 JSON；cold merge
-      // 会抑制重复 durable spawned，若不从稳定 agentId 行恢复 child session，侧栏入口会丢失。
+      // The persistence tool output of the background Agent is human-readable text instead of JSON; cold merge
+      // Will suppress repeated durable spawning, and if the child session is not restored from the stable agentId row, the sidebar entry will be lost.
       (explicitAgentId ? createSessionId(`subagent_${agentId}`) : undefined),
     description:
       stringField(output, "description") ??
@@ -525,9 +534,10 @@ function subagentStatusFromToolPart(
 }
 
 /**
- * 附件渲染：FilePart → TurnStarted 附件展示元信息（TurnAttachmentMeta）。
- * 冷订阅/fork-child 的历史附件由 transcript 反向合成——与 live 事件同一投影入口
- * （buildUserInputRow），保证冷/热路径行内容一致。
+ * Attachment rendering: FilePart -> the attachment display metadata on TurnStarted (TurnAttachmentMeta).
+ * Historical attachments for cold subscriptions / fork children are synthesized backwards from the transcript,
+ * through the same projection entry point as live events
+ * (buildUserInputRow), guaranteeing identical row content on the cold and hot paths.
  */
 function attachmentMetasOfMessage(
   parts: readonly MessagePart[],
@@ -628,9 +638,9 @@ function synthesizeTextPart(
       partId: part.id,
     },
     turnId,
-    // cold 合成事件不能统一用“首条消息时间 + seq”：刷新后
-    // assistant 动作栏会把不同历史回复显示成接近同一时间。text row 创建时必须
-    // 保留所属 transcript assistant message 的真实创建时间；事件顺序仍由 seq 裁决。
+    // Cold synthetic events cannot use "first message time + seq" uniformly: after refreshing
+    // The assistant action bar will display different historical replies close to the same time. text row is required when creating
+    // The true creation time of the corresponding transcript assistant message is retained; the order of events is still determined by seq.
     assistantMessageCreatedAtMs,
   );
   push(
@@ -729,8 +739,8 @@ function synthesizeToolPart(
   turnId: string,
 ): AssistantSynthesisState {
   if (shouldHideInvalidToolCallFromProduct(part.tool, part.metadata)) {
-    // footprint 过滤只决定是否需要补事件，不能阻止实际合成；这里必须在事件源头
-    // 跳过带原始空名 metadata 的恢复 part，避免 cold hydration 重新物化工具行。
+    // Footprint filtering only determines whether the event needs to be supplemented, and cannot prevent the actual synthesis; it must be at the source of the event
+    // Skip recovery parts with original empty metadata to avoid cold hydration rematerialization of tool lines.
     return { resultType: "success", toolCallCount: 0 };
   }
   const toolCallId = part.callID;
@@ -813,8 +823,8 @@ function synthesizeToolPart(
     return { resultType: "success", toolCallCount: 1 };
   }
 
-  // CLI 重启后无法证明历史 pending/running 工具仍在运行，不能把
-  // active work / stop 按钮复活；让 TurnComplete(cancelled) 统一收口成只读历史。
+  // After the CLI is restarted, it cannot be proved that the historical pending/running tools are still running, and it cannot be
+  // The active work / stop button is resurrected; TurnComplete(cancelled) is unified into a read-only history.
   return { resultType: "cancelled", toolCallCount: 1 };
 }
 
@@ -835,8 +845,8 @@ function synthesizeCompactPart(
   const operationId = String(compact.payload.operationId);
   const durablePart = durableCompactPartsByOperation.get(operationId);
   if (durablePart) {
-    // 同 operation 的 timeline part 通常排在 durable compaction part 前面。
-    // 旧“先到先得”会丢 tail_start_id；优先采用带 coverage boundary 的 durable payload。
+    // The timeline part of the same operation is usually ranked before the durable compaction part.
+    // The old "first come first served" will lose tail_start_id; the durable payload with coverage boundary is preferred.
     const durablePayload = compactPayloadFromLegacyCompactionPart(durablePart);
     compact = durablePayload ?? {
       ...compact,
@@ -855,11 +865,11 @@ function synthesizeCompactPart(
 }
 
 // ── goal verification timeline part──
-// 持久化契约（core events.ts persistDurableSessionEvent）：verifier 每次生命周期变化
-// upsert 同一个 timeline part，身份 targetId_goalIteration，status 为最终生命周期态。
-// 反向合成为 started(+终态) 事件对，复用投影既有 goalVerify marker 状态机。
-// 旧 hydration 只认 context_compaction，goal_verification part 落入无人
-// 消费的分支——每次冷恢复 goalVerify marker 都消失。
+// Persistence contract (core events.ts persistDurableSessionEvent): verifier every life cycle change
+// Upsert is the same timeline part, the identity is targetId_goalIteration, and the status is the final life cycle state.
+// Reversely synthesize it into a started(+final state) event pair, and reuse the existing goalVerify marker state machine for projection.
+// The old hydration only recognizes context_compaction, and the goal_verification part is left unattended.
+// Consumed branch - goalVerify marker disappears on every cold restore.
 function goalVerificationKeyOfPart(part: Extract<MessagePart, { type: "timeline" }>): string {
   if (part.timelineType !== "goal_verification") return String(part.id);
   return part.goalIteration !== undefined
@@ -867,8 +877,8 @@ function goalVerificationKeyOfPart(part: Extract<MessagePart, { type: "timeline"
     : part.verificationId;
 }
 
-// 冷恢复无法证明历史 verifier 仍在运行（同 pending tool 收口为 cancelled 的先例）：
-// started/未知态收口为 cancelled；completed/failed_closed 原样还原。
+// Cold recovery cannot prove that the historical verifier is still running (the same as the precedent of pending tool closing as canceled):
+// The started/unknown state is closed as canceled; completed/failed_closed is restored as it is.
 function goalVerificationTerminalStatus(
   status: string | undefined,
 ): "completed" | "failed_closed" | "cancelled" {
@@ -883,7 +893,7 @@ function goalVerificationTerminalStatus(
   }
 }
 
-/** goal verify 事实的归一形态：timeline part（新契约）与 session_entry（legacy 主体）共用。 */
+/** The normalized shape of a goal verify fact: shared by timeline parts (the new contract) and session_entry (the legacy mainstay). */
 interface GoalVerificationFact {
   key: string;
   targetId: string;
@@ -954,10 +964,10 @@ function synthesizeGoalVerificationPart(
   return true;
 }
 
-// ── session_entry legacy 源──
-// 历史上 goal verify 主要持久化在 session_entry（本机观测 1,402 行 vs timeline part
-// 仅 10 行）；entry.data 保留了原始事件 payload。读取端跨源按 targetId_goalIteration
-// 去重：timeline part 与 entry 表达同一事实时只发一次（先到先得，anchor 语义一致）。
+// ── session_entry legacy source──
+// Historically goal verify was mainly persisted in session_entry (native observation 1,402 lines vs timeline part
+// Only 10 lines); entry.data retains the original event payload. Read side cross-origin by targetId_goalIteration
+// Duplication removal: timeline part and entry are only sent once when expressing the same fact (first come, first served, anchor has the same semantics).
 export interface HydratedGoalVerificationEntry {
   payload: {
     targetId: string;
@@ -972,7 +982,7 @@ export interface HydratedGoalVerificationEntry {
   timeCreated: number;
 }
 
-/** SessionEntryInfo（target_completion_verification）→ 归一 entry；非法数据静默剔除。 */
+/** SessionEntryInfo (target_completion_verification) -> normalized entry; invalid data is silently dropped. */
 export function goalVerificationEntriesFromSessionEntries(
   entries: readonly { data: unknown; time: { created: number } }[],
 ): HydratedGoalVerificationEntry[] {
@@ -1009,7 +1019,7 @@ export function goalVerificationEntriesFromSessionEntries(
       timeCreated: entry.time.created,
     });
   }
-  // 同一 key 多条（started/terminal 各一条 entry）：按事件序取最新终态。
+  // Multiple entries for the same key (one entry each for started/terminal): get the latest final state in event order.
   parsed.sort(
     (left, right) =>
       (left.sequenceNumber ?? left.timeCreated) - (right.sequenceNumber ?? right.timeCreated),
@@ -1036,7 +1046,7 @@ function goalVerificationFactOfEntry(entry: HydratedGoalVerificationEntry): Goal
   };
 }
 
-/** 同一 key 的多条 entry（生命周期各一条）合并为单个 fact：终态覆盖 started。 */
+/** Multiple entries with the same key (one per lifecycle state) merge into a single fact: the terminal state overrides started. */
 function mergeGoalVerificationEntryFacts(
   entries: readonly HydratedGoalVerificationEntry[],
 ): GoalVerificationFact[] {
@@ -1048,7 +1058,7 @@ function mergeGoalVerificationEntryFacts(
       byKey.set(fact.key, fact);
       continue;
     }
-    // entries 已按事件序排序：后到的生命周期态（终态）覆盖，anchor 取先有值。
+    // Entries are sorted by event order: the later arriving life cycle state (final state) is overwritten, and the anchor takes the first value.
     byKey.set(fact.key, {
       ...existing,
       ...fact,
@@ -1060,12 +1070,12 @@ function mergeGoalVerificationEntryFacts(
   return [...byKey.values()];
 }
 
-// ── 轮次选型事实──
-// modelChange marker 由投影在 TurnStarted 时对比 lastTurnModel 与 config 生成；
-// 冷恢复没有 ModelSelected 事件，这里按每轮的持久化选型事实重建。
-// 来源优先级：user prompt 的 model 快照（恒在场、与提交时 config 一致）；
-// preface 轮（无 user）取 assistant 消息事实。合成 timeline 宿主消息
-// （semantics.kind=timeline_event）的 model 是宿主兼容占位，不是本轮事实。
+// ── Round selection facts──
+// The modelChange marker is generated by comparing lastTurnModel and config when the projection is in TurnStarted;
+// There is no ModelSelected event in cold recovery, and it is rebuilt based on the persistence selection facts of each round.
+// Source priority: model snapshot of user prompt (always present, consistent with the config when submitted);
+// The preface wheel (without user) gets the assistant message fact. Synthesize timeline host messages
+// The model (semantics.kind=timeline_event) is a host-compatible placeholder, not a fact of this round.
 interface HydratedTimelineModel {
   modelSelection: ModelSelection;
   previousModelSelection?: ModelSelection | null;
@@ -1116,8 +1126,8 @@ function modelChangeToModelOf(message: MessageWithParts): HydratedTimelineModel 
   return null;
 }
 
-// preface 轮开轮门槛：只含 model_change/session_fork 宿主等不可渲染内容的 assistant
-// 消息不开轮，避免合成出只有「已工作」壳的空轮。
+// preface wheel opening threshold: only assistants containing non-renderable content such as model_change/session_fork hosts
+// The message does not open the wheel to avoid synthesizing an empty wheel with only "working" shells.
 function assistantMessageHasSynthesizableContent(message: MessageWithParts): boolean {
   return message.parts.some((part) => {
     switch (part.type) {
@@ -1175,8 +1185,8 @@ function synthesizeAssistantParts(
           ? "success"
           : "error_during_execution"
       : message.info.role === "assistant" && message.info.time.completed === undefined
-        ? // 进程退出可能只持久化 step-start/partial，却没有 assistant error；
-          // 旧 cold hydration 默认 success，伪造正常 TurnComplete 并让异常 Worked 被收起。
+        ? // Process exit may only persist step-start/partial, but there will be no assistant error;
+          // Old cold hydration defaults to success, fakes normal TurnComplete and lets exception Worked be put away.
           "cancelled"
         : "success";
   let toolCallCount = 0;
@@ -1192,8 +1202,8 @@ function synthesizeAssistantParts(
         );
         break;
       case "reasoning":
-        // cold hydration 过去没有把 transcript assistant message 身份带到
-        // reasoning_start，导致恢复后的 ReasoningRow 无法复用 live projection 的 response 边界。
+        // cold hydration did not bring transcript assistant message identity to
+        // reasoning_start, causing the restored ReasoningRow to be unable to reuse the response boundary of the live projection.
         synthesizeReasoningPart(part, String(message.info.id), push, turnId);
         break;
       case "tool": {
@@ -1241,15 +1251,15 @@ function synthesizeAssistantParts(
   return { resultType, toolCallCount };
 }
 
-// ── model-only 唤醒轮──
-// live 路径的 background wake / goal continuation 以 TurnStarted(inputVisibility=
-// model-only) 开独立轮；冷路径不能把这类 synthetic user 跳过、让其后的 assistant 并进
-// 上一轮——live/cold 必须结构一致。触发 source 由 shared projection policy
-// 唯一维护；compact summary / rewind notice 等非触发型 synthetic context 照旧不开轮。
+// ── model-only wake-up wheel──
+// background wake / goal continuation of live path with TurnStarted(inputVisibility=
+// model-only) to open an independent wheel; the cold path cannot skip this type of synthetic user and allow the subsequent assistant to proceed concurrently
+// Previous round - live/cold must have a consistent structure. Trigger source by shared projection policy
+// The only maintenance: non-triggered synthetic contexts such as compact summary / rewind notice still do not open the wheel.
 
-// ── guide steer 内联──
-// drain 持久化的 user message 带 metadata.turnSteerDelivery：guide=内联当前轮
-// （不是轮边界），queue=独立轮（真实 starter，与 live 切分一致）。legacy 无标记按 queue。
+// ── guide steer inline──
+// drain persistent user message with metadata.turnSteerDelivery: guide=inline current round
+// (not round boundary), queue=independent round (real starter, consistent with live segmentation). legacy unmarked by queue.
 function steerDeliveryOfMessage(message: MessageWithParts): "guide" | "queue" | null {
   if (message.info.role !== "user") return null;
   const metadata = (message.info as { metadata?: unknown }).metadata;
@@ -1259,17 +1269,20 @@ function steerDeliveryOfMessage(message: MessageWithParts): "guide" | "queue" | 
 }
 
 /**
- * 轮边界判定：真实 user starter（guide steer 除外——内联当前轮）或 model-only
- * 唤醒触发（background wake / goal continuation 各开一轮）。
- * 注：live 的「合流」场景（active loop 未结束时通知并入当前轮）冷路径无法从持久
- * 事实区分，统一按边界处理——内容不丢、无气泡，仅轮归属与 live 合流场景有已知差异。
+ * Turn boundary decision: a real user starter (except guide steer, which is inlined into the current turn) or
+ * a model-only
+ * wake trigger (background wake / goal continuation each open a turn).
+ * Note: the live "convergence" case (a notification merging into the current turn while an active loop is still
+ * running) cannot be distinguished from persisted facts on the cold path, so it is uniformly treated as a
+ * boundary: no content is lost and no bubble appears, and only the turn attribution differs from the live
+ * convergence case, a known difference.
  */
 function isTurnBoundaryStarter(message: MessageWithParts): boolean {
   if (isRealUserTurnStarter(message)) {
     return steerDeliveryOfMessage(message) !== "guide";
   }
-  // 启动轮是可见 controlOnly 用户轮，必须作为边界让前一轮输出收集在此停下（一会话一 run 下
-  // 它本就是首条消息，但语义上仍是独立轮边界，不能被并进上一轮）。
+  // The startup wheel is a visible controlOnly user wheel and must be used as a boundary where the previous round of output collection stops (one run per session
+  // It is the first message, but semantically it is still an independent round boundary and cannot be merged into the previous round).
   if (workflowLaunchOfMessage(message)) return true;
   return getConversationModelOnlyTurnTriggerSource(message) !== null;
 }
@@ -1285,9 +1298,9 @@ function backgroundResultOriginMetaOfMessage(
   const backgroundSource = record.backgroundSource;
   const workId = typeof record.workId === "string" ? record.workId.trim() : "";
   const title = typeof record.title === "string" ? record.title.trim() : "";
-  // 三个取值与 BackgroundResultOriginMeta 保持同步（contracts/src/events/session.events.ts）。
-  // "workflow" 是 workflow run（workId ≡ runId）：漏掉它，workflow 的后台结果轮在冷恢复后会
-  // 静默退化成一条无标题 model-only 消息，工具卡→详情页的关联键随之丢失。
+  // The three values ​​​​are synchronized with BackgroundResultOriginMeta (contracts/src/events/session.events.ts).
+  // "workflow" is workflow run (workId ≡ runId): if you miss it, the background result wheel of workflow will be lost after cold recovery.
+  // Silence degenerates into an untitled model-only message, and the associated key of the tool card → details page is lost.
   if (
     (backgroundSource !== "bash" &&
       backgroundSource !== "subagent" &&
@@ -1297,9 +1310,9 @@ function backgroundResultOriginMetaOfMessage(
   ) {
     return undefined;
   }
-  // manifest 载荷（workflowNotification）也要过冷恢复：这里若只回读三基字段，冷恢复后
-  // 载荷就丢了——manifest 条目退回裸标题行。用 shared 的 zod schema 校验，畸形就**只丢载荷**
-  // 保基字段，绝不抛：这是投影重建路径，一个坏载荷不该打挂整条冷恢复。
+  // The manifest payload (workflowNotification) also needs to be restored after cold recovery: if only the three base fields are read back here, after cold recovery
+  // The payload is lost - the manifest entry returns the bare header row. Use shared zod schema verification, if it is malformed, only the payload will be lost.
+  // Keep the base field and never throw it away: This is the projected reconstruction path, and a bad load should not disrupt the entire cold recovery.
   const workflowNotification = parseWorkflowNotificationMeta(record.workflowNotification);
   return {
     backgroundSource,
@@ -1309,7 +1322,7 @@ function backgroundResultOriginMetaOfMessage(
   };
 }
 
-/** 防御性解析 manifest 载荷：畸形 / 缺席都回 undefined（调用方据此让字段缺席），绝不抛。 */
+/** Defensively parses the manifest payload: malformed / absent both return undefined (the caller then leaves the field absent); it never throws. */
 function parseWorkflowNotificationMeta(
   value: unknown,
 ): BackgroundResultOriginMeta["workflowNotification"] {
@@ -1323,8 +1336,8 @@ function isLegacyCompactMaintenanceInput(
   nextMessage: MessageWithParts | undefined,
 ): boolean {
   if (message.info.role !== "user") return false;
-  // 只修复缺 canonical policy 的旧数据；显式 user-visible `/compact` 必须原样下发，
-  // UI 不得再靠文本覆盖 CLI visibility authority。
+  // Only old data with missing canonical policy will be repaired; explicit user-visible `/compact` must be delivered as is.
+  // The UI must no longer rely on text to override the CLI visibility authority.
   if (message.info.visibility !== undefined || message.info.semantics !== undefined) return false;
   const text = textOfMessage(message.parts).trim();
   if (text !== "/compact" && !text.startsWith("/compact ")) return false;
@@ -1351,7 +1364,7 @@ interface TurnOutputCollection {
   turnEndedAtMs: number;
 }
 
-/** 收集一轮的 assistant 输出（直到下一个轮边界）；普通轮与 preface 轮共用。 */
+/** Collects one turn's assistant output (up to the next turn boundary); shared by ordinary turns and preface turns. */
 function collectTurnOutput(options: {
   messages: readonly MessageWithParts[];
   startIndex: number;
@@ -1368,8 +1381,8 @@ function collectTurnOutput(options: {
   let index = options.startIndex;
   let resultType: TurnResultForHydration = "success";
   let failure: TurnOutputCollection["failure"];
-  // 被 stream recovery 作废的 tail 若是本轮最后一条 assistant，说明恢复请求没有落盘
-  //（进程在重发前退出），本轮按 interrupted 收口；后续 assistant 出现则由它决定结果。
+  // If the tail invalidated by stream recovery is the last assistant in this round, it means that the recovery request has not been placed.
+  //(The process exits before resending). Press interrupted to end this round; subsequent assistants will determine the result if they appear.
   let awaitingStreamRecovery = false;
   let toolCallCount = 0;
   let historyRoundCount = 0;
@@ -1377,9 +1390,9 @@ function collectTurnOutput(options: {
   while (index < messages.length && !isTurnBoundaryStarter(messages[index]!)) {
     const message = messages[index]!;
     if (isProviderContextOnlyAssistant(message)) {
-      // selection side chat 会把继承的 assistant 历史标成 model-only，
-      // 旧 cold hydration 却只隐藏 user carrier，随后把 assistant 当作 preface/上一轮输出合成，
-      // 导致副屏首次打开和冷恢复都泄漏父时间线。统一服从 projection policy，整条跳过。
+      // Selection side chat will mark the inherited assistant history as model-only.
+      // The old cold hydration only hides the user carrier, and then uses the assistant as the preface/previous round of output synthesis.
+      // As a result, the parent timeline is leaked when the secondary screen is first opened and cold restored. Uniformly obey the projection policy and skip the entire line.
       index += 1;
       continue;
     }
@@ -1401,14 +1414,14 @@ function collectTurnOutput(options: {
       index += 1;
       continue;
     }
-    // guide steer：内联进当前轮——合成 TurnSteerDrained（带 drainedInputs），
-    // 投影按 delivery=guide 走内联 userInput 行，与 live 同一归约入口。
+    // guide steer: inline into the current round - synthesized TurnSteerDrained (with drainedInputs),
+    // The projection takes the inline userInput line according to delivery=guide, which is the same reduction entry as live.
     if (message.info.role === "user" && steerDeliveryOfMessage(message) === "guide") {
       const intent = inputIntentOfMessage(message);
-      // cold guide 过去只凭 messageId 临时拼 pendingInputId，且没有把
-      // transcript 中已持久化的 ConversationInputIntent 带回事件；恢复后 row 会丢
-      // sourceCommandId/clientId/attachments，命令去重与展示也不再和 live 等价。
-      // 新数据优先复用原 queueItemId，legacy 才使用可诊断的 hydration fallback。
+      // In the past, cold guide only used messageId to temporarily spell pendingInputId, and did not
+      // The persisted ConversationInputIntent in transcript brings back the event; the row will be lost after restoration
+      // sourceCommandId/clientId/attachments, command deduplication and display are no longer equivalent to live.
+      // New data will reuse the original queueItemId first, and legacy will use the diagnosable hydration fallback.
       const pendingInputId = intent?.queueItemId ?? `hydrate-steer-${String(message.info.id)}`;
       push(
         SessionEventType.TurnSteerDrained,
@@ -1448,7 +1461,7 @@ function collectTurnOutput(options: {
       failure = {
         type: message.info.error.name,
         message: (typeof data?.message === "string" && data.message) || message.info.error.name,
-        // 旧 cold hydration 只把归因留在 data 内，TurnError 投影无法读取，重启后退化成 runtime。
+        // The old cold hydration only leaves the attribution in data, and the TurnError projection cannot be read, and it degrades to runtime after restarting.
         ...(attribution ? { attribution } : {}),
         ...(typeof data?.retryable === "boolean" ? { retryable: data.retryable } : {}),
         ...(message.info.error.data !== undefined ? { data: message.info.error.data } : {}),
@@ -1460,9 +1473,9 @@ function collectTurnOutput(options: {
       index += 1;
       continue;
     }
-    // Host 不能从 toolCallCount 或裁剪后的 history 长度反推模型轮次。
-    // 新 transcript 在最终 assistant anchor 固化精确值；旧 transcript 才按独立
-    // assistant history 条目做兼容计数。
+    // Host cannot infer model rounds from toolCallCount or trimmed history length.
+    // The new transcript is fixed to the exact value of the final assistant anchor; the old transcript is independent
+    // Assistant history entries are counted for compatibility.
     historyRoundCount = message.info.anchor?.historyRoundCount ?? historyRoundCount + 1;
     const messageEnd = messageEndAtMs(message);
     if (messageEnd !== undefined) {
@@ -1483,10 +1496,10 @@ function collectTurnOutput(options: {
       message.info.finish?.trim().toLowerCase() === "length" &&
       synthesized.toolCallCount === 0
     ) {
-      // live ProductProjection 能从逐请求 ModelComplete 识别 output-token
-      // Continue，但 cold transcript 过去只在整轮末尾合成一次 end_turn，导致刷新后
-      // 同一句又退化成多条 assistant row。持久化 finish 是请求终止事实；用零 usage
-      // 的 hydration-only ModelComplete 恢复资格，不重复累计 token 或注入 Continue user。
+      // live ProductProjection can identify output-token from per-request ModelComplete
+      // Continue, but cold transcript only synthesized end_turn once at the end of the entire round in the past, causing the refresh
+      // The same sentence degenerates into multiple assistant rows. Persistence finish is the request termination fact; use zero usage
+      // The hydration-only ModelComplete restores eligibility without repeating accumulated tokens or injecting Continue user.
       push(
         SessionEventType.ModelComplete,
         {
@@ -1505,8 +1518,8 @@ function collectTurnOutput(options: {
         messageEnd,
       );
     }
-    // session_entry 源的 goal verify：锚定本条 assistant 的事实紧随其后落位
-    //（与 timeline part 同 key 去重，先到先得）。
+    // goal verify of the session_entry source: the fact anchoring this assistant is immediately followed by
+    //(Same key as timeline part to eliminate duplicates, first come first served).
     const anchored = options.goalVerificationsByAnchor.get(String(message.info.id));
     if (anchored) {
       for (const fact of anchored) {
@@ -1529,8 +1542,10 @@ function collectTurnOutput(options: {
 }
 
 /**
- * 把 transcript（按时间/parentID 顺序的 MessageWithParts）合成为归约等价的 SessionEvent 序列。
- * 轮次分组：user message 开一轮，紧随其后的 assistant message（同轮输出）直到下一个 user message。
+ * Reduce a transcript (MessageWithParts in time / parentID order) into a reduction-equivalent SessionEvent
+ * sequence.
+ * Turn grouping: a user message opens a turn, and the assistant messages that immediately follow (the output of
+ * the same turn) run until the next user message.
  */
 export function synthesizeEventsFromMessages(
   messages: readonly MessageWithParts[],
@@ -1554,7 +1569,7 @@ export function synthesizeEventsFromMessages(
       sessionId,
       turnId: turnId as TurnId | undefined,
       type,
-      // source timestamp 仅恢复 row.createdAt 等展示事实；事件全序始终由 sequenceNumber 裁决。
+      // source timestamp only restores display facts such as row.createdAt; the total order of events is always determined by sequenceNumber.
       timestamp: new Date(sourceTimestampMs ?? baseMs + seq),
       traceId,
       sequenceNumber: seq,
@@ -1562,7 +1577,7 @@ export function synthesizeEventsFromMessages(
     });
   };
 
-  // 历史消息不声明模型容量；调用方未知时保持未知，不能合成默认分母。
+  // Historical messages do not declare model capacity; they remain unknown when the caller is unknown and cannot be synthesized into the default denominator.
   const contextWindow = options.contextWindow;
   push(SessionEventType.SessionCreated, {
     mode: "default",
@@ -1601,10 +1616,10 @@ export function synthesizeEventsFromMessages(
     goalVerificationsByAnchor.set(fact.anchorAssistantMessageId, list);
   }
 
-  // MC-cold：modelChange marker 由投影在 TurnStarted 时
-  // 对比 lastTurnModel 与 config 生成；冷恢复按每轮持久化选型事实在 TurnStarted 前
-  // 合成 ModelSelected——普通首轮静默，显式 source-less 与后续 A→B 边界恒重建。
-  // 该合成事件带 HYDRATION_TRACE_ID，不声明 种子权威（见 onModelSelected）。
+  // MC-cold: modelChange marker is projected on TurnStarted
+  // Compare lastTurnModel and config generation; cold recovery is based on each round of persistence selection fact before TurnStarted
+  // Synthetic ModelSelected—normal first-round silence, explicit source-less and subsequent A→B boundary constant reconstruction.
+  // This synthetic event takes HYDRATION_TRACE_ID and does not declare seed authority (see onModelSelected).
   let lastSelectedModelKey: string | null = null;
   let pendingTimelineModel: HydratedTimelineModel | null = null;
   const selectTurnModel = (selection: HydratedTimelineModel | null): void => {
@@ -1644,9 +1659,9 @@ export function synthesizeEventsFromMessages(
     turnEndedAtMs: number;
   }): void => {
     if (input.failure) {
-      // provider 首字前失败只持久化在 assistant.info.error，旧 cold 路径
-      // 折成 TurnComplete(error_during_execution)，导致 lastError 的 code/message 全丢。
-      // 这里复用 live 的 TurnError 状态机，避免另建 cold-only 错误 reducer。
+      // Failure before the first word of provider is only persisted in assistant.info.error, old cold path
+      // Folded into TurnComplete(error_during_execution), causing all the code/message of lastError to be lost.
+      // The live TurnError state machine is reused here to avoid building another cold-only error reducer.
       push(
         SessionEventType.TurnError,
         { error: input.failure, turnPhase: "model" },
@@ -1661,8 +1676,8 @@ export function synthesizeEventsFromMessages(
         content: "",
         stopReason: "end_turn",
         querySource: "main_turn",
-        // 冷恢复曾把合成事件的窗口固定成 20 万，覆盖同一模型在
-        // workspace provider registry 中的 1M 能力；这里沿用调用方解析出的当前模型真值。
+        // Cold recovery once fixed the window of synthetic events to 200,000, covering the same model in
+        // 1M capability in the workspace provider registry; the current model truth value parsed by the caller is used here.
         contextWindow,
         usage: {
           inputTokens: 0,
@@ -1682,8 +1697,8 @@ export function synthesizeEventsFromMessages(
         tokenCount: 0,
         toolCallCount: input.toolCallCount,
         historyRoundCount: input.historyRoundCount,
-        // 冷恢复是从 message transcript 反向合成事件，不能像 live
-        // 事件一样依赖运行时 startedAt；固定 0 会让历史轮次显示成 1 秒。
+        // Cold recovery is a reverse synthesis of events from message transcript and cannot be used like live
+        // The event also depends on the runtime startedAt; fixing it to 0 will cause the historical rounds to be displayed as 1 second.
         duration: Math.max(0, input.turnEndedAtMs - input.turnStartedAtMs),
         resultType: input.resultType,
       },
@@ -1699,8 +1714,8 @@ export function synthesizeEventsFromMessages(
       continue;
     }
     if (isLegacyCompactMaintenanceInput(message, messages[index + 1])) {
-      // 旧手动 compact 的 user 宿主只是维护命令，不是 real-user intent；跳过宿主后，
-      // 下一条 assistant compact fact 会走 preface model-only 轮并生成 canonical marker。
+      // The user host of the old manual compact is just a maintenance command, not a real-user intent; after skipping the host,
+      // The next assistant compact fact will go through the preface model-only round and generate canonical markers.
       index += 1;
       continue;
     }
@@ -1720,19 +1735,19 @@ export function synthesizeEventsFromMessages(
     }
     const timelineModel = modelChangeToModelOf(message);
     if (timelineModel) {
-      // model_change timeline part 是已接受轮的持久边界事实；
-      // 宿主消息不能完全跳过、只靠后续 user message model 快照碰巧重建：
-      // 快照缺失/滞后时 marker 就会消失，所以先消费显式 toModel，
-      // 下一个 TurnStarted 仅使用该权威选型，不再被滞后快照覆盖。
+      // model_change timeline part is a persistent boundary fact for accepted rounds;
+      // The host message cannot be completely skipped and can only be rebuilt by chance on subsequent user message model snapshots:
+      // The marker will disappear when the snapshot is missing/lags, so consume the explicit toModel first.
+      // The next TurnStarted only uses this authoritative selection and is no longer overwritten by the lagging snapshot.
       recordTimelineModel(timelineModel);
       index += 1;
       continue;
     }
     const workflowLaunch = workflowLaunchOfMessage(message);
     if (workflowLaunch) {
-      // 中枢直接启动的启动轮：可见 controlOnly 用户轮，冷恢复须与活投影同形——同一 messageId、
-      // origin workflowLaunch（由 inputSource 映射）、同一份 workflowLaunch 元数据、无助手输出。
-      // 放在 real-user 分支之前，避免这条 synthetic user 被 hiddenSynthetic 跳过。
+      // The startup wheel started directly by the center: visible controlOnly user wheel, cold recovery must be the same shape as the live projection - the same messageId,
+      // origin workflowLaunch (mapped by inputSource), same workflowLaunch metadata, no helper output.
+      // Place it before the real-user branch to prevent this synthetic user from being skipped by hiddenSynthetic.
       turnNumber += 1;
       const turnId = `hydrate-turn-${turnNumber}`;
       lastTurnId = turnId;
@@ -1743,11 +1758,11 @@ export function synthesizeEventsFromMessages(
         SessionEventType.TurnStarted,
         {
           turnNumber,
-          // 文本仍进 userInput.text（旧客户端 / TUI 的降级呈现）；GUI 用元数据画启动卡。
+          // Text still goes into userInput.text (downgraded rendering of old client/TUI); GUI uses metadata to draw launch cards.
           input: launchText,
-          // 持久 messageId 是该轮权威 target，与活投影同用，否则 productTurn 身份冷热分叉。
+          // The persistent messageId is the authoritative target of this round, and is used with the live projection, otherwise the productTurn identity is hot and cold bifurcated.
           messageId: String(message.info.id),
-          // 启动轮不执行 Agent（controlOnly，无工时）；source 驱动 origin=workflowLaunch。
+          // The startup wheel does not execute Agent (controlOnly, no work hours); source driver origin=workflowLaunch.
           executionKind: "controlOnly",
           inputSource: "workflow_launch",
           workflowLaunch,
@@ -1781,10 +1796,10 @@ export function synthesizeEventsFromMessages(
       continue;
     }
     if (!isRealUserTurnStarter(message)) {
-      // model-only 唤醒轮：background wake /
-      // goal continuation 触发的 synthetic user 开独立 model-only 轮（无可见气泡，
-      // 通知文本不进 rows），其后 assistant 归本轮——与 live 的 TurnStarted
-      // (inputVisibility=model-only) 结构一致，不再并进上一轮。
+      // model-only wake wheel: background wake /
+      // synthetic user triggered by goal continuation opens independent model-only round (no visible bubbles,
+      // The notification text does not enter rows), and then the assistant returns to the current round - TurnStarted with live
+      // (inputVisibility=model-only) The structure is consistent and will not advance to the previous round.
       const wakeSource = getConversationModelOnlyTurnTriggerSource(message);
       if (wakeSource) {
         turnNumber += 1;
@@ -1796,17 +1811,17 @@ export function synthesizeEventsFromMessages(
           SessionEventType.TurnStarted,
           {
             turnNumber,
-            // cold hydration 曾把 model-only background wake 的原文清空，
-            // 导致 ProductProjection 即使能消费 task-notification，恢复时也拿不到
-            // tool-use-id 与失败详情。输入仍是 model-only，不会生成用户气泡。
+            // cold hydration once cleared the original text of model-only background wake,
+            // As a result, even if ProductProjection can consume task-notification, it cannot be obtained during recovery.
+            // tool-use-id and failure details. The input is still model-only and no user bubbles are generated.
             input: wakeSource === "background_task" ? textOfMessage(message.parts) : "",
             inputVisibility: "model-only",
             inputSource: wakeSource,
             ...(wakeSource === "background_task"
               ? { originMeta: backgroundResultOriginMetaOfMessage(message) }
               : {}),
-            // model-only trigger 同样是持久 user 实体；若不传 messageId，
-            // cold 会退化到 hydrate-turn-N，live/cold productTurn 身份再次分叉。
+            // model-only trigger is also a persistent user entity; if messageId is not passed,
+            // cold will degenerate to hydrate-turn-N, and the live/cold productTurn identity will fork again.
             messageId: String(message.info.id),
           },
           turnId,
@@ -1838,11 +1853,11 @@ export function synthesizeEventsFromMessages(
         });
         continue;
       }
-      // assistant-head-skip 修复（「assistant 回复整段消失」冷路径向量）：
-      // 首条真实用户消息之前的消息不能一律跳过——会话头部是 rewind notice /
-      // compact summary 等非真实用户消息时，其后 assistant 回复刷新后会整段消失。
-      // 因此为头部 assistant 输出合成 preface model-only 轮（无可见 user 气泡，
-      // 内容照常渲染）。user 角色的非触发型 synthetic context 仍按设计不可见，照旧跳过。
+      // assistant-head-skip fix ("assistant recovery entire section disappears" cold path vector):
+      // Messages before the first real user message cannot be skipped - the session header is rewind notice /
+      // When a non-real user message such as compact summary is used, the entire paragraph of the subsequent assistant reply will disappear after refreshing.
+      // So for the head assistant output the synthesized preface model-only wheel (no visible user bubble,
+      // The content is rendered as usual). The non-triggered synthetic context of the user role is still invisible by design and is still skipped.
       if (message.info.role !== "assistant" || !assistantMessageHasSynthesizableContent(message)) {
         index += 1;
         continue;
@@ -1892,8 +1907,8 @@ export function synthesizeEventsFromMessages(
     const executionKind = executionKindOfMessage(message);
     const epilogueStart = epilogueStartOfMessage(message);
     const turnStartedAtMs = messageCreatedAtMs(message) ?? baseMs + seq;
-    // timeline part 与下一个 accepted turn 之间可以夹着 legacy synthetic
-    // context，不能靠「紧邻前一条」猜测；持有显式边界直到真正开轮。
+    // Legacy synthetic can be sandwiched between the timeline part and the next accepted turn
+    // context, cannot be guessed based on the "immediately preceding one"; explicit boundaries are held until the actual start of the round.
     selectAcceptedTurnModel(turnModelSelectionOfUserMessage(message));
     push(
       SessionEventType.TurnStarted,
@@ -1901,10 +1916,10 @@ export function synthesizeEventsFromMessages(
         turnNumber,
         input: userText,
         ...(epilogueStart === undefined ? {} : { epilogueStart }),
-        // 根因：cold hydration 过去只重建可见 user row，遗漏持久 messageId，导致
-        // 同一条历史消息在 UI 中可见却无法被 edit/rewind 命令寻址。真实 user
-        // transcript message 就是该 row 的权威 target，必须与 live TurnStarted
-        // 使用同一个 messageId 字段进入 ProductProjection。
+        // Root cause: cold hydration used to only rebuild the visible user row, leaving out the persistent messageId, resulting in
+        // The same historical message is visible in the UI but cannot be addressed by the edit/rewind command. real user
+        // transcript message is the authoritative target of the row and must be consistent with live TurnStarted
+        // Use the same messageId field to enter ProductProjection.
         messageId: String(message.info.id),
         ...(executionKind ? { executionKind } : {}),
         ...(message.info.anchor?.sourceCommandId
@@ -1943,8 +1958,8 @@ export function synthesizeEventsFromMessages(
     });
   }
 
-  // anchor 缺失或指向未在 transcript 中出现的消息的 entry 事实：落到已知时间线末尾
-  //（已按 key 去重，锚定成功的在上面循环里已发射；不猜 timestamp，不静默丢）。
+  // The anchor is missing or points to an entry that does not appear in the transcript. Fact: falls to the end of the known timeline
+  //(The key has been pressed to remove duplicates. If the anchor is successful, it will be launched in the above loop; do not guess the timestamp and do not lose it silently).
   for (const fact of entryFacts) {
     pushGoalVerificationFact(fact, emittedGoalVerifications, push, lastTurnId);
   }

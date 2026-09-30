@@ -15,17 +15,20 @@ import type { PresetLabels } from "@/app-shell/workflow-artifacts/presets/index.
 import type { WorkflowRunArtifactView } from "@/hooks/useWorkflowRunArtifacts.js";
 
 /**
- * 预置看板的正文。
+ * The body of a preset board.
  *
- * ⚠ 术语：artifact = 脚本经 `artifact.*` 发布给用户看的产出，不是引擎内部那个「脚本顶层返回值」
- * 的同名词。
+ * ⚠ Terminology: an artifact = the output a script publishes to the user through `artifact.*`; it
+ * is not the homonym the engine uses internally for the "top-level return value of a script".
  *
- * 曾与侧板的产物卡同住一个文件；卡换成产物药丸之后，
- * 这里只剩侧板小预览与全尺寸 tab 共用的这一个分派。
+ * This used to share a file with the side pane's artifact card; once the card became an artifact
+ * pill, only this one dispatch — shared by the side pane's small preview and the full-size tab —
+ * was left.
  */
 /**
- * 按 kind 把 spec + 条目交给四个渲染器之一。侧板小卡（`compact`）与全尺寸 tab 共用它——
- * 两处若各写一份 switch，迟早出现「小卡画了图、大图什么也没画」这种只在一处发生的偏斜。
+ * Hands the spec + entries to one of four renderers based on kind. The side pane's small card
+ * (`compact`) and the full-size tab share it — if each site wrote its own switch, a skew like "the
+ * small card drew the diagram while the large one drew nothing", which happens at only one of the
+ * two sites, would show up eventually.
  */
 export function ArtifactPresetBody({
   artifact,
@@ -40,19 +43,25 @@ export function ArtifactPresetBody({
   items: readonly ArtifactItem[];
   labels: PresetLabels;
   compact?: boolean;
-  /** spec 在场但**解析不出来**时的降级文案；缺席即整块不渲染。 */
+  /**
+   * Fallback copy for when the spec is present but **cannot be parsed**; when absent, the whole
+   * block does not render.
+   */
   invalidLabel?: string;
-  /** spec **整个不在场**时的文案；缺席即整块不渲染（见下面那段关于加载中的注释）。 */
+  /**
+   * Copy for when the spec is **entirely absent**; when absent, the whole block does not render
+   * (see the comment about loading below).
+   */
   missingLabel?: string;
   className?: string;
 }) {
   if (!isArtifactPresetKind(artifact.kind)) return null;
-  // 「spec 不在场」与「spec 坏了」必须分开说。
+  // "spec is not present" and "spec is broken" must be said separately.
   //
-  // spec 只有 journal 查询带得回来（活投影刻意不带它），所以**每次打开面板的头几帧**
-  // spec 都还是 undefined。两者合并成一句「无法渲染」的结果，是每个看板在加载期间都先
-  // 闪一次错误文案。所以：不在场 ⇒ 交给调用方决定（侧板小卡传 undefined，保持安静；
-  // 全尺寸 tab 只在元数据**已经读完**之后才传 missingLabel）。
+  // spec can only be brought back by journal query (living projection deliberately does not bring it), so **the first few frames of the panel are opened each time**
+  // spec is still undefined. The result of merging the two into a sentence of "unable to render" is that each Kanban board is first
+  // Flash the wrong copy once. So: Not present ⇒ Leave it to the caller to decide (the side panel card passes undefined, keep quiet;
+  // Full-size tab (missingLabel is only passed after the metadata has been read).
   if (artifact.spec === undefined) {
     return missingLabel === undefined ? null : (
       <p
@@ -74,9 +83,9 @@ export function ArtifactPresetBody({
       </p>
     );
   }
-  // 四个 `as` 都由**同一个 kind** 担保：`parseArtifactPresetSpec(kind, …)` 是按 kind 校验的，
-  // 它认下来的形状就是该 kind 的 spec。4b 的这个函数没有按 kind 的重载（只有
-  // `applyArtifactItems` 有），所以这层收窄只能在调用方做。
+  // The four `as` are all guaranteed by the same kind: `parseArtifactPresetSpec(kind, …)` is verified by kind,
+  // The shape it recognizes is the spec of that kind. This function of 4b does not have overloading by kind (only
+  // `applyArtifactItems` has), so this layer of narrowing can only be done on the caller side.
   const shared = { compact, items, labels, className };
   switch (artifact.kind) {
     case "chart":

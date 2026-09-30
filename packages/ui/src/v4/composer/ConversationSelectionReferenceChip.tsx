@@ -22,7 +22,7 @@ export function ConversationSelectionReferenceChip({
   const { intl } = useZCodeIntl();
   if (references.length === 0) return null;
   const filePath = references.length === 1 ? references[0]?.path : undefined;
-  // 文件引用沿用共用 pill，但不能再被「对话引用」计数隐藏来源。
+  // File references still use the shared pill, but can no longer be counted as hidden sources by "Conversation References".
   const label = filePath
     ? intl.formatMessage(
         { id: "chat.selections.file" },

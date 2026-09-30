@@ -20,9 +20,9 @@ export interface IMcpSyncService {
     request?: LoadCliMcpFromUserDirectoryRequest,
   ): Promise<LoadCliMcpFromUserDirectoryResult>;
   /**
-   * workspace MCP server 运行态状态列表（原 UI 直调 zcodeAgentService 的
-   * mcp/list）。真实 connect/listTools 检查必须发生在 agent 进程（PATH/cwd 是
-   * workspace 环境），本服务只是 UI 的注入面——mcp/list 词的 host 消费收拢到实现一处。
+   * Workspace MCP server running status list (original UI directly adjusts zcodeAgentService’s
+   * mcp/list). The real connect/listTools check must happen in the agent process (PATH/cwd is
+   * workspace environment), this service is just the injection surface of the UI - the host consumption of mcp/list words is gathered into one implementation.
    */
   listWorkspaceMcpServerStatuses(params: {
     workspacePath: string;

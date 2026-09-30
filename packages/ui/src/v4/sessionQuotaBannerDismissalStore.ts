@@ -11,7 +11,7 @@ function storageKey(sessionId: string, dismissKey: string): string {
   return `${sessionId}\u0000${dismissKey}`;
 }
 
-/** Renderer 生命周期内的 session-scoped dismissal；不持久化、不跨客户端同步。 */
+/** Session-scoped dismissal within the Renderer life cycle; not persistent and not synchronized across clients. */
 function createSessionQuotaBannerDismissalStore(
   maxEntries = 256,
 ): SessionQuotaBannerDismissalStore {

@@ -71,8 +71,8 @@ function buildTableCellElements(
     return row.cells.flatMap((cell, cellIndex) => {
       const gridSpan = Math.max(1, cell.gridSpan || 1);
       if (cell.hMerge || cell.vMerge) {
-        // 原因：pptx-renderer 对纵向 merge continuation 仍推进 gridSpan，横向
-        // continuation 则不推进；直接使用物理 cellIndex 会把后续 overlay 左移。
+        // Reason: pptx-renderer still advances gridSpan for vertical merge continuation, horizontal
+        // The continuation is not advanced; using the physical cellIndex directly will move the subsequent overlay to the left.
         if (cell.vMerge && !cell.hMerge) {
           columnIndex += gridSpan;
         }
@@ -141,8 +141,8 @@ export function buildPresentationPageElements(options: {
     }
     const pathSegments = entry.nodePath.split("/");
     const nodesSegmentIndex = pathSegments.indexOf("nodes");
-    // buildTextIndex 的真实路径是 slides/{slide}/nodes/{groupId}/children/...；
-    // 兼容旧测试/调用方的首段 groupId，避免所有组内文本都错误落到 zIndex 0。
+    // The real path of buildTextIndex is slides/{slide}/nodes/{groupId}/children/...;
+    // Compatible with the first groupId of the old test/caller to prevent all text in the group from incorrectly falling into zIndex 0.
     const groupId =
       (nodesSegmentIndex >= 0 ? pathSegments[nodesSegmentIndex + 1] : undefined) ?? pathSegments[0];
     const zIndex = Math.max(

@@ -1,8 +1,9 @@
 /**
- * 资源样本来源注册表的类型与调度。
+ * Types and scheduling for the resource sample source registry.
  *
- * 每个来源是一个独立文件，只往注册表里加一行；来源之间互不知情，
- * 单个来源采样失败只丢它自己的样本（失败即丢，不阻塞业务）。
+ * Each source lives in its own file and only adds a line to the registry; sources know nothing
+ * about each other, and a single source that fails to sample loses only its own sample (dropped on
+ * failure, never blocking the product).
  */
 
 import type { ProcessResourceRole } from "@zcode/shared";
@@ -11,59 +12,66 @@ import type { DeviceResourceSample } from "./processResourceSystemWindowAggregat
 import type { ProcessRoleSample } from "./processResourceWindowAggregator.js";
 
 export interface ProcessResourceSampleContext {
-  /** 本次 tick 的墙钟时间，来源共用同一个读数，避免同 tick 内时间漂移。 */
+  /** Wall-clock time for this tick, shared by every source so time cannot drift within a tick. */
   now: number;
   addRoleSample: (sample: ProcessRoleSample) => void;
   /**
-   * 只贡献 heap 读数、不构成完整角色样本的来源用这个钩子
-   * （host / scheduler 自采、renderer）。heap 会并入同一 tick 内该角色的完整样本；
-   * 该角色本 tick 没有完整样本时这次读数丢弃——heap 只是角色事件的附加维度，不足以独立开窗。
+   * Sources that only contribute heap readings without forming a complete role sample use this hook
+   * (host / scheduler self-sampling, renderer). The heap reading is folded into the complete sample
+   * for that role within the same tick; when that role has no complete sample in this tick the
+   * reading is dropped — heap is only an extra dimension of a role event, not enough to open a
+   * window on its own.
    */
   addRoleHeapSample: (role: ProcessResourceRole, heapUsedKb: number) => void;
   /**
-   * 本 tick 内能被 main 精确枚举的应用进程合计（目前只有 Chromium 体系）。
-   * 设备级来源在第二阶段读它算应用总量，因此这里的合计不能和外部样本入口重复计数。
+   * The total of the app processes main can enumerate exactly within this tick (currently only the
+   * Chromium family). Device-level sources read it in the second phase to compute the app total, so
+   * the total here must not double-count the external sample entry points.
    */
   addAppProcessTotals: (totals: AppResourceTotals) => void;
   onError?: (sourceId: string, error: unknown) => void;
 }
 
 /**
- * 设备级采样（第二阶段）的上下文：依赖同一 tick 内第一阶段已经采到的事实。
- * 两个阶段分开跑，来源之间就不需要靠调用顺序或模块级变量传值。
+ * Context for device-level sampling (second phase): it relies on facts the first phase already
+ * collected within the same tick. Running the two phases separately means sources no longer have
+ * to pass values through call order or module-level variables.
  */
 export interface ProcessResourceDeviceSampleContext {
   now: number;
-  /** 第一阶段的精确合计；本 tick 没有任何来源贡献时为 null，设备样本不产生。 */
+  /** The exact total from the first phase; null when no source contributed in this tick, in which case no device sample is produced. */
   appProcessTotals: AppResourceTotals | null;
   addDeviceSample: (sample: DeviceResourceSample) => void;
   onError?: (sourceId: string, error: unknown) => void;
 }
 
 export interface ProcessResourceSampleSource {
-  /** 来源标识，仅用于日志与注册表唯一性校验，不进入事件属性。 */
+  /** Source identifier, used only for logging and registry uniqueness checks; never an event property. */
   readonly id: string;
   /**
-   * main 每 10 秒 tick 调用，把本来源当前的瞬时事实写进当前窗口。
+   * Called by main on every 10-second tick to write this source's current instantaneous facts into
+   * the open window.
    *
-   * push 型来源（host/scheduler heap、renderer heap、CLI、MCP）同样用这个钩子：
-   * 各自导出一个 `ingestXxx(sample)` 供消息分发点调用，把最近一次样本存在来源模块内，
-   * 然后在 `sample()` 里交给聚合器。这样窗口的切分权始终只在 main 的 flush 时钟上，
-   * 来源之间不需要知道彼此，注册表也只加一行。
+   * Push-style sources (host/scheduler heap, renderer heap, CLI, MCP) use the same hook: each one
+   * exports an `ingestXxx(sample)` for the message dispatch point to call, keeps the most recent
+   * sample inside the source module, and hands it to the aggregator in `sample()`. Window
+   * boundaries therefore stay solely on main's flush clock, sources need no knowledge of each
+   * other, and the registry only grows by a line.
    */
   sample?: (context: ProcessResourceSampleContext) => void;
   /**
-   * 需要「同一 tick 内其他来源已采到的事实」的来源用这个钩子（`perf_system_window`）。
-   * 同一 tick 内先跑完全部 `sample`，再跑全部 `sampleDevice`。
+   * Sources that need "facts other sources already collected within the same tick" use this hook
+   * (`perf_system_window`). Within a tick every `sample` runs first, then every `sampleDevice`.
    */
   sampleDevice?: (context: ProcessResourceDeviceSampleContext) => void;
   /**
-   * 正常退出排空残窗时调用：把「已经收到、但还没赶上自己交付节拍」的读数补交给窗口
-   * （CLI，MCP 同理）。**只搬已有事实，不做新采样**——退出路径不允许再读
-   * `getAppMetrics()` 或起任何探针。
+   * Called while a normal exit drains the leftover window: it hands readings that "arrived but
+   * missed their own delivery beat" to the window in time (CLI does the same, as does MCP).
+   * **It only moves facts that already exist and never samples anew** — the exit path is not
+   * allowed to read `getAppMetrics()` again or start any probe.
    */
   flushPending?: (context: ProcessResourceSampleContext) => void;
-  /** 采样停止或重启时清空来源自身缓存的瞬时状态，避免跨 session 串数据。 */
+  /** Clears the source's own cached instantaneous state when sampling stops or restarts, so data never leaks across sessions. */
   reset?: () => void;
 }
 
@@ -113,7 +121,7 @@ export function resetProcessResourceSampleSources(
     try {
       source.reset?.();
     } catch {
-      // reset 只负责丢弃瞬时状态，失败不影响其他来源与后续采样。
+      // reset is only responsible for discarding the transient state, and failure will not affect other sources and subsequent sampling.
     }
   }
 }

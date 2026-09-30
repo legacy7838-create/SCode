@@ -4,36 +4,51 @@ import type {
 } from "@/components/workflow-timeline/timeline-model.js";
 
 /**
- * 脊线的排布：把时间线模型翻译成**每一节**
- * 要画的竖轨与曲线。纯函数、只有下标与像素偏移，没有 React、没有 DOM——渲染件照着画就行。
+ * Spine layout: translates the timeline model into the vertical rails and curves that **each
+ * segment** has to draw. A pure function over indices and pixel offsets only, no React and no DOM —
+ * renderers just draw what it says.
  *
- * 轨道 t 的竖轨在 `x = 21 + 12t`；带里的分支轨道从带首节的顶上 13px 用分叉曲线离开主轨，一路
- * 竖下来，到汇合站的节顶（没有汇合站就到带末节的节底）再用镜像的曲线回到主轨。分支站的节里主轨
- * 照常穿过，墨是横跨它的那条主线段的墨——控制流确实从那里流过，只是这一节的灯不在主线上。
+ * The vertical rail of track t sits at `x = 21 + 12t`; a branch track inside a band leaves the main
+ * rail 13px below the top of the band's first segment with a fork curve, runs straight down to the
+ * top of the merge station's segment (with no merge station, to the bottom of the band's last
+ * segment), then returns to the main rail with a mirrored curve. In a branch station's segment the
+ * main rail still passes through as usual, and the ink is that of the main-line segment spanning it
+ * — control flow really does run through there, it is only this segment's lamp that is not on the
+ * main line.
  *
- * 轨道段一律**成对**查（`from → to`），不按 `from` 索引：带里一站可以同时是双线段的左端与主线段
- * 的左端，`from` 不再唯一。
+ * Track segments are always looked up in **pairs** (`from → to`), never indexed by `from`: inside a
+ * band one station can be the left end of a dual-line segment and the left end of a main-line
+ * segment at the same time, so `from` is no longer unique.
  */
 
-/** 分叉 / 合流曲线占的高度。 */
+/** Height the fork / merge curves occupy. */
 const SPINE_CURVE_PX = 13;
 
-/** 一段竖轨。`from` / `to` 是对默认起止的覆盖（px，分别距节顶 / 节底），给曲线让位时才有。 */
+/**
+ * A vertical rail segment. `from` / `to` override the default start and end (px, measured from the
+ * segment top / bottom respectively) and exist only to make room for curves.
+ */
 export interface SpineRailPiece {
   track: number;
   ink: TimelineInk;
-  /** `above` = 节顶到灯，`below` = 灯到节底，`full` = 整节穿过。 */
+  /**
+   * `above` = segment top to lamp, `below` = lamp to segment bottom, `full` = through the whole
+   * segment.
+   */
   position: "above" | "below" | "full";
   from?: number;
   to?: number;
 }
 
-/** 分支轨道离开 / 回到主轨的那 13px。 */
+/** The 13px by which a branch track leaves / rejoins the main rail. */
 export interface SpineCurvePiece {
   kind: "fork" | "merge";
   track: number;
   ink: TimelineInk;
-  /** 贴节顶还是贴节底（没有汇合站时合流画在带末节的底上）。 */
+  /**
+   * Whether it hugs the segment top or the segment bottom (with no merge station, the merge is
+   * drawn at the bottom of the band's last segment).
+   */
   at: "top" | "bottom";
 }
 
@@ -46,7 +61,10 @@ export function spineSections(model: WorkflowTimelineModel): SpineSection[] {
   const sections: SpineSection[] = model.stations.map(() => ({ curves: [], rails: [] }));
   const trackAt = (i: number): number => model.stations[i]?.track ?? 0;
   const plain = model.rails.filter((rail) => rail.kind === undefined);
-  /** 横跨第 i 节、两端都在轨道 t 上的那条平轨（主轨穿过分支站、分支轨穿过别人的站都读它）。 */
+  /**
+   * The flat rail spanning the i-th segment with both ends on track t (read both by the main rail
+   * through a branch station and by a branch track through someone else's station).
+   */
   const spanning = (i: number, track: number): TimelineInk | undefined =>
     plain.find(
       (rail) =>
@@ -61,7 +79,7 @@ export function spineSections(model: WorkflowTimelineModel): SpineSection[] {
       station.track === 0 ? undefined : model.bands.find((b) => b.from <= i && i <= b.to);
     const track = band?.tracks[station.track];
     if (track === undefined) {
-      // 主线上的站：与从前一样，上一站画下半截、下一站画上半截；相邻无边就留空。
+      // Stations on the main line: As before, the previous station is drawn in the lower half and the next station is drawn in the upper half; if there is no border, leave it blank.
       const above = model.rails.find(
         (rail) => rail.to === i && rail.kind !== "twin" && rail.kind !== "merge",
       );
@@ -72,7 +90,7 @@ export function spineSections(model: WorkflowTimelineModel): SpineSection[] {
       if (below !== undefined) section.rails.push({ ink: below.ink, position: "below", track: 0 });
       return;
     }
-    // 分支站：上下两截读它自己那条轨道，首尾两端读轨道的进出墨（也就是分叉 / 合流段的墨）。
+    // Branch station: read its own track at the top and bottom, and read the incoming and outgoing ink of the track (that is, the ink of the bifurcation/merging section) at the beginning and end.
     const at = track.stations.indexOf(i);
     const previous = track.stations[at - 1];
     const next = track.stations[at + 1];
@@ -96,7 +114,7 @@ export function spineSections(model: WorkflowTimelineModel): SpineSection[] {
       const end = band.join ?? band.to;
       const first = track.stations[0]!;
       const last = track.stations[track.stations.length - 1]!;
-      // 没有汇合站时合流画在带末节的底上，那一节的竖轨要短 13px。
+      // When there is no merging station, the merging is drawn on the bottom with the end section, and the vertical rail of that section should be 13px shorter.
       const tail = band.join === undefined ? SPINE_CURVE_PX : undefined;
       sections[band.from]?.curves.push({ at: "top", ink: track.entry, kind: "fork", track: t });
       sections[end]?.curves.push({
@@ -116,7 +134,7 @@ export function spineSections(model: WorkflowTimelineModel): SpineSection[] {
           }
           continue;
         }
-        // 有汇合站时，汇合那一节的顶上是曲线，没有竖着穿过去的一截。
+        // When there is a merging station, the top of the merging section is a curve, and there is no vertical section to pass through.
         if (i === end && tail === undefined) continue;
         const ink =
           i < first ? track.entry : i > last ? track.exit : (spanning(i, t) ?? track.exit);

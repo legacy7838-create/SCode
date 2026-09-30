@@ -1,9 +1,9 @@
 import { randomBytes } from "node:crypto";
 import type { ServerRemoteHostCapability } from "@zcode/shared";
 
-// 与 packages/server/src/hostCapability.ts 保持一致的一次性短期 ticket 语义。
-// 依赖边界禁止从 @zcode/server 的入口导入实现，因此在新包内保留一份等价的
-// 纯内存实现，行为以旧 server 的兼容合同为准（TTL、一次性消费、过期清理）。
+// Single-use short-lived ticket semantics consistent with packages/server/src/hostCapability.ts.
+// Dependency boundaries prohibit importing implementations from @zcode/server entries, so an equivalent copy is kept in the new package
+// Pure memory implementation, the behavior is based on the compatibility contract of the old server (TTL, one-time consumption, expiration cleanup).
 export const DEFAULT_HOST_CAPABILITY_TTL_MS = 30_000;
 
 export interface HostCapabilityStoreOptions {
@@ -17,7 +17,7 @@ export interface HostCapabilityStore {
   consume(capability: string | undefined): boolean;
 }
 
-/** 短期、一次性 desktop host capability；只在 Server Core 进程内存中存在。 */
+/** A short-lived, single-use desktop host capability; it only exists in the Server Core process memory. */
 export function createHostCapabilityStore(
   options: HostCapabilityStoreOptions = {},
 ): HostCapabilityStore {
@@ -46,8 +46,8 @@ export function createHostCapabilityStore(
       if (!capability) return false;
       const consumedAt = now();
       const expiresAt = expiresByCapability.get(capability);
-      // ticket 无论成功、过期还是重放都先删除，只有首次且 TTL 内的消费能获得
-      // trusted-host role，避免可重放的长期提权声明。
+      // Regardless of whether the ticket is successful, expired or replayed, it will be deleted first. Only the first consumption within TTL can be obtained.
+      // trusted-host role to avoid replayable long-term privilege escalation claims.
       expiresByCapability.delete(capability);
       purgeExpired(consumedAt);
       return expiresAt !== undefined && expiresAt > consumedAt;

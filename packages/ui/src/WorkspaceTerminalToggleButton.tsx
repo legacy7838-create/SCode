@@ -23,7 +23,7 @@ export function WorkspaceTerminalToggleButton({
   const { intl } = useZCodeIntl();
   const isOfficeMode = useIsOfficeMode();
   const label = intl.formatMessage({ id: "terminal.toggle" });
-  // 展示 label 从快捷键生效表取，用户改键后 tooltip 跟随更新
+  // The display label is taken from the shortcut key effective table, and the tooltip is updated after the user changes the key.
   const toggleTerminalShortcutLabel = useShortcutCommandLabel("toggleTerminal");
 
   if (isOfficeMode) return null;

@@ -1,7 +1,7 @@
-// composer parity：`#` 会话候选的数据源从旧 zcodeSessionStore/taskQueryCache/remote*
-// 店面切到 v4 sessions-index（useWorkspaceSessionsIndexItems，侧栏同源）。
-// 旧店面在 v4 shell 下不再被会话列表填充，继续读会得到空面板；序列化与排序语义不变
-// （collectSessionMentionItems 保留，供单测与聚合复用）。
+// composer parity: `#` session candidate data source from old zcodeSessionStore/taskQueryCache/remote*
+// The storefront cuts to v4 sessions-index (useWorkspaceSessionsIndexItems, the same source as the sidebar).
+// The old storefront is no longer populated by the session list under the v4 shell. If you continue reading, you will get an empty panel; the serialization and sorting semantics remain unchanged.
+// (collectSessionMentionItems is reserved for single testing and aggregation reuse).
 import { useMemo } from "react";
 import type { IServiceAccessor } from "@zcode/services";
 import type { ZCodeProvider, ZCodeTaskMeta } from "@zcode/shared";
@@ -29,7 +29,7 @@ import {
 const HASH_SESSION_MENTION_LIMIT_PER_WORKSPACE = 20;
 
 interface SessionMentionItem extends MentionItem {
-  /** 只在候选聚合阶段分桶，不写入 Lexical node 或 canonical mention。 */
+  /** Bucketing is only done in the candidate aggregation stage, no Lexical node or canonical mention is written. */
   workspaceKey: string;
 }
 
@@ -167,9 +167,9 @@ function buildSessionMentionScopes(params: {
       params.baseServices,
       params.serviceResolverState,
     );
-    // 功能边界：# 引用最终由当前 Agent Host 的 SQLite session store 按 session id 读取。
-    // 这里只聚合同一 agent service authority，避免把另一个远端 Host 的会话做成可选但不可读的引用；
-    // 未连接 remote 也会在 resolver 处返回 null，不能回退到本地 base service。
+    // Functional boundaries: # The reference is ultimately read by the current Agent Host's SQLite session store by session id.
+    // Only the same agent service authority is aggregated here to avoid making another remote Host's session an optional but unreadable reference;
+    // If the remote is not connected, null will be returned at the resolver, and it cannot fall back to the local base service.
     if (!resolved || resolved.services.zcodeAgentService !== currentAgentService) {
       continue;
     }
@@ -219,8 +219,8 @@ export function useSessionsMentionProvider(
     remoteSessionId,
     isRemoteTarget,
   } = useWorkspaceServicesResolution(workspacePath, undefined, workspaceIdentity);
-  // `@` 与 `#` 复用 provider，但只有 `#` 能扩展到同 authority 的 workspace。
-  // sessions-index registry 仍按 endpoint+workspaceKey 引用计数复用，不额外建立连接。
+  // `@` and `#` reuse providers, but only `#` can be extended to the workspace of the same authority.
+  // The sessions-index registry is still reused based on the endpoint+workspaceKey reference count, and no additional connections are established.
   const scopes = useMemo<WorkspaceSessionsIndexScope[]>(() => {
     if (!enabled || (isRemoteTarget && !remoteSessionId)) {
       return [];
@@ -231,7 +231,7 @@ export function useSessionsMentionProvider(
           workspacePath,
           ...(workspaceIdentity ? { workspaceIdentity } : {}),
           ...(remoteSessionId ? { endpointKey: remoteSessionId } : {}),
-          // 远端必须显式携带已解析 endpoint 的 service，不能让本机 Host 查询远端路径。
+          // The remote end must explicitly carry the service of the resolved endpoint, and the local Host cannot query the remote path.
           agentService: workspaceServices.zcodeAgentService,
         },
       ];
@@ -270,13 +270,13 @@ export function useSessionsMentionProvider(
   );
 
   const items = useMemo(() => {
-    // mention filter 只排序/截取原对象；保留 SessionMentionItem 的 workspaceKey。
+    // mention filter only sorts/intercepts the original object; retains the workspaceKey of SessionMentionItem.
     const matchedItems = filterMentionItemsWithOptions(allItems, query, {
       limit: Number.POSITIVE_INFINITY,
       requireQuery: false,
     }) as SessionMentionItem[];
-    // `#` 先搜索全部会话，再按 workspaceKey 独立限制结果；不能全局截断，
-    // 否则当前 workspace 的优先排序会把其他 workspace 全部挤掉。
+    // `#` Search all sessions first, then limit the results independently by workspaceKey; cannot truncate globally.
+    // Otherwise, the priority order of the current workspace will crowd out all other workspaces.
     return workspaceScope === "same-authority-workspaces"
       ? limitSessionMentionItemsPerWorkspace(matchedItems)
       : matchedItems;

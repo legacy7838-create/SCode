@@ -1,9 +1,9 @@
 import { Cron } from "croner";
 
-/** 校验 cron 表达式是否合法（5 段，本地时区）。 */
+/** Validates whether a cron expression is legal (5 fields, local time zone). */
 export function isValidCronExpr(cronExpr: string): boolean {
   try {
-    // croner 构造时即解析，非法表达式会抛错。
+    // Croner is parsed when it is constructed, and illegal expressions will throw an error.
     new Cron(cronExpr);
     return true;
   } catch {

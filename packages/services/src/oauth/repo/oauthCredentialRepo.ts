@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- OAuth 凭据仓储集中维护 ZAI/BigModel 登录镜像 key 边界，拆分会让鉴权事实源更难追踪。 */
+/* eslint-disable max-lines -- The OAuth credential repo centrally maintains the ZAI/BigModel login mirror key boundary; splitting it would make the auth source of truth harder to trace. */
 import { Buffer } from "node:buffer";
 import type {
   OAuthLoginAttribution,
@@ -132,7 +132,7 @@ function toOAuthUserProfileFromRawZaiUser(raw: Record<string, unknown>): OAuthUs
   };
 }
 
-/** OAuth 凭据仓储：统一 provider 命名空间 */
+/** OAuth credential repo: a unified provider namespace */
 export class OAuthCredentialRepo {
   private readonly knownProviderIds: OAuthProviderId[];
 
@@ -175,7 +175,7 @@ export class OAuthCredentialRepo {
       return;
     }
 
-    // App 登录恢复为 oauth:* 镜像，active provider 是互斥 provider 域的唯一事实源。
+    // App login reverts to the oauth:* mirror, and the active provider is the only source of truth for the mutually exclusive provider domain.
     await this.credentialService.save(ACTIVE_PROVIDER_KEY, provider);
   }
 
@@ -196,7 +196,7 @@ export class OAuthCredentialRepo {
   async saveActiveTokenSet(tokenSet: OAuthTokenSet): Promise<void> {
     const provider = await this.loadActiveProvider();
     if (!provider) {
-      throw new Error("保存当前登录 token 前缺少 active provider");
+      throw new Error("No active provider before saving the current sign-in token");
     }
     await this.saveTokenSet(provider, tokenSet);
   }
@@ -218,7 +218,7 @@ export class OAuthCredentialRepo {
   async saveActiveUserProfile(profile: OAuthUserProfile): Promise<void> {
     const provider = await this.loadActiveProvider();
     if (!provider) {
-      throw new Error("保存当前登录 user 前缺少 active provider");
+      throw new Error("No active provider before saving the current sign-in user");
     }
     await this.saveUserProfile(provider, profile);
   }
@@ -255,7 +255,7 @@ export class OAuthCredentialRepo {
 
     try {
       const parsed = JSON.parse(raw) as Record<string, unknown>;
-      // 兼容本分支早期保存过的 { params, expiresAt } 结构；取消 TTL 后只读取 params。
+      // Compatible with the { params, expiresAt } structure saved earlier in this branch; only params is read after canceling TTL.
       const storedParams =
         parsed.params && typeof parsed.params === "object"
           ? (parsed.params as Record<string, unknown>)
@@ -329,9 +329,9 @@ export class OAuthCredentialRepo {
 
     if (provider === ZAI_PROVIDER_ID || provider === BIGMODEL_PROVIDER_ID) {
       if (tokenSet.zcodeJwtToken) {
-        // BigModel Start Plan 与 Z.ai Start Plan 一样消费 zcode JWT。
-        // JWT 必须在 OAuth callback 阶段随 tokenSet 落盘，后续 balance/runtime 只读取它，
-        // 不能再拿 BigModel access token 拼另一个 /oauth/token body 临时兑换。
+        // BigModel Start Plan consumes zcode JWT like Z.ai Start Plan.
+        // JWT must be placed with the tokenSet during the OAuth callback phase, and subsequent balance/runtime will only read it.
+        // You can no longer use the BigModel access token to create another /oauth/token body for temporary redemption.
         await this.credentialService.save(ZCODE_JWT_TOKEN_KEY, tokenSet.zcodeJwtToken);
       } else {
         await this.credentialService.delete(ZCODE_JWT_TOKEN_KEY);
@@ -385,8 +385,8 @@ export class OAuthCredentialRepo {
       }
 
       if (provider === ZAI_PROVIDER_ID && typeof parsed === "object" && parsed !== null) {
-        // ZAI user_info 现在按后端 data.user 原样持久化，
-        // 启动恢复时需要从 user_id/name/avatar 重新映射展示字段。
+        // ZAI user_info is now persisted as-is by backend data.user,
+        // Display fields need to be remapped from user_id/name/avatar when initiating recovery.
         const zaiProfile = toOAuthUserProfileFromRawZaiUser(parsed as Record<string, unknown>);
         if (zaiProfile) {
           return zaiProfile;
@@ -400,8 +400,8 @@ export class OAuthCredentialRepo {
   }
 
   async saveUserProfile(provider: OAuthProviderId, profile: OAuthUserProfile): Promise<void> {
-    // ZAI 后端返回的 data.user 是后续账号态排查与恢复的源数据，
-    // 之前只保存归一化展示字段会丢失 email/name/avatar 原始结构。
+    // The data.user returned by the ZAI backend is the source data for subsequent account status troubleshooting and recovery.
+    // Previously, saving only the normalized display fields would lose the original structure of email/name/avatar.
     const persistProfile =
       provider === ZAI_PROVIDER_ID && profile.rawProfile ? profile.rawProfile : profile;
 
@@ -430,9 +430,9 @@ export class OAuthCredentialRepo {
   }
 
   private async clearCorruptOAuthSession(): Promise<void> {
-    // AES-GCM 解密失败说明当前运行时已经无法信任本地 OAuth 登录态。
-    // 等价于强制登出已注册 OAuth provider：先清 provider 命名空间与共享 zcode JWT，
-    // 再通知 service 层清理 Start/Coding Plan 这类派生模型凭据，同时避免误删 SSH 等其他独立凭据。
+    // AES-GCM decryption failure indicates that the current runtime cannot trust the local OAuth login state.
+    // Equivalent to forcing logout of a registered OAuth provider: first clear the provider namespace and share zcode JWT,
+    // Then notify the service layer to clean up derived model credentials such as Start/Coding Plan, and avoid accidentally deleting other independent credentials such as SSH.
     for (const provider of this.knownProviderIds) {
       await this.clearProvider(provider);
     }
@@ -440,8 +440,8 @@ export class OAuthCredentialRepo {
     try {
       await this.onCorruptOAuthSessionCleared?.(this.knownProviderIds);
     } catch (error) {
-      // 派生模型 provider 清理失败不能阻断 OAuth 损坏态恢复。
-      // 主 OAuth 凭据已经删除，用户必须能回到可重新登录的未登录态。
+      // Failure to clean up the derived model provider cannot prevent OAuth damage state recovery.
+      // The primary OAuth credentials have been deleted and the user must be able to return to a non-logged-in state where they can log back in.
       log.warn(undefined, "clear derived provider keys after corrupt OAuth session failed", error);
     }
   }

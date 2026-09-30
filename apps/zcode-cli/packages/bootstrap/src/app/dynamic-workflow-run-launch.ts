@@ -1,14 +1,14 @@
 // ============================================================
-// Dynamic Workflow Run 的启动执行体（submit 与 resume 的共享半身）
+// The startup execution body of Dynamic Workflow Run (the shared half of submit and resume)
 // ============================================================
-// submit（新 runId）与 resume（既有 runId，引擎走
-// resume 分支）在「装配 driver → 跑 runWorkflowScript」这一段完全同构，抽到本文件共享：
-// 两条入口各自维护一份，迟早有一边忘记接事件 sequence 截取或 actor 重水化。
+// submit (new runId) and resume (existing runId, the engine will
+// resume branch) is completely isomorphic in the section "Assembly driver → Run runWorkflowScript", and this file is shared:
+// Each of the two entrances maintains a copy. Sooner or later, one of them forgets to intercept the event sequence or rehydrate the actor.
 //
-// 本文件持有三件事：
-//   1. journal sequence 截取（emit 侧拿到刚 append 的那条事件的 sequence）；
-//   2. RunEvent → 会话事件载荷（有界化 + 两个派生字段）；
-//   3. actor runtime 的接入：全新（落会话行 + task link）或重水化（resumeFromStore）。
+// This document holds three things:
+//   1. Journal sequence interception (emit side gets the sequence of the event just appended);
+//   2. RunEvent → Session event payload (bounded + two derived fields);
+//   3. Actor runtime access: new (drop session line + task link) or rehydrated (resumeFromStore).
 
 import { randomUUID } from "node:crypto";
 import {
@@ -52,17 +52,17 @@ import type { WorkflowRunControl } from "./workflow-run-control.js";
 import { createWorkflowRunSeatGate } from "./workflow-seat-gate.js";
 import type { DynamicWorkflowRunServiceDeps } from "./dynamic-workflow-run-service.js";
 
-/** 适配包内校验器到引擎的 ValidateFn 契约（launch 是 runWorkflowScript 的唯一调用点）。 */
+/** Adapts the in-package validator to the engine's ValidateFn contract (launch is the only call site of runWorkflowScript). */
 const validateFn: ValidateFn = (schema, value) => validate(schema as JsonSchema, value);
 
-/** 一次编译的全部产物。四个消费者共用同一个 ts.Program（编译一次，见 run service 不变式 2）。 */
+/** Everything one compilation produces. All four consumers share the same ts.Program (compiled once — see run service invariant 2). */
 export interface CompiledDynamicWorkflowScript {
   lowered: string;
   scriptHash: string;
   askSpecs: Map<string, AskSpec>;
-  /** world.run 的已批准命令集（编译期字面量收集）。 */
+  /** The approved command set of world.run (collected as literals at compile time). */
   declaredRunCommands: ReadonlySet<string>;
-  /** 每个 actor 站点的 submit profile。 */
+  /** The submit profile of each actor site. */
   actorSubmitProfiles: ReadonlyMap<string, ActorSubmitProfile>;
 }
 
@@ -71,14 +71,15 @@ interface LaunchDynamicWorkflowRunInput {
   compiled: CompiledDynamicWorkflowScript;
   cwd: string;
   deps: DynamicWorkflowRunServiceDeps;
-  /** run 的展示名（`CreateWorkflow` 的可选 `input.name`）：随 EngineConfig 在 createRun 时落 dwf_run.name。 */
+  /** The run's display name (the optional `input.name` of `CreateWorkflow`): travels in EngineConfig and lands in dwf_run.name at createRun time. */
   name?: string;
   /**
-   * 本次 run 的实参（saved workflow 的已校验实参袋）。两个去处：随 EngineConfig 落
-   * `dwf_run.args_json`，以及进 spawn payload 注入沙箱的 `args` 全局。
+   * This run's arguments (the validated argument bag of a saved workflow). Two destinations:
+   * in `dwf_run.args_json` via EngineConfig, and in the spawn payload as the sandbox's `args`
+   * global.
    *
-   * resume 分支传的是**从 journal 读回的那一份**，不是调用方新给的——见 run service 的
-   * resume 注释。
+   * The resume branch passes **the copy read back from the journal**, not a freshly supplied
+   * one — see the resume comment in the run service.
    */
   args?: Record<string, unknown>;
   parentSessionId?: string;
@@ -87,54 +88,66 @@ interface LaunchDynamicWorkflowRunInput {
   signal: AbortSignal;
   toolCallId?: string;
   /**
-   * 修订续跑的 lineage 指针（`dwf_run.resumed_from`）与导入缓存。两者**成对**出现：
-   * 指针是行级事实（UI 的「续自 run X」、崩溃后 resume 据它重建），缓存是本次执行的加速结构。
+   * The lineage pointer for an amended resume (`dwf_run.resumed_from`) and its import cache.
+   * The two always appear **as a pair**: the pointer is a row-level fact (the UI's "resumed from
+   * run X", and a post-crash resume rebuilds from it), while the cache is an acceleration
+   * structure for this execution.
    *
-   * 与其余元数据同一条路——launch → harness → EngineConfig，中途零加工。构建（读前驱 journal、
-   * 走 `resumed_from` 链、解析转录源）全部发生在 run service：这里已经是执行侧，把构建放进来
-   * 就等于让 resume 与 submit 各构建一次（而它们必须是同一个纯函数的两次调用）。
+   * They travel the same route as the rest of the metadata — launch → harness → EngineConfig,
+   * with no processing in between. Building them (reading the predecessor's journal, walking
+   * the `resumed_from` chain, resolving transcript sources) happens entirely in the run
+   * service: this is already the execution side, so putting the build here would mean resume
+   * and submit each build once (and they must be two calls of the same pure function).
    */
   resumedFrom?: string;
   importedCache?: ImportedRunCache;
   /**
-   * 建 run 时的用量起点：前驱结算后的 `spentTokens`。
-   * 与 lineage 指针同一条路——launch → harness → EngineConfig，中途零加工；amend 路径给出，
-   * 全新 submit 与 resume 缺席（后者的用量从既有行恢复）。
+   * Where usage starts when the run is created: the predecessor's `spentTokens` after it
+   * settled. Same route as the lineage pointer — launch → harness → EngineConfig, with no
+   * processing in between: the amend path supplies it, while a brand-new submit and a resume
+   * omit it (the latter restores usage from the existing row).
    */
   inheritedTokens?: number;
   /**
-   * 发起 run 那一轮的锚点。submit 路径给出（引擎在建 run
-   * 那一世记 `run-launched`）；resume 路径缺席，本函数从 journal 读回——两条路径都用同一个值给
-   * `actor-created` / `run-settled` 进度事件派生 `launchInputId`。submit 路径还随车带脚本声明的
-   * 阶段表（`phaseNames`）与本 run 的子代理模型（`subagentModel`，规范 picker 串），三者同样
-   * 只在建 run 那一世落 journal，resume 路径一概从那条事件读回。
+   * The anchor of the turn that started the run. The submit path supplies it (the engine
+   * records `run-launched` in the lifetime when the run is created); the resume path omits it
+   * and this function reads it back from the journal — both paths use that same value to derive
+   * `launchInputId` for the `actor-created` / `run-settled` progress events. The submit path
+   * also rides along with the script's declared phase table (`phaseNames`) and this run's
+   * subagent model (`subagentModel`, a canonical picker string); all three land in the journal
+   * only in the lifetime when the run is created, and the resume path reads every one of them
+   * back from that event.
    */
   launch?: RunLaunch;
   /**
-   * 升级问答的停驻注册表。由 run service 持有一张、
-   * 跨它名下所有在飞 run，两条入口（submit / resume）传的是**同一个对象**——注册表按完整 qid
-   * 索引，两条入口各持一张会让 resume 之后的 run 作答不到自己刚提的问题。
+   * The residency registry of escalation questions. The run service holds one, spanning all
+   * in-flight runs under its name, and both entry points (submit / resume) pass **the same
+   * object** — the registry is keyed by the full qid, so one registry per entry point would
+   * leave a run that resumed unable to answer the question it just asked.
    */
   escalationRegistry: WorkflowEscalationRegistry;
   /**
-   * 本 run 的活体控制面。由 run
-   * service 按**注册表条目**造一个（submit / amend / resume 三条入口都造），本函数在这里把它的
-   * 两端接上：harness 负责 `bind(engine)`，本函数负责 `bindSeatGate`。
+   * The live control plane of this run. The run service builds one per **registry entry** (all
+   * three entry points — submit / amend / resume — build one), and this function wires up its
+   * two ends here: the harness owns `bind(engine)`, this function owns `bindSeatGate`.
    *
-   * 缺席即这次启动没有控制面（如 snippet 执行）——run 照常跑完，只是上界中途改不了。
+   * Absent means this launch has no control plane (e.g. snippet execution) — the run still
+   * finishes normally, only the ceiling cannot be changed midway.
    */
   control?: WorkflowRunControl;
   /**
-   * 接住本次 launch 造出来的 driver 的**会话静默探针**（workflow-driver-quiescence.ts）。
-   * 三条入口都传同一件事：把它挂到这个 run 的注册表条目上，好让将来修订它的那次 amend
-   * 问得着「前驱的会话写完了没有」。原样下传，本文件不读它。
+   * Catches the **session quiescence probe** of the driver this launch just created
+   * (workflow-driver-quiescence.ts). All three entry points pass the same thing: attach it to
+   * this run's registry entry, so that a later amend of it can ask "has the predecessor's
+   * session finished writing?". It is forwarded verbatim; this file does not read it.
    */
   onQuiescenceProbe?: (probe: ActorSessionQuiescence) => void;
 }
 
 /**
- * 启动（或恢复）一个 run：装配 sequence 截取 → emit 钩子 → 真实 driver → runWorkflowScript。
- * fire-and-forget 语义由调用方决定（本函数只返回结算 promise，不做注册表簿记）。
+ * Start (or resume) a run: wire up sequence slicing → emit hooks → the real driver →
+ * runWorkflowScript. The caller decides the fire-and-forget semantics (this function only
+ * returns the settlement promise and does no registry bookkeeping).
  */
 export function launchDynamicWorkflowRun(
   input: LaunchDynamicWorkflowRunInput,
@@ -157,41 +170,41 @@ export function launchDynamicWorkflowRun(
     toolCallId,
   } = input;
   const childSpawn = dynamicWorkflowChildSpawn();
-  // 本 run 自己上界的**第二个**执行点：调度器管「还能不能再派一个 ask」，闸门管「已经在跑的那些下一次请求能不能发出去」。
-  // 起点就是这次启动的 caps（submit 是钳过的请求值，resume 是 journal 行里的那一份），所以一个
-  // 从未被 retune 过的 run 永远走闸门的快路径——不发事件、不持票、与从前逐字相同。
+  // The **second** execution point of this run's own upper bound: the scheduler controls "whether another ask can be sent", and the gate controls "whether the next requests that are already running can be sent out."
+  // The starting point is the caps of this startup (submit is the clamped request value, resume is the copy in the journal line), so a
+  // A run that has never been retune always takes the fast path through the gate—no events, no tickets, and is literally the same as before.
   const seatGate = createWorkflowRunSeatGate({ limit: caps.maxConcurrency });
   control?.bindSeatGate(seatGate);
-  // 锚点：submit 给的（本次建 run）或 journal 里的（resume）。升级前的 run 两边都没有 → 缺席，
-  // 进度事件不带 launchInputId，子代理不上报。
+  // Anchor point: given by submit (this build run) or in journal (resume). pre-upgrade run has neither → absent,
+  // The progress event does not have launchInputId and is not reported by the subagent.
   const launch = input.launch ?? readRunLaunchAnchor(deps.journal, runId);
-  // lineage 指针：submit/amend 路径由入参给出；resume 路径入参缺席（createRun 早已写死），从
-  // journal 行读回——两条路径的 `run-started` 载荷因此同形。
+  // lineage pointer: submit/amend path is given by input parameter; resume path input parameter is absent (createRun has been hard-coded), from
+  // Journal line readback - `run-started` payloads for both paths are therefore isomorphic.
   const lineageFrom = resumedFrom ?? deps.journal.getRun(runId)?.resumedFrom;
-  // 并发天花板：`run-started` 载荷的第二个宿主派生字段。每次 launch 算一次而不是每条事件算
-  // 一次——它是进程事实，一个 run 跑到一半核数不会变，而 `availableParallelism()` 是系统调用。
+  // Concurrency ceiling: The second host-derived field of the `run-started` payload. Counted once for each launch instead of for each event
+  // Once - it is a process fact, the number of cores does not change after a run reaches half of the cores, and `availableParallelism()` is a system call.
   const concurrencyCeiling = resolveWorkflowConcurrencyCeiling(deps.availableParallelism);
-  // 子代理模型：submit 给的（随锚点同车）或 journal 里的（resume 从同一条 run-launched 读回）。
-  // 与锚点同一条论证，两条路径因此同形；升级前的 run 两边都没有 → 缺席 = 跑在会话模型上。
+  // Subagent model: given by submit (same as anchor) or in journal (resume is read back from the same run-launched).
+  // With the same argument as the anchor, the two paths are therefore isomorphic; pre-upgrade run has neither side → absent = running on the conversational model.
   const subagentModel = input.launch?.subagentModel ?? readRunSubagentModel(deps.journal, runId);
-  // 字符串 → 选择，每次 launch 解析一次。进度载荷走原串（下面的 toProgressPayload），
-  // actor runtime 工厂要的是结构化选择（含 reasoning 档位，pin 的两段身份带不回来）。
+  // String → selection, parsed once per launch. The progress payload takes the original string (toProgressPayload below),
+  // What the actor runtime factory wants is structured selection (including reasoning gear, the two identities of pin cannot be brought back).
   const runSubagentModel =
     subagentModel === undefined ? undefined : parseModelPickerValue(subagentModel);
 
-  // 事件的 journal sequence 只有 appendEvent 知道，而引擎在 record() 里
-  // `journal.appendEvent(...)` 之后**同步**紧接着 `driver.emit(...)`，并丢掉了返回的
-  // StoredEvent（engine.ts）。所以这里包一层 journal 把分配到的 sequence 截下来：
-  // emit 拿到的一定是刚才那一条。替代方案都更差——本地自增计数器会在 resume（sequence
-  // 从既有最大值续下去）时整体偏移，而每条事件回查一次 journal 是白付一次 IO。
-  // 「append 紧跟 emit、一一对应」这个前提由测试钉住：钩子看到的 sequence 序列必须与
-  // listEvents 返回的逐条相等。
+  // The journal sequence of events is only known by appendEvent, and the engine is in record()
+  // `journal.appendEvent(...)` is **synchronized** immediately followed by `driver.emit(...)`, and the returned
+  // StoredEvent(engine.ts). So here is a layer of journal to cut off the assigned sequence:
+  // What emit got must be the one just now. The alternatives are worse - the local incrementing counter will be in resume(sequence
+  // Continuing from the existing maximum value), the overall offset will occur, and checking the journal once for each event is a waste of IO.
+  // The premise of "append follows emit, one-to-one correspondence" is nailed by the test: the sequence sequence seen by the hook must be consistent with
+  // listEvents returns item-by-item equality.
   const sequenceCapture = createJournalSequenceCapture(deps.journal);
 
   const makeDriver = createAgentRuntimeWorkflowDriver({
     journal: sequenceCapture.journal,
     emit: (event) => {
-      // 事件扇出绝不能把 run 打挂：钩子是观察者，异常吞在此边界并记日志。
+      // Event fanout must not suspend run: the hook is an observer, and exceptions are swallowed at this boundary and logged.
       try {
         if (deps.onRunEvent === undefined) return;
         deps.onRunEvent(
@@ -205,8 +218,8 @@ export function launchDynamicWorkflowRun(
             concurrencyCeiling,
             ...(subagentModel === undefined ? {} : { subagentModel }),
           }),
-          // 路由与载荷分开：事件必须落在**发起该 run 的**会话里，而 parentSessionId 是
-          // 判断"是不是那个会话"的唯一依据。
+          // Routing and payload are separated: the event must fall in the session that initiated the run, and parentSessionId is
+          // The only basis for judging "whether it is that conversation".
           parentSessionId === undefined ? {} : { parentSessionId },
         );
       } catch (error) {
@@ -222,11 +235,11 @@ export function launchDynamicWorkflowRun(
     fileSystemPort: deps.fileSystemPort,
     escalationRegistry,
     cwd,
-    // 用户面产物的落点。会话作用域取**本服务
-    // 的**父会话（= 本 app 的会话）而不是 launch 入参里那个可选的 parentSessionId：两者在
-    // 生产里同值（run start 传的就是 runtime 自己的 sessionId），但只有前者是必填的，而
-    // 「字节写进哪个会话的目录」不该有一条 undefined 的分支。store 缺席时整对都不传，
-    // driver 侧因此以 ArtifactStoreUnavailable 大声拒绝。
+    // The placement point of user-facing products. Session scope fetch** this service
+    // The ** parent session (= the session of this app) instead of the optional parentSessionId in the launch input parameter: both are
+    // The same value in production (run start passes the runtime's own sessionId), but only the former is required, while
+    // There should not be an undefined branch in "Which session's directory the bytes are written to". When store is absent, the entire pair will not be transmitted.
+    // The driver side therefore rejects it loudly as ArtifactStoreUnavailable.
     ...(deps.artifactStore === undefined
       ? {}
       : {
@@ -234,23 +247,23 @@ export function launchDynamicWorkflowRun(
           parentSessionId: deps.parentSessionId as SessionId,
         }),
     declaredRunCommands: compiled.declaredRunCommands,
-    // 每个 actor 站点拿哪一种 submit_result（typed / generic / 无），编译期已定。
+    // Which submit_result (typed/generic/none) each actor site takes is determined at compile time.
     actorSubmitProfiles: compiled.actorSubmitProfiles,
     runId,
-    // 边界记账与种子复制都要读写 actor 会话的消息（driver 侧，见 workflow-driver.ts 的文件头）。
+    // Boundary accounting and seed replication both read and write actor session messages (on the driver side, see the file header of workflow-driver.ts).
     ...(deps.actorTranscriptStore === undefined
       ? {}
       : { actorTranscriptStore: deps.actorTranscriptStore }),
     ...(deps.logger === undefined ? {} : { logger: deps.logger }),
-    // 进程级并发治理器的窄端口：在场时 driver 给每个
-    // actor runtime 一个请求级准入端口（下面 runtimeFactory 原样下传）；缺席即 actor 不受闸门约束。
+    // Narrow port of process-level concurrency manager: present driver to each
+    // actor runtime is a request-level access port (the runtimeFactory is downloaded as is below); its absence means that the actor is not subject to the gate.
     ...(deps.concurrency === undefined ? {} : { concurrency: deps.concurrency }),
-    // 本 run 的座位闸门：driver 把每个 actor 的准入端口包进它，并把 ask 的起止喂给它
-    // （startAsk 与引擎的 `node-settled`）。
+    // The seat gate of this run: the driver wraps the admission port of each actor into it and feeds it the start and end of the ask
+    // (startAsk with engine's `node-settled`).
     seatGate,
-    // 测试注入的 driver 时钟（故障矩阵）；生产缺席，driver 走真时间。
+    // Test injected driver clock (fault matrix); production absent, driver real time.
     ...(deps.driverClock === undefined ? {} : { clock: deps.driverClock }),
-    // 会话静默探针的回填口（见入参字段注释）：driver 在构造时调一次。
+    // The backfill port of the session silent probe (see input parameter field comments): driver is called once during construction.
     ...(input.onQuiescenceProbe === undefined
       ? {}
       : { onQuiescenceProbe: input.onQuiescenceProbe }),
@@ -270,32 +283,32 @@ export function launchDynamicWorkflowRun(
         actor,
         persona,
         submitPort,
-        // 工厂据 profile 决定端口是否注入、声明是否 typed（create-app.ts 的 createActorRuntime）。
+        // The factory determines whether the port is injected and whether the declaration is typed (createActorRuntime of create-app.ts) based on the profile.
         submitProfile,
-        // 请求级准入端口与两个工具端口同路下传到 runtime deps。
+        // The request-level admission port and the two tool ports are downloaded to the runtime deps via the same path.
         ...(modelRequestAdmission === undefined ? {} : { modelRequestAdmission }),
-        // 升级端口与 submit 端口同路下传：core 侧的注册门以端口存在为准，所以恒传。
+        // The upgrade port and the submit port are transmitted through the same path: the registration gate on the core side is subject to the existence of the port, so it is always transmitted.
         escalatePort,
-        // resume 的 pin：这个 actor 上一次跑在哪个模型上。必须在**造 runtime 之前**读，
-        // 因为下面那行 journalActorResolvedModel 会把这一轮的解析结果写回同一个字段。
+        // Resume pin: The model on which this actor ran last time. Must be read before **creating the runtime,
+        // Because the following line journalActorResolvedModel will write this round of parsing results back to the same field.
         //
-        // 种子带来的 pin 是**承袭**（amend-resume）：修订 run 的第一次派发时本 run 的 journal 还
-        // 没有解析结果，pin 只能来自前驱——转录接续下静默换模型正是 pin 要防的身份突变。两者都在
-        // 场（修订 run 崩溃后 resume）时以本 run 的记录为准：那是这个 actor 在**这个 run 里**实际
-        // 跑过的模型，比前驱的更具体，且两者本就应当相等。畸形 pin 的大声失败沿用既有那一套
-        // （workflow-actor-model.ts 的 WorkflowActorPinnedModelError），此处不分叉。
+        // The pin brought by the seed is amend-resume: when the run is revised for the first time, the journal of this run is still there.
+        // Without analysis results, pin can only come from the precursor - the silent change model under transcriptional continuation is exactly the identity mutation that pin needs to prevent. Both are there
+        // field (revised run resumes after crash), the record of this run shall prevail: that is the actual behavior of this actor in **this run**
+        // The running model is more specific than the front-wheel drive one, and the two are meant to be equal. The loud failure of misshapen pins follows the established routine.
+        // (WorkflowActorPinnedModelError of workflow-actor-model.ts), no forking here.
         pinnedModel:
           pinnedActorModel({ actor, journal: deps.journal, runId }) ?? seed?.resolvedModel,
-        // 本 run 的子代理模型：在 pin **之上**（workflow-actor-model.ts 的优先级表）。它是用户对
-        // 这一次 run 的显式表态（AmendWorkflow 带 subagent_model 就是「resume 时换模型」的那个显式
-        // 决定），pin 只守没有它时的隐式缺省。与 pin 不同，它整条带着 reasoning 档位下去——
-        // journal 的 pin 只记身份两段。
+        // Subagent model for this run: on top of pin (priority table in workflow-actor-model.ts). It is the user's
+        // This time the explicit statement of run (AmendWorkflow with subagent_model is the explicit statement of "resume when changing model"
+        // Determine), pin just sticks to the implicit default without it. Unlike pin, it goes down the whole line with reasoning gear——
+        // The pin of the journal only records two paragraphs of identity.
         ...(runSubagentModel === undefined ? {} : { runSubagentModel }),
       });
-      // persona 的模型档位实际解析成了哪个模型，只有造好的 runtime 说得准（档位映射见
-      // workflow-actor-model.ts）。先落库再接入会话：一次失败的会话持久化会让这次 ask 失败，
-      // 但「当时选了哪个模型」这条审计事实照旧留在 journal 里。rehydrate 路径也要写——
-      // pin 缺席（升级前的旧 run）时这一轮才是第一次有解析结果可记。
+      // Which model the model gear of persona is actually parsed into can only be determined accurately by the built runtime (see gear mapping)
+      // workflow-actor-model.ts). Drop the database first and then connect to the session: a failed session persistence will cause the ask to fail.
+      // But the audit fact "which model was selected at that time" remains in the journal. The rehydrate path must also be written——
+      // When the pin is absent (the old run before the upgrade), this round is the first time that the parsing results can be recorded.
       journalActorResolvedModel({
         actor,
         journal: deps.journal,
@@ -325,13 +338,13 @@ export function launchDynamicWorkflowRun(
   return runWorkflowScript({
     askSpecs: compiled.askSpecs,
     caps,
-    // SEA 下必须换 spawn 策略，非 SEA 一律不传。
+    // The spawn strategy must be changed under SEA, and will not be passed under non-SEA.
     ...(childSpawn === undefined ? {} : { childSpawn }),
     cwd,
     lowered: compiled.lowered,
     makeDriver,
-    // 入口文件写不进项目 `.zcode/` 时 harness 回落到 OS 临时目录并报一声——run 照常启动，
-    // 但这条日志是排查「项目里为什么没有 workflow-runs 存档」的唯一线索。
+    // When the entry file cannot be written into the project `.zcode/`, the harness will fall back to the OS temporary directory and will beep - run and start as usual.
+    // But this log is the only clue to troubleshoot "why there is no workflow-runs archive in the project".
     onWarning: (warning) => {
       deps.logger?.warn?.("Dynamic workflow entry file fell back to the OS temp dir", {
         event: "dynamic_workflow.entry_file.fallback",
@@ -340,47 +353,50 @@ export function launchDynamicWorkflowRun(
         ...warning,
       });
     },
-    // name 与 scriptText 同一条元数据路：harness 原样转交 EngineConfig（resume 时 journal
-    // 命中短路 createRun，传它无害且保持 submit/resume 两条 launch 输入同形）。
+    // name and scriptText share the same metadata path: harness is transferred to EngineConfig as it is (journal when resume
+    // Hit short-circuit createRun, passing it is harmless and keeps the submit/resume two launch inputs homogeneous).
     ...(name === undefined ? {} : { name }),
-    // 实参与 name / scriptText 同一条元数据路，但多一个去处：harness 既转交 EngineConfig
-    // （落 args_json），也放进 spawn payload 注入沙箱。
+    // Really participates in the same metadata path of name / scriptText, but has one more destination: harness is transferred to EngineConfig
+    // (fall args_json), also put into the spawn payload injection sandbox.
     ...(args === undefined ? {} : { args }),
     ...(parentSessionId === undefined ? {} : { parentSessionId }),
     runId,
-    // 落库的是作者原文与它的哈希，不是 lowered 函数体（resume 的比对基准是原文）。
+    // What is included in the library is the author's original text and its hash, not the lowered function body (the comparison benchmark of resume is the original text).
     scriptHash: compiled.scriptHash,
     scriptText,
-    // 关联锚点随 run 落库：重启后工具卡 join 与 resume 通知都只能从 dwf_run 还原它。
+    // The associated anchor point is dropped with run: after restarting, the tool card join and resume notifications can only restore it from dwf_run.
     ...(toolCallId === undefined ? {} : { toolCallId }),
-    // 修订续跑：lineage 指针落库（createRun 一次写死），导入缓存注入引擎（纯数据，核心零 I/O）。
+    // Revision and continuation: drop the lineage pointer into the library (createRun is written once) and import the cache injection engine (pure data, core zero I/O).
     ...(resumedFrom === undefined ? {} : { resumedFrom }),
     ...(importedCache === undefined ? {} : { importedCache }),
-    // 用量起点与缓存同车：引擎在 createRun 时把它写成 spent_tokens 的初值，命中既有行时忽略。
+    // The usage starting point is the same as the cache: the engine writes it as the initial value of spent_tokens when creatingRun, and ignores it when it hits an existing row.
     ...(input.inheritedTokens === undefined ? {} : { inheritedTokens: input.inheritedTokens }),
-    // 锚点只在建 run 那一世落 journal（引擎侧的门），resume 时传它无害。
+    // The anchor point is only built in the run journal (the door on the engine side), and it is harmless when resumed.
     ...(launch === undefined ? {} : { launch }),
     signal,
-    // 控制面与 signal 同一条缝：那个是「停下这个 run」，这个是「改这个 run 的一项设置」。
-    // harness 在引擎构造好的同一同步片里 bind（harness.ts），所以 run 从第一条事件起就可被改。
+    // The control surface is the same as the signal: that one is "stop this run", this one is "change a setting of this run".
+    // The harness binds (harness.ts) in the same synchronization piece that the engine constructed, so the run can be modified from the first event.
     ...(control === undefined ? {} : { control }),
     validate: validateFn,
   });
 }
 
 /**
- * 沙箱子进程的 spawn 策略：SEA 下走隐藏子命令自 re-exec，否则不表态（harness 缺省
- * `node --max-old-space-size=… <entry>`）。
+ * Spawn strategy for the sandbox child process: under SEA it re-execs through a hidden
+ * subcommand, otherwise it takes no position (the harness default is
+ * `node --max-old-space-size=… <entry>`).
  *
- * SEA 单文件二进制不解释 Node CLI 旗标，harness 缺省 argv 里的
- * `--max-old-space-size` 会原样落进 CLI 的严格 parseArgs，子进程立即报错退出——**SEA 下每一个
- * workflow run 必然失败**。修法与 official plugin host 同款
- * （official-plugin-runtime.ts 的 `officialPluginHostPrefixArgs`）。
+ * A SEA single-file binary does not interpret Node CLI flags, so the `--max-old-space-size`
+ * in the harness's default argv lands verbatim in the CLI's strict parseArgs and the child
+ * dies immediately with a parse error — **under SEA every workflow run would fail**. The fix
+ * is the same one the official plugin host uses (`officialPluginHostPrefixArgs` in
+ * official-plugin-runtime.ts).
  *
- * SEA 判定留在 bootstrap 而不下沉到 harness：harness 是 app-free 的（只依赖
- * `@zcode/dynamic-workflow` 与 node 内建），既拿不到 contracts 的子命令常量，也不该知道
- * 自己被哪种宿主打包。`isSea` 可注入只为可测——默认探针在测试进程里必然返回 false，
- * 于是「非 SEA 不得带 argsPrefix」也是一条可断言的事实。
+ * The SEA check stays in bootstrap instead of sinking into the harness: the harness is
+ * app-free (it depends only on `@zcode/dynamic-workflow` and node builtins), so it can
+ * neither reach contracts' subcommand constants nor should it know which host packaged it.
+ * `isSea` is injectable purely for testability — the default probe inevitably returns false
+ * in a test process, which makes "no argsPrefix outside SEA" an assertable fact.
  */
 export function dynamicWorkflowChildSpawn(
   isSea: boolean = isSeaRuntime(),
@@ -388,7 +404,7 @@ export function dynamicWorkflowChildSpawn(
   return isSea ? { argsPrefix: [ZCODE_DWF_CHILD_COMMAND] } : undefined;
 }
 
-/** SEA 运行时探针（official-plugin-runtime.ts 私有同名 helper 的本地镜像，刻意不跨文件复用）。 */
+/** SEA runtime probe (a local mirror of the identically named private helper in official-plugin-runtime.ts, deliberately not shared across files). */
 function isSeaRuntime(): boolean {
   const getBuiltinModule = process.getBuiltinModule as
     | ((id: "node:sea") => { isSea(): boolean })
@@ -401,13 +417,17 @@ function isSeaRuntime(): boolean {
 }
 
 /**
- * resume 重水化：journal 已记录该 actor 的会话 id ⇒ 这是一次重挂（会话行与消息早已落库，
- * `mintActorSessionId` 纯确定所以 sessionId 就是当年那一个，driver 侧另有互证）。
- * `resumeFromStore` 从落库的 message/part 行重建 messageHistory——被打断的 tool call 会被
- * hydrator 钉成 "[Tool execution was interrupted before resume]"，正是被杀 ask 的正确语义。
+ * Resume re-hydration: the journal already records a session id for this actor ⇒ this is a
+ * re-attach (the session row and its messages were persisted long ago; `mintActorSessionId`
+ * is purely deterministic, so sessionId is the very one from back then, and the driver side
+ * cross-checks it). `resumeFromStore` rebuilds messageHistory from the persisted
+ * message/part rows — an interrupted tool call is pinned by the hydrator to "[Tool execution
+ * was interrupted before resume]", which is exactly the right semantics for a killed ask.
  *
- * `SessionNotFound`（会话行被清理）不是错误而是记录在案的例外：退回全新持久化路径，actor 从空上下文重来——比让整个 run 卡死诚实。
- * 其余异常原样上抛（低层不吞错，house rule）。
+ * `SessionNotFound` (the session row was cleaned up) is not an error but a documented
+ * exception: fall back to the fresh-persistence path and let the actor start over from an
+ * empty context — more honest than wedging the whole run. Every other exception is rethrown
+ * as-is (low layers never swallow errors — house rule).
  */
 async function attachActorSession(input: {
   actor: ActorRef;
@@ -421,7 +441,7 @@ async function attachActorSession(input: {
   if (journaledSessionId === undefined) return "fresh";
   try {
     await runtime.resumeFromStore();
-    // 会话行、task link 都在上一世落库过（两者皆 upsert），重挂不再重建。
+    // The session line and task link were both dropped in the previous life (both were upsert), and they will not be rebuilt again if they are hung again.
     return "rehydrated";
   } catch (error) {
     if (!isSessionNotFound(error)) throw error;
@@ -436,7 +456,7 @@ async function attachActorSession(input: {
   }
 }
 
-/** 结构化判定 core 的 SessionNotFound（不依赖错误文本做流程判断）。 */
+/** Structured detection of core's SessionNotFound (flow decisions never key off the error text). */
 function isSessionNotFound(error: unknown): boolean {
   return (
     typeof error === "object" &&
@@ -446,17 +466,20 @@ function isSessionNotFound(error: unknown): boolean {
 }
 
 /**
- * actor 会话真实化：落会话行 + 建 task link（legacy 路径的示范在
- * script-workflow-runtime.ts）。
+ * Make the actor session real: write the session row + create the task link (the legacy path
+ * demonstrates this in script-workflow-runtime.ts).
  *
- * 顺序是**载荷性**的：`session_task_link.child_session_id` 对 `session(id)` 有 FK，
- * 所以必须先落会话行再建 link。这也是 ActorRuntimeFactory 允许返回 Promise 的原因。
+ * The order is **load-bearing**: `session_task_link.child_session_id` has an FK on
+ * `session(id)`, so the session row must land before the link. That is also why
+ * ActorRuntimeFactory is allowed to return a Promise.
  *
- * 这里**不再**订阅 actor runtime 的事件：直播通道在 child runtime 的**构造期**就装好了
- * （script-workflow-child-runtime.ts 的 eventSink → 父 runtime 的外部 sink 集）。旧的
- * `subscribeEvents` 通道装在下面这行 `ensureSessionPersistedForExternalActivity` 之后，
- * 而它会把 SessionTitleUpdated 写成 sequenceNumber 1——v4 网关只排水连续 seq，
- * 于是订阅从 seq 2 起永远等一个再也不会来的 seq 1，transcript 永久空白。
+ * Events of the actor runtime are **no longer** subscribed to here: the live channel was
+ * already wired up during the child runtime's **construction** (the eventSink in
+ * script-workflow-child-runtime.ts → the parent runtime's external sink set). The old
+ * `subscribeEvents` channel was installed after the
+ * `ensureSessionPersistedForExternalActivity` line below, and it writes SessionTitleUpdated as
+ * sequenceNumber 1 — the v4 gateway only drains a contiguous seq run, so the subscription
+ * waits from seq 2 for a seq 1 that will never come and the transcript stays blank forever.
  */
 async function persistActorSession(input: {
   actor: ActorRef;
@@ -475,25 +498,25 @@ async function persistActorSession(input: {
     await deps.taskLinkStore.createSessionTaskLink({
       childSessionId: sessionId,
       id: `tasklink_${randomUUID()}`,
-      // rootWorkflowRunId 刻意留空。**经验证的事实**（不是猜测）：该列声明为
-      // `root_workflow_run_id text references workflow_run(id)`（migration 0007，
-      // 见 session_task_link 建表），指向 **legacy** workflow_run 表，而 workflow run 的记录在
-      // dwf_run；migration runner 开着 pragma foreign_keys = on。对着真实 store 探测过：
-      // 带 workflow runId 调用得到 `FOREIGN KEY constraint failed`，省略则成功。所以 run 身份走
-      // 下面这个无 FK 的 path 列。别把它"修"回来。
+      // rootWorkflowRunId is intentionally left blank. **Verified Fact** (not a guess): The column is declared as
+      // `root_workflow_run_id text references workflow_run(id)`(migration 0007,
+      // See session_task_link table creation), pointing to the **legacy** workflow_run table, and the records of workflow run are in
+      // dwf_run;migration runner on pragma foreign_keys = on. Detected against the real store:
+      // Calling with workflow runId will result in `FOREIGN KEY constraint failed`, if omitted, it will succeed. So run as identity
+      // The path column below has no FK. Don't "fix" it back.
       //
-      // path 是一个迷你契约：`dwf/<runId>/<siteId>@<ordinal>`。runId 已字符集安全；siteId 段
-      // 保留原始 `#`/`@`（自由文本列，且已 sanitize 的形态就在会话 id 里）。**今天没有任何代码
-      // 解析它**——它服务于人阅读与将来可能的前缀扫描（"这个 run 的所有 actor 会话"）。
-      // 若将来要按 run id 建索引查询，需要一条重建
-      // session_task_link 的 migration 把 FK 改指或去掉。
+      // path is a mini-contract: `dwf/<runId>/<siteId>@<ordinal>`. runId is character set safe; siteId segment
+      // Keep the original `#`/`@` (free text column and sanitized form in session id). **No code today
+      // Parse it** - it serves human reading and possible future prefix scanning ("all actor sessions for this run").
+      // If you want to build an index query based on run id in the future, you will need a rebuild
+      // The migration of session_task_link changes or removes FK.
       path: `dwf/${runId}/${refToString(actor)}`,
       ...(parentSessionId === undefined ? {} : { parentSessionId: parentSessionId as SessionId }),
-      // 与 legacy 的 "workflow_agent"（script-workflow-runtime.ts）刻意区分，而不是复用：
-      // 两者是不同的人群。legacy 行的 root_workflow_run_id 指向 workflow_run 且非空，dwf 行
-      // 该列恒为空、run 身份在 path 里。共用一个 role 值会让"按 role 取行再解引用
-      // root_workflow_run_id"的消费者从 dwf 行拿到 null。列是 `text not null`，无 CHECK、
-      // 无 enum、契约侧也无 zod（已核对），所以新值合法。
+      // It is deliberately distinguished from the legacy "workflow_agent" (script-workflow-runtime.ts), rather than reused:
+      // The two are different groups of people. The root_workflow_run_id of the legacy row points to workflow_run and is not empty, the dwf row
+      // This column is always empty and the run identity is in path. Sharing a role value will cause "fetch rows by role and then dereference"
+      // The consumer of root_workflow_run_id" gets null from the dwf row. Column is `text not null`, no CHECK,
+      // There is no enum and no zod on the contract side (checked), so the new value is legal.
       role: "workflow_actor",
       status: "running",
     } satisfies CreateSessionTaskLinkInput);
@@ -501,16 +524,17 @@ async function persistActorSession(input: {
 }
 
 /**
- * 把 actor 实际跑在哪个模型上写进 journal（`ActorRecord.resolvedModel`，落 dwf_actor 的
- * resolved_model 列）。
+ * Write which model the actor actually ran on into the journal (`ActorRecord.resolvedModel`,
+ * landing in the dwf_actor resolved_model column).
  *
- * 为什么必须**读改写**：`putActor` 是整条记录的替换，而这条记录的另外几个字段（name /
- * persona / sessionId）不是本函数的；直接写一条只有 resolvedModel 的记录会把引擎刚写下的
- * 冻结 persona 抹掉。
+ * Why it must be a **read-modify-write**: `putActor` replaces the whole record, and this
+ * record's other fields (name / persona / sessionId) are not this function's to know; writing
+ * a record with only resolvedModel would erase the frozen persona the engine just wrote.
  *
- * 为什么是 driver 侧写：子代理跑在哪个模型上是宿主事实（父会话当时的选择），引擎在 createActor
- * 时同步落 persona 的那一刻看不见它。引擎那一侧的两处 putActor 会把本字段原样带过去，见
- * dynamic-workflow 的 engine.ts / scheduler.ts。
+ * Why the driver side writes it: which model a subagent runs on is a host fact (the choice the
+ * parent session made at the time), and the engine cannot see it at the moment it persists the
+ * persona synchronously in createActor. The engine's two putActor calls carry this field
+ * through unchanged — see dynamic-workflow's engine.ts / scheduler.ts.
  */
 export function journalActorResolvedModel(input: {
   actor: ActorRef;
@@ -526,33 +550,39 @@ export function journalActorResolvedModel(input: {
   });
 }
 
-/** journal 里 `resolvedModel` 的写法：`providerId/modelId`，与 pin 的读法（workflow-actor-model.ts）互逆。 */
+/** How `resolvedModel` is written in the journal: `providerId/modelId`, the exact inverse of how a pin is read (workflow-actor-model.ts). */
 function formatActorResolvedModel(selection: ModelSelection): string {
   return `${selection.providerId}/${selection.modelId}`;
 }
 
 /**
- * 造好的 actor runtime 必须已经有模型选择：child 继承父会话当前的选择（script-workflow-child-runtime.ts），
- * 父会话没有选择时它连第一次模型请求都发不出去。这里大声失败，而不是把「没选模型」落成一条空 pin。
+ * A freshly built actor runtime must already have a model selection: the child inherits the
+ * parent session's current choice (script-workflow-child-runtime.ts), and without a choice the
+ * parent session cannot even send the first model request. Fail loudly here rather than
+ * recording "no model chosen" as an empty pin.
  */
 function requireActorModelSelection(runtime: AgentRuntime, actor: ActorRef): ModelSelection {
   const selection = runtime.getSessionModelSelection();
   if (selection === undefined) {
     throw new Error(
-      `actor 会话没有模型选择，无法记录 resolvedModel: ${actor.siteId}#${actor.ordinal}`,
+      `actor session has no model selection, cannot record resolvedModel: ${actor.siteId}#${actor.ordinal}`,
     );
   }
   return selection;
 }
 
 /**
- * resume 的 pin 读取：这个 actor 在 journal 里记下的 `resolvedModel`（`providerId/modelId`）。
+ * The pin read on resume: this actor's `resolvedModel` as recorded in the journal
+ * (`providerId/modelId`).
  *
- * 只有 resume 才会读到值：引擎 replay `createActor` 时把该字段 carry-forward 保了下来；
- * 全新 run 在 runtime 工厂运行的这一刻还没有解析结果，天然缺席。**必须在造 runtime 之前读**，
- * 因为 `journalActorResolvedModel` 随后就会把本轮的解析写回同一字段——读晚了会把本轮结果
- * 误当成上一轮的 pin。pin 与本 run 的 subagentModel 谁优先，见 workflow-actor-model.ts
- * （run 选择在上；pin 只守没有 run 选择时的缺省，persona 冻结不变式的持久化那一半）。
+ * Only resume ever reads a value: the engine carries the field forward when replaying
+ * `createActor`, while a brand-new run has no resolution result yet at the moment the runtime
+ * factory runs, so it is naturally absent. **It must be read before the runtime is built**,
+ * because `journalActorResolvedModel` then writes this round's resolution back into the same
+ * field — reading too late would mistake this round's result for the previous round's pin.
+ * For which of the pin and this run's subagentModel wins, see workflow-actor-model.ts (the
+ * run's choice is on top; the pin only guards the default when there is no run choice — the
+ * persistence half of the frozen-persona invariant).
  */
 function pinnedActorModel(input: {
   actor: ActorRef;
@@ -564,21 +594,26 @@ function pinnedActorModel(input: {
 }
 
 /**
- * RunEvent → 协议事件的映射（**本注释即契约**）：`type` 取事件的判别式，`payload` 是同一个
- * 事件对象去掉 `type` 后的其余字段，经 {@link boundDynamicWorkflowRunEventPayload} 有界化。
- * 刻意不重塑字段名——读端（详情页事件日志）按事件种类解释 payload，而引擎的词汇表就是那份 schema。
+ * The RunEvent → protocol event mapping (**this comment is the contract**): `type` is the
+ * event's discriminant, and `payload` is the remaining fields of that same event object with
+ * `type` removed, bounded by {@link boundDynamicWorkflowRunEventPayload}. Field names are
+ * deliberately not reshaped — the read side (the detail page's event log) interprets the
+ * payload per event kind, and the engine's vocabulary *is* that schema.
  *
- * 引擎实际发出的种类：run-started / actor-created / node-queued / node-dispatched /
- * node-repairing / node-nudged / node-settled / usage-updated / log / report / phase-entered /
- * run-settled。
- * （`executing` 不是可观察事件；`compaction` v1 从不发出。）另有两种由 **driver** 发出、
- * 走同样两条轨的事件：escalation-raised / escalation-resolved（workflow-driver.ts 的升级桥接）。
+ * The kinds the engine actually emits: run-started / actor-created / node-queued /
+ * node-dispatched / node-repairing / node-nudged / node-settled / usage-updated / log /
+ * report / phase-entered / run-settled. (`executing` is not an observable event; `compaction`
+ * is never emitted in v1.) Two further kinds are emitted by the **driver** and travel the same
+ * two rails: escalation-raised / escalation-resolved (the escalation bridge in
+ * workflow-driver.ts).
  *
- * 新增一个事件种类在**本函数**里是零改动的，这正是"不重塑字段名"买到的东西：`type` 取判别式、
- * payload 是其余字段，这里没有按种类的分支可漏。**但下游确实有一个按种类的 switch**：
- * `zcode-protocol-v4/product-projection.ts` 的 `applyWorkflowRunEvent` 逐种类归约，其
- * `eventType` 形参是 `string` 而不是 `RunEvent["type"]`，漏一支 tsc 不会报——加事件种类时
- * 要去读那个 switch，不能指望编译器。
+ * Adding an event kind is zero-diff in **this function**, which is exactly what "do not
+ * reshape field names" buys: `type` is the discriminant, the payload is everything else, and
+ * there is no per-kind branch here to miss. **There is, however, a per-kind switch
+ * downstream**: `applyWorkflowRunEvent` in `zcode-protocol-v4/product-projection.ts` reduces
+ * kind by kind and its `eventType` parameter is `string` rather than `RunEvent["type"]`, so a
+ * missing arm is not a tsc error — when you add an event kind, go read that switch instead of
+ * relying on the compiler.
  */
 export function toProtocolEvent(sequence: number, event: RunEvent): DynamicWorkflowRunEvent {
   const { type, ...rest } = event;
@@ -589,38 +624,48 @@ export function toProtocolEvent(sequence: number, event: RunEvent): DynamicWorkf
 }
 
 /**
- * RunEvent → 会话事件载荷。`payload` 与 {@link toProtocolEvent} 使用同一次序列化，
- * 派生字段放在 payload 之外，保留引擎事件原文。
+ * RunEvent → session event payload. The `payload` uses the very same serialization as
+ * {@link toProtocolEvent}; derived fields sit outside the payload so that the engine event
+ * text is preserved.
  *
- * `actorSessionId` 通过与 driver 相同的生成函数获取，避免 renderer 重复实现会话 ID 规则。
- * `actor-created` 和带 actor 的 `node-dispatched` 都补充该字段，使运行中实例被收进有界表时，
- * 仍能关联到对应的子代理会话。进程并发上限和子代理来源按下方各自的事件条件补充。
+ * `actorSessionId` comes from the same generator the driver uses, so the renderer never
+ * reimplements the session id rules. Both `actor-created` and a `node-dispatched` carrying an
+ * actor fill that field in, so a live instance that gets folded into the bounded table can
+ * still be linked to its subagent session. The process concurrency ceiling and the subagent
+ * model are added under their own event conditions below.
  */
 export function toProgressPayload(input: {
   event: RunEvent;
   runId: string;
   sequence: number;
   toolCallId?: string;
-  /** run 的锚点 inputId；只在 actor-created / run-settled 上派生（子代理归属的两个时刻）。 */
+  /** The run's anchor inputId; derived only on actor-created / run-settled (the two moments of subagent attribution). */
   launchInputId?: string;
-  /** 修订 run 的前驱；只在 `run-started` 上派生（卡片的「调整自 run X」）。 */
+  /** The predecessor of an amended run; derived only on `run-started` (the card's "adjusted from run X"). */
   resumedFrom?: string;
   /**
-   * 铸造这条载荷那一刻的进程并发天花板；在 `run-started` 与 `run-caps-changed` 两种事件上派生。
+   * The process concurrency ceiling at the moment this payload is minted; derived on both
+   * `run-started` and `run-caps-changed`.
    *
-   * 引擎事件只带它自己的 `caps.maxConcurrency`，而「这个数值不值得显示」要拿它和天花板比——
-   * 天花板是宿主事实（机器核数），引擎既看不见也不该看见。投影侧据 `caps.maxConcurrency <
-   * concurrencyCeiling` 记下本 run 的自有上界，UI 的并发 chip 再取 min(共享 cap, 本 run 上界)。
+   * Engine events only carry their own `caps.maxConcurrency`, while "this number is not worth
+   * showing" requires comparing it against the ceiling — and the ceiling is a host fact (the
+   * machine's core count) that the engine can neither see nor should see. The projection
+   * records this run's own ceiling when `caps.maxConcurrency < concurrencyCeiling`, and the
+   * UI's concurrency chip then takes min(shared cap, this run's own ceiling).
    *
-   * 一次就地 retune 发的 `run-caps-changed` 带着**新的** caps，判据却是同一条：低于天花板就写下
-   * 上界、等于天花板就把它清掉（= 解除限制）。所以两种事件必须拿到同一个天花板，也就是这一个。
+   * An in-place retune emits `run-caps-changed` with **new** caps, yet the criterion is the
+   * same one: below the ceiling, write down the ceiling; equal to the ceiling, clear it
+   * (= no restriction). Both event kinds therefore have to get the same ceiling, which is
+   * this one.
    */
   concurrencyCeiling?: number;
   /**
-   * 本 run 的子代理模型（规范 picker 串）；只在 `run-started` 上派生，且**只在设过时**在场。
-   * 与 `concurrencyCeiling` 不同，它不需要与任何默认值比对：
-   * 引擎压根不知道有这件事（模型面整个在宿主侧），所以缺席即「子代理跑在会话模型上」。
-   * 冷回放从同一条 `run-launched` 事件给出同一个键，两侧载荷因此逐字节相等。
+   * This run's subagent model (a canonical picker string); derived only on `run-started`, and
+   * present **only when it was set**. Unlike `concurrencyCeiling` it needs no comparison
+   * against any default: the engine has no idea this exists (the whole model surface lives on
+   * the host side), so absent means "subagents run on the session model". A cold replay yields
+   * the same key from the same `run-launched` event, so the payloads on both sides are
+   * byte-identical.
    */
   subagentModel?: string;
 }): DynamicWorkflowRunProgressPayload {
@@ -641,15 +686,15 @@ export function toProgressPayload(input: {
     ...(toolCallId === undefined ? {} : { toolCallId }),
     sequence,
     eventType: protocolEvent.type,
-    // `run-settled` 多带一位 `resumable`：
-    // resume 门的谓词只在 CLI 有，投影与 UI 只搬运这一位、绝不自行按 status 推导。
-    // 谓词 = stopped ∧ 非 superseded；冷回放对孤儿收敛过的
-    // 行给同一个键——两条链、一个谓词（isResumableSettlement）。stopReason / supersededBy 随事件载荷原样透出。
-    // `run-started` 多带 `resumedFrom`：引擎事件不带它（引擎不读 lineage），但卡片要画这条边。
-    // 同一条缝里还多带 `concurrencyCeiling`：引擎只发自己的 caps，而「这个上界是不是默认值」
-    // 要拿它和宿主的天花板比（见上面的字段注释）。两者互不相关，各自缺席即各自不出。
-    // `run-caps-changed` 走**同一条**缝、同一个天花板：一次就地 retune 之后读面要靠它判断新上界
-    // 该写下还是该清掉，缺了它这条事件就只是两个没有标尺的数。
+    // `run-settled` takes one more `resumable`:
+    // The predicate of the resume gate is only available in the CLI. The projection and UI only carry this bit and will never deduce it by status.
+    // Predicate = stopped ∧ not superseded; cold replay has converged on orphans
+    // Rows are given to the same key - two chains, one predicate (isResumableSettlement). stopReason / supersededBy is exposed as is with the event payload.
+    // `run-started` has more than `resumedFrom`: the engine event does not have it (the engine does not read lineage), but the card needs to draw this edge.
+    // There is also `concurrencyCeiling` in the same crack: the engine only sends its own caps, and "is this upper bound the default value?"
+    // Compare this to the host's ceiling (see field notes above). The two are not related to each other, and each is absent.
+    // `run-caps-changed` walks the same crack and the same ceiling: retune on the spot once and then rely on it to determine the new upper bound when reading.
+    // Should it be written down or should it be cleared away? Without it, this event would be just two numbers without a scale.
     payload:
       event.type === "run-settled" && isResumableSettlement(event.status, event.stopReason)
         ? { ...protocolEvent.payload, resumable: true }
@@ -668,8 +713,8 @@ export function toProgressPayload(input: {
             : protocolEvent.payload,
     ...(protocolEvent.truncated ? { truncated: true } : {}),
     ...(actorRef === undefined ? {} : { actorSessionId: mintActorSessionId(runId, actorRef) }),
-    // 第三个派生字段：埋点事实层只在这两种事件上
-    // 需要锚点——actor-created 登记子代理归属，run-settled 结算该 run 全部子代理。
+    // The third derived field: the buried fact layer is only for these two events
+    // Anchors are required - actor-created registers sub-agent ownership, run-settled settles all sub-agents of the run.
     ...((event.type === "actor-created" || event.type === "run-settled") &&
     launchInputId !== undefined
       ? { launchInputId }
@@ -678,10 +723,12 @@ export function toProgressPayload(input: {
 }
 
 /**
- * 这条事件点名了哪个子代理（要补 `actorSessionId` 的那个 ref），没点名即 undefined。
+ * Which subagent this event names (the ref that gets `actorSessionId` filled in); undefined
+ * when it names none.
  *
- * 两种事件：`actor-created`（子代理的出生），以及带 `actor` 的 `node-dispatched`（ask 派发时重复出生事实）。
- * world-read 的派发不带 `actor`，因此不补——它没有转录可开。
+ * Two event kinds: `actor-created` (a subagent's birth), and a `node-dispatched` carrying an
+ * `actor` (the birth fact repeated at ask dispatch). A world-read dispatch carries no
+ * `actor`, so nothing is filled in — it has no transcript to open.
  */
 function actorSessionRefOf(event: RunEvent): ActorRef | undefined {
   if (event.type === "actor-created") return event.actor;

@@ -1,15 +1,15 @@
 import type { ZCodeSavedWorkflowMeta, ZCodeSavedWorkflowScope } from "@zcode/shared";
 import type { ZCodeAgentWorkspaceTarget } from "./zcodeAgentPluginParams.js";
 
-// 已保存工作流的 GUI 中枢：五个 workspace 级、无会话的方法。
-// 与 Skill catalog 同一条路径（workspace agent client），不走独立插件管理进程——文件在
-// workspace 里，远程 workspace 时就在远端 agent 进程里扫远端目录。
+// GUI hub for saved workflows: five workspace-level, session-less methods.
+// The same path as the Skill catalog (workspace agent client), without going through the independent plug-in management process - the file is in
+// In the workspace, when using the remote workspace, scan the remote directory in the remote agent process.
 //
-// 全局工作流：`scope: "global"` 时文件落在 agent 机器的
-// `~/.zcode/workflows/`。调用方可以省略 workspace——此时 services 层自选**载体运行时**
-// （活跃的本地 runtime → 管理面 workspace），协议处理器对全局档不读 workspace 的路径。
-// 项目组内的动作仍带自己的 workspace（既是运行目标又是载体），因此下面用一个 union：
-// 要么带 workspace（scope 可选，缺省 project），要么只给 `scope: "global"`（workspace 可省）。
+// Global workflow: `scope: "global"` when the file falls on the agent machine
+// `~/.zcode/workflows/`. The caller can omit the workspace - in this case the services layer chooses the **carrier runtime**
+// (Active local runtime → management plane workspace), the protocol processor does not read the workspace path for global files.
+// Actions within the project group still have their own workspace (both a running target and a carrier), so a union is used below:
+// Either bring workspace (scope is optional, default is project), or only `scope: "global"` (workspace is optional).
 export type ZCodeAgentSavedWorkflowTarget =
   | (ZCodeAgentWorkspaceTarget & { scope?: ZCodeSavedWorkflowScope })
   | ({ scope: "global" } & Partial<ZCodeAgentWorkspaceTarget>);
@@ -30,15 +30,15 @@ export type ZCodeAgentDeleteSavedWorkflowParams = ZCodeAgentSavedWorkflowTarget 
 };
 
 export type ZCodeAgentListSavedWorkflowRunsParams = ZCodeAgentSavedWorkflowTarget & {
-  /** 只要这个工作流名下的 run；缺省即（该 scope 下）全部。 */
+  /** Just run under this workflow name; the default is all (under this scope). */
   name?: string;
-  /** [1, 50]；服务端钳制。 */
+  /** [1, 50]; Server-side clamping. */
   limit: number;
 };
 
-// workflows/move：把全局档搬回项目档，
-// **只此一向**。`workspace`
-// 必填，既是载体也是「移到项目…」选中的目标项目；同机同用户，不覆盖已存在的目标。
+// workflows/move: Move the global file back to the project file,
+// **This is the only way**. `workspace`
+// Required, it is both the carrier and the target project selected by "Move to Project..."; the same machine and user will not overwrite the existing target.
 export type ZCodeAgentMoveSavedWorkflowParams = ZCodeAgentWorkspaceTarget & {
   name: string;
 };

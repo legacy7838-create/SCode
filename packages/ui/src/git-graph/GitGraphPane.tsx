@@ -36,7 +36,7 @@ const NODE_RADIUS = 4;
 const SELECTED_NODE_RADIUS = 4.25;
 const SELECTED_RING_RADIUS = 5.5;
 const LOAD_MORE_SCROLL_THRESHOLD_PX = 96;
-// 单泳道图形宽度比 Graph 表头短，保留最小列宽避免表头被挤压。
+// The single-lane graph width is shorter than the Graph header, and the minimum column width is retained to prevent the header from being squeezed.
 const GRAPH_COLUMN_MIN_WIDTH_PX = 56;
 
 function getLaneStrokeClass(laneIndex: number): string {

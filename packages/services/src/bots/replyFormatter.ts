@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- Bot bot reply formatter 集中维护第三方消息的文本颗粒度、工具摘要和权限摘要，避免 provider 间文案分叉。 */
+/* eslint-disable max-lines -- The bot reply formatter centralizes third-party message text granularity, tool summaries and permission summaries so that copy does not fork between providers. */
 import type {
   ZCodePermissionRequest,
   ZCodeStreamEvent,
@@ -9,7 +9,29 @@ import {
   getCompactToolCallSummary,
   getPermissionRequestPreview,
 } from "@zcode/shared";
-import { normalizeBotMessageLocale } from "./messages.js";
+
+const formatterMessages = {
+  "en-US": {
+    toolCalls: "Tool calls:",
+    completed: "Completed",
+    failed: "Failed",
+    denied: "Denied",
+    inProgress: "Running",
+    pending: "Pending",
+    permissionRequired: "Permission required:",
+    editWriting: "Writing",
+    editUpdating: "Updating",
+    editDeleting: "Deleting",
+    editEditing: "Editing",
+    changeSummary: "Change summary",
+    moreToolCalls: "{count} more tool calls",
+    moreFiles: "{count} more files",
+  },
+} as const;
+
+function t(locale: Locale | undefined, key: keyof (typeof formatterMessages)["en-US"]): string {
+  return formatterMessages["en-US"][key];
+}
 
 export interface BotReplyToolCallState {
   toolId: string;
@@ -49,44 +71,6 @@ const MAX_REPLY_MESSAGE_LENGTH = 3500;
 const DIFF_ADDED_MARKER = "🟢";
 const DIFF_REMOVED_MARKER = "🔴";
 
-const formatterMessages = {
-  "zh-CN": {
-    toolCalls: "工具调用：",
-    completed: "完成",
-    failed: "失败",
-    denied: "已拒绝",
-    inProgress: "⏳ 运行中",
-    pending: "等待中",
-    permissionRequired: "需要权限：",
-    editWriting: "写入中",
-    editUpdating: "更新中",
-    editDeleting: "删除中",
-    editEditing: "编辑中",
-    changeSummary: "变更摘要",
-    moreToolCalls: "还有 {count} 个工具调用",
-    moreFiles: "还有 {count} 个文件",
-  },
-  "en-US": {
-    toolCalls: "Tool calls:",
-    completed: "Completed",
-    failed: "Failed",
-    denied: "Denied",
-    inProgress: "Running",
-    pending: "Pending",
-    permissionRequired: "Permission required:",
-    editWriting: "Writing",
-    editUpdating: "Updating",
-    editDeleting: "Deleting",
-    editEditing: "Editing",
-    changeSummary: "Change summary",
-    moreToolCalls: "{count} more tool calls",
-    moreFiles: "{count} more files",
-  },
-} as const;
-
-function t(locale: Locale | undefined, key: keyof (typeof formatterMessages)["zh-CN"]): string {
-  return formatterMessages[normalizeBotMessageLocale(locale)][key];
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -110,7 +94,7 @@ function truncateMiddleText(value: string, maxLength = MAX_COMMAND_FIELD_LENGTH)
 }
 
 function formatMarkdownInlineCode(value: string): string {
-  // Telegram Markdown 的 inline code 需要转义反斜杠和反引号，否则路径/命令里的特殊字符会导致文本退回裸显示。
+  // Telegram Markdown's inline code needs to escape backslashes and backticks, otherwise special characters in the path/command will cause the text to return to naked display.
   return `\`${value.replace(/\\/gu, "\\\\").replace(/`/gu, "\\`")}\``;
 }
 
@@ -234,8 +218,8 @@ function formatEditPermissionKindLabel(
   if (/\b(update|updating|updated)\b/u.test(normalizedText)) {
     return t(locale, "editUpdating");
   }
-  // Bugfix: edit 权限标题直接透传 ZCode Agent 的 "Edit <path>" 时，第三方消息无法像 UI kindLabel 一样区分写入/更新/删除。
-  // 这里至少把泛化的 Edit 换成 edit kind label，具体操作能从 raw/fileChange 推断时再细分。
+  // Bugfix: When the edit permission title is directly transparently transmitted to ZCode Agent's "Edit <path>", the third-party message cannot distinguish write/update/delete like the UI kindLabel.
+  // Here at least replace the general Edit with edit kind label, and the specific operations can be subdivided when inferred from raw/fileChange.
   return t(locale, "editEditing");
 }
 
@@ -294,8 +278,8 @@ export function extractBotAssistantResponseMessages(
     return { messages: [], rest: normalizedBuffer };
   }
 
-  // Bugfix: Bot channel 的 provider chunk 常按词或子词到达，非终态时必须继续留在
-  // assistantReplyBuffer 里合并；真正的发送边界由 tool_call / task_complete 等 force flush 决定。
+  // Bugfix: Bot channel's provider chunk often arrives by word or subword, and must remain in the non-final state
+  // Merged in assistantReplyBuffer; the actual sending boundary is determined by force flush such as tool_call / task_complete.
   return {
     messages: splitLongReplyText(normalizedBuffer),
     rest: "",
@@ -349,9 +333,7 @@ function formatBotChangeSummary(
     return "";
   }
   const lines = [
-    options?.locale === "en-US"
-      ? `${t(options.locale, "changeSummary")}: ${changeSummary.fileCount} files, ${formatBotDiffCount(changeSummary)}`
-      : `${t(options?.locale, "changeSummary")}：${changeSummary.fileCount} 个文件，${formatBotDiffCount(changeSummary)}`,
+    `${t(options?.locale, "changeSummary")}: ${changeSummary.fileCount} files, ${formatBotDiffCount(changeSummary)}`,
   ];
   for (const file of changeSummary.files.slice(0, MAX_TOOL_SUMMARY_ITEMS)) {
     lines.push(`- ${formatMarkdownInlineCode(file.path)} (${formatBotDiffCount(file)})`);

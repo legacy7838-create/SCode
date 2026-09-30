@@ -47,42 +47,55 @@ export interface ConversationStatusPanelRunningSubagent extends RunningSubagentS
 }
 
 /**
- * Workflows 分区的一行。
+ * One row of the Workflows section.
  *
- * 字段成三簇，因为三种事实各自可以缺席：`status` / `nodesSettled` / `nodesTotal` 来自
- * `workflowRuns` 投影；`title` / `startedAt` 是后台任务的静态元数据；`workId` /
- * `cancellable` 是 Stop 的前提，只在后台任务仍 running 时出现。**缺席用字段不存在表达，
- * 而不是 0 或空串**——渲染层据此决定这行有没有状态词/步数、有没有时长、能不能停，一个假
- * 的 0/0 会显示成「一步都没跑」。分簇的理由见 `buildRunningWorkflowRuns`。
+ * The fields fall into three clusters, because each of the three kinds of fact can be absent on its
+ * own: `status` / `nodesSettled` / `nodesTotal` come from the `workflowRuns` projection; `title` /
+ * `startedAt` are static metadata of the background work; `workId` / `cancellable` are the
+ * preconditions for Stop and appear only while the background work is still running. **Absence is
+ * expressed by the field not existing, rather than by 0 or an empty string** — the rendering layer
+ * uses that to decide whether the row has a status word / step count, whether it has a duration,
+ * and whether it can be stopped; a fake 0/0 would render as "no steps ran at all". The reason for
+ * the clustering is spelled out in `buildRunningWorkflowRuns`.
  */
 export interface ConversationStatusPanelWorkflowRun {
-  /** 身份与 React key；偏斜降级行用 workId 顶替（两者本就 ≡）。 */
+  /** Identity and React key; skewed fallback rows substitute workId (the two are ≡ anyway). */
   runId: string;
-  /** 缺席即该行不可点（没有可开的详情页 tab），与投影里 run 无 toolCallId 同义。 */
+  /**
+   * Absent means the row is not clickable (there is no details-page tab to open), which is the same
+   * thing as the run having no toolCallId in the projection.
+   */
   toolCallId?: string;
-  /** 有 run 支撑才有状态词；降级行没有。 */
+  /** A status word exists only when a run backs it; fallback rows do not have one. */
   status?: "pending" | "running";
   nodesSettled?: number;
   nodesTotal?: number;
   /**
-   * 展示名。**`title ≡ workId` 即「未命名」**，渲染层据此换成 i18n 兜底名：core 的
-   * `workflowTaskSubject` 兜底链最终落到 taskId（≡ runId ≡ workId），而投影把非空
-   * description 原样抄进 title——所以「题名恰好等于 id」是唯一可靠的未命名信号。
-   * 模型不做这个替换（i18n 不属于模型层），只保证 title 原样透出。
+   * The display name. **`title ≡ workId` means "unnamed"**, and the rendering layer swaps in the
+   * i18n fallback name based on that: core's `workflowTaskSubject` fallback chain ends at taskId (≡
+   * runId ≡ workId), while the projection copies a non-empty description into the title verbatim —
+   * so "the title happens to equal the id" is the only reliable signal for unnamed. The model does
+   * not do this substitution (i18n does not belong to the model layer); it only guarantees that the
+   * title is passed through verbatim.
    */
   title?: string;
   startedAt?: number;
-  /** 停止按钮要的控制句柄；只在 work 仍 running 时出现（已结束的 work 没有可取消的东西）。 */
+  /**
+   * The control handle the stop button needs; it appears only while the work is still running
+   * (finished work has nothing to cancel).
+   */
   workId?: string;
   cancellable?: boolean;
 }
 
 /**
- * 「打开哪个 run 的详情页」的意图。会话与 workspace 身份由宿主补齐，面板不感知 scope
- * （与工具卡走同一个 handler，不存在第二条打开路径）。
+ * The intent of "open the details page of which run". The host fills in the session and workspace
+ * identity; the panel is unaware of scope (it goes through the same handler as the tool card; there
+ * is no second open path).
  *
- * 住在模型文件而不是组件里：composer 徽标的直达判定（`resolveSoleRunningWorkflowRunTarget`）
- * 与面板行产出同一形状，组件层从模型取类型，不反向依赖。
+ * It lives in the model file rather than in the component: the composer badge's direct-open check
+ * (`resolveSoleRunningWorkflowRunTarget`) and the panel row produce the same shape, the component
+ * layer takes its types from the model, and the model does not depend back on the component.
  */
 export interface ConversationStatusPanelWorkflowRunTarget {
   runId: string;
@@ -91,9 +104,11 @@ export interface ConversationStatusPanelWorkflowRunTarget {
 }
 
 /**
- * 面板行 → 打开意图。无 `toolCallId` 即 null（没有可开的详情页 tab）。名字只在真有时带上：
- * `title ≡ runId` 是未命名 run 的兜底样子（core 的 workflowTaskSubject 落到 taskId），把 runId
- * 冻进 tab 标签比通用兜底名更糟。面板行与 composer 徽标直达共用这一处换算。
+ * Panel row → open intent. No `toolCallId` means null (there is no details-page tab to open). The
+ * name is only attached when it really exists: `title ≡ runId` is what an unnamed run falls back to
+ * (core's workflowTaskSubject lands on taskId), and freezing the runId into the tab label is worse
+ * than the generic fallback name. The panel row and the composer badge's direct open share this one
+ * conversion.
  */
 export function workflowRunOpenTarget(
   run: ConversationStatusPanelWorkflowRun,
@@ -144,8 +159,8 @@ function buildGitModel({
   }
   const added = gitWorktreeChangeSummary?.added ?? 0;
   const removed = gitWorktreeChangeSummary?.removed ?? 0;
-  // v4 之前只要是 Git repository 就创建 Git model，导致 clean repo
-  // 也挂出右上角状态卡；旧 ChatView 只在 worktree 有行级变化时展示 Git Tools。
+  // Before v4, Git model was created as long as it was a Git repository, resulting in clean repo
+  // Also hang up the status card in the upper right corner; the old ChatView only displays Git Tools when there are row-level changes in the worktree.
   if (added + removed <= 0) {
     return null;
   }
@@ -175,8 +190,8 @@ function buildPlanModel(plan: PlanState | null | undefined) {
   const completed = plan.items.filter((item) => item.status === "completed");
   return {
     items: plan.items,
-    // 按状态重新分组会让 Todo 完成时从原位置跳到列表末尾，破坏 TodoWrite
-    // snapshot 的权威顺序。这里完整保留原数组，只由 renderer 负责滚动和状态样式。
+    // Regrouping by status will cause the Todo to jump from its original position to the end of the list when it is completed, destroying TodoWrite
+    // The authoritative order of snapshots. The original array is completely retained here, and only the renderer is responsible for scrolling and state styles.
     displayItems: plan.items,
     completedCount: completed.length,
     waitingCount: plan.items.length - completed.length,
@@ -214,22 +229,30 @@ function buildSessionPlansModel(
 }
 
 /**
- * Workflows 分区：活动 run 与 workflow 后台任务按 **workId ≡ runId** 联接。
+ * The Workflows section: active runs and workflow background works are joined by **workId ≡
+ * runId**.
  *
- * 这条等式不是猜的，是 schema 上写明的既有事实（`backgroundWorkSummarySchema` 的
- * kind 注释与 `backgroundResultOriginMetaSchema` 的 "workflow" 注释）；所以联接用主键
- * 直接对上，不需要 Agent 行那套「重复身份宁可不显示」的消歧。
+ * That equation is not a guess; it is an existing fact written into the schema (the kind comment on
+ * `backgroundWorkSummarySchema` and the "workflow" comment on `backgroundResultOriginMetaSchema`);
+ * so the join matches on the primary key directly and does not need the Agent row's "prefer not to
+ * show duplicated identities" disambiguation.
  *
- * 两侧各自可以单方面缺席，缺席的处理按**字段含义**分簇，而不是按 work 的 status 一刀切：
- * - `title` / `startedAt` 是静态元数据，work 无论什么 status 都取。work 走到 resultPending
- *   时若一并丢掉它们，run 还在跑的那一行会当场闪成 i18n 兜底名并失去时长——纯视觉故障。
- * - `workId` / `cancellable` 是 Stop 的前提，**只在 work 仍 running 时给**：已结束的 work
- *   没有可取消的东西，留着按钮就是一个点了没反应的 Stop。
- * - run 有、work 全无：仍成行（状态词与步数是投影自己的事实），只是没有题名/时长/Stop。
- * - work 有、run 无：说明 CLI 老到不发 `workflowRuns` 投影键。降级成只有题名/时长/Stop
- *   的一行，**追加在 run 支撑的行之后**——它没有启动序上的位置，插进中间等于编造顺序。
- *   这条兜底的全部理由是：**cancel 入口在任何偏斜下都不许消失**；因此降级行只收 running
- *   的 work——既没有 run、work 也已结束的那条没有任何可操作的东西，显示它就是一条死行。
+ * Either side can be absent on its own, and absence is handled by clustering on **field meaning**
+ * rather than by cutting on the work's status all at once:
+ * - `title` / `startedAt` are static metadata and are taken whatever the work's status. If they
+ *   were dropped as soon as the work reaches resultPending, the row of a run that is still running
+ *   would flash over to the i18n fallback name and lose its duration — a purely visual failure.
+ * - `workId` / `cancellable` are the preconditions for Stop and are given **only while the work is
+ *   still running**: a finished work has nothing to cancel, and leaving the button there is a Stop
+ *   that does nothing when clicked.
+ * - Run present, work entirely absent: it still becomes a row (the status word and the step count
+ *   are facts of the projection itself), just with no title / duration / Stop.
+ * - Work present, run absent: the CLI is old enough not to emit the `workflowRuns` projection key.
+ *   It degrades to a row with only title / duration / Stop, **appended after the run-backed rows**
+ *   — it has no position in start order, and inserting it in the middle would amount to fabricating
+ *   an order. The entire reason for this fallback is: **the cancel entry point must never disappear
+ *   under any skew**; so a fallback row only takes running works — the one with neither a run nor a
+ *   still-running work has nothing actionable, and showing it would just be a dead row.
  */
 function buildRunningWorkflowRuns(
   runs: readonly WorkflowRunState[] | undefined,
@@ -238,12 +261,12 @@ function buildRunningWorkflowRuns(
   const rows: ConversationStatusPanelWorkflowRun[] = [];
   const joinedWorkIds = new Set<string>();
   for (const run of runs ?? []) {
-    // pending 也是活动态：run 已经起跑、只是还没派发第一个节点，藏起来等于让用户
-    // 在「工作流启动了」和「面板出现它」之间看到一段空窗。
+    // pending is also an active state: the run has started, but the first node has not been distributed yet. Hiding it is equivalent to letting the user
+    // I see a blank window between "Workflow started" and "Panel appears".
     if (run.status !== "pending" && run.status !== "running") continue;
     const work = workflowWorkByWorkId.get(run.runId);
     if (work) joinedWorkIds.add(run.runId);
-    // 计数与聊天紧凑卡同源（唯一实现在 @zcode/shared 的 workflowRunStepCounts：表内 + 表外）。
+    // Counting has the same origin as the chat compact card (the only implementation is workflowRunStepCounts in @zcode/shared: inside the table + outside the table).
     const steps = workflowRunStepCounts(run);
     rows.push({
       runId: run.runId,
@@ -255,13 +278,13 @@ function buildRunningWorkflowRuns(
       ...(work?.status === "running"
         ? {
             workId: work.workId,
-            // 缺省即可停，与 Agent 行同款 `!== false`：能停而不给按钮比反过来更糟。
+            // The default is to stop, which is the same as Agent line `!== false`: being able to stop without giving a button is worse than the other way around.
             cancellable: work.cancellable !== false,
           }
         : {}),
     });
   }
-  // 顺序 = 投影 runs 序 = 启动序，模型不排序；重排会让面板行在每次投影更新时跳位。
+  // Order = projection runs Order = startup order, models are not sorted; reordering causes panel rows to jump each time the projection is updated.
   for (const [workId, work] of workflowWorkByWorkId) {
     if (joinedWorkIds.has(workId) || work.status !== "running") continue;
     rows.push({
@@ -276,13 +299,17 @@ function buildRunningWorkflowRuns(
 }
 
 /**
- * composer 徽标直达：本会话的运行态**恰好**
- * 是一条可开详情页的 workflow run 时，返回它的打开意图；否则 null，徽标退回展开胶囊。
+ * Composer badge direct open: when the running state of this conversation is **exactly** one
+ * workflow run that has a details page to open, return its open intent; otherwise null, and the
+ * badge falls back to the expanding capsule.
  *
- * 判定条件逐项都有理由：终端 / 子代理为零——徽标是它们唯一的入口，直达会把它们藏掉；
- * workflow 恰一条——两条以上选哪条是用户的事；带 `toolCallId`——降级行（work 有、run 无）与
- * 旧 CLI 的 run 没有可开的详情页，与面板行「不可点」同义，退回胶囊让 Stop 仍可达。
- * 输入就是 `buildConversationStatusPanelModel` 的产出：徽标与胶囊共用同一份运行态真值。
+ * Every condition has a reason: zero terminals / subagents — the badge is their only entry point,
+ * and a direct open would hide them; exactly one workflow — with two or more, which one to pick is
+ * the user's business; carrying a `toolCallId` — fallback rows (work present, run absent) and runs
+ * from old CLIs have no details page to open, which is the same thing as the panel row being "not
+ * clickable", so falling back to the capsule keeps Stop reachable. The input is exactly the product
+ * of `buildConversationStatusPanelModel`: the badge and the capsule share one source of truth for
+ * the running state.
  */
 export function resolveSoleRunningWorkflowRunTarget(
   model: Pick<
@@ -307,13 +334,13 @@ export function buildConversationStatusPanelModel(
   const subagentControlByChildSessionId = new Map<string, BackgroundWorkSummary | null>();
   for (const work of input.backgroundWorks ?? []) {
     if (work.kind === "workflow") {
-      // "workflow"（workflow run）曾与 bash 同列在 Terminals 下，那是保住停止入口的已记录错标；
-      // 现在它有自己的 Workflows 分区，于是**只**按 workId ≡ runId 进 workflow 联接表。
-      // 留在 runningBashWorks 里就是让同一个 run 在两个分区各出现一次。
+      // "workflow" (workflow run) was once listed under Terminals with bash, which was a recorded error that preserved the stop entry;
+      // Now it has its own Workflows partition, so just enter the workflow join table by workId ≡ runId.
+      // Staying in runningBashWorks means letting the same run appear once in both partitions.
       //
-      // 这一支**收在 running 闸门之前**：题名与启动时刻对已结束的 work 依然有效（见
-      // buildRunningWorkflowRuns 的分簇说明），status 的判断留到那里按字段做。workId 是
-      // 主键，重复即上游损坏，不做消歧。
+      // This branch is closed before the running gate: the title and start time are still valid for the completed work (see
+      // The clustering description of buildRunningWorkflowRuns), the judgment of status is left there to be done by field. workId is
+      // If the primary key is repeated, the upstream is damaged and no disambiguation is performed.
       workflowWorkByWorkId.set(work.workId, work);
       continue;
     }
@@ -321,9 +348,9 @@ export function buildConversationStatusPanelModel(
     if (work.kind === "bash") {
       runningBashWorks.push(work);
     } else if (work.kind === "subagent" && work.childSessionId) {
-      // 目录投影接管 Agent 展示后，旧 backgroundWorks 的 workId/cancellable
-      // 没有再关联回来，导致 Stop 入口消失。只接受唯一 childSessionId 精确匹配；重复或
-      // 缺失身份时宁可不显示控制，也不能按标题、时间猜测并停止错误任务。
+      // After directory projection takes over Agent display, the workId/cancellable of the old backgroundWorks
+      // It is not associated back, causing the Stop entrance to disappear. Accepts only unique childSessionId exact matches; duplicates or
+      // It is better not to display the control when the identity is missing than to guess and stop the wrong task by title and time.
       const existing = subagentControlByChildSessionId.get(work.childSessionId);
       subagentControlByChildSessionId.set(
         work.childSessionId,
@@ -347,9 +374,9 @@ export function buildConversationStatusPanelModel(
   );
   for (const [childSessionId, controlWork] of subagentControlByChildSessionId) {
     if (!controlWork || projectedChildSessionIds.has(childSessionId)) continue;
-    // backgroundWorks 已有精确 childSessionId 的 running 事实，但
-    // subagents cold/live 投影交接的短窗口可能暂时缺行；旧模型会把 Agent 控制
-    // 整条隐藏。这里只用唯一身份的权威 work 补齐同一控制，重复身份仍拒绝猜测。
+    // backgroundWorks already has the exact childSessionId running fact, but
+    // The short window for subagents cold/live projection handover may be temporarily missing; the old model will control the Agent
+    // Entirely hidden. Here only the authoritative work with unique identity is used to complete the same control, and duplicate identities still refuse to guess.
     runningSubagentWorks.push({
       agentId: controlWork.workId,
       childSessionId,

@@ -227,8 +227,8 @@ export function buildStandardChromeInstallations(
     userDataDir: join(configRoot, linuxProductDirectory(browser)),
     executablePaths: linuxExecutablePaths(browser),
   }));
-  // Ubuntu 上 Chromium 常以 Snap 安装，Chrome/Chromium 也可能来自 Flatpak。
-  // 这些 Profile 不在 XDG 标准目录中；保留独立候选，才能在标准目录为空时继续发现真实数据。
+  // Chromium on Ubuntu is often installed with Snap, and Chrome/Chromium may also come from Flatpak.
+  // These profiles are not in the XDG standard catalog; they remain independent candidates to continue to discover real data when the standard catalog is empty.
   const sandboxedInstallations: ChromeInstallationCandidate[] = [
     {
       browser: "chromium",
@@ -330,8 +330,8 @@ export function parseRunningChromeInstallations(
       candidate.executablePaths.some((path) => pathsMatch(path, executablePath)),
     );
     if (fallback) {
-      // Linux 常规启动不会显式携带 --user-data-dir；仍需把运行进程选择的密钥后端
-      // 合并回对应标准 Profile，确保隔离 helper 使用同一个 Libsecret/KWallet backend。
+      // Linux regular startup does not explicitly carry --user-data-dir; you still need to put the key backend selected by the running process.
+      // Merge back to the corresponding standard Profile to ensure that the isolation helper uses the same Libsecret/KWallet backend.
       installations.push({
         ...fallback,
         executablePath,

@@ -12,33 +12,40 @@ import {
 } from "./types.js";
 
 /**
- * 实时叠加视图（live view v1）的纯选择器。
+ * A pure selector for the live overlay view (live view v1).
  *
- * 这个视图刻意**不展开**成实例图：它就是提交时那张静态因果图，加一层状态装饰。由此得到的最强性质是
- * **运行期间图的节点与边集合绝不变化**——rank 单调、无重排按构造成立，因为叠加从不摆卡片。
- * 代价只有一个，而且只有这一个：一个静态 step 对应 N 个运行时实例（循环 / fan-out），
- * 所以状态必须坍缩，「第 3 轮失败了、第 4 轮在跑」是单张卡片说不出的那句话。
+ * This view deliberately does **not** expand into an instance graph: it is the static causal graph
+ * as submitted, with a layer of status decoration on top. The strongest property that buys is that
+ * the graph's node and edge sets **never change while a run is in flight** — ranks are monotonic
+ * and no reordering happens by construction, because the overlay never places cards. There is
+ * exactly one price for that, and only one: a static step corresponds to N runtime instances (loops
+ * / fan-out), so statuses have to collapse, and "iteration 3 failed, iteration 4 is running" is a
+ * sentence a single card cannot say.
  */
 export interface WorkflowRunOverlay {
   /**
-   * 按图上的 step id 索引的状态。偏表：没有观察到实例的 step **没有条目**。「每个 step 都有值」
-   * 曾是给 React Flow 板面的承诺（每张卡都要装饰）；板面退役后没有消费者需要它，而它让
-   * 「从没跑过」与「排队中」共用一个 `pending`。
+   * Statuses indexed by the step ids on the graph. Leaning table-shaped: a step with no observed
+   * instances has **no entry**. "Every step has a value" used to be a promise made for the React
+   * Flow surface (every card gets decorated); once that surface was retired no consumer needed it,
+   * and it made "never ran" share a single `pending` with "queued".
    */
   statuses: StepStatusTable;
-  /** 从 running 的 step 出发的排序边是否动画。 */
+  /** Whether ranking edges leaving a running step animate. */
   animatedEdges: boolean;
 }
 
 /**
- * 引擎相位 → 四值 `StepRunStatus`。
+ * Engine phase → four-valued `StepRunStatus`.
  *
- * 词汇表按**引擎实际发出的**事件写：queued / dispatched / executing / waiting / repairing / nudged /
- * settled。`executing` / `waiting` 是 driver 的观察：
- * 模型请求真的发出去了 / 在等进程级槽位或退避。
+ * The vocabulary is written against **the events the engine actually emits**: queued / dispatched /
+ * executing / waiting / repairing / nudged / settled. `executing` / `waiting` are the driver's
+ * observations: the model request has genuinely gone out / it is waiting on a process-level slot or
+ * a backoff.
  *
- * queued / dispatched / waiting 归入 pending 是有意的：这三段都是「还没有请求在 provider 那里跑」——
- * FIFO 与 per-run 上限的等待、会话就绪但首个请求尚未准入、闸门排队或退避。真正在动由 executing 说。
+ * Folding queued / dispatched / waiting into pending is deliberate: all three phases mean "no
+ * request is running over at the provider yet" — waiting on FIFO and the per-run cap, a session
+ * that is ready but whose first request has not been admitted, or gate queuing and backoff. Actual
+ * motion is what executing reports.
  */
 export function statusOfRunNode(node: WorkflowRunNode): StepRunStatus {
   switch (node.phase) {
@@ -47,9 +54,9 @@ export function statusOfRunNode(node: WorkflowRunNode): StepRunStatus {
     case "nudged":
       return "running";
     case "settled":
-      // 失败与取消都画成 failed（journal 里两者语义不同，但叠加视图只用四值词汇表）。
-      // outcome 缺省在引擎里不可达（settled 必带 outcome）；真出现时按「已结束」处理，
-      // 因为谎报 pending（没开始）比少一格颜色更糟，而谎报 failed 会造成假警报。
+      // Failure and cancellation are both drawn as failed (the two have different semantics in the journal, but the overlay view only uses a four-value vocabulary).
+      // Outcome is not reachable in the engine by default (settled must contain outcome); when it does appear, it will be treated as "Ended".
+      // Because lying about pending (not started) is worse than missing one color, and lying about failed will cause false alarms.
       return node.outcome === "failed" || node.outcome === "cancelled" ? "failed" : "done";
     default:
       return "pending";
@@ -57,17 +64,21 @@ export function statusOfRunNode(node: WorkflowRunNode): StepRunStatus {
 }
 
 /**
- * 唯一的折叠：实例状态的多重集 → 一个状态。
+ * The single collapse: multiset of instance statuses → one status.
  *
- *   - 空集 → `undefined`。缺席不是状态，折叠不凭空造一个；由消费者按控制流解缺席。
- *   - 任一 running → running。**刻意优先于 failed**：读者最需要知道的是「还在动吗」。
- *   - 既有已结算又有排队 → running：开始了、没结束。旧规则把它读成 pending（「还没开始」），
- *     是同一个混淆换了件衣服。
- *   - 全部排队 → pending。
- *   - 全部结算：任一 failed → failed，否则 done。
+ * - Empty set → `undefined`. Absence is not a status, and the fold does not invent one out of
+ *   nothing; consumers resolve the absence along their own control flow.
+ * - Any running → running. **Deliberately takes priority over failed**: what a reader most needs to
+ *   know is "is it still moving".
+ * - Both settled and queued → running: it started, it has not finished. The old rule read that as
+ *   pending ("has not started yet"), which is the same confusion in different clothes.
+ * - All queued → pending.
+ * - All settled: any failed → failed, otherwise done.
  *
- * 四条都是 any 判定，所以先按站点折、再按参与者折与直接按实例折结果相同——两级折叠不会漂移。
- * 输入既可以是实例状态（`statusOfRunNode`），也可以是站点状态（本函数的输出），词汇表相同。
+ * All four are `any` predicates, so folding by site first and then by participant gives the same
+ * result as folding directly by instance — the two-level fold does not drift. The input can be
+ * instance statuses (`statusOfRunNode`) or site statuses (this function's output); the vocabulary
+ * is the same.
  */
 export function aggregateRunStatuses(
   statuses: readonly StepRunStatus[],
@@ -81,9 +92,10 @@ export function aggregateRunStatuses(
 }
 
 /**
- * 一张卡片的收状态口子。`lane` 只有 may-set 展开的拷贝才有——它是这张卡片的**全部**主张
- * （「这次 ask 可能跑在这条车道上」），所以别的车道上的实例与它无关。`phase` 是阶段拷贝的
- * 同一种主张（「这次 ask 是在这个阶段里发的」）：出生在别的阶段的实例与它无关。
+ * A card's status-collection entry point. `lane` exists only on a copy that may be set — it is the
+ * card's **entire** claim ("this ask may have run on this lane"), so instances on other lanes are
+ * irrelevant to it. `phase` is the same kind of claim for a phase copy ("this ask was issued in
+ * this phase"): instances born in another phase are irrelevant to it.
  */
 interface OverlayTarget {
   instances: StepRunStatus[];
@@ -95,21 +107,21 @@ export function workflowRunOverlay(
   run: WorkflowRunState | undefined,
   graph: WorkflowCausalityGraphData,
 ): WorkflowRunOverlay {
-  // 没有 run 就是静态渲染：返回空表而不是一张全 pending 的表，让组件保持"零运行时数据"的样子。
+  // Without run, it is static rendering: returning an empty table instead of a full pending table, allowing the component to maintain the appearance of "zero runtime data".
   if (!run) return { statuses: {}, animatedEdges: false };
 
-  // 关联键是**站点 id**，不是卡片 id：may-set 车道展开后一个站点对应每候选车道一张卡片，
-  // 阶段拷贝后一个站点对应每认领阶段一张卡片（`ask#1~phase#3`）；`source` 记下展开自的站点，
-  // 两种拷贝都按它收，再各按自己的主张收窄——车道拷贝按 actor 车道，阶段拷贝按实例的出生阶段
-  // （`phaseName`，与卡片绑定、站的观察同一个 `phaseBinder`）。漏掉后一条，一个共享 helper
-  // 从五个阶段各派一批子代理时，第一批一动五站的灯全亮。
+  // The associated key is **site id**, not card id: may-set. After the lane is expanded, one site corresponds to one card for each candidate lane.
+  // The site after the phase copy corresponds to one card in each claiming stage (`ask#1~phase#3`); `source` notes the site expanded from,
+  // Both copies are narrowed according to it, and then each is narrowed according to its own opinion - the lane copy is according to the actor lane, and the stage copy is according to the birth stage of the instance.
+  // (`phaseName`, the same `phaseBinder` as the card binding and station observation). Missing the last one, a shared helper
+  // When a batch of sub-agents are dispatched from each of the five stages, the lights of the first batch of five stations will all light up.
   const byStepId = new Map<string, StepRunStatus[]>();
   const targetsBySiteId = new Map<string, OverlayTarget[]>();
   for (const step of graph.steps) {
     const instances: StepRunStatus[] = [];
     byStepId.set(step.id, instances);
-    // 不带 source 的 step **不做**车道收窄：>4 候选（或含 unknown）回退的单卡画在 lanes[0]，
-    // 实例却可能落在任一候选车道上，收窄会把这类卡片永久熄灭。
+    // Step without source **does not do** lane narrowing: >4 candidate (or including unknown) single card for rollback is drawn in lanes[0],
+    // Instances may fall in any of the candidate lanes, and the narrowing will permanently extinguish such cards.
     const target: OverlayTarget = {
       instances,
       ...(step.source === undefined ? {} : { lane: step.lane }),
@@ -123,20 +135,20 @@ export function workflowRunOverlay(
 
   const binder = phaseBinder(graph, run);
   for (const node of run.nodes) {
-    // 图里不存在的 site id 一律忽略：叠加绝不增删节点。
+    // Site ids that do not exist in the graph are ignored: superposition will never add or delete nodes.
     const targets = targetsBySiteId.get(node.siteId);
     if (targets === undefined) continue;
     const status = statusOfRunNode(node);
     for (const target of targets) {
-      // actorSiteId 缺席的实例进该站点的**全部**拷贝：退化成旧单卡的过度点亮，而不是死图——
-      // liveness 线索宁可多亮一格，也不能一格都不亮。
+      // ActorSiteId Absence of instances into **all** copies of the site: degenerated into an over-lighting of the old card, rather than a dead map -
+      // The liveness clue would rather light up one more square than not light up at all.
       const belongsToOtherLane =
         target.lane !== undefined &&
         node.actorSiteId !== undefined &&
         node.actorSiteId !== target.lane;
       if (belongsToOtherLane) continue;
-      // 出生阶段同理：无戳的实例（旧 run、标记前出生）由 binder 按既有规则归位——无词汇的 run
-      // 落全部阶段，退化成今天的过度点亮，而不是熄灯。
+      // The same is true for the birth stage: instances without stamps (old runs, born before marking) are returned by binder according to existing rules - runs without vocabulary
+      // Falling all stages, degenerating into today's over-lighting, rather than lights-out.
       const belongsToOtherPhase =
         target.phase !== undefined && !binder.has(target.phase, node.phaseName);
       if (belongsToOtherPhase) continue;
@@ -157,11 +169,13 @@ export function workflowRunOverlay(
 }
 
 /**
- * 车道 → 该车道上的 actor 实例（phase 5 的 transcript 下钻：单实例直接开，多实例弹选择器）。
+ * Lane → the actor instances on that lane (phase 5's transcript drill-down: a single instance opens
+ * directly, multiple instances pop a picker).
  *
- * 车道 site id 是身份，显示名只是展示（沿用 causality-graph 的命名契约）。
- * `workspace` 与 `unknown` 是合成车道，上面没有会话，所以恒返回空——world-read step
- * 因此只有选中态、没有下钻。
+ * The lane site id is the identity; the display name is presentation only (following the naming
+ * contract of causality-graph). `workspace` and `unknown` are synthetic lanes with no session on
+ * them, so they always return empty — a world-read step therefore has a selected state but no
+ * drill-down.
  */
 export function workflowRunActorsForLane(
   run: WorkflowRunState | undefined,

@@ -1,26 +1,25 @@
 /**
- * 产物（artifact）的编译期收集与诊断。
+ * Compile-time collection of artifacts and diagnostics about them.
  *
- * ⚠ 术语：本模块的 artifact 是**用户面产物**——脚本经 `artifact.*` 发布给用户看的文件 /
- * markdown / 预置看板。同目录下的 `artifact-types.ts` 说的是**另一个** artifact：站点的
- * 类型化输出值（给模型看的）。两者不相干。
+ * ⚠ Terminology: the artifact in this module is a **user-facing artifact** — a file / markdown / preset board that the script publishes for users through `artifact.*`. What
+ * `artifact-types.ts` in the same directory talks about is a **different** artifact: a node's typed output value (meant for the model). The two are unrelated.
  *
- * 产物两件：
+ * There are two things about artifacts:
  *
- * 1. `declaredArtifacts`（编译产物，照 `collectWorldRunCommands` 的 `commands`）：脚本声明的
- *    产物清单 `[{id, kind}]`，去重、按 id 排序。中枢与检视器据它在**运行前**就能说出这个
- *    工作流会产出什么。
- * 2. 定位诊断（facade-misuse 同族）：id 必须是编译期字面量，标签必须指向一个已声明的预置，
- *    同一个 id 不能横跨两个成员种类，预置声明不该长在循环体 / 回调 / 条件分支里。
+ * 1. `declaredArtifacts` (a compile-time product, mirroring the `commands` of `collectWorldRunCommands`): the list of artifacts declared by
+ *    the script, `[{id, kind}]`, deduplicated and sorted by id. It lets the hub and the inspector say **before the run** what this
+ *    workflow will produce.
+ * 2. Siting diagnostics (the facade-misuse family): an id must be a compile-time literal, a label must point at an already declared preset,
+ *    one id must not straddle two member kinds, and a preset declaration must not sit in a loop body / callback / conditional branch.
  *
- * 为什么 id 必须是编译期字面量（与 `world.run` 的 cmd、`phase` 的 name 同一姿态）：一个运行期
- * 才成形的 id 没有可展示的对象——它既进不了「将产出」清单，也让「同 id 两种种类」这类规则
- * 只剩运行期一条路。教改写发生在便宜的那一侧。
+ * Why an id must be a compile-time literal (the same stance as the cmd of `world.run` and the name of `phase`): an id that only takes shape at run time has nothing displayable —
+ * it cannot get into the "will produce" list, and it would leave rules like "two kinds under one id" with a single run-time path left.
+ * The teaching rewrite has to happen on the cheaper side.
  *
- * 与运行期的分工：这一趟只做**字面量能看穿的那一半**。真正的门在引擎——`ArtifactKindMismatch`
- * /`ArtifactRedeclared`/`ArtifactUndeclared`/`ArtifactCapExceeded` 都在运行期兜底，因为
- * 声明的**执行顺序**（哪个先跑到）静态看不出来。所以本模块**只会漏报、不会误报**，
- * 唯一的例外是提升诊断（见 {@link ARTIFACT_HOISTING_CODE}）。
+ * Division of labour with run time: this pass only does **the half that literals can see through**. The real gate is in the engine — `ArtifactKindMismatch`
+ * /`ArtifactRedeclared`/`ArtifactUndeclared`/`ArtifactCapExceeded` all backstop at run time, because the
+ * **execution order** of the declarations (which one runs first) is not statically visible. So this module **only under-reports, never false-positives**,
+ * and the sole exception is the hoisting diagnostic (see {@link ARTIFACT_HOISTING_CODE}).
  */
 
 import ts from "typescript";
@@ -30,45 +29,45 @@ import { isArtifactPresetOp, type ArtifactOp } from "../facade/registry.js";
 import { findWorkflowBody, type ArtifactSite, type SiteTable } from "./sites.js";
 
 /**
- * 产物的编译期诊断码（9001 = facade-siting、9002 = schema、9003 = world-run、9004 = phase、
- * 9005/9006 = actor 名，顺延）。覆盖：非字面量 / 空 / 超长 / 非法字符的 id、同 id 跨种类复用、
- * `report` 标签的三种错法。全部是**静态确定**的错误——没有一条会误伤一份合法脚本。
+ * The compile-time diagnostic codes for artifacts (9001 = facade-siting, 9002 = schema, 9003 = world-run, 9004 = phase,
+ * 9005/9006 = actor names, and so on). Coverage: an id that is non-literal / empty / too long / contains illegal characters, an id reused across kinds,
+ * and the three ways of getting a `report` label wrong. All of them are **statically certain** errors — not one of them can hurt a legitimate script.
  */
 export const ARTIFACT_DECLARATION_CODE = 9007;
 
 /**
- * 预置声明长在循环体 / 回调 / 条件分支里（「声明提到顶层，一次即可」），单独一个码而不是
- * 复用 9007，理由与 9005/9006 的分家完全相同：**确定性不同**。
+ * A preset declaration sits in a loop body / callback / conditional branch ("move the declaration to the top level, once is enough"). It gets its own code instead of
+ * reusing 9007, for exactly the same reason 9005/9006 are split out: **the certainty is different**.
  *
- * 循环里以**相同 spec** 重复声明在运行期其实是幂等 no-op，所以这条子句理论上会误报。接受它
- * 的理由是代价不对称——修复是免费的（把声明挪到脚本顶部），而不报的代价是一个看板声明藏在
- * 第三层回调里，读者要跑一遍才知道它到底声明了没有。读端（fixture 语料、未来的宽松档）
- * 因此需要能把它与 9007 区分开，而按错误文本分流是本仓库处处禁止的。
+ * Repeating a declaration with the **same spec** inside a loop is in fact an idempotent no-op at run time, so this clause is theoretically prone to false positives. It is accepted
+ * because the costs are asymmetric — fixing it is free (move the declaration to the top of the script), while the cost of not reporting it is a board declaration
+ * hidden in a third-level callback, and the reader has to run it once to find out whether it declared anything at all. The read side (fixture corpora, a future lenient tier)
+ * therefore has to be able to tell it apart from 9007, and routing by error text is forbidden everywhere in this repository.
  */
 export const ARTIFACT_HOISTING_CODE = 9008;
 
 /**
- * 两个**不同的** id 都写了字面量 `primary: true`。
- * 与 9008 同一种确定性：互斥分支里各标一个在运行期跑得通，但卡与侧板只会带头一个交付物，
- * 说不清哪个是的脚本没写完。只认字面量 `true`；算出来的旗子留给引擎的 `ArtifactPrimaryConflict`。
+ * Two **different** ids both wrote a literal `primary: true`.
+ * The certainty is the same as 9008's: marking one in each arm of a mutually exclusive branch does run, but the card and the side panel will only ever deliver the first one, and
+ * it stays unclear which was intended — the script is simply unfinished. Only a literal `true` is recognized; a computed flag is left to the engine's `ArtifactPrimaryConflict`.
  */
 export const ARTIFACT_PRIMARY_CONFLICT_CODE = 9009;
 
-/** 脚本声明的一个产物：id 与它的成员种类。 */
+/** One artifact declared by the script: an id plus its member kind. */
 export interface DeclaredArtifact {
   id: string;
-  /** 成员种类（`file` / `markdown` / `chart` / `table` / `metrics` / `board`）。 */
+  /** The member kind (`file` / `markdown` / `chart` / `table` / `metrics` / `board`). */
   kind: ArtifactOp;
 }
 
 export interface ArtifactDeclarations {
-  /** 脚本声明的产物清单：去重、按 id 字典序（`declaredCommands` 的同形产物）。 */
+  /** The list of artifacts declared by the script: deduplicated, sorted by id (the same shape as `declaredCommands`). */
   declaredArtifacts: DeclaredArtifact[];
-  /** 定位诊断；非空即脚本不可提交。 */
+  /** A siting diagnostic; a non-empty list means the script cannot be submitted. */
   diagnostics: CompileDiagnostic[];
 }
 
-/** 预置声明所处的、不该待的词法位置。 */
+/** The lexical position a preset declaration sits in — a position it should not be in. */
 type HoistingContext = "loop" | "callback" | "conditional";
 
 const HOISTING_MESSAGE: Record<HoistingContext, string> = {
@@ -101,8 +100,8 @@ const EMPTY_ID_MESSAGE =
   'report tag all key off. Give it a short stable name ("book", "perf", "coverage").';
 
 /**
- * 收集产物清单与诊断。非空诊断即脚本不可提交（`analyzeWorkflowScript` 与 world.run / phase /
- * actor 名的编译期规则同席）。
+ * Collects the artifact list and the diagnostics. A non-empty diagnostic list means the script cannot be submitted (`analyzeWorkflowScript` sits on the same stage as the
+ * compile-time rules for world.run / phase / actor names).
  */
 export function collectArtifactDeclarations(
   workflow: WorkflowProgram,
@@ -116,15 +115,15 @@ export function collectArtifactDeclarations(
     workflow.toScriptLoc(node.getStart(workflow.scriptFile));
 
   const body = findWorkflowBody(workflow.scriptFile);
-  /** id → 第一个用它的站点（种类冲突时用来指认前一处）。 */
+  /** id → the first site that used it (used to point at the earlier occurrence when kinds conflict). */
   const claimed = new Map<string, ArtifactSite>();
-  /** 第一个写了字面量 `primary: true` 的站点；第二个不同 id 再写就是 9009。 */
+  /** The first site that wrote a literal `primary: true`; a second one under a different id is 9009. */
   let primaryClaim: { id: string; site: ArtifactSite } | undefined;
   const declared: DeclaredArtifact[] = [];
 
   for (const site of table.artifacts) {
-    // id 的诊断落在**出问题的那个表达式**上（缺席时退回站点位置，同 world-run 的处理：
-    // 元数错误由类型检查先拦，但诊断收集不该依赖那条推断）。
+    // The diagnosis of id falls on the expression that caused the problem (return to the site location in absence, the same as world-run's processing:
+    // Numeric errors are blocked first by type checking, but diagnostic collection should not rely on that inference).
     const idLoc = site.artifactIdExpr === undefined ? site.loc : locOf(site.artifactIdExpr);
     if (site.artifactId === undefined) {
       push(ARTIFACT_DECLARATION_CODE, idLoc, NON_LITERAL_ID_MESSAGE);
@@ -155,7 +154,7 @@ export function collectArtifactDeclarations(
       continue;
     }
 
-    // 跨成员种类复用（诊断 4）：诊断落在**后一处**——先出现的那个种类是既有事实。
+    // Reuse across member categories (diagnosis 4): The diagnosis falls in the last place - the category that appears first is the established fact.
     const first = claimed.get(id);
     if (first === undefined) {
       claimed.set(id, site);
@@ -171,7 +170,7 @@ export function collectArtifactDeclarations(
       );
     }
 
-    // 交付物唯一（9009）：诊断落在**后一处**的 `primary` 属性上——先标的那个是既有事实。
+    // Unique deliverable (9009): The diagnosis falls on the `primary` attribute of the last place - the one marked first is the existing fact.
     const primaryNode = primaryLiteralOf(site);
     if (primaryNode !== undefined) {
       if (primaryClaim === undefined) primaryClaim = { id, site };
@@ -187,8 +186,8 @@ export function collectArtifactDeclarations(
       }
     }
 
-    // 提升诊断（预置族专属）：内容成员反而**常常**该出现在循环 / 条件里（每轮发布一版、
-    // 失败时补一版），所以这条子句绝不能扩到那一族。
+    // Improved diagnostics (exclusive to preset families): Content members **often** appear in loops/conditions where they should (one release per round,
+    // Make up a new edition if it fails), so this clause must not be extended to that family.
     if (isArtifactPresetOp(site.op)) {
       const context = hoistingContextOf(site.call, body);
       if (context !== undefined) {
@@ -197,15 +196,15 @@ export function collectArtifactDeclarations(
     }
   }
 
-  // 已声明的**预置** id（标签的合法目标集）与内容 id，两张表分开：标签指向内容 id 有专门
-  // 的一条文案（它不是「没这个东西」，而是「这个东西没有数据面」）。
+  // The declared **preset** id (the legal target set of the tag) and the content id are separated into two tables: the tag pointing to the content id has a dedicated
+  // A piece of copywriting (it's not "there is no such thing", but "this thing has no data surface").
   const presetIds = declared.filter((entry) => isArtifactPresetOp(entry.kind)).map((e) => e.id);
   const contentIds = new Set(
     declared.filter((entry) => !isArtifactPresetOp(entry.kind)).map((e) => e.id),
   );
 
   for (const site of table.reports) {
-    if (site.artifactIdExpr === undefined) continue; // 无标签的 report 照旧
+    if (site.artifactIdExpr === undefined) continue; // Unlabeled reports continue as usual
     const tagLoc = locOf(site.artifactIdExpr);
     if (site.artifactId === undefined) {
       push(
@@ -244,8 +243,8 @@ export function collectArtifactDeclarations(
 }
 
 /**
- * 站点 opts / spec 实参里字面量写着 `primary: true` 的那个属性；没有、不是对象字面量、不是
- * 字面量 `true`（算出来的、展开进来的）都算没有——那一半留给引擎。
+ * The property written literally as `primary: true` among the site opts / spec arguments; absent, not an object literal, or not a
+ * literal `true` (computed, or spread in) all count as absent — that half is left to the engine.
  */
 function primaryLiteralOf(site: ArtifactSite): ts.Node | undefined {
   const arg = site.call.arguments[isArtifactPresetOp(site.op) ? 1 : 2];
@@ -260,13 +259,13 @@ function primaryLiteralOf(site: ArtifactSite): ts.Node | undefined {
   return undefined;
 }
 
-/** 「已声明的预置有：…」的尾巴；一个都没有时说得更直白。 */
+/** The tail of "the declared presets are: …"; when there are none, it says so more plainly. */
 function describePresets(presetIds: readonly string[]): string {
   if (presetIds.length === 0) return " (this script declares no preset artifacts at all)";
   return ` (declared presets: ${[...presetIds].sort().map((id) => `"${id}"`).join(", ")})`;
 }
 
-/** 去重（同 id 同种类只留一条）、按 id 字典序。 */
+/** Deduplicated (same id + same kind keeps one entry) and sorted by id. */
 function sortDeclared(declared: readonly DeclaredArtifact[]): DeclaredArtifact[] {
   const seen = new Set<string>();
   const unique: DeclaredArtifact[] = [];
@@ -280,14 +279,14 @@ function sortDeclared(declared: readonly DeclaredArtifact[]): DeclaredArtifact[]
 }
 
 /**
- * 该调用**词法上**待在哪种不该待的位置里，从调用向外走到脚本体为止；都不是则 undefined。
- * 报最内层的那一个：它离作者要改的那一行最近，文案也最具体。
+ * Which kind of position this call **lexically** belongs in that it should not belong in, walking outward from the call to the script body; undefined when it is none of them.
+ * The innermost one is reported: it is closest to the line the author has to change, and the wording is the most specific.
  *
- * 刻意**不**把普通函数声明算作回调：`function setup() { artifact.chart(...) }` 后跟一次
- * `setup()` 是一份合法的顶层声明，只是换了个写法。箭头函数与函数表达式则几乎总是回调
- * （`.map(...)`、`.then(...)`），所以它们算。代价是「在具名 helper 里声明、而 helper 被
- * 循环调用」这一形状漏报——那是漏报方向，与本模块的保守取向一致（引擎的
- * `ArtifactRedeclared` 仍然兜底）。
+ * An ordinary function declaration is deliberately **not** counted as a callback: `function setup() { artifact.chart(...) }` followed by one
+ * `setup()` is a legitimate top-level declaration, just written differently. Arrow functions and function expressions, on the other hand, are almost always callbacks
+ * (`.map(...)`, `.then(...)`), so they do count. The cost is an under-report for the shape "declared inside a named helper that the loop calls" — that is the
+ * under-report direction, consistent with this module's conservative stance (the engine's
+ * `ArtifactRedeclared` still backstops it).
  */
 function hoistingContextOf(call: ts.CallExpression, body: ts.Block): HoistingContext | undefined {
   let child: ts.Node = call;
@@ -305,8 +304,8 @@ function hoistingContextOf(call: ts.CallExpression, body: ts.Block): HoistingCon
     ) {
       return "loop";
     }
-    // if / ternary：只有**分支**算条件位置，条件表达式本身不算——`if (artifact.chart(...))`
-    // 无条件求值，它的问题是别的（一个 void 当条件用），不该借这条文案说。
+    // if / ternary: Only **branch** counts the conditional position, the conditional expression itself does not count - `if (artifact.chart(...))`
+    // The problem with unconditional evaluation is something else (a void is used as a condition), and this article should not be used to explain it.
     if (ts.isIfStatement(node) && (node.thenStatement === child || node.elseStatement === child)) {
       return "conditional";
     }

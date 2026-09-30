@@ -19,7 +19,7 @@ export type ConversationShareSelectionPreflightState =
   | { status: "idle" | "checking" }
   | ({ status: "ready" | "stale" } & ConversationSharePreflightResult);
 
-// memo 组件的默认对象每次创建会破坏引用稳定性；idle 默认值仅供读取。
+// The default object of the memo component will destroy reference stability every time it is created; the idle default value is only for reading.
 const DEFAULT_PREFLIGHT: ConversationShareSelectionPreflightState = { status: "idle" };
 
 interface ConversationShareSelectionDockProps {
@@ -30,11 +30,11 @@ interface ConversationShareSelectionDockProps {
   onSelectAll: () => void;
   onDeselectAll: () => void;
   /**
-   * 整轮取消选择。只接受 productTurnId：turnOrdinal 是 service 按全部 turnHeader
-   * 编号的展示序号，用它反查 UI 的 per-query 列表会取消到别的轮次。
+   * Deselect the entire round. Only accept productTurnId: turnOrdinal is service press all turnHeader
+   * The display sequence number of the number. Use it to check the per-query list of the UI and it will be canceled to other rounds.
    */
   onDeselectTurn?: (productTurnId: string) => void;
-  /** 传输类阻断（网络/RPC 抖动）没有可操作对象，只能整体重新预检。 */
+  /** Transmission blocking (network/RPC jitter) has no operable objects and can only be pre-checked as a whole. */
   onRetryPreflight?: () => void;
   preflight?: ConversationShareSelectionPreflightState;
   pending?: boolean;
@@ -52,7 +52,7 @@ function ConversationShareSelectionDockImpl({
   preflight = DEFAULT_PREFLIGHT,
   pending = false,
 }: ConversationShareSelectionDockProps) {
-  const { intl, locale } = useZCodeIntl();
+  const { intl } = useZCodeIntl();
   const selectAllState =
     selectedCount === 0 ? false : selectedCount === totalCount ? true : ("indeterminate" as const);
   const bulkActionMessageId =
@@ -91,18 +91,18 @@ function ConversationShareSelectionDockImpl({
   const formatIssueValues = (issue: ConversationShareFailureIssue) => ({
     turnOrdinal: issue.turnOrdinal ?? "—",
     artifactDisplayName: issue.artifactDisplayName ?? "—",
-    artifactType: formatConversationShareArtifactType(issue, locale),
+    artifactType: formatConversationShareArtifactType(issue, "en-US"),
     extension: issue.extension ?? "—",
     mimeType: issue.mimeType ?? "—",
-    allowedFormats: formatConversationShareAllowedArtifacts(issue, locale),
+    allowedFormats: formatConversationShareAllowedArtifacts(issue, "en-US"),
     actual: formatValue(issue.actual, issue.code),
     limit: formatValue(issue.limit, issue.code),
     phase: issue.phase ?? "—",
   });
 
   return (
-    // 分享 dock 曾在同一输入区额外叠加 popover ring、阴影和固定宽度，
-    // 切换时会产生不必要的层级光晕；这里只继承普通 Composer 的基础输入 surface。
+    // Share dock used to overlay popover ring, shadow and fixed width in the same input area.
+    // Unnecessary layer halo will be generated when switching; only the basic input surface of ordinary Composer is inherited here.
     <section
       data-conversation-share-keep-open="selection-dock"
       data-testid="conversation-share-selection-dock"
@@ -139,7 +139,7 @@ function ConversationShareSelectionDockImpl({
                 className="size-3.5 rounded-sm [&_[data-slot=checkbox-checked-icon]]:size-2.5 [&_[data-slot=checkbox-indeterminate-icon]]:size-2.5"
               />
             </div>
-            {/* 固定宽度会拆开英文标签；按内容宽度保持单行，让操作组整体换行。 */}
+            {/* Fixed width will split the English labels; keep a single line according to the content width, and let the operation group wrap as a whole. */}
             <span
               data-testid="conversation-share-bulk-label"
               className="shrink-0 whitespace-nowrap text-ui-sm leading-4"
@@ -257,7 +257,7 @@ function ConversationShareSelectionDockImpl({
             data-testid="conversation-share-next"
             className="px-3"
           >
-            {/* 预检进度已由状态入口展示，按钮只通过禁用状态阻止提前进入下一步。 */}
+            {/* Preflight progress is already shown by the status portal, and the button is only prevented from advancing to the next step early by its disabled status. */}
             {intl.formatMessage({ id: "conversationShare.partial.next" })}
           </Button>
         </div>

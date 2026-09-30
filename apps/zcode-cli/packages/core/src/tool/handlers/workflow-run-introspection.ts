@@ -1,25 +1,25 @@
 // ============================================================
-// Workflow run 内省工具的共同面（ListWorkflowRuns / GetWorkflowRun）
+// Common aspects of Workflow run introspection tools (ListWorkflowRuns/GetWorkflowRun)
 // ============================================================
 //
-// 三样东西必须逐字共用，所以它们在这里而不是在两个 handler 里各写一遍：
+// Three things must be shared verbatim, so they are written here instead of in both handlers:
 //
-//   1. **能力缺席的业务失败**。「端口缺席」（journal 不可用 → run service 整个不构造）与
-//      「端口在场但方法缺席」（journal 不带内省查询）对模型是同一件事：本会话没有这个能力。
-//      两个工具、两条判据，一段文案。
-//   2. **失败码**。`ToolHandlerFailure.errorCode` 的类型是 number（executor 侧的
-//      `isToolHandlerFailure` 按 number 收），所以两个稳定判别键
-//      （`workflow_introspection_unavailable` / `run_not_found`）落在 message 的前缀上——
-//      它是模型与日志唯一能读到的判别位。
-//   3. **异步引导文案**。两个工具描述都要说清「本会话的 run 会自动送达携产物的通知」，
-//      文案分叉就等于给模型两套默认行为。
+//   1. **Business failure due to absence of capability**. "Port is absent" (journal is not available → run service is not constructed at all) and
+//      "The port is present but the method is absent" (journal without introspection query) is the same thing for models: this session does not have this capability.
+//      Two tools, two criteria, and a paragraph of copy.
+//   2. **Failure code**. The type of `ToolHandlerFailure.errorCode` is number (executor side
+//      `isToolHandlerFailure` is closed by number), so there are two stable discrimination keys
+//      (`workflow_introspection_unavailable` / `run_not_found`) falls on the prefix of message——
+//      It is the only discriminant bit that the model and log can read.
+//   3. **Asynchronous guidance copywriting**. Both tool descriptions must clearly state that "the run of this session will automatically send a notification of the product."
+//      Copywriting bifurcation is equivalent to giving the model two sets of default behaviors.
 
 import { escapeXml } from "../../runtime-task/notification.js";
 import type { ToolHandlerFailure } from "../types.js";
 
 /**
- * 业务失败码。数值本身不进模型（executor 把它投影成 `code: "1"`），判别键在 message 前缀。
- * 两个码必须不同：能力缺席与 run 未知是模型要分别处理的两件事。
+ * Business failure codes. The numbers themselves do not reach the model (the executor projects them as `code: "1"`); the discriminator key is in the message prefix.
+ * The two codes must differ: an absent capability and an unknown run are two things the model has to handle separately.
  */
 const WORKFLOW_RUN_INTROSPECTION_ERROR_CODE = {
   INTROSPECTION_UNAVAILABLE: 1,
@@ -27,8 +27,8 @@ const WORKFLOW_RUN_INTROSPECTION_ERROR_CODE = {
 } as const;
 
 /**
- * 「本会话没有 workflow 内省能力」。**绝不**静默回空列表：那会让模型把「这个项目没跑过
- * workflow」和「这个会话读不到 workflow」混成同一个结论（CreateWorkflow 的可见降级同款理由）。
+ * "This session has no workflow introspection capability". It **never** silently returns an empty list: that would let the model conflate "this project has never run
+ * a workflow" with "this session cannot read workflows" (the very same reasoning behind CreateWorkflow's visible degradation).
  */
 export function workflowIntrospectionUnavailableFailure(): ToolHandlerFailure {
   return {
@@ -48,9 +48,9 @@ export function workflowRunNotFoundFailure(runId: string): ToolHandlerFailure {
 }
 
 /**
- * 两个工具描述共用的异步引导。
+ * The async guidance shared by the two tool descriptions.
  *
- * 不禁用轮询——用户显式要求盯着在飞 run 时它仍是对的动作；这里只设默认。
+ * Polling is not disabled — when the user explicitly asks to watch an in-flight run, it is still the right action; only the default is set here.
  */
 export const WORKFLOW_RUN_INTROSPECTION_STEERING = [
   "Runs this session starts settle on their own: you receive a completion notification carrying the final output. Do NOT poll this tool while waiting for one — continue with other work.",
@@ -58,10 +58,10 @@ export const WORKFLOW_RUN_INTROSPECTION_STEERING = [
 ].join("\n");
 
 /**
- * epoch ms → ISO 8601（UTC）。结构化输出里时间戳是 epoch ms（journal 的原样事实），模型面给
- * ISO：那是它能直接读出「多久以前」的形式，而不必对一串 13 位数字做心算。
+ * epoch ms → ISO 8601 (UTC). In the structured output a timestamp is epoch ms (the journal's verbatim fact), while the model-facing side gets
+ * ISO: that is the form in which it can read off "how long ago" directly, instead of doing mental arithmetic on a string of 13 digits.
  *
- * 坏值（NaN / 越界）落回原始数字而不是抛错——一条时间戳不该让整个工具结果失败。
+ * A bad value (NaN / out of range) falls back to the raw number instead of throwing — one timestamp must not fail the entire tool result.
  */
 export function formatWorkflowRunTimestamp(epochMs: number): string {
   if (!Number.isFinite(epochMs)) return String(epochMs);
@@ -72,7 +72,7 @@ export function formatWorkflowRunTimestamp(epochMs: number): string {
   }
 }
 
-/** 时长阶梯。一处定义，摘要与格式器共用——两处各写一套就会在某次调参时分叉。 */
+/** The duration ladder. Defined in one place and shared by the summary and the formatter — two separate implementations would diverge at some tuning round. */
 const DURATION_MS = {
   second: 1_000,
   minute: 60_000,
@@ -85,11 +85,11 @@ function padTwo(value: number): string {
 }
 
 /**
- * 毫秒 → 人读的时长（`40s` / `5m 10s` / `2h 15m` / `3d 2h`）。
+ * milliseconds → a human-readable duration (`40s` / `5m 10s` / `2h 15m` / `3d 2h`).
  *
- * 只保留两级：一个读者要的是量级而不是精度，而「1h 02m 03s」会让他去数位数。分与秒补零
- * （同为 60 进制的子单位，不补零时 `1m 5s` 与 `1m 50s` 一眼难分），日下的小时不补。
- * 非有限值与负值（时钟回拨）折成 0，绝不让一条时间戳把整个工具结果变成 NaN。
+ * Only two levels are kept: a reader wants the order of magnitude, not the precision, and "1h 02m 03s" would send him off counting digits. Minutes and seconds are zero-padded
+ * (they are both base-60 subunits, and without padding `1m 5s` and `1m 50s` are hard to tell apart at a glance); hours below a day are not.
+ * Non-finite and negative values (a clock jumping backwards) collapse to 0; one timestamp must never turn the entire tool result into NaN.
  */
 export function formatWorkflowRunDuration(ms: number): string {
   const total = Number.isFinite(ms) && ms > 0 ? ms : 0;
@@ -110,15 +110,15 @@ export function formatWorkflowRunDuration(ms: number): string {
 }
 
 /**
- * 「多久以前」。`at` 缺席或不是有限数时回 `undefined`——读侧据此**整段省略**这个年龄，
- * 而不是渲染一个 0 或「unknown」：没有时间戳的老 journal 说不出年龄，这是一件事实。
+ * "How long ago". When `at` is absent or not a finite number, `undefined` is returned — the read side then **omits the age entirely**
+ * instead of rendering a 0 or an "unknown": an old journal with no timestamp genuinely cannot state an age, and that is a fact.
  */
 export function formatRelativeAge(now: number, at: number | undefined): string | undefined {
   if (at === undefined || !Number.isFinite(at) || !Number.isFinite(now)) return undefined;
   return `${formatWorkflowRunDuration(now - at)} ago`;
 }
 
-/** 格式化 ISO 时刻与相对年龄；年龄不可知时只显示 ISO 时刻。 */
+/** Formats the ISO instant and the relative age; when the age is unknowable, only the ISO instant is shown. */
 export function formatWorkflowRunInstant(now: number, at: number): string {
   const age = formatRelativeAge(now, at);
   const iso = formatWorkflowRunTimestamp(at);
@@ -126,8 +126,8 @@ export function formatWorkflowRunInstant(now: number, at: number): string {
 }
 
 /**
- * 千分位。`toLocaleString` 的结果取决于宿主的 ICU 数据，而模型面的每一个字都要能被测试
- * 逐字钉住，所以这里自己插逗号。
+ * Thousands separators. The result of `toLocaleString` depends on the host's ICU data, and every character on the model-facing side has to be pinnable verbatim
+ * by a test, so the commas are inserted here by hand.
  */
 export function formatWorkflowRunCount(value: number): string {
   if (!Number.isFinite(value)) return String(value);
@@ -137,8 +137,8 @@ export function formatWorkflowRunCount(value: number): string {
 }
 
 /**
- * XML-ish 属性。值先把空白折成单空格再转义：属性里的换行会破坏「一 run 一行」的排版，
- * 而 label 是自由文本（用户起的名字或脚本首行）。
+ * An XML-ish attribute. Whitespace in the value is folded to a single space before escaping: a newline inside an attribute would break the "one run per line" layout,
+ * and label is free text (a name the user chose or the first line of the script).
  */
 export function workflowRunAttribute(name: string, value: string | number | boolean): string {
   const text = typeof value === "string" ? value.replace(/\s+/gu, " ").trim() : String(value);
@@ -146,7 +146,7 @@ export function workflowRunAttribute(name: string, value: string | number | bool
 }
 
 /**
- * 转义**复用** runtime-task 的通知投影里那一个（notification.ts）：两处是同一类
- * XML-ish 模型面投影，而一张抄第二遍的转义表只会在某次调整时分叉。
+ * The escaping **reuses** the one from the notification projection of runtime-task (notification.ts): both are the same kind of
+ * XML-ish model-facing projection, and a second hand-copied escaping table would only diverge at some adjustment round.
  */
 export { escapeXml as escapeWorkflowRunText };

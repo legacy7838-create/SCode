@@ -13,7 +13,6 @@ export type {
   IntegratedTerminalShellOption,
   IntegratedTerminalShellSelection,
   Locale,
-  LocalePreference,
   ZCodeInteractionBehavior,
   TabId,
   TabState,
@@ -36,12 +35,7 @@ export type {
   RemoteResourcePackageId,
   RemoteResourcePackageSelection,
 } from "./remoteResourcePackages.js";
-export type {
-  DockerConnectOptions,
-  RemoteTarget,
-  SSHConnectOptions,
-  WSLConnectOptions,
-} from "./remoteTarget.js";
+export type { RemoteTarget, SSHConnectOptions, WSLConnectOptions } from "./remoteTarget.js";
 export { stripRemoteTargetSecrets } from "./remoteTarget.js";
 export { buildSshRemoteHostKey } from "./remoteSshHostKey.js";
 export { buildRemoteEnvironmentKey } from "./remoteEnvironmentKey.js";
@@ -80,7 +74,7 @@ export * from "./validation.js";
 export * from "./api.js";
 export * from "./zcode-protocol/index.js";
 export * from "./account-provider-state.js";
-// re-home：旧协议承重面的幸存文件（消费者继续走 barrel，零感知）
+// re-home: surviving files of the load-bearing side of the old protocol (consumers continue to use barrel, zero awareness)
 export * from "./zcode-protocol-legacy-types.js";
 export * from "./zcode-task-types-core.js";
 export * from "./task-realtime-core.js";
@@ -199,7 +193,6 @@ export type {
   CuaOsSupport,
   DesktopWindowChromeState,
   DesktopTitleBarTheme,
-  DockerContainerInfo,
   EditorInfo,
   ApplicationIconInfo,
   ApplicationIconLocator,

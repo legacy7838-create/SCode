@@ -55,7 +55,7 @@ export function WorkspaceEditorButtonGroup({
         setInstalledEditors(editors);
       })
       .catch((error) => {
-        logger.warn("[WorkspaceEditorButtonGroup] 获取已安装 IDE 列表失败:", error);
+        logger.warn("[WorkspaceEditorButtonGroup] failed to list installed IDEs:", error);
       });
 
     return () => {
@@ -79,8 +79,8 @@ export function WorkspaceEditorButtonGroup({
     onSelectedEditorChange?.(selectedEditor);
   }, [onSelectedEditorChange, selectedEditor]);
   const editorIconClassName = useMemo(() => {
-    // Windows 上编辑器图标的视觉占比普遍更大，继续用 size-6 会让按钮显得偏挤。
-    // 这里只在当前按钮做平台级微调，不影响菜单里的通用图标尺寸。
+    // The visual proportion of editor icons on Windows is generally larger, and continuing to use size-6 will make the buttons appear crowded.
+    // This only performs platform-level fine-tuning on the current button and does not affect the general icon size in the menu.
     if (typeof navigator !== "undefined" && /windows/i.test(navigator.userAgent)) {
       return "size-4 shrink-0";
     }
@@ -115,7 +115,7 @@ export function WorkspaceEditorButtonGroup({
       if (result.success) {
         return;
       }
-      logger.warn("[WorkspaceEditorButtonGroup] 打开编辑器失败", {
+      logger.warn("[WorkspaceEditorButtonGroup] failed to open editor", {
         editorId: editor.id,
         workspaceAbsPath,
         workspaceIdentity,

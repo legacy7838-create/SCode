@@ -1,17 +1,17 @@
 // ============================================================
-// 世界读取的执行侧（Boundary B 的 executeWorldRead）
+// The execution side of world reading (executeWorldRead of Boundary B)
 // ============================================================
-// 从 workflow-driver.ts 里分出来的一半。driver 那边是 actor 会话、turn 编排与 submit 桥接；
-// 这边是"把一个 (op, args) 变成一次真实的只读观察"——两者唯一的接触面是
-// {@link executeWorldRead}，且这一半完全不碰会话、模型与 journal。
+// Half of workflow-driver.ts. On the driver side are actor sessions, turn orchestration and submit bridging;
+// This is "turning an (op, args) into a real read-only observation" - the only contact between the two is
+// {@link executeWorldRead}, and this half does not touch the session, model and journal at all.
 //
-// 三件事在这里，而且只在这里：
-//   1. **每个 op 的元数与实参校验**。Boundary A 的 `worldRead(siteId, op, args)` 只承诺
-//      "实参按位置原样送达"（lowering 不看 op），所以"一个 pattern / 一个 base ref 长什么样"
-//      归这一侧。
-//   2. **上限的执行**。常量在纯包（`@zcode/dynamic-workflow` 的 WORLD_READ_CAPS），执行在这里，
-//      因为只有这一侧能"不生产"——让 ripgrep 在 2000 条上停手，胜过物化一百万条再回头量。
-//   3. **git 的固定 argv**。构造在 workflow-git-world-read.ts（纯），spawn 在这里。
+// Three things are here and only here:
+//   1. **Check the element number and actual parameters of each op**. Boundary A's `worldRead(siteId, op, args)` only promises
+//      "The actual parameters are served as-is by position" (lowering does not look at the op), so "what does a pattern / a base ref look like"
+//      Return to this side.
+//   2. **Enforcement of upper limit**. The constant is in the pure package (WORLD_READ_CAPS of `@zcode/dynamic-workflow`), implemented here,
+//      Because only this side can "not produce" - it is better to stop ripgrep at 2000 items than to materialize a million items and then go back.
+//   3. **git fixed argv**. Constructed in workflow-git-world-read.ts (pure), spawned here.
 
 import {
   isAbsolute as isAbsolutePath,
@@ -35,32 +35,32 @@ import {
   type GitStatusResult,
 } from "./workflow-git-world-read.js";
 
-/** 世界读取需要的端口与基准目录（driver deps 的一个子集）。 */
+/** The ports and the base directory a world read needs (a subset of the driver deps). */
 export interface WorldReadDeps {
-  /** files.glob / files.read / files.grep 落到的文件系统端口。 */
+  /** The file system port that files.glob / files.read / files.grep land on. */
   readonly fileSystemPort: FileSystemPort;
-  /** git.* 落到的子进程执行端口（cwd = 工作区根）。 */
+  /** The subprocess execution port that git.* lands on (cwd = the workspace root). */
   readonly executionPort: ExecutionPort;
-  /** 路径解析与相对化的基准目录（workspace 根）。 */
+  /** The base directory for path resolution and relativization (the workspace root). */
   readonly cwd: string;
   /**
-   * world.run 的已批准命令集（编译期从字面量 cmd 收集、确认窗展示过的那一份）。**缺席即拒绝一切 world.run**（fail-closed）：
-   * 授权面的空集与「忘了接线」必须同样安全，而复验在这里只是纵深防御——真正的授权
-   * 发生在编译期字面量 + 提交确认。
+   * The approved command set of world.run (collected at compile time from literal cmd values, the very set the confirmation window displayed). **Absent means every world.run is rejected** (fail-closed):
+   * an empty set on the authorization surface and a "forgot to wire it up" have to be equally safe, and the re-verification here is only defence in depth — the real authorization
+   * happens at the compile-time literal + submit confirmation.
    */
   readonly declaredRunCommands?: ReadonlySet<string>;
 }
 
 /**
- * 按 op 从**位置实参数组**里取参并执行一次世界读取。Boundary A 只承诺"实参按位置原样送达"
- * （lowering 不看 op），所以每个 op 的元数与类型校验就在这里——这一侧才是知道
- * "一个 pattern / 一个 base ref 长什么样"的那一侧。
- * 形状不符一律以结构化 `DriverError` 拒绝该节点，绝不静默强转：一个被 `String(undefined)`
- * 悄悄变成 `"undefined"` 的路径，会读出一个查不明白的失败，而不是一条能改的错误。
+ * Pulls arguments out of the **positional argument array** per op and performs one world read. Boundary A only promises "positional arguments arrive as-is"
+ * (lowering does not look at the op), so each op's arity and type checks live here — this is the side that knows
+ * "what one pattern / one base ref looks like".
+ * Any shape mismatch rejects the node with a structured `DriverError`, never a silent coercion: a path that quietly became `"undefined"` through
+ * `String(undefined)` would produce an unexplainable read failure instead of an actionable error.
  *
- * 声明成 `async` 是有意的：实参校验的抛错必须变成**该节点的 promise 拒绝**。同步抛错会从
- * `engine.worldRead` 里穿出去（引擎在准入落 journal 之后才 `.then(...)`），留下一个永远
- * running 的节点。
+ * Declared `async` on purpose: the throw from argument validation has to become a **promise rejection of that node**. A synchronous throw would escape
+ * through `engine.worldRead` (the engine only `.then(...)`s once admission has landed in the journal), leaving a node
+ * running forever.
  */
 export async function executeWorldRead(
   deps: WorldReadDeps,
@@ -85,7 +85,7 @@ export async function executeWorldRead(
       return await gitDiff(deps, base, path);
     }
     case "git-status": {
-      // 无参 op：`names` 为空即"恰好 0 个实参"，多传一个仍然大声失败。
+      // No-parameter op: `names` is empty, which means "exactly 0 actual parameters". Passing one more will still fail loudly.
       worldReadStringArgs(op, args, []);
       return await gitStatus(deps);
     }
@@ -94,7 +94,7 @@ export async function executeWorldRead(
     case "run":
       return await worldRun(deps, args);
     default: {
-      // op 词汇表由 world-read 注册表推导：新增一行而这里没接上，就会落到这里大声失败。
+      // The op vocabulary is derived from the world-read registry: if a new line is added and it is not connected here, it will fail loudly here.
       const unknownOp: never = op;
       throw new WorkflowError("DriverError", `Unsupported world-read op "${String(unknownOp)}".`);
     }
@@ -102,18 +102,18 @@ export async function executeWorldRead(
 }
 
 /**
- * `files.glob(pattern)`：经 FileSystemPort 的 searchFiles，归一成 facade 承诺的形状。
+ * `files.glob(pattern)`: through the FileSystemPort's searchFiles, normalized into the shape the facade promises.
  *
- * 三步归一都来自端口语义与 facade 承诺的落差——端口结果不能原样交出。
- * 端口是为 UI 的 Glob 工具设计的：绝对路径、mtime 降序、默认 100 条截断。
+ * All three normalizations come from the gap between the port semantics and the facade promise — the port result cannot be handed over as-is.
+ * The port was designed for the UI's Glob tool: absolute paths, mtime descending, truncated to 100 by default.
  *
- * - **cap+1 拒绝**（与 worldGrep 同一惯用法）：端口的默认截断静默生效过，一次 5000 文件
- *   的 glob 只交出 2%，且错误视图会进 journal 被 resume 重放。cap 归 WORLD_READ_CAPS
- *   所有，恰好 cap 条无从区分"正好"与"被截断"，故多要一条。
- * - **工作区相对化**：绝对路径让脚本按工作区相对前缀写的路由（`startsWith("apps/…")`）
- *   全部落空，把 6 路扇出静默坍缩成 1 路；grep/git 早已相对化，glob 是漏网的那个。
- * - **字典序重排**：mtime 随任何一次写文件漂移，journaled 值必须确定——同一脚本两次
- *   提交不该扇出在不同的次序上。拒绝语义保证到这里手上必是全量匹配，重排是完备的。
+ * - **Reject at cap+1** (the same idiom as worldGrep): the port's default truncation applies silently, so a glob over 5000 files
+ *   hands back only 2%, and the error view enters the journal and gets replayed on resume. The cap belongs to WORLD_READ_CAPS,
+ *   and exactly cap hits cannot be told apart from "exactly right" versus "truncated", so one extra is asked for.
+ * - **Workspace relativization**: absolute paths make every routing a script writes with a workspace-relative prefix (`startsWith("apps/…")`)
+ *   fall through, silently collapsing 6-way fan-out into 1; grep/git were already relativized, glob is the one that slipped through.
+ * - **Reordering lexicographically**: mtime drifts with every file write, while journaled values must be deterministic — two submissions of the same script
+ *   should not fan out in a different order. The rejection semantics guarantee that what we hold here is the full match set, so the reordering is complete.
  */
 async function worldGlob(deps: WorldReadDeps, pattern: string): Promise<string[]> {
   const cap = WORLD_READ_CAPS.globMaxFiles;
@@ -129,13 +129,13 @@ async function worldGlob(deps: WorldReadDeps, pattern: string): Promise<string[]
 }
 
 /**
- * `files.read(path)`：解析到绝对路径后**先确认它仍在工作区之内**，再交给端口。
+ * `files.read(path)`: after resolving to an absolute path, **first confirm it is still inside the workspace**, then hand it to the port.
  *
- * 为什么这道检查现在才补上：在 `git.*` 落地之前，能进到这里的路径都是脚本自己写出来的字面量，
- * 越界是一次显式的越界。`git.*` 是第一个**能生产出**路径的原语——`changedFiles() → files.read(p)`
- * 是那个最显然的两行组合，而 git 的原生输出在工作区是仓库子目录时会带 `../` 前缀。git 那一侧
- * 已经用 pathspec 把范围收在工作区内了，这道检查是同一条不变式在另一端的落点：一个原语的
- * 显然组合不该是个陷阱。
+ * Why this check is only being added now: before `git.*` landed, every path reaching here was a literal the script itself wrote, so going out of bounds was an explicit
+ * act. `git.*` is the first primitive that can **produce** paths — `changedFiles() → files.read(p)`
+ * is the most obvious two-line combination, and git's native output carries a `../` prefix when the workspace is a repository subdirectory. The git side
+ * already holds its scope inside the workspace with a pathspec, so this check is the same invariant landing at the other end: an obvious combination of primitives
+ * should not be a trap.
  */
 async function worldRead(deps: WorldReadDeps, arg: string): Promise<string> {
   const path = assertWithinWorkspace("read", deps.cwd, arg);
@@ -144,13 +144,13 @@ async function worldRead(deps: WorldReadDeps, arg: string): Promise<string> {
 }
 
 /**
- * `files.grep(pattern, glob?)`：经 FileSystemPort 的 searchText（ripgrep 语义）。
+ * `files.grep(pattern, glob?)`: through the FileSystemPort's searchText (ripgrep semantics).
  *
- * **headLimit 取 cap + 1**，这是本方法唯一不显然的一行。上限是"命中超过 cap 就拒绝"，
- * 而端口只会按 headLimit 截断——所以刚好取 cap 会得到一个歧义结果：cap 条命中，既可能是
- * 正好 cap 条（应当放行），也可能是被截掉了后面一百万条（应当拒绝）。多取一条就把这个
- * 歧义消掉了：拿到 cap+1 条即确知溢出，而代价仍然只有一条记录，不必物化整个结果集。
- * `truncated` 是同一判断的第二条线（端口若因别的原因截断，我们手上就不是完整结果了）。
+ * **headLimit takes cap + 1**, and that is the one non-obvious line of this method. The rule is "reject when the hits exceed the cap",
+ * while the port only truncates at headLimit — so taking exactly cap yields an ambiguous result: cap hits could mean
+ * exactly cap (which should be let through) or that a million more were cut off (which should be rejected). Asking for one extra removes that
+ * ambiguity: receiving cap+1 rows proves the overflow, and the cost is still a single record instead of materializing the whole result set.
+ * `truncated` is the second line of the same judgement (if the port truncated for some other reason, what we hold is not the complete result).
  */
 async function worldGrep(
   deps: WorldReadDeps,
@@ -173,8 +173,8 @@ async function worldGrep(
   }
   const matches: GrepMatch[] = [];
   for (const entry of result.entries) {
-    // content 模式下每条命中都带行号与行文本；缺其一的条目不是一条内容命中（例如端口在
-    // 别的 outputMode 下产出的计数项），跳过而不是填 0 / "" 造一条假命中。
+    // In content mode, each hit has a line number and line text; an entry missing either is not a content hit (for example, the port in
+    // Count items output under other outputMode), skip instead of filling in 0 / "" to create a false hit.
     if (entry.lineNumber === undefined || entry.text === undefined) continue;
     matches.push({
       path: toWorkspaceRelative(deps.cwd, entry.path),
@@ -192,14 +192,14 @@ async function worldGrep(
   return matches;
 }
 
-// ——————————————————————————————— 内部：git.* world-read ———————————————————————————————
+// —————————————————————————————— Internal: git.* world-read ——————————————————————————
 
 /**
- * 跑一条 git 命令并返回 stdout。argv 由 workflow-git-world-read.ts **构造**（固定数组，
- * 永不 shell 字符串），本方法只负责交给端口并把失败归一成 node 级 `DriverError`。
+ * Runs one git command and returns stdout. argv is **constructed** by workflow-git-world-read.ts (a fixed array,
+ * never a shell string); this method only hands it to the port and normalizes a failure into a node-level `DriverError`.
  *
- * `maxInlineBytes` 由调用方给：git.diff 要用它做上限探测（同 grep 的 cap+1 手法），
- * 其余 op 用一个够大的缺省值。
+ * `maxInlineBytes` comes from the caller: git.diff needs it for limit probing (the same cap+1 trick as grep),
+ * the other ops use a large enough default.
  */
 async function runGit(
   deps: WorldReadDeps,
@@ -213,8 +213,8 @@ async function runGit(
     outputLimit: { maxInlineBytes },
   });
   if (result.status !== "completed" || (result.exitCode ?? 0) !== 0) {
-    // git 缺失、非仓库、坏 ref 都走这里。归一成**可 catch 的** DriverError 而不是 run 级
-    // 失败，使脚本可以通过 try/catch 改用 files.glob。
+    // Missing git, non-repository, and bad refs all go here. Normalized to a **catchable** DriverError instead of run level
+    // fails, allowing the script to use files.glob via try/catch instead.
     const detail = firstLine(result.stderr.text) || firstLine(result.stdout.text) || result.status;
     throw new WorkflowError(
       "DriverError",
@@ -229,11 +229,11 @@ async function runGit(
 }
 
 /**
- * 工作区相对仓库根的前缀（仓库根时为空串）。线上的路径一律是仓库根相对的，剥掉这个前缀
- * 才是 facade 承诺的工作区相对路径（见 workflow-git-world-read.ts 顶部的输出契约 2）。
+ * The prefix of the repository root relative to the workspace (an empty string when it is the repository root). Every path on the wire is relative to the repository root,
+ * and stripping this prefix is what produces the workspace-relative path the facade promises (see output contract 2 at the top of workflow-git-world-read.ts).
  *
- * 每次读取都问一次而不做缓存：一次 `rev-parse` 是毫秒级的，而世界读取按 site×ordinal
- * 只发生一次并落 journal，不在任何热路径上。换来的是这一侧完全无状态。
+ * Every read asks once instead of caching: a `rev-parse` is on the order of milliseconds, and a world read happens once per site×ordinal
+ * and is journaled, so it is on no hot path. In exchange this side is completely stateless.
  */
 async function gitWorkspacePrefix(deps: WorldReadDeps, op: WorldReadOp): Promise<string> {
   const out = await runGit(deps, op, GIT_SHOW_PREFIX_ARGV, GIT_TEXT_OUTPUT_BYTES);
@@ -241,7 +241,7 @@ async function gitWorkspacePrefix(deps: WorldReadDeps, op: WorldReadOp): Promise
 }
 
 async function gitChangedFiles(deps: WorldReadDeps, base: string | undefined): Promise<string[]> {
-  // 先构造 argv：base 不合法时应当在**跑任何 git 之前**就拒绝。
+  // Construct argv first: if base is illegal, it should be rejected before running any git.
   const plans = gitChangedFilesPlan(base);
   const prefix = await gitWorkspacePrefix(deps, "git-changed-files");
   const paths: string[] = [];
@@ -249,8 +249,8 @@ async function gitChangedFiles(deps: WorldReadDeps, base: string | undefined): P
     const out = await runGit(deps, "git-changed-files", plan.argv, GIT_TEXT_OUTPUT_BYTES);
     paths.push(...parseGitPathList(out.text, prefix));
   }
-  // 并集去重并排序：两条命令可以报出同一个路径，且 journal 存的是这个值，所以它必须只
-  // 依赖内容、不依赖两条命令谁先返回。
+  // Union deduplication and sorting: two commands can report the same path, and the journal stores this value, so it must only
+  // Whichever command returns first depends on the content or does not depend on the content.
   return [...new Set(paths)].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 }
 
@@ -260,7 +260,7 @@ async function gitDiff(
   path: string | undefined,
 ): Promise<string> {
   const cap = WORLD_READ_CAPS.gitDiffMaxBytes;
-  // cap + 1：同 grep 的理由——"正好 cap 字节"与"被截断"必须可区分。
+  // cap + 1: Same reason as grep - "exactly cap bytes" and "truncated" must be distinguishable.
   const out = await runGit(deps, "git-diff", gitDiffArgv(base, path), cap + 1);
   if (out.bytes > cap || out.truncated) {
     throw capExceeded(
@@ -281,9 +281,9 @@ async function gitLog(deps: WorldReadDeps, count: number): Promise<GitCommitResu
   return parseGitLog(out.text);
 }
 
-// ——————————————————————————————— 内部：world.run ———————————————————————————————
+// ———————————————————————————————— Internal: world.run ————————————————————————————
 
-/** `world.run` 的返回值。权威声明是 FACADE_DTS 里的 `declare interface WorldRunResult`。 */
+/** The return value of `world.run`. The authoritative declaration is `declare interface WorldRunResult` in FACADE_DTS. */
 interface WorldRunResult {
   exitCode: number;
   stdout: string;
@@ -291,27 +291,27 @@ interface WorldRunResult {
 }
 
 /**
- * `world.run(cmd, args?, opts?)`：journal 化命令执行。
+ * `world.run(cmd, args?, opts?)`: journaled command execution.
  *
- * 与 `git.*` 的三个刻意差异，每个都是契约而非疏忽：
- *   1. **非零退出是值**。执行适配器把非零退出映射成 `status:"failed"` 且 `error` 缺席
- *      （node-execution-adapter-results.ts 的 statusFromExit/statusFailure），据此与
- *      spawn 失败 / 超时可靠区分。门控循环的常态路径不该走异常控制流。
- *   2. **cmd 复验**。授权发生在编译期字面量 + 提交确认；这里对 declaredRunCommands 的
- *      比对只防接线错误（lowering / 线协议把别的字符串送了进来），且 fail-closed——
- *      集合缺席与命令不在集合里同样拒绝。
- *   3. **超时无上限**。缺省 300s，脚本可任意加大（为真正长跑的测试设计）；
- *      cancel 仍是最后的控制。
+ * Three deliberate differences from `git.*`, each of them a contract rather than an oversight:
+ *   1. **A nonzero exit is a value.** The execution adapter maps a nonzero exit to `status:"failed"` with `error` absent
+ *      (statusFromExit/statusFailure in node-execution-adapter-results.ts), which reliably tells it apart from
+ *      a spawn failure / timeout. The normal path of a gated loop should not travel through exception control flow.
+ *   2. **Re-verification of cmd.** Authorization happens at the compile-time literal + submit confirmation; comparing against declaredRunCommands
+ *      here only guards against wiring mistakes (lowering / the wire protocol handing in some other string), and it fails closed —
+ *      an absent set and a command not in the set are rejected the same way.
+ *   3. **No upper bound on the timeout.** 300s by default, and a script can raise it arbitrarily (designed for genuinely long-running tests);
+ *      cancel remains the last control.
  *
- * stdout/stderr 各 256KB，cap+1 探测（`maxInlineBytes` 按两 cap 之大者 +1，随后逐流判定），
- * 超限拒绝不截断——message 给出可操作的下一步，与 grep/diff 同一 house policy。
+ * 256KB each for stdout/stderr, with cap+1 probing (`maxInlineBytes` is the larger of the two caps + 1, after which each stream is judged separately),
+ * over-limit rejects rather than truncating — the message gives an actionable next step, the same house policy as grep/diff.
  */
 async function worldRun(deps: WorldReadDeps, args: unknown[]): Promise<WorldRunResult> {
   const { argv, cmd, timeoutMs } = worldRunArgs(args);
 
   const declared = deps.declaredRunCommands;
   if (declared === undefined || !declared.has(cmd)) {
-    // fail-closed 的接线防御：能到这里的 cmd 理应经过编译期字面量收集与确认。
+    // Fail-closed wiring defense: The cmd that can reach here should be collected and confirmed through compile-time literals.
     throw new WorkflowError(
       "DriverError",
       `world.run: command '${cmd}' is not in the declared set of commands (a wiring error).`,
@@ -333,8 +333,8 @@ async function worldRun(deps: WorldReadDeps, args: unknown[]): Promise<WorldRunR
       `world.run '${cmd}' timed out after ${timeoutMs}ms. Raise opts.timeoutMs or narrow the work.`,
     );
   }
-  // completed（exit 0）与 failed-无-error（非零退出）都是**跑完了的观察**，交出值；
-  // 其余（spawn_error / cancelled / 带 error 的 failed，如 output_limit）是观察本身没成立。
+  // Completed (exit 0) and failed-none-error (non-zero exit) are both **finished observations** and hand over the value;
+  // The rest (spawn_error / canceled / failed with error, such as output_limit) are due to the observation itself not being established.
   const ranToExit =
     result.status === "completed" ||
     (result.status === "failed" &&
@@ -369,9 +369,9 @@ async function worldRun(deps: WorldReadDeps, args: unknown[]): Promise<WorldRunR
 }
 
 /**
- * `world.run` 的实参形状：`[cmd: string, args?: string[], opts?: { timeoutMs?: number }]`。
- * 与 {@link worldReadStringArgs} 同一纪律（大声失败、绝不强转），但形状（数组 + 选项袋）
- * 超出了 string 序列助手的表达面，所以单列。
+ * The argument shape of `world.run`: `[cmd: string, args?: string[], opts?: { timeoutMs?: number }]`.
+ * It follows the same discipline as {@link worldReadStringArgs} (fail loudly, never coerce), but the shape (array + options bag)
+ * goes beyond what a string-sequence helper can express, so it gets its own entry.
  */
 function worldRunArgs(args: unknown[]): { cmd: string; argv: string[]; timeoutMs: number } {
   if (args.length < 1 || args.length > 3) {
@@ -419,7 +419,7 @@ function worldRunArgs(args: unknown[]): { cmd: string; argv: string[]; timeoutMs
           `world.run: opts.timeoutMs must be an integer >= 1, got ${describeArg(rawTimeout)}.`,
         );
       }
-      // 刻意无上限钳制：为真正长跑的测试设计；cancel 是最后的控制。
+      // Deliberately uncapped clamp: Designed for real long-distance testing; cancel is the final control.
       timeoutMs = rawTimeout;
     }
   }
@@ -427,20 +427,20 @@ function worldRunArgs(args: unknown[]): { cmd: string; argv: string[]; timeoutMs
   return { argv, cmd, timeoutMs };
 }
 
-// ——————————————————————————————— 纯辅助 ———————————————————————————————
+// ———————————————————————————————— Pure support ————————————————————————————
 
 /**
- * 从 world-read 的位置实参数组里取出 `names` 所描述的**必填 string 实参**，形状不符即抛结构化
- * `DriverError`（node 级失败，脚本可 `catch`）。元数按 `names.length` 精确校验：多传的实参只可能
- * 来自接线错误——facade 的类型签名在编译期就拦住了多余实参，所以运行期出现就是 lowering /
- * 线协议出了岔子，静默忽略等于把一个可定位的 bug 藏成一次语义不明的读取。
+ * Takes the **required string arguments** described by `names` out of a world-read positional argument array, and throws a structured
+ * `DriverError` on a shape mismatch (a node-level failure the script can `catch`). Arity is checked exactly against `names.length`: extra arguments can only
+ * come from a wiring mistake — the facade's type signature already stops extra arguments at compile time, so seeing one at runtime means lowering
+ * or the wire protocol went astray, and silently ignoring it would hide a locatable bug behind a semantically unclear read.
  *
- * 为什么校验而不强转：Boundary A 的 `args: unknown[]` 是**原样透传**的脚本实参，这一侧是第一个
- * 也是唯一一个知道每个 op 元数的地方。
- * `String(args[0])` 会把 `undefined` 变成路径 `"undefined"`，报出的 ENOENT 指不回真正的错处。
+ * Why validate instead of coerce: Boundary A's `args: unknown[]` are script arguments passed through **as-is**, and this side is the first
+ * and only place that knows each op's arity.
+ * `String(args[0])` turns `undefined` into the path `"undefined"`, and the reported ENOENT points nowhere near the real mistake.
  *
- * 带可选实参的多参 op（`files.grep(pattern, glob?)`、`git.diff(base?, path?)`）走的是允许尾部
- * 缺省的变体 {@link worldReadOptionalStringArgs}；接缝在这两个函数里，不在调用点。
+ * Multi-arg ops with optional arguments (`files.grep(pattern, glob?)`, `git.diff(base?, path?)`) use the variant that allows a missing
+ * tail, {@link worldReadOptionalStringArgs}; the seam lives inside these two functions, not at the call sites.
  */
 function worldReadStringArgs(op: WorldReadOp, args: unknown[], names: readonly string[]): string[] {
   if (args.length !== names.length) {
@@ -453,21 +453,21 @@ function worldReadStringArgs(op: WorldReadOp, args: unknown[], names: readonly s
 }
 
 /**
- * {@link worldReadStringArgs} 的**尾部可选**变体：`required` 是必填前缀，`optional` 是可选尾部。
- * 返回定长 `required.length + optional.length` 的数组，缺席的可选位是 `undefined`。
+ * The **trailing-optional** variant of {@link worldReadStringArgs}: `required` is the required prefix, `optional` the optional tail.
+ * It returns an array of fixed length `required.length + optional.length`, with an absent optional slot being `undefined`.
  *
- * 三条规则，都是"大声失败"的一面：
- *   1. 实参数少于必填数、或多于总数 → 结构化 `DriverError`。多传仍然拒绝，理由与精确变体
- *      相同：facade 的签名在编译期就拦住了多余实参，运行期出现只可能是 lowering / 线协议的
- *      接线错误，静默忽略等于把一个可定位的 bug 藏成一次语义不明的读取。
- *   2. 必填位必须是 string。
- *   3. **可选位允许显式 `undefined`**，因为它在脚本里是可写的：`git.diff(undefined, "a.ts")`
- *      在 `base?: string` 下合法，lowering 原样按位置打包，于是 driver 真的会收到一个
- *      `undefined` 前缀。把它当成"缺席"是唯一说得通的读法。
+ * Three rules, all on the "fail loudly" side:
+ *   1. Fewer arguments than the required count, or more than the total → a structured `DriverError`. Extra arguments are still rejected, for the same reason
+ *      as in the exact variant: the facade's signature already stops extra arguments at compile time, so at runtime it can only be a lowering / wire protocol
+ *      wiring mistake, and silently ignoring it would hide a locatable bug behind a semantically unclear read.
+ *   2. A required slot must be a string.
+ *   3. **An optional slot may be an explicit `undefined`**, because it is writable in the script: `git.diff(undefined, "a.ts")`
+ *      is legal under `base?: string`, lowering packs positionally as-is, and the driver really does receive an
+ *      `undefined` prefix. Reading it as "absent" is the only defensible interpretation.
  *
- * 注意 lowering 对**尾部**缺省打包的是**更短的数组**（不是 undefined 洞），而
- * `inputHash({op, args})` 是 journal 键——所以 `["TODO"]` 与 `["TODO", "*.ts"]` 天然是两个键。
- * 本函数只把两种到达形态都归一成同一个调用形状，不去改写 args。
+ * Note that lowering packs a missing **trailing** argument as a **shorter array** (not an undefined hole), and
+ * `inputHash({op, args})` is the journal key — so `["TODO"]` and `["TODO", "*.ts"]` are naturally two different keys.
+ * This function only normalizes both arrival shapes into the same call shape; it does not rewrite args.
  */
 function worldReadOptionalStringArgs(
   op: WorldReadOp,
@@ -503,11 +503,11 @@ function worldReadOptionalStringArgs(
 }
 
 /**
- * `git.log(count?)` 的实参：0 或 1 个，必须是正整数且不超过上限。缺席取
- * {@link WORLD_READ_CAPS.gitLogDefaultCount}。
+ * The arguments of `git.log(count?)`: 0 or 1, and it must be a positive integer no larger than the limit. When absent it takes
+ * {@link WORLD_READ_CAPS.gitLogDefaultCount}.
  *
- * 超上限**拒绝**而不是静默夹到上限：脚本请求 500 条却拿到 100 条，会在它自己的逻辑里变成
- * 一个查不明白的"历史怎么这么短"。一条指名上限的错误让脚本能直接改对。
+ * Over the limit **rejects** rather than silently clamping to it: a script that asks for 500 entries and gets 100 turns that into
+ * an unexplainable "why is the history so short" inside its own logic. An error naming the limit lets the script fix it directly.
  */
 function worldReadOptionalCount(op: WorldReadOp, args: unknown[], name: string): number {
   const max = WORLD_READ_CAPS.gitLogMaxCount;
@@ -534,7 +534,7 @@ function worldReadOptionalCount(op: WorldReadOp, args: unknown[], name: string):
   return raw;
 }
 
-/** 取一个必须是 string 的位置实参，否则结构化拒绝（绝不 `String(...)` 强转）。 */
+/** Takes one positional argument that must be a string, otherwise rejects in structured form (never a `String(...)` coercion). */
 function requireStringArg(op: WorldReadOp, value: unknown, name: string, index: number): string {
   if (typeof value !== "string") {
     throw new WorkflowError(
@@ -546,29 +546,29 @@ function requireStringArg(op: WorldReadOp, value: unknown, name: string, index: 
 }
 
 /**
- * 上限溢出的结构化拒绝。message 一律带**可操作的下一步**（"缩窄 pattern 或加一个 glob"）：
- * 上限是脚本可以据以重写自己的契约，一条只说"超了"的错误把这一点浪费掉。
+ * The structured rejection for a limit overflow. The message always carries an **actionable next step** ("narrow the pattern or add a glob"):
+ * the limit is a contract the script can rewrite itself against, and an error that only says "you went over" wastes that.
  */
 function capExceeded(message: string): WorkflowError {
   return new WorkflowError("WorldReadCapExceeded", message);
 }
 
 /**
- * 把一个脚本给的相对路径解析成绝对路径，并**词法上**判定它是否仍在工作区之内；越界返回
- * `undefined`（错误的措辞与结构化码归调用方——世界读取报 `DriverError`，产物发布报
- * `ArtifactPathOutsideWorkspace`）。
+ * Resolves a script-supplied relative path into an absolute one and judges **lexically** whether it is still inside the workspace; out of bounds it returns
+ * `undefined` (the wording of the error and the structured code belong to the caller — world reads report `DriverError`, artifact publishing
+ * reports `ArtifactPathOutsideWorkspace`).
  *
- * 判据用 `relative(cwd, resolved)`：它的输出已经规范化，`..` 只可能出现在开头，所以
- * "不以 `..` 段开头且不是绝对路径"就等价于"仍在工作区内"。第二个条件在 windows 上是必需的
- * ——跨盘符时 `relative` 会返回一个绝对路径而不是一串 `..`。
+ * The criterion is `relative(cwd, resolved)`: its output is already normalized, so `..` can only appear at the front, and
+ * "does not start with a `..` segment and is not an absolute path" is therefore equivalent to "still inside the workspace". The second condition is required on windows
+ * — across drive letters `relative` returns an absolute path instead of a run of `..`.
  *
- * **只做词法检查，不追符号链接**：工作区内一个指向外部的软链在这一层仍然通过。世界读取
- * 接受这条已知边界（读出来的字节就是脚本自己看到的值）；产物发布不接受它，因为它把字节
- * **拷进一个持久 store 交给用户**，所以那一侧在本函数之上再做一次 realpath 复核
- * （见 workflow-artifact-publish.ts）。
+ * **Lexical check only, no symlink following**: a symlink inside the workspace that points outside still passes at this layer. World reads
+ * accept that known edge (the bytes they read are the values the script itself sees); artifact publishing does not accept it, because it copies those bytes
+ * **into a persistent store handed to the user**, so that side re-checks with realpath on top of this function
+ * (see workflow-artifact-publish.ts).
  *
- * **导出是有意的**：越界的定义必须只有一个实现。两处各写一遍，就会有一天两处对同一个
- * 路径给出不同答案，而其中一处是安全边界。
+ * **The export is deliberate**: the definition of out-of-bounds must have exactly one implementation. Writing it twice means that one day
+ * the two disagree about the same path, and one of them is a security boundary.
  */
 export function resolveWithinWorkspace(cwd: string, arg: string): string | undefined {
   const resolved = resolvePath(cwd, arg);
@@ -577,7 +577,7 @@ export function resolveWithinWorkspace(cwd: string, arg: string): string | undef
   return escapes || isAbsolutePath(rel) ? undefined : resolved;
 }
 
-/** {@link resolveWithinWorkspace} 的世界读取包装：越界即结构化 `DriverError`（脚本可 `catch`）。 */
+/** The world-read wrapper around {@link resolveWithinWorkspace}: out of bounds becomes a structured `DriverError` (the script can `catch` it). */
 function assertWithinWorkspace(op: string, cwd: string, arg: string): string {
   const resolved = resolveWithinWorkspace(cwd, arg);
   if (resolved === undefined) {
@@ -590,38 +590,38 @@ function assertWithinWorkspace(op: string, cwd: string, arg: string): string {
 }
 
 /**
- * 端口返回的路径归一成**工作区相对**路径（facade 承诺的形状）。端口可能给绝对路径也可能
- * 已经给相对路径，两种都接。分隔符统一成 `/`：这个值会进 journal、也会被插值进模型提示，
- * 所以它不该随宿主平台变形（同一份脚本在 windows 与 mac 上应当读出同样的 path）。
+ * Normalizes a path returned by the port into a **workspace-relative** path (the shape the facade promises). The port may hand back an absolute path
+ * or an already-relative one, and both are accepted. Separators are unified to `/`: this value goes into the journal and is interpolated into model prompts,
+ * so it must not deform with the host platform (the same script should read the same path on windows and on mac).
  *
- * **导出是有意的**（同 {@link resolveWithinWorkspace}）：产物记录里的 `sourcePath` 是同一种
- * 值——工作区相对、正斜杠——而"同一种值"必须只有一处定义，否则两处迟早会在 windows 上分叉。
+ * **The export is deliberate** (same as {@link resolveWithinWorkspace}): the `sourcePath` in an artifact record is the same kind
+ * of value — workspace-relative, forward slashes — and "the same kind of value" must have exactly one definition, otherwise the two diverge on windows one day.
  */
 export function toWorkspaceRelative(cwd: string, path: string): string {
   const rel = resolvePath(cwd, path) === path ? relativePath(cwd, path) : path;
   return rel.replace(/\\/g, "/");
 }
 
-/** stderr / stdout 的首行（错误消息用，不回显整段输出）。 */
+/** The first line of stderr / stdout (for error messages; the whole output is never echoed back). */
 function firstLine(text: string): string {
   return text.split("\n", 1)[0]?.trim() ?? "";
 }
 
 /**
- * git 文本输出（路径列表 / status / log）的 inline 上限。这些 op 没有 spec 级上限，但一个
- * 无界 buffer 不是选项——100 个 commit 与一棵工作树的路径列表离 4MB 有几个数量级。
- * git.diff **不**用这个值：它有自己的 512KB 上限，且要靠 cap+1 做溢出探测。
+ * The inline limit for git text output (path lists / status / log). These ops have no spec-level limit, but an unbounded
+ * buffer is not an option — 100 commits and the path list of a working tree are several orders of magnitude below 4MB. git.diff does **not**
+ * use this value: it has its own 512KB limit and needs cap+1 for overflow probing.
  */
 const GIT_TEXT_OUTPUT_BYTES = 4 * 1024 * 1024;
 
-/** `files.grep` 的一条命中。权威声明是 FACADE_DTS 里的 `declare interface GrepMatch`。 */
+/** One `files.grep` hit. The authoritative declaration is `declare interface GrepMatch` in FACADE_DTS. */
 interface GrepMatch {
   path: string;
   line: number;
   text: string;
 }
 
-/** 实参形状的简短描述（只用于错误消息，不回显完整内容）。 */
+/** A short description of the argument shape (used only in error messages; the full content is never echoed back). */
 function describeArg(value: unknown): string {
   if (value === undefined) return "undefined";
   if (value === null) return "null";

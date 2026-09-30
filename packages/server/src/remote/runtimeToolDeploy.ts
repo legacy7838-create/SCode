@@ -31,14 +31,18 @@ export async function deployRuntimeTools(
       options.selectedResourcePackageIds &&
       !options.selectedResourcePackageIds.includes(componentId)
     ) {
-      loggers.log(`[tool-deploy] ${toolId}: 未选择资源包 ${componentId}，跳过检查和部署`);
+      loggers.log(
+        `[tool-deploy] ${toolId}: resource package ${componentId} is not selected, skipping the check and deploy`,
+      );
       continue;
     }
 
     const entrySegments = runtime.resolveEntrySegments(env.platform);
     const binaryName = entrySegments[entrySegments.length - 1];
     if (!binaryName) {
-      loggers.logWarn(`[tool-deploy] ${toolId}: 无法解析 binary 名称，跳过部署`);
+      loggers.logWarn(
+        `[tool-deploy] ${toolId}: could not resolve the binary name, skipping the deploy`,
+      );
       continue;
     }
 
@@ -56,7 +60,9 @@ export async function deployRuntimeTools(
     if (remoteVersion === version) {
       const hasRemoteBinary = await backend.exists(remoteBinaryPath);
       if (hasRemoteBinary) {
-        loggers.log(`[tool-deploy] ${toolId}: 远程版本 ${version} 已是最新，跳过`);
+        loggers.log(
+          `[tool-deploy] ${toolId}: remote version ${version} is already up to date, skipping`,
+        );
         continue;
       }
       loggers.logWarn(
@@ -64,7 +70,7 @@ export async function deployRuntimeTools(
       );
     }
 
-    loggers.log(`[tool-deploy] ${toolId}: 开始部署 ${version}`);
+    loggers.log(`[tool-deploy] ${toolId}: starting to deploy ${version}`);
     await options.installer.installFile({
       componentId,
       sourceRelativePath: `tools/${platformArch}/${runtime.bundledResourceDir}/${binaryName}`,
@@ -76,6 +82,6 @@ export async function deployRuntimeTools(
       buildWriteLiteralFileCommand(remoteVersionFile, version),
     );
     await waitForClose(versionStream);
-    loggers.log(`[tool-deploy] ${toolId}: 部署完成 ${version}`);
+    loggers.log(`[tool-deploy] ${toolId}: deploy completed ${version}`);
   }
 }

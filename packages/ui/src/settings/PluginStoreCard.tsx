@@ -26,14 +26,20 @@ import {
 } from "@/settings/pluginStoreListing.js";
 import { runUserAction } from "@/lib/userActionTelemetry.js";
 
-/** 商店条目的通用动作集：列表卡片、详情页共用同一套回调与进行中态判定。 */
+/**
+ * The common action set for store entries: list cards and the detail page share the same callbacks
+ * and in-progress state checks.
+ */
 export interface PluginStoreActions {
   onOpenDetail: (pluginId: string) => void;
-  /** 安装或恢复（restorable 内置插件走 restoreBuiltin，其余走 install）。 */
+  /**
+   * Install or restore (restorable built-in plugins go through restoreBuiltin, everything else
+   * through install).
+   */
   onInstall: (item: StorePluginItem) => void;
   onUninstall: (pluginId: string) => void;
   onSetEnabled?: (pluginId: string, enabled: boolean) => void;
-  /** 删除当前 Workspace scope 的显式配置，使其回退到 User。 */
+  /** Remove the explicit configuration at the current Workspace scope, so it falls back to User. */
   onResetConfig?: (pluginId: string) => void;
   onUpdate: (pluginId: string) => void;
   operationId: string | null;
@@ -52,12 +58,14 @@ function isItemBusy(item: StorePluginItem, actions: PluginStoreActions): boolean
 }
 
 /**
- * 付费套餐提示：目录条目声明 `listing.requiresPaidPlan` 时，在标题右侧展示渐变徽标。
- * 表达的是「需要付费套餐才好用」这个使用条件，不是「插件是收费商品」——不做安装门禁。
- * 商店卡片与详情页标题共用同一渐变徽标。
- * 徽标使用短文案，完整条件由 Tooltip 和 aria-label 表达；缺字段时整个标记不渲染。
- * hover 提示走 ControlHintTooltip（Root Provider 的 delayDuration=0，即时弹出），
- * 不用原生 title——后者有约 1s 系统延迟。
+ * Paid-plan hint: when a catalog entry declares `listing.requiresPaidPlan`, a gradient badge is
+ * shown to the right of the title. It expresses the usage condition "only useful with a paid plan",
+ * not "this plugin is a paid product" — no install gate is applied. The store card and the detail
+ * page title share the same gradient badge. The badge uses short wording, while the full condition
+ * is expressed by the Tooltip and the aria-label; when the field is missing, the whole marker does
+ * not render. The hover hint goes through ControlHintTooltip (the Root Provider's delayDuration=0,
+ * so it pops up immediately) instead of the native title — the latter has a system delay of about
+ * 1s.
  */
 export function PluginStorePaidPlanBadge({
   item,
@@ -83,7 +91,10 @@ export function PluginStorePaidPlanBadge({
   );
 }
 
-/** 已安装条目的「…」菜单：启用/禁用、更新（有更新时）、卸载。卡片与详情页共用。 */
+/**
+ * The "…" menu for installed entries: enable/disable, update (when an update exists), uninstall.
+ * Shared by cards and the detail page.
+ */
 export function PluginStoreItemMenu({
   item,
   actions,
@@ -102,16 +113,16 @@ export function PluginStoreItemMenu({
   const updatePending = canUpdatePluginItem(item);
   const busy = isItemBusy(item, actions);
   const canToggleEnabled = Boolean(item.info && actions.onSetEnabled);
-  // 分隔线不应跟随 item.installed 无条件渲染；启停/更新/恢复配置都不出现时，
-  // 菜单只剩「卸载」一项，上方却留下一条孤立横线。分隔线只在卸载前确有其他操作项时才有意义。
+  // The dividing line should not follow the unconditional rendering of item.installed; when start/stop/update/restore configuration does not appear,
+  // The only item left on the menu is "Uninstall", but there is an isolated horizontal line above it. The separator line only makes sense if there are other operations before uninstalling.
   const hasActionsBeforeUninstall =
     canToggleEnabled || updatePending || Boolean(actions.onResetConfig);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         {/**
-         * 原实现重复声明 data-testid，导致 TSX 编译报错 TS17001，
-         * 仅保留一个测试 id 即可。
+         * The original implementation declared data-testid twice, which made the TSX compile fail
+         * with TS17001; keeping a single test id is enough.
          */}
         <Button
           type="button"
@@ -185,7 +196,10 @@ export function PluginStoreItemMenu({
   );
 }
 
-/** 安装/恢复胶囊按钮（未安装条目的卡片与详情页主按钮共用）。 */
+/**
+ * The install / restore pill button (the primary button on the card and the detail page of
+ * not-yet-installed entries).
+ */
 export function PluginStoreInstallButton({
   item,
   actions,
@@ -226,7 +240,10 @@ export function PluginStoreInstallButton({
   );
 }
 
-/** 已安装条目的「可更新」角标：列表/卡片标题行直接标出哪个插件有更新，与详情页入口共用判定。 */
+/**
+ * The "update available" corner badge for installed entries: the list / card title line directly
+ * marks which plugin has an update, sharing the check with the detail page entry.
+ */
 export function PluginStoreUpdateBadge({
   item,
 }: {
@@ -248,7 +265,10 @@ export function PluginStoreUpdateBadge({
   );
 }
 
-/** 行内「更新」胶囊：已安装且可更新的条目原地触发更新，不必进详情页。 */
+/**
+ * The inline "Update" pill: an installed entry that can be updated triggers the update in place,
+ * without going into the detail page.
+ */
 export function PluginStoreUpdateButton({
   item,
   actions,
@@ -286,8 +306,9 @@ export function PluginStoreUpdateButton({
 }
 
 /**
- * 商店卡片（双列网格单元）：40px 头像 + 显示名 + 单行截断描述；
- * 尾部动作：已安装 → 「…」菜单，未安装 → 「安装」胶囊。点击主体进入详情页。
+ * The store card (a cell of the two-column grid): 40px avatar + display name + single-line
+ * truncated description; trailing action: installed → the "…" menu, not installed → the "Install"
+ * pill. Clicking the body opens the detail page.
  */
 export function PluginStoreCard({
   item,
@@ -345,8 +366,10 @@ export function PluginStoreCard({
         {item.installed ? (
           <>
             <PluginStoreUpdateButton item={item} actions={actions} />
-            {/* 旧版误写 suppression 后可能只剩安装记录、没有运行时 info；
-                此时仍须保留卸载菜单，让用户能清理安装记录与脏 suppression。 */}
+            {/* After a mistaken suppression was written on an old version, only the install record may
+                be left, with no runtime info; the uninstall menu must still be kept then, so the
+                user can clean up the install record and the dirty suppression.
+                */}
             <PluginStoreItemMenu item={item} actions={actions} />
           </>
         ) : (

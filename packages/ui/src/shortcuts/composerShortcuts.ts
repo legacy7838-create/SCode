@@ -1,29 +1,37 @@
 /**
- * composer 作用域快捷键解析——独立模块，唯一消费方是
- * LexicalChatInput 的键盘行为插件；useAppKeyboard / 菜单 / Web 回退监听对
- * composer 命令零感知。只依赖内核匹配器，不依赖 DOM / React，可独立单测。
+ * composer-scope shortcut resolution — a standalone module whose only consumer is the
+ * keyboard-behaviour plugin of LexicalChatInput; useAppKeyboard / menus / the Web fallback listener
+ * are wholly unaware of composer commands. It depends only on the core matcher, not on DOM / React,
+ * so it can be unit-tested on its own.
  */
 import type { ShortcutBindingEvent } from "./bindings.js";
 import { matchesShortcutBinding } from "./bindings.js";
 
-/** composer 作用域命令在生效表中的切片（只关心这两条，避免拉全量表的类型依赖）。 */
+/**
+ * The slice of composer-scope commands in the active binding table (only these two matter, which
+ * avoids the type dependency of pulling in the whole table).
+ */
 interface ComposerEffectiveBindings {
   readonly composerSend: readonly string[];
   readonly composerInsertNewline: readonly string[];
 }
 
-/** Enter 族事件在 composer 内的最终动作。 */
+/** The final action of an Enter-family event inside the composer. */
 type ComposerKeyAction = "send" | "newline";
 
 /**
- * 按生效表解析 composer 动作（改绑层，统一开放策略）。
+ * Resolve a composer action against the active binding table (the rebinding layer, with one uniform
+ * openness policy).
  *
- * 对 `composerInsertNewline` / `composerSend` 的全部生效绑定做匹配（newline 先判：
- * 编辑操作误发送代价更高）——**不限定 Enter 族**：用户可把发送绑成 F9 等任意键，
- * 与其他命令的开放策略一致；命中返回动作，全部未命中返回 null（调用方走既有主链）。
+ * It matches against all active bindings of `composerInsertNewline` / `composerSend` (newline is
+ * checked first: a mistaken send while editing costs more) — and it is **not restricted to the
+ * Enter family**: the user can bind send to any key such as F9, consistent with the openness policy
+ * of the other commands; on a hit it returns the action, and when nothing matches it returns null
+ * (the caller follows its existing main chain).
  *
- * 发送动作的运行时门禁（submitDisabled / 手机视口 enterSubmits / 空输入 /
- * 反转投递让位）由调用方执行，本函数只回答"键位表说了算"的部分。
+ * The runtime gates on the send action (submitDisabled / enterSubmits on phone viewports / empty
+ * input / yielding to reversed delivery) are executed by the caller; this function only answers the
+ * part that "the key table gets to decide".
  */
 export function resolveComposerKeyAction(
   event: Pick<ShortcutBindingEvent, "key" | "code" | "metaKey" | "ctrlKey" | "shiftKey" | "altKey">,
@@ -44,9 +52,10 @@ export function resolveComposerKeyAction(
 }
 
 /**
- * 裸 Enter 是否应回退为换行（主链前置检查）：
- * 用户已把 `composerSend` 改绑走（生效绑定不再包含裸 Enter，含显式空数组 = 未设置）时，
- * 裸 Enter 不再代表发送，放行 Lexical 换行——"Ctrl+Enter 党"改绑后的预期行为。
+ * Whether a bare Enter should fall back to a newline (a pre-check on the main chain): once the user
+ * has rebound `composerSend` away (the active bindings no longer include a bare Enter, an explicit
+ * empty array included = unset), bare Enter no longer means send, so Lexical's newline is allowed
+ * through — the expected behavior for the "Ctrl+Enter camp" after rebinding.
  */
 export function shouldBareEnterFallThroughToNewline(effective: ComposerEffectiveBindings): boolean {
   return !effective.composerSend.includes("Enter");

@@ -1,14 +1,17 @@
 /**
- * `table` 预置渲染器：一行一条（或按 `key` upsert 的一行一实体）。
+ * `table` preset renderer: one row per item (or one row per entity, upserted by `key`).
  *
- * 两种形态：
- * - `compact`：run 侧板卡片里的行数 + 前 3 行；
- * - 全尺寸：`workflow-artifact` tab 里的完整表格，表头吸顶、自带纵横滚动。
+ * Two shapes:
+ * - `compact`: the row count plus the first 3 rows inside a run side-panel card;
+ * - full size: the complete table in the `workflow-artifact` tab, with a sticky header and its own
+ *   horizontal and vertical scrolling.
  *
- * 刻意**不复用** `MarkdownTable`：那是一份 1400 行、带排序 / 选区 / 复制 / 虚拟化的富组件，
- * 为一张只读投影表把它整棵拖进来不划算（spec 允许「或轻量表格，实现期定」）。行数用一个
- * 固定上限兜住 DOM 规模，超出的部分在表头的计数里如实呈现——这比装一个虚拟器便宜得多，
- * 而条目本身在投影侧已经是有界的。
+ * Deliberately does **not** reuse `MarkdownTable`: that is a 1400-line rich component with sorting
+ * / selection / copy / virtualization, and dragging the whole tree in for a read-only projection
+ * table does not pay off (the spec allows "or a lightweight table, decided during implementation").
+ * The row count is bounded by a fixed cap so the DOM size stays in check, and whatever exceeds it
+ * is reported faithfully in the header count — far cheaper than mounting a virtualizer, and the
+ * items themselves are already bounded on the projection side.
  */
 
 import { memo, useMemo } from "react";
@@ -26,9 +29,15 @@ import {
 import type { TableSpec } from "@/app-shell/workflow-artifacts/presets/spec.js";
 import { cn } from "@/components/lib/utils.js";
 
-/** 小卡片里只露前几行——它是一个「有东西了」的信号，不是阅读面。 */
+/**
+ * Small cards only reveal the first few rows — it is a "there is content" signal, not a reading
+ * surface.
+ */
 const COMPACT_ROWS = 3;
-/** 全尺寸下真正挂进 DOM 的行数上限；再多也读不过来，且 DOM 规模必须有界。 */
+/**
+ * Upper bound on the rows actually mounted in the DOM at full size; past it there is nothing more
+ * to read, and the DOM size must stay bounded.
+ */
 const ARTIFACT_TABLE_MAX_ROWS = 200;
 
 export const ArtifactTable = memo(function ArtifactTable({
@@ -82,7 +91,7 @@ export const ArtifactTable = memo(function ArtifactTable({
           trailing={count}
         />
       )}
-      {/* 宽内容在自己的容器里横向滚动，绝不把面板本身撑出横向滚动条（DESIGN.md 响应式）。 */}
+      {/* Wide content scrolls horizontally inside its own container and must never stretch the panel itself into a horizontal scrollbar (DESIGN.md responsive rules). */}
       <div
         className={cn(
           "min-w-0 overflow-auto rounded-lg border border-border",
@@ -105,8 +114,8 @@ export const ArtifactTable = memo(function ArtifactTable({
           </thead>
           <tbody>
             {visible.map((row) => (
-              // 身份是行 id（spec 的 key 值，或 journal 的 siteId@ordinal）——它稳定，
-              // 于是只有**新行**会播揭示动画，既有行原地更新不闪。
+              // The identity is the row id (key value for spec, or siteId@ordinal for journal) - it is stable,
+              // So only the **new row** will play the reveal animation, and the existing row will be updated in place without flashing.
               <tr
                 className={cn(
                   "border-b border-border/60 last:border-b-0 hover:bg-hover",

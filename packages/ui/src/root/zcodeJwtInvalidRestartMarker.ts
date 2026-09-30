@@ -26,7 +26,7 @@ export function consumeZcodeJwtInvalidRestartMarker(storage?: RestartMarkerStora
   if (!resolved || resolved.getItem(ZCODE_JWT_INVALID_RESTART_MARKER_KEY) !== "1") {
     return false;
   }
-  // 该标记只服务于本次重启；如果不在读取时删除，后续正常启动仍会被强制带回登录页。
+  // This mark only serves this restart; if it is not deleted during reading, subsequent normal startups will still be forced back to the login page.
   resolved.removeItem(ZCODE_JWT_INVALID_RESTART_MARKER_KEY);
   return true;
 }

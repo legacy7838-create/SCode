@@ -1,14 +1,14 @@
 /**
- * Layer 0: 基础设施
- * - IDisposable / DisposableStore: 资源生命周期管理
- * - Event / Emitter: 事件系统
- * - CancellationToken: 取消令牌
+ * Layer 0: infrastructure
+ * - IDisposable / DisposableStore: resource lifecycle management
+ * - Event / Emitter: the event system
+ * - CancellationToken: the cancellation token
  *
- * 这些是整个 IPC 框架的地基，所有上层模块都依赖它们。
+ * These are the bedrock of the whole IPC framework; every module above depends on them.
  */
 
 // ============================================================================
-// Disposable - 资源释放模式
+// Disposable - resource release pattern
 // ============================================================================
 
 export interface IDisposable {
@@ -30,8 +30,8 @@ function once(fn: () => void): () => void {
 }
 
 /**
- * DisposableStore 收集多个 IDisposable，统一释放。
- * VS Code 里几乎每个类都有一个 DisposableStore 来管理子资源。
+ * DisposableStore collects multiple IDisposable instances and releases them together.
+ * Nearly every class in VS Code owns a DisposableStore to manage its sub-resources.
  */
 export class DisposableStore implements IDisposable {
   private items = new Set<IDisposable>();
@@ -60,20 +60,20 @@ export class DisposableStore implements IDisposable {
 }
 
 // ============================================================================
-// Event System - 事件系统
+// Event System - event system
 // ============================================================================
 
 /**
- * Event<T> 就是一个函数签名：传入 listener，返回一个 IDisposable 用于取消订阅。
- * 这是整个 IPC 框架中事件流转的核心类型。
+ * Event<T> is just a function signature: pass in a listener, get back an IDisposable that unsubscribes.
+ * This is the core type through which events flow in the entire IPC framework.
  */
 export type Event<T> = (listener: (e: T) => void) => IDisposable;
 
 export namespace Event {
-  /** 永远不触发的事件 */
+  /** An event that never fires */
   export const None: Event<any> = () => ({ dispose() {} });
 
-  /** 只触发一次就自动取消订阅 */
+  /** Fires at most once, then unsubscribes automatically */
   export function once<T>(event: Event<T>): Event<T> {
     return (listener) => {
       let fired = false;
@@ -88,12 +88,12 @@ export namespace Event {
     };
   }
 
-  /** 把事件转为 Promise，resolve 后自动取消订阅 */
+  /** Turns an event into a Promise, unsubscribing automatically once it resolves */
   export function toPromise<T>(event: Event<T>): Promise<T> {
     return new Promise((resolve) => once(event)(resolve));
   }
 
-  /** 过滤事件 */
+  /** Filters an event */
   export function filter<T>(event: Event<T>, fn: (e: T) => boolean): Event<T> {
     return (listener) =>
       event((e) => {
@@ -103,22 +103,22 @@ export namespace Event {
       });
   }
 
-  /** 映射事件 */
+  /** Maps an event */
   export function map<T, R>(event: Event<T>, fn: (e: T) => R): Event<R> {
     return (listener) => event((e) => listener(fn(e)));
   }
 }
 
 /**
- * Emitter<T> 是事件的发射器。
+ * Emitter<T> is the emitter behind an event.
  *
- * 关键设计：
- * - onWillAddFirstListener: 第一个订阅者到来时触发（懒初始化资源）
- * - onDidRemoveLastListener: 最后一个订阅者离开时触发（释放资源）
+ * Key design points:
+ * - onWillAddFirstListener: fires when the first subscriber arrives (lazily initializes resources)
+ * - onDidRemoveLastListener: fires when the last subscriber leaves (releases resources)
  *
- * 这个"懒订阅"机制在 IPC 框架中至关重要——
- * ChannelClient 的 requestEvent 正是利用它来实现
- * "有人监听才发送 EventListen 请求，无人监听就发 EventDispose"。
+ * This "lazy subscription" mechanism is critical to the IPC framework —
+ * ChannelClient's requestEvent relies on it to implement
+ * "only send an EventListen request while somebody is listening; send EventDispose when nobody is".
  */
 export class Emitter<T> implements IDisposable {
   private listeners = new Set<(e: T) => void>();
@@ -172,8 +172,8 @@ interface EmitterOptions {
 }
 
 /**
- * Relay 是一个"事件中继器"，可以动态切换输入源。
- * 用于 getDelayedChannel 中：先创建 Relay，等 channel promise resolve 后切换 input。
+ * Relay is an "event relay" whose input source can be swapped dynamically.
+ * Used by getDelayedChannel: create the Relay first, then switch the input once the channel promise resolves.
  */
 export class Relay<T> implements IDisposable {
   private emitter = new Emitter<T>();
@@ -193,8 +193,8 @@ export class Relay<T> implements IDisposable {
 }
 
 /**
- * EventMultiplexer 聚合多个事件源为一个事件。
- * IPCServer 的 getMulticastEvent 用它来聚合所有客户端的同名事件。
+ * EventMultiplexer merges several event sources into a single event.
+ * IPCServer's getMulticastEvent uses it to merge the same-named event of every client.
  */
 export class EventMultiplexer<T> implements IDisposable {
   private readonly emitter = new Emitter<T>();
@@ -217,7 +217,7 @@ export class EventMultiplexer<T> implements IDisposable {
 }
 
 // ============================================================================
-// CancellationToken - 取消令牌
+// CancellationToken - cancellation token
 // ============================================================================
 
 export interface CancellationToken {

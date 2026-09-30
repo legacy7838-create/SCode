@@ -44,7 +44,7 @@ function resolveDesktopContextPromptConfig(payload: unknown): DesktopContextProm
   }
   const config = envelope.data?.configs?.desktopContextPrompt;
   if (config === undefined || config === null) {
-    // 服务端成功响应但未下发该单功能配置，语义是未启用；不能继续沿用旧的开启快照。
+    // The server responded successfully but did not deliver the single-function configuration, and the semantics is that it is not enabled; the old enabled snapshot cannot continue to be used.
     return { enabled: false };
   }
   if (typeof config?.enabled !== "boolean") {

@@ -28,9 +28,9 @@ type AnsiProps = {
   useClasses?: boolean;
 };
 
-// ansi-to-react 在当前 NodeNext 配置下也会被推成模块对象类型，
-// 直接写成 <Ansi /> 会误报 JSX 组件不可调用。这里仅把第三方默认导出收窄成组件类型，
-// 不改变运行时加载方式。
+// ansi-to-react will also be pushed to the module object type under the current NodeNext configuration.
+// Directly writing <Ansi /> will falsely report that the JSX component cannot be called. Here we only narrow the third-party default export to component types.
+// Does not change the runtime loading method.
 const Ansi = RawAnsi as unknown as ComponentType<AnsiProps>;
 
 interface TerminalContextType {

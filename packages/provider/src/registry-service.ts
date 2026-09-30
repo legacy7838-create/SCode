@@ -84,13 +84,13 @@ export class ProviderRegistryService {
       await this.#requestRefresh("start");
       return;
     }
-    // 启动只负责就绪；业务读取必须使用 getSnapshot，不能长期保留首次启动快照。
+    // Startup is only responsible for readiness; business reads must use getSnapshot, and the first startup snapshot cannot be retained for a long time.
     if (!this.#snapshot) await this.#requestRefresh("start");
   }
 
   refresh(reason = "explicit"): Promise<ProviderRegistryServiceSnapshot> {
     this.#assertNotDisposed();
-    if (!this.#started) throw new Error("ProviderRegistryService 必须先 start() 再 refresh()");
+    if (!this.#started) throw new Error("ProviderRegistryService must be started before refresh()");
     return this.#requestRefresh(reason);
   }
 
@@ -134,7 +134,7 @@ export class ProviderRegistryService {
     if (this.#disposed) return;
     this.#disposed = true;
     for (const dispose of this.#sourceDisposers.splice(0)) dispose();
-    const error = new Error("ProviderRegistryService 已 dispose");
+    const error = new Error("ProviderRegistryService has been disposed");
     for (const waiter of this.#refreshWaiters.splice(0)) waiter.reject(error);
     this.#changeListeners.clear();
     this.#errorListeners.clear();
@@ -143,7 +143,7 @@ export class ProviderRegistryService {
   #refreshFromSource(source: "config" | "account", reason: string): void {
     if (this.#disposed) return;
     void this.#requestRefresh(`${source}:${reason || "changed"}`).catch(() => {
-      // Source 驱动的后台刷新通过 onDidRefreshError 报告；调用栈没有 Promise 消费者。
+      // Source-driven background refresh is reported via onDidRefreshError; the call stack has no Promise consumer.
     });
   }
 
@@ -203,8 +203,8 @@ export class ProviderRegistryService {
       this.#assertNotDisposed();
 
       if (account.basedOnZCodeBuiltinRevision !== config.zcodeBuiltinRevision) {
-        // Built-in 已变化但 Account 仍基于旧事实时，继续服务上一份完整 Registry。
-        // 当前 generation 结束；等待 Account Source 的后续 change 再一次性发布最终组合。
+        // Continue serving the last full Registry when the Built-in has changed but the Account is still based on the old facts.
+        // The current generation ends; wait for subsequent changes in the Account Source and publish the final combination at once.
         this.#completedGeneration = generation;
         if (this.#snapshot) this.#resolveRefreshWaiters(generation, this.#snapshot);
         reasons.clear();
@@ -299,7 +299,7 @@ export class ProviderRegistryService {
   }
 
   #assertNotDisposed(): void {
-    if (this.#disposed) throw new Error("ProviderRegistryService 已 dispose");
+    if (this.#disposed) throw new Error("ProviderRegistryService has been disposed");
   }
 }
 

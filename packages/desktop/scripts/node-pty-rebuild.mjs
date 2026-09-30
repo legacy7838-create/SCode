@@ -101,9 +101,9 @@ export async function main() {
   const decision = await resolveNodePtyRebuildDecision();
 
   if (!decision.shouldRebuild) {
-    // electron-rebuild 会在 Windows 强制 node-gyp build-from-source。
-    // node-pty 1.1 已自带 Electron 可复用的 N-API 预编译产物，继续本地编译只会把 CI 绑到 VS 的 Spectre 库上，
-    // 导致安装阶段直接失败，所以这里命中预编译时跳过 rebuild。
+    // electron-rebuild will force node-gyp build-from-source on Windows.
+    // node-pty 1.1 already comes with Electron's reusable N-API precompiled product. Continuing local compilation will only tie CI to the Specter library of VS.
+    // This causes the installation phase to fail directly, so rebuild is skipped when precompilation is hit here.
     console.log(`[node-pty] skip electron-rebuild (${decision.reason}): ${decision.prebuildPath}`);
     return;
   }

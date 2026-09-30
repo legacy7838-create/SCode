@@ -14,7 +14,10 @@ interface ProviderSettingsRead {
 }
 
 interface ProviderSettingsServiceRead extends ProviderSettingsRead {
-  /** 提交 mutation 返回的权威 View；不依赖异步 onDidChange 事件才能收敛 UI。 */
+  /**
+   * The authoritative View returned by the submit mutation; the UI converges without waiting for an
+   * async onDidChange event.
+   */
   commit(view: ProviderSettingsView): void;
 }
 
@@ -28,7 +31,7 @@ export function useProviderSettingsView(): ProviderSettingsRead {
     state,
     reload: useCallback(() => {
       void reloadProviderSettingsSnapshot().catch((error) => {
-        logger.warn("[ProviderSettings] 重试加载根 Environment 失败", { error });
+        logger.warn("[ProviderSettings] failed to retry loading the root environment", { error });
       });
     }, []),
   };
@@ -39,7 +42,10 @@ interface OwnedProviderSettingsState {
   state: ProviderSettingsState;
 }
 
-/** Settings 编辑器按当前 ServiceProvider 读取目标 Environment，并显式暴露失败与重试。 */
+/**
+ * The Settings editor reads the target Environment for the current ServiceProvider, and explicitly
+ * surfaces failures and retries.
+ */
 export function useProviderSettingsServiceView(
   service: IProviderSettingsService,
 ): ProviderSettingsServiceRead {
@@ -58,8 +64,8 @@ export function useProviderSettingsServiceView(
 
   const commitView = useCallback(
     (view: ProviderSettingsView): boolean => {
-      // 远端 workspace attachment 换代时，旧 mutation 可能晚于新 Service 返回。
-      // 只允许当前 Service 的最新 revision 提交，避免旧 Environment 回写新页面。
+      // When the remote workspace attachment is replaced, an older mutation may return after the new Service.
+      // Only the latest revision from the current Service may commit, so an old Environment never writes back into the new page.
       if (serviceRef.current !== service || ownedRef.current.service !== service) {
         return false;
       }
@@ -69,7 +75,7 @@ export function useProviderSettingsServiceView(
       if (view.revision < latestRevision) {
         return false;
       }
-      // 同一 revision 的事件与 mutation response 表示同一份 Registry 事实，避免重复渲染。
+      // An event and a mutation response with the same revision represent the same Registry fact, avoiding a duplicate render.
       if (view.revision === latestRevision && current.status === "ready") {
         return false;
       }
@@ -99,7 +105,7 @@ export function useProviderSettingsServiceView(
     void service.getView().then(commit, (cause) => {
       if (generation !== generationRef.current) return;
       const error = cause instanceof Error ? cause : new Error(String(cause));
-      logger.warn("[ProviderSettings] 加载目标 Environment 失败", { error });
+      logger.warn("[ProviderSettings] failed to load the target environment", { error });
       if (!hasReadyView) setOwned({ service, state: { status: "error", error } });
     });
     return () => {

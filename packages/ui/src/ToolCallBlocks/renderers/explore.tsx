@@ -1,4 +1,7 @@
-/* eslint-disable max-lines -- Explore 聚合渲染同时维护分类、父级摘要和可复用子工具摘要，拆开会让父子展示规则更难对齐 */
+/* eslint-disable max-lines -- Explore aggregate rendering maintains classification, parent
+ * summaries, and reusable subtool summaries in one place; splitting them would make the
+ * parent/child display rules harder to keep aligned
+ */
 import { SearchIcon } from "lucide-react";
 import { extractPlanStepsFromToolInput, extractPlanStepsFromToolOutput } from "@zcode/shared";
 import { ToolCallBlock } from "@/ToolCallBlocks.js";

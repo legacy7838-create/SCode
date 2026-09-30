@@ -1,7 +1,7 @@
 /**
- * 构建期开关：为真时安装包使用 Preview 身份，而后端环境仍由 `ZCODE_ENV` 单独决定。
- * 典型用法是 `ZCODE_ENV=production ZCODE_PREVIEW_IDENTITY=1`，得到一个连接生产后端、
- * 可与正式版并排安装的 `ZCode Preview`。
+ * Build-time switch: When true, the installation package uses the Preview identity, and the backend environment is still determined by `ZCODE_ENV` alone.
+ * Typical usage is `ZCODE_ENV=production ZCODE_PREVIEW_IDENTITY=1` to get a connection to the production backend,
+ * `ZCode Preview` that can be installed side by side with the official version.
  */
 export const ZCODE_PREVIEW_IDENTITY_ENV = "ZCODE_PREVIEW_IDENTITY";
 
@@ -33,9 +33,9 @@ function normalizeDesktopZCodeEnv(env) {
 }
 
 /**
- * 开关只有一种开启拼写 `1`（`0` / 空 = 关闭），与 CI workflow 规则和 release 门的
- * `$ZCODE_PREVIEW_IDENTITY == "1"` 精确比较保持同一套语义。其它拼写在构建期直接失败，
- * 避免 `true` 之类在 YAML 路由层漏匹配、却在脚本层被当成开启，把 Preview 包打进生产验收目录。
+ * The switch has only one on spelling of `1` (`0` / null = off), as is the case with CI workflow rules and release gates
+ * `$ZCODE_PREVIEW_IDENTITY == "1"` Exact comparisons maintain the same set of semantics. Other spellings simply fail during the build phase,
+ * To prevent `true` from leaking matches at the YAML routing layer but being treated as enabled at the script layer, enter the Preview package into the production acceptance directory.
  */
 export function isPreviewIdentityRequested(env = process.env) {
   const value = env[ZCODE_PREVIEW_IDENTITY_ENV]?.trim() ?? "";
@@ -51,10 +51,10 @@ export function isPreviewIdentityRequested(env = process.env) {
 }
 
 /**
- * 产品身份（flavor）与后端环境（`ZCODE_ENV`）是两个轴：
- * - `ZCODE_ENV=test` 一律是 Preview，测试后端不能顶着正式 `ZCode` 身份覆盖用户的正式安装；
- * - `ZCODE_ENV=production` 默认是正式身份，显式 `ZCODE_PREVIEW_IDENTITY=1` 时改用 Preview 身份。
- * 未知 `ZCODE_ENV` 继续按 test 处理，和共享层 normalizeZCodeEnv 的 fail-safe 默认值一致。
+ * Product identity (flavor) and backend environment (`ZCODE_ENV`) are two axes:
+ * - `ZCODE_ENV=test` is always Preview, and the test backend cannot cover the user's official installation with the official `ZCode` identity;
+ * - `ZCODE_ENV=production` defaults to the official identity. When `ZCODE_PREVIEW_IDENTITY=1` is specified, the Preview identity is used instead.
+ * Unknown `ZCODE_ENV` continues to be processed as test, which is consistent with the fail-safe default value of normalizeZCodeEnv in the shared layer.
  */
 export function resolveDesktopProductFlavor(env = process.env) {
   if (isPreviewIdentityRequested(env)) {
@@ -68,19 +68,19 @@ export function resolveDesktopProductIdentity(env = process.env) {
 }
 
 /**
- * 产物文件名后缀标记的是后端环境而不是身份：`_TEST` 只出现在测试后端的安装包上。
- * 生产后端的 Preview 包靠 productName（`ZCode Preview-<version>-...`）与正式包区分。
+ * The product file name suffix marks the backend environment rather than the identity: `_TEST` only appears on the installation package of the test backend.
+ * The Preview package of the production backend is distinguished from the official package by productName (`ZCode Preview-<version>-...`).
  */
 export function resolveDesktopArtifactSuffix(env = process.env) {
   return normalizeDesktopZCodeEnv(env) === "test" ? "_TEST" : "";
 }
 
 /**
- * 返回 Windows Shell 使用的 AppUserModelId。
+ * Returns the AppUserModelId used by the Windows Shell.
  *
- * 打包态必须复用 electron-builder 的 appId，否则快捷方式里的 AUMID、开始菜单索引
- * 和运行中的 Electron 进程会被 Windows 视为三个不同的应用。开发态继续保留旧身份，
- * 避免本地调试快捷方式和正式/Preview 安装包互相污染。
+ * The packaged state must reuse the appId of electron-builder, otherwise the AUMID and start menu index in the shortcut
+ * and a running Electron process will be treated as three different applications by Windows. The development state continues to retain its old identity.
+ * Avoid mutual contamination of local debugging shortcuts and official/Preview installation packages.
  */
 export function resolveWindowsAppUserModelIdForFlavor(flavor, runtime = { isPackaged: true }) {
   if (runtime.isPackaged === false) {

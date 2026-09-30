@@ -88,7 +88,7 @@ export function useDraftSuggestedPluginActionPopover() {
   useEffect(() => {
     const current = pluginActionPopover;
     if (!current || (current.phase !== "success" && current.phase !== "error")) return;
-    // 成功反馈的 2000ms 从 DOM 已提交后的 effect 开始计时，避免异步 render 吞掉可见时长。
+    // The 2000ms for successful feedback starts from the effect after the DOM has been submitted to prevent asynchronous render from eating up the visible time.
     const durationMs =
       current.phase === "success"
         ? PLUGIN_ACTION_SUCCESS_DURATION_MS

@@ -1,44 +1,47 @@
 /**
- * workflow run 进度事件 → 父会话的追加汇（create-app 的 `onRunEvent` 就是它）。
+ * Workflow run progress events -> the parent session's append sink (create-app's `onRunEvent` is exactly that).
  *
- * 单独成文件而不是留在 create-app 的闭包里，是为了让下面三条**降级路径**可被直接单测：
- * 它们都属于「run 在飞、观察面出问题」这一类，任何一条把异常放出去都会打挂一个正在跑的 run，
- * 而 run 的真相在 journal——进度面只是观察面，绝不该有能力终止它。
+ * Being its own file rather than staying inside create-app's closure is what lets the three **degradation paths** below be
+ * unit-tested directly: all of them belong to the "run in flight, observation side failing" class, and letting an
+ * exception escape any one of them would take down a run that is currently executing — while the truth about a run
+ * lives in the journal, the progress surface is only an observer and must never be able to terminate it.
  */
 
 import type { DynamicWorkflowRunProgressPayload, Logger, SessionId } from "@zcode/contracts";
 import type { AgentRuntime } from "@zcode/core";
 
 interface DynamicWorkflowRunProgressSinkDeps {
-  /** 惰性取 runtime：run service 在 runtime 构造**之前**就已建好（它是 runtime 的依赖之一）。 */
+  /** Lazily obtains the runtime: the run service is already built **before** the runtime is constructed (it is one of the runtime's dependencies). */
   getRuntime: () => AgentRuntime;
-  /** 本 app 所属会话。run 的 parentSessionId 必须与它相等，见下面的身份闸门。 */
+  /** The session this app belongs to. A run's parentSessionId must equal it, see the identity gate below. */
   sessionId: SessionId;
   logger?: Logger;
 }
 
 /**
- * 造一个进度汇。返回的函数**永不抛异常、永不返回 rejected promise**。
+ * Builds a progress sink. The returned function **never throws and never returns a rejected promise**.
  *
- * ## 身份闸门（load-bearing）
+ * ## Identity gate (load-bearing)
  *
- * 事件必须落在**发起该 run 的那个会话**里。今天这是按构造成立的 1:1：
+ * Events must land in **the session that started the run**. Today that is a 1:1 which holds by construction:
  *
- *   ZCodeApp ──1:1── AgentRuntime ──1:1── sessionId        （create-app：`new AgentRuntime(sessionId, …)`）
- *        └──1:1── run service（本 app 内建，端口不外借）
- *   CreateWorkflow handler 提交时带 `parentSessionId = context.sessionId`
+ *   ZCodeApp ──1:1── AgentRuntime ──1:1── sessionId        (create-app: `new AgentRuntime(sessionId, …)`)
+ *        └──1:1── run service (built inside this app, the port is never lent out)
+ *   CreateWorkflow handler submits carrying `parentSessionId = context.sessionId`
  *
- * 而**只有** app 顶层 runtime 能拿到 `dynamicWorkflowRunPort`：subagent 子 runtime 的依赖对象
- * （`core/src/runtime/methods/subagent.ts` 的 `new AgentRuntime(...)`）与 workflow actor runtime
- * （`script-workflow-child-runtime.ts`）都**不含**该端口（已逐字核对），所以子会话根本走不到
- * submit——它们的 CreateWorkflow 落回「端口缺席 → 占位诊断」那条路。
+ * And **only** the app's top-level runtime can obtain `dynamicWorkflowRunPort`: the dependency object of a subagent
+ * child runtime (`new AgentRuntime(...)` in `core/src/runtime/methods/subagent.ts`) and the workflow actor runtime
+ * (`script-workflow-child-runtime.ts`) both **exclude** that port (checked verbatim), so a child session can never
+ * reach submit at all — its CreateWorkflow falls back onto the "port absent -> placeholder diagnostic" path.
  *
- * 于是 `getRuntime()` 就是正确的那个 runtime。**但这条不变式不写下来就会被将来的人改掉**：
- * 只要有人把该端口加进子 runtime 的依赖，子会话发起的 run 就会把事件投进**父**会话的
- * transcript——一个不会报错、只会让事件出现在错误对话里的 bug。所以这里显式比对身份，
- * 不相等时**不追加**并记一条带指引的日志：宁可少一份投影，也不要污染另一个会话的 transcript。
- * （真要支持子会话发起 run，需要的是按 sessionId 找 runtime 的注册表，而 bootstrap 侧没有——
- * 子 runtime 活在 core 内部。那是一次带自己的设计的改动。）
+ * So `getRuntime()` is the right runtime. **But this invariant gets edited away by whoever comes next if it is not
+ * written down**: the moment someone adds that port to a child runtime's dependencies, a run started from a child
+ * session would project its events into the **parent** session's transcript — a bug that raises no error and only
+ * makes events show up in the wrong conversation. So the identity is compared explicitly here, and on a mismatch
+ * the event is **not appended** and a log line with guidance is recorded: better one projection too few than a
+ * polluted transcript in someone else's session. (Actually supporting runs started from child sessions would need a
+ * registry that finds a runtime by sessionId, and bootstrap has none — child runtimes live inside core. That is a
+ * change with a design of its own.)
  */
 export function createDynamicWorkflowRunProgressSink(
   deps: DynamicWorkflowRunProgressSinkDeps,
@@ -54,8 +57,8 @@ export function createDynamicWorkflowRunProgressSink(
 
   return (progress, routing) => {
     const parentSessionId = routing?.parentSessionId;
-    // 缺席是合法的（submit 未带 parentSessionId）：本 app 的端口只可能被本会话触达，
-    // 所以缺席等价于"就是本会话"。只有**明确不等**才是接线错误。
+    // Absence is legal (submit does not include parentSessionId): the port of this app can only be reached by this session.
+    // So absence is equivalent to "this is the session". Only **explicit wait** is a wiring error.
     if (parentSessionId !== undefined && parentSessionId !== deps.sessionId) {
       warn("Dynamic workflow run progress dropped: parent session is not this app", progress.runId, {
         event: "dynamic_workflow.run_progress.session_mismatch",
@@ -66,8 +69,8 @@ export function createDynamicWorkflowRunProgressSink(
       return;
     }
 
-    // getRuntime() 在 runtime 尚未构造时**同步抛错**；关闭中的 runtime 也可能在 append 链路
-    // （事件库 / 持久化 / sink 扇出）上抛。两者都必须退化成"记一条日志的 no-op"。
+    // getRuntime() **throws an error synchronously** when the runtime has not yet been constructed; the closed runtime may also be in the append link
+    // (Event library/persistence/sink fanout) throw up. Both must degenerate into "a no-op that keeps a log".
     let appended: Promise<void>;
     try {
       appended = deps.getRuntime().recordDynamicWorkflowRunProgress(progress);

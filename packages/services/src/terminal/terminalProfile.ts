@@ -399,8 +399,8 @@ export function resolveTerminalFontProfile(input: TerminalFontProfileInput): Ter
 
   if (detectedProfile) {
     return {
-      // macOS 用户终端样式不只包含字体族，还包含字号和配色；
-      // 读不到字体族时不能整体放弃系统 profile，否则仅配置配色的终端无法继承到面板。
+      // macOS user terminal styles include not only font families, but also font sizes and colors;
+      // When the font family cannot be read, the system profile cannot be abandoned as a whole, otherwise the terminal configured only with color matching cannot be inherited to the panel.
       fontFamily: dedupeFontFamilyStack(detectedProfile.fontFamily ?? FONT_FAMILY_FALLBACKS[0]),
       fontSize: detectedProfile.fontSize,
       theme: detectedProfile.theme,

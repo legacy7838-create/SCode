@@ -8,8 +8,9 @@ import {
 type CuaHelperInstallerFactory = (options: CuaHelperInstallerOptions) => CuaHelperInstaller;
 
 /**
- * macOS `lipo -archs` 对 Intel 二进制返回 `x86_64`，而 Node 的运行时架构名是 `x64`。
- * 两者表示同一架构；如果直接比较字符串，合法的 Intel Helper 会被误判为不可用。
+ * macOS `lipo -archs` reports `x86_64` for Intel binaries, while Node's runtime architecture
+ * name is `x64`. Both denote the same architecture; comparing the strings directly would make
+ * a legitimate Intel Helper be judged unavailable.
  */
 export function normalizeCuaHelperArch(rawArch: string): string {
   switch (rawArch.trim().toLowerCase()) {

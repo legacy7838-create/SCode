@@ -1,0 +1,38 @@
+[workspace]
+members = ["crates/*"]
+resolver = "2"
+
+[workspace.package]
+version = "0.0.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[workspace.dependencies]
+napi = { version = "3", features = ["serde-json"] }
+napi-derive = "3"
+serde = { version = "1", features = ["derive"] }
+# `preserve_order` is REQUIRED for RPC wire compatibility, not a preference.
+# The TS side uses `JSON.stringify`, which emits object keys in insertion order;
+# serde_json's default `Map` is a BTreeMap and would emit them sorted. That
+# changes the bytes on the wire for every object argument and response, and any
+# byte-level consumer (checksums, snapshot tests, strict clients) would see a
+# different payload for the same logical value.
+serde_json = { version = "1", features = ["preserve_order"] }
+# zcode-codec hot byte primitives must beat the platform's own (Node's `Buffer.toString("base64")`
+# and the previous hand-rolled CRC32), so the compute is delegated to the optimized crates:
+# base64 0.23 ships AVX2/AVX-512 encode+decode behind its default `simd-unsafe` feature, and
+# crc32fast uses the x86-64 CRC32 instruction (SSE4.2/PCLMULQDQ) via a 16-way slicing-by-8 loop.
+base64 = "0.23"
+crc32fast = "1.5"
+# zcode-events (docs/specs/rust-native-events.md): rusqlite bundled avoids a system-SQLite dependency;
+# sha2 matches migration checksums computed as createHash("sha256") of trimmed SQL (migration-runner.ts:296-298).
+rusqlite = { version = "0.37", features = ["bundled"] }
+sha2 = "0.10"
+# zcode-markdown: inline tokenization of independent blocks is data-parallel, so
+# rayon maps it over the libuv worker pool instead of lexing blocks serially.
+rayon = "1"
+
+[profile.release]
+lto = "thin"
+strip = "symbols"

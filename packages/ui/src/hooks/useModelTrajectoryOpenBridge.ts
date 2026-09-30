@@ -2,10 +2,13 @@ import { useEffect } from "react";
 import { useModelTrajectoryStore } from "@/store/modelTrajectoryStore.js";
 
 /**
- * 订阅“打开模型调用轨迹”请求并交给当前 workspace 的侧边栏控制器。
+ * Subscribes to "open model call trajectory" requests and hands them to the sidebar controller of
+ * the current workspace.
  *
- * 触发入口在任务右键菜单 / Header 菜单深处，通过单例 store 发起请求；这里按 workspaceKey
- * 匹配后调用 onOpen 打开侧边栏 tab，再消费请求，避免多 workspace 实例串开。
+ * The trigger lives deep in the task context menu / Header menu and raises the request through a
+ * singleton store; here it is matched by workspaceKey, onOpen is called to open the sidebar tab,
+ * and the request is then consumed, so that multiple workspace instances never open each other's
+ * panes.
  */
 export function useModelTrajectoryOpenBridge(
   ownWorkspaceKey: string,
@@ -22,7 +25,7 @@ export function useModelTrajectoryOpenBridge(
       useModelTrajectoryStore.getState().consumeRequest(pendingRequest.requestId);
     };
 
-    // 订阅期间可能已有 pending 请求（点击与挂载存在竞态），先处理一次当前值。
+    // A pending request may already exist while subscribing (click and mount race), so handle the current value once first.
     handlePending(useModelTrajectoryStore.getState().pendingRequest);
     return useModelTrajectoryStore.subscribe((state) => {
       handlePending(state.pendingRequest);

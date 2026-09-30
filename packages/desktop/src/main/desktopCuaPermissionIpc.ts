@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 权限频道注册、拖拽浮窗与前台应用返回等待共享同一 main 进程会话状态 */
+/* eslint-disable max-lines -- permission channel registration, the drag floating panel, and the foreground-app return wait all share the same main-process session state */
 import { execFile } from "node:child_process";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -18,19 +18,19 @@ import { createSystemSettingsWindowWatcher } from "./cuaSystemSettingsWindowWatc
 
 const execFileAsync = promisify(execFile);
 const MACOS_SYSTEM_SETTINGS_BUNDLE_ID = "com.apple.systempreferences";
-// 1x1 透明 PNG。startDrag 在 macOS 上要求 icon 非空（electron.d.ts: "The image must be non-empty
-// on macOS"），连随包 ZCode 图标都读不到时用它兜底 —— 否则 startDrag 抛异常，用户完全拖不动。
+// 1x1 transparent PNG. startDrag requires icon to be non-empty on macOS (electron.d.ts: "The image must be non-empty
+// on macOS"), use it when you can't even read the included ZCode icon - otherwise startDrag will throw an exception and the user will be unable to drag at all.
 const CUA_HELPER_DRAG_ICON_DATA_URL =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
-/** 拖拽光标与浮窗 tile 都用 64pt，避免巨大的光标贴图。 */
+/** Both the drag cursor and the floating window tile use 64pt to avoid huge cursor textures. */
 const CUA_DRAG_ICON_SIZE = 64;
 
 /**
- * 拖拽光标与浮窗 tile 共用的 ZCode 图标（模块级缓存，避免每次拖拽读磁盘）。
+ * Drag the ZCode icon shared by the cursor and the floating window tile (module-level caching to avoid reading the disk every time you drag).
  *
- * 不能用 `nativeImage.createFromNamedImage("NSApplicationIcon")`：那取的是**当前宿主 app** 的
- * 图标，dev 下宿主是 Electron.app，于是拖拽时显示 Electron 默认图标。
- * 改为显式读随包的 ZCode 图标（electron-builder 已把 build/icon.png 打进 resources/icon.png）。
+ * Cannot use `nativeImage.createFromNamedImage("NSApplicationIcon")`: it takes the **current host app**
+ * Icon, the host under dev is Electron.app, so the Electron default icon is displayed when dragging.
+ * Change to explicitly read the ZCode icon that comes with the package (electron-builder has typed build/icon.png into resources/icon.png).
  */
 let cachedZCodeIcon: Electron.NativeImage | null = null;
 
@@ -69,8 +69,8 @@ async function resolveFrontmostBundleId(): Promise<string | null> {
 }
 
 /**
- * 监听 Electron main 的应用级窗口信号，而不是 origin renderer 的 DOM focus。用户从窗口 A 发起、
- * 回到窗口 B 时，也必须推进 A 的原始 IPC；监听在 openExternal 之前安装，关闭所有竞态空窗。
+ * Listen to the application-level window signal of Electron main instead of the DOM focus of origin renderer. Initiated by the user from window A,
+ * When returning to window B, the original IPC of A must also be advanced; the listener is installed before openExternal and all race empty windows are closed.
  */
 function waitForCuaApplicationReturn({
   openSettings,
@@ -81,9 +81,9 @@ function waitForCuaApplicationReturn({
   return new Promise<void>((resolve, reject) => {
     let settled = false;
     let settingsOpened = false;
-    // LaunchServices 查询是两次子进程往返，可能已经读到 Settings 的 ASN，却在
-    // ZCode focus 边沿之后才返回 bundle id。用单调序号配对“探针开始/期间 blur”与
-    // 后续 focus，既不丢失真实返回，也不复活 BrowserWindow.isFocused() 的旧快照。
+    // The LaunchServices query is two sub-process round trips. The ASN of Settings may have been read, but in
+    // The bundle id is returned only after the ZCode focus edge. Pair "probe start/during blur" with monotonic sequence numbers
+    // Subsequent focus neither loses the true return nor resurrects the old snapshot of BrowserWindow.isFocused().
     let applicationEventSequence = 0;
     let latestBlurSequence = 0;
     let latestZCodeReturnSequence = 0;
@@ -132,9 +132,9 @@ function waitForCuaApplicationReturn({
         inspectionTimer = undefined;
       }
       const inspectionStartedAtSequence = applicationEventSequence;
-      // 只有在“最近一次应用事件是 blur、且尚未看到 return focus”的离开区间内启动的采样，
-      // 才能为本次 System Settings round-trip 建立证据。由 return focus 自己触发的查询即使稍后
-      // 读到 LaunchServices 的滞后 Settings 值，也不能与同一 focus 配对或清除超时。
+      // Only sampling started in the leaving interval of "the last application event is blur and return focus has not been seen yet",
+      // Only then can evidence be established for this System Settings round-trip. Query triggered by return focus itself even later
+      // Reading the hysteresis Settings value of LaunchServices also cannot pair with the same focus or clear the timeout.
       const inspectionStartedWhileAway = latestBlurSequence > latestZCodeReturnSequence;
       activeInspections += 1;
       void readFrontmostBundleId().then(
@@ -146,19 +146,19 @@ function waitForCuaApplicationReturn({
             inspectionStartedWhileAway &&
             inspectionStartedAtSequence >= latestBlurSequence
           ) {
-            // 如果本次查询期间又收到 blur，该 blur 也必须早于可接受的 ZCode
-            // return edge。这会排除“先在 ZCode 内部切窗，后打开 Settings”的旧 focus。
-            // LaunchServices 的结果可早于 Electron blur 投递。若 pre-open 探针先读到
-            // Settings，而探测启动前恰有一次 ZCode focus/activate，立即把旧 focus 当成「返回」会误判。
-            // 探针必须在最近一次 blur 后、return focus 前启动：仅检查“曾经 blur”仍会借用一次
-            // 更早的内部切窗 blur；而 focus 后才启动的探针可能读到 LaunchServices 的滞后值并永久
-            // 清掉超时。两类结果都忽略，交给 blur-bound/away-interval 探针确认。
+            // If another blur is received during this query, the blur must also be earlier than the acceptable ZCode
+            // return edge. This will eliminate the old focus of "first cut the window inside ZCode, then open Settings".
+            // Results from LaunchServices can be delivered earlier than Electron blur. If the pre-open probe reads first
+            // Settings, and there was exactly one ZCode focus/activate before the detection was started. Immediately treating the old focus as "return" would be a misjudgment.
+            // The probe must be started after the latest blur and before return focus: only checking "once blur" will still borrow once
+            // Earlier internal window cuts are blurred; probes started after focus may read the lagging value of LaunchServices and permanently
+            // Clear the timeout. Both types of results are ignored and left to the blur-bound/away-interval probe for confirmation.
             observedSystemSettingsAfterSequence = Math.max(
               inspectionStartedAtSequence,
               latestBlurSequence,
             );
-            // 旧 timer 把“系统设置是否打开”的机器 SLA 错当成用户操作时限。确认设置页
-            // 已在前台后立即清掉；用户停留多久都不丢 return/restart，只由显式生命周期信号结束。
+            // The old timer mistook the machine SLA of "whether system settings are turned on" as the user operation time limit. Confirm settings page
+            // It is cleared immediately after being in the foreground; return/restart is not lost as long as the user stays, and is only ended by an explicit life cycle signal.
             if (observationTimer) {
               clearTimeout(observationTimer);
               observationTimer = undefined;
@@ -176,16 +176,16 @@ function waitForCuaApplicationReturn({
     };
     const onBlur = () => {
       latestBlurSequence = ++applicationEventSequence;
-      // pre-open 的 lsappinfo 查询可能已经采到 ZCode，却卡在第二个 info 子进程。
-      // 若复用全局 single-flight，Settings 打开并快速返回的完整 round-trip 会落入盲窗。blur 边沿
-      // 必须强制启动一份时间绑定的并行采样；普通 150ms 轮询仍保持 single-flight，避免无界并发。
+      // The pre-open lsappinfo query may have picked up ZCode, but got stuck in the second info sub-process.
+      // If the global single-flight is reused, the complete round-trip opened by Settings and quickly returned will fall into the blind window. blur edge
+      // A time-bound parallel sampling must be forced to be started; ordinary 150ms polling remains single-flight to avoid unbounded concurrency.
       inspectFrontmost(true);
     };
     const onFocus = () => {
-      // System Settings 成为前台后，BrowserWindow.isFocused() 仍可能短暂保留旧 true。
-      // 前台探针完成时直接读取这个 stale 快照会把「刚打开设置页」误判成「用户已返回」。
-      // focus/activate 总是先记序号；若对应的 Settings 探针还在飞行，它延迟返回后
-      // 仍能用 inspection-start snapshot 证明这是后续边沿。边沿也可早于 openExternal resolve。
+      // System Settings BrowserWindow.isFocused() may still briefly hold the old true after becoming foreground.
+      // Directly reading this stale snapshot when the front-end probe is completed will misjudge "the settings page just opened" as "the user has returned".
+      // focus/activate always records the serial number first; if the corresponding Settings probe is still flying, it will return after a delay
+      // You can still use inspection-start snapshot to prove that this is a subsequent edge. Edges can also resolve earlier than openExternal.
       latestZCodeReturnSequence = ++applicationEventSequence;
       inspectFrontmost();
       maybeFinishReturn();
@@ -210,8 +210,8 @@ function waitForCuaApplicationReturn({
       onAbort();
       return;
     }
-    // 在调用 openExternal 前已装好所有监听；从这一刻开始轮询 LaunchServices 的真实前台 app。
-    // 只有确实观察到 System Settings，后续 ZCode focus 才能推进，内部窗口切换不会误判。
+    // All listeners are installed before calling openExternal; from this moment on the real foreground app starts polling LaunchServices.
+    // Only when System Settings is indeed observed can subsequent ZCode focus be advanced, and internal window switching will not be misjudged.
     inspectFrontmost();
     void openSettings().then(
       () => {
@@ -241,11 +241,11 @@ function normalizeOnboardingOperationId(value: unknown): string | null {
 }
 
 /**
- * 为一次 onboarding 会话建浮窗（含吸附数据源）。
+ * Create a floating window (including adsorption data source) for an onboarding session.
  *
- * watcher 拿不到 bounds 时（二进制未随包、无 swiftc 的构建、设置页未开、进程崩溃）
- * `getSettingsBounds` 返回 null → positioner 走 fail-open 分支把面板放到屏幕底部居中。
- * 吸附是观感增强，绝不能成为授权引导的可用性前提。
+ * When the watcher cannot get bounds (the binary is not packaged, there is no swiftc build, the settings page is not open, the process crashes)
+ * `getSettingsBounds` returns null → positioner takes the fail-open branch to center the panel at the bottom of the screen.
+ * Adsorption is a visual enhancement and must not be a prerequisite for the usability of authorized guidance.
  */
 function createDragPanelForSession(
   logger: {
@@ -272,8 +272,8 @@ function createDragPanelForSession(
     getSettingsBounds: () => watcher.latest(),
     stopSettingsBounds: () => watcher.stop(),
     getLocale,
-    // tile 用真实 ZCode 图标，与系统设置权限列表里那一行的图标对得上，用户才能把
-    // 「要拖的东西」和「要出现在列表里的条目」对应起来。
+    // The tile uses a real ZCode icon that matches the icon in the row in the system settings permission list, so that the user can
+    // "Things to be dragged" correspond to "items to appear in the list".
     getIconDataUrl: () =>
       resolveZCodeIcon()
         .resize({ width: CUA_DRAG_ICON_SIZE, height: CUA_DRAG_ICON_SIZE })
@@ -282,7 +282,7 @@ function createDragPanelForSession(
   });
 }
 
-/** 生产走签名包内的 extraResources；dev 走 checkout 里的构建产物。 */
+/** For production, use the extraResources in the signed package; for dev, use the build products in checkout. */
 function resolveWindowBoundsBinaryPath(): string {
   const relative = join("macos-window-bounds", "zcode-window-bounds");
   return app.isPackaged
@@ -297,21 +297,21 @@ export function registerCuaPermissionIpcHandlers(options: {
   };
   currentApplicationLocale: () => Locale;
 }) {
-  // operationId 只在同一个 webContents id 命名空间内有效，避免另一个 renderer 猜中 id 后取消
-  // 不属于自己的 participant。invoke 终态一定删除；destroyed 仍由原有 signal 路径兜底。
+  // operationId is only valid within the same webContents id namespace to prevent another renderer from canceling after guessing the id.
+  // A participant that does not belong to you. The final state of invoke must be deleted; destroyed is still covered by the original signal path.
   const onboardingControllers = new Map<string, AbortController>();
   const operationKey = (senderId: number, operationId: string) => `${senderId}\0${operationId}`;
 
-  // 已验证的 Helper.app 路径 + 字节指纹缓存。原生文件拖拽必须在 dragstart 事件链路里*同步*调用
-  // event.sender.startDrag()，不能等 install/verify 这类异步 I/O（否则错过 OS 拖拽手势窗口，用户
-  // 拖不出任何文件）。所以浮窗挂载时先 prepare 预热，dragstart 只读缓存 + 微秒级同步指纹比对。
+  // Verified Helper.app path + byte fingerprint cache. Native file drag and drop must be called *synchronously* in the dragstart event link
+  // event.sender.startDrag(), cannot wait for asynchronous I/O such as install/verify (otherwise the OS drag gesture window will be missed and the user
+  // No files can be dragged out). Therefore, when mounting the floating window, first prepare to warm up, dragstart read-only cache + microsecond-level synchronous fingerprint comparison.
   let verifiedHelperAppPath: string | null = null;
   let verifiedHelperFingerprint: string | null = null;
-  // Helper 的 bundle display name。浮窗 tile 显示它而不是硬编码字符串 —— macOS 权限列表里
-  // 那一行的名字就是这个值（dev 下带 Dev 后缀），两边一致用户才能确认「拖进去的就是它」。
+  // Helper's bundle display name. Floating tile displays it instead of hardcoded string - macOS permission list
+  // The name of that row is this value (with the Dev suffix under dev). Only when both sides are consistent can the user confirm that "the one dragged in is it."
   let verifiedHelperDisplayName: string | null = null;
-  // 当前会话的浮窗。拖拽落地后要通知它冻结位置，而 StartDrag 与 onboarding 是两个独立
-  // handler，故提到这一层共享；会话终态置回 null。
+  // The floating window for the current session. After dragging and landing, you need to notify it of the frozen position, and StartDrag and onboarding are two independent
+  // handler, so this layer of sharing is mentioned; the session end state is returned to null.
   let activeDragPanel: CuaPermissionDragPanel | null = null;
 
   function cacheVerifiedHelper(
@@ -344,10 +344,10 @@ export function registerCuaPermissionIpcHandlers(options: {
     }
   }
 
-  // 浮窗挂载时调用：异步 install+verify 并缓存已验证路径 + 指纹，为后续同步拖拽做准备。
+  // Called when the floating window is mounted: asynchronous install+verify and caches the verified path + fingerprint to prepare for subsequent synchronous drag and drop.
   ipcMain.handle(PlatformChannels.PrepareCuaHelperPermissionDrag, async () => {
     await refreshVerifiedHelperAppPath();
-    // 指纹是 main 侧的同步 TOCTOU 证据，绝不跨 IPC 返回 renderer。
+    // The fingerprint is synchronized TOCTOU evidence on the main side and is never returned across IPC to the renderer.
     return {
       success: verifiedHelperAppPath !== null,
       ...(verifiedHelperAppPath !== null ? { helperAppPath: verifiedHelperAppPath } : {}),
@@ -362,18 +362,18 @@ export function registerCuaPermissionIpcHandlers(options: {
     const helperAppPath = verifiedHelperAppPath;
     const fingerprint = verifiedHelperFingerprint;
     if (!helperAppPath || !fingerprint) {
-      // 尚未预热：这里绝不能做异步 install/verify（会错过拖拽手势）。后台补一次让下次拖拽可用，
-      // 本次跳过（浮窗挂载时已触发 prepare，正常不会走到这里）。
+      // Not yet warmed up: asynchronous install/verify must not be done here (drag gestures will be missed). Make it up in the background so that it can be used next time you drag and drop.
+      // Skip this time (prepare has been triggered when the floating window is mounted, and it will not go here normally).
       options.logger.warn(
         "[cua-permission-onboarding] helper drag not prepared yet; verifying in background for next drag",
       );
       void refreshVerifiedHelperAppPath();
       return;
     }
-    // TOCTOU 门：prepare(验签) 之后到此刻，同 UID 攻击者可能覆写 Helper.app，而 TCC 授权绑定的正是
-    // 被拖入的那个 bundle 身份。同步比对字节指纹（ino/ctime/size，ctime 用户态不可回拨）；不符即
-    // 拒拖 + 清缓存重新 prepare，绝不把可能被替换的 bundle 拖进 Accessibility/Screen Recording。
-    // 该比对是同步的（微秒级），不会错过拖拽手势。
+    // TOCTOU gate: prepare (signature verification) From now on, an attacker with the same UID may overwrite Helper.app, and the TCC authorization is bound to
+    // The identity of the bundle being dragged into. Synchronously compare byte fingerprints (ino/ctime/size, ctime user mode cannot be dialed back); if it does not match, it means
+    // Refuse to drag + clear cache and prepare again. Never drag bundles that may be replaced into Accessibility/Screen Recording.
+    // The comparison is synchronized (microsecond level) and drag gestures are not missed.
     if (!cuaHelperBundleFingerprintUnchanged(helperAppPath, fingerprint)) {
       options.logger.warn(
         "[cua-permission-onboarding] cached helper changed since verification; refusing to drag a possibly-tampered bundle",
@@ -387,7 +387,7 @@ export function registerCuaPermissionIpcHandlers(options: {
       height: CUA_DRAG_ICON_SIZE,
     });
     try {
-      // 同步启动原生文件拖拽 —— 只有这样 OS 才会真的把 Helper.app 拖出到系统设置。
+      // Start native file drag and drop synchronously - only then will the OS actually drag Helper.app out to the system settings.
       event.sender.startDrag({ file: helperAppPath, icon });
     } catch (error) {
       options.logger.warn(
@@ -395,16 +395,16 @@ export function registerCuaPermissionIpcHandlers(options: {
         error instanceof Error ? error.message : String(error),
       );
     }
-    // 拖拽已落地：系统设置随后会弹模态提示，继续跟踪窗口会让浮窗追着提示框跑并被压到它下面。
+    // Drag has been implemented: the system setting will then pop up a modal prompt, and continuing to track the window will cause the floating window to chase the prompt box and be pressed under it.
     activeDragPanel?.freezePosition();
-    // 后续若收到 dragend/mouseup 会把浮窗直接收走（见下方 handler）；freeze 是那条信号
-    // 不到时的兜底 —— 至少不让浮窗追着系统提示框跑。
-    // 后台刷新缓存（Helper 可能被后台重装/升级），保证下次拖拽仍是最新的已验证路径 + 指纹。
+    // If dragend/mouseup is received later, the floating window will be taken away directly (see handler below); freeze is the signal
+    // Don’t let the pop-up window chase the system prompt box.
+    // Refresh the cache in the background (Helper may be reinstalled/upgraded in the background) to ensure that the next drag and drop will still have the latest verified path + fingerprint.
     void refreshVerifiedHelperAppPath();
   });
 
-  // 拖拽手势结束 —— 授权已落地，浮窗让位给设置页和系统的重启提示。用 hide 而非 destroy：
-  // 下一个权限阶段还要复用同一个窗口。hide 幂等，dragend 与 mouseup 重复通知无害。
+  // The drag gesture ends - the authorization has been implemented, and the floating window gives way to the settings page and system restart prompt. Use hide instead of destroy:
+  // The same window will be reused in the next permissions phase. hide is idempotent, dragend and mouseup repeat notifications harmlessly.
   ipcMain.on(PlatformChannels.NotifyCuaHelperPermissionDragEnded, () => {
     activeDragPanel?.hide();
   });
@@ -423,7 +423,7 @@ export function registerCuaPermissionIpcHandlers(options: {
   });
 
   ipcMain.handle(PlatformChannels.OpenCuaPermissionOnboarding, async (event, payload) => {
-    // 直接打开系统设置对应面板（不再弹确认对话框 + 不再 Finder 暴露 Helper 磁贴/动画）。
+    // Directly open the corresponding panel of the system settings (no more confirmation dialog boxes + no more exposure of Helper tiles/animations in Finder).
     const payloadRecord =
       payload && typeof payload === "object" ? (payload as Record<string, unknown>) : undefined;
     const operationId = normalizeOnboardingOperationId(payloadRecord?.operationId);
@@ -454,12 +454,12 @@ export function registerCuaPermissionIpcHandlers(options: {
     if (sender.isDestroyed?.()) abortForDestroyedOrigin();
     else sender.once?.("destroyed", abortForDestroyedOrigin);
 
-    // 惰性创建：浮窗只在 macOS 的实际引导流程里有意义，且必须逐会话新建/销毁（不做单例，
-    // 避免上一会话的残留窗口被下一会话复用）。非 darwin 保持 null，全部调用点用 ?. 短路。
+    // Lazy creation: Floating windows are only meaningful in the actual boot process of macOS, and must be created/destroyed session by session (no singleton,
+    // Prevent the remaining windows from the previous session from being reused by the next session). Non-darwin values ​​remain null, and all call points are short-circuited with ?..
     //
-    // 必须包 try/catch：浮窗创建要解析二进制路径、起 watcher 子进程、建 BrowserWindow，
-    // 任何一步抛异常都不该击穿整个授权引导 —— 那样用户连设置页都打不开，而没有浮窗时
-    // 设置页仍可用（用户能自己从 Finder 拖 .app 进列表）。降级 > 全盘失败。
+    // Must include try/catch: To create a floating window, you need to parse the binary path, start the watcher subprocess, and build the BrowserWindow.
+    // Any exception thrown at any step should not break down the entire authorization boot - then the user cannot even open the settings page, and there is no floating window.
+    // The settings page is still available (users can drag .app from Finder into the list themselves). Downgrade > Total failure.
     let dragPanel: CuaPermissionDragPanel | null = null;
     if (process.platform === "darwin") {
       try {
@@ -485,8 +485,8 @@ export function registerCuaPermissionIpcHandlers(options: {
           ? { participantKey: `webContents:${sender.id}` }
           : {}),
         signal: originController.signal,
-        // 每个 stage：打开设置页的同时弹出拖拽浮窗（Helper 进入 TCC 列表的唯一途径），
-        // 该 stage 的等待结束就收走。整个会话的终态清理在下面的 finally 里。
+        // Each stage: When opening the settings page, a drag-and-drop window pops up (the only way for the Helper to enter the TCC list),
+        // The stage will be collected after waiting for it to end. The final cleanup of the entire session is in finally below.
         openSettingsAndWaitForReturn: async (stage) => {
           try {
             await waitForCuaApplicationReturn({
@@ -503,8 +503,8 @@ export function registerCuaPermissionIpcHandlers(options: {
         logger: options.logger,
       });
     } finally {
-      // 会话终态（成功/取消/超时/origin destroyed）一律销毁浮窗。PiP 面板曾因为缺少这条
-      // 无条件清理而凭空常驻，这里放在 finally 里，不依赖任何成功路径。
+      // The floating window will be destroyed in all session end states (success/cancellation/timeout/origin destroyed). The PiP panel was missing this
+      // It is cleaned up unconditionally and persists out of thin air. It is placed in finally and does not depend on any success path.
       dragPanel?.destroy();
       if (activeDragPanel === dragPanel) activeDragPanel = null;
       sender.removeListener?.("destroyed", abortForDestroyedOrigin);
@@ -515,13 +515,13 @@ export function registerCuaPermissionIpcHandlers(options: {
         onboardingControllers.delete(participantOperationKey);
       }
     }
-    // onboarding 期间用户可能在系统设置里停留很久，不能把 stage 启动时的旧验签证据在返回后
-    // 继续当作“已验证指纹”。成功后另起一次绑定 verify+fingerprint 的 prepare，供下次拖拽使用。
+    // During onboarding, the user may stay in the system settings for a long time, and the old verification evidence when the stage is started cannot be used after returning.
+    // Continue as "verified fingerprint". After success, another prepare with verify+fingerprint is started for next drag and drop.
     if (result.success) void refreshVerifiedHelperAppPath();
     return result;
   });
 
-  // 2026-08 审计曾把 Prepare/StartCuaHelperPermissionDrag 当作死链路删除（当时渲染层无调用方，
-  // 权限引导靠 native 弹窗让 Helper 自动进入 TCC 列表）。弹窗被摘除后，拖拽成为
-  // Helper 进入权限列表的唯一途径，两个频道已在上方恢复。
+  // 2026-08 Audit once deleted Prepare/StartCuaHelperPermissionDrag as a dead link (there was no caller in the rendering layer at that time,
+  // Permission guidance relies on native pop-up windows to allow Helper to automatically enter the TCC list). After the pop-up window is removed, drag it to become
+  // Helper's only way into the permissions list, both channels have been restored above.
 }

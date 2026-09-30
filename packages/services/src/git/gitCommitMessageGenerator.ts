@@ -75,7 +75,7 @@ export class GitCommitMessageGenerator {
       conversationContext: params.conversationContext,
     });
 
-    this.options.logger?.info(undefined, "开始生成 Git 提交消息", {
+    this.options.logger?.info(undefined, "generating git commit message", {
       workspacePath: params.workspacePath,
       workspaceIdentity: params.workspaceIdentity,
       providerId: selection.providerId,
@@ -94,9 +94,9 @@ export class GitCommitMessageGenerator {
     });
     const validation = validateGeneratedGitCommitMessage(rawMessage);
     if (!validation.ok) {
-      // 模型可能重复 prompt 或返回解释性长文本，直接塞给 UI 会让错误提示失控。
-      // 这里只保留短 preview 给用户，完整模型调用细节由 agent runtime 的模型日志记录。
-      this.options.logger?.debug(undefined, "模型生成的 Git 提交消息不合规", {
+      // The model may repeat prompts or return long explanatory text, which can cause error messages to get out of control when shoved directly into the UI.
+      // Only a short preview is reserved here for users, and the complete model call details are recorded in the model log of the agent runtime.
+      this.options.logger?.debug(undefined, "generated git commit message is invalid", {
         workspacePath: params.workspacePath,
         providerId: selection.providerId,
         model: selection.modelId,
@@ -104,7 +104,7 @@ export class GitCommitMessageGenerator {
         preview: validation.preview,
       });
       throw new GitCommitMessageGenerationError(
-        "模型没有返回可用的 Conventional Commit 提交消息。",
+        "The model did not return a usable Conventional Commit message.",
         "invalid-output",
         validation.preview,
       );
@@ -129,7 +129,10 @@ export class GitCommitMessageGenerator {
     const providerId = currentModel?.providerId?.trim();
     const options = currentModel?.options;
     if (!providerId || !modelId) {
-      throw new GitCommitMessageGenerationError("未读取到当前模型。", "model-unavailable");
+      throw new GitCommitMessageGenerationError(
+        "Could not read the current model.",
+        "model-unavailable",
+      );
     }
     return {
       providerId,
@@ -164,7 +167,7 @@ export class GitCommitMessageGenerator {
         throw error;
       }
       throw new GitCommitMessageGenerationError(
-        "模型请求失败。",
+        "Model request failed.",
         "request-failed",
         error instanceof Error ? error.message : String(error),
       );
@@ -228,8 +231,8 @@ function resolveCommitMessageLanguage(locale?: Locale): "Chinese" | "English" {
 
 function readRuntimeLocale(): string | undefined {
   try {
-    // 系统默认语言没有从 UI 显式传入时，服务层只能读取当前运行时的 Intl locale。
-    // 这里仍只接受 zh 为中文，其它未知或读取失败都按英文处理，避免误生成第三种语言。
+    // When the system default language is not explicitly passed in from the UI, the service layer can only read the Intl locale of the current runtime.
+    // Here we still only accept zh as Chinese, and other unknown or failed reads will be treated as English to avoid accidentally generating a third language.
     return Intl.DateTimeFormat().resolvedOptions().locale;
   } catch {
     return undefined;
@@ -350,7 +353,7 @@ function stripGeneratedCommitMessageDecorations(value: string): string {
 
 function normalizeModelText(value: unknown): string {
   if (typeof value !== "string" || !value.trim()) {
-    throw new Error("模型响应缺少文本内容。");
+    throw new Error("The model response has no text content.");
   }
   return value.trim();
 }

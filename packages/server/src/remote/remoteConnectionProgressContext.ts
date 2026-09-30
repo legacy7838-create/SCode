@@ -14,11 +14,14 @@ interface RemoteConnectionProgressStore {
 }
 
 /**
- * 把共享 Host 内并发产生的远程连接日志绑定到各自 requestId。
+ * Binds the remote connection logs produced concurrently inside a shared Host to their own
+ * requestId.
  *
- * 把远程连接并入 window-scoped Host 后，进程 label 不再代表某一次远程连接，
- * Main 无法从共享 stdout 判断日志属于哪个连接。AsyncLocalStorage 保留异步调用链上下文，
- * 同时在连接 Promise settle 后关闭上报，避免长生命周期 stream 的迟到日志继续污染连接面板。
+ * Once remote connections were folded into the window-scoped Host, the process label no longer
+ * stands for any single remote connection, so Main can no longer tell from the shared stdout which
+ * connection a log line belongs to. AsyncLocalStorage preserves the async call-chain context while
+ * also switching reporting off once the connection Promise settles, so late log lines from a
+ * long-lived stream cannot keep polluting the connection panel.
  */
 export function createRemoteConnectionProgressContext(options: {
   emit: (event: RemoteConnectionProgressEvent) => void;

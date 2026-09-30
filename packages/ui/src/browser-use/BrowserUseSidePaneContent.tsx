@@ -19,7 +19,10 @@ interface BrowserUseSidePaneContentProps {
   onPageMetadataChange(metadata: BrowserSidePaneMetadata): void;
 }
 
-/** browser-use 专用 TabsContent：非活动 tab 仅在截图准备期间保留真实合成布局。 */
+/**
+ * TabsContent dedicated to browser-use: inactive tabs keep a real composited layout only while
+ * screenshots are being prepared.
+ */
 export function BrowserUseSidePaneContent({
   tab,
   isPanelVisible,
@@ -33,24 +36,24 @@ export function BrowserUseSidePaneContent({
   onUrlChange,
   onPageMetadataChange,
 }: BrowserUseSidePaneContentProps): React.JSX.Element {
-  // 截图 surface 不能依赖收起的 ResizablePanel 提供尺寸：面板宽度为 0 时，Electron
-  // guest 会被 Chromium 当成没有 compositor surface，capturePage 会直接失败。把同一份
-  // TabsContent 临时固定到窗口内的合成层，并用接近透明的 opacity 隔离视觉；完全移到窗口外
-  // 会被 Viz 视为 offscreen 而继续返回 UnknownVizError。它仍不参与右侧布局，也不卸载 guest。
+  // Screenshot surface cannot rely on the collapsed ResizablePanel to provide size: when the panel width is 0, Electron
+  // The guest will be regarded by Chromium as having no compositor surface, and capturePage will fail directly. put the same portion
+  // TabsContent is temporarily docked to the compositing layer within the window and visually isolated with near-transparent opacity; moved completely outside the window
+  // Will be regarded as offscreen by Viz and continue to return UnknownVizError. It still does not participate in the right layout and does not uninstall the guest.
   const screenshotSurfaceStyle: CSSProperties | undefined = screenshotSurfaceRequest
     ? {
         position: "fixed",
         left: 0,
         top: 0,
-        // 固定层超过窗口时，Fit 误以为 viewport 能完整显示；Windows 高 DPI
-        // 的 Chromium 会裁剪超出可见范围的 guest raster，native 截图归一后横向拉伸。
-        // 以宿主窗口为上限，让 Fit 按真实可见画布缩放，保持逻辑 viewport 与用户偏好。
+        // When the fixed layer exceeds the window, Fit mistakenly believes that the viewport can be fully displayed; Windows high DPI
+        // Chromium will crop the guest raster beyond the visible range, and the native screenshot will be normalized and stretched horizontally.
+        // Use the host window as the upper limit, allowing Fit to scale according to the real visible canvas, maintaining the logical viewport and user preferences.
         width: `${screenshotSurfaceRequest.viewport.width}px`,
         height: `${screenshotSurfaceRequest.viewport.height + 48}px`,
         maxWidth: screenshotSurfaceRequest.surfaceScaleMode === "unscaled" ? undefined : "100vw",
         maxHeight: screenshotSurfaceRequest.surfaceScaleMode === "unscaled" ? undefined : "100vh",
         pointerEvents: "none",
-        // opacity=0 会让 Chromium 丢弃 guest layer；0.001 保留 compositor surface，视觉上不可见。
+        // Opacity=0 will cause Chromium to discard the guest layer; 0.001 will keep the compositor surface, which is visually invisible.
         opacity: 0.001,
       }
     : undefined;

@@ -1,12 +1,12 @@
-// 附件命令面（UI 侧）：ZCodePromptAttachment（composer 序列化产物）→ AttachmentRef
-// （v4 sendText/createSession attachments 引用模型）。
+// Attachment command surface (UI side): ZCodePromptAttachment (composer serialization product) → AttachmentRef
+// (v4 sendText/createSession attachments reference model).
 //
-// 分派规则（与 CLI attachment-refs.ts 的映射对偶）：
-// - localPath（desktop 主流：native picker / 拖拽 getPathForFile / 长粘贴临时文件 /
-//   oversized 大图路径降级）→ ref 直接携带绝对路径，零上传；
-// - dataBase64（粘贴截图等内联图）→ 高层 put（内部 begin/chunk/commit）→ artifact ref；
-// - textContent（无路径文本，web 回退面）→ 编码后同走 put；
-// - 三者皆无（元信息-only）→ 丢弃并告警（无内容可发，不伪造引用）。
+// Dispatch rules (mapping dual to CLI attachment-refs.ts):
+// - localPath (desktop mainstream: native picker / drag and drop getPathForFile / long paste temporary file /
+//   oversized large image path downgrade) → ref directly carries the absolute path, zero upload;
+// - dataBase64 (paste inline images such as screenshots) → high-level put (internal begin/chunk/commit) → artifact ref;
+// - textContent (text without path, web fallback) → put after encoding;
+// - None of the three (meta-information-only) → discard and alert (no content to send, no forged references).
 import type { ZCodePromptAttachment } from "@zcode/shared";
 import type {
   AttachmentRef,
@@ -36,7 +36,10 @@ function base64ByteLength(dataBase64: string): number {
   return Math.floor((dataBase64.length * 3) / 4) - padding;
 }
 
-/** 单个附件 → AttachmentRef（需要上传时经 chunk transaction）。返回 null = 无内容可发（丢弃）。 */
+/**
+ * A single attachment → AttachmentRef (via a chunk transaction when an upload is needed). Returning
+ * null = nothing to send (discarded).
+ */
 export async function uploadComposerAttachment(
   put: AttachmentPutFn,
   sessionId: string,
@@ -45,7 +48,7 @@ export async function uploadComposerAttachment(
 ): Promise<AttachmentRef | null> {
   const fileName = attachment.filename;
   const mime = attachment.mimeType;
-  // audio 变体无 sizeBytes 字段；统一经窄化读取。
+  // The audio variant has no sizeBytes field; uniform reads are narrowed.
   const sizeBytes =
     "sizeBytes" in attachment && typeof attachment.sizeBytes === "number"
       ? attachment.sizeBytes
@@ -66,7 +69,7 @@ export async function uploadComposerAttachment(
         : null;
   if (dataBase64 === null) {
     logger.warn(
-      `[v4-composer] 附件无内容可发（无 localPath/dataBase64/textContent），已丢弃: ${fileName}`,
+      `[v4-composer] attachment has no content to send (no localPath/dataBase64/textContent), dropped: ${fileName}`,
     );
     return null;
   }

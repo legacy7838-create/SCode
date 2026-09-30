@@ -32,7 +32,7 @@ function finite(value: number | undefined): value is number {
 }
 
 export function bucketRemainingRatio(bucket: UsageQuotaLimit): number | null {
-  // 使用同桶的真实剩余额度；不能把 available（扣除预占）当 remaining。
+  // Use the real remaining quota of the same bucket; available (minus pre-emption) cannot be regarded as remaining.
   if (finite(bucket.remaining) && finite(bucket.number) && bucket.number > 0) {
     return bucket.remaining / bucket.number;
   }
@@ -40,7 +40,7 @@ export function bucketRemainingRatio(bucket: UsageQuotaLimit): number | null {
 }
 
 export function allBucketsExhausted(buckets: UsageQuotaLimit[]): boolean {
-  // 只看第一个桶会把“活动桶耗尽、日桶仍有额度”误报成模型耗尽；未知值不能当 0。
+  // Only looking at the first bucket will falsely report "the active bucket is exhausted and the daily bucket still has quota" as model exhaustion; unknown values ​​cannot be treated as 0.
   return (
     buckets.length > 0 &&
     buckets.every((bucket) =>
@@ -58,6 +58,6 @@ export function bucketReminderKey(bucket: UsageQuotaLimit): string | null {
     bucket.periodEnd <= bucket.periodStart
   )
     return null;
-  // 桶标识隔离账号/套餐；同桶服务多个模型时也只提醒一次，不把任务和余额写进 key。
+  // Bucket identification isolates accounts/packages; when serving multiple models in the same bucket, it is only reminded once, and tasks and balances are not written into the key.
   return JSON.stringify([bucket.bucketId.trim(), bucket.periodStart, bucket.periodEnd]);
 }

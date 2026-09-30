@@ -18,8 +18,8 @@ async function sha256File(path: string): Promise<string> {
 
 async function flattenArchiveRoot(extractDir: string): Promise<void> {
   const entries = await readdir(extractDir, { withFileTypes: true });
-  // macOS tar 可能额外写入 `._*` PAX/resource-fork 条目，不能因为这些旁路文件
-  // 让唯一发行根目录识别失败，否则后续会误报 manifest.json 缺失。
+  // macOS tar may write additional `._*` PAX/resource-fork entries, which cannot be used because of these bypass files
+  // Let the identification of the unique distribution root directory fail, otherwise it will falsely report that manifest.json is missing later.
   const rootEntries = entries.filter(
     (entry) => entry.isDirectory() && entry.name.startsWith("zcode-server-"),
   );

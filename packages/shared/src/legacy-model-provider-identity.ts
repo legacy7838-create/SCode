@@ -4,7 +4,7 @@ import {
 } from "./model-provider-types.js";
 import { normalizeOfficialGlmModelId } from "./official-glm-model-id.js";
 
-// 不凭用户自定义 Provider 的名字猜所属站点；闲时 Ticket 的绑定身份也不能改。
+// The site to which the Provider belongs cannot be guessed based on the name of the user-defined Provider; the binding identity of the Ticket cannot be changed at leisure.
 export function migrateLegacyOfficialGlmModelId(providerId: string, modelId: string): string {
   return /^(?:builtin:(?:zai|bigmodel)(?:-start-plan|-coding-plan)?|account:(?:zai|bigmodel)-(?:start-plan|individual-coding-plan|team-coding-plan))$/.test(
     providerId,
@@ -14,10 +14,10 @@ export function migrateLegacyOfficialGlmModelId(providerId: string, modelId: str
 }
 
 /**
- * 仅供已发布旧数据的单向升级使用，不是运行时 Provider 别名或选择兜底。
- * 依赖当前账号解释旧 Coding Plan 会使离线/SSH 迁移丢失原意图。
- * 同域 Individual 仅是确定性迁移落点，当前账号对应留给有效选择解析，不能据此绑定执行。
- * 迁移不查模型/档位是否可用；普通未知 ID 不构成旧格式证据。
+ * For one-way upgrades of already-published legacy data only; not a runtime Provider alias or selection fallback.
+ * Interpreting legacy Coding Plan against the current account would lose the original intent on offline/SSH migration.
+ * The same-domain Individual is merely a deterministic migration landing point; the current-account correspondence is left to valid-selection resolution and must not be used to bind execution.
+ * Migration does not check whether the model/tier is available; an ordinary unknown ID is not evidence of the legacy format.
  */
 export function migrateLegacyModelProviderId(providerId: string): string | undefined {
   switch (providerId) {

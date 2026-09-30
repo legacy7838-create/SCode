@@ -1,8 +1,8 @@
 import { PERMISSION_FULL_ACCESS_OPTION_ID } from "@zcode/shared/zcode-protocol-v4";
-// 权限/后台命令组：resolveInteraction / cancelBackgroundWork。
-// - resolveInteraction：前向命令收口反向请求（permission/AskUserQuestion），经
-//   host.interactions（V4InteractionRegistry）投递给 broker 侧等待中的 deferred。
-// - cancelBackgroundWork：直驱 core 的可选能力 cancelBackgroundTask（workId ≡ taskId）。
+// Permissions/Background Command Group: resolveInteraction/cancelBackgroundWork.
+// - resolveInteraction: The forward command closes the reverse request (permission/AskUserQuestion).
+//   host.interactions (V4InteractionRegistry) is delivered to the waiting deferred on the broker side.
+// - cancelBackgroundWork: optional capability of direct drive core cancelBackgroundTask (workId ≡ taskId).
 import type {
   CommandEnvelope,
   CommandPayloadMap,
@@ -20,9 +20,10 @@ import { requireRecord } from "../record-access.js";
 import type { V4CommandCoreHost } from "../types.js";
 
 /**
- * 能力不支持错误：会话 runtime 未实现可选能力时抛出（对照旧 server-operations.ts
- * cancelBackgroundTask 的 ProtocolRequestError -32031 语义）。v4 侧不再用 JSON-RPC
- * 错误码，改用带 reasonCode 的结构化 Error（fault 命名空间），网关据此收口 ACK。
+ * Capability-unsupported error: thrown when the session runtime has not implemented an optional capability
+ * (compare with the ProtocolRequestError -32031 semantics of the old server-operations.ts
+ * cancelBackgroundTask). The v4 side no longer uses JSON-RPC error codes; it uses a structured Error carrying
+ * a reasonCode (fault namespace) instead, and the gateway uses that to settle the ACK.
  */
 export class V4CapabilityUnsupportedError extends Error {
   readonly reasonCode = "fault.command.capabilityUnsupported";
@@ -34,13 +35,15 @@ export class V4CapabilityUnsupportedError extends Error {
 }
 
 /**
- * resolveInteraction：投递应答给等待中的反向请求（interaction-broker 的 race deferred）。
+ * resolveInteraction: deliver the response to a pending reverse request (the interaction-broker's race deferral).
  *
- * 语义保真（勘查结论）：
- * - 未命中（delivered === false，交互已被应答/已注销/未知 id）按幂等成功收口，不抛错——
- *   多端先到先得，晚到应答是无害幂等操作，抛 failed 会误导客户端。
- * - 不做 requireRecord：晚到应答可能发生在会话已收口/删除之后，同样必须无害；
- *   登记表按 interactionId 全局寻址，不依赖 record 存在。
+ * Semantic fidelity (conclusion of the investigation):
+ * - A miss (delivered === false; the interaction was already answered / already deregistered / an unknown id)
+ *   settles as an idempotent success and throws nothing, because first response from any endpoint wins and a
+ *   late response is a harmless idempotent operation; throwing failed would mislead the client.
+ * - No requireRecord: a late response may arrive after the session has already settled / been deleted, and it
+ *   must be harmless there too; the registry is addressed globally by interactionId and does not depend on a
+ *   record existing.
  */
 async function resolveInteraction(
   host: V4CommandCoreHost,
@@ -119,10 +122,10 @@ async function revokeWorkspaceHookTrust(
 }
 
 /**
- * 软门禁:按需开审核 flow。
+ * Soft gate: open the review flow on demand.
  *
- * 用户点击「去审核」时调用。经 controller.requestReview → openOrReuseFlow +
- * superviseFlow。已有活跃 flow 时幂等复用。无 pending 项时为安全 no-op。
+ * Called when the user clicks "go review". Goes through controller.requestReview -> openOrReuseFlow +
+ * superviseFlow. Reuses an existing active flow idempotently. With no pending items it is a safe no-op.
  */
 async function requestWorkspaceHookReview(
   host: V4CommandCoreHost,
@@ -150,11 +153,13 @@ function requireWorkspaceHookReviewRecord(
 }
 
 /**
- * cancelBackgroundWork 的业务拒绝：core 明确回「没有取消任何东西」（reason 在场）。
+ * The business rejection of cancelBackgroundWork: core explicitly answers "nothing was cancelled" (reason
+ * present).
  *
- * 老 run 被冷回放误留在 running 时，详情页的 Cancel 可点，
- * 命令直达 core 却查无此任务（`background_task_not_found`）；旧 handler 把结构化结果整个丢掉、
- * 回 accepted，用户面前于是「点了没反应」。core 的 reason 是唯一权威，这里只做前缀搬运。
+ * When an old run is mistakenly left in running by cold replay, Cancel on the detail page is clickable,
+ * yet the command reaches core and finds no such task (`background_task_not_found`); the old handler threw the
+ * whole structured result away and returned accepted, so the user sees "clicked and nothing happened". core's
+ * reason is the single authority, and here we only carry the prefix over.
  */
 class V4BackgroundWorkCancelRejectedError extends Error {
   readonly reasonCode: string;
@@ -166,13 +171,16 @@ class V4BackgroundWorkCancelRejectedError extends Error {
 }
 
 /**
- * cancelBackgroundWork：workId ≡ 旧 taskId 直传 core。
- * - cancelBackgroundTask 是 ZCodeApp 可选能力：不存在 → 抛能力不支持（见上）。
- * - core 回 `reason`（不存在 / 已终结 / 类型不支持）→ 以 `fault.command.backgroundWorkCancelRejected.<reason>`
- *   的 reasonCode 回 ACK；真取消了或返回值缺席（stub 宿主）才是 accepted。
- * - 不需要 legacy 广播：BackgroundTask*（Started/Updated/Completed）生命周期事件
- *   由 core 直接 emit，v4 投影（product-projection backgroundWorks）自收口——
- *   对照旧 op 的 afterStateMutation("background_task_cancelled")，v4 面无此义务。
+ * cancelBackgroundWork: workId ≡ the old taskId, passed straight to core.
+ * - cancelBackgroundTask is an optional ZCodeApp capability: absent => throw capability-unsupported (see
+ *   above).
+ * - core returns a `reason` (not found / already terminal / unsupported type) => ACK with reasonCode
+ *   `fault.command.backgroundWorkCancelRejected.<reason>`; only an actual cancellation, or an absent return
+ *   value (stub host), counts as accepted.
+ * - No legacy broadcast is needed: BackgroundTask* (Started/Updated/Completed) lifecycle events are emitted
+ *   directly by core, and the v4 projection (product-projection backgroundWorks) settles them by itself;
+ *   compare with the old op's afterStateMutation("background_task_cancelled"), which the v4 surface has no
+ *   obligation to perform.
  */
 async function cancelBackgroundWork(
   host: V4CommandCoreHost,
@@ -183,7 +191,7 @@ async function cancelBackgroundWork(
   if (!record.app.cancelBackgroundTask) {
     throw new V4CapabilityUnsupportedError("cancelBackgroundTask", record.app.sessionId);
   }
-  // 注意：方法必须经 app 调用（不可解构，实现可能依赖 this 绑定）。
+  // Note: Methods must be called by app (cannot be deconstructed, implementation may rely on this binding).
   const result = await record.app.cancelBackgroundTask(payload.workId);
   if (result?.reason !== undefined) {
     throw new V4BackgroundWorkCancelRejectedError(result.reason, payload.workId);
@@ -192,12 +200,15 @@ async function cancelBackgroundWork(
 }
 
 /**
- * resumeWorkflowRun：workId ≡ runId 直传 app 能力。
- * - 能力缺席（journal 不可用 / 端口无 resume）→ 能力不支持错误（同 cancel 的语义）。
- * - 业务拒绝（not_found / not_resumable / already_running / script_missing /
- *   script_mismatch / compile_failed）以 `fault.command.workflowRunResumeRejected.<reason>` 的 reasonCode
- *   回 ACK——网关对携带 reasonCode 的领域错误原样上行，UI 按词表分流；不用错误文本做判断。
- *   compile_failed 的有界诊断经 `error.message` 收进 `ack.message`（与 startSavedWorkflow 同一约定）。
+ * resumeWorkflowRun: workId ≡ runId, passed straight to the app capability.
+ * - Capability absent (journal unavailable / the port has no resume) => capability-unsupported error (the same
+ *   semantics as cancel).
+ * - Business rejections (not_found / not_resumable / already_running / script_missing /
+ *   script_mismatch / compile_failed) ACK with reasonCode
+ *   `fault.command.workflowRunResumeRejected.<reason>`: the gateway passes domain errors carrying a reasonCode
+ *   through unchanged and the UI routes on the vocabulary; the error text is never used to decide. The bounded
+ *   diagnostics of compile_failed are folded into `ack.message` via `error.message` (the same convention as
+ *   startSavedWorkflow).
  */
 class V4WorkflowRunResumeRejectedError extends Error {
   readonly reasonCode: string;
@@ -217,7 +228,7 @@ async function resumeWorkflowRun(
   if (!record.app.resumeWorkflowRun) {
     throw new V4CapabilityUnsupportedError("resumeWorkflowRun", record.app.sessionId);
   }
-  // 注意：方法必须经 app 调用（不可解构，实现可能依赖 this 绑定）。
+  // Note: Methods must be called by app (cannot be deconstructed, implementation may rely on this binding).
   const result = await record.app.resumeWorkflowRun({
     workId: payload.workId,
     ...(payload.name === undefined ? {} : { name: payload.name }),
@@ -227,20 +238,25 @@ async function resumeWorkflowRun(
 }
 
 /**
- * startSavedWorkflow：中枢直接启动一个已保存的工作流。
- * - 能力缺席（无 dwf 端口 / stub 宿主）→ 能力不支持错误（与 resume 家族同一条语义），GUI 原样显示
- *   「当前 agent 不支持直接启动」并回收空会话。
- * - 业务拒绝（invalid_name / not_found / invalid_args / compile_failed / session_busy / start_failed）
- *   以 `fault.command.savedWorkflowStartRejected.<reason>` 的 reasonCode 回 ACK；`message` 携带
- *   人可读诊断（编译诊断合并后有界截断），供实参窗行内展示。网关对携带 reasonCode 的领域错误
- *   原样上行、并把 `error.message` 收进 `ack.message`，UI 按词表分流——不用错误文本做流程判断。
- * - 成功以 `{ type: "startSavedWorkflow", runId, toolCallId }` 回 ACK.result（联工具卡 → 详情页）。
- * 注：非输入类命令（不排队、不带 baseRevision），与 resume / cancel 同类，登记在 interaction-background 组。
+ * startSavedWorkflow: the hub starts a saved workflow directly.
+ * - Capability absent (no dwf port / stub host) => capability-unsupported error (the same semantics as the
+ *   resume family), and the GUI shows "the current agent does not support direct start" verbatim and reclaims
+ *   the empty session.
+ * - Business rejections (invalid_name / not_found / invalid_args / compile_failed / session_busy /
+ *   start_failed) ACK with reasonCode `fault.command.savedWorkflowStartRejected.<reason>`, with `message`
+ *   carrying human-readable diagnostics (merged compile diagnostics, truncated to a bound) for inline display
+ *   in the argument pane. The gateway passes domain errors carrying a reasonCode through unchanged and folds
+ *   `error.message` into `ack.message`; the UI routes on the vocabulary, never on the error text for flow
+ *   decisions.
+ * - On success, ACK.result carries `{ type: "startSavedWorkflow", runId, toolCallId }` (linking the tool card
+ *   -> the detail page).
+ * Note: it is a non-input command (not queued, no baseRevision), of the same kind as resume / cancel, and is
+ * registered in the interaction-background group.
  */
 class V4SavedWorkflowStartRejectedError extends Error {
   readonly reasonCode: string;
   constructor(reason: SavedWorkflowStartRejectionReason, message?: string) {
-    // message 直接进 ack.message（网关约定：error.message 收口到 ACK），缺席时给可读兜底。
+    // The message directly enters ack.message (gateway convention: error.message receives ACK), and is readable in case of absence.
     super(message ?? `saved workflow start rejected: ${reason}`);
     this.name = "V4SavedWorkflowStartRejectedError";
     this.reasonCode = `${SAVED_WORKFLOW_START_REJECTED_FAULT_PREFIX}${reason}`;
@@ -256,7 +272,7 @@ async function startSavedWorkflow(
   if (!record.app.startSavedWorkflow) {
     throw new V4CapabilityUnsupportedError("startSavedWorkflow", record.app.sessionId);
   }
-  // 注意：方法必须经 app 调用（不可解构，实现可能依赖 this 绑定）。
+  // Note: Methods must be called by app (cannot be deconstructed, implementation may rely on this binding).
   const result = await record.app.startSavedWorkflow({
     name: payload.name,
     ...(payload.scope === undefined ? {} : { scope: payload.scope }),
@@ -267,12 +283,15 @@ async function startSavedWorkflow(
 }
 
 /**
- * amendWorkflowRunSettings：run 卡 / 详情页的「配置」。workId ≡ runId；两项设置的三态原样下传给 runtime。
- * - 能力缺席（无 dwf 端口，或端口不带 amend / getScript）→ 能力不支持错误，弹层显示「不支持」。
- * - 业务拒绝以 `fault.command.workflowRunSettingsRejected.<reason>` 回 ACK，`message` 携带诊断
- *   （编译诊断 / 模型解析诊断 / 启动失败原因）；拒绝时旧 run 照旧在跑。
- * - 成功以 `{ type, runId, toolCallId, supersededRunId? }` 回 ACK.result——新 run 的两把联接键，
- *   详情页据它把 tab 换到新 run。
+ * amendWorkflowRunSettings: the "configure" action on a run card / detail page. workId ≡ runId; the tri-state
+ * of the two settings is passed down to the runtime as is.
+ * - Capability absent (no dwf port, or the port has no amend / getScript) => capability-unsupported error, and
+ *   the dialog shows "not supported".
+ * - Business rejections ACK with `fault.command.workflowRunSettingsRejected.<reason>`, with `message` carrying
+ *   the diagnostics (compile diagnostics / model resolution diagnostics / start failure reason); the old run
+ *   keeps running as usual on a rejection.
+ * - On success, ACK.result carries `{ type, runId, toolCallId, supersededRunId? }`: the two linking keys of
+ *   the new run, which the detail page uses to switch the tab to the new run.
  */
 class V4WorkflowRunSettingsRejectedError extends Error {
   readonly reasonCode: string;
@@ -292,7 +311,7 @@ async function amendWorkflowRunSettings(
   if (!record.app.amendWorkflowRunSettings) {
     throw new V4CapabilityUnsupportedError("amendWorkflowRunSettings", record.app.sessionId);
   }
-  // 注意：方法必须经 app 调用（不可解构，实现可能依赖 this 绑定）。
+  // Note: Methods must be called by app (cannot be deconstructed, implementation may rely on this binding).
   const result = await record.app.amendWorkflowRunSettings({
     runId: payload.workId,
     ...(payload.subagentModel === undefined ? {} : { subagentModel: payload.subagentModel }),

@@ -15,9 +15,9 @@ export function resolveRemoteCdnBaseUrls(options: RemoteCdnBaseOptions): string[
 export function buildReleaseBaseCandidates(remoteCdnBaseUrls: string[], version: string): string[] {
   const candidates = remoteCdnBaseUrls.flatMap((remoteCdnBaseUrl) => {
     const normalizedBase = remoteCdnBaseUrl.replace(/\/+$/, "");
-    // 当调用方已经传入带版本的 CDN 基址时，继续盲目拼 `${base}/${version}`
-    // 会先走一次必然失败的双版本路径（例如 .../0.2.10/0.2.10），产生无意义 404 噪音。
-    // 这里识别“已固定到当前版本”的场景，直接使用原基址即可。
+    // When the caller has passed in the versioned CDN base address, continue to blindly spell `${base}/${version}`
+    // It will first take a dual version path that is bound to fail (for example.../0.2.10/0.2.10), resulting in meaningless 404 noise.
+    // Here to identify the scenario of "fixed to the current version", just use the original base address directly.
     if (normalizedBase.endsWith(`/${version}`)) {
       return [normalizedBase];
     }
@@ -72,8 +72,8 @@ export function buildComponentReleaseBaseCandidates(
   const candidates = releaseBaseCandidates.flatMap((releaseBaseCandidate) => {
     const normalizedBase = releaseBaseCandidate.replace(/\/+$/, "");
     if (normalizedBase.endsWith(`/${version}`)) {
-      // 当前 CI 只把 component artifact 上传到跨版本 components 根目录。
-      // 因此运行时应先探测父级 release root，避免每个组件都先命中一次已停止发布的版本化路径。
+      // Currently CI only uploads component artifacts to the cross-version components root directory.
+      // Therefore, the parent release root should be detected first during runtime to avoid each component hitting the versioned path that has stopped publishing once.
       return [normalizedBase.slice(0, -version.length - 1), normalizedBase];
     }
     return [normalizedBase];
@@ -133,21 +133,21 @@ export function assertRemoteCdnBaseVersionMatches(
     return;
   }
 
-  // 开发态常会临时覆盖 ZCODE_REMOTE_ASSET_CDN_BASE_URL 做分支联调。
-  // 如果把基址固定到旧版本（如 .../0.2.7）但客户端已经是 0.2.10，
-  // 之前会把旧 remote-assets 落到新版本缓存目录，最终在 deploy 阶段才报 bundle 版本不匹配。
-  // 这里前置做版本锁校验，避免“下载成功但后续部署失败”的误导性体验。
+  // The development state often temporarily overwrites ZCODE_REMOTE_ASSET_CDN_BASE_URL for branch joint debugging.
+  // If the base is fixed to an older version (e.g. .../0.2.7) but the client is already 0.2.10,
+  // Previously, the old remote-assets would be dropped into the new version cache directory, and finally the bundle version mismatch would be reported during the deploy stage.
+  // Version lock verification is done in advance here to avoid the misleading experience of "successful download but subsequent deployment failure".
   throw new Error(
-    `[remote-assets] remoteCdnBaseUrl 版本不匹配：当前应用版本是 ${expectedVersion}，但以下基址固定在其他版本：` +
-      `${mismatchedBases.map(({ remoteCdnBaseUrl, pinnedVersion }) => `${pinnedVersion} (${remoteCdnBaseUrl})`).join(", ")}。` +
-      `请将 ZCODE_REMOTE_ASSET_CDN_BASE_URL 改为不带版本的发布根目录，或改为 ${expectedVersion} 对应目录。`,
+    `[remote-assets] remoteCdnBaseUrl version mismatch: the current app version is ${expectedVersion}, but the following base URLs are pinned to other versions: ` +
+      `${mismatchedBases.map(({ remoteCdnBaseUrl, pinnedVersion }) => `${pinnedVersion} (${remoteCdnBaseUrl})`).join(", ")}. ` +
+      `Please change ZCODE_REMOTE_ASSET_CDN_BASE_URL to a release root without a version, or to the directory for ${expectedVersion}.`,
   );
 }
 
 function joinCdnUrl(baseUrl: string, relativePath: string): string {
   const normalizedBase = baseUrl.replace(/\/+$/, "");
-  // 组件版本里会带 '+'（如 v1.3.0+abcd），直接拼 URL 会在部分 CDN 侧命中失败（404）。
-  // 这里按路径段做 URL 编码，保证对象 key 与下载 URL 一致（+ -> %2B）。
+  // There will be a '+' in the component version (such as v1.3.0+abcd), and directly spelling the URL will fail (404) on some CDN sides.
+  // Here, URL encoding is performed based on the path segment to ensure that the object key is consistent with the download URL (+ -> %2B).
   const encodedRelativePath = encodeRelativePathForUrl(relativePath);
   return `${normalizedBase}/${encodedRelativePath}`;
 }
@@ -160,8 +160,8 @@ function encodeRelativePathForUrl(relativePath: string): string {
 }
 
 function encodePathSegment(segment: string): string {
-  // 兼容已编码输入：先尝试解码再编码，避免把 %2B 再编码成 %252B。
-  // 若输入包含非法 '%' 序列则回退到直接编码，确保不会抛异常。
+  // Compatible with encoded input: try decoding first and then encoding to avoid re-encoding %2B to %252B.
+  // If the input contains illegal '%' sequences, it will fall back to direct encoding to ensure that no exception will be thrown.
   try {
     return encodeURIComponent(decodeURIComponent(segment));
   } catch {

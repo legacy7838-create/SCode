@@ -5,25 +5,25 @@ import {
   PlatformChannels,
 } from "@zcode/shared";
 
-// Coding Plan 官网页 preload：
-// - 在官网页主世界挂 window.zcodeBridge，暴露三个能力：
-//   1) notifyPurchaseComplete：购买完成后通过 sendToHost 通知 host renderer；
-//   2) getLang / onLangChange：读取 App 当前 locale 并订阅运行时切换；
-//   3) getReportContext：读取 App 注入的购买来源上下文；
-//   4) openExternal：用系统默认浏览器打开外链。webview 内 <a target="_blank">
-//      默认会被 setWindowOpenHandler 路由到内部 Browser tab，但官网侧希望
-//      条款/管理等外链直接拉起系统浏览器，由官网脚本拦截后调此方法转发。
-// - getLang 读 main world 的 window.__zcodeLang__（由 App executeJavaScript 注入）；
-//   onLangChange 在 main world 监听 zcode-coding-plan-lang-change CustomEvent
-//   （同样由 App executeJavaScript 在 locale 变化时派发）。
-//   因为整个 bridge 通过 contextBridge.executeInMainWorld 挂在 main world，
-//   与页面脚本共享同一 window，事件能通。
-// - 官网页主世界拿不到 Node / ipcRenderer 原语，只暴露业务函数。
-// 参照 embeddedBrowserJavaScriptDialog.ts 的 contextBridge.executeInMainWorld 模式
-// （sandbox=true + contextIsolation=true 下可用，已有先例）。
+// Coding Plan official website preload:
+// - Hang window.zcodeBridge in the main world of the official website, exposing three capabilities:
+//   1) notifyPurchaseComplete: Notify the host renderer through sendToHost after the purchase is completed;
+//   2) getLang / onLangChange: Read the current locale of the App and subscribe to the runtime switch;
+//   3) getReportContext: Read the purchase source context injected by the App;
+//   4) openExternal: Use the system default browser to open external links. <a target="_blank"> within webview
+//      By default, it will be routed to the internal Browser tab by setWindowOpenHandler, but the official website hopes
+//      External links such as terms and management directly launch the system browser, and are intercepted by the official website script and forwarded by this method.
+// - getLang reads main world's window.__zcodeLang__ (injected by App executeJavaScript);
+//   onLangChange listens to zcode-coding-plan-lang-change CustomEvent in main world
+//   (Also dispatched by App executeJavaScript when locale changes).
+//   Because the entire bridge is hung in the main world through contextBridge.executeInMainWorld,
+//   Share the same window with the page script, and the events can be passed through.
+// - The Node/ipcRenderer primitives are not available in the main world of the official website, and only business functions are exposed.
+// Refer to the contextBridge.executeInMainWorld mode of embeddedBrowserJavaScriptDialog.ts
+// (Available under sandbox=true + contextIsolation=true, there is a precedent).
 //
-// 注入时机：Electron webview 在 will-attach-webview 钩子里按 params.src 判断为官网购买页时，
-// 把 webPreferences.preload 切到本文件（见 desktopWindowChrome.ts）。
+// Injection timing: When Electron webview presses params.src in the will-attach-webview hook to determine that it is the official website purchase page,
+// Cut webPreferences.preload to this file (see desktopWindowChrome.ts).
 
 const PUBLIC_BRIDGE_KEY = "zcodeBridge";
 const NATIVE_BRIDGE_KEY = "__zcodeCodingPlanWebviewNativeBridge__";
@@ -44,8 +44,8 @@ function isTrustedCodingPlanBridgeLocation(): boolean {
     }
     if (!url.pathname.includes("coding-plan")) return false;
     if (url.searchParams.get("embedded") === "app") return true;
-    // PayPal 回跳页本身不带 embedded=app，但 returnTo 指回内嵌购买页；
-    // 该页支付成功后仍需 zcodeBridge.notifyPurchaseComplete 通知 App 刷新模型设置。
+    // The PayPal return page itself does not have embedded=app, but returnTo refers back to the embedded purchase page;
+    // After successful payment on this page, zcodeBridge.notifyPurchaseComplete is still required to notify the App to refresh the model settings.
     if (!url.pathname.endsWith("/coding-plan/payment/callback")) return false;
     const returnTo = url.searchParams.get("returnTo");
     if (!returnTo) return false;
@@ -72,8 +72,8 @@ interface CodingPlanNativeBridge {
   openExternal(url: string): void;
 }
 
-// Coding Plan guest 导航到 PayPal 时仍会复用同一个 preload 配置。
-// bridge 只允许暴露给可信官网购买页，避免第三方授权页继承 App 通信能力。
+// Coding Plan guest still reuses the same preload configuration when navigating to PayPal.
+// The bridge is only allowed to be exposed to trusted official website purchase pages to prevent third-party authorization pages from inheriting App communication capabilities.
 if (isTrustedCodingPlanBridgeLocation()) {
   contextBridge.exposeInMainWorld(NATIVE_BRIDGE_KEY, {
     notifyPurchaseComplete(payload: NotifyPurchaseCompletePayload) {
@@ -83,8 +83,8 @@ if (isTrustedCodingPlanBridgeLocation()) {
           timestamp: Date.now(),
         } satisfies import("@zcode/shared").CodingPlanPurchaseCompletePayload);
       } catch {
-        // host renderer 尚未 attach 或 webview 被销毁时 sendToHost 会抛；
-        // 官网页自身不依赖此调用成功，静默即可。
+        // sendToHost will throw when the host renderer has not been attached or the webview is destroyed;
+        // The official web page itself does not rely on the success of this call, it can be silent.
       }
     },
     openExternal(url: string) {
@@ -96,7 +96,7 @@ if (isTrustedCodingPlanBridgeLocation()) {
           url: parsed.toString(),
         });
       } catch {
-        // 非法 URL 忽略，避免官网页通过 bridge 发送任意 IPC payload。
+        // Illegal URLs are ignored to prevent official web pages from sending arbitrary IPC payloads through the bridge.
       }
     },
   } satisfies CodingPlanNativeBridge);
@@ -120,11 +120,11 @@ if (isTrustedCodingPlanBridgeLocation()) {
           }
           nativeBridge.notifyPurchaseComplete(payload);
         },
-        // 返回 App 当前 locale；App 尚未注入时为 null（website 据此判断是否嵌入环境）。
+        // Returns the current locale of the App; it is null when the App has not been injected (the website determines whether to embed the environment based on this).
         getLang() {
-          // 注意：executeInMainWorld 的 func 体不经过 TS 编译，不能用 as 断言等 TS 语法。
+          // Note: The func body of executeInMainWorld is not compiled by TS, and TS syntax such as as assertion cannot be used.
           const value = (window as unknown as Record<string, unknown>)[langVar];
-          return value === "zh-CN" || value === "en-US" ? value : null;
+          return value === "en-US" ? value : null;
         },
         getReportContext() {
           const value = (window as unknown as Record<string, unknown>)[reportContextVar];
@@ -133,12 +133,12 @@ if (isTrustedCodingPlanBridgeLocation()) {
           }
           return value as CodingPlanReportContext;
         },
-        // 订阅 App locale 运行时变化，返回取消订阅函数。
-        // App locale 变化时用 executeJavaScript 派发 zcode-coding-plan-lang-change 事件。
-        onLangChange(callback: (locale: "zh-CN" | "en-US") => void) {
+        // Subscribe to App locale runtime changes and return the unsubscribe function.
+        // Use executeJavaScript to dispatch the zcode-coding-plan-lang-change event when the App locale changes.
+        onLangChange(callback: (locale: "en-US") => void) {
           const handler = (event: Event) => {
             const detail = (event as CustomEvent<{ locale?: unknown }>).detail;
-            if (detail && (detail.locale === "zh-CN" || detail.locale === "en-US")) {
+            if (detail && detail.locale === "en-US") {
               callback(detail.locale);
             }
           };

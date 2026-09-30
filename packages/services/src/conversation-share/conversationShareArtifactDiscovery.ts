@@ -45,7 +45,7 @@ interface ConversationShareArtifactSnapshot {
   bytesBySourceRef: Map<string, Uint8Array>;
   additionalArtifacts: ConversationSharePublicArtifact[];
   issues: ConversationShareFailureIssue[];
-  /** 非阻断：被跳过的预览结果物，发布照常继续。 */
+  /** Non-blocking: For preview results that are skipped, publishing continues as usual. */
   warnings: ConversationShareFailureIssue[];
 }
 
@@ -91,8 +91,8 @@ function matchAllowedArtifact(
   capabilities: ConversationShareCapabilities,
   candidate: Pick<ConversationPreviewArtifactCandidate, "mimeType" | "previewKind" | "sourceRef">,
 ): { artifactType: ConversationArtifactType; mimeType: string } | null {
-  // 视频/音频只是预览卡片候选；ConversationArtifactType 没有媒体枚举，即使服务端
-  // 能力列表意外包含媒体类型，也不能把它们重新放进可上传 manifest。
+  // Video/audio are only preview card candidates; ConversationArtifactType has no media enumeration, even if the server
+  // The capability list unexpectedly contains media types and cannot be put back into the uploadable manifest.
   if (candidate.previewKind === "video" || candidate.previewKind === "audio") {
     return null;
   }
@@ -125,8 +125,8 @@ async function materializeRegisteredArtifacts(options: {
       maxBytes: options.maxArtifactBytes,
     });
     const sha256 = createHash("sha256").update(bytes).digest("hex");
-    // Row 在工具完成时记录，用户可能在发布前修改同一路径；必须复验当前字节，
-    // 否则 projection/manifest 描述的是旧文件而 multipart 上传的是新文件。
+    // Row is recorded when the tool completes, the user may modify the same path before publishing; the current byte must be rechecked,
+    // Otherwise projection/manifest describes the old file and multipart uploads the new file.
     if (
       bytes.byteLength !== artifact.descriptor.size_bytes ||
       sha256 !== artifact.descriptor.sha256
@@ -222,8 +222,8 @@ async function discoverPreviewArtifacts(options: {
           baseLogEpoch: options.logEpoch,
         });
       } catch (error) {
-        // rows/range 与 fileChanges 是两次只读 RPC；若中间 projection 已推进，继续发布会
-        // 把不同 revision 的对话和文件拼在一起。陈旧水位必须在 prepare 前显式失败。
+        // rows/range and fileChanges are two read-only RPCs; if the intermediate projection has been advanced, continue the release
+        // Stitch together conversations and files from different revisions. Stale water levels must fail explicitly before prepare.
         const message = error instanceof Error ? error.message : String(error);
         if (message.includes("proto.staleRevision") || message.includes("proto.staleLogEpoch")) {
           throwDiscoveryError("Conversation changed while preparing share");
@@ -259,8 +259,8 @@ async function discoverPreviewArtifacts(options: {
     const previewCanonicalPaths = new Set<string>();
     const fallbackReadCache = new Map<string, { bytes: Uint8Array; canonicalPath: string }>();
     for (const candidate of candidatesForPublish) {
-      // 与 UI 预览卡片保持一致：先 stat 决定卡片是否仍存在，再判断分享能力。
-      // 发布阶段重新确认失败时要回传 warning，避免“分享成功”却悄悄漏掉选择时可见的卡片。
+      // Consistent with the UI preview card: first stat determines whether the card still exists, and then determines the sharing ability.
+      // When the re-confirmation fails during the publishing phase, a warning must be returned to avoid "sharing successfully" but quietly missing the card that is visible when selecting.
       const visibleCandidateSource = {
         workspacePath: options.input.workspacePath,
         ref: candidate.sourceRef,
@@ -271,8 +271,8 @@ async function discoverPreviewArtifacts(options: {
           if (previewCanonicalPaths.has(stat.canonicalPath)) continue;
           previewCanonicalPaths.add(stat.canonicalPath);
         } else {
-          // artifactSource.stat 是可选能力，不是所有测试桩或历史运行时都实现。
-          // 缺省时以 read 做存在性确认，保持向后兼容：仍能从行内引用发现结果物。
+          // artifactSource.stat is an optional capability and not implemented by all test stubs or history runtimes.
+          // By default, read is used for existence confirmation, maintaining backward compatibility: the discovery results can still be referenced from within the line.
           const materialized = await options.artifactSource.read({
             ...visibleCandidateSource,
             maxBytes: options.capabilities.max_artifact_bytes,
@@ -309,8 +309,8 @@ async function discoverPreviewArtifacts(options: {
     for (const candidate of visibleCandidates) {
       const match = matchAllowedArtifact(options.capabilities, candidate);
       if (!match) {
-        // 文件类型不在 capabilities 时只跳过该候选，分享其它消息；选择阶段 preflight 和成功态
-        // 共用这条结构化提示，不能再把单个不支持文件升级成整次发布失败。
+        // When the file type is not in capabilities, only the candidate is skipped and other messages are shared; the selection phase preflight and success status
+        // By sharing this structured tip, you can no longer upgrade a single unsupported file to an entire release failure.
         options.warnings.push({
           code: "artifact_type_not_allowed",
           scope: "artifact",
@@ -333,7 +333,7 @@ async function discoverPreviewArtifacts(options: {
         });
         continue;
       }
-      // stat 通过后仍需 read：文件可能在选择阶段到发布阶段之间被删除或变化。
+      // stat still needs to be read after passing: the file may have been deleted or changed between the selection phase and the release phase.
       let materialized;
       const cached = fallbackReadCache.get(candidate.sourceRef);
       try {
@@ -351,7 +351,7 @@ async function discoverPreviewArtifacts(options: {
           !(error instanceof ConversationShareServiceError) ||
           error.reasonCode !== "artifact_read_failed"
         ) {
-          // limit_exceeded / unsafe_structure 仍然阻断：那是需要用户处理的真实约束。
+          // limit_exceeded / unsafe_structure are still blocking: those are real constraints that need to be dealt with by the user.
           throw error;
         }
         options.warnings.push({
@@ -577,8 +577,8 @@ async function discoverInputAttachments(options: {
           faultCode === ZCODE_ATTACHMENT_FAULT_CODES.previewTooLarge ||
           faultCode === ZCODE_ATTACHMENT_FAULT_CODES.shareStatTooLarge
         ) {
-          // 容量超限是确定阻断，不能降级成「附件不可用」warning 后静默发布——
-          // 那样接收者拿不到附件，分享者也看不出错误类别（见预检同名分类）。
+          // Capacity exceeding the limit is determined to be blocked and cannot be downgraded to an "attachment unavailable" warning and then released silently——
+          // In this way, the recipient cannot get the attachment, and the sharer cannot see the error category (see preflight category with the same name).
           throw new ConversationShareServiceError(
             "limit_exceeded",
             "Conversation input attachment exceeds the artifact size limit",

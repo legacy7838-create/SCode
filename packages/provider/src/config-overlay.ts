@@ -14,9 +14,10 @@ export interface ConfigValidationIssue {
 }
 
 /**
- * 稀疏配置层和覆盖完成后的配置使用同一类型。
+ * The sparse config layer and the fully overlaid config share the same type.
  *
- * 子类显式列出字段；本基类只统一“缺省继承、Config 递归覆盖、其他值整体替换”的语义。
+ * Subclasses list their fields explicitly; this base class only unifies the semantics of "inherit by
+ * default, overlay recursively from Config, replace everything else wholesale".
  */
 export abstract class ConfigOverlay<TSelf extends ConfigOverlay<TSelf>> {
   abstract overlay(next: TSelf): TSelf;
@@ -41,6 +42,6 @@ export function requiredFieldIssue(path: readonly string[], field: string): Conf
   return {
     code: "required-field-missing",
     path: [...path, field],
-    message: `缺少必填配置 ${[...path, field].join(".")}`,
+    message: `Missing required config ${[...path, field].join(".")}`,
   };
 }

@@ -48,7 +48,7 @@ interface CrashArchiveCleanupResult {
 interface ArchivedCrashDumpRecord {
   dumpPath: string;
   archivedDumpPath: string;
-  /** dump 里没有 V8 OOM 注解（例如 GPU / native 崩溃）时为 null。 */
+  /** It is null if there are no V8 OOM annotations in the dump (e.g. GPU/native crash). */
   v8OomSummary: CrashDumpV8OomSummary | null;
 }
 
@@ -96,11 +96,11 @@ function persistArchivedCrashDump(
 
   const sourceStats = statSync(dumpPath);
   copyFileSync(dumpPath, archivedDumpPath);
-  // copyFileSync 会把归档 mtime 改成复制时间，启动批量恢复时会按遍历顺序误删较新的 crash。
-  // 保留原始 dump 时间，使归档清理始终按实际 crash 先后排序。
+  // copyFileSync will change the archive mtime to the copy time, and when starting batch recovery, newer crashes will be mistakenly deleted in the traversal order.
+  // Keep the original dump time so that archive cleaning is always sorted by actual crash.
   utimesSync(archivedDumpPath, sourceStats.atime, sourceStats.mtime);
-  // 取证目的：白屏/崩溃排查只能拿到日志包，dump 本身要靠 crashpad 注解才能分辨
-  // “JS 堆撞上限”还是“JIT 代码区耗尽”。解析失败只影响取证信息，绝不阻断归档。
+  // Purpose of evidence collection: White screen/crash troubleshooting can only obtain the log package, and the dump itself can only be distinguished by crashpad annotations.
+  // "JS heap hit upper limit" or "JIT code area exhausted". Failure in parsing only affects forensic information and never blocks archiving.
   const annotations = readCrashDumpAnnotationsFromFile(archivedDumpPath, sourceStats.size);
   const v8OomSummary = summarizeCrashDumpAnnotations(annotations);
   writeFileSync(
@@ -124,8 +124,8 @@ function pruneCrashDumpArchive(
   archiveDir: string,
   policy: CrashArchiveRetentionPolicy,
 ): CrashArchiveCleanupResult {
-  // 启动时必须先完成本地留档与清理，再让 ARMS 扫描并删除 live；这里保持与既有归档一致的
-  // 同步临界区，避免异步 IO 改变 appCrashCaptureBootstrap -> appARMSBootstrap 的先后顺序。
+  // When starting, local archives and cleanup must be completed first, and then ARMS scans and deletes the live files; here, the files must be consistent with the existing archives.
+  // Synchronize the critical section to avoid asynchronous IO changing the order of appCrashCaptureBootstrap -> appARMSBootstrap.
   const deletedFiles: string[] = [];
   const failedFiles: string[] = [];
   const dumps: Array<{ entry: string; path: string; mtimeMs: number; size: number }> = [];
@@ -181,8 +181,8 @@ function pruneCrashDumpArchive(
   }
 
   for (const dump of dumpsToDelete) {
-    // 本地 crash archive 必须有容量边界，否则历史 dump 会永久累积。
-    // 清理只作用于已复制成功的 archive，绝不触碰仍由 Crashpad 管理的 live 文件。
+    // The local crash archive must have capacity boundaries, otherwise historical dumps will accumulate forever.
+    // Cleaning only affects archives that have been copied successfully and never touches live files still managed by Crashpad.
     try {
       unlinkSync(dump.path);
       deletedFiles.push(dump.path);
@@ -207,8 +207,8 @@ function pruneCrashDumpArchive(
       continue;
     }
 
-    // 旧 dump 删除成功但元数据删除失败后，下一轮已无法从 dump 集合再次触达元数据。
-    // 每轮重新扫描孤立的普通 .dmp.json，使暂时性删除失败能够继续收敛，同时不触碰其他 JSON。
+    // After the old dump is successfully deleted but the metadata deletion fails, the metadata cannot be accessed from the dump collection again in the next round.
+    // Orphaned plain .dmp.json is rescanned every round, allowing temporary deletion failures to continue to converge without touching other JSON.
     try {
       unlinkSync(metadata.path);
       deletedFiles.push(metadata.path);
@@ -317,8 +317,8 @@ function logArchivedCrashDumpSummaries(
   for (const record of result.archivedDumps) {
     const dump = basename(record.archivedDumpPath);
     if (record.v8OomSummary) {
-      // 一行看清是哪种 OOM：code_space_exhausted 说明 256MB JIT 代码区被占满，
-      // js_heap_exhausted 才是普通的 JS 堆泄漏；具体数值同时落在 archive 的 .dmp.json 里。
+      // Find out which OOM it is in one line: code_space_exhausted Description The 256MB JIT code area is full.
+      // js_heap_exhausted is a common JS heap leak; the specific value also falls in the .dmp.json of the archive.
       logger.warn(
         `[crash-capture] v8 oom annotations source=${source} dump=${dump}`,
         record.v8OomSummary,
@@ -402,9 +402,9 @@ interface CrashEventMonitorHooks {
 }
 
 function resolveProcessGoneLogLevel(reason: string): "info" | "warn" {
-  // Electron 也会为 clean-exit / killed 这类受控终止发送 gone 事件。
-  // 原始 gone 回调只记录生命周期事实，最终是否为 crash 交给稳定性分类；不能无条件打
-  // error，避免被日志采集当成异常统计。
+  // Electron also sends gone events for controlled terminations such as clean-exit / killed.
+  // The original gone callback only records life cycle facts, and whether it crashes in the end is handed over to the stability classification; it cannot be hit unconditionally.
+  // error to avoid being regarded as abnormal statistics by log collection.
   return reason === "clean-exit" || reason === "killed" ? "info" : "warn";
 }
 
@@ -427,9 +427,9 @@ export function registerCrashEventMonitor(
       url: webContents.getURL(),
     });
     hooks?.onRenderProcessGone?.(webContents, details);
-    // 远端 crash SDK 可能会在处理后清理 live 目录里的原始 dmp。
-    // 这里在事件后补两次延迟归档，把原始 dump 复制到 ~/.zcode/v2/crash/archive，
-    // 这样既保留线上上报，又能在本地留下一份可供排查的副本。
+    // The remote crash SDK may clean the original dmp in the live directory after processing.
+    // Here, two delayed archives are added after the event, and the original dump is copied to ~/.zcode/v2/crash/archive.
+    // This way, you can keep the online report and leave a local copy for troubleshooting.
     scheduleCrashArchive(logger, paths, "render-process-gone");
   });
 

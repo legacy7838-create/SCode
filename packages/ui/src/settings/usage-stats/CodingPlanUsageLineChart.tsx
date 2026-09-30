@@ -22,8 +22,8 @@ const LINE_CHART_COLORS = [
   "var(--color-usage-chart-5)",
   "var(--color-usage-chart-6)",
 ];
-// XAxis 首尾刻度以绘图区边界为中心向两侧延伸，左右安全区太小会裁掉
-// System health 等折线图的首尾日期文本。
+// The first and last XAxis scales are centered on the boundary of the drawing area and extend to both sides. If the left and right safety zones are too small, they will be cropped.
+// The first and last date text of line charts such as System health.
 const CODING_PLAN_LINE_CHART_MARGIN = { top: 8, right: 24, left: 24 } as const;
 
 type CodingPlanLineChartRow = {
@@ -94,10 +94,10 @@ export function CodingPlanUsageLineChart({
   valueKind?: "count" | "credit" | "speed" | "token";
   showLegend?: boolean;
 }) {
-  const { intl, locale } = useZCodeIntl();
+  const { intl } = useZCodeIntl();
   const visibleSeries = useMemo(
-    // Recharts 对 series、legend、tooltip props 的引用变化很敏感。
-    // 稳定派生数据，避免设置页刷新时图表内部 store 出现重复 replace 更新。
+    // Recharts is sensitive to reference changes in series, legend, and tooltip props.
+    // Stable derived data to avoid repeated replace updates in the internal store of the chart when the settings page is refreshed.
     () =>
       series.slice(0, 6).map((item, index) => ({
         ...item,
@@ -123,8 +123,8 @@ export function CodingPlanUsageLineChart({
     [visibleSeries],
   );
   const chartData = useMemo(
-    () => buildChartData(locale, xTime, granularity, visibleSeries),
-    [granularity, locale, visibleSeries, xTime],
+    () => buildChartData("en-US", xTime, granularity, visibleSeries),
+    [granularity, visibleSeries, xTime],
   );
   const shouldShowAxisLabel = useCallback(
     (value: string, index: number) => (shouldShowXAxisLabel(index, chartData.length) ? value : ""),
@@ -147,8 +147,8 @@ export function CodingPlanUsageLineChart({
               <span className="font-mono font-medium tabular-nums">
                 {typeof value === "number"
                   ? valueKind === "token"
-                    ? formatCompactTokenUsage(locale, value)
-                    : formatCompactNumber(locale, value)
+                    ? formatCompactTokenUsage("en-US", value)
+                    : formatCompactNumber("en-US", value)
                   : String(value)}
               </span>
               {typeof value === "number" && valueKind === "speed" ? (
@@ -159,7 +159,7 @@ export function CodingPlanUsageLineChart({
         </>
       );
     },
-    [chartConfig, locale, valueKind],
+    [chartConfig, valueKind],
   );
   const tooltipContent = useMemo(
     () => (

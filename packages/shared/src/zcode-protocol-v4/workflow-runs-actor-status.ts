@@ -1,34 +1,39 @@
 // ============================================================
-// actor 三态的**派生**（workflowRuns 归约的一条规则）
+// **Derivation** of actor three-state (a rule for workflowRuns reduction)
 // ============================================================
-// 纯函数，只从节点与 run 状态推导，不读取时钟或执行 I/O。
+// Pure function, deduced only from node and run status, does not read the clock or perform I/O.
 //
-// 为什么必须派生：引擎的 Boundary C 除了 `actor-created` 之外**不发任何 actor 生命周期事件**，
-// 所以「这个子代理在动吗、在等吗、干完了吗」没有事件可搬，只能由它名下节点的相位与 run 的
-// 终态推出来。每一条改动了 nodes 或 run.status 的事件之后都要重跑一遍这个函数。
+// Why it must be derived: The engine's Boundary C does not emit any actor life cycle events except `actor-created`,
+// Therefore, "Is this subagent moving, waiting, and finished?" There is no event to move, and it can only be determined by the phase of the node under its name and the run
+// The final state is derived. This function must be re-run after each event that changes nodes or run.status.
 
 import type { WorkflowRunActor, WorkflowRunState } from "./workflow-runs.js";
 
 /**
- * 键用 `\0` 连接而不是任何可打印字符：siteId 是引擎给的字符串，用 `-` 之类会让
- * ("a-1", 2) 与 ("a", "1-2") 撞车。（源码里写成转义 `\0` 而不是裸 NUL 字节——同一个运行时
- * 字符串，但文件不再是 grep 眼里的二进制。）
+ * Keys are joined with `\0` rather than any printable character: siteId is a string the engine
+ * supplies, so a separator like `-` would make ("a-1", 2) collide with ("a", "1-2"). (In the
+ * source this is written as the escape `\0` rather than a raw NUL byte — the same runtime
+ * string, but the file is no longer a binary blob as far as grep is concerned.)
  */
 function actorKey(siteId: string, ordinal: number): string {
   return `${siteId}\0${ordinal}`;
 }
 
 /**
- * 三态推导：
- *   running   有节点在 executing / repairing / nudged（模型请求已发出、正在跑）
- *   waiting   有 live 节点（queued / dispatched / waiting），或尚无任何节点且 run 未终态
- *   completed 其余：全部节点已结算，或 run 已终态（终态压过一切：一个终态 run 里没有任何人
- *             还在跑或在等，哪怕某个节点的 settled 事件没来得及落下）
- * `dispatched` 归 waiting 而不是 running：它是「会话就绪、首个请求尚未准入」的短暂相位，
- * 真正在跑由 node-executing 说。
+ * The three-state derivation:
+ *   running   a node is executing / repairing / nudged (the model request has been issued and
+ *             is in flight)
+ *   waiting   a live node exists (queued / dispatched / waiting), or there is no node at all yet
+ *             and the run is not terminal
+ *   completed everything else: all nodes have settled, or the run is terminal (terminal wins
+ *             outright: nobody in a terminal run is still running or waiting, even if some
+ *             node's settled event has not landed yet)
+ * `dispatched` counts as waiting, not running: it is the brief "session ready, first request
+ * not yet admitted" phase — node-executing is what says something is really running.
  *
- * 状态没变的 actor 保持**引用不变**——键级增量按引用先判一遍"这条变了吗"，这里每次都造新对象
- * 会让每条节点事件都把整张 actors 表搬上线。
+ * Actors whose status did not change keep their **reference** — the key-level delta first asks
+ * "did this one change?" by reference, and building a fresh object here every time would make
+ * every node event ship the whole actors table back onto the wire.
  */
 export function withDerivedWorkflowActorStatuses(run: WorkflowRunState): WorkflowRunState {
   const executing = new Set<string>();

@@ -15,8 +15,8 @@ export function isStaleBranchRuntimeCommand(
     return false;
   }
   if (command.branchGeneration === runtime.branchGeneration) return false;
-  // rewind 与后台 completion 存在竞态；命令即使已入队，也必须在持久化和
-  // provider 注入前再次校验 generation，旧分支结果只留诊断日志。
+  // There is a race condition between rewind and background completion; even if the command is enqueued, it must be between persistence and
+  // The generation is verified again before provider injection, and only diagnostic logs are left for old branch results.
   runtime.logger?.debug("Dropped queued stale-branch runtime command", {
     ...traceContextToLogContext(command.traceContext),
     branchGeneration: command.branchGeneration,

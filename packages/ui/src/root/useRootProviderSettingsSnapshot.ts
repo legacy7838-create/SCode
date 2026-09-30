@@ -10,7 +10,7 @@ export function useRootProviderSettingsSnapshot(services: IServiceAccessor): voi
 
     const connection = connectProviderSettingsSnapshot(service);
     void connection.ready.catch((error) => {
-      logger.warn("[Root] 加载 Provider Settings View 失败", {
+      logger.warn("[Root] failed to load the Provider Settings View", {
         error,
       });
     });

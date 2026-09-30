@@ -7,7 +7,10 @@ import {
   type V4ComposerDraft,
 } from "@/v4/composer/composerDraftStore.js";
 
-/** 普通新任务与首次分享导入共用初始化；保留 Recent 原意图，由公共 View 解析有效选择。 */
+/**
+ * A plain new task and the first-share import share one initialization; the original Recent intent
+ * is preserved, and the public View resolves the effective selection.
+ */
 export function initializeNewTaskDraft(
   draft: V4ComposerDraft,
   workspacePath: string,
@@ -27,7 +30,10 @@ export function initializeNewTaskDraft(
   };
 }
 
-/** 在激活首次导入的 Session 前调用；不依赖模型可执行，也不把原新任务正文带入分享。 */
+/**
+ * Called before activating the first-import Session; it does not depend on a runnable model, and it
+ * does not carry the original new-task body into the share.
+ */
 export function seedImportedSessionDraft(result: {
   workspacePath: string;
   workspaceIdentity?: string;
@@ -37,8 +43,8 @@ export function seedImportedSessionDraft(result: {
   const { workspacePath, workspaceIdentity, sessionId, reused } = result;
   if (reused || readV4ComposerDraft(workspacePath, workspaceIdentity, sessionId)) return;
   const root = readV4ComposerDraft(workspacePath, workspaceIdentity, V4_DRAFT_SCOPE_ROOT);
-  // 导入已创建真实 Session，旧初始化把空 snapshot 当成确定选择，跳过了新任务规则。
-  // 显式标记首次导入来源，而非按“会话没模型”猜测；Root 的明确空选择也必须保留。
+  // Import the created real Session. The old initialization regards the empty snapshot as the final selection and skips the new task rules.
+  // Explicitly mark the source of first import rather than guessing by "session model"; the explicit empty selection of Root must also be retained.
   persistV4ComposerDraft(
     workspacePath,
     workspaceIdentity,

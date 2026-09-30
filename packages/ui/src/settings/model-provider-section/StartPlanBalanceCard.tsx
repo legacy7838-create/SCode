@@ -22,8 +22,8 @@ export function StartPlanBalanceCard({
     const remaining = resolveLimitRemaining(limit);
     return total > 0 || remaining > 0;
   });
-  // Today's balance 后端已经按产品优先级返回 balances。
-  // UI 继续反转会把 GLM-5.2 放到最后，和服务端配置及用户预期不一致。
+  // Today's balance backend already returns balances by product priority.
+  // Continuing to invert the UI will put GLM-5.2 at the end, which is inconsistent with server configuration and user expectations.
   const displayLimits = visibleLimits;
   if (!isChecking && visibleLimits.length === 0) {
     return null;
@@ -57,8 +57,8 @@ export function StartPlanBalanceCard({
               key={resolveLimitKey(limit)}
               limit={limit}
               locale={locale}
-              // 桶刷新时间只来自本桶的 expires_at（limit.nextResetTime），
-              // 不再用套餐级 renewTime 兜底，避免把同一时间复制到所有桶。
+              // The bucket refresh time only comes from expires_at (limit.nextResetTime) of this bucket.
+              // No longer use package-level renewTime to avoid copying to all buckets at the same time.
               renewTimeLabel={formatStartPlanBucketResetTime(locale, limit.nextResetTime)}
             />
           ))}
@@ -149,8 +149,8 @@ export function resolveStartPlanQuotaCardEntries({
 }): StartPlanQuotaCardEntry[] {
   return plans.map((plan) => ({
     plan,
-    // 额度桶只按 plan_id 精确归属。服务端契约保证每个桶都带 plan_id，
-    // 不再对无 plan_id 的桶做单套餐兜底，否则多套餐下会把同一桶复制进每张卡片。
+    // Quota buckets are accurately attributed only according to plan_id. The server contract ensures that each bucket has plan_id.
+    // No more single package guarantees for buckets without plan_id, otherwise the same bucket will be copied into each card under multiple packages.
     limits: limits.filter((limit) => limit.planId?.trim() === plan.productId.trim()),
   }));
 }

@@ -25,9 +25,7 @@ import {
   parseLaunchMarks,
   LAUNCH_MARKS_QUERY_KEY,
   type LaunchMarks,
-  DEFAULT_LOCALE,
 } from "@zcode/shared";
-import type { Locale } from "@zcode/shared";
 import type { IServiceAccessor } from "@zcode/services";
 import { syncAppTelemetryContext } from "../appTelemetryBridge.js";
 import { createDesktopPlatform } from "./desktopPlatform.js";
@@ -46,7 +44,7 @@ type DesktopRendererImportMetaEnv = {
 
 startPerformanceTimelineCleanup();
 
-// T4:renderer bundle 开始执行。同时从 loadURL query 解析 main 注入的 T0-T3。
+// T4: renderer bundle starts executing. Also parse T0-T3 injected by main from the loadURL query.
 const rendererStartedAt = Date.now();
 const launchMarks: LaunchMarks | null = parseLaunchMarks(
   new URLSearchParams(window.location.search).get(LAUNCH_MARKS_QUERY_KEY),
@@ -73,7 +71,7 @@ function registerE2EStoreBridgesIfEnabled() {
   });
 }
 
-// 初始化主题：默认 Zai dark，后续由 useTheme hook 接管
+// Initialize theme: default Zai dark, later taken over by the useTheme hook
 {
   const saved = localStorage.getItem("zcode-theme") || "zai-dark";
   const resolved =
@@ -102,14 +100,17 @@ function registerE2EStoreBridgesIfEnabled() {
 const isMacDesktop = navigator.userAgent.includes("Mac");
 const isWindowsDesktop = navigator.userAgent.includes("Windows");
 const isLinuxDesktop = !isMacDesktop && !isWindowsDesktop;
-// macOS hidden 原生标题栏仍参与鼠标拖拽命中，深层浮层需要平台标记避开其高度。
+// macOS hidden native titlebar still participates in mouse drag hit-testing; deep overlays need a platform marker to avoid its height.
 document.documentElement.classList.toggle("platform-mac-desktop", isMacDesktop);
-// Windows 的原生 titleBarOverlay 与 renderer 共用右上角，深层浮层拿不到
-// Root 的 isWindowsDesktop prop 时会把关闭按钮放进原生窗控命中区。根节点平台标记只描述
-// Desktop chrome，不会让普通 Windows Web 误用标题栏安全区。
+// Windows native titleBarOverlay shares the top-right corner with the renderer; deep
+// overlays that cannot access Root's isWindowsDesktop prop would place the close button
+// inside the native window controls hit area. The root node platform marker only describes
+// Desktop chrome and will not cause regular Windows Web to misuse the titlebar safe area.
 document.documentElement.classList.toggle("platform-windows-desktop", isWindowsDesktop);
-// Linux 的窗口标题栏由 renderer 自绘，应用内 Dialog overlay 如果覆盖整个 webContents，
-// 会把标题栏点击区一起拦截。给桌面 Linux 根节点打平台标记，让 UI overlay 能只在 Linux 避开标题栏。
+// Linux window titlebars are self-drawn by the renderer; if an in-app Dialog overlay
+// covers the entire webContents, it also intercepts the titlebar click area. Tag the
+// desktop Linux root node with a platform marker so UI overlays can avoid the titlebar
+// only on Linux.
 document.documentElement.classList.toggle("platform-linux-desktop", isLinuxDesktop);
 const isLocalDevelopmentRuntime =
   (globalThis as typeof globalThis & { __ZCODE_LOCAL_DEVELOPMENT_RUNTIME__?: boolean })
@@ -132,11 +133,6 @@ const initialWorkspaceAbsPath = readStringFlag("initialWorkspacePath");
 const initialWorkspacePurpose = readStringFlag("initialWorkspacePurpose");
 const unavailableWorkspacePath = readStringFlag("unavailableWorkspacePath");
 const windowKind = readStringFlag("windowKind");
-const initialLocaleFlag = readStringFlag("locale");
-const initialLocale: Locale =
-  initialLocaleFlag === "zh-CN" || initialLocaleFlag === "en-US"
-    ? initialLocaleFlag
-    : DEFAULT_LOCALE;
 let baseServicesForRemoteSessions: IServiceAccessor | null = null;
 const pendingRemoteWorkspaceServicePorts: RemoteWorkspaceServicePortRegistration[] = [];
 
@@ -148,14 +144,16 @@ initializeDesktopUserActionTrace({
 });
 
 /**
- * 等待 preload 通过 window.postMessage 转发 MessagePort。
+ * Wait for preload to forward the MessagePort via window.postMessage.
  *
- * MessagePort 不能经过 contextBridge（会丢失原生方法），
- * 所以 preload 用 window.postMessage + transfer 把 port 原样传递到 renderer。
- * 本地窗口的 port 来自 utilityProcess，远程窗口也一样，renderer 无需区分。
+ * MessagePort cannot go through contextBridge (it loses native methods),
+ * so preload uses window.postMessage + transfer to pass the port as-is to the renderer.
+ * The port for local windows comes from utilityProcess, and remote windows are the same;
+ * the renderer does not need to distinguish.
  */
-// 之前用匿名函数注册 addEventListener("message")，reload/HMR 时会重复注册，
-// 导致多次 createRoot 在同一 DOM 节点上挂载。用 flag 防止重复初始化。
+// Previously an anonymous function was used to register addEventListener("message"),
+// which would register repeatedly on reload/HMR, causing multiple createRoot calls
+// mounting on the same DOM node. Use a flag to prevent duplicate initialization.
 let appInitialized = false;
 const databaseStartupAdmission = new DatabaseStartupAdmission();
 const appRoot =
@@ -165,10 +163,7 @@ const sendStartupControl = (control: DatabaseStartupControl) =>
 function renderDatabaseStartup(): void {
   appRoot?.render(
     <AppErrorBoundary isDesktop isMacDesktop={isMacDesktop} isWindowsDesktop={isWindowsDesktop}>
-      <ZCodeIntlProvider
-        initialLocale={initialLocaleFlag ? initialLocale : undefined}
-        resolveSystemLocale={desktopPlatform.getSystemLocale}
-      >
+      <ZCodeIntlProvider>
         <StartupReadyNotifier />
         <GlobalDatabaseStartupLoading
           state={databaseStartupAdmission.state}
@@ -229,8 +224,9 @@ function registerRemoteWorkspaceServicePort(params: RemoteWorkspaceServicePortRe
     dispose: (reason) =>
       remoteConnection.dispose(reason ?? createRemoteWorkspaceDisconnectedError()),
   });
-  // canonical workspace bind 会换代 remote-scoped port。
-  // 只有 store 已注册新 services 后才能确认 ready，bind IPC 返回后的调用方才可重新读取并使用新代 services。
+  // canonical workspace bind rotates the remote-scoped port.
+  // Only after the store has registered new services can ready be confirmed; callers
+  // returning from the bind IPC can then re-read and use the new-generation services.
   notifyRemoteWorkspaceServicePortReady(params);
 }
 
@@ -247,11 +243,13 @@ function flushPendingRemoteWorkspaceServicePorts(): void {
 
 function StartupReadyNotifier() {
   useEffect(() => {
-    // T5:React 首次 commit。供启动分阶段耗时计算 react_commit 段。
+    // T5: React first commit. Used for startup phase timing to calculate the react_commit segment.
     (window as Window & { __ZCODE_REACT_COMMIT_AT__?: number }).__ZCODE_REACT_COMMIT_AT__ =
       Date.now();
-    // HTML 启动壳的弹出动画结束时，React 首屏可能还没 commit，直接移除壳会露出空白。
-    // 这里在 React commit 后通知 index.html，再由启动壳统一判断动画和 React ready 两个条件后退场。
+    // When the HTML startup shell's pop animation ends, the React first frame may not have
+    // committed yet; removing the shell directly would reveal a blank screen. After React
+    // commits, notify index.html here, and the startup shell then uniformly decides when to
+    // exit based on both the animation and React ready conditions.
     window.dispatchEvent(new Event("zcode-react-startup-ready"));
   }, []);
 
@@ -278,8 +276,9 @@ function handleServicePortMessage(event: MessageEvent): void {
   const remoteWorkspacePort = parseRemoteWorkspaceServicePortMessage(event);
   if (remoteWorkspacePort) {
     if (!baseServicesForRemoteSessions) {
-      // renderer reload 时 main 可能先补投 remote port，再投本地 ServicePort。
-      // 早到的 remote port 不能直接丢弃，否则 SSH host 仍存活但 UI 会进入断连代理。
+      // On renderer reload, main may deliver the remote port before the local ServicePort.
+      // The early-arriving remote port must not be dropped, otherwise the SSH host remains
+      // alive but the UI enters a disconnected proxy state.
       pendingRemoteWorkspaceServicePorts.push(remoteWorkspacePort);
       return;
     }
@@ -306,7 +305,6 @@ function initializeBusinessRoot(port: MessagePort): void {
   baseServicesForRemoteSessions = services;
   registerBaseWorkspaceServices(services);
   flushPendingRemoteWorkspaceServicePorts();
-  const settingService = supportsSettings ? services.settingService : undefined;
 
   syncAppTelemetryContext({
     bridge: {
@@ -315,21 +313,19 @@ function initializeBusinessRoot(port: MessagePort): void {
     createRendererContext: collectTelemetryRendererContext,
   });
 
-  // 初始化稳定的设备 ID，确保所有 hook 在首次渲染前就使用正确的值
+  // Initialize a stable device ID to ensure all hooks use the correct value before first render
   setStreamClientId(desktopPlatform.getDeviceId());
 
-  // React 错误边界捕获的异常不会冒泡到 window.onerror，RUM Browser SDK 默认收不到。
-  // 必须在 createRoot 之前注入 reporter：根级 AppErrorBoundary 的职责正是兜住 Root 自身
-  // 渲染崩溃，若依赖 Root 的 effect 注入，则 Root 首帧就崩时上报会丢失。
+  // Exceptions caught by the React error boundary do not bubble to window.onerror, so the
+  // RUM Browser SDK does not receive them by default. The reporter must be injected before
+  // createRoot: the root-level AppErrorBoundary's job is to catch Root's own render crash;
+  // if injection relied on Root's effect, the report would be lost when Root crashes on its
+  // first frame.
   setReactErrorArmsReporter(desktopPlatform);
 
   appRoot?.render(
     <AppErrorBoundary isDesktop isMacDesktop={isMacDesktop} isWindowsDesktop={isWindowsDesktop}>
-      <ZCodeIntlProvider
-        settingService={settingService}
-        broadcastService={services.broadcastService}
-        resolveSystemLocale={desktopPlatform.getSystemLocale}
-      >
+      <ZCodeIntlProvider>
         <StartupReadyNotifier />
         <Root
           services={services}
@@ -361,11 +357,7 @@ if (windowKind === "update-status") {
   createRoot(document.getElementById("root")!).render(
     <AppErrorBoundary isDesktop isMacDesktop={isMacDesktop} isWindowsDesktop={isWindowsDesktop}>
       <StartupReadyNotifier />
-      <UpdateStatusWindowRoot
-        platform={desktopPlatform}
-        initialLocale={initialLocale}
-        onRequestClose={() => window.close()}
-      />
+      <UpdateStatusWindowRoot platform={desktopPlatform} onRequestClose={() => window.close()} />
     </AppErrorBoundary>,
   );
 }

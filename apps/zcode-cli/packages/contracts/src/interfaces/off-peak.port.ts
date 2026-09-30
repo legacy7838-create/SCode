@@ -1,9 +1,9 @@
 // ============================================================
 // Off-Peak Port - idle-time task creation boundary
 // ============================================================
-// 与 AutomationPort 兄弟并列。create 返回判别联合而非抛错：失败分类
-// （额度 3103 / 资格 3101 / 网络等）必须跨 CLI↔host 协议保真到 handler，
-// 供模型收到稳定、可行动的错误提示，禁止降级为 message 字符串判断。
+// Alongside its AutomationPort brethren. create returns a discriminant union instead of throwing an error: failure classification
+// (Quota 3103/Qualification 3101/Network, etc.) Must be fidelity to the handler across CLI↔host protocol,
+// Provides the model with stable, actionable error prompts and prohibits downgrading to message string judgment.
 
 import type { OffPeakCreateInput, OffPeakTaskSummary } from "../tools/off-peak.js";
 
@@ -40,7 +40,7 @@ export function isOffPeakEligibilityFailure(
 }
 
 export interface OffPeakCreateContext {
-  /** 当前工具调用所在 session；作为闲时任务的绑定会话（首跑 resume 该会话，对齐 CronCreate targetTaskId）。 */
+  /** The session where the current tool is called; as the binding session for idle tasks (resume the session first and align it with CronCreate targetTaskId). */
   sessionId?: string;
 }
 

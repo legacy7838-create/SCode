@@ -23,6 +23,7 @@
     "@mbears/opentui-react": "0.2.15",
     "@zcode/contracts": "workspace:*",
     "@zcode/i18n": "workspace:*",
+    "@zcode/rust": "workspace:*",
     "@zcode/shared": "workspace:*",
     "react": "19.2.5",
     "react-devtools-core": "7.0.1",

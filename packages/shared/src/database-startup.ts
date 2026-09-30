@@ -16,7 +16,7 @@ export const databaseStartupErrorCodeSchema = z.enum([
 ]);
 export type DatabaseStartupErrorCode = z.infer<typeof databaseStartupErrorCodeSchema>;
 
-/** 原始结构化 cause 比外层通用包装更准确；禁止从错误文案推断满盘或 OOM。 */
+/** The original structured cause is more accurate than the outer generic wrapper; inferring a full disk or an OOM from the error message is forbidden. */
 export function classifyDatabaseStartupError(error: unknown): DatabaseStartupErrorCode {
   const seen = new Set<unknown>();
   let fallback: DatabaseStartupErrorCode = "sql_failed";
@@ -40,7 +40,7 @@ export function classifyDatabaseStartupError(error: unknown): DatabaseStartupErr
   return fallback;
 }
 
-/** 只跨进程传输错误码和冻结迁移 ID，不携带 SQL、文件内容或凭据。 */
+/** Only the error code and the frozen migration id cross the process boundary; no SQL, file contents or credentials are carried. */
 export function databaseStartupErrorDetails(error: unknown): {
   sqliteCode?: number;
   systemCode?: string;
@@ -95,13 +95,13 @@ export const databaseStartupPhaseSchema = z.enum([
 ]);
 export const databaseMigrationIdSchema = z.string().regex(/^[a-zA-Z_0-9-]{1,128}$/);
 
-/** 需求种类与真实执行/提交分开；预检发现需求不意味着当前执行者运行过 SQL。 */
+/** The kind of need is kept separate from what actually executed/committed; a precheck finding a need does not mean the current executor ran SQL. */
 export const databaseMigrationFactsSchema = z
   .object({
     kind: z.enum(["none", "initialize", "upgrade"]),
     executedCount: z.number().int().nonnegative(),
     committedCount: z.number().int().nonnegative(),
-    // null 表示锁内账本为空；缺失表示尚未取得可信起点。
+    // Null means that the ledger in the lock is empty; missing means that the trusted starting point has not yet been obtained.
     lastAppliedMigrationId: databaseMigrationIdSchema.nullable().optional(),
   })
   .strict()
@@ -147,7 +147,7 @@ export const databaseStartupStateSchema = z
   })
   .strict();
 export type DatabaseStartupState = z.infer<typeof databaseStartupStateSchema>;
-/** 本地端口和启动快照必须来自同一 Host；此 ID 不承担工作区或任务身份。 */
+/** The local port and the startup snapshot must come from the same Host; this id does not carry workspace or task identity. */
 export const databaseStartupPortPayloadSchema = z
   .object({
     databaseStartupId: z.string().min(1).max(128),
@@ -160,7 +160,7 @@ export const databaseStartupControlSchema = z.discriminatedUnion("action", [
 ]);
 export type DatabaseStartupControl = z.infer<typeof databaseStartupControlSchema>;
 
-/** 迁移可手动重试；已部分装配服务或损坏/失联时通过退出重开恢复，避免重复启动副作用。 */
+/** Migration can be retried manually; when services are already partly assembled or the database is corrupt/unreachable, recover by exiting and reopening, to avoid repeated startup side effects. */
 export function canRetryDatabaseStartup(
   state: Pick<DatabaseStartupState, "phase" | "failedPhase" | "errorCode">,
 ): boolean {

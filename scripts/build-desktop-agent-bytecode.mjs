@@ -18,7 +18,7 @@ async function publishImmutable(path, contents) {
   } catch (error) {
     if (error.code !== "EEXIST") throw error;
     if (!(await readFile(path)).equals(contents)) {
-      throw new Error(`已有字节码资源损坏: ${path}`);
+      throw new Error(`Existing bytecode resource is damaged: ${path}`);
     }
   }
 }
@@ -28,7 +28,8 @@ export async function buildDesktopAgentBytecode({
   electronPath = createRequire(import.meta.url)("electron"),
   env = process.env,
 } = {}) {
-  if (env.ZCODE_E2E_COVERAGE === "1") throw new Error("coverage 构建不能启用字节码试验");
+  if (env.ZCODE_E2E_COVERAGE === "1")
+    throw new Error("coverage build cannot enable bytecode experiments");
   const directory = dirname(entryPath);
   const temporary = join(directory, `.bytecode-${randomUUID()}`);
   const loaderPath = join(directory, "zcode.bytecode.cjs");
@@ -45,7 +46,7 @@ export async function buildDesktopAgentBytecode({
     const runtimeFile = `zcode.bytecode-runtime-${runtimeHash}.cjs`;
     metadata.bytecodeFile = bytecodeFile;
     metadata.sourceFile = basename(entryPath);
-    // 先写不可变依赖，最后原子替换入口；失败时上次可用的加载器仍能找到自己的字节码。
+    // Write immutable dependencies first, and finally replace the entry atomically; when it fails, the last available loader can still find its own bytecode.
     await publishImmutable(bytecodePath, await readFile(temporary));
     await publishImmutable(join(directory, runtimeFile), runtimeSource);
     const loader = `#!/usr/bin/env node\n"use strict";\nconst metadata = ${JSON.stringify(metadata)};\nrequire(${JSON.stringify(`./${runtimeFile}`)}).loadBytecode(metadata, module, require).catch(error => {\n  process.stderr.write(String(error.stack ?? error) + "\\n");\n  process.exitCode = 1;\n});\n`;

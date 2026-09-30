@@ -1,11 +1,11 @@
-/* oxlint-disable eslint(max-lines) -- task realtime 共享合约集中维护，类型和 schema 需要保持就近。 */
-// ── 旧协议兼容面（过渡期）──────────────────────────────
-// 剩余 18 个导出：realtime 事件/lease/owner-command 接口类型。
-// 消费者：desktop taskRealtimeBus/taskRealtimeBridge、services sessionRealtimePort、
-// shared channels.ts（旧 host 通道表）。
-// 运行时 zod schema 与 resolveWorkspaceKey 已迁 task-realtime-core.ts（幸存面）；
-// 基础传输类型（TaskRealtimeReason/TaskStreamMirrorOp/TaskStreamWatermark 等）已迁
-// zcode-task-types-core.ts。本文件与旧 realtime 总线组同生命周期。
+/* oxlint-disable eslint(max-lines) -- the task realtime shared contract is maintained in one place; types and schemas need to stay close together. */
+// ── Old protocol compatibility (transition period)─────────────────────────────
+// The remaining 18 exports: realtime events/lease/owner-command interface type.
+// Consumer: desktop taskRealtimeBus/taskRealtimeBridge, services sessionRealtimePort,
+// shared channels.ts (old host channel table).
+// Runtime zod schema and resolveWorkspaceKey have been migrated to task-realtime-core.ts (survival side);
+// Basic transfer types (TaskRealtimeReason/TaskStreamMirrorOp/TaskStreamWatermark, etc.) have been migrated
+// zcode-task-types-core.ts. This file has the same life cycle as the old realtime bus group.
 import type {
   ZCodeTaskClientMode,
   ZCodeTaskRuntimeCommand,

@@ -39,7 +39,7 @@ export function registerRendererActionTraceIpc(options: {
       awaitingNewInstance = true;
     };
     const completeNavigation = () => {
-      // did-start-loading 与 did-navigate 可能属于同一次加载，避免二次退休新实例。
+      // did-start-loading and did-navigate may belong to the same loading to avoid retiring new instances twice.
       if (awaitingNewInstance) {
         awaitingNewInstance = false;
         return;

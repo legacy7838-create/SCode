@@ -13,9 +13,9 @@ import { dirname, join, relative } from "node:path";
 import process from "node:process";
 import { runCommand } from "./spawn-command.mjs";
 
-// Bugfix: Windows GNU tar（Git Bash）会把绝对路径里的盘符冒号（C:）当成远程主机名，
-// 反斜杠路径也会被 MSYS 参数转换破坏。tar 参数统一转正斜杠，归档路径优先改用
-// 相对 cwd 的形式避开盘符冒号；对 bsdtar 与 Linux/macOS CI 无影响。
+// Bugfix: Windows GNU tar (Git Bash) will treat the drive letter colon (C:) in the absolute path as the remote host name.
+// Backslash paths are also corrupted by MSYS parameter conversion. The tar parameters are uniformly converted to forward slashes, and the archive path is used first.
+// The format relative to cwd avoids the drive letter colon; it has no impact on bsdtar and Linux/macOS CI.
 function toTarPosixPath(pathValue) {
   return pathValue.replaceAll("\\", "/");
 }
@@ -28,7 +28,7 @@ function resolveTarArchiveArg(archivePath, cwd) {
         return toTarPosixPath(relativeArchivePath);
       }
     } catch {
-      // 跨盘符时 relative 会抛错，退回正斜杠绝对路径（bsdtar 可用）。
+      // When crossing drive letters, relative will throw an error and return a forward slash absolute path (available for bsdtar).
     }
   }
 
@@ -121,20 +121,20 @@ export async function extractPrebuiltBinary({
       throw new Error(`Failed to locate ${binaryName} in extracted archive`);
     }
 
-    // foreign target 不能靠执行目标文件验真，必须在覆盖正式路径前校验临时产物。
+    // The foreign target cannot be verified by executing the target file, and the temporary product must be verified before overwriting the official path.
     await validateBinary?.(extractedBinaryPath);
     copyFileSync(extractedBinaryPath, binaryPath);
     if (targetPlatform !== "win32") {
       chmodSync(binaryPath, 0o755);
     }
   } finally {
-    // Bugfix: Windows 下解压产物可能被杀毒/索引器或尚未退出的解压子进程短暂持有句柄，
-    // rmSync 立即删除会 EPERM，且 finally 里抛出的异常会掩盖真正的解压错误。
-    // 带重试删除，失败时仅告警，让原始错误正常抛出。
+    // Bugfix: The decompression product under Windows may temporarily hold the handle to the antivirus/indexer or the decompression subprocess that has not yet exited.
+    // Immediate deletion of rmSync will cause EPERM, and the exception thrown in finally will cover up the real decompression error.
+    // Delete with retry, only alert when failure occurs, and let the original error be thrown normally.
     try {
       rmSync(tempDir, { force: true, recursive: true, maxRetries: 10, retryDelay: 500 });
     } catch (error) {
-      console.warn(`[warn] 清理临时目录失败（可忽略）: ${tempDir}`);
+      console.warn(`[warn] Failed to clean up temporary directory (ignorable): ${tempDir}`);
       console.warn(`[warn] ${String(error)}`);
     }
   }

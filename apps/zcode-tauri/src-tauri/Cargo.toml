@@ -1,0 +1,72 @@
+[package]
+name = "zcode-tauri"
+version = "3.14.3"
+description = "ZCode Desktop App (Tauri port)"
+authors = ["ZCode"]
+edition = "2021"
+rust-version = "1.82"
+
+[lib]
+# Tauri v2 keeps the app in a library so the mobile entrypoints can reuse it.
+name = "zcode_tauri_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# The in-process channel RPC server. Serves the UI's `IServiceAccessor` natively
+# so the Node `@zcode/server` process can be retired service by service. Pulled
+# in with default features (which include the `websocket` network edge).
+zcode-rpc-server = { path = "../../../packages/rust/crates/zcode-rpc-server" }
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-fs = "2"
+tauri-plugin-os = "2"
+tauri-plugin-shell = "2"
+tauri-plugin-deep-link = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-notification = "2"
+urlencoding = "2"
+parking_lot = "0.12"
+# Base64 for binary payloads: Tauri's JSON transport turns an `ArrayBuffer` into
+# `{}` (`JSON.stringify(new ArrayBuffer(8))`), so file bytes ride as a base64
+# string instead. Keep this in sync with the TS side.
+base64 = "0.22"
+# Scheduler persistence: the Electron scheduler claimed `automations` and
+# `off_peak_tasks` rows directly. Bundled sqlite keeps the storage layer
+# independent of the host system libsqlite.
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# Already in the lock file (pulled in by the Tauri plugin tree); listed directly
+# because the ported `system` channel performs HTTP service probes. `rustls` is
+# pure Rust, so this adds no system OpenSSL dependency.
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "rustls", "http2"] }
+# Credential storage reproduces the existing AES-256-GCM cipher byte for byte, so
+# secrets written by the Node build stay readable. `sha2`, `base64` and `rand` are
+# already in the lock file via the plugin tree; only the AEAD is new.
+aes-gcm = "0.10"
+crossbeam-channel = "0.5"
+rand = "0.8"
+sha2 = "0.10"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[features]
+# Enabled by `tauri build`; keeps devtools out of release bundles.
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+# NOTE: `panic = "abort"` is deliberately NOT set. With abort, a panic in any
+# supervised task kills the whole process, which would make `Supervisor`'s
+# backoff and per-child restart unreachable. Unwinding is what makes crash
+# recovery work; see src/supervisor/mod.rs.
+strip = true

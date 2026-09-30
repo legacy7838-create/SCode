@@ -1,6 +1,6 @@
-// turn_complete 的处理：用量/缓存统计 + 结果兜底。
+// Turn_complete processing: usage/cache statistics + results summary.
 //
-// 两件事放一起是因为它们同源于一条事件；顺带让 app-events.ts 的 switch 留在 max-lines 之内。
+// The two things are put together because they have the same origin as one event; by the way, let the switch of app-events.ts stay within max-lines.
 import type React from "react";
 import type { ModelUsageSummary } from "@zcode/contracts";
 import type { CacheStats, Message } from "./app-model.js";
@@ -9,20 +9,26 @@ import { projectedTranscriptHasResponse } from "./app-transcript-stream.js";
 import { stringField } from "./state.js";
 
 /**
- * turn_complete 携带权威 `response`；只在转写里**还没有**这段文本时补上。
+ * turn_complete carries the authoritative `response`; it is only filled in when the transcript does
+ * **not** yet have that text.
  *
- * 为什么需要：通知驱动的回合没有 submitPrompt，也就没有 applyResult 去追加结果。绝大多数
- * 情况流式事件已经把文本画出来了，但只有工具调用、或流在
- * 中途错误断掉的回合会一个字都不留——那时这条兜底就是唯一的答案来源。
+ * Why it is needed: a notification-driven turn has no submitPrompt, and therefore no applyResult to
+ * append the result with. In the vast majority of cases the streaming events have already painted the
+ * text, but a turn with only tool calls, or one whose stream broke with an error midway, leaves not a
+ * single word behind — and then this backstop is the only source of the answer.
  *
- * 为什么不会双写：判据是**内容**而不是时序。`projectedTranscriptHasResponse` 已存在于
- * appendAgentResult 的同一条守卫上，所以无论这里先补还是 applyResult 先补，另一边都会看到
- * 内容已在而跳过——与事件 id 去重同一个思路（按内容/身份幂等，不赌先后）。
+ * Why it never double-writes: the criterion is the **content**, not the timing.
+ * `projectedTranscriptHasResponse` already exists on the very same guard in appendAgentResult, so
+ * whichever side fills it in first, the other one sees that the content is already there and skips —
+ * the same idea as deduplicating by event id (idempotent by content/identity, never betting on who
+ * wins the race).
  *
- * 但这条对称性有个前提：守卫只扫 `streamProjected` 的消息，所以这里补上的消息
- * 必须**自己带 `streamProjected: true`**——否则用户回合里"流断了但 turn_complete 带着
- * response"的场景会先由这里补一条普通消息，随后 applyResult 的守卫看不见它、再补一条，
- * 同一段回答出现两次。`transcriptText` 对无 parts 的消息回落到 `content`，因此不需要合成 parts。
+ * This symmetry does have one premise: the guard only scans the `streamProjected` messages, so the
+ * message filled in here must **carry `streamProjected: true` itself** — otherwise, in the user-turn
+ * case where "the stream broke but turn_complete carries a response", this would first add an
+ * ordinary message, after which the guard in applyResult would not see it and would add a second
+ * one, and the same answer would appear twice. `transcriptText` falls back to `content` for a message
+ * with no parts, so no parts have to be synthesized.
  */
 export function applyTurnCompleteFallbackResponse(
   payload: Record<string, unknown>,

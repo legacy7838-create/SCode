@@ -1,3 +1,4 @@
+import { installNativeRpcBytesPort } from "@zcode/rpc/native";
 import { disposeServiceResourcesAndWait, getAppConfigDir } from "@zcode/services/node";
 import {
   ZCODE_VERSION,
@@ -21,10 +22,10 @@ const log = (...args: unknown[]) =>
   console.error(formatLogPrefix("zcode-server:stdio", process.pid), ...args);
 const stderrConsoleLog = (...args: unknown[]) => console.error(...args);
 
-// stdio 模式下 stdout 只能承载 RPC 帧。
-// 之前 services 里的 info/debug 日志仍会走 console.log / console.info，
-// 一旦把普通文本写进 stdout，就会直接污染协议流，表现成远程调用一直 pending / loading。
-// 这里在 entry 层统一把普通 console 输出重定向到 stderr，确保所有服务日志都不会再打坏 RPC。
+// In stdio mode, stdout can only carry RPC frames.
+// Previously, info/debug logs in services still went through console.log / console.info,
+// and once ordinary text is written into stdout, it directly pollutes the protocol stream, manifesting as remote calls stuck in pending / loading.
+// Here at the entry layer, ordinary console output is uniformly redirected to stderr to ensure all service logs no longer corrupt RPC.
 console.log = stderrConsoleLog;
 console.info = stderrConsoleLog;
 console.warn = stderrConsoleLog;
@@ -35,6 +36,9 @@ if (process.argv.includes("--version")) {
   process.stdout.write(ZCODE_VERSION + "\n");
   process.exit(0);
 }
+
+// Node-only entrypoint: bind the RPC byte port (Rust CRC32) before any RPC traffic.
+installNativeRpcBytesPort();
 
 async function main() {
   // Phase 1: Send hello message
@@ -51,9 +55,9 @@ async function main() {
   const ack = await waitForAck();
   log(`client connected: ${ack.clientId} (v${ack.version})`);
 
-  // 远端主机没有 Desktop main，没人写 telemetry-state.json，services 发往 ZCode endpoint
-  // 的请求缺 X-Device-Mid，Start Plan 的 billing/balance 被拒。远端 server 是本机设备身份的
-  // 生命周期所有者，必须在 services 创建前确保 deviceMid 存在（详见 stdioDeviceMid.ts）。
+  // The remote host has no Desktop main, so no one writes telemetry-state.json; services sending to the ZCode endpoint
+  // requests lack X-Device-Mid, and Start Plan billing/balance is rejected. The remote server is the lifecycle owner of the local device identity
+  // and must ensure deviceMid exists before services are created (see stdioDeviceMid.ts for details).
   await ensureRemoteServerDeviceMid({ log });
 
   // Phase 3: Initialize services and start stdio RPC server
@@ -67,7 +71,7 @@ async function main() {
   });
   if (authorityModeParseResult.invalidRawValue) {
     log(
-      `${SERVICE_AUTHORITY_MODE_ENV}=${authorityModeParseResult.invalidRawValue} 非法，按默认本机 Environment 权威模式启动`,
+      `${SERVICE_AUTHORITY_MODE_ENV}=${authorityModeParseResult.invalidRawValue} is invalid, starting with the default local Environment authority mode`,
     );
   }
   const stdioServer = createStdioServer(services);
@@ -76,14 +80,14 @@ async function main() {
     signalSource: process,
     log,
     stopRpc: () => stdioServer.stop(),
-    // Desktop Host 已经会等待 disposeServiceResourcesAndWait，远端 stdio
-    // entry 却仍直接 process.exit，导致其托管的 workspace Agent 来不及完成进程树清理。
-    // 远端 server 也是 ServiceCollection owner，退出前必须遵守同一异步回收契约。
+    // Desktop Host already waits for disposeServiceResourcesAndWait, but the remote stdio
+    // entry still directly calls process.exit, causing its hosted workspace Agent to not finish process tree cleanup in time.
+    // The remote server is also a ServiceCollection owner and must follow the same async cleanup contract before exiting.
     dispose: () => disposeServiceResourcesAndWait(services),
     exit: (code) => process.exit(code),
   });
-  // ready 日志必须在退出监听注册之后；否则 SSH 恰好在 ready 后断开时，
-  // SIGHUP/SIGTERM 仍可能落入 Node 默认处理并绕过 Agent cleanup。
+  // The ready log must be after exit listener registration; otherwise, when SSH happens to disconnect right after ready,
+  // SIGHUP/SIGTERM may still fall into Node's default handling and bypass Agent cleanup.
   log("stdio mode ready");
 }
 

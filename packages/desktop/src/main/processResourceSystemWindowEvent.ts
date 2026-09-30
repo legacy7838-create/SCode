@@ -1,4 +1,4 @@
-/** `perf_system_window` 的属性投影（纯函数，属性 key 与白名单一一对应，共 17 个）。 */
+/** The property projection for `perf_system_window` (a pure function whose property keys map one-to-one to the allow-list, 17 in total). */
 
 import { PROCESS_RESOURCE_EVENT_NAMES } from "@zcode/shared";
 import type { SystemResourceWindowReport } from "./processResourceSystemWindowAggregator.js";
@@ -9,7 +9,7 @@ import {
 
 export const PERF_SYSTEM_WINDOW_EVENT_NAME = PROCESS_RESOURCE_EVENT_NAMES.systemWindow;
 
-/** 硬件维度描述桌面机本身：设备级事件只统计本机进程，没有远端覆盖的情形。 */
+/** The hardware dimension describes the desktop machine itself: a device-level event only counts local processes, with no remote override case. */
 export function buildSystemWindowEventProperties(
   report: SystemResourceWindowReport,
   context: ProcessResourceReportContext,

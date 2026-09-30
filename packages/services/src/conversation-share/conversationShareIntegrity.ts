@@ -95,17 +95,22 @@ export function buildConversationShareConfirmRequest(
 }
 
 /**
- * 服务端签发 signed URL 时才有的字段，不参与 artifact set 摘要。
+ * Fields that only exist because the server issues a signed URL; they take no part in the
+ * artifact set digest.
  *
- * 这是一份「服务端在读取时附加的字段」名单，不是「本端认识的字段」白名单——两者方向相反，
- * 选前者才对得上版本歪斜：
- * - 更新版发布端给 descriptor 加字段 → 它进了服务端存储、也进了服务端算的摘要，
- *   老导入端按原始值算同样包含它，哈希对得上（这正是要保住的方向）；
- * - 若改成按本端已知字段投影，那个新字段会被削掉，哈希立刻不一致。
+ * This is a list of "fields the server attaches on read", not a whitelist of "fields this
+ * client knows about" — the two run in opposite directions, and only the former keeps hashes
+ * aligned when versions are skewed:
+ * - a newer publisher adds a field to a descriptor → it lands in server storage and in the
+ *   server-computed digest, and an older importer computing over the raw values includes it
+ *   too, so the hashes still match (this is the direction we must preserve);
+ * - if we instead projected onto the fields this client knows, that new field would be
+ *   stripped and the hashes would immediately disagree.
  *
- * 代价是：服务端将来在读取响应里新增字段（而不是回显上传内容）必须同步加进这份名单，
- * 否则摘要会不一致。这属于服务端违反 revision 契约（continuation integrity 定义在
- * descriptor 集合上），且症状明确、修法就是往这里加一个键。
+ * The price: whenever the server later adds a field to its read response (rather than echoing
+ * back what was uploaded) it must also be added to this list, or the digests diverge. That is
+ * a server-side violation of the revision contract (continuation integrity is defined over the
+ * descriptor set), it has an obvious symptom, and the fix is simply to add one key here.
  */
 const ARTIFACT_URL_KEYS = ["download_url", "download_url_expires_at", "url", "url_expires_at"];
 
@@ -122,14 +127,17 @@ function stripArtifactUrls(value: unknown): unknown {
 }
 
 /**
- * 用服务端**原样发来的** rows / artifacts 复核两个摘要。
+ * Re-verifies both digests using the rows / artifacts the server sent **verbatim**.
  *
- * 关键点是「原始值」：以前这里拿的是 zod 解析产物，而 zod 默认剥掉未知字段，所以发布端
- * 只要给 row 加一个 optional 字段，老导入端重算的哈希就必然不一致，报出「分享文件校验
- * 失败」——一条看着像被篡改的告警，加一个永远不会成功的重试按钮。
+ * The key point is the "raw values": this used to operate on the zod parse output, and zod
+ * strips unknown fields by default, so as soon as a publisher added one optional field to a
+ * row, the hash recomputed by an older importer was guaranteed to mismatch and reported
+ * "share file verification failed" — a warning that looks like tampering, plus a retry button
+ * that can never succeed.
  *
- * 校验对原始字节之后，完整性与 schema 认知彻底解耦：schema 可以自由 additive 演进，而
- * 哈希不一致重新变成它本该表达的意思——内容真的被改过或损坏了。
+ * Once verification targets the raw bytes, integrity is fully decoupled from schema knowledge:
+ * the schema can evolve additively, and a hash mismatch goes back to meaning exactly what it
+ * is supposed to mean — the content really was altered or corrupted.
  */
 export function verifyConversationShareIntegrity(input: {
   rawRows: unknown;

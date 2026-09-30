@@ -395,7 +395,6 @@
     "packages/desktop/src/renderer/public/material-icons/disc.svg": "6c4af1e943afe4945ba0218be5d1ab7f85b16fe6dde63531ebe0130e3fb6a195",
     "packages/desktop/src/renderer/public/material-icons/django.svg": "2e5d7fd0b2f70632cadbf2fe36bc3e9a70cfbf39812438b80e31aaf5f1beccbd",
     "packages/desktop/src/renderer/public/material-icons/dll.svg": "5c45ee3a6a63e5292be4d704b29a96238ed67a625e831d42941b68b0c8fd1d8c",
-    "packages/desktop/src/renderer/public/material-icons/docker.svg": "3d032b712bbedea1dd8a1103c40cf5f27ce5b1af83ae0c9312fd15eb3c341c66",
     "packages/desktop/src/renderer/public/material-icons/doctex-installer.svg": "f9e8f4a292cfd5ffd2471b8d305202ec667c8c8abbde92f127aaa4b1d0cba680",
     "packages/desktop/src/renderer/public/material-icons/document.svg": "64f5da56de591d5f429d2c7f5f5733388b3ce704762631ba0b487a08475f9452",
     "packages/desktop/src/renderer/public/material-icons/docx.svg": "2d19ec83e3cba9194dc0d4beb846fea25c3ddc11bea1768b88ea334a4b897d73",
@@ -555,8 +554,6 @@
     "packages/desktop/src/renderer/public/material-icons/folder-directive.svg": "8f7f5dd8320a3e3bfe19d5db1ee260db03c17c10a05b774824c6d27a2a4e457c",
     "packages/desktop/src/renderer/public/material-icons/folder-dist-open.svg": "d64c807547096f207f1fe80687e2b44839d30fbc5d3bc37efe3d342c1b07f2cd",
     "packages/desktop/src/renderer/public/material-icons/folder-dist.svg": "0a1d768485b25d8e464ea7306c82057b34e354e00157940d73a62fdb8660af62",
-    "packages/desktop/src/renderer/public/material-icons/folder-docker-open.svg": "539dc42dc3717cf73fc72affc426570b2427f84d7a8d9b8aa8746da09ddae054",
-    "packages/desktop/src/renderer/public/material-icons/folder-docker.svg": "658444edb22dfe12029552c4aa72b8a34dfa144e735cb368a59df0801acfb520",
     "packages/desktop/src/renderer/public/material-icons/folder-docs-open.svg": "ac7111260c192d3366fed6a3f03a7eeed6b72920c703e3f0946acf065e465562",
     "packages/desktop/src/renderer/public/material-icons/folder-docs.svg": "71bec357e64761462d18b66fa9c6095fe390ab29e1d5977c1f89e3dbd3e6fca3",
     "packages/desktop/src/renderer/public/material-icons/folder-download-open.svg": "2c43818672b21cdfe90bd755a999ab5626a7a2bf70f4c0af3c36d66844144ba0",
@@ -1665,7 +1662,6 @@
     "packages/web/public/material-icons/disc.svg": "6c4af1e943afe4945ba0218be5d1ab7f85b16fe6dde63531ebe0130e3fb6a195",
     "packages/web/public/material-icons/django.svg": "2e5d7fd0b2f70632cadbf2fe36bc3e9a70cfbf39812438b80e31aaf5f1beccbd",
     "packages/web/public/material-icons/dll.svg": "5c45ee3a6a63e5292be4d704b29a96238ed67a625e831d42941b68b0c8fd1d8c",
-    "packages/web/public/material-icons/docker.svg": "3d032b712bbedea1dd8a1103c40cf5f27ce5b1af83ae0c9312fd15eb3c341c66",
     "packages/web/public/material-icons/doctex-installer.svg": "f9e8f4a292cfd5ffd2471b8d305202ec667c8c8abbde92f127aaa4b1d0cba680",
     "packages/web/public/material-icons/document.svg": "64f5da56de591d5f429d2c7f5f5733388b3ce704762631ba0b487a08475f9452",
     "packages/web/public/material-icons/docx.svg": "2d19ec83e3cba9194dc0d4beb846fea25c3ddc11bea1768b88ea334a4b897d73",
@@ -1825,8 +1821,6 @@
     "packages/web/public/material-icons/folder-directive.svg": "8f7f5dd8320a3e3bfe19d5db1ee260db03c17c10a05b774824c6d27a2a4e457c",
     "packages/web/public/material-icons/folder-dist-open.svg": "d64c807547096f207f1fe80687e2b44839d30fbc5d3bc37efe3d342c1b07f2cd",
     "packages/web/public/material-icons/folder-dist.svg": "0a1d768485b25d8e464ea7306c82057b34e354e00157940d73a62fdb8660af62",
-    "packages/web/public/material-icons/folder-docker-open.svg": "539dc42dc3717cf73fc72affc426570b2427f84d7a8d9b8aa8746da09ddae054",
-    "packages/web/public/material-icons/folder-docker.svg": "658444edb22dfe12029552c4aa72b8a34dfa144e735cb368a59df0801acfb520",
     "packages/web/public/material-icons/folder-docs-open.svg": "ac7111260c192d3366fed6a3f03a7eeed6b72920c703e3f0946acf065e465562",
     "packages/web/public/material-icons/folder-docs.svg": "71bec357e64761462d18b66fa9c6095fe390ab29e1d5977c1f89e3dbd3e6fca3",
     "packages/web/public/material-icons/folder-download-open.svg": "2c43818672b21cdfe90bd755a999ab5626a7a2bf70f4c0af3c36d66844144ba0",
@@ -12217,18 +12211,6 @@
       ]
     },
     {
-      "name": "is-docker",
-      "version": "3.0.0",
-      "license": "MIT",
-      "repository": "sindresorhus/is-docker",
-      "notices": [
-        {
-          "member": "license",
-          "sha256": "5c932d88256b4ab958f64a856fa48e8bd1f55bc1d96b8149c65689e0c61789d3"
-        }
-      ]
-    },
-    {
       "name": "is-extglob",
       "version": "2.1.1",
       "license": "MIT",
@@ -21059,10 +21041,6 @@
           "sha256": "5c45ee3a6a63e5292be4d704b29a96238ed67a625e831d42941b68b0c8fd1d8c"
         },
         {
-          "file": "packages/desktop/src/renderer/public/material-icons/docker.svg",
-          "sha256": "3d032b712bbedea1dd8a1103c40cf5f27ce5b1af83ae0c9312fd15eb3c341c66"
-        },
-        {
           "file": "packages/desktop/src/renderer/public/material-icons/doctex-installer.svg",
           "sha256": "f9e8f4a292cfd5ffd2471b8d305202ec667c8c8abbde92f127aaa4b1d0cba680"
         },
@@ -21697,14 +21675,6 @@
         {
           "file": "packages/desktop/src/renderer/public/material-icons/folder-dist.svg",
           "sha256": "0a1d768485b25d8e464ea7306c82057b34e354e00157940d73a62fdb8660af62"
-        },
-        {
-          "file": "packages/desktop/src/renderer/public/material-icons/folder-docker-open.svg",
-          "sha256": "539dc42dc3717cf73fc72affc426570b2427f84d7a8d9b8aa8746da09ddae054"
-        },
-        {
-          "file": "packages/desktop/src/renderer/public/material-icons/folder-docker.svg",
-          "sha256": "658444edb22dfe12029552c4aa72b8a34dfa144e735cb368a59df0801acfb520"
         },
         {
           "file": "packages/desktop/src/renderer/public/material-icons/folder-docs-open.svg",
@@ -25643,10 +25613,6 @@
           "sha256": "5c45ee3a6a63e5292be4d704b29a96238ed67a625e831d42941b68b0c8fd1d8c"
         },
         {
-          "file": "packages/web/public/material-icons/docker.svg",
-          "sha256": "3d032b712bbedea1dd8a1103c40cf5f27ce5b1af83ae0c9312fd15eb3c341c66"
-        },
-        {
           "file": "packages/web/public/material-icons/doctex-installer.svg",
           "sha256": "f9e8f4a292cfd5ffd2471b8d305202ec667c8c8abbde92f127aaa4b1d0cba680"
         },
@@ -26281,14 +26247,6 @@
         {
           "file": "packages/web/public/material-icons/folder-dist.svg",
           "sha256": "0a1d768485b25d8e464ea7306c82057b34e354e00157940d73a62fdb8660af62"
-        },
-        {
-          "file": "packages/web/public/material-icons/folder-docker-open.svg",
-          "sha256": "539dc42dc3717cf73fc72affc426570b2427f84d7a8d9b8aa8746da09ddae054"
-        },
-        {
-          "file": "packages/web/public/material-icons/folder-docker.svg",
-          "sha256": "658444edb22dfe12029552c4aa72b8a34dfa144e735cb368a59df0801acfb520"
         },
         {
           "file": "packages/web/public/material-icons/folder-docs-open.svg",

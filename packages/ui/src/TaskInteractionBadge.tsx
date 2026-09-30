@@ -6,7 +6,7 @@ interface TaskInteractionBadgeProps {
   interaction?: ZCodeTaskPendingInteraction;
   legacyPending?: boolean;
   className?: string;
-  /** fake-clock / SSR 注入；生产缺省使用当前绝对时间。 */
+  /** fake-clock / SSR injection; production defaults to the current absolute time. */
   now?: number;
   formatMessage: (id: string) => string;
   onSnoozeCountdown?: (interactionId: string) => boolean | Promise<boolean>;
@@ -22,8 +22,8 @@ function isAskUserQuestionInteraction(
   interaction: ZCodeTaskPendingInteraction | undefined,
 ): boolean {
   if (!interaction || interaction.kind !== "userInput") return false;
-  // 旧 sessions-index 摘要没有 toolName；autoResolution 只属于普通 AskUserQuestion，
-  // 因此可作为恢复旧帧时的兼容判据。
+  // Old sessions-index summary has no toolName; autoResolution only belongs to normal AskUserQuestion,
+  // Therefore, it can be used as a compatibility criterion when restoring old frames.
   return (
     interaction.toolName?.trim().toLowerCase() === "askuserquestion" ||
     interaction.autoResolution !== undefined
@@ -43,8 +43,8 @@ function getTaskInteractionBadgePresentation(
   }
   const autoResolution = interaction.autoResolution;
   if (!autoResolution) {
-    // permission_requested 与 durable autoResolution event 可能相邻两帧到达；已知工具身份时
-    // 先稳定显示 Ask 交互，并允许 runtime 幂等处理提前的暂停意图。
+    // permission_requested and durable autoResolution event may arrive in two adjacent frames; when the tool identity is known
+    // Stable display of Ask interactions first, and allow the runtime to handle premature pause intentions idempotently.
     return { kind: "userInput", canSnooze: true };
   }
   if (autoResolution.state === "snoozed") {
@@ -58,7 +58,7 @@ function getTaskInteractionBadgePresentation(
   return { kind: "userInput", countdownProgress: progress, canSnooze: true };
 }
 
-/** 普通、timeline、grouped task row 共用的阻塞交互胶囊。 */
+/** The blocking-interaction pill shared by plain, timeline, and grouped task rows. */
 export function TaskInteractionBadge({
   interaction,
   legacyPending = false,
@@ -73,10 +73,10 @@ export function TaskInteractionBadge({
 
   useEffect(() => {
     if (injectedNow !== undefined) return;
-    // reduced-motion 不连续动画；窗口重新活跃时只按绝对 deadline 校准一次。
+    // reduced-motion discontinuous animation; the window is calibrated only once to the absolute deadline when it becomes active again.
     const refresh = () => setClockNow(Date.now());
-    // 原因：task row 通常比 pending interaction 存活更久；新问答或阶段事件到达时若沿用
-    // row mount 时的旧 clock，可能把 visibleCountdown 误判成仍在静默期。
+    // Reason: task row usually survives longer than pending interaction; if a new question or stage event arrives, it will be used
+    // The old clock during row mount may misjudge visibleCountdown as still in the silent period.
     refresh();
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", refresh);
@@ -160,7 +160,7 @@ export function TaskInteractionBadge({
   );
 
   const badgeClassName = cn(
-    // 原因：权限确认和用户问答使用相同的“等待确认”文案，颜色分叉会让同一状态看似不一致。
+    // Reason: Permission confirmation and user Q&A use the same "waiting for confirmation" copy, and the color split will make the same status look inconsistent.
     "relative inline-flex h-5 shrink-0 items-center justify-center overflow-hidden rounded-full border border-transparent bg-interaction-confirmation-surface px-2 text-ui-sm font-medium text-interaction-confirmation-foreground",
     className,
   );

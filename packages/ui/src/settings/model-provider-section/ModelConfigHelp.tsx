@@ -24,7 +24,7 @@ export function ModelConfigInputLabel({
 }) {
   const { intl } = useZCodeIntl();
   return (
-    // 帮助按钮必须是 label 的兄弟，避免抢走输入关联和标题点击焦点。
+    // The help button must be a sibling of the label to avoid taking away input association and title click focus.
     <>
       <label htmlFor={htmlFor}>
         {intl.formatMessage({ id: `settings.modelProvider.${field}` })}
@@ -60,7 +60,7 @@ export function ModelConfigHelp({ field }: { field: ModelConfigHelpField }) {
           }}
           onFocus={() => setOpen(true)}
           onClick={(event) => {
-            // 点击/触摸只打开说明；阻止 Radix 在已由 focus/hover 打开时反向关闭，不触发相邻表单控件。
+            // Click/touch only opens the description; prevents Radix from closing when already opened by focus/hover, without triggering adjacent form controls.
             event.preventDefault();
             event.stopPropagation();
             setOpen(true);
@@ -98,7 +98,7 @@ export function ModelConfigHelp({ field }: { field: ModelConfigHelpField }) {
   );
 }
 
-// 只呈现定稿语言包的加粗/行内代码，不解释 HTML、链接或用户输入。
+// Only the bold/inline code of the final language pack is rendered, no HTML, links or user input is interpreted.
 function emphasis(text: string) {
   return text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((part, index) =>
     part.startsWith("**") ? (

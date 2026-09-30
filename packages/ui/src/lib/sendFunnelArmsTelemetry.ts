@@ -1,9 +1,9 @@
 import type { ArmsCustomEventPayload, IPlatformService } from "@zcode/shared";
 import { logger } from "@/logger.js";
 
-// Composer 发送漏斗埋点的 ARMS 出口。
-// 本组事件只走 ARMS，不进 /event/report；reporter 由 Root.tsx 按 isDesktop 安装，
-// Web / 手机远控拿不到 reporter，整组静默。
+// Composer sends the ARMS outlet of the funnel buried point.
+// This group of events only goes to ARMS, not /event/report; the reporter is installed by Root.tsx according to isDesktop.
+// Web/Mobile remote control cannot get the reporter, and the entire group is silent.
 
 const SEND_FUNNEL_ARMS_GROUP = "send_funnel";
 
@@ -13,7 +13,7 @@ const SEND_FUNNEL_EVENT_SEND_RESULT = "send_result";
 
 type ArmsReporter = Pick<IPlatformService, "reportArmsCustomEvent">;
 
-/** 发送落定的原因码。 */
+/** Reason code for how a send settled. */
 export type SendFunnelReasonCode =
   | "attachment_not_ready"
   | "blocked"
@@ -31,31 +31,40 @@ export function setSendFunnelArmsReporter(reporter: ArmsReporter | null): void {
   armsReporter = reporter;
 }
 
-// 原因:ARMS 属观测链路,发送主链路不得因埋点失败而中断。
+// Reason: ARMS is an observation link, and the main sending link must not be interrupted due to point burying failure.
 function emit(payload: ArmsCustomEventPayload): void {
   if (!armsReporter) {
     return;
   }
   try {
     void Promise.resolve(armsReporter.reportArmsCustomEvent(payload)).catch((error) => {
-      logger.warn("[send-funnel] ARMS 上报失败", { name: payload.name, error });
+      logger.warn("[send-funnel] ARMS report failed", { name: payload.name, error });
     });
   } catch (error) {
-    logger.warn("[send-funnel] ARMS 上报异常", { name: payload.name, error });
+    logger.warn("[send-funnel] ARMS report threw", { name: payload.name, error });
   }
 }
 
-/** 会话态 / 草稿态，用于区分「已有会话里发」和「新建任务首发」两类漏斗。 */
+/**
+ * Session state / draft state, used to tell the "sent inside an existing session" and "first send
+ * of a new task" funnels apart.
+ */
 function composerScopeOf(sessionId: string | null | undefined): "session" | "draft" {
   return sessionId ? "session" : "draft";
 }
 
-/** 空 sessionId / commandId 不下发对应 property，避免 ARMS 侧出现空串维度。 */
+/**
+ * An empty sessionId / commandId does not report the corresponding property, so no empty-string
+ * dimension shows up on the ARMS side.
+ */
 function optionalId(value: string | null | undefined): string | undefined {
   return value ? value : undefined;
 }
 
-/** 点击输入框（仅用户真实聚焦，程序性自动聚焦由 composer 侧拦截）。 */
+/**
+ * Clicking the input box (only genuine user focus; programmatic autofocus is intercepted on the
+ * composer side).
+ */
 export function reportSendFunnelInputFocus(params: {
   sessionId: string | null;
   focusTime: number;
@@ -72,7 +81,7 @@ export function reportSendFunnelInputFocus(params: {
   });
 }
 
-/** 点击发送 / Enter 提交并通过发送门禁。 */
+/** Clicking send / pressing Enter submits and passes the send gate. */
 export function reportSendFunnelSendClick(params: {
   sessionId: string | null;
   sendClickId: string;
@@ -96,11 +105,12 @@ export function reportSendFunnelSendClick(params: {
 }
 
 /**
- * 发送落定（成功与失败共用）。value 取 send_cost_ms，
- * 让 ARMS 可以直接对该事件做 avg/p50/p95/p99 并按 status / reason_code 切分。
+ * A send settling (shared by success and failure). The value is send_cost_ms, so ARMS can compute
+ * avg/p50/p95/p99 for this event directly and slice it by status / reason_code.
  *
- * costMs 是**端到端**耗时：点击发送 → 用户消息呈现在对话历史里。
- * ackCostMs 单独留出「点击发送 → 收到 ACK」那一段，两者相减即「回流 + 渲染」耗时。
+ * costMs is the **end-to-end** duration: clicking send → the user message appearing in the
+ * conversation history. ackCostMs separately isolates the "clicking send → receiving the ACK"
+ * segment; the difference between the two is the "return trip + rendering" duration.
  */
 export function reportSendFunnelSendResult(params: {
   sessionId: string | null;

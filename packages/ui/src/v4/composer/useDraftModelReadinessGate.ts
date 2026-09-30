@@ -16,13 +16,22 @@ interface DraftModelReadinessState {
 }
 
 interface DraftModelReadinessGate {
-  /** 只有 readiness 已确认或检查本身不可用时，才允许进入 workspace prepare/prewarm。 */
+  /**
+   * Entering workspace prepare/prewarm is allowed only once readiness is confirmed or the check
+   * itself is unavailable.
+   */
   agentStartupAllowed: boolean;
   error: ModelConfigMissingUiError | null;
   dismissError(): void;
-  /** 首发 admission 的权威复查；false 表示应保留 composer 并返回 blocked。 */
+  /**
+   * The authoritative re-check for first-send admission; false means the composer should be kept
+   * and blocked returned.
+   */
   ensureReadyForSend(): Promise<boolean>;
-  /** Host 门禁在 UI 复查后竞态命中时，将同一错误重新投影到草稿横幅。 */
+  /**
+   * When the Host gate wins the race after the UI re-check, the same error is projected back onto
+   * the draft banner.
+   */
   markProviderNotReady(): void;
 }
 
@@ -33,11 +42,12 @@ function resolveModelSelectionReadinessStatus(
 }
 
 /**
- * V4 草稿的 provider/model admission。
+ * provider/model admission for V4 drafts.
  *
- * V4 迁移删除了旧 useWorkspacePrepare 的 renderer readiness 门禁，草稿首发
- * 会先登记 pending command，再由 Host 以 provider_not_ready 拒绝。这个确定性拒绝随后会
- * 被恢复账本误判成 unknown。这里恢复 UI 前置门禁；Host 门禁继续负责进程级竞态兜底。
+ * The V4 migration removed the old useWorkspacePrepare renderer readiness gate, so a draft's first
+ * send registers a pending command first and is then rejected by the Host with provider_not_ready.
+ * This deterministic rejection is afterwards misjudged by the recovery ledger as unknown. The UI
+ * front gate is restored here; the Host gate continues to cover process-level races as a fallback.
  */
 export function useDraftModelReadinessGate(params: {
   workspacePath: string;
@@ -96,7 +106,7 @@ export function useDraftModelReadinessGate(params: {
     void modelSelectionService
       .getView()
       .then((view) => {
-        // 读取在变更事件之前发起、之后才返回时，事件快照更新；禁止旧读取覆盖新状态。
+        // When a read is initiated before and returns after a change event, the event snapshot is updated; old reads are prohibited from overwriting the new state.
         if (registryEventVersion !== initialReadVersion) return;
         applyStatus(resolveModelSelectionReadinessStatus(view));
       })
@@ -106,10 +116,10 @@ export function useDraftModelReadinessGate(params: {
 
     function handleReadinessFailure(error: unknown) {
       if (disposed) return;
-      // registry 读取异常不等价于“确实没有模型”。保留 Host 门禁作为兜底，避免把
-      // app-global service 的瞬时故障错误显示成用户配置问题。
+      // A registry read exception is not equivalent to "there really is no model". Keep the Host access control as a backup to avoid
+      // Transient failure errors in the app-global service appear as user configuration issues.
       commitStatus("check-failed");
-      logger.warn("[v4-draft-readiness] provider registry 检查失败，回落 Host 门禁", {
+      logger.warn("[v4-draft-readiness] provider registry check failed, using Host gate", {
         error: error instanceof Error ? error.message : String(error),
         workspaceKey,
       });
@@ -137,7 +147,7 @@ export function useDraftModelReadinessGate(params: {
       const status = resolveModelSelectionReadinessStatus(view);
       commitStatus(status, { revealMissing: status === "missing" });
       if (status === "missing") {
-        logger.info("[v4-draft-readiness] 无可用 provider/model，草稿首发在 UI admission 拒绝", {
+        logger.info("[v4-draft-readiness] no provider/model available, first draft send rejected", {
           providerCount: view.providers.length,
           revision: view.revision,
           workspaceKey,
@@ -146,9 +156,9 @@ export function useDraftModelReadinessGate(params: {
       }
       return true;
     } catch (error) {
-      // 与 mount 检查一致：读 registry 失败不冒充“没有模型”，继续由 Host 启动门禁裁决。
+      // Consistent with the mount check: failure to read the registry does not pretend to be "no model", and the Host continues to start the access control decision.
       commitStatus("check-failed");
-      logger.warn("[v4-draft-readiness] 首发复查 provider registry 失败，回落 Host 门禁", {
+      logger.warn("[v4-draft-readiness] provider registry recheck failed, using Host gate", {
         error: error instanceof Error ? error.message : String(error),
         workspaceKey,
       });

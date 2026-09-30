@@ -81,12 +81,12 @@ export function usePluginCreator(
         isCurrent,
       );
       if (prefill) {
-        logger.info("[PluginCreator] 已解析创建技能", { workspaceKey: targetKey });
+        logger.info("[PluginCreator] resolved create-skill prefill", { workspaceKey: targetKey });
         onCreateTask({ ...prefill, expectedWorkspaceKey: targetKey });
       }
     } catch (error) {
       if (isCurrent()) {
-        logger.warn("[PluginCreator] 创建技能不可用", {
+        logger.warn("[PluginCreator] create skill unavailable", {
           error: error instanceof Error ? error.message : String(error),
           workspaceKey: targetKey,
         });

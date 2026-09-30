@@ -28,7 +28,7 @@ export async function repairEmptyImportedClaudeSessionSnapshot(params: {
     onRepair: (history) => {
       logger.warn(
         undefined,
-        `[zcode-session-service] Claude 导入 session 历史异常，按 ${history.source} 回填 taskId=${params.target.sessionId}`,
+        `[zcode-session-service] Claude imported session history is abnormal, backfilling by ${history.source} taskId=${params.target.sessionId}`,
       );
     },
   });

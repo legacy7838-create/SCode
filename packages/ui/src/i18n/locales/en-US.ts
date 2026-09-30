@@ -1749,7 +1749,7 @@ const enUS: Record<string, string> = {
   "webRemoteControl.botChannel.manageBots": "Manage bots",
   "remote.title": "Connect remote environment",
   "remote.description":
-    "Connect to a remote workspace over SSH, Server, WSL, or Docker, then choose a directory in the current window.",
+    "Connect to a remote workspace over SSH, Server, or WSL, then choose a directory in the current window.",
   "remote.step.connect": "Connect",
   "remote.step.selectDirectory": "Choose directory",
   "remote.selectDirectoryTitle": "Choose remote directory",
@@ -1760,10 +1760,8 @@ const enUS: Record<string, string> = {
   "remote.methods": "Connection method",
   "remote.kind.ssh": "SSH",
   "remote.kind.wsl": "WSL",
-  "remote.kind.docker": "Docker",
   "remote.kind.ssh.wizardDescription": "Remote host",
   "remote.kind.wsl.wizardDescription": "Windows Subsystem for Linux",
-  "remote.kind.docker.wizardDescription": "Local container",
   "remote.connect": "Connect",
   "remote.connecting": "Connecting...",
   "remote.minimize": "Minimize remote connection window",
@@ -1785,7 +1783,6 @@ const enUS: Record<string, string> = {
     "Failed to load local runtime options. You can still enter values manually.",
   "remote.log.prepare": "Wizard parameters validated. Preparing the connection request.",
   "remote.log.sshTarget": "SSH target: {username}@{host}:{port}",
-  "remote.log.dockerTarget": "Docker container target: {container}",
   "remote.log.requestingSession": "Requesting the host process to create a remote session...",
   "remote.log.sessionReady":
     "Remote session created successfully. You can choose a directory next.",
@@ -1805,16 +1802,6 @@ const enUS: Record<string, string> = {
   "wsl.detectedCount": "{count} distros detected on this device.",
   "wsl.noDistros":
     "No WSL distros were detected. You can still connect to the default distro if WSL is installed.",
-  "docker.description": "Connect to a local container using docker exec and docker cp.",
-  "docker.container": "Container",
-  "docker.containerPlaceholder": "Enter container name or ID, e.g. my-container",
-  "docker.manualContainerHint":
-    "If the running container list is incomplete, enter a container name or ID manually to connect.",
-  "docker.selectContainer": "Choose a running container",
-  "docker.loading": "Detecting running containers...",
-  "docker.unavailable": "No running containers detected.",
-  "docker.noContainers": "No running containers detected.",
-  "docker.validation.required": "Container name or ID is required",
 
   // Locale switch
   "locale.switchLanguage": "Switch language",
@@ -2168,7 +2155,7 @@ const enUS: Record<string, string> = {
   "settings.memory.viewer.updated.today": "Today {time}",
   "settings.memory.viewer.updated.yesterday": "Yesterday {time}",
   "settings.memory.viewer.updated.weekday": "{weekday} {time}",
-  "settings.memory.viewer.updated.weekdayZh": "周{weekday}",
+  "settings.memory.viewer.updated.weekdayZh": "Week {weekday}",
   "settings.memory.viewer.updated.date": "{date} {time}",
   "settings.memory.viewer.updated.dateMonthDay": "{month}/{day}",
   "settings.memory.viewer.updated.dateYearMonthDay": "{year}/{month}/{day}",
@@ -2279,12 +2266,8 @@ const enUS: Record<string, string> = {
   "settings.dataBaseDirForbiddenInstallDir":
     "The data directory cannot be the ZCode installation folder on Windows. Choose a folder outside the app install location.",
   "settings.dataBaseDirRestartRequired": "Data saved. Please restart the app to take effect.",
-  "settings.locale.system": "System default",
-  "settings.locale.zh-CN": "中文简体",
   "settings.locale.en-US": "English",
   "sidebar.settings.systemDefault": "System default",
-  "sidebar.settings.locale.en-US": "English",
-  "sidebar.settings.locale.zh-CN": "中文简体",
   "sidebar.settings.interfaceZoom": "Interface zoom",
   "sidebar.settings.theme.light": "Light theme",
   "sidebar.settings.theme.zai-light": "Light theme",
@@ -5048,7 +5031,7 @@ const enUS: Record<string, string> = {
     "{count} more subagents · list everyone in the run pane",
   "chat.toolCall.workflow.timeline.roster.door.list": "{count} more subagents · list them here",
   "chat.toolCall.workflow.timeline.roster.door.fold": "{count} more subagents · fold",
-  // 门后名单末尾的那一行：被淘汰的子代理没有行，差额在这里说明（本仓的轻量 intl 无 ICU 复数）。
+  // The last line at the tail of the roster behind the door: eliminated subagents have no row, so the difference is explained here (this repo's lightweight intl has no ICU plurals).
   "chat.toolCall.workflow.timeline.roster.unlisted.one": "1 more agent not listed",
   "chat.toolCall.workflow.timeline.roster.unlisted.many": "{count} more agents not listed",
   "chat.toolCall.workflow.timeline.ledge.earlier": "{count} earlier phase(s), scrolled out of view",
@@ -5329,7 +5312,7 @@ const enUS: Record<string, string> = {
   "chat.backgroundResult.workflow.completed": "Workflow completed",
   "chat.backgroundResult.workflow.errored": "Workflow errored",
   "chat.backgroundResult.workflow.stopped": "Workflow stopped",
-  // run 级停滞通知：run 还在跑，只是没有进展。
+  // Run-level stall notice: the run is still going, just not making progress.
   "chat.backgroundResult.workflow.stall": "Workflow waiting on the model",
   "chat.backgroundResult.workflow.stall.body":
     "No model request in this run has succeeded for {minutes} min. It is still running and retrying with backoff; stop it from the run card if you no longer need it.",
@@ -5340,7 +5323,7 @@ const enUS: Record<string, string> = {
   "chat.backgroundResult.workflow.asked": "Subagent asked a question",
   "chat.backgroundResult.workflow.artifacts.more": "+{count}",
   // ── Escalation tool cards ──
-  // escalate：子代理把阻塞问题升级给主代理，停驻等答案。asking 相可能持续很久，措辞要平静。
+  // escalate: the subagent escalates a blocking issue to the main agent and parks waiting for an answer. The asking phase can last a long time, so the wording must stay calm.
   "chat.toolCall.workflow.escalate.asking": "Asking the main agent",
   "chat.toolCall.workflow.escalate.asked": "Asked the main agent",
   "chat.toolCall.workflow.escalate.question": "Question",
@@ -5359,7 +5342,7 @@ const enUS: Record<string, string> = {
   "chat.toolCall.workflow.run.status.completed": "Completed",
   "chat.toolCall.workflow.run.status.errored": "Errored",
   "chat.toolCall.workflow.run.status.stopped": "Stopped",
-  // stopped 的原因词，跟在状态词后。
+  // The reason words for stopped, following the status word.
   "chat.toolCall.workflow.run.stopReason.user": "by you",
   "chat.toolCall.workflow.run.stopReason.model": "by the agent",
   "chat.toolCall.workflow.run.stopReason.provider": "model error",
@@ -5374,8 +5357,8 @@ const enUS: Record<string, string> = {
   "chat.toolCall.workflow.run.usage.label": "Usage",
   "chat.toolCall.workflow.run.usage.tokens": "{tokens} tokens",
   "chat.toolCall.workflow.run.usage.value": "{tokens} tokens · {steps} steps",
-  // 实例表撞界后卡与详情页各有的那一句：停的是每一步的**详情**，不是 run，
-  // 它上面那些计数已经把表外的实例算进来了。
+  // After the instance table hits its bound, the line each of the card and the details page shows: what is stopped is the **details** of each
+  // step, not the run — the counters above already count the instances beyond the table.
   "chat.toolCall.workflow.run.truncated": "Details shown for {shown} of {total} steps",
   "chat.toolCall.workflow.run.cancel": "Stop run",
   "chat.toolCall.workflow.run.cancelling": "Stopping…",
@@ -5429,7 +5412,7 @@ const enUS: Record<string, string> = {
     "Continues as a new run with these settings; finished steps are kept.",
   "chat.toolCall.workflow.run.settings.consequence.errored":
     "Retries as a new run with these settings; finished steps are kept.",
-  // 只改并发上限、而且运行正在跑：就地生效。
+  // Only the concurrency cap is changed and the run is still going: it takes effect in place.
   "chat.toolCall.workflow.run.settings.consequence.concurrencyLive":
     "Applies to this run right away; no new run is started.",
   "chat.toolCall.workflow.run.settings.apply": "Apply",
@@ -5500,8 +5483,8 @@ const enUS: Record<string, string> = {
   "chat.toolCall.workflow.run.artifacts.preset.otherColumn": "Other",
   "chat.toolCall.workflow.run.artifacts.preset.empty": "No data yet",
   "chat.toolCall.workflow.run.artifacts.preset.items": "{count} items",
-  // 待答问题区（升级问答）：actor 停驻在自己那次 ask 里等
-  // 主代理回话。只读——应答者是主代理，不是用户，所以文案不能读起来像在请用户作答。
+  // The pending-questions area (escalation Q&A): the actor is parked in its own ask waiting for the
+  // main agent to reply. Read-only — the responder is the main agent, not the user, so the copy must not read like it is asking the user to answer.
   "chat.toolCall.workflow.run.questions.title": "Waiting on an answer",
   "chat.toolCall.workflow.run.graph.unavailable":
     "The workflow graph is not in this conversation's visible history.",
@@ -5568,7 +5551,7 @@ const enUS: Record<string, string> = {
     "Waiting for provider ({reason}) · retry in {seconds}s",
   "chat.toolCall.workflow.run.event.nodeExecuting": "Request sent",
   "chat.toolCall.workflow.run.event.concurrencyChanged": "Concurrency {previous} → {next}",
-  // 上一条是治理器在压共享桶；这一条是用户改了这次 run 自己的上限（就地生效，不另起一次运行）。
+  // The previous entry is the governor throttling the shared bucket; this one is the user changing this run's own cap (effective in place, no new run is started).
   "chat.toolCall.workflow.run.event.runCapsChanged": "Concurrency limit {previous} → {next}",
   "chat.toolCall.workflow.run.throttle.reason.rateLimited": "rate limited",
   "chat.toolCall.workflow.run.throttle.reason.overloaded": "overloaded",
@@ -6131,9 +6114,9 @@ const enUS: Record<string, string> = {
   "feedback.type.feature.description": "New capabilities or UX improvements",
   "feedback.type.performance.label": "Slow performance",
   "feedback.type.performance.description": "Lag, slow response, or resource issues",
-  "feedback.severity.P1-高.label": "Cannot use it",
-  "feedback.severity.P2-中.label": "Affects usage",
-  "feedback.severity.P3-低.label": "Minor issue/suggestion",
+  "feedback.severity.P1-High.label": "Cannot use it",
+  "feedback.severity.P2-Medium.label": "Affects usage",
+  "feedback.severity.P3-Low.label": "Minor issue/suggestion",
   "feedback.submit.bug.sectionTitle": "What happened?",
   "feedback.submit.bug.titleLabel": "Title",
   "feedback.submit.bug.titlePlaceholder": "Example: SSH connection fails",
@@ -6804,7 +6787,7 @@ const enUS: Record<string, string> = {
     "The Computer Use plugin is not enabled. Enable it in Plugins to use Computer Use.",
   "settings.computerUse.unsupported.title": "Computer Use is unavailable here",
   "settings.computerUse.unsupported.remoteDescription":
-    "Computer Use is not yet supported for SSH, WSL, Docker, or other remote environments. Switch to a local macOS or Windows workspace.",
+    "Computer Use is not yet supported for SSH, WSL, or other remote environments. Switch to a local macOS or Windows workspace.",
   "settings.computerUse.unsupported.linuxDescription":
     "Computer Use is not yet supported on Linux desktops. Switch to a local macOS or Windows workspace.",
   "settings.computerUse.unsupported.badge": "Unavailable here",

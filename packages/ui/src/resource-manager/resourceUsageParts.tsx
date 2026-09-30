@@ -1,6 +1,7 @@
 /**
- * 资源管理器 CPU / 内存 tab 的展示零件：双层指标卡、分组列表、进程行。
- * 只做格式化与布局，不持有任何指标状态。
+ * Display parts for the resource manager's CPU / memory tabs: the dual-layer metric card, the
+ * grouped list and the process row. They only do formatting and layout and hold no metric state
+ * themselves.
  */
 import { ChevronRight } from "lucide-react";
 import type { ResourceUsageProcess } from "@zcode/shared";
@@ -22,7 +23,10 @@ interface UsageMeterProps {
   systemLabel: string;
 }
 
-/** 双层进度条：灰色 = 整机总占用，brand = ZCode 自身占用；图例文字做颜色之外的第二编码 */
+/**
+ * Dual-layer progress bar: gray = whole-machine usage, brand = ZCode's own usage; the legend text
+ * provides a second encoding beyond color
+ */
 export function UsageMeter({
   testId,
   label,

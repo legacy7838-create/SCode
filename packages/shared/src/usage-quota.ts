@@ -1,9 +1,10 @@
 /**
- * Coding Plan 额度相关的纯类型定义。
+ * Pure type definitions for Coding Plan quota.
  *
- * 从 usage-stats.ts 拆出：MCP 额度接入后该文件超过 oxlint max-lines(400) 门禁，
- * 而额度是可以独立描述的一组类型（不依赖统计聚合结构），拆出后两边都在门禁内。
- * 这里只依赖自身，usage-stats.ts 单向导入并 re-export，不构成循环依赖。
+ * Split out of usage-stats.ts: once MCP quota landed, that file exceeded the oxlint max-lines(400) gate,
+ * while quota is a set of types that can be described independently (it does not depend on the stats
+ * aggregation structure), so after the split both sides are back under the gate.
+ * This file only depends on itself; usage-stats.ts imports it one-way and re-exports, so there is no circular dependency.
  */
 
 export interface UsageQuotaSnapshot {
@@ -13,16 +14,16 @@ export interface UsageQuotaSnapshot {
 
 export interface UsageQuotaLimit {
   type: string;
-  /** Start Plan 服务端额度桶及周期身份；周期时间为毫秒，供提醒去重。 */
+  /** Server-side Start Plan quota bucket and its period identity; the period times are milliseconds, used to de-duplicate reminders. */
   bucketId?: string;
   userPlanId?: string;
   periodStart?: number;
   periodEnd?: number;
-  /** 所属 entitlement 的周期类型，如 daily / one_time。 */
+  /** Period type of the owning entitlement, e.g. daily / one_time. */
   period?: string;
   meter?: string;
   unitType?: string;
-  /** Start Plan bucket 所属套餐身份，仅用于设置页按 plan 分组展示。 */
+  /** Plan identity the Start Plan bucket belongs to, used only so the settings page can group the display by plan. */
   planId?: string;
   unit?: number;
   number?: number;
@@ -41,14 +42,15 @@ export interface UsageQuotaUsageDetail {
 }
 
 /**
- * `aggregate.type` 的合成值。
+ * Synthetic value for `aggregate.type`.
  *
- * 不复用 TOKENS_LIMIT / TIME_LIMIT：`isSameLimitCategory` 会把 TIME_LIMIT 判为工具额度同类，
- * 让 MCP 汇总额度被现有的 findCodingPlanQuotaLimit 查询误命中。
+ * Deliberately not reusing TOKENS_LIMIT / TIME_LIMIT: `isSameLimitCategory` classifies TIME_LIMIT as a
+ * tool-quota category, which would let the existing findCodingPlanQuotaLimit query falsely match the
+ * MCP aggregate quota.
  */
 export const MCP_USAGE_QUOTA_LIMIT_TYPE = "MCP_USAGE_LIMIT" as const;
 
-/** MCP 额度所属的 Coding Plan 连接，供 UI 判断能否显示在当前 provider tab 下。 */
+/** The Coding Plan connection the MCP quota belongs to, so the UI can tell whether it can be shown under the current provider tab. */
 export type UsageMcpQuotaScope =
   | {
       providerFamily: "zai" | "bigmodel";
@@ -62,13 +64,14 @@ export type UsageMcpQuotaScope =
     };
 
 export interface UsageMcpQuotaSnapshot {
-  /** 服务端 server_time，毫秒（接口返回 Unix 秒）。 */
+  /** Server-side server_time, in milliseconds (the API returns Unix seconds). */
   serverTime: number;
   level: string | null;
   scope: UsageMcpQuotaScope;
   /**
-   * 服务端 `total_usage`（总已用 / 总额度 / 总剩余）的等价表达，直接复用现有额度条 / 额度卡的
-   * 展示逻辑。注意 percentage 沿用 quota 接口口径：**已使用占比**，展示端负责反转成剩余。
+   * Equivalent expression of the server-side `total_usage` (total used / total quota / total remaining), which
+   * reuses the existing quota bar / quota card display logic directly. Note that percentage follows the quota
+   * API's convention: **fraction used**; the display side is responsible for inverting it to remaining.
    */
   aggregate: UsageQuotaLimit;
 }

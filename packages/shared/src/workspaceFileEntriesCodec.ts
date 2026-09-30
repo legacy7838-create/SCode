@@ -1,29 +1,31 @@
 import type { WorkspaceFileEntry } from "@zcode/shared";
 
 /**
- * 工作区文件条目的列式编解码（worker/跨进程传输专用，零运行时依赖）。
- * 每行 `type\trelativePath`——name 是 relativePath 的最后段、path 由
- * rootPath 拼回，不重复传输（37 万条实测 65.7MB → ~25MB）。
- * Unix 文件名可含 \t、\n、\\，打包时转义、解包时还原。
+ * Columnar codec for workspace file entries (worker / cross-process transport only, zero runtime dependencies).
+ * Each line is `type\trelativePath` — name is the last segment of relativePath and path is
+ * rebuilt from rootPath, so neither is transmitted twice (370k entries measured 65.7MB → ~25MB).
+ * Unix filenames may contain \t, \n, \\; they are escaped while packing and restored while unpacking.
  *
- * 传输形态选择（性能约束）：
- * - RPC 顶层返回裸 string：走框架的 String 快速路径（长度前缀+原始字节），
- *   避免 Object 的 JSON.stringify/parse 对含 \t\n 大字符串的转义开销（实测 6-9s）；
- * - 单条消息不超过 WORKSPACE_FILE_ENTRIES_CHUNK_SIZE（~4MB）：大消息在 renderer
- *   接收端的分帧重组是秒级主线程长任务（实测 4.6-6.3s），分块拉取 + 块间让出
- *   事件循环后，主线程任何时刻只处理一小块（~50ms），输入永不冻结。
+ * Why this wire shape (performance constraints):
+ * - RPC returns a bare string at the top level to take the framework's String fast path
+ *   (length prefix + raw bytes), avoiding the escaping cost that Object's JSON.stringify/parse
+ *   pays on large strings containing \t\n (measured 6-9s);
+ * - A single message never exceeds WORKSPACE_FILE_ENTRIES_CHUNK_SIZE (~4MB): reassembling a large
+ *   message's frames on the renderer side is a multi-second main-thread long task (measured 4.6-6.3s);
+ *   with chunked fetching plus yielding the event loop between chunks, the main thread only ever
+ *   handles one small chunk (~50ms), so typing never freezes.
  */
 const FIELD_SEPARATOR = "\t";
 const LINE_SEPARATOR = "\n";
 
-/** 单块目标大小（字符数）；调用方按 totalLength 分块拉取。 */
+/** Target size of a single chunk (in characters); callers chunk their fetches by totalLength. */
 export const WORKSPACE_FILE_ENTRIES_CHUNK_SIZE = 4_000_000;
 
 function escapeField(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/\t/g, "\\t").replace(/\n/g, "\\n");
 }
 
-// 正则一次性还原转义（比逐字符循环快数倍，37 万行下节省秒级 worker 时间）。
+// Regular escapes can be restored at once (several times faster than character-by-character looping, saving seconds of worker time for 370,000 lines).
 const UNESCAPE_PATTERN = /\\(.)/g;
 
 function unescapeField(value: string): string {
@@ -47,8 +49,8 @@ export function packWorkspaceFileEntries(entries: WorkspaceFileEntry[]): string 
 }
 
 /**
- * 解包并拼回完整 entries：name 取 relativePath 最后段，path 由 rootPath 拼出
- * （rootPath 以分隔符结尾与否都兼容；Windows 下用 \、其余用 /）。
+ * Unpack and reassemble the complete entries: name is the last segment of relativePath, and path is
+ * built from rootPath (works whether or not rootPath ends with a separator; \ on Windows, / elsewhere).
  */
 export function unpackWorkspaceFileEntries(packed: string, rootPath: string): WorkspaceFileEntry[] {
   if (packed.length === 0) {
@@ -69,7 +71,7 @@ export function unpackWorkspaceFileEntries(packed: string, rootPath: string): Wo
     }
     const relativePath = unescapeField(line.slice(tabAt + 1));
     const lastSlash = relativePath.lastIndexOf("/");
-    // Windows root 下把 posix 相对路径的分隔符也换回 \，保持与 node:path.join 一致。
+    // Under Windows root, the delimiter of posix relative path is also changed back to \, keeping it consistent with node:path.join.
     const pathPart = separator === "/" ? relativePath : relativePath.split("/").join("\\");
     entries.push({
       name: lastSlash === -1 ? relativePath : relativePath.slice(lastSlash + 1),

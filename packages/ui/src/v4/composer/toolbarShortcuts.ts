@@ -1,15 +1,16 @@
 /**
- * V4 composer 工具条键盘热键（composer parity）。
+ * V4 composer toolbar keyboard shortcuts (composer parity).
  *
- * 判定为纯逻辑（无 store / 协议依赖，仅消费 config 目录选项与回调）。
- * 绑定处的回调只修改 Composer：
- * - Ctrl+M        → 打开模型菜单（openRequestKey 递增，ModelConfigSelect 消费）
- * - Ctrl+Shift+M  → 循环下一次 Submission 的模式
- * - Ctrl+T        → 循环下一次 Submission 的思考深度
+ * Judged to be pure logic (no store / protocol dependencies; it only consumes config catalog
+ * options and callbacks). The callbacks at the binding site only mutate the Composer:
+ * - Ctrl+M → open the model menu (openRequestKey increments, consumed by ModelConfigSelect)
+ * - Ctrl+Shift+M → cycle the mode of the next Submission
+ * - Ctrl+T → cycle the thought depth of the next Submission
  *
- * 三条热键已转正为命令表命令（openModelMenu / cycleSessionMode /
- * cycleThoughtLevel，window 通道全局作用域），键位匹配读生效表，可在设置页改绑；
- * 默认键位保持既有行为，零变化。
+ * All three shortcuts have been promoted to command-table commands (openModelMenu /
+ * cycleSessionMode / cycleThoughtLevel, global scope on the window channel); key matching reads the
+ * effective table, so they can be rebound in the settings page. The default keys keep the existing
+ * behavior, with zero change.
  */
 import { useEffect, useRef } from "react";
 import type { ShortcutCommandId, ZCodeConfigOption } from "@zcode/shared";
@@ -23,7 +24,7 @@ import { logger } from "@/logger.js";
 
 type ChatToolbarShortcutKey = "m" | "ctrlShiftM" | "t" | null;
 
-/** 按 config category 解析工具条热键槽位。 */
+/** Resolves the toolbar shortcut slot by config category. */
 function getChatToolbarShortcutKey(
   category: ZCodeConfigOption["category"],
 ): ChatToolbarShortcutKey {
@@ -39,7 +40,7 @@ function getChatToolbarShortcutKey(
   }
 }
 
-/** 计算 select 选项的下一次循环取值（模式循环用）。 */
+/** Computes the next cyclic value of a select's options (used for mode cycling). */
 export function getNextConfigSelectValue(
   option: Pick<ZCodeConfigOption, "type" | "currentValue" | "options">,
 ): string | null {
@@ -78,10 +79,12 @@ interface ToolbarShortcutState {
 type ToolbarShortcutAction = "openModelMenu" | "cycleSessionMode" | "cycleThoughtLevel";
 
 /**
- * 按生效表解析工具条动作（工具条热键转正为可配置命令）。
- * 键位匹配走内核（命令表 + matcher，修饰精确匹配，与旧 matchesCtrlShortcut 系列
- * 对 "Ctrl+m" / "Ctrl+Shift+m" / "Ctrl+t" 的语义一致）；原 option 归属与 disabled
- * 门控保持不变。事件与生效表由调用方传入，纯函数可独立单测。
+ * Resolves the toolbar action from the effective table (the toolbar shortcuts have been promoted to
+ * configurable commands). Key matching goes through the kernel (command table + matcher, with exact
+ * modifier matching and semantics consistent with the old matchesCtrlShortcut family for "Ctrl+m" /
+ * "Ctrl+Shift+m" / "Ctrl+t"); the original option ownership and the disabled gating stay unchanged.
+ * The event and the effective table are passed in by the caller, and the pure function can be
+ * unit-tested on its own.
  */
 function resolveToolbarShortcutAction(
   event: ToolbarShortcutKeyboardEvent,
@@ -161,9 +164,14 @@ export function useToolbarShortcutBindings(params: {
   modeOption?: ZCodeConfigOption;
   thoughtOption?: ZCodeConfigOption;
   onOpenModelMenu: () => void;
-  /** Ctrl+Shift+M：参考 thought level，按选项顺序快速切换会话模式，不打开菜单。 */
+  /**
+   * Ctrl+Shift+M: mirrors the thought level by quickly switching the session mode in option order,
+   * without opening the menu.
+   */
   onCycleSessionMode: () => void;
-  /** Ctrl+T：保留 thought level 快速切换，不受默认 select 菜单交互影响。 */
+  /**
+   * Ctrl+T: keeps the fast thought-level switch, unaffected by the default select menu interaction.
+   */
   onCycleThoughtLevel: () => void;
 }) {
   const {
@@ -177,7 +185,7 @@ export function useToolbarShortcutBindings(params: {
     onCycleSessionMode,
     onCycleThoughtLevel,
   } = params;
-  // 工具条热键已转正为命令表命令，键位匹配读生效表——设置页改绑后即时生效
+  // The toolbar hotkeys have been converted to command table commands, and the key position matching reads the effective table - it will take effect immediately after the setting page is changed.
   const effectiveBindings = useEffectiveShortcutBindings();
   const effectiveRef = useRef(effectiveBindings);
   effectiveRef.current = effectiveBindings;
@@ -188,14 +196,14 @@ export function useToolbarShortcutBindings(params: {
     }
 
     function handleWindowKeydown(event: KeyboardEvent) {
-      // 录制态键盘归录制器独占。本监听先于录制监听注册（同 capture 阶段），
-      // 不短路的话录制期按键预览会真的触发工具条动作。
+      // The recording keyboard is exclusive to the recorder. This monitor is registered before the recording monitor (same as the capture stage).
+      // If there is no short circuit, the key preview during recording will actually trigger the toolbar action.
       if (isShortcutRecordingActive()) {
         return;
       }
-      // Windows/Linux 上 Cmd/Ctrl+P 已由 useAppKeyboard 用于「搜索
-      // 文件」，与工具栏旧版 ⌃P 同类按键冲突。模式切换改为 Ctrl+Shift+M，仍尊重
-      // defaultPrevented，避免与其它捕获阶段快捷键重复处理。
+      // Cmd/Ctrl+P on Windows/Linux is used by useAppKeyboard for Search
+      // File", which conflicts with similar keys in the old version of the toolbar ⌃P. Mode switching changed to Ctrl+Shift+M, still respected
+      // defaultPrevented, to avoid repeated processing with other capture phase shortcut keys.
       const state = {
         hasAnyOption,
         toolbarDisabled,
@@ -206,13 +214,13 @@ export function useToolbarShortcutBindings(params: {
       };
       const action = resolveToolbarShortcutAction(event, effectiveRef.current, state);
       if (!action) {
-        // 诊断日志与生效表解耦——只在按下的键确实绑定了 openModelMenu 时才打
-        // 「未打开模型菜单」（改绑后按旧键不应误打，改绑后的新键失败不再无日志）。
+        // The diagnostic log is decoupled from the validation table - it is only logged when the pressed key is actually bound to openModelMenu
+        // "Model menu is not opened" (pressing the old key after rebinding should not be accidentally hit, and there will no longer be no log if the new key fails after rebinding).
         const openModelMenuBound = (effectiveRef.current.openModelMenu ?? []).some((binding) =>
           matchesShortcutBinding(event, binding),
         );
         if (openModelMenuBound) {
-          logger.debug("[V4ComposerToolbar] 模型菜单热键未打开模型菜单", {
+          logger.debug("[V4ComposerToolbar] model menu shortcut did not open the model menu", {
             hasModelOption: Boolean(modelOption),
             shortcutKey: getChatToolbarShortcutKey(modelOption?.category),
             modelMenuDisabled,
@@ -223,7 +231,7 @@ export function useToolbarShortcutBindings(params: {
 
       event.preventDefault();
       if (action === "openModelMenu") {
-        logger.debug("[V4ComposerToolbar] Ctrl+M 打开模型菜单");
+        logger.debug("[V4ComposerToolbar] Ctrl+M opened the model menu");
         onOpenModelMenu();
         return;
       }

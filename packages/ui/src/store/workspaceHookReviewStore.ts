@@ -4,8 +4,8 @@ import type {
   CommandEnvelope,
   WorkspaceHookReviewRequestPayload,
 } from "@zcode/shared/zcode-protocol-v4";
-// review 单调性裁决单一来源；store 的应用策略是 cross_flow 接受新 Runtime 权威
-// （renderer 服从 canonical snapshot 的最新投递）。
+// review monotonicity rules single source; store's application strategy is cross_flow accepts new Runtime authority
+// (The renderer obeys the latest delivery of the canonical snapshot).
 import { verdictWorkspaceHookReviewRequest } from "@zcode/shared/workspace-hook-review-monotonicity";
 
 export interface WorkspaceHookCommandBinding {
@@ -48,8 +48,8 @@ export const useWorkspaceHookReviewStore = create<WorkspaceHookReviewState>((set
       delete commandBindings[sessionId];
       const review = state.bindings[sessionId];
       if (!review || review.sendCommand !== sendCommand) return { commandBindings };
-      // command channel 已断开后不能继续保留同一连接的 review binding；否则 Settings
-      // 会拿到 disposed client。sendCommand identity guard 可避免旧连接 cleanup 清掉新连接。
+      // After the command channel is disconnected, the review binding of the same connection cannot be retained; otherwise Settings
+      // Will get the disposed client. sendCommand identity guard prevents old connections cleanup from clearing new connections.
       const bindings = { ...state.bindings };
       delete bindings[sessionId];
       return { bindings, commandBindings };
@@ -58,17 +58,17 @@ export const useWorkspaceHookReviewStore = create<WorkspaceHookReviewState>((set
     set((state) => {
       const commandBinding = state.commandBindings[sessionId];
       if (commandBinding && commandBinding.sendCommand !== binding.sendCommand) {
-        // renderer 重连时旧 effect 可能迟到；只有当前 session command channel 才能刷新
-        // review binding，避免 equal-generation replay 把新 client 换回 disposed client。
+        // Old effects may be late when the renderer reconnects; only the current session command channel can be refreshed
+        // Review binding to avoid equal-generation replay and replace the new client with the disposed client.
         return state;
       }
       const current = state.bindings[sessionId];
       if (current) {
         const verdict = verdictWorkspaceHookReviewRequest(current.request, binding.request);
-        // generation 只在一个 Runtime flow 内可比较。新 Runtime 会生成新
-        // reviewFlowId 并从 1 重计；跨 flow（cross_flow）必须服从 canonical snapshot 的
-        // 最新投递，否则旧 Runtime 的高 generation 会永久挡住新权威请求。同 flow 则严格
-        // 要求 generation 单调，replay/conflict/stale 不得覆盖当前 binding。
+        // Generations are only comparable within a Runtime flow. A new Runtime will generate a new
+        // reviewFlowId and recalculate from 1; cross-flow (cross_flow) must obey the canonical snapshot
+        // The latest delivery, otherwise the high generation of the old runtime will permanently block new authoritative requests. Same as flow, strict
+        // The generation is required to be monotonic, and replay/conflict/stale must not overwrite the current binding.
         if (
           verdict === "same_flow_stale" ||
           verdict === "same_flow_replay" ||
@@ -111,11 +111,11 @@ export function findWorkspaceHookReviewBinding(
 const TRUSTABLE_WORKSPACE_HOOK_STATES = new Set(["pending_trust", "revoked", "stale_digest"]);
 
 /**
- * 查找能授权指定静态 Settings 行的精确 immutable review binding。
+ * Finds the exact immutable review binding that can authorize a given static Settings row.
  *
- * Settings 的 trustState 只负责展示，绝不能直接成为 mutation authority；真正提交前必须
- * 同时匹配 workspace、bundle 和 opaque reviewItemId，避免等待期间跨 generation/bundle
- * 误用另一条 request。
+ * The trustState in Settings is only for display and must never become the mutation authority;
+ * before an actual commit the workspace, bundle and opaque reviewItemId all have to match, so that
+ * a pending request is never wrongly reused across a generation/bundle while waiting.
  */
 export function findWorkspaceHookReviewBindingForItem(
   bindings: Record<string, WorkspaceHookReviewBinding>,
@@ -176,7 +176,7 @@ export function waitForWorkspaceHookReviewBindingForItem(
       if (binding) finish(binding);
     });
 
-    // subscribe 与首次读取之间仍可能发生一次同步 upsert；订阅完成后再检查一次收口竞态。
+    // A synchronous upsert may still occur between subscribe and the first read; check for closing race conditions again after the subscription is completed.
     const afterSubscribe = findWorkspaceHookReviewBindingForItem(
       useWorkspaceHookReviewStore.getState().bindings,
       input,
@@ -210,13 +210,13 @@ function matchesWorkspaceBinding(input: {
   if (!workspaceKey) return false;
   const bindingWorkspaceIdentity = input.bindingWorkspaceIdentity?.trim();
   if (bindingWorkspaceIdentity) {
-    // identity 命中或 path 命中的 OR 判定不够：同一路径的远程 tab 因 path
-    // 相等会被本地 Settings 选成信任提交通道，形成跨 workspace 误授权。
-    // 修法：binding 一旦带 identity 就只能严格匹配 workspaceKey；只有自身无
-    // identity 的旧本地 binding 才允许按 path fallback。
+    // The OR determination of identity hit or path hit is not enough: the remote tab of the same path is due to path
+    // Equality will be selected as a trusted submission channel by the local Settings, resulting in incorrect authorization across workspaces.
+    // Correction: Once binding contains identity, it can only strictly match workspaceKey; only itself cannot
+    // The old local binding of identity only allows path fallback.
     return bindingWorkspaceIdentity === workspaceKey;
   }
-  // 当前查询本身携带 identity 时同样禁止降级到 path；否则未知远程 identity 会误选
-  // 一个无 identity 的本地旧 binding。
+  // When the current query itself carries identity, it is also prohibited to downgrade to path; otherwise, the unknown remote identity will be mistakenly selected.
+  // A local old binding without identity.
   return !input.workspaceIdentity?.trim() && input.bindingWorkspacePath === input.workspacePath;
 }

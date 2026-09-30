@@ -1,7 +1,7 @@
 import type { ZCodeApp } from "../app/types.js";
 import type { ZCodeProtocolAgentDependencies } from "./server-types.js";
 
-/** 持有 app 资源而非业务 session；临时 workspace app、尚未登记的 app 也归此 owner。 */
+/** Owns app resources rather than business sessions; a temporary workspace app and a not-yet-registered app belong to this owner too. */
 export class ProtocolRuntimeResources {
   private stopping = false;
   private readonly apps = new Set<ZCodeApp>();
@@ -26,7 +26,7 @@ export class ProtocolRuntimeResources {
     };
     this.apps.add(app);
     if (this.stopping) {
-      // create 在 EOF 前开始、EOF 后返回时不能重新成为可用 session，也不能遗失资源。
+      // When create starts before EOF and returns after EOF, it cannot become an available session again, and resources cannot be lost.
       await this.stopApp(app);
       this.assertServing();
     }

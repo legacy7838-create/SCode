@@ -1,8 +1,8 @@
 import { BUILTIN_MODEL_PROVIDER_IDS } from "@zcode/shared";
 
 /**
- * transcript 和 custom provider 的安全 code/message 证据集中在这里判定：
- * 低基数 allowlist，每条规则原子返回同一份证据决定的 source/reason。
+ * The security code/message evidence of transcript and custom provider is determined here:
+ * Low cardinality allowlist, each rule atomically returns the source/reason determined by the same evidence.
  */
 interface TelemetryEvidenceAttribution {
   errorSource: "provider" | "runtime" | "network";
@@ -58,8 +58,8 @@ const PROVIDER_CODE_FAILURE_REASONS: Readonly<Record<string, string>> = {
   "429": "rate_limited",
 };
 
-// provider 包装可能只保留上游业务码，未带 adapter 的标准 reason；
-// 这些 code 的拒绝语义有明确证据，只在 telemetry 边界补为低基数 invalid_request。
+// The provider package may only retain the upstream business code, without the standard reason of the adapter;
+// There is clear evidence of rejection semantics for these codes, which are only supplemented by low-cardinality invalid_request at telemetry boundaries.
 const GENERIC_PROVIDER_INVALID_REQUEST_CODES = new Set(["BAD_REQUEST"]);
 
 const LOCAL_MODEL_VALIDATION_MESSAGES = new Set([
@@ -71,8 +71,8 @@ const LOCAL_MODEL_VALIDATION_MESSAGES = new Set([
   "Model does not support PDF input",
 ]);
 
-// 事件可能只持久化 providerErrorCode，错误文案不重复底层 errno；
-// allowlist 若只覆盖少量现场样本，ECONNRESET 等 adapter 已确认的网络码会退化成 provider/unknown。
+// The event may only persist the providerErrorCode, and the error text does not repeat the underlying errno;
+// If allowlist only covers a small number of on-site samples, the confirmed network code of adapters such as ECONNRESET will degenerate into provider/unknown.
 const STABLE_TRANSPORT_ERROR_CODES = new Set([
   "EPIPE",
   "ECONNABORTED",
@@ -201,7 +201,7 @@ export function resolveLegacyProviderEnvelopeCode(
 }
 
 export function isQuotaMessage(message: string): boolean {
-  return /quota|usage\s+limit|limit\s+exhausted|exceed(?:ed)?\s+(?:the\s+)?(?:limit|quota)|额度|用量上限|使用量上限|使用上限/iu.test(
+  return /quota|usage\s+limit|limit\s+exhausted|exceed(?:ed)?\s+(?:the\s+)?(?:limit|quota)|Quota|Usage upper limit|Usage upper limit|Usage upper limit/iu.test(
     message,
   );
 }
@@ -232,10 +232,10 @@ export function resolveControlledUnknownMessageAttribution(
     ) ||
     /upstream truncated response without stop reason/iu.test(message) ||
     /server disconnected without sending a response/iu.test(message) ||
-    /responses\s+流式调用失败/iu.test(message) ||
+    /responses\s+Streaming call failed/iu.test(message) ||
     /engine protocol predict request failed:\s*fetch failed/iu.test(message) ||
     /the model provider encountered a streaming error/iu.test(message) ||
-    /上游流式响应长时间无数据/iu.test(message) ||
+    /Upstream streaming response has no data for a long time/iu.test(message) ||
     /(?:^|\n)stream_read_error(?:\n|$)/iu.test(message)
   ) {
     return {
@@ -282,7 +282,7 @@ export function resolveControlledUnknownMessageAttribution(
     /tool call id.*must be/iu.test(message) ||
     /litellm\.badrequesterror:.*invalid_request_error/iu.test(message) ||
     /media item count was exceeded/iu.test(message) ||
-    /残缺、非法或不存在的工具调用/iu.test(message)
+    /Incomplete, illegal or non-existent tool call/iu.test(message)
   ) {
     return { errorSource: "provider", failureReason: "invalid_request" };
   }
@@ -290,13 +290,13 @@ export function resolveControlledUnknownMessageAttribution(
     /upstream service temporarily unavailable|model service is temporarily unavailable|the service is temporarily unavailable/iu.test(
       message,
     ) ||
-    /服务暂时不可用/iu.test(message) ||
-    /责任方[:：]服务端/iu.test(message) ||
+    /Service is temporarily unavailable/iu.test(message) ||
+    /Responsible Party[::]Server/iu.test(message) ||
     /the model has crashed/iu.test(message) ||
     /fatal exception in the backend generation thread/iu.test(message) ||
-    /\[500\]\[操作失败\]/iu.test(message) ||
-    /502\s+服务响应内容异常/iu.test(message) ||
-    /流式推理过程中发生内部错误/iu.test(message) ||
+    /\[500\]\[Operation failed\]/iu.test(message) ||
+    /502\s+Exception in service response content/iu.test(message) ||
+    /An internal error occurred during streaming inference/iu.test(message) ||
     /a server error occurred/iu.test(message) ||
     /engine protocol predict stream returned an error:.*(?:"code":500|"type":"server_error"|errordevicelost)/iu.test(
       message,
@@ -307,14 +307,20 @@ export function resolveControlledUnknownMessageAttribution(
   if (/\bat capacity\b|high demand.{0,120}capacity|no capacity/iu.test(message)) {
     return { errorSource: "provider", failureReason: "provider_overloaded" };
   }
-  if (/业务申请资源不足.*申请扩容/iu.test(message)) {
+  if (
+    /Insufficient business application resources.*Application for capacity expansion/iu.test(
+      message,
+    )
+  ) {
     return { errorSource: "provider", failureReason: "provider_overloaded" };
   }
-  if (/请求过于频繁/iu.test(message)) {
+  if (/Requests are too frequent/iu.test(message)) {
     return { errorSource: "provider", failureReason: "rate_limited" };
   }
   if (
-    /session\s+[^\s]+\s+is already in flight|并发(?:数)?(?:已)?达到上限|并发上限/iu.test(message)
+    /session\s+[^\s]+\s+is already in flight|Concurrency (?:number)?(?:already)?reached the upper limit|Concurrency upper limit/iu.test(
+      message,
+    )
   ) {
     return { errorSource: "provider", failureReason: "rate_limited" };
   }
@@ -322,25 +328,29 @@ export function resolveControlledUnknownMessageAttribution(
     return { errorSource: "provider", failureReason: "rate_limited" };
   }
   if (
-    /balance greater than \$?0|account.*in arrears|top up the account|failure to pay past invoices|credit已耗尽|balance_depleted|福利版模型.*需先充值/iu.test(
+    / greaterbalance than \$?0|account.*in arrests|top up the account|failure to pay past invoices|credit has been exhausted|balance_depleted|welfare version model.*need to recharge first/iu.test(
       message,
     )
   ) {
     return { errorSource: "provider", failureReason: "balance_insufficient" };
   }
-  if (/budget has been exceeded|预算已用尽|daily cost limit reached/iu.test(message)) {
+  if (/budget has been exceeded|daily cost limit reached/iu.test(message)) {
     return { errorSource: "provider", failureReason: "quota_exhausted" };
   }
   if (/"type":"notfounderror".*model.*does not exist/iu.test(message)) {
     return { errorSource: "provider", failureReason: "model_not_found" };
   }
-  if (/达到对话长度上限/iu.test(message)) {
+  if (/maximum conversation length reached/iu.test(message)) {
     return { errorSource: "provider", failureReason: "context_exceeded" };
   }
-  if (/没有可用套餐.*(?:订购|续费)|暂无生效套餐.*激活订阅/iu.test(message)) {
+  if (
+    /No available package.*(?:Subscription|Renewal)|No effective package.*Activate subscription/iu.test(
+      message,
+    )
+  ) {
     return { errorSource: "provider", failureReason: "plan_access_denied" };
   }
-  if (/无api调用权限.*未订阅.*(?:codeplan|资源包)/iu.test(message)) {
+  if (/No api calling permission.*Not subscribed.*(?:codeplan|Resource package)/iu.test(message)) {
     return { errorSource: "provider", failureReason: "plan_access_denied" };
   }
   return undefined;

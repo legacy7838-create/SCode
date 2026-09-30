@@ -46,7 +46,7 @@ export function ConversationAgentToolCallRow({
   const toolCallNode = useMemo(() => toolCallRowToLegacyNode(item.row), [item.row]);
   const childSessionId = item.subagentRow.childSessionId;
   const subagentType = item.subagentRow.subagentType;
-  // 与 Agent 摘要行复用同一 title resolver，保证右侧 tab 和用户点击的可见标题逐字一致。
+  // Reuse the same title resolver with the Agent summary row to ensure that the right tab and the visible title clicked by the user are word-for-word consistent.
   const title = getAgentPrimaryText(toolCallNode.toolCall, "");
   const canOpenChildSession = Boolean(
     childSessionId && context.sessionId && context.onOpenSubagentSession,
@@ -71,8 +71,8 @@ export function ConversationAgentToolCallRow({
     [canOpenChildSession, childSessionId, handleOpenChildSession],
   );
 
-  // Agent 工具行和普通工具行同属工作流，不能在配对壳上额外加 px-4，
-  // 否则会和未配对 toolCall 行产生左右缩进差异。
+  // The Agent tool line and the ordinary tool line belong to the same workflow, and you cannot add additional px-4 to the matching shell.
+  // Otherwise, there will be left and right indent differences with the unpaired toolCall line.
   return (
     <div
       data-row-id={item.row.rowId}

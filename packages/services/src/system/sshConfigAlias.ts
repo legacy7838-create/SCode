@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- SSH config alias 解析链路包含扫描、回退和受控执行，暂集中在同一文件。 */
+/* eslint-disable max-lines -- The SSH config alias resolution chain covers scanning, fallback and controlled execution, so it is kept in one file for now. */
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { glob, readFile } from "node:fs/promises";
@@ -145,9 +145,9 @@ function splitSshTokens(line: string): string[] {
         i += 1;
         continue;
       }
-      // SSH config 在 Windows 下常见 `C:\Users\...` 这类路径。
-      // 不能把任意 `\` 都当成转义前缀：反斜杠会被吞掉，私钥/Include 路径失效。
-      // 这里仅在“确实用于转义分隔符/引号”时解义，其余场景保留字面反斜杠。
+      // SSH config is commonly found in paths such as `C:\Users\...` under Windows.
+      // Do not treat any `\` as an escape prefix: backslashes will be eaten, and the private key/Include path will become invalid.
+      // This is only interpreted here if "really used to escape delimiters/quotes", leaving literal backslashes intact for the rest of the scenarios.
       current += "\\";
       continue;
     }
@@ -163,8 +163,8 @@ function splitSshTokens(line: string): string[] {
 }
 
 function hasGlobPattern(value: string): boolean {
-  // Windows 绝对路径天然包含 `\`，但这不代表 Include 是 glob。
-  // 这里只识别 SSH Include 真正的 glob 元字符：`* ? [ ]`。
+  // Windows absolute paths naturally include `\`, but this does not mean that Include is a glob.
+  // Only the real glob metacharacters of SSH Include are recognized here: `* ? [ ]`.
   return /[*?[\]]/.test(value);
 }
 
@@ -215,7 +215,7 @@ async function resolveIncludeTargets(includeTokens: string[], baseDir: string): 
         results.push(resolvedMatch);
       }
     } catch {
-      // include 展开失败时按空集合处理，避免单个坏配置阻塞整体加载。
+      // When include fails to expand, it will be processed as an empty collection to avoid a single bad configuration blocking the overall loading.
     }
   }
 
@@ -344,8 +344,8 @@ function matchHostPattern(pattern: string, alias: string): boolean {
     if (char === "?") {
       return ".";
     }
-    // Teleport 会生成 `Host *.teleport-*.example.com` 这类 SSH glob。
-    // 特殊字符（含 `*`）必须先转义，否则会拼出 `^*...` 非法正则并让 alias 枚举整体失败。
+    // Teleport will generate SSH globs such as `Host *.teleport-*.example.com`.
+    // Special characters (including `*`) must be escaped first, otherwise it will spell out `^*...`, which is an illegal regular expression and cause the alias enumeration to fail as a whole.
     return char.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&");
   }).join("");
   const regex = new RegExp(`^${regexBody}$`);
@@ -692,9 +692,9 @@ export async function listSSHConfigAliasesFromLocalConfig(): Promise<SSHConfigAl
             host: parsed.host ?? fallbackOption.host ?? meta.alias,
             port: parsed.port ?? fallbackOption.port,
             username: parsed.username ?? fallbackOption.username,
-            // `ssh -G` 会返回默认 identityfile（例如 ~/.ssh/id_rsa），
-            // 即使 alias 并未显式配置 IdentityFile。之前直接采用该值，会把“密码登录”误判成“密钥登录”。
-            // 因此 privateKeyPath 只信任 ssh config 显式解析结果，不再使用 `ssh -G` 的 identityfile。
+            // `ssh -G` will return the default identityfile (e.g. ~/.ssh/id_rsa),
+            // Even though alias does not explicitly configure IdentityFile. Previously, if this value was used directly, "password login" would be misjudged as "key login".
+            // Therefore privateKeyPath only trusts the explicit parsing results of ssh config and no longer uses the identityfile of `ssh -G`.
             privateKeyPath: fallbackOption.privateKeyPath,
             source: meta.source,
           } satisfies SSHConfigAliasOption;

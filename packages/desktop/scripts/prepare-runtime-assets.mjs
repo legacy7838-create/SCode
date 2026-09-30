@@ -15,17 +15,17 @@ const nativeSearchReleasePlan = resolveNativeSearchReleasePlan({
   platform: target.os,
   arch: target.arch,
 });
-// Windows Chrome 导入入口未启用，默认构建继续编译 helper 会增加 CI 时间和发布签名面。
-// 保留显式开关，后续恢复入口时仍可复用既有原生实现和供应链校验。
+// The Windows Chrome import portal is not enabled, and the default build continues to compile the helper, which will increase CI time and release signing time.
+// Explicit switches are retained, and the existing native implementation and supply chain verification can still be reused when the entry is restored later.
 const shouldPrepareWindowsBrowserImportHelper =
   target.os === "win32" && process.env.ZCODE_ENABLE_WINDOWS_BROWSER_IMPORT === "1";
-// CUA 权限浮窗的吸附数据源。仅 macOS；缺 swiftc 时脚本内部自行降级为跳过（浮窗 fail-open
-// 到屏幕底部，仍可用），所以无条件挂在 darwin 上不会让构建变脆。
+// CUA permission floating window's adsorption data source. macOS only; when swiftc is missing, the script internally downgrades to skip (floating window fail-open
+// to the bottom of the screen, still available), so hanging on darwin unconditionally doesn't make the build brittle.
 const shouldPrepareMacosWindowBounds = target.os === "darwin";
 
-// 本机桌面包内置 agent 的 JS bundle（prepare:agent-bundle），运行时由 app 的 Electron Node runtime 执行。
-// 远端跨平台原生二进制仍由上面的 prepare:remote-assets 提供。
-// native-search 归档随仓库分发，准备步骤只做本地解包校验，不需要任何下载源配置。
+// The native desktop package has a built-in agent's JS bundle (prepare:agent-bundle), which is executed by the app's Electron Node runtime during runtime.
+// The remote cross-platform native binary is still provided by prepare:remote-assets above.
+// The native-search archive is distributed with the warehouse. The preparation step only performs local unpacking and verification, and does not require any download source configuration.
 const localRuntimeScripts = [
   "prepare:agent-bundle",
   ...(nativeSearchReleasePlan.enabled ? ["prepare:native-search"] : []),
@@ -53,9 +53,9 @@ const shouldSkipRemoteAssets = process.env.ZCODE_SKIP_REMOTE_ASSETS === "1";
 if (!shouldSkipRemoteAssets) {
   runTimedPnpmScript("prepare:remote-assets");
 } else {
-  // Windows build job 的桌面安装包不依赖 mock-cdn remote 资产。
-  // 之前这里无条件执行 prepare:remote-assets，会在同一个 job 里串行下载/打包跨平台资源，
-  // 导致 CI 时间被白白拉长并逼近 1 小时上限。增加显式开关，只在需要时才准备 remote 资产。
+  // The desktop installation package of the Windows build job does not rely on the mock-cdn remote asset.
+  // Previously, prepare:remote-assets was executed unconditionally here, which would serially download/package cross-platform resources in the same job.
+  // As a result, the CI time is lengthened in vain and approaches the upper limit of 1 hour. Add explicit switch to only prepare remote assets when needed.
   console.log("[prepare:runtime-assets] skip prepare:remote-assets (ZCODE_SKIP_REMOTE_ASSETS=1)");
 }
 

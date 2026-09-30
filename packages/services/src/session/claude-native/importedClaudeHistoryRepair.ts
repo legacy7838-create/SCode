@@ -71,9 +71,9 @@ function shouldRepairImportedClaudeSnapshot(
     /^msg_import_\d+$/u.test(message.info.messageId),
   );
   if (!snapshot.session.sessionId.startsWith("claude-import-") && !hasLegacyFixedMessageIds) {
-    // user-only / assistant-first 只是异常形态，不等于 Claude 导入。
-    // 只有稳定导入 taskId 或旧版全局 msg_import_* 污染能证明它属于迁移修复边界，
-    // 避免普通 ZCode session 被同名 legacy 备份误回填成 Claude 历史。
+    // user-only / assistant-first are just abnormal forms and are not equal to Claude import.
+    // Only stable import taskId or legacy global msg_import_* contamination can prove that it falls within the migration-fix boundary,
+    // Prevent ordinary ZCode sessions from being accidentally backfilled into Claude history by legacy backups with the same name.
     return false;
   }
   const hasAssistant = snapshot.messages.some((message) => message.info.role === "assistant");
@@ -83,9 +83,9 @@ function shouldRepairImportedClaudeSnapshot(
   if (snapshot.messages[0]?.info.role === "assistant") {
     return true;
   }
-  // 旧协议导入把所有 Claude session 都写成 msg_import_0/msg_import_1。
-  // 这些 ID 是全局主键，后续导入会把前一个 session 的消息改绑到新 session，
-  // 即使当前快照里有 assistant，也必须按原 Claude jsonl 重新回填，修正串会话和反序。
+  // The old protocol import writes all Claude sessions as msg_import_0/msg_import_1.
+  // These IDs are global primary keys. Subsequent imports will bind the messages of the previous session to the new session.
+  // Even if there is an assistant in the current snapshot, it must be backfilled according to the original Claude jsonl, and the string session and reverse order must be corrected.
   return hasLegacyFixedMessageIds;
 }
 
@@ -175,8 +175,8 @@ async function resolveImportedClaudeHistoryForRepair(
     countAssistantMessages(nativeHistory.messages) >=
       countAssistantMessages(legacyHistory?.messages ?? [])
   ) {
-    // 旧版本可能已经把 user-only 的 legacy 备份写坏了。
-    // 这时 legacy 不能再作为权威来源，需要按 taskId 反查原 Claude jsonl 重建 assistant。
+    // Older versions may have corrupted user-only legacy backups.
+    // At this time, legacy can no longer be used as an authoritative source. You need to reverse check the original Claude jsonl by taskId and rebuild the assistant.
     return nativeHistory;
   }
 
@@ -198,9 +198,9 @@ export async function repairImportedClaudeSessionSnapshot<T>(params: {
   }
 
   params.onRepair?.(history);
-  // 早期导入可能已经创建了真实 ZCode session，但没有把 Claude 历史写入
-  // zcode-cli sessionStore，或用了全局 msg_import_* 导致串会话。这里统一用同名 sessionId
-  // 幂等回填 importedHistory，让 session/read、task snapshot 和远控恢复路径走同一套修复。
+  // An early import may have created a real ZCode session, but not written Claude history
+  // zcode-cli sessionStore, or use global msg_import_* to cause stringed sessions. The sessionId with the same name is used here.
+  // Idempotent backfill importedHistory, allowing session/read, task snapshot and remote control recovery paths to follow the same set of repairs.
   return params.createSession({
     workspacePath: params.target.workspacePath,
     workspaceIdentity: params.target.workspaceIdentity,

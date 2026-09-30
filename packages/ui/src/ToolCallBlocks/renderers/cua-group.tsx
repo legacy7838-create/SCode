@@ -82,8 +82,8 @@ function CuaGroupChildren({
     const content = contentRef.current;
     if (!viewport || !content || typeof ResizeObserver === "undefined") return;
 
-    // 每次尺寸变化都强制吸底会让用户向上查看历史时被截图加载或流式
-    // message 拉回底部。只有用户原本位于底部时才跟随新内容。
+    // Forcibly sucking the bottom every time the size changes will cause the user to be screenshot loaded or streamed when looking up the history.
+    // message pulls back to the bottom. New content is only followed if the user was originally at the bottom.
     const observer = new ResizeObserver(() => {
       if (shouldStickToBottomRef.current) scrollToBottom();
       else updateScrollState();

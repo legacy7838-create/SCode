@@ -13,9 +13,9 @@ const DOCX_RENDER_OPTIONS = {
   experimental: true,
   ignoreFonts: false,
   ignoreHeight: false,
-  // docx-preview@0.4.0 在该选项为 false 时会合并纸张尺寸相同、
-  // 但页边距不同的相邻 section，导致封面后的正文丢失分页并沿用封面的零边距。
-  // 保持官方预览的默认行为，优先保留 OOXML section 边界和各页 pgMar。
+  // docx-preview@0.4.0 will merge files with the same paper size when this option is false.
+  // However, adjacent sections with different page margins will cause the main text after the cover to lose pagination and use the zero margin of the cover.
+  // Keep the default behavior of the official preview, giving priority to retaining OOXML section boundaries and pgMar of each page.
   ignoreLastRenderedPageBreak: true,
   ignoreWidth: false,
   inWrapper: true,
@@ -85,9 +85,9 @@ export function PreviewPaneOfficeDocxContent({
       if (isSameDocxPreviewFit(current, next)) {
         return current;
       }
-      // 调试说明：拖动 Preview Pane 时会按帧触发 ResizeObserver；高频尺寸轨迹只走 debug，
-      // 生产构建不落盘，避免响应式布局把日志量放大到和 resize 事件同数量级。
-      logger.debug("[PreviewPane] DOCX 预览宽度已同步", {
+      // Debugging instructions: When dragging the Preview Pane, the ResizeObserver will be triggered by frame; only debug is used for high-frequency size tracks.
+      // Production builds are not dropped to disk to prevent responsive layout from amplifying the log volume to the same order of magnitude as the resize event.
+      logger.debug("[PreviewPane] docx preview width synced", {
         path: sourcePath,
         availableWidth: viewport.clientWidth,
         naturalWidth: content.offsetWidth,
@@ -129,15 +129,15 @@ export function PreviewPaneOfficeDocxContent({
 
         const wrapper = bodyContainer.querySelector<HTMLElement>(`.${className}-wrapper`);
         if (wrapper) {
-          // docx-preview 默认给页面包装层写入灰色背景和固定 30px padding，
-          // 会与 Preview Pane 主题冲突，也会让窄屏缩放把装饰间距算进纸张宽度。
+          // docx-preview writes a gray background and fixed 30px padding to the page packaging layer by default.
+          // It will conflict with the Preview Pane theme, and will also cause narrow screen scaling to calculate the decorative spacing into the paper width.
           wrapper.style.background = "transparent";
           wrapper.style.padding = "0";
           wrapper.style.width = "max-content";
         }
 
-        // docx-preview 默认使用 50% 黑色页面阴影，在 Preview Pane 中会形成过深黑边；
-        // 追加作用域样式复用原 react-docx 的浅色纸张阴影，并一次覆盖当前文档的所有页面。
+        // docx-preview uses 50% black page shadow by default, which will form too dark black edges in the Preview Pane;
+        // The appended scope style reuses the light paper shadow of the original react-docx and covers all pages of the current document at once.
         const pageSurfaceStyle = document.createElement("style");
         pageSurfaceStyle.dataset.docxPageSurfaceStyle = "";
         pageSurfaceStyle.textContent = `.${className}-wrapper>section.${className} { box-shadow: ${DOCX_PAGE_BOX_SHADOW}; }`;
@@ -154,7 +154,7 @@ export function PreviewPaneOfficeDocxContent({
         }
 
         const message = error instanceof Error ? error.message : String(error);
-        logger.error("[PreviewPane] DOCX 文件解析失败", {
+        logger.error("[PreviewPane] failed to parse docx file", {
           path: sourcePath,
           error: message,
         });
@@ -163,8 +163,8 @@ export function PreviewPaneOfficeDocxContent({
       });
 
     return () => {
-      // renderAsync 不提供取消能力；切换文件后只允许最新 source 提交可见 DOM，
-      // 旧任务即使稍后完成也只能停留在脱离文档树的临时容器中。
+      // renderAsync does not provide cancellation capabilities; only the latest source is allowed to submit the visible DOM after switching files.
+      // Even if the old task is completed later, it can only stay in a temporary container detached from the document tree.
       active = false;
       disposeLinkSafety?.();
       renderRoot.remove();
@@ -219,8 +219,8 @@ export function PreviewPaneOfficeDocxContent({
             data-docx-fit-frame
             style={fit ? { width: fit.width, height: fit.height } : undefined}
           >
-            {/* docx-preview 保留纸张原始宽度；窄 Preview Pane 需要只缩小不放大，
-                并同步包装层宽高，避免单独 transform 后仍保留未缩放的横向滚动区。 */}
+            {/* docx-preview retains the original width of the paper; the narrow Preview Pane needs to be reduced but not enlarged.
+                And synchronize the width and height of the wrapping layer to avoid retaining unscaled horizontal scrolling area after separate transform. */}
             <div
               ref={contentRef}
               className="w-max"

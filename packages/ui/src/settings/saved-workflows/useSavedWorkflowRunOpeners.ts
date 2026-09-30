@@ -5,32 +5,42 @@ import type {
   SavedWorkflowsOpenRunParams,
 } from "@/settings/saved-workflows/savedWorkflowContract.js";
 
-/** 一行运行记录归属的项目（项目档恒定，全局档按 `run.cwd` 反查）。 */
+/**
+ * The project a run-history row belongs to (constant in the project tab; in the global tab it is
+ * looked up from `run.cwd`).
+ */
 interface SavedWorkflowRunOpenTarget {
   workspacePath: string;
   workspaceIdentity?: string;
 }
 
 /**
- * 中枢运行历史行上两个「打开」的门与实参构造。
+ * The two "open" doors on a run-history row in the hub, and how their arguments are built.
  *
- * ⚠ 术语：这里的 artifact 是脚本经 `artifact.*` 发布给用户看的产出，不是脚本的顶层返回值。
+ * ⚠ Terminology: an artifact here is an output a script published for the user to see through
+ * `artifact.*`, not the script's top-level return value.
  *
- * 抽成一个 hook 而不是在两个组里各写一遍：项目档与全局档唯一的差别是**目标项目怎么算**
- * （前者恒定，后者按 `run.cwd` 反查已打开项目），而两个门的判据必须一致——它们各写一遍时，
- * 「产物不需要 toolCallId」这条会很自然地在其中一处被写成「和查看实例一样」。
+ * Extracted into a hook instead of being written once in each of the two groups: the only
+ * difference between the project tab and the global tab is **how the target project is computed**
+ * (constant in the former, looked up from `run.cwd` against the opened projects in the latter),
+ * while the criteria for the two doors have to agree — written separately, the rule "artifacts need
+ * no toolCallId" would very naturally become "same as viewing the instance" in one of them.
  *
  * ```
- *                       parentSessionId?   toolCallId?   项目可打开?
- * 「查看实例」              必需              必需            必需
- * 产物 chip                必需              —              必需
+ *                       parentSessionId?   toolCallId?   project openable?
+ *  "View instance"              required      required            required
+ *  Artifact chip                required        —                 required
  * ```
  *
- * `toolCallId` 只服务于 run 详情页里那张静态因果图（它挂在那条 CreateWorkflow 工具行的
- * display 上）。产物 tab 不画图，所以老行缺 `toolCallId` 时产物仍然打得开。
+ * `toolCallId` exists only for the static cause graph on the run detail page (it hangs off the
+ * display of that CreateWorkflow tool row). The artifact tab draws no graph, so artifacts still
+ * open for old rows that lack `toolCallId`.
  */
 export function useSavedWorkflowRunOpeners(options: {
-  /** 该行归属的项目；返回 null 即两个入口都关闭（全局档里 cwd 对应的项目没打开）。 */
+  /**
+   * The project this row belongs to; returning null closes both entries (in the global tab, the
+   * project for the cwd is not open).
+   */
   resolveTarget: (run: ZCodeSavedWorkflowRun) => SavedWorkflowRunOpenTarget | null;
   onOpenWorkflowRun?: (params: SavedWorkflowsOpenRunParams) => void;
   onOpenWorkflowArtifact?: (params: SavedWorkflowsOpenArtifactParams) => void;
@@ -62,8 +72,8 @@ export function useSavedWorkflowRunOpeners(options: {
       if (!run.parentSessionId) return;
       const target = resolveTarget(run);
       if (!target) return;
-      // 行上的 chip 载荷（`ZCodeSavedWorkflowRun.artifacts`）带最新版的 `contentType`：
-      // 终点据它把 html 产物直接开成浏览器 tab。老行整个 `artifacts` 缺席，少一个键是退化不是错误。
+      // chip payload on line (`ZCodeSavedWorkflowRun.artifacts`) with latest version of `contentType`:
+      // In the end, it opens the html product directly into a browser tab. The entire `artifacts` of the old row are missing and one missing key is a degeneracy not an error.
       const artifact = run.artifacts?.find((candidate) => candidate.id === artifactId);
       onOpenWorkflowArtifact?.({
         sessionId: run.parentSessionId,

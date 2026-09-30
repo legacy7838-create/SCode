@@ -1,12 +1,12 @@
 // ============================================================
-// 脚本 transcript 的纯模型
+// Pure model of script transcript
 // ============================================================
-// 一行 journal 节点 → 一张工具卡的素材：种类（Read / Search / Git / Terminal）、主文本、命令行、
-// 所属阶段与轮次、状态词、页脚数字。无 React、无 DOM、无取数。
+// One line of journal node → Material of a tool card: type (Read / Search / Git / Terminal), main text, command line,
+// The stage and round, status words, and footer numbers. No React, no DOM, no access.
 //
-// 种类按 **op** 分派，不按 kind：`kind` 只分 world-read / world-run，而卡片要的是「读文件」
-// 「找东西」「git」「跑命令」四个动词——它们正是 files / git / world 三个 facade 容器的分法。
-// 升级前的历史行没有 op（`input_json` 为 NULL），退回静态图上的步标签，种类是通用的「步骤」。
+// Types are assigned by **op**, not by kind: `kind` is only divided into world-read / world-run, and the card requires "reading files"
+// The four verbs of "finding things", "git" and "running commands" - they are exactly how the three facade containers of files / git / world are divided.
+// There is no op in the history line before the upgrade (`input_json` is NULL), and the step label on the static image is returned. The type is the general "step".
 
 import type { WorkflowRunState, WorkflowRunWorkspaceNode } from "@zcode/shared/zcode-protocol-v4";
 import type { WorkflowCausalityGraphData } from "@/components/workflow-graph/types.js";
@@ -14,28 +14,40 @@ import type { PhaseNaming } from "@/components/workflow-graph/phase-name.js";
 
 export type WorkspaceCardKind = "read" | "search" | "git" | "terminal" | "step";
 
-/** 一张卡的静态素材（不含状态——状态在 `workspaceCardStatus`，因为它还要叠活投影）。 */
+/**
+ * Static material for one card (no state — state lives in `workspaceCardStatus`, because it also
+ * has to overlay the live projection).
+ */
 export interface WorkspaceCardModel {
-  /** React key 与 ToolLayout 的 toolId / 展开态记忆键。 */
+  /** React key, and the toolId / expanded-state memory key for ToolLayout. */
   key: string;
   node: WorkflowRunWorkspaceNode;
   kind: WorkspaceCardKind;
   op: string | undefined;
-  /** Read：路径；Search：pattern（glob / grep）；Git：子命令 + 实参；Terminal：命令行；Step：步标签。 */
+  /**
+   * Read: path; Search: pattern (glob / grep); Git: subcommand + arguments; Terminal: command line;
+   * Step: step label.
+   */
   primary: string;
-  /** Search 的第二个实参（grep 的 glob 范围）；Git diff 的路径。 */
+  /** The second Search argument (the glob scope for grep); the path for a Git diff. */
   secondary?: string;
-  /** Terminal：`cmd arg…`（展开面板里 `$` 后面那一行）。 */
+  /** Terminal: `cmd arg…` (the line after the `$` in the expanded panel). */
   command?: string;
-  /** 所属阶段（静态图按站点查）；图不可得或站点不在图上时缺席。 */
+  /**
+   * The phase it belongs to (looked up by station in the static graph); absent when the graph is
+   * unavailable or the station is not on it.
+   */
   phase?: PhaseNaming;
-  /** 该站点的第几次调用（journal 序号）；> 1 时源芯片带 ⟳n。 */
+  /**
+   * Which invocation of that station this is (journal sequence number); the source chip carries ⟳n
+   * when > 1.
+   */
   round: number;
 }
 
 interface WorkspaceCardStatus {
   status: WorkflowRunWorkspaceNode["status"];
-  /** 活投影说这一步是 resume 的缓存命中（`replayed` 芯片）。 */
+  /** The live projection says this step was a cache hit on resume (the `replayed` chip). */
   replayed: boolean;
 }
 
@@ -47,12 +59,15 @@ function argString(args: readonly unknown[] | undefined, index: number): string 
 function argList(args: readonly unknown[] | undefined, index: number): string[] {
   const value = args?.[index];
   if (Array.isArray(value)) return value.map((item) => String(item));
-  // 截断模式下数组实参已经是 JSON 预览文本。
+  // In truncation mode, the array actual parameter is already the JSON preview text.
   if (typeof value === "string" && value.startsWith("[")) return [value];
   return [];
 }
 
-/** 一条 argv 的展示：带空格的实参加引号，与终端里敲的样子一致。 */
+/**
+ * Display form of one argv: arguments containing spaces are quoted, matching how they are typed in
+ * a terminal.
+ */
 function formatCommandLine(cmd: string, args: readonly string[]): string {
   const quote = (part: string) => (/[\s"']/.test(part) ? JSON.stringify(part) : part);
   return [cmd, ...args].map(quote).join(" ");
@@ -67,14 +82,15 @@ function workspaceCardKindOf(op: string | undefined): WorkspaceCardKind {
   return "step";
 }
 
-/** `git-changed-files` → `changed-files`；源芯片与主文本都用它。 */
+/** `git-changed-files` → `changed-files`; both the source chip and the main text use it. */
 function gitSubcommand(op: string): string {
   return op.slice("git-".length);
 }
 
 /**
- * 站点 → 阶段的查找表。静态图的 step 带 `phase`；`source ?? id` 是站点 id（may-set 展开的
- * 拷贝带 `source`）。无 `phase()` 标记的脚本没有 phases，表为空，所有卡都不带源芯片。
+ * Station → phase lookup table. Steps in the static graph carry `phase`; `source ?? id` is the
+ * station id (the copy expanded by may-set carries `source`). Scripts without a `phase()` marker
+ * have no phases, so the table is empty and no card carries a source chip.
  */
 function phaseBySiteId(graph: WorkflowCausalityGraphData | undefined): Map<string, PhaseNaming> {
   const table = new Map<string, PhaseNaming>();
@@ -89,7 +105,7 @@ function phaseBySiteId(graph: WorkflowCausalityGraphData | undefined): Map<strin
   return table;
 }
 
-/** 站点 → 静态步标签（历史行的兜底主文本）。 */
+/** Station → static step label (the fallback main text for history rows). */
 function stepLabelBySiteId(graph: WorkflowCausalityGraphData | undefined): Map<string, string> {
   const table = new Map<string, string>();
   for (const step of graph?.steps ?? []) table.set(step.source ?? step.id, step.label);
@@ -150,9 +166,11 @@ export function buildWorkspaceCards(
 }
 
 /**
- * 活投影的叠加：只补 `cached`（replayed 芯片）。状态以 journal 行为准——投影里 settled 而
- * journal 还是 running 的那一拍是查询滞后，下一次 `lastEventSequence` 抬升就会追上；反过来
- * journal 领先于投影（admission 先落库再发事件）时投影里干脆没有这个节点。
+ * The live projection overlay: it only fills in `cached` (the replayed chip). State is
+ * authoritative from the journal row — the moment the projection says settled while the journal
+ * still says running is query lag, and the next `lastEventSequence` bump catches up; conversely,
+ * when the journal is ahead of the projection (admission persists before the event is emitted) the
+ * node is simply absent from the projection.
  */
 export function workspaceCardStatus(
   node: WorkflowRunWorkspaceNode,
@@ -164,7 +182,10 @@ export function workspaceCardStatus(
   return { status: node.status, replayed: live?.cached === true };
 }
 
-/** 落点：该阶段的第一张卡的下标；阶段还没到（没有卡）→ -1（面板滚到末尾）。 */
+/**
+ * Landing spot: the index of the first card of that phase; when the phase has not arrived yet (no
+ * card) → -1 (the panel scrolls to the end).
+ */
 export function firstCardIndexOfPhase(
   cards: readonly WorkspaceCardModel[],
   phaseId: string,
@@ -172,7 +193,7 @@ export function firstCardIndexOfPhase(
   return cards.findIndex((card) => card.phase?.id === phaseId);
 }
 
-/** `1.3s` / `840ms` / `2m 05s`：一步的耗时。 */
+/** `1.3s` / `840ms` / `2m 05s`: how long one step took. */
 export function formatWorkspaceDuration(ms: number): string {
   if (ms < 1000) return `${Math.max(0, Math.round(ms))}ms`;
   if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
@@ -181,14 +202,17 @@ export function formatWorkspaceDuration(ms: number): string {
   return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
 }
 
-/** `4.1 KB` / `312 B` / `1.2 MB`：正文的大小。 */
+/** `4.1 KB` / `312 B` / `1.2 MB`: the size of the body text. */
 export function formatWorkspaceBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/** 失败行的状态词判据：driver 的超时 code 说「timed out」，其余说 code 本身。 */
+/**
+ * Criterion for the status word on a failure row: the driver's timeout code reads "timed out",
+ * anything else reads the code itself.
+ */
 export function isTimeoutError(error: { code: string; message: string } | undefined): boolean {
   if (error === undefined) return false;
   return /timeout|timed ?out/i.test(error.code) || /timed out|timeout/i.test(error.message);

@@ -1,51 +1,51 @@
 // ============================================================
-// dwf run 的发起锚点
+// dwf run launch anchor point
 // ============================================================
-// 子代理的 agent_step 要归到「发起这次 run 的那一轮」下面。锚点是一个 inputId，
-// 零 SQL 地活在 journal 事件 `run-launched` 里（只在建 run 那一世记一次）：
-//   - 提交时由本文件解析出来（活动轮 / 直接启动铸的值 / 前驱 run 的锚点 / 兜底铸值）
-//     交给引擎落库；
-//   - resume 与进度事件派生字段从 journal 读回，同一个 run 的锚点因此跨生命周期唯一。
+// The agent_step of the subagent should be classified under "the round that initiated this run". The anchor is an inputId,
+// Live in the journal event `run-launched` with zero SQL (only once in the run generation):
+//   - It is parsed from this file when submitting (active wheel / direct start casting value / front-wheel drive run anchor point / pocket casting value)
+//     Leave it to the engine for storage;
+//   - The derived fields of resume and progress events are read back from the journal, and the anchor points of the same run are therefore unique across the life cycle.
 //
-// 同一条事件还捎着三件同规的宿主元数据：脚本声明的阶段表（`phaseNames`）、本 run 子代理的
-// 选型（`subagentModel`）与脚本来自哪个文件（`scriptPath`）。四者都只在建 run 那一世写一次、引擎一概不读、都零 SQL——`dwf_run` 上
-// 没有对应的列。
+// The same event also carries three pieces of the same host metadata: the phase table (`phaseNames`) declared by the script, the run subagent's
+// Which file does the selection (`subagentModel`) and the script come from (`scriptPath`). All four are only written once in the life of the build run, the engine does not read at all, and they all have zero SQL - `dwf_run`.
+// There is no corresponding column.
 
 import type { TraceContext } from "@zcode/contracts";
 import type { JournalStorePort } from "@zcode/dynamic-workflow";
 import { uuidv7 } from "@zcode/shared";
 
 export interface RunLaunchAnchor {
-  /** 发起 run 那一轮的 inputId（中枢直接启动为铸出的 UUID v7）。 */
+  /** The inputId of the turn that initiated the run (a minted UUID v7 for a hub direct launch). */
   inputId: string;
 }
 
 /**
- * 交给引擎记进 `run-launched` 的全部内容：锚点 + 脚本声明的阶段表 + 本 run 子代理的选型（`subagentModel`，规范 picker 串
- * `providerId/modelId[$reasoningLevel]`）。
+ * Everything handed to the engine to record in `run-launched`: the anchor + the phase table declared by the script + the subagent selection for this run (`subagentModel`, the canonical picker string
+ * `providerId/modelId[$reasoningLevel]`).
  *
- * 后两者**都不是**锚点的一部分：修订续跑沿用前驱的 inputId，却用新脚本的阶段表，也绝不沿用
- * 前驱的模型（「省略即沿用前驱」是工具面的三态，由 AmendWorkflow 的 resolveInput 归一）——
- * 所以它们在 submit 里与锚点并列合入，而不是塞进 {@link resolveLaunchAnchor}。
+ * The latter two are **not** part of the anchor: a revision resume reuses the predecessor's inputId, yet takes the phase table of the new script, and it never reuses
+ * the predecessor's model either ("omitted means inherit the predecessor" is a tri-state on the tool surface, normalized by AmendWorkflow's resolveInput) —
+ * so they are merged alongside the anchor in submit rather than stuffed into {@link resolveLaunchAnchor}.
  */
 export interface RunLaunch extends RunLaunchAnchor {
   phaseNames?: string[];
   subagentModel?: string;
   /**
-   * 本 run 脚本文件的绝对路径。与阶段表、
-   * 子代理选型同规地不属于锚点：修订记的是**这一次修订**的脚本来自哪个文件，绝不沿用前驱的。
+   * The absolute path of this run's script file. Just like the phase table and the
+   * subagent selection, it is not part of the anchor: a revision records which file **this** revision's script came from, and never reuses the predecessor's.
    */
   scriptPath?: string;
-  /** 与 `phaseNames` 按位置对齐的「同时在跑」表（下标指向同一张表）；同样只在建 run 那一世落 journal。 */
+  /** The "running alongside" table positionally aligned with `phaseNames` (its indices point into the same table); likewise only journaled in the lifetime of run creation. */
   phaseAlongside?: number[][];
 }
 
 /**
- * 从 journal 读回 run 的锚点：首条 `run-launched`。升级前发起的 run 没有这条事件 → `undefined`，
- * 调用方据此不派生 `launchInputId`（事实层随之不发 `workflow.lifecycle`，子代理不上报，不补造）。
+ * Reads a run's anchor back from the journal: the first `run-launched`. A run launched before the upgrade has no such event → `undefined`,
+ * and the caller then does not derive `launchInputId` (the fact layer accordingly emits no `workflow.lifecycle`, the subagent reports nothing, and nothing is fabricated).
  *
- * 锚点紧跟首条 `run-started`（引擎的记录顺序），所以只读 journal 的头几条，不把整条 journal
- * 读进内存；`RUN_LAUNCH_ANCHOR_SCAN_LIMIT` 留出余量以防将来在它前面再插入建 run 事件。
+ * The anchor immediately follows the first `run-started` (the engine's recording order), so only the first few journal entries are read
+ * instead of pulling the whole journal into memory; `RUN_LAUNCH_ANCHOR_SCAN_LIMIT` leaves headroom in case run-creation events are ever inserted ahead of it.
  */
 const RUN_LAUNCH_ANCHOR_SCAN_LIMIT = 8;
 
@@ -60,14 +60,14 @@ export function readRunLaunchAnchor(
 }
 
 /**
- * 从 journal 读回本 run 子代理的选型：同一条 `run-launched` 上的 `subagentModel`。resume、两条读面与冷回放都据此还原同一个规范串——
- * 零 SQL，`dwf_run` 上没有这一列。缺席即子代理跑在会话模型上（绝大多数 run，升级前发起的
- * run 亦然）。
+ * Reads this run's subagent selection back from the journal: the `subagentModel` on that same `run-launched`. Resume, both read surfaces and cold replay all restore the same canonical string from it —
+ * zero SQL, there is no such column on `dwf_run`. Absence means the subagent runs on the session model (the vast majority of runs, including those
+ * launched before the upgrade).
  *
- * 与锚点同一条扫描、同一个上限，却**刻意不挂在** {@link RunLaunchAnchor} 上：
- * {@link resolveLaunchAnchor} 会让修订续跑沿用前驱的锚点，而模型绝不能这样被继承——那是
- * 工具面的三态（省略 = 沿用前驱、null = 回到会话模型、串 = 设定），归一发生在
- * `AmendWorkflow` 的 resolveInput 里，与 `max_concurrency` 同一条论证。
+ * Same scan and same limit as the anchor, yet **deliberately not hung on** {@link RunLaunchAnchor}:
+ * {@link resolveLaunchAnchor} lets a revision resume inherit the predecessor's anchor, but the model must never be inherited that way — that is
+ * the tri-state on the tool surface (omitted = inherit the predecessor, null = fall back to the session model, string = set it), normalized in
+ * `AmendWorkflow`'s resolveInput, by the same argument as `max_concurrency`.
  */
 export function readRunSubagentModel(journal: JournalStorePort, runId: string): string | undefined {
   for (const stored of journal.listEvents(runId, { limit: RUN_LAUNCH_ANCHOR_SCAN_LIMIT })) {
@@ -77,13 +77,13 @@ export function readRunSubagentModel(journal: JournalStorePort, runId: string): 
 }
 
 /**
- * 从 journal 读回本 run 的脚本文件：同一条 `run-launched` 上的 `scriptPath`。两条读面的冷路径据此
- * 还原同一个绝对路径——零 SQL，`dwf_run` 上没有这一列。缺席即这个 run 没有可编辑的脚本文件
- * （草稿写不下去的项目、本特性之前发起的 run）。
+ * Reads this run's script file back from the journal: the `scriptPath` on that same `run-launched`. The cold path of both read surfaces restores
+ * the same absolute path from it — zero SQL, there is no such column on `dwf_run`. Absence means this run has no editable script file
+ * (projects whose draft could not be written, runs launched before this feature).
  *
- * 与 {@link readRunSubagentModel} 同一条扫描、同一个上限，同样**刻意不挂在**
- * {@link RunLaunchAnchor} 上：锚点会被修订续跑沿用，而前驱的脚本路径指向的是旧脚本，
- * 沿用它就是让模型下次去编辑一个已经不在跑的文件。
+ * Same scan and same limit as {@link readRunSubagentModel}, and likewise **deliberately not hung on**
+ * {@link RunLaunchAnchor}: the anchor is inherited by a revision resume, whereas the predecessor's script path points at the old script,
+ * and reusing it would send the model off to edit a file that is no longer running.
  */
 export function readRunScriptPath(journal: JournalStorePort, runId: string): string | undefined {
   for (const stored of journal.listEvents(runId, { limit: RUN_LAUNCH_ANCHOR_SCAN_LIMIT })) {
@@ -93,11 +93,11 @@ export function readRunScriptPath(journal: JournalStorePort, runId: string): str
 }
 
 /**
- * 提交时解析锚点。优先级：
- *   1. 修订续跑（`resume_from`）沿用**前驱**的锚点——同一件工作的所有 step 挂同一个 message；
- *   2. 调用方显式给的 `launchInputId`（中枢直接启动：与 controlOnly 启动轮共用一个 UUID v7）；
- *   3. 父 runtime 活动轮的 inputId（聊天 CreateWorkflow：工具在那一轮里执行）；
- *   4. 兜底铸一个 UUID v7（CLI、无活动轮的宿主、前驱没有锚点的修订）。
+ * Resolves the anchor at submit time. Priority:
+ *   1. A revision resume (`resume_from`) reuses the **predecessor's** anchor — every step of the same work hangs off the same message;
+ *   2. The `launchInputId` explicitly given by the caller (hub direct launch: one UUID v7 shared with the controlOnly launch turn);
+ *   3. The inputId of the parent runtime's active turn (chat CreateWorkflow: the tool executes in that turn);
+ *   4. Fallback: mint a UUID v7 (CLI, hosts with no active turn, revisions whose predecessor has no anchor).
  */
 export function resolveLaunchAnchor(input: {
   requested?: string;

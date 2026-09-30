@@ -1,6 +1,7 @@
 /**
- * IStorageService 实现：扫描 job、最近快照、清理的唯一 owner。
- * 不做 IO；根目录、遍历、删除、系统定位全部通过 ports 注入。
+ * IStorageService implementation: the single owner of scan jobs, the latest snapshot and
+ * cleanup. It performs no IO; roots, traversal, deletion and system location are all injected
+ * through ports.
  */
 import { Emitter } from "@zcode/rpc";
 import type { IStorageService } from "../contract.js";
@@ -15,7 +16,7 @@ interface StorageServiceDependencies {
   scanRunner: ScanRunnerPort;
   cleaner: FsCleanerPort;
   now?: () => number;
-  /** 进度事件最小间隔，默认 300ms。 */
+  /** Minimum interval between progress events, 300ms by default. */
   progressThrottleMs?: number;
 }
 
@@ -54,8 +55,8 @@ export function createStorageService(deps: StorageServiceDependencies): IStorage
         now,
         throttleMs,
         emit: (snapshot) => {
-          // 用 currentJob 判断会在用户主动 cancelScan 后（currentJob 已清空）丢掉取消态快照。
-          // 这里按「最近一次启动的 job」判断：旧 job 被新 job 取代后发出的尾包不能覆盖新 job 的快照。
+          // Using currentJob for determination would lose the cancellation state snapshot after the user actively cancels a scan (currentJob is already cleared).
+          // Here we determine by "the most recently started job": tail packets sent after an old job is replaced by a new job cannot overwrite the new job's snapshot.
           if (jobId === latestJobId) {
             latestSnapshot = snapshot;
           }
@@ -84,7 +85,7 @@ export function createStorageService(deps: StorageServiceDependencies): IStorage
       if (getStorageCategoryCleanability(request.categoryId) === "none") {
         throw new Error(`storage category is not cleanable: ${request.categoryId}`);
       }
-      // 清理会改变磁盘内容，进行中的扫描结果会失真；先取消，UI 在清理后重新扫描。
+      // Cleanup changes disk content, making in-progress scan results inaccurate; cancel first, then UI rescans after cleanup.
       cancelCurrentJob();
       const root = await resolveRoot(request.rootId);
       const scopes = getStorageCleanScopes(request.categoryId);

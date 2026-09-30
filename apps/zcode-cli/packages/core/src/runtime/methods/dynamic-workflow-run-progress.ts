@@ -10,16 +10,17 @@ import {
 import type { AgentRuntimeInternal } from "../internal.js";
 
 /**
- * 把一条 workflow run 进度事件追加到**父会话**（run 自己没有会话）。
+ * Append a workflow run progress event to the **parent session** (a run has no session of its own).
  *
- * 这是一次**出回合追加**：run 在后台跑，事件到达时父会话可能正在跑一个回合，也可能完全空闲。
- * 两种都必须落地，而这条链路本来就两种都支持——BackgroundTask* 走的就是它（core 内部经
- * tool executor 的 emitEvent）。dwf 的事件源在 bootstrap 的 run service，那一层拿不到
- * AgentRuntimeInternal，所以需要这个公共方法；同形先例是 {@link recordTargetChanged}。
+ * This is an **out-of-turn append**: the run executes in the background, and when the event arrives the parent session may be
+ * mid-turn or completely idle. Both must land, and this channel already supports both — BackgroundTask* is what rides it
+ * (inside core, via the tool executor's emitEvent). dwf's event source is the run service in bootstrap, and that layer cannot
+ * reach AgentRuntimeInternal, hence this public method; the precedent of the same shape is {@link recordTargetChanged}.
  *
- * 刻意用 `rootTraceContext` 而不是当前回合的 trace：turnId 因此为空，事件不冒领任何一轮。
- * 冷恢复的 merge 会把带 turnId 的内存事件按"所属未完结轮"插回该轮尾部，而一条 run 事件
- * 属于 run、不属于任何一轮——冒领会让它在冷恢复后出现在一轮已完结对话的末尾。
+ * Deliberately uses `rootTraceContext` instead of the current turn's trace: turnId is therefore empty and the event claims
+ * no turn. The merge during cold recovery inserts in-memory events carrying a turnId back at the tail of the unfinished turn
+ * they belong to, while a run event belongs to the run and to no turn — claiming one would make it show up at the end of an
+ * already finished conversation after a cold recovery.
  */
 export async function recordDynamicWorkflowRunProgress(
   this: AgentRuntimeInternal,
@@ -39,13 +40,13 @@ export async function recordDynamicWorkflowRunProgress(
   notifyRunStalled.call(this, payload, traceContext);
 }
 
-/** run 级停滞的事件种类（引擎的 `RunEvent.type`）。 */
+/** The event kind of a run-level stall (the engine's `RunEvent.type`). */
 const RUN_STALLED_EVENT_TYPE = "run-stalled";
 
 /**
- * `run-stalled` → 一条模型可见的 run 中通知。与 {@link notifyEscalationRaised} 同一层、同三条
- * 纪律：每条事件恰好一条通知（driver 侧每个 stall 段只发一次，成功后重新上膛才会有下一条）；
- * 不催办；绝不抛异常——载荷形状不对就跳过并记一条日志。
+ * `run-stalled` → one model-visible in-run notification. Same layer and same three disciplines as
+ * {@link notifyEscalationRaised}: exactly one notification per event (on the driver side, once per stall segment; the next one
+ * only arrives once a success re-arms it); no nagging; and never throw — if the payload shape is wrong, skip it and log one line.
  */
 function notifyRunStalled(
   this: AgentRuntimeInternal,
@@ -94,21 +95,22 @@ function notifyRunStalled(
   });
 }
 
-/** 升级问答的事件种类（引擎的 `RunEvent.type`，经进度载荷的 `eventType` 到达）。 */
+/** The event kind of an escalation Q&A (the engine's `RunEvent.type`, arriving via the progress payload's `eventType`). */
 const ESCALATION_RAISED_EVENT_TYPE = "escalation-raised";
 
 /**
- * `escalation-raised` → 一条模型可见的 run 中通知。
+ * `escalation-raised` → one model-visible in-run notification.
  *
- * 为什么在这一层而不是新开一条端口：进度汇已经把每一条 RunEvent 送到这里，这是**唯一**一个
- * 同时看得见 run 事件与 AgentRuntime 的地方。再加一个端口只会让同一条事实走两条路。
+ * Why at this layer rather than opening a new port: the progress sink already delivers every RunEvent here, and this is the
+ * **only** place that can see both run events and the AgentRuntime. One more port would only make the same fact travel two roads.
  *
- * 三条纪律：
- *   - **每个 raised 恰好一条通知**，不重发、不催办。通知被丢弃（stale branch / shutdown）
- *     后的兜底是查询——GetWorkflowRun 的 pendingQuestions，不是重试。
- *   - **`escalation-resolved` 不发通知**：作答方就是主代理自己，回执已经是那次工具调用的结果。
- *   - **绝不抛异常**：这是观察面，而 run 的真相在 journal。载荷形状不对就跳过并记一条日志——
- *     它跨了端口边界又被有界化裁剪过，防御性读取是它应得的待遇。
+ * Three disciplines:
+ *   - **Exactly one notification per raised**, no resending, no nagging. When a notification is dropped (stale branch / shutdown),
+ *     the fallback is a query — the pendingQuestions of GetWorkflowRun, not a retry.
+ *   - **`escalation-resolved` sends no notification**: the answerer is the main agent itself, and the receipt is already the
+ *     result of that tool call.
+ *   - **Never throw**: this is an observation surface, while the truth of a run lives in the journal. If the payload shape is
+ *     wrong, skip it and log one line — it has crossed a port boundary and been trimmed by bounding, so a defensive read is what it has earned.
  */
 function notifyEscalationRaised(
   this: AgentRuntimeInternal,
@@ -129,25 +131,25 @@ function notifyEscalationRaised(
     return;
   }
 
-  // 展示名的兜底链与终态通知同源：registry 条目的 description（CreateWorkflow 的 name /
-  // 脚本首行派生）→ runId。刻意不去查端口——通知是同步产出的，而这条路径不做 I/O。
+  // The backend link of the display name has the same origin as the final notification: the description of the registry entry (the name/name of CreateWorkflow
+  // Derived from the first line of the script) → runId. Deliberately not checking the port - notifications are generated synchronously, and this path does not do I/O.
   const runLabel = this.runtimeTaskRegistry.get(payload.runId)?.description ?? payload.runId;
   const context = stringField(payload.payload, "context");
-  // 匿名 actor 没有 actorName（引擎刻意不合成兜底标签，见 RunEvent 的注释）：这里落到
-  // 结构化 ref `site@ordinal`，它在 run 内唯一定位，读成句子也还过得去。通知文本与 manifest
-  // 载荷共用同一条兜底链——两处若各兜各的，同一个 actor 会在两处显示不同的名字。
+  // Anonymous actors do not have actorName (the engine deliberately does not synthesize hidden labels, see the comments of RunEvent): Here comes the
+  // The structured ref `site@ordinal`, which is uniquely positioned within the run, reads passably as a sentence. Notification text and manifest
+  // The payloads share the same pocket chain - if the two places are pocketed separately, the same actor will display different names in the two places.
   const actor = stringField(payload.payload, "actorName") ?? actorRefLabel(payload.payload);
-  // askedAt 是 epoch ms，可能缺席（stringField 读不出数字，只能防御性直读）。
+  // askedAt is epoch ms and may be absent (stringField cannot read numbers and can only read them defensively).
   const askedAt = payload.payload.askedAt;
 
   this.enqueueBackgroundTaskNotification({
     originMeta: {
       backgroundSource: "workflow",
       title: runLabel,
-      // workId ≡ runId：与该 run 的终态通知同一个展示锚点，两条通知因此落在同一条后台工作上。
+      // workId ≡ runId: The same display anchor point as the final notification of the run, so the two notifications fall on the same background work.
       workId: payload.runId,
-      // manifest 载荷（escalation 判别分支）：GUI 折叠成「Subagent X has a question」，
-      // 展开显示问题全文。发射侧铸造、有界（question / context ≤4000，同步 shared schema）。
+      // Manifest payload (escalation decision branch): GUI collapsed into "Subagent X has a question",
+      // Expand to display the full text of the question. Launch-side casting, bounded (question/context ≤4000, synchronous shared schema).
       workflowNotification: {
         kind: "escalation",
         qid,
@@ -159,7 +161,7 @@ function notifyEscalationRaised(
         ...(typeof askedAt === "number" && Number.isFinite(askedAt) ? { askedAt } : {}),
       },
     },
-    // taskId 让通知继承该 run 的 branchGeneration（迟到通知的 fencing）；兜底是快照查询。
+    // taskId allows the notification to inherit the branchGeneration of the run (fencing of late notifications); the bottom line is snapshot query.
     taskId: payload.runId,
     text: formatWorkflowEscalationNotification({
       runLabel,
@@ -173,10 +175,10 @@ function notifyEscalationRaised(
   });
 }
 
-/** manifest 载荷里 question / context 的界（shared schema：≤4000 字符）。 */
+/** The bounds on question / context in the manifest payload (shared schema: ≤4000 characters). */
 const WORKFLOW_ESCALATION_TEXT_MAX_CHARS = 4_000;
 
-/** `{siteId, ordinal}` → `site@ordinal`（引擎 `refToString` 的形状）；读不出来就说「未知 actor」。 */
+/** `{siteId, ordinal}` → `site@ordinal` (the shape of the engine's `refToString`); when it cannot be read, say "unknown actor". */
 function actorRefLabel(payload: Record<string, unknown>): string {
   const actor = payload.actor;
   if (typeof actor === "string") return actor;

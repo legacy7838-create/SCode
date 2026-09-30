@@ -15,7 +15,7 @@ export function WorkspaceContextPath({
   const [home, setHome] = useState<{ service: typeof systemService; path: string } | null>(null);
   useEffect(() => {
     let disposed = false;
-    // 路径缩写必须使用当前 workspace 的主机信息，不能把本机 home 套到远程路径上。
+    // The path abbreviation must use the host information of the current workspace, and the local home cannot be applied to the remote path.
     void systemService.info().then(
       (info) => {
         if (!disposed) setHome({ service: systemService, path: info.homedir });

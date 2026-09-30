@@ -36,8 +36,8 @@ function parsePosixProcessList(stdout: string, includeCommand: boolean): Process
     const processGroupId = parsePositiveInteger(processGroupIdText);
     const lstart = fields.slice(3, 8).join(" ");
     const command = includeCommand ? fields.slice(8).join(" ") : "";
-    // Darwin 的 ps 只暴露秒级 lstart；追加完整 command 作为复用校验熵。
-    // Linux 随后会用 /proc start ticks 覆盖该值。
+    // Darwin's ps only exposes second-level lstart; appends the complete command as reuse verification entropy.
+    // Linux then overwrites this value with /proc start ticks.
     const startTime = includeCommand ? `${lstart}|command:${command}` : lstart;
     if (pid === undefined || parentPid === undefined || !processGroupId || !startTime) {
       continue;
@@ -84,15 +84,25 @@ function readPosixProcessList(options: ProcessTreeTerminatorOptions): ProcessIde
     },
   );
   if (result.error) {
-    warn(options, "查询 runtime 后代进程失败（进程表查询）:", result.error);
+    warn(
+      options,
+      "failed to look up runtime descendant processes (process table query):",
+      result.error,
+    );
     return [];
   }
   if (result.signal === "SIGTERM" || result.signal === "SIGKILL") {
-    warn(options, `查询 runtime 后代进程失败（进程表超时） signal=${result.signal}`);
+    warn(
+      options,
+      `failed to look up runtime descendant processes (process table timeout) signal=${result.signal}`,
+    );
     return [];
   }
   if (result.status !== 0 || !result.stdout) {
-    warn(options, `查询 runtime 后代进程失败（进程表查询） status=${result.status ?? "unknown"}`);
+    warn(
+      options,
+      `failed to look up runtime descendant processes (process table query) status=${result.status ?? "unknown"}`,
+    );
     return [];
   }
   return parsePosixProcessList(result.stdout, includeCommand);
@@ -120,15 +130,15 @@ function readWindowsProcessList(options: ProcessTreeTerminatorOptions): readonly
   if (result.error || result.status !== 0 || !result.stdout) {
     warn(
       options,
-      `查询 Windows runtime 进程表失败 status=${result.status ?? "unknown"}:`,
+      `failed to query the Windows runtime process table status=${result.status ?? "unknown"}:`,
       result.error ?? result.stderr,
     );
     return [];
   }
   const identities = parseWindowsProcessList(result.stdout);
   windowsProcessListCache = identities;
-  // 同一轮 app quit 会同步抓取多个 workspace，复用同一份带 CreationDate 的系统进程表；
-  // 下个 microtask 立即失效，避免稍后的 restart/quit 把 PID 复用误判成旧进程。
+  // The same round of app quit will capture multiple workspaces simultaneously and reuse the same system process table with CreationDate;
+  // The next microtask will be invalidated immediately to avoid misjudgment of PID reuse as an old process during subsequent restart/quit.
   queueMicrotask(() => {
     if (windowsProcessListCache === identities) {
       windowsProcessListCache = undefined;
@@ -153,8 +163,8 @@ function refineLinuxProcessIdentity(identity: ProcessIdentity): ProcessIdentity 
     if (commandEnd < 0) {
       return undefined;
     }
-    // /proc/<pid>/stat 的 field 22 是自 boot 起的启动 tick；精度高于 ps lstart
-    // 的秒级时间，PID 在同一秒被复用时也不会被误认成旧 runtime 成员。
+    // Field 22 of /proc/<pid>/stat is the startup tick since boot; the accuracy is higher than ps lstart
+    // Second-level time, the PID will not be mistaken for the old runtime member when it is reused in the same second.
     const fieldsAfterCommand = stat
       .slice(commandEnd + 2)
       .trim()
@@ -169,7 +179,7 @@ function refineLinuxProcessIdentity(identity: ProcessIdentity): ProcessIdentity 
       parentPid !== identity.parentPid ||
       processGroupId !== identity.processGroupId
     ) {
-      // ps 与 /proc 两次读取间发生 PID 复用/reparent 时，不能拼出混合身份。
+      // When PID reuse/reparent occurs between two reads of ps and /proc, mixed identities cannot be spelled out.
       return undefined;
     }
     return {
@@ -251,14 +261,14 @@ export function captureProcessTreeSnapshot(
   const processList = readProcessList(options);
   const rootIdentity = processList.find((identity) => identity.pid === child.pid);
   if (!rootIdentity) {
-    // 没有创建标识的 rootPid 不能形成进程所有权；返回半截快照会让
-    // 延迟回收在 PID 复用后重新沿裸 root PID 认领无关进程树。
+    // A rootPid that does not create an identity cannot form process ownership; returning a half-snapshot would
+    // Delayed recycling reclaims the unrelated process tree along the bare root PID after PID reuse.
     return undefined;
   }
   const descendantIdentities = collectDescendantIdentitiesFromProcessList(child.pid, processList);
-  // POSIX detached root 是自己进程组的 leader；若它在 ps 扫描期间退出，
-  // 后代会被 reparent，单靠 PPID 链会漏掉仍属于该 owned PGID 的进程。仅在
-  // PGID === root PID 时合并同组成员，避免把普通 child 所在的宿主进程组纳入快照。
+  // POSIX detached root is the leader of its own process group; if it exits during a ps scan,
+  // Descendants will be reparented, and relying on the PPID chain alone will miss processes that still belong to the owned PGID. only in
+  // When PGID === root PID, merge the members of the same group to avoid including the host process group where the ordinary child is located into the snapshot.
   const ownedProcessGroupIdentities =
     process.platform !== "win32" && rootIdentity.processGroupId === child.pid
       ? processList.filter((identity) => identity.processGroupId === child.pid)
@@ -289,9 +299,9 @@ export function captureProcessGroupSnapshot(
   if (process.platform === "win32" || !Number.isInteger(processGroupId) || processGroupId <= 0) {
     return undefined;
   }
-  // POSIX detached Agent 的 root 可能先于同组 MCP/工具进程退出，
-  // 此时 PPID 已经变化，但内核会在最后一个成员退出前保留原 PGID。只在 cleanup
-  // 边界按 Host spawn 时拥有的 PGID 查询，避免把进程表扫描带入协议消息热路径。
+  // The root of POSIX detached Agent may exit before the same group of MCP/tool processes.
+  // At this point the PPID has changed, but the kernel will retain the original PGID until the last member exits. Only in cleanup
+  // Boundaries are queried by the PGID owned by the Host when spawned to avoid bringing process table scans into the protocol message hot path.
   const identities = refineProcessIdentities(
     readProcessList(options).filter((identity) => identity.processGroupId === processGroupId),
   );
@@ -324,10 +334,10 @@ export function captureExitedRootDescendantsSnapshot(
   ) {
     return undefined;
   }
-  // Windows Win32_Process 会保留创建者 ParentProcessId，即使 CLI root
-  // 已经退出。裸 ParentProcessId 会在 PID 复用后误认领无关进程，因此候选成员的
-  // CreationDate 还必须落在 Host 记录的 root 生命周期内；后续 force 再按同一
-  // CreationDate 复核，不能向已经复用的 descendant PID 发信号。
+  // Windows Win32_Process retains creator ParentProcessId even if CLI root
+  // Already exited. The naked ParentProcessId will mistakenly claim an unrelated process after PID reuse, so the candidate member's
+  // CreationDate must also fall within the root life cycle of the Host record; subsequent force presses the same
+  // CreationDate review, cannot signal a descendant PID that has been reused.
   const processList = readProcessList(options).filter((identity) => {
     const createdAtMs = parseWindowsCreationTimeMs(identity.startTime);
     return createdAtMs !== undefined && createdAtMs >= startedAtMs && createdAtMs <= exitedAtMs;

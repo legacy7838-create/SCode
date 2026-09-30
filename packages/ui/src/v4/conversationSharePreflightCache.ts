@@ -89,8 +89,9 @@ export function conversationSharePreflightCacheKey(
 }
 
 /**
- * 聚合多个 turn 的预检结果时，去掉同一条无法定位到具体轮次/文件的全局错误。
- * 轮次或文件级问题保留各自定位字段，避免把用户真正需要处理的多个问题合并掉。
+ * When aggregating preflight results across several turns, drop duplicate global errors that cannot
+ * be located to a specific turn/file. Turn-level or file-level problems keep their own locator
+ * fields, so that the several problems the user really has to act on are not merged away.
  */
 export function dedupeConversationShareIssues(
   issues: readonly ConversationShareFailureIssue[],
@@ -101,8 +102,8 @@ export function dedupeConversationShareIssues(
       issue.rowId !== undefined ||
       issue.turnOrdinal !== undefined ||
       issue.artifactDisplayName !== undefined;
-    // transport/conversation 问题本身就是全局状态；turn/artifact 问题没有定位字段时，
-    // 即使内容相同也要保留，避免把多个待处理轮次误合并成一条。
+    // The transport/conversation question itself is the global state; when the turn/artifact question does not have a positioning field,
+    // Even if the content is the same, it should be retained to avoid merging multiple pending rounds into one by mistake.
     if (!hasLocator && issue.scope !== "transport" && issue.scope !== "conversation") {
       return true;
     }
@@ -130,11 +131,13 @@ export function dedupeConversationShareIssues(
 }
 
 /**
- * 把一次预检结果拆成按 turn 的缓存条目。
+ * Splits one preflight result into per-turn cache entries.
  *
- * dev 下 host 进程不会随 services 重建重启，老 host 返回的结果没有 turnResults，
- * 调用方直接 `.map` 会抛异常并被下游 catch 报成「服务端预检失败」。这里对字段缺失做降级：
- * 找不到某个 turn 的明细就回落到整体 issues，宁可粒度粗一点也不能把成功的预检说成失败。
+ * In dev the host process is not restarted when services are rebuilt, and a result from an old host
+ * has no turnResults, so a caller that directly `.map`s it throws and the downstream catch reports
+ * it as “server-side preflight failed”. This degrades gracefully on a missing field: when the
+ * detail for some turn cannot be found, it falls back to the overall issues — coarser granularity
+ * is acceptable, but a successful preflight must never be called a failure.
  */
 export function buildConversationSharePreflightCacheEntries(
   result: ConversationSharePreflightResult,

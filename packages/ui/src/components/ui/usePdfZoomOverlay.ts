@@ -5,9 +5,9 @@ export const ZOOM_STEP = 0.25;
 export const MIN_SCALE = 0.25;
 export const MAX_SCALE = 4;
 export const DEFAULT_SCALE = 1;
-// 修饰键 + 滚轮的连续缩放灵敏度：兼容触控板高频小 delta 和鼠标滚轮大 delta。
+// Continuous zoom sensitivity for modifier keys + wheel: Compatible with trackpad high frequency small delta and mouse wheel large delta.
 export const WHEEL_ZOOM_SENSITIVITY = 0.002;
-// 手势停顿后才提交真实渲染，连续手势期间只做 CSS 预览。
+// The real rendering is submitted only after the gesture pauses, and only CSS preview is done during the continuous gesture.
 export const ZOOM_COMMIT_DELAY_MS = 200;
 
 export function clampScale(scale: number): number {
@@ -61,7 +61,7 @@ export function getPdfPagePreviewStyle(
     return undefined;
   }
   return {
-    // 已知页面尺寸后脱离普通文档流，只让目标布局盒决定滚动范围，避免旧画布尺寸干扰缩放。
+    // After the page size is known, it is separated from the ordinary document flow and only lets the target layout box determine the scrolling range to avoid the old canvas size interfering with scaling.
     position: hasStableLayoutBox ? "absolute" : undefined,
     inset: hasStableLayoutBox ? 0 : undefined,
     transform: previewScale === 1 ? undefined : `scale(${previewScale})`,

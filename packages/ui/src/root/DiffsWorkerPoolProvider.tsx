@@ -50,7 +50,7 @@ function WorkerRenderOptionsSync({
         useTokenTransformer: highlighterOptions.useTokenTransformer,
       })
       .catch((error: unknown) => {
-        logger.warn("[DiffsWorkerPoolProvider] 同步渲染参数失败", {
+        logger.warn("[DiffsWorkerPoolProvider] failed to sync render options", {
           error: error instanceof Error ? error.message : String(error),
         });
       });

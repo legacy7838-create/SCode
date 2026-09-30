@@ -1,18 +1,18 @@
 #!/usr/bin/env node
-// 开工前基线新鲜度检查 —— 当前分支落后自己的远端、或（非特性分支时）落后
-// origin/main 超阈值，直接失败，防止在旧架构上分析、写测试、修已经消失的问题。
+// Baseline freshness check before starting work - the current branch lags behind its own remote end, or (in the case of non-feature branches) lags behind
+// origin/main exceeds the threshold and fails directly, preventing analysis, writing tests, and repairing problems that have disappeared on the old architecture.
 //
-// 背景：本地 zcode-cua 曾落后 origin/main 140 个提交（本地 Skill 仍
-// 558 行、主线已收敛到 128 行），z-code 集成分支曾落后自己的远端 29 个提交，都曾在
-// 旧基线上开工。任何会话开始前先跑本脚本（zcode-cua 仓库用它的 python 等价物）。
+// Background: The local zcode-cua was once 140 commits behind origin/main (the local Skill is still
+// 558 lines, the main line has converged to 128 lines), the z-code integration branch was once behind its own remote end by 29 commits, all of which were
+// Work started on the old baseline. Run this script before starting any session (the zcode-cua repository uses its python equivalent).
 //
-// 判定规则：
-//   1) 落后自己的远端跟踪分支（任何数量）→ 失败：先 git merge --ff-only <upstream>。
-//   2) ahead==0 且落后 origin/main 超阈值 → 失败：本地 main 类分支纯过期。
-//   3) ahead>0（特性/MR 分支）且落后 origin/main 超阈值 → 警告不失败：分叉是正常的，
-//      但数字会打出来，由你决定是否 rebase（有未合并的草稿变更时不要盲目 rebase）。
+// Judgment rules:
+//   1) Fall behind own remote tracking branches (any number) → fail: git merge --ff-only <upstream> first.
+//   2) ahead==0 and behind origin/main exceeds the threshold → Failure: the local main class branch is purely out of date.
+//   3) ahead>0 (feature/MR branch) and behind origin/main beyond threshold → warning does not fail: forking is normal,
+//      But the number will be printed, and it’s up to you to decide whether to rebase (don’t blindly rebase when there are unmerged draft changes).
 //
-// 用法：node scripts/check-workspace-freshness.mjs [--max-behind-main 50] [--no-fetch]
+// Usage: node scripts/check-workspace-freshness.mjs [--max-behind-main 50] [--no-fetch]
 
 import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
@@ -22,7 +22,7 @@ const args = process.argv.slice(2);
 const maxBehindMainIndex = args.indexOf("--max-behind-main");
 const maxBehindMain = maxBehindMainIndex >= 0 ? Number(args[maxBehindMainIndex + 1]) : 50;
 if (!Number.isInteger(maxBehindMain) || maxBehindMain < 0) {
-  console.error("[freshness] --max-behind-main 需要一个非负整数");
+  console.error("[freshness] --max-behind-main requires a non-negative integer");
   process.exit(2);
 }
 const doFetch = !args.includes("--no-fetch");
@@ -42,7 +42,7 @@ try {
   upstream = await git("rev-parse", "--abbrev-ref", "@{upstream}");
 } catch {
   console.warn(
-    `[freshness] ${branch} 没有远端跟踪分支，跳过 behind-remote 检查（是否忘了 push -u？）`,
+    `[freshness] ${branch} has no remote tracking branch, skips behind-remote checks (did you forget push -u?)`,
   );
 }
 
@@ -51,7 +51,7 @@ if (upstream) {
   const behindRemote = Number(await git("rev-list", "--count", `HEAD..${upstream}`));
   if (behindRemote > 0) {
     failures.push(
-      `${branch} 落后 ${upstream} ${behindRemote} 个提交：先 git merge --ff-only ${upstream}`,
+      `${branch} is behind ${upstream} ${behindRemote} commits: first git merge --ff-only ${upstream}`,
     );
   }
 }
@@ -61,29 +61,33 @@ try {
   await git("rev-parse", "--verify", "origin/main^{commit}");
   const aheadMain = Number(await git("rev-list", "--count", `origin/main..HEAD`));
   const behindMain = Number(await git("rev-list", "--count", `HEAD..origin/main`));
-  mainReport = `相对 origin/main：ahead ${aheadMain} / behind ${behindMain}（阈值 ${maxBehindMain}）`;
+  mainReport = `Relative to origin/main: ahead ${aheadMain} / behind ${behindMain} (threshold ${maxBehindMain})`;
   if (behindMain > maxBehindMain) {
-    const message = `落后 origin/main ${behindMain} 个提交，超过阈值 ${maxBehindMain}`;
+    const message = `Behind origin/main ${behindMain} commits, exceeds threshold ${maxBehindMain}`;
     if (aheadMain === 0) {
-      failures.push(`${message}：git merge --ff-only origin/main 或重建分支`);
+      failures.push(`${message}: git merge --ff-only origin/main or rebuild the branch`);
     } else {
       console.warn(
-        `[freshness] 警告：${message}。这是特性/MR 分支（ahead ${aheadMain}），` +
-          `分叉本身正常；若要跟主线对齐请先确认 MR 状态（有未合并的草稿变更时不要盲目 rebase）。`,
+        `[freshness] Warning: ${message}. This is the feature/MR branch (ahead ${aheadMain}),` +
+          `The fork itself is normal; if you want to align with the main line, please confirm the MR status first (do not blindly rebase when there are unmerged draft changes).`,
       );
     }
   }
 } catch {
-  console.warn("[freshness] 仓库没有 origin/main，跳过 main 距离检查。");
+  console.warn(
+    "[freshness] The warehouse does not have origin/main, and the main distance check is skipped.",
+  );
 }
 
 if (failures.length > 0) {
-  console.error(`[freshness] 基线过期，拒绝在旧架构上开工（当前分支：${branch}）：`);
+  console.error(
+    `[freshness] The baseline has expired and work on the old architecture is refused (current branch: ${branch}):`,
+  );
   for (const failure of failures) console.error(`  - ${failure}`);
   process.exit(1);
 }
 console.log(
-  `[freshness] 基线新鲜：${branch}${upstream ? `（与 ${upstream} 同步）` : ""}${
-    mainReport ? `，${mainReport}` : ""
+  `[freshness] Baseline freshness: ${branch}${upstream ? `(with ${upstream} synced)` : ""}${
+    mainReport ? `, ${mainReport}` : ""
   }`,
 );

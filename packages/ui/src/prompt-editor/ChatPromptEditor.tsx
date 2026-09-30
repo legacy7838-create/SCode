@@ -1,5 +1,7 @@
-/* oxlint-disable eslint(max-lines) -- 输入壳同时收口 Lexical 同步、拖拽和工具栏插槽，暂不拆组件。 */
-// 输入展示壳：纯 props 组件、无 store/协议依赖；mention 面板通过 enableMentionPanel 透传。
+/* oxlint-disable eslint(max-lines) -- the input shell also absorbs Lexical syncing, drag handling,
+ * and the toolbar slot; components are not being split out yet.
+ */
+// Input display shell: pure props component, no store/protocol dependency; mention panel is transparently transmitted through enableMentionPanel.
 import type {
   KeyboardEventHandler,
   DragEventHandler,
@@ -92,7 +94,7 @@ export function ChatPromptEditor({
   workspacePath: string;
   workspaceIdentity?: string;
   taskId: string | null;
-  /** 仅供 Composer Skill catalog；可为草稿的 prewarm Session。 */
+  /** For the Composer Skill catalog only; a prewarm Session for drafts. */
   skillCatalogSessionId?: string | null;
   initialValue?: string;
   syncInitialValueOnMount?: boolean;
@@ -119,7 +121,7 @@ export function ChatPromptEditor({
     testId?: string;
     menuItemTestId?: string;
   };
-  /** 行内编辑专用：固定插在取消与主提交之间的第二动作。 */
+  /** Inline editing only: a second action fixed between cancel and the primary submit. */
   betweenCancelAndSubmitAction?: ReactNode;
   submitControl?: ReactNode;
   inputTestId?: string;
@@ -133,7 +135,7 @@ export function ChatPromptEditor({
   shellClassName?: string;
   compactPlaceholder?: boolean;
   onChange?: (value: string) => void;
-  // 适配：返回 false 表示业务层拒绝/延迟本次提交，Lexical 不自行 reset（草稿保留）。
+  // Adaptation: Returning false indicates that the business layer rejects/delays this submission, and Lexical does not reset itself (the draft is retained).
   onSubmit: (value: string) => boolean | void;
   onModifiedSubmit?: (value: string) => boolean | void;
   onCancel?: () => void;
@@ -144,9 +146,9 @@ export function ChatPromptEditor({
   onDragLeave?: DragEventHandler<HTMLDivElement>;
   onDrop?: DragEventHandler<HTMLDivElement>;
   excludedSlashCommandNames?: readonly string[];
-  /** App 层本地斜杠命令（透传 LexicalChatInput）。 */
+  /** App-level local slash commands (passed through to LexicalChatInput). */
   appSlashCommands?: readonly AppSlashCommand[];
-  /** mention 面板开关（透传 LexicalChatInput）。 */
+  /** The mention panel toggle (passed through to LexicalChatInput). */
   enableMentionPanel?: boolean;
 }) {
   const { intl } = useZCodeIntl();
@@ -191,8 +193,8 @@ export function ChatPromptEditor({
 
     latestTextRef.current = initialValue;
     runAfterFrame(() => {
-      // task 草稿恢复时外层 input state 已经更新，但 Lexical 内部文本不会自动跟随 props。
-      // 同时普通打字也会更新 input prop，必须先比较当前编辑器文本，避免每个字符都程序化重写编辑器。
+      // When the task draft is restored, the outer input state has been updated, but the Lexical inner text will not automatically follow the props.
+      // At the same time, normal typing will also update the input prop, and the current editor text must be compared first to avoid programmatically rewriting the editor for each character.
       if (resolvedInputApiRef.current?.getMarkdown() === initialValue) {
         return;
       }
@@ -222,8 +224,8 @@ export function ChatPromptEditor({
         return;
       }
 
-      // Dialog 通过 React Portal 挂载时，Esc 关闭弹窗的事件仍会沿组件树
-      // 冒泡到行内编辑 form；弹窗已消费这次交互，不能再把消息编辑一并取消。
+      // When Dialog is mounted through React Portal, the Esc event to close the pop-up window will still move along the component tree.
+      // Bubbles up to the inline editing form; the pop-up window has consumed this interaction and cannot cancel the message editing together.
       if (
         event.defaultPrevented ||
         (event.target instanceof Element && event.target.closest('[role="dialog"]'))
@@ -231,7 +233,7 @@ export function ChatPromptEditor({
         return;
       }
 
-      // 交互说明：用户消息 edit 是临时编辑态，Esc 应等价于点击取消，方便键盘流快速退出。
+      // Interaction description: The user message edit is in a temporary editing state, and Esc should be equivalent to clicking cancel to facilitate quick exit of the keyboard flow.
       event.preventDefault();
       onCancel();
     },
@@ -239,8 +241,8 @@ export function ChatPromptEditor({
   );
 
   const handleEditorSubmit = useCallback(
-    // 适配：透传业务层返回值（false = 不 reset 编辑器，草稿保留），
-    // 吞掉返回值会让 Enter 路径总是清空。
+    // Adaptation: transparently transmit the return value of the business layer (false = do not reset the editor, the draft is retained),
+    // Swallowing the return value will always clear the Enter path.
     (value: string) => onSubmit(value),
     [onSubmit],
   );
@@ -250,8 +252,8 @@ export function ChatPromptEditor({
       const hasWorkspaceFilePayload =
         enableWorkspaceFileDrop && hasWorkspaceFileDragPayload(event.dataTransfer);
       if (hasWorkspaceFilePayload) {
-        // 浏览器在 dragover 阶段通常只暴露 dataTransfer.types，不保证能读到 getData 内容。
-        // 之前用完整 payload 判断，导致编辑输入框 drop 可用但 hover 状态不亮。
+        // Browsers usually only expose dataTransfer.types during the dragover phase, and there is no guarantee that the getData content can be read.
+        // Previously, the complete payload was used to judge, which resulted in the edit input box drop being available but the hover status not being lit.
         event.preventDefault();
         event.dataTransfer.dropEffect = "copy";
         setWorkspaceFileDragging(true);
@@ -286,11 +288,11 @@ export function ChatPromptEditor({
         ? readWorkspaceFileDragPayload(event.dataTransfer)
         : null;
       if (workspaceFilePayload) {
-        // file tree 拖拽不是系统文件，不能走附件分支；
-        // 这里统一转换成和 @ 文件一致的 mention，避免 contenteditable 插入纯文本。
+        // The file tree drag and drop is not a system file and cannot go to the attachment branch;
+        // This is uniformly converted into mention consistent with the @ file to avoid contenteditable inserting plain text.
         event.preventDefault();
-        // 用户消息编辑器嵌套在 ChatView drop target 内；消费后必须停止冒泡，
-        // 否则同一条 mention 还会被底部主输入框再次接收。
+        // The user message editor is nested within the ChatView drop target; bubbling must stop after consumption.
+        // Otherwise, the same mention will be received again by the main input box at the bottom.
         event.stopPropagation();
         setInternalDragging(false);
         setWorkspaceFileDragging(false);
@@ -321,8 +323,8 @@ export function ChatPromptEditor({
     ],
   );
 
-  // file tree 拖进编辑框时走的是 mention 插入，不是附件上传。
-  // 这里单独使用 workspace file 文案，并从拖拽开始事件就点亮可投放状态，避免必须 over 到输入框才有反馈。
+  // When the file tree is dragged into the edit box, mention is inserted, not the attachment is uploaded.
+  // The workspace file copy is used here alone, and the ready-to-deliver state is lit from the drag start event to avoid having to go over to the input box to get feedback.
   const isWorkspaceFileDropActive = workspaceFileDragging || internalDragging;
   const isExternalFileDropActive = externalFileDragging || isDraggingOver;
   const draggingOverlayHint = isWorkspaceFileDropActive
@@ -403,7 +405,7 @@ export function ChatPromptEditor({
                   showPlugins={enableMentionPanel !== false}
                 />
               ) : null}
-              {/* 权限/模式选择曾作为 leadingActions 先于动作菜单渲染，导致常驻顺序与产品规范相反。*/}
+              {/* Permissions/mode selection used to render as leadingActions ahead of the actions menu, which left the persistent order the opposite of the product spec.*/}
               {leadingActions}
               {onModeSwitchContainerChange ? (
                 <span ref={onModeSwitchContainerChange} className="flex shrink-0 items-center" />

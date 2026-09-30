@@ -1,4 +1,4 @@
-import type { CuaPermissionKind, Locale } from "@zcode/shared";
+import type { CuaPermissionKind } from "@zcode/shared";
 
 interface CuaPermissionPanelMessages {
   documentTitle: string;
@@ -9,41 +9,28 @@ interface CuaPermissionPanelMessages {
   completion: string;
 }
 
-const MESSAGES: Record<
-  Locale,
-  Omit<CuaPermissionPanelMessages, "permissionLabel"> & Record<CuaPermissionKind, string>
-> = {
-  "zh-CN": {
-    documentTitle: "ZCode Computer Use 权限",
-    dragTitle: "拖动我到上面的权限列表",
-    hintPrefix: "把左边的图标拖进上方的",
-    hintSuffix: "列表",
-    completion: "松手即完成授权，无需再点开关",
-    accessibility: "辅助功能",
-    screen_recording: "屏幕录制",
-  },
-  "en-US": {
-    documentTitle: "ZCode Computer Use Permissions",
-    dragTitle: "Drag me to the permission list above",
-    hintPrefix: "Drag the icon on the left into the ",
-    hintSuffix: " list above",
-    completion: "Release to grant access—no need to toggle the switch",
-    accessibility: "Accessibility",
-    screen_recording: "Screen Recording",
-  },
-};
+const PERMISSION_LABELS = {
+  accessibility: "Accessibility",
+  screen_recording: "Screen Recording",
+} satisfies Record<CuaPermissionKind, string>;
+
+const MESSAGES = {
+  documentTitle: "ZCode Computer Use Permissions",
+  dragTitle: "Drag me to the permission list above",
+  hintPrefix: "Drag the icon on the left into the ",
+  hintSuffix: " list above",
+  completion: "Release to grant access—no need to toggle the switch",
+} satisfies Omit<CuaPermissionPanelMessages, "permissionLabel">;
 
 export function resolveCuaPermissionPanelMessages(
-  locale: Locale,
   permission: CuaPermissionKind,
 ): CuaPermissionPanelMessages {
-  const messages = MESSAGES[locale];
   return {
-    documentTitle: messages.documentTitle,
-    dragTitle: messages.dragTitle,
-    hintPrefix: messages.hintPrefix,
-    permissionLabel: messages[permission],
-    hintSuffix: messages.hintSuffix,
-    completion: messages.completion,
+    documentTitle: MESSAGES.documentTitle,
+    dragTitle: MESSAGES.dragTitle,
+    hintPrefix: MESSAGES.hintPrefix,
+    permissionLabel: PERMISSION_LABELS[permission],
+    hintSuffix: MESSAGES.hintSuffix,
+    completion: MESSAGES.completion,
   };
 }

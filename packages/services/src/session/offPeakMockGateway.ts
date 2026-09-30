@@ -1,49 +1,53 @@
-/* eslint-disable max-lines -- mock 网关集中模拟 availability、ticket、status、settle 与 messages，拆分会割裂共享票据状态。 */
-/* off-peak 进程内 mock 网关。
-   本地起 127.0.0.1 http 服务完整模拟 额度快照/取号/批量状态/结算/messages，
-   真实 HTTP client 与 idle plan provider 的 baseURL 只需指到本网关 origin——生产代码路径
-   与联调完全一致，联调时删掉 ZCODE_OFFPEAK_MOCK 开关即可。
+/* eslint-disable max-lines -- the mock gateway centrally simulates availability, ticket, status, settle and messages; splitting it would fracture the shared ticket state. */
+/* In-process off-peak mock gateway.
+   Starts a 127.0.0.1 http service locally that fully simulates quota snapshot / ticket take / batch
+   status / settle / messages, so the real HTTP client and the idle plan provider only need their
+   baseURL pointed at this gateway's origin — the production code path is exactly the same as in
+   integration testing, and removing the ZCODE_OFFPEAK_MOCK switch disables it again.
 
-   ⚠ messages 端点在准入后把请求原样代理到 resolveUpstream() 指定的真实模型端点
-   （通常是用户 coding plan 的 anthropic 兼容端点）——mock 模式下跑的是真模型、
-   计费走用户自己的 key，仅用于开发/演示。
+   ⚠ After admission the messages endpoint proxies the request verbatim to the real model endpoint
+   named by resolveUpstream() (usually the user's anthropic-compatible coding plan endpoint) — in
+   mock mode a real model runs and billing goes through the user's own key, so it is for
+   development/demos only.
 
-   状态机（对齐两轴的服务端轴）：
-   take → queued（FIFO position）；status 轮询触发晋级（轮询即 Promote）：
-   取号超过 readyDelayMs → ready（readyDeadline = +readyTtlMs）；ready 超时未发首个
-   message → expired；首个 message 准入 → active（activeDeadline = +activeMs）；
-   active 到期 → expired，messages 返回 400/3102；settle → settled（幂等）。
-   messages 准入前可注入 N 次 429/3105 + Retry-After（模拟资源满载细阀）。 */
+   State machine (mirrors the service-side axis of the two axes):
+   take → queued (FIFO position); polling status drives promotion (polling is Promote):
+   held longer than readyDelayMs → ready (readyDeadline = +readyTtlMs); ready times out without a
+   first message → expired; the first message is admitted → active (activeDeadline = +activeMs);
+   active expires → expired, messages returns 400/3102; settle → settled (idempotent).
+   Before messages admission it can inject N × 429/3105 + Retry-After (simulating a fine-grained
+   throttle for full resource load). */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { ServiceLogger } from "../logger/serviceLogger.js";
 
 interface OffPeakMockGatewayOptions {
-  /** queued→ready 的晋级延迟；默认 15s（演示低峰等待）。 */
+  /** Promotion delay from queued→ready; default 15s (demos the off-peak wait). */
   readyDelayMs?: number;
-  /** ready 后须发首个 message 的窗口；默认 5min。 */
+  /** Window in which the first message must be sent after ready; default 5min. */
   readyTtlMs?: number;
-  /** active 硬顶；默认 3h（调小可演示 400/3102 自动续跑）。 */
+  /** Hard ceiling on active; default 3h (lower it to demo automatic continuation after 400/3102). */
   activeMs?: number;
-  /** 每张票准入前先回多少次 429/3105；默认 0。 */
+  /** How many 429/3105 responses to return before admission for each ticket; default 0. */
   queue429Count?: number;
-  /** 前 N 次取号直接回 3103（免费额度耗尽），用于验证错误提示后仍可重试；默认 0。 */
+  /** Return 3103 (free quota exhausted) directly for the first N ticket takes, to verify retrying still works after the error prompt; default 0. */
   quotaExhaustedCount?: number;
-  /** availability 与真实取号保持不可用的时长；默认 0，E2E 用于验证服务端快照置灰。 */
+  /** Duration for which availability and real ticket takes stay unavailable; default 0, used by E2E to verify the server snapshot is greyed out. */
   availabilityBlockedMs?: number;
-  /** 429 的 Retry-After 秒数；默认 5。 */
+  /** Retry-After seconds for the 429; default 5. */
   retryAfterS?: number;
-  /** status/take 下发的 next_poll_after 秒数；默认 5。 */
+  /** next_poll_after seconds handed out by status/take; default 5. */
   nextPollS?: number;
-  /** 仅供确定性 E2E 使用的 messages 脚本；生产与普通 mock 演示均不设置。 */
+  /** messages script used only by deterministic E2E; never set in production or in ordinary mock demos. */
   scenario?: "foreground-subagents" | "capture" | "invalid-ticket";
 }
 
 interface OffPeakMockGatewayDeps {
   logger: ServiceLogger;
   /**
-   * 准入后 messages 的转发目标：完整 messages URL + 出站头（含上游鉴权）。
-   * 返回 null = 不代理，直接回一段固定的 Anthropic 响应（E2E/离线演示：agent loop 立即完成，
-   * 不依赖真实模型 key）。
+   * Forwarding target for messages after admission: the full messages URL + outbound headers
+   * (including upstream auth). Returning null = do not proxy, answer with a fixed Anthropic
+   * response instead (E2E/offline demos: the agent loop finishes immediately, with no dependency on a
+   * real model key).
    */
   resolveUpstream: () => Promise<{
     url: string;
@@ -60,7 +64,7 @@ interface MockTicket {
   readyDeadline?: number;
   activeDeadline?: number;
   queue429Remaining: number;
-  /** FIFO 序号，用于 position 计算。 */
+  /** FIFO sequence number, used to compute position. */
   seq: number;
 }
 
@@ -68,7 +72,7 @@ export function isOffPeakMockEnabled(env: NodeJS.ProcessEnv = process.env): bool
   return env["ZCODE_OFFPEAK_MOCK"] === "1";
 }
 
-/** 环境变量覆盖数值选项（真机演示用；测试直接传 options）。 */
+/** Environment variables override the numeric options (for on-device demos; tests pass options directly). */
 function readEnvOptions(env: NodeJS.ProcessEnv): OffPeakMockGatewayOptions {
   const num = (key: string): number | undefined => {
     const raw = env[key];
@@ -130,12 +134,12 @@ interface OffPeakMockCapturedRequest {
 interface OffPeakMockGatewayHandle {
   origin: string;
   port: number;
-  /** true = 端口已被另一个 host 的网关占用，本 handle 只是指向它（close 为 no-op）。 */
+  /** true = the port is already taken by another host's gateway and this handle merely points at it (close is a no-op). */
   external: boolean;
   close: () => Promise<void>;
 }
 
-/** 固定端口（可用 ZCODE_OFFPEAK_MOCK_PORT 覆盖）：多窗口多 host 时共享同一份 mock 票据状态。 */
+/** Fixed port (overridable via ZCODE_OFFPEAK_MOCK_PORT): multiple windows and hosts share the same mock ticket state. */
 const DEFAULT_MOCK_PORT = 45_197;
 
 export async function startOffPeakMockGateway(
@@ -157,13 +161,13 @@ export async function startOffPeakMockGateway(
   const tickets = new Map<string, MockTicket>();
   let quotaInjectionsRemaining = config.quotaExhaustedCount;
   const availabilityBlockedUntil = Date.now() + config.availabilityBlockedMs;
-  /** taskId → 最新一张票（同 task_id 重新取号后旧票作废）。 */
+  /** taskId → the newest ticket (re-taking for the same task_id invalidates the old ticket). */
   const latestByTask = new Map<string, string>();
   const capturedRequests: OffPeakMockCapturedRequest[] = [];
   let invalidTicketRequests = 0;
   let seqCounter = 0;
 
-  /** 懒惰推进时间驱动的状态（轮询/messages 时评估，无后台计时器）。 */
+  /** Lazily advances time-driven state (evaluated on poll/messages, no background timer). */
   function advance(ticket: MockTicket, now: number): void {
     if (ticket.state === "queued" && now - ticket.takenAt >= config.readyDelayMs) {
       ticket.state = "ready";
@@ -186,7 +190,7 @@ export async function startOffPeakMockGateway(
     }
   }
 
-  /** 排队位次 = 前面还有多少张未晋级的活票。 */
+  /** Queue position = how many unpromoted live tickets are still ahead. */
   function positionOf(ticket: MockTicket): number {
     let ahead = 0;
     for (const other of tickets.values()) {
@@ -241,7 +245,7 @@ export async function startOffPeakMockGateway(
       });
       return;
     }
-    // 同 task_id 重新取号：旧票直接作废（真实服务端旧票已自然终态）。
+    // Retrieve the number with the same task_id: the old ticket will be invalidated directly (the old ticket on the real server has ended naturally).
     const previous = latestByTask.get(taskId);
     if (previous) {
       const old = tickets.get(previous);
@@ -258,7 +262,7 @@ export async function startOffPeakMockGateway(
       queue429Remaining: config.queue429Count,
       seq: seqCounter,
     };
-    // readyDelayMs=0 时取号即 ready（低峰空闲直接晋级的形态）。
+    // When readyDelayMs=0, the number is ready (the state of direct upgrade during low peak idle time).
     advance(ticket, now);
     tickets.set(ticket.ticketId, ticket);
     latestByTask.set(taskId, ticket.ticketId);
@@ -307,7 +311,7 @@ export async function startOffPeakMockGateway(
   function handleSettle(res: ServerResponse, ticketId: string): void {
     const ticket = tickets.get(ticketId);
     if (ticket) ticket.state = "settled";
-    // 幂等：未知票也 200。
+    // Idempotent: Unknown votes are also 200.
     json(res, 200, {
       ticket_id: ticketId,
       state: "settled",
@@ -325,14 +329,14 @@ export async function startOffPeakMockGateway(
       return;
     }
     if (config.scenario === "invalid-ticket") {
-      // 让 E2E 走真实的 3102 终态路径：客户端必须重取票/保留原任务身份，
-      // 且不能把失败的闲时请求偷偷改发到普通 Chat provider。
+      // Let E2E take the real 3102 final state path: the client must retake the ticket/retain the original task identity,
+      // And failed free time requests cannot be secretly redirected to ordinary Chat providers.
       invalidTicketRequests += 1;
       json(res, 400, { code: 3102, msg: "wrong off-peak ticket" });
       return;
     }
     if (ticket.state === "queued") {
-      // 粗阀未开就来了 message：按细阀排队应答（客户端不应走到这，防御分支）。
+      // The message came before the coarse valve was opened: Queue the response according to the fine valve (the client should not go here, defense branch).
       json(
         res,
         429,
@@ -352,14 +356,14 @@ export async function startOffPeakMockGateway(
       return;
     }
     if (ticket.state === "ready") {
-      // ready 5min 内首个 message 即准入 active，进入 3h 窗口。
+      // The first message within ready 5min is admitted to active and enters the 3h window.
       ticket.state = "active";
       ticket.activeDeadline = now + config.activeMs;
       deps.logger.info(
         `mock gateway admitted ticket=${ticketId} activeDeadline=${ticket.activeDeadline}`,
       );
     }
-    // admitted：原样代理到真实上游（SSE 透传）。
+    // admitted: proxy to the real upstream as it is (SSE transparent transmission).
     const requestBody = await (async () => {
       const chunks: Buffer[] = [];
       for await (const chunk of req) chunks.push(chunk as Buffer);
@@ -403,7 +407,7 @@ export async function startOffPeakMockGateway(
       upstream = null;
     }
     if (!upstream) {
-      // 离线/E2E：回一段固定的非流式 Anthropic 响应，agent loop 立即拿到 stop 收尾。
+      // Offline/E2E: Return a fixed non-streaming Anthropic response, and the agent loop immediately ends with stop.
       json(res, 200, {
         id: "msg_offpeak_mock",
         type: "message",
@@ -429,7 +433,7 @@ export async function startOffPeakMockGateway(
       });
       const responseHeaders: Record<string, string> = {};
       upstreamResponse.headers.forEach((value, key) => {
-        // hop-by-hop 头不透传。
+        // hop-by-hop head-to-head pass.
         if (
           ["transfer-encoding", "connection", "content-length", "content-encoding"].includes(key)
         ) {
@@ -502,7 +506,7 @@ export async function startOffPeakMockGateway(
       try {
         json(res, 500, { msg: "mock gateway internal error" });
       } catch {
-        // 响应已发出，忽略。
+        // Response sent, ignored.
       }
     });
   });
@@ -519,8 +523,8 @@ export async function startOffPeakMockGateway(
     });
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "EADDRINUSE") {
-      // 多窗口：另一个 host 已起网关，共用它的票据状态（票在共享 sqlite 里跨 host 流转，
-      // mock 状态必须单实例，否则 A 取的票在 B 的网关查不到）。
+      // Multi-window: Another host has set up a gateway and shares its ticket status (tickets are transferred across hosts in shared sqlite.
+      // The mock state must be a single instance, otherwise the ticket taken by A cannot be found in B's gateway).
       const origin = `http://127.0.0.1:${requestedPort}`;
       deps.logger.info(`off-peak mock gateway reusing existing instance at ${origin}`);
       return {

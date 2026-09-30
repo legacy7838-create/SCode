@@ -8,13 +8,13 @@ if (!requestedCommand) {
   process.exit(1);
 }
 
-// Windows 上 pnpm 是 .cmd 文件；其他平台直接使用 pnpm 可执行入口。
+// On Windows, pnpm is a .cmd file; other platforms use the pnpm executable entry directly.
 const command =
   process.platform === "win32" && requestedCommand === "pnpm" ? "pnpm.cmd" : requestedCommand;
 const child = spawn(command, args, {
   cwd: process.cwd(),
   env: withPinnedNodePath(process.env, process.execPath),
-  // Windows 的 .cmd 入口需要 shell 才能被 Node spawn。
+  // The Windows .cmd entry requires a shell to be spawned by Node.
   shell: process.platform === "win32",
   stdio: "inherit",
 });

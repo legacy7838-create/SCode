@@ -1,17 +1,17 @@
 // ============================================================
-// 观察类工作流工具（GetWorkflowRun / ListWorkflowRuns / EvalWorkflowSnippet /
-// ListSavedWorkflows / ListModels）的工具卡 display 载荷
+// Observation workflow tools (GetWorkflowRun/ListWorkflowRuns/EvalWorkflowSnippet/
+// ListSavedWorkflows / ListModels) tool card display payload
 // ============================================================
-// 照 create-workflow-display.ts 的先例单独成模块（特性级 schema 不堆进 toolDisplay.ts）。
+// Follow the example of create-workflow-display.ts and separate it into a module (feature-level schema is not stacked into toolDisplay.ts).
 //
-// ⚠ 与 apps/zcode-cli/packages/contracts/src/tools/workflow-observation-display.ts 的
-// toolResultDisplayPayloadSchema 成员必须同步——两侧都是 strict，少一侧整条 row/display
-// 校验失败、工具卡退化成文本（create_workflow display 注释记录过同款坑）。
-// 限长常量与 CLI 构造侧一一对应；display 不经过 result budget。
+// ⚠ with apps/zcode-cli/packages/contracts/src/tools/workflow-observation-display.ts
+// toolResultDisplayPayloadSchema members must be synchronized - strict on both sides, missing the entire row/display on one side
+// The verification failed and the tool card degraded into text (the create_workflow display comment recorded the same pitfall).
+// The limited-length constants correspond to the CLI construction side one-to-one; display does not go through the result budget.
 
 import { z } from "zod";
 
-/** `stopped` 的原因。 */
+/** The reasons for `stopped`. */
 export const WORKFLOW_RUN_STOP_REASONS = [
   "user",
   "model",
@@ -46,10 +46,10 @@ const actorSchema = z
   })
   .strict();
 
-// 情势截面（阶段 / 子代理 / 健康）的卡面载荷。与 CLI 侧
-// getWorkflowRunToolResultDisplayPayloadSchema 的对应成员**逐字段同步**，枚举集闭合且同词表——
-// 两侧都是 strict，少一个字段或多一个枚举值，整条 row/display 校验失败、工具卡退化成文本。
-// 数字界与 CLI 侧常量一一对应（32 阶段 / 64 子代理 / 240 指令头 / 400 摘要）。
+// Card surface loadings for situational cross-sections (Phase/Subagent/Health). with CLI side
+// The corresponding members of getWorkflowRunToolResultDisplayPayloadSchema are synchronized field by field, and the enumeration set is closed and has the same vocabulary -
+// Both sides are strict, if there is one less field or one more enumeration value, the entire row/display verification will fail and the tool card will degrade into text.
+// Numeric bounds map one-to-one to CLI-side constants (32 stages / 64 subagents / 240 command headers / 400 digests).
 const workflowRunPhaseViewSchema = z
   .object({
     name: z.string().min(1).max(128),
@@ -145,9 +145,9 @@ export const toolCallGetWorkflowRunDisplaySchema = z
     status: z.enum(WORKFLOW_RUN_OBSERVATION_STATUSES),
     stopReason: z.enum(WORKFLOW_RUN_STOP_REASONS).optional(),
     possiblyInterrupted: z.boolean().optional(),
-    // 情势截面五件全部可选：情势上线前持久化的 transcript 载荷没有这些键，而本 schema 是
-    // strict 的——设成必填会让升级后打开的每一条历史会话里这张卡整块被剥、退化成纯文本。
-    // 构造侧每次仍然全填（CLI 侧同款注释）。
+    // All five parts of the situation section are optional: the transcript payload that was persisted before the situation went online does not have these keys, and this schema is
+    // Strict - Setting it to required will cause the entire card to be stripped and degraded into plain text in every historical session opened after upgrading.
+    // The construction side is still fully filled in every time (same comment as the CLI side).
     summary: z.string().max(400).optional(),
     generatedAt: z.number().optional(),
     usage: usageSchema,
@@ -161,8 +161,8 @@ export const toolCallGetWorkflowRunDisplaySchema = z
           .object({
             sequence: z.number(),
             message: z.string().max(1_024),
-            // 事件落 journal 的时刻（epoch ms）；卡上的「多久以前」对 generatedAt 算。
-            // 可选：这一列在情势截面之前的载荷上不存在，读旧行时缺席而不是拒收。
+            // The time when the event was logged into the journal (epoch ms); the "how long ago" on the card counts against generatedAt.
+            // Optional: This column did not exist on the previous load of the situation section, and is absent rather than rejected when reading the old row.
             at: z.number().optional(),
           })
           .strict(),
@@ -239,9 +239,9 @@ export type ToolCallSavedWorkflowListDisplay = z.infer<
   typeof toolCallSavedWorkflowListDisplaySchema
 >;
 
-// ListModels 的目录卡载荷。与
-// contracts 侧 listModelsToolResultDisplayPayloadSchema 成员同步——两侧都 strict，缺成员整块
-// 被剥、工具卡退化成 `<models>` 文本。限长数字与 CLI 侧常量一一对应（100 行 / 2048 字符）。
+// Catalog card payload for ListModels. with
+// Synchronization of listModelsToolResultDisplayPayloadSchema members on the contracts side - strict on both sides, missing entire member
+// When stripped, the tool card degenerates into `<models>` text. The limited length number corresponds to the CLI-side constant (100 lines / 2048 characters).
 export const toolCallListModelsDisplaySchema = z
   .object({
     kind: z.literal("list_models"),
@@ -267,9 +267,9 @@ export const toolCallListModelsDisplaySchema = z
   .strict();
 export type ToolCallListModelsDisplay = z.infer<typeof toolCallListModelsDisplaySchema>;
 
-// ResumeWorkflowRun 的结果卡载荷。与 contracts 侧
-// resumeWorkflowRunToolResultDisplayPayloadSchema 成员同步——两侧都 strict，缺成员整块被剥、
-// 工具卡退化成文本。载荷刻意最小 {runId}（理由见 contracts 侧注释）。
+// ResumeWorkflowRun's result card payload. with contracts side
+// resumeWorkflowRunToolResultDisplayPayloadSchema member synchronization - strict on both sides, missing members will be stripped whole.
+// Tool cards degrade into text. The payload is intentionally minimal {runId} (see the comments on the contracts side for the reason).
 export const toolCallResumeWorkflowRunDisplaySchema = z
   .object({
     kind: z.literal("resume_workflow_run"),

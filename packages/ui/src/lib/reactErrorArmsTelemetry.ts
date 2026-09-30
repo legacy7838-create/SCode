@@ -5,15 +5,16 @@ import {
 } from "@zcode/shared";
 import { logger } from "@/logger.js";
 
-/** ARMS 自定义事件名：React 错误边界捕获的渲染层异常 */
+/** ARMS custom event name: render-layer exceptions caught by a React error boundary */
 const REACT_ERROR_ARMS_EVENT_NAME = "perf_react_error";
-/** ARMS 业务分组 */
+/** ARMS business group */
 const REACT_ERROR_ARMS_GROUP = "react_error";
 
 /**
- * stack / componentStack 截断上限。
- * 原因：React 组件堆栈与错误栈可能很长，ARMS 单字段过长会被截断/拒绝，
- * 主动截断到上限保证关键头部（最近的抛错组件）一定上得去。
+ * Truncation limit for stack / componentStack. Why: React component stacks and error stacks can be
+ * very long, and ARMS truncates or rejects over-long single fields, so truncating proactively to
+ * this limit guarantees that the important head (the component that threw most recently) always
+ * gets through.
  */
 const REACT_ERROR_STACK_MAX_LEN = 4000;
 
@@ -22,21 +23,24 @@ type ArmsReporter = Pick<IPlatformService, "reportArmsCustomEvent">;
 let armsReporter: ArmsReporter | null = null;
 
 /**
- * 注入 ARMS reporter。
+ * Inject the ARMS reporter.
  *
- * 注意：必须在 renderer 入口 createRoot 之前注入，不能依赖 Root 的 effect。
- * 因为根级 AppErrorBoundary 的职责正是兜住 Root 自身渲染崩溃——若 reporter 走
- * Root effect 注入，Root 首帧就崩时 effect 从未执行，根级错误依旧丢失。
+ * Note: it must be injected before createRoot in the renderer entry and cannot rely on Root's
+ * effect. Because the root-level AppErrorBoundary exists precisely to catch render crashes of Root
+ * itself — if the reporter were injected through a Root effect, then when Root crashes on its very
+ * first frame the effect never runs and the root-level error is still lost.
  */
 export function setReactErrorArmsReporter(reporter: ArmsReporter | null): void {
   armsReporter = reporter;
 }
 
 /**
- * 上报副本必须先脱敏：渲染层 stack 与 componentStack 在桌面端携带 `file:///Users/<用户名>/...`
- * 路径，error.message 也可能带工作区路径或用户内容。与 ARMS 自动采集 exception 事件共用
- * `redactTelemetryText`；本地日志与 fallback 恢复继续使用原值。截断仍保留 4000 上限，
- * 保证最近的抛错组件一定上得去。
+ * The reported copy must be redacted first: on desktop the render-layer stack and componentStack
+ * carry `file:///Users/<username>/...` paths, and error.message may also carry workspace paths or
+ * user content. It shares `redactTelemetryText` with the exception events ARMS collects
+ * automatically; local logging and the fallback recovery keep using the original values. Truncation
+ * still keeps the 4000 limit, guaranteeing that the component that threw most recently always gets
+ * through.
  */
 function redactStack(value: string): string {
   return redactTelemetryText(value, { maxLength: REACT_ERROR_STACK_MAX_LEN });
@@ -58,19 +62,20 @@ function buildReactErrorArmsPayload(params: {
       error_message: redactTelemetryText(params.error.message),
       error_stack: errorStack || undefined,
       component_stack: componentStack || undefined,
-      // 根级边界无 scope，统一记为 app；scoped 边界用各自的 scope 区分 sidebar/chat/settings 等。
+      // The root-level boundary has no scope and is uniformly recorded as app; the scoped boundary uses its own scope to distinguish sidebar/chat/settings, etc.
       boundary_scope: params.scope ?? "app",
     },
   };
 }
 
 /**
- * 把 React 错误边界捕获的异常上报到 ARMS RUM。
+ * Report the exceptions caught by React error boundaries to ARMS RUM.
  *
- * 背景：React 错误边界拦截子树渲染异常、阻止其冒泡到 window.onerror，
- * 而 Browser RUM SDK 靠 window.onerror / unhandledrejection 自动采集，
- * 故边界捕获的错误对 RUM 默认完全不可见，只能靠本地日志。这里把它转发到
- * 与 perf_crash 同一条 ARMS 自定义事件干道，补上这块盲区。
+ * Background: a React error boundary intercepts render exceptions of its subtree and stops them
+ * from bubbling to window.onerror, while the Browser RUM SDK collects automatically via
+ * window.onerror / unhandledrejection, so errors caught by a boundary are entirely invisible to RUM
+ * by default and can only be reached through local logs. This forwards them onto the same ARMS
+ * custom event channel as perf_crash, closing that blind spot.
  */
 export function reportReactErrorToArms(params: {
   error: Error;
@@ -84,14 +89,14 @@ export function reportReactErrorToArms(params: {
   try {
     const payload = buildReactErrorArmsPayload(params);
     void Promise.resolve(armsReporter.reportArmsCustomEvent(payload)).catch((error) => {
-      // 原因：ARMS 属观测链路，错误边界的 fallback 恢复流程不得因埋点失败而中断。
-      logger.warn("[react-error] ARMS 自定义事件上报失败", {
+      // Reason: ARMS is an observation link, and the error boundary fallback recovery process must not be interrupted due to point burying failure.
+      logger.warn("[react-error] ARMS custom event report failed", {
         scope: params.scope ?? "app",
         error: error instanceof Error ? error.message : String(error),
       });
     });
   } catch (error) {
-    logger.warn("[react-error] ARMS 自定义事件上报异常", {
+    logger.warn("[react-error] ARMS custom event report threw", {
       scope: params.scope ?? "app",
       error: error instanceof Error ? error.message : String(error),
     });

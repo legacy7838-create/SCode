@@ -66,8 +66,8 @@ export function ConversationUserInputBody({
     const scheduleOverflowUpdate = () => {
       if (animationFrameRef.current !== null) return;
 
-      // 长会话会同时 mount 多条 userInput；逐条同步读取 scrollHeight 会把布局测量
-      // 堆进同一提交。用 RAF 合并同一条消息的 ResizeObserver 通知，并兼容测试里的同步 RAF。
+      // A long session will mount multiple userInputs at the same time; synchronously reading scrollHeight one by one will measure the layout.
+      // Pile into the same commit. Use RAF to merge ResizeObserver notifications for the same message and be compatible with synchronous RAF in tests.
       animationFrameRef.current = -1;
       const frameId = window.requestAnimationFrame(() => {
         animationFrameRef.current = null;

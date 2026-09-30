@@ -142,9 +142,9 @@ function applyPreviewSvgLayout(
 ): DiagramViewportBounds {
   const rootBounds = readRootSvgBounds(svgElement);
   if (rootBounds.width > 0 && rootBounds.height > 0) {
-    // Mermaid 输出的 SVG 常见为 width="100%" + max-width=viewBox 宽度。
-    // transform 实际作用在父级 content 上；如果只改 SVG，父级仍可能保持 300px 级别的收缩宽度。
-    // 因此父级和 SVG 都要对齐到 viewBox 尺寸，保证 fit 计算和 CSS transform 使用同一个坐标系。
+    // The common SVG output by Mermaid is width="100%" + max-width=viewBox width.
+    // Transform actually acts on the parent content; if only the SVG is changed, the parent may still maintain a shrinking width of 300px.
+    // Therefore, the parent and SVG must be aligned to the viewBox size to ensure that the fit calculation and CSS transform use the same coordinate system.
     contentElement.style.width = `${rootBounds.width}px`;
     contentElement.style.height = `${rootBounds.height}px`;
     svgElement.style.width = "100%";
@@ -274,7 +274,7 @@ function resolveSvgBounds(svgElement: SVGSVGElement | null): DiagramViewportBoun
       }
       visibleBounds = mergeBounds(visibleBounds, box);
     } catch {
-      // 某些 SVG 元素未完成布局时不能读取 bbox；继续用其余可见图形求 union。
+      // The bbox cannot be read when some SVG elements are not completely laid out; continue to use the remaining visible graphics to union.
     }
   }
 
@@ -293,7 +293,7 @@ function resolveSvgBounds(svgElement: SVGSVGElement | null): DiagramViewportBoun
       };
     }
   } catch {
-    // 根 bbox 不可用时回退到 viewBox / 声明尺寸。
+    // Fallback to viewBox/declared dimensions when root bbox is unavailable.
   }
 
   return rootBounds;

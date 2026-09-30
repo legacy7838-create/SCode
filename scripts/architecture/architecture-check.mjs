@@ -14,7 +14,7 @@ const cwd = process.cwd();
 
 if (command === "context") {
   const moduleId = args[1];
-  if (!moduleId) throw new Error("用法: pnpm architecture:context <module-id>");
+  if (!moduleId) throw new Error("Usage: pnpm architecture:context <module-id>");
   console.log(await generateContext({ cwd, moduleId }));
   process.exit(0);
 }

@@ -5,22 +5,30 @@ import {
 } from "./workflow-runs.js";
 
 /**
- * `phase-entered` 的归约：控制流经过了
- * 一个 `phase("…")` 标记。住在 reducer 主文件之外与并发观察同一个理由——主文件的 max-lines 门。
+ * The reduction of `phase-entered`: the control flow passed
+ * through a `phase("…")` marker. Living outside the reducer's main file for the same reason as
+ * concurrency observation — the main file's max-lines gate.
  *
- * 不碰 nodes / actors——标记不是一步工作。`rounds` 取 **max** 而不是 +1：引擎在 resume 重跑时会
- * 把前缀再发一遍（标记没有 journal 行可去重），单调归约让重放逐条无变化；ordinal 缺席（旧 CLI /
- * 残缺载荷）按 1 记。触界语义与 actors / nodes 同族：拒绝新条目、已有条目照常更新，超界事实仍在
- * journal 里；`currentPhase` 不受上限约束——「控制流在哪」是事实，进不了表也要说。
+ * Does not touch nodes / actors — a marker is not a unit of work. `rounds` takes a **max** rather
+ * than +1: the engine re-emits the prefix when re-running on resume (a marker has no journal line
+ * to dedup against), and a monotonic reduction makes replay a no-op event by event; a missing
+ * ordinal (old CLI / truncated payload) is recorded as 1. On hitting the bound, semantics are the
+ * same family as actors / nodes: reject the new entry, keep updating existing entries as usual,
+ * and the over-bound fact stays in the journal; `currentPhase` is not subject to the limit —
+ * "where the control flow is" is a fact and must be stated even if it does not fit in the table.
  */
 /**
- * `run-launched` 的归约：锚点（inputId）
- * 是事件归属的事，状态不装它；这里只搬运脚本声明的阶段表 `phaseNames`，按声明序、裁到与 `phases`
- * 同一对界。缺席或空表 → 原样返回（只抬水位），键不建：UI 据缺席画一个隐含站点。
- * 同一世只记一次，所以 resume 的 `run-started` 不清它、重放逐条无变化。
+ * The reduction of `run-launched`: the anchor (inputId) is
+ * a matter of event ownership and is not stored in the state; here we only carry over the
+ * script-declared phase table `phaseNames`, in declaration order, trimmed to the same pair of
+ * bounds as `phases`. Absent or empty table → returned unchanged (only bumping the watermark),
+ * the key is not created: the UI draws one implicit station from the absence. It is recorded only
+ * once per life, so a resume's `run-started` does not clear it and replay is a no-op event by
+ * event.
  *
- * 「同时在跑」表 `phaseAlongside` 搭它的车（下标指向的正是被接受的那张 `phaseNames`），所以
- * 只在名字表立住之后才读，且按那张表的长度裁齐——见 {@link readPhaseAlongside}。
+ * The "running at the same time" table `phaseAlongside` rides along with it (its indices point
+ * precisely into the accepted `phaseNames`), so it is only read once the name table has been
+ * established, and it is trimmed to that table's length — see {@link readPhaseAlongside}.
  */
 export function reduceRunLaunched(
   run: WorkflowRunState,
@@ -41,13 +49,18 @@ export function reduceRunLaunched(
 }
 
 /**
- * 「同时在跑」表的搬运，只在 `phaseNames` 被接受之后调用。
+ * The carry-over of the "running at the same time" table, called only after `phaseNames` has been
+ * accepted.
  *
- * 下标指向的是**被接受的**那张名字表，所以整张表按它的长度裁齐（载荷更短时补空数组），逐项再
- * 过一遍：整数、落在 `[0, count)`、不是自己（一个阶段不与自己并行）、去重保序、条数同界。越界
- * 的下标会让侧栏把双线段连到一个不存在的站上，所以宁可少画。
+ * The indices point into the **accepted** name table, so the whole table is trimmed to its length
+ * (padded with empty arrays when the payload is shorter), and each entry is checked again:
+ * integer, within `[0, count)`, not itself (a phase does not run in parallel with itself),
+ * deduplicated while preserving order, and bounded by the same count. An out-of-range index would
+ * make the sidebar connect a double segment to a station that does not exist, so drawing less is
+ * preferred.
  *
- * 一项都不剩时返回 `undefined`：键不建，UI 据缺席画一条直线——与 `phaseNames` 空表同一姿态。
+ * Returns `undefined` when not a single entry survives: the key is not created, and the UI draws a
+ * straight line from the absence — the same posture as an empty `phaseNames` table.
  */
 function readPhaseAlongside(raw: unknown, count: number): number[][] | undefined {
   if (!Array.isArray(raw)) return undefined;

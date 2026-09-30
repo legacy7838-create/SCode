@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- autoUpdater 需要集中维护 Electron 事件、菜单状态与 IPC 交互，过度拆分会让更新状态流更难追踪 */
+/* eslint-disable max-lines -- autoUpdater centralizes Electron events, menu state and IPC interaction; splitting it any further would make the update state flow harder to trace */
 import type { ISettingService } from "@zcode/services";
 import {
   DEFAULT_LOCALE,
@@ -33,7 +33,6 @@ const DEV_AUTO_UPDATE_VERSION_SWITCH = "--zcode-auto-update-dev-version";
 let readyUpdateVersion: string | null = null;
 let readyUpdateReleaseNotes: PostUpdateReleaseNotesPayload | null = null;
 let readyUpdateRestoredFromPendingReleaseNotes = false;
-let menuLocale: Locale = DEFAULT_LOCALE;
 let manualCheckWebContentsId: number | null = null;
 let pendingPostUpdateReleaseNotes: PostUpdateReleaseNotesPayload | null = null;
 let deliveredPostUpdateReleaseNotesWebContentsId: number | null = null;
@@ -56,9 +55,9 @@ const acknowledgedPostUpdateReleaseNotesVersions = new Set<string>();
 const cancelledDownloadTokens = new WeakSet<CancellationToken>();
 let pendingCancelledDownloadErrorCount = 0;
 let autoUpdaterSettingService: SettingServiceLike | undefined;
-// initAutoUpdater({ enabled: false }) 只清轮询并 return，electron-updater 实例保持未配置
-// （占位 feed、autoDownload 默认值）。任何漏改成按身份判断的入口若仍调用手动检查，
-// 都会对占位 feed 发真实请求。这里记住“本 flavor 已禁用”，让手动检查在模块内部 fail-closed。
+// initAutoUpdater({ enabled: false }) only clears polling and returns, the electron-updater instance remains unconfigured
+// (Placeholder feed, autoDownload default value). If any entry that has not been changed to be judged by identity still calls for manual inspection,
+// All requests will be made to the placeholder feed. Remember here that "this flavor is disabled" and let the manual check fail-closed inside the module.
 let autoUpdaterDisabledForProductFlavor = false;
 
 type SettingServiceLike = Pick<ISettingService, "get" | "update">;
@@ -112,7 +111,6 @@ interface InitAutoUpdaterOptions {
   enabled?: boolean;
   onBeforeQuitAndInstall?: () => void | Promise<void>;
   settingService?: SettingServiceLike;
-  locale?: Locale;
   updateFeedSource?: RuntimeUpdateFeedSource;
   deviceMid?: string;
   resolveEndpointOrigin?: () => string | Promise<string>;
@@ -188,9 +186,9 @@ function applyDevAutoUpdateRuntimeOverrides(): void {
   mutableAutoUpdater.forceDevUpdateConfig = true;
   if (parsedVersion) {
     devAutoUpdateVersionOverride = parsedVersion.format();
-    // Electron 开发态 app.getVersion() 读取的是 desktop 运行壳版本，
-    // 不一定跟产品版本一致。验证自动更新时需要显式把 electron-updater 的
-    // currentVersion 改成产品版本，否则 3.3.1 -> 3.3.2 这类流程无法复现。
+    // Electron development app.getVersion() reads the desktop running shell version.
+    // It may not be consistent with the product version. When verifying automatic updates, you need to explicitly add electron-updater
+    // Change currentVersion to the product version, otherwise the 3.3.1 -> 3.3.2 process cannot be reproduced.
     mutableAutoUpdater.currentVersion = parsedVersion;
   }
 
@@ -301,9 +299,9 @@ function settleAutoUpdateCheckResult(
   settlingAutoUpdateCheckId = checkId;
   try {
     return Promise.resolve(work()).finally(() => {
-      // electron-updater 的 checkForUpdates() Promise 只代表请求返回，
-      // 不会等待 update-available 里读取设置、跳过版本、自动下载等异步状态处理。
-      // 这里让一次 check 的互斥范围覆盖“请求 + 结果处理”，避免通道刷新或手动检查抢在旧结果写状态前启动。
+      // electron-updater's checkForUpdates() Promise only represents the request return.
+      // It will not wait for asynchronous status processing such as reading settings, skipping versions, and automatic downloads in update-available.
+      // Here, the mutually exclusive scope of a check covers "request + result processing" to avoid channel refresh or manual check from starting before the old result is written to the status.
       completeAutoUpdateCheck(reason, checkId);
     });
   } catch (error) {
@@ -346,9 +344,7 @@ function notifyForceAutoUpdate(state: ForceAutoUpdateState) {
 }
 
 function getForceAutoUpdateNoUpdateMessage(): string {
-  return menuLocale === "zh-CN"
-    ? "未找到可安装更新，请使用手动升级。"
-    : "No installable update was found. Use manual update instead.";
+  return "No installable update was found. Use manual update instead.";
 }
 
 function normalizeProgressPercent(progress: unknown): string | undefined {
@@ -374,7 +370,7 @@ function logForceAutoUpdateProgress(progress: string | undefined) {
     return;
   }
   forceAutoUpdateLastLoggedProgressBucket = bucket;
-  logger.info(`[force-update] 自动升级下载进度 ${progress}%`);
+  logger.info(`[force-update] automatic update download progress ${progress}%`);
 }
 
 function buildDownloadProgressState(
@@ -416,9 +412,9 @@ async function quitAndInstallUpdate(rejectUnavailable = false) {
   }
 
   if (menuState.kind !== "update-downloaded" || !readyUpdateVersion) {
-    // renderer 可能因为旧 UpdateReady 缓存残留而展示“重启以更新”，
-    // 但 main 在 staging error 后已经清掉 ready。此时不能再执行退出准备或调用
-    // quitAndInstall，否则会杀掉 host 进程却没有安装器接管，表现成按钮没反应。
+    // The renderer may show "restart to update" due to old UpdateReady cache remaining,
+    // But main has cleared ready after staging error. At this time, no more exit preparations or calls can be executed.
+    // quitAndInstall, otherwise the host process will be killed but no installer will take over, causing the button to become unresponsive.
     logger.warn(`[auto-update] ignore quitAndInstall request: state=${menuState.kind}`);
     if (rejectUnavailable) {
       throw new Error(`Update is not ready to install: state=${menuState.kind}`);
@@ -432,19 +428,19 @@ async function quitAndInstallUpdate(rejectUnavailable = false) {
   }
   quitAndInstallInFlight = true;
   logger.info("[auto-update] user requested quit and install");
-  // macOS 上 quitAndInstall() 在关窗前不会先走 app.before-quit。
-  // 如果仍然只靠 before-quit 去放行窗口 close，现有的“红绿灯关闭=隐藏窗口”逻辑会把退出拦住，
-  // 表现成点击更新后界面消失但进程没退、安装流程也不再继续。
-  // 这里先通知主进程进入“允许真正关窗”的状态，再把控制权交给 updater。
+  // On macOS, quitAndInstall() will not execute app.before-quit before closing the window.
+  // If we still only rely on before-quit to release the window close, the existing "traffic light close = hide window" logic will block the exit.
+  // The interface disappears after clicking update but the process does not exit and the installation process does not continue.
+  // Here, the main process is first notified to enter the "allow real window closing" state, and then control is given to the updater.
   try {
-    // Windows 更新会替换 resources/glm 等随包资源；
-    // 若 quitAndInstall 先于 host/agent 子进程完成退出，安装器可能在文件仍被占用时开始覆盖，
-    // 最终留下“应用能启动但 bundled agent 丢失”的半更新状态。
-    // 这里显式等待主进程完成退出准备，再进入安装器，尽量把资源替换和子进程回收时序拉直。
+    // Windows updates will replace packaged resources such as resources/glm;
+    // If quitAndInstall finishes exiting before the host/agent child process, the installer may start overwriting the file while it is still occupied.
+    // Finally, the semi-updated state of "the application can be started but the bundled agent is missing" is left.
+    // Here we explicitly wait for the main process to complete exit preparations before entering the installer, and try to straighten the timing of resource replacement and child process recycling.
     await onBeforeQuitAndInstall?.();
   } catch (error) {
-    // 安装前退出准备是释放 host/agent 与 resources/glm 文件锁的硬前置条件。
-    // 如果这里失败后仍启动安装器，Windows 可能在资源仍被占用时覆盖安装目录，形成半更新。
+    // Exit preparation before installation is a hard prerequisite for releasing the host/agent and resources/glm file locks.
+    // If the installer is still launched after this fails, Windows may overwrite the installation directory while resources are still occupied, resulting in a semi-update.
     quitAndInstallInFlight = false;
     handleAutoUpdateFailure(error, "prepare quit and install failed");
     if (rejectUnavailable) {
@@ -455,18 +451,18 @@ async function quitAndInstallUpdate(rejectUnavailable = false) {
 
   try {
     if (shouldRelaunchForDevAutoUpdateInstall()) {
-      // 开发态只用于验证服务端 manifest、下载进度和安装入口 UI 闭环，
-      // 未打包应用没有可被安装器接管的真实发布包上下文。这里改为重启当前 dev app，
-      // 避免点击“重启以更新”执行退出准备后停在无响应状态。
+      // The development state is only used to verify the server manifest, download progress and installation entrance UI closed loop.
+      // Unpackaged applications do not have a real release package context that can be taken over by the installer. Here we restart the current dev app instead.
+      // Avoid clicking "Restart to update" to perform exit preparation and then stop in an unresponsive state.
       logger.info("[auto-update] dev update install fallback: relaunch app");
       app.relaunch();
       app.exit(0);
       return;
     }
 
-    // 3.3.0 的 Windows 自定义 PowerShell delayed launcher 在 detached/hidden
-    // 模式下可能只创建 powershell.exe，却没有稳定执行到安装器启动，用户看到应用关闭但版本不变。
-    // 这里恢复 electron-updater 原生安装入口，避免把“launcher 进程创建成功”误当成更新已接管。
+    // Custom PowerShell delayed launcher for Windows 3.3.0 in detached/hidden
+    // In this mode, powershell.exe may only be created, but it will not be executed stably until the installer starts. The user will see that the application is closed but the version remains unchanged.
+    // The electron-updater native installation entry is restored here to avoid mistaking "launcher process created successfully" as the update has been taken over.
     autoUpdater.quitAndInstall();
   } finally {
     quitAndInstallInFlight = false;
@@ -485,30 +481,27 @@ function updateMenuItemLabel(label: string, enabled: boolean) {
 function getMenuItemLabel(state: AutoUpdaterMenuState): string {
   switch (state.kind) {
     case "checking":
-      return getDesktopMenuMessage(menuLocale, desktopMenuMessageIds.helpCheckingForUpdates);
+      return getDesktopMenuMessage(desktopMenuMessageIds.helpCheckingForUpdates);
     case "update-available":
-      return formatDesktopMenuMessage(
-        menuLocale,
-        desktopMenuMessageIds.helpUpdateAvailableVersion,
-        { version: state.version },
-      );
+      return formatDesktopMenuMessage(desktopMenuMessageIds.helpUpdateAvailableVersion, {
+        version: state.version,
+      });
     case "download-progress":
-      return formatDesktopMenuMessage(
-        menuLocale,
-        desktopMenuMessageIds.helpDownloadingUpdateProgress,
-        { progress: state.progress },
-      );
+      return formatDesktopMenuMessage(desktopMenuMessageIds.helpDownloadingUpdateProgress, {
+        progress: state.progress,
+      });
     case "update-downloaded":
-      return formatDesktopMenuMessage(menuLocale, desktopMenuMessageIds.helpRestartToUpdate, {
+      return formatDesktopMenuMessage(desktopMenuMessageIds.helpRestartToUpdate, {
         version: state.version,
       });
     case "idle":
     default:
-      return getDesktopMenuMessage(menuLocale, desktopMenuMessageIds.helpCheckForUpdates);
+      return getDesktopMenuMessage(desktopMenuMessageIds.helpCheckForUpdates);
   }
 }
 
-function syncMenuItemState() {
+/** The menu template only carries the static "Check for Updates" text; every updater state change rewrites the menu item once more. */
+export function syncAutoUpdaterMenuItemState() {
   updateMenuItemLabel(getMenuItemLabel(menuState), menuState.enabled);
 }
 
@@ -568,7 +561,7 @@ function setAutoUpdaterMenuState(nextState: AutoUpdaterMenuState) {
   }
 
   menuState = nextState;
-  syncMenuItemState();
+  syncAutoUpdaterMenuItemState();
   broadcastAutoUpdaterState();
   for (const listener of autoUpdaterStateListeners) {
     listener(menuState);
@@ -621,35 +614,32 @@ function normalizeLocalizedReleaseNotes(
   version: string,
   releaseNotesByLocale: UpdateDownloadedInfoLike["releaseNotesByLocale"],
 ): PostUpdateReleaseNotesPayload["releaseNotesByLocale"] | undefined {
-  const localized: PostUpdateReleaseNotesPayload["releaseNotesByLocale"] = {};
   if (!releaseNotesByLocale || typeof releaseNotesByLocale !== "object") {
     return undefined;
   }
 
-  for (const locale of ["zh-CN", "en-US"] as const) {
-    const entry = releaseNotesByLocale[locale];
-    if (!entry) {
-      continue;
-    }
+  const entry = releaseNotesByLocale[DEFAULT_LOCALE];
+  if (!entry) {
+    return undefined;
+  }
 
-    const markdown =
-      typeof entry === "string"
-        ? normalizeReleaseNotesMarkdown(entry)
-        : normalizeReleaseNotesMarkdown(entry.markdown ?? entry.releaseNotes);
-    if (!markdown) {
-      continue;
-    }
+  const markdown =
+    typeof entry === "string"
+      ? normalizeReleaseNotesMarkdown(entry)
+      : normalizeReleaseNotesMarkdown(entry.markdown ?? entry.releaseNotes);
+  if (!markdown) {
+    return undefined;
+  }
 
-    localized[locale] = {
+  return {
+    [DEFAULT_LOCALE]: {
       title:
         typeof entry === "object" && entry.title?.trim()
           ? entry.title.trim()
           : deriveReleaseNotesTitle(markdown, version),
       markdown,
-    };
-  }
-
-  return Object.keys(localized).length > 0 ? localized : undefined;
+    },
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -704,7 +694,7 @@ export function resolveUpdateFeedSourceFromStartupConfig(
   if (!feedUrl) {
     return undefined;
   }
-  // 更新源覆盖仅供开发构建联调;正式包按 isPackaged 忽略,避免更新请求被环境变量/启动参数改道
+  // Update source coverage is only for development and build joint debugging; official packages are ignored by isPackaged to avoid update requests being redirected by environment variables/startup parameters.
   if (app.isPackaged) {
     logger.warn(
       `[auto-update] ignore update feed override in packaged app: ${redactUpdateFeedUrlForLog(feedUrl)}`,
@@ -745,8 +735,8 @@ async function syncAutoUpdateCheckChannelFromSettings(
       `[auto-update] ${reason}: check channel ${availableUpdateChannel} -> ${nextChannel}`,
     );
   }
-  // 服务端 manifest provider 会在 checkForUpdates 内部读取 preview 设置。
-  // 如果 begin 阶段仍用默认 stable 作为 expected channel，冷启动 preview 结果会被误判为 stale。
+  // The server manifest provider will read preview settings inside checkForUpdates.
+  // If the default stable is still used as the expected channel in the begin phase, the cold start preview result will be misjudged as stale.
   availableUpdateChannel = nextChannel;
   activeAutoUpdateCheckChannel = nextChannel;
 }
@@ -777,12 +767,7 @@ function applyManifestUpdateProvider(options: InitAutoUpdaterOptions): void {
 function pickFallbackReleaseNotesMarkdown(
   localized: PostUpdateReleaseNotesPayload["releaseNotesByLocale"] | undefined,
 ): string | null {
-  return (
-    localized?.[menuLocale]?.markdown ??
-    localized?.["zh-CN"]?.markdown ??
-    localized?.["en-US"]?.markdown ??
-    null
-  );
+  return localized?.[DEFAULT_LOCALE]?.markdown ?? null;
 }
 
 function normalizeReleaseDate(
@@ -844,10 +829,10 @@ async function persistPendingPostUpdateReleaseNotes(
 }
 
 /**
- * 待展示说明里的 version 来自「已下载的安装包」；当前进程版本在安装完成前仍可能是旧版，
- * 此时待展示版本高于当前运行版本属于正常中间态，不能丢弃。
- * 若用户跳过自动更新链路（官网安装包等）直接升到更高版本，磁盘里可能仍残留更早一次下载写入的 pending，
- * 此时待展示版本低于已安装版本，应在启动时丢弃，否则会弹出旧版更新说明。
+ * The version in the description to be displayed comes from the "downloaded installation package"; the current process version may still be an old version before the installation is completed.
+ * At this time, the version to be displayed is higher than the currently running version, which is a normal intermediate state and cannot be discarded.
+ * If the user skips the automatic update link (official website installation package, etc.) and directly upgrades to a higher version, there may still be pending files downloaded and written earlier on the disk.
+ * The version to be displayed at this time is lower than the installed version and should be discarded at startup, otherwise the old version update instructions will pop up.
  */
 function shouldDiscardStalePendingReleaseNotes(
   pendingVersion: string,
@@ -1005,9 +990,9 @@ function handleAutoUpdateFailure(error: unknown, source: string) {
     readyUpdateVersion &&
     isDevSquirrelReadyError(error)
   ) {
-    // 开发态验证真实测试环境 manifest 时，macOS Squirrel 仍可能在
-    // update-downloaded 后补一个 code=2 staging 错误。生产包必须清掉失败的 ready，
-    // 但开发态需要保留 ready 状态来验证“重启以更新”交互闭环。
+    // When verifying the real test environment manifest in development mode, macOS Squirrel may still be
+    // update-downloaded is followed by a code=2 staging error. The production package must clear the failed ready.
+    // However, the development state needs to retain the ready state to verify the "restart to update" interactive closed loop.
     logger.warn(
       `[auto-update] ignore dev Squirrel ready error after ${source} version=${readyUpdateVersion}: ${message}`,
     );
@@ -1018,8 +1003,8 @@ function handleAutoUpdateFailure(error: unknown, source: string) {
   logger.error(`[auto-update] ${source}:`, error);
   if (menuState.kind === "update-downloaded" && readyUpdateVersion) {
     const failedReadyVersion = readyUpdateVersion;
-    // macOS Squirrel 可能在 update-downloaded 后才发现包无法 stage。
-    // 如果继续保留 ready 缓存，renderer 会一直展示“重启以更新”，再次点击只会调用一个已失败的安装上下文。
+    // macOS Squirrel may find that the package cannot be staged after update-downloaded.
+    // If you continue to keep the ready cache, the renderer will always display "Restart to update", and clicking again will only call a failed installation context.
     clearReadyUpdateState();
     clearPersistedPostUpdateReleaseNotesForVersion(
       failedReadyVersion,
@@ -1030,9 +1015,9 @@ function handleAutoUpdateFailure(error: unknown, source: string) {
   clearAvailableUpdateState();
   clearDownloadingUpdateState();
   if (failedDownload?.version && !readyUpdateVersion && !activeForceAutoUpdateListener) {
-    // 用户点击“下载更新”后如果下载启动或 staging 很快失败，
-    // 清空 available/downloading 并广播 idle 会让 renderer 入口和弹窗同时消失。
-    // 失败并不等同于用户跳过该版本，应退回“发现更新”状态，让用户能看到并重试下载。
+    // If the download starts or staging fails quickly after the user clicks "Download Updates",
+    // Clearing available/downloading and broadcasting idle will cause the renderer entry and pop-up window to disappear at the same time.
+    // Failure does not mean that the user skipped the version, and should be returned to the "Update Found" state so that the user can see and retry the download.
     availableUpdateReleaseNotes = failedDownload.releaseNotes;
     availableUpdateChannel = failedDownload.channel;
     setAutoUpdaterMenuState(
@@ -1062,8 +1047,8 @@ async function isSkippedUpdateVersion(
     return false;
   }
 
-  // 用户手动检查更新代表重新关注被跳过的版本。
-  // 即使持久化清理还没落盘，这一轮也不能继续把同版本更新当作 up-to-date 隐藏掉。
+  // Users manually checking for updates represents a renewed focus on skipped versions.
+  // Even if the persistence cleanup has not yet been implemented, this round cannot continue to hide the same version updates as up-to-date.
   if (manualCheckWebContentsId != null) {
     return false;
   }
@@ -1121,9 +1106,9 @@ async function skipAvailableUpdateVersion(
     );
   }
 
-  // 下载态弹窗仍需要允许用户跳过当前版本。
-  // 如果 main 只接受 update-available，UI 中点击“跳过此版本”会变成 no-op；
-  // 这里在持久化跳过前取消当前下载，并清理下载态，避免后台继续拉取已跳过版本。
+  // Download pop-ups still need to allow users to skip the current version.
+  // If main only accepts update-available, clicking "Skip this version" in the UI will become no-op;
+  // Here, the current download is canceled before persistence is skipped, and the download status is cleared to prevent the background from continuing to pull the skipped version.
   clearAvailableUpdateState();
   clearDownloadingUpdateState();
   setAutoUpdaterMenuState(
@@ -1211,9 +1196,9 @@ function downloadAvailableUpdate(reason = "renderer") {
   downloadingUpdateVersion = menuState.version;
   downloadingUpdateReleaseNotes = menuState.releaseNotes ?? availableUpdateReleaseNotes;
   downloadingUpdateChannel = menuState.channel ?? availableUpdateChannel;
-  // electron-updater 如果命中本地已下载缓存，会在 downloadUpdate() 内直接触发
-  // update-downloaded。这里不能先广播 0% 下载态，否则用户会先看到“下载中”，
-  // 再跳到“已下载”；真实下载态改由第一条 download-progress 事件驱动。
+  // If electron-updater hits the local downloaded cache, it will be triggered directly within downloadUpdate()
+  // update-downloaded. You cannot broadcast 0% download status here first, otherwise the user will see "Downloading" first.
+  // Then jump to "Downloaded"; the actual download status is driven by the first download-progress event.
   notifyForceAutoUpdate({
     kind: "downloading",
     version: downloadingUpdateVersion,
@@ -1229,8 +1214,8 @@ function downloadAvailableUpdate(reason = "renderer") {
         logger.info(`[auto-update] ${reason} download cancelled`);
         return;
       }
-      // 下载由用户点击或强更 gate 显式触发，Promise reject 也必须立即反馈。
-      // 不能只依赖 electron-updater 后续是否额外触发 error 事件，否则 UI 会卡在下载态。
+      // The download is explicitly triggered by the user clicking or changing the gate, and the Promise reject must also be fed back immediately.
+      // You cannot just rely on electron-updater to trigger an additional error event later, otherwise the UI will be stuck in the download state.
       handleAutoUpdateFailure(error, "download update failed");
     })
     .finally(() => {
@@ -1262,7 +1247,7 @@ function cancelDownloadingUpdate(reason = "renderer") {
     `[auto-update] ${reason}: cancel download channel=${channel} version=${version ?? "unknown"}`,
   );
 
-  // 取消下载不是跳过版本，只回退到发现更新状态，保留同一份 manifest 信息让用户可以稍后重试。
+  // Canceling the download does not skip the version, but only goes back to the update discovery state, retaining the same manifest information so that the user can try again later.
   clearDownloadingUpdateState();
   if (version) {
     availableUpdateReleaseNotes = releaseNotes;
@@ -1276,15 +1261,6 @@ function cancelDownloadingUpdate(reason = "renderer") {
       ? buildUpdateDownloadedState(readyUpdateVersion)
       : { kind: "idle", enabled: true },
   );
-}
-
-export function setAutoUpdaterMenuLocale(locale: Locale) {
-  menuLocale = locale;
-
-  // 检查更新菜单项会被 updater 的异步状态流反复改写。
-  // 如果只在创建菜单时翻译一次，后续 checking/downloading 阶段又会退回英文。
-  // 这里把 locale 和当前 updater 状态一起保存，确保每次重建菜单或切语言后都能按最新状态重新渲染。
-  syncMenuItemState();
 }
 
 export async function hydratePendingPostUpdateReleaseNotes(settingService: SettingServiceLike) {
@@ -1318,9 +1294,9 @@ export async function hydratePendingPostUpdateReleaseNotes(settingService: Setti
     pendingPostUpdateReleaseNotes &&
     isPendingReleaseNotesForFutureVersion(pendingPostUpdateReleaseNotes)
   ) {
-    // 用户下载完成但尚未安装时重启应用，electron-updater 的内存 ready 状态会丢失，
-    // 但本地 pending 包和版本说明仍在。这里用“pending 版本高于当前版本”恢复待安装状态，
-    // 避免已有缓存时仍提示“下载更新”，点击后又被 dev staging 错误打回 idle。
+    // When the user restarts the application after downloading it but not yet installing it, the memory ready state of electron-updater will be lost.
+    // But the local pending package and version notes are still there. Here, use "pending version higher than current version" to restore the pending installation state.
+    // Avoid being prompted to "download updates" when there is already a cache, and then being returned to idle with a dev staging error after clicking on it.
     readyUpdateVersion = pendingPostUpdateReleaseNotes.version;
     readyUpdateReleaseNotes = pendingPostUpdateReleaseNotes;
     readyUpdateRestoredFromPendingReleaseNotes = true;
@@ -1336,9 +1312,9 @@ export function syncReadyUpdateToWindow(win: BrowserWindow) {
     return;
   }
 
-  // update-downloaded 可能发生在 renderer React effect 还没挂好之前，
-  // 甚至发生在窗口 reload / 新开窗口之前。这里把“已有可安装更新”视为一份持久状态，
-  // 在窗口后续就绪时补发一次，避免按钮只靠那次瞬时事件而丢失。
+  // update-downloaded may occur before the renderer React effect is hung up.
+  // Happens even before the window reloads/opens a new window. Here "installable updates are available" is considered a persistent state.
+  // Reissue once when the window is ready to prevent the button from being lost based on that transient event.
   logger.info(
     `[auto-update] sync ready update to window ${win.webContents.id}: ${readyUpdateVersion}`,
   );
@@ -1366,9 +1342,9 @@ export function refreshAutoUpdaterReleaseChannel(
   }
 
   if (checkForUpdatesInFlight) {
-    // 用户可能在启动检查尚未完成时切换 preview 开关。
-    // 不能立刻改 availableUpdateChannel，否则旧请求返回时会把旧通道的版本标成新通道；
-    // 这里只记录待刷新通道，等当前 check 收口后再重新请求 manifest。
+    // The user may toggle the preview switch while the startup check has not yet completed.
+    // AvailableUpdateChannel cannot be changed immediately, otherwise the old channel version will be marked as the new channel when the old request returns;
+    // Only the channels to be refreshed are recorded here, and the manifest will be requested again after the current check is closed.
     pendingManifestReleaseChannelRefresh = nextChannel;
     logger.info(
       `[auto-update] defer ${reason}: check already in flight, next channel=${nextChannel}`,
@@ -1418,8 +1394,8 @@ export function syncPostUpdateReleaseNotesToWindow(win: BrowserWindow) {
   }
 
   if (isPendingReleaseNotesForFutureVersion(pendingPostUpdateReleaseNotes)) {
-    // pending release notes 是下载完成时写入的；若版本仍高于当前 app，
-    // 说明更新尚未安装，不能提前作为“安装后说明”发给 renderer 静默 ack。
+    // Pending release notes are written when the download is completed; if the version is still higher than the current app,
+    // Note that the update has not yet been installed and cannot be sent to the renderer silently ack in advance as "post-installation notes".
     return;
   }
 
@@ -1473,9 +1449,6 @@ export async function initAutoUpdater(options: InitAutoUpdaterOptions = {}): Pro
   if (!canUseAutoUpdaterInCurrentRuntime()) return;
 
   onBeforeQuitAndInstall = options.onBeforeQuitAndInstall;
-  if (options.locale) {
-    menuLocale = options.locale;
-  }
   autoUpdaterSettingService = options.settingService;
 
   if (autoUpdatePollTimer) {
@@ -1495,13 +1468,13 @@ export async function initAutoUpdater(options: InitAutoUpdaterOptions = {}): Pro
 
   logger.info(`[auto-update] initializing, current version: ${getCurrentAppVersionForUpdate()}`);
 
-  // 已下载旧版本后，feed 继续推进到更高版本时，主进程必须先比较远端版本和 ready 版本，
-  // 再决定是否下载。若继续让 electron-updater 自动下载，它只会按当前 app 版本判断，
-  // 导致 `3.1.2` 已 ready `3.1.3` 时每次轮询都可能重复下载 `3.1.3`。
+  // After the old version has been downloaded, when the feed continues to advance to a higher version, the main process must first compare the remote version and the ready version.
+  // Then decide whether to download. If you continue to let electron-updater download automatically, it will only judge based on the current app version.
+  // As a result, `3.1.3` may be downloaded repeatedly for each poll when `3.1.2` is ready `3.1.3`.
   autoUpdater.autoDownload = false;
-  // Windows/NSIS 在窗口关闭后会异步启动安装；如果用户紧接着关机，安装器可能被系统中断，
-  // 留下半更新状态并导致下次启动失败。
-  // 这里仅在 Windows 关闭“退出即自动安装”，要求用户显式点更新；其他平台保持原有行为，避免改动既有升级链路。
+  // Windows/NSIS will start the installation asynchronously after the window is closed; if the user shuts down immediately, the installer may be interrupted by the system.
+  // Leaving a half-updated state and causing the next startup to fail.
+  // Here, "automatic installation on exit" is only turned off on Windows, requiring the user to explicitly click update; other platforms maintain the original behavior to avoid changing the existing upgrade link.
   autoUpdater.autoInstallOnAppQuit = process.platform !== "win32";
   autoUpdater.logger = logger;
   applyManifestUpdateProvider(options);
@@ -1512,10 +1485,10 @@ export async function initAutoUpdater(options: InitAutoUpdaterOptions = {}): Pro
       return;
     }
 
-    // 发布链路即使改成“安装包先、latest 后”，CDN 生效仍可能晚于客户端的轮询节奏。
-    // 如果 checking / downloading 阶段继续并发触发 checkForUpdates，会把同一轮更新流重复拉起，
-    // 造成无效请求、噪音日志，甚至把用户看到的菜单状态来回覆盖，所以自动轮询只在 idle 或
-    // update-downloaded 态进入；后者继续轮询是为了发现取代已下载版本的新版本。
+    // Even if the publishing link is changed to "install the package first, then the latest", the CDN may still take effect later than the client's polling rhythm.
+    // If the checking/downloading phase continues to trigger checkForUpdates concurrently, the same update stream will be started repeatedly.
+    // Causes invalid requests, noisy logs, and even overwrites the menu status seen by the user, so automatic polling only occurs when idle or
+    // The update-downloaded state is entered; the latter continues to poll in order to discover a new version that replaces the downloaded version.
     if (reason === "poll" && !canPollForUpdatesFromState(menuState)) {
       logger.info(`[auto-update] skip ${reason}: state=${menuState.kind}`);
       return;
@@ -1531,8 +1504,8 @@ export async function initAutoUpdater(options: InitAutoUpdaterOptions = {}): Pro
 
     checkForUpdatesPromise
       .catch((err) => {
-        // 强更弹窗可能复用启动期后台检查；如果 checkForUpdates 直接 reject 且没有后续 error 事件，
-        // 只写日志会让弹窗停在 checking。这里复用失败收敛逻辑，把状态恢复并反馈给强更监听。
+        // The strong update pop-up window may reuse the background check during the startup period; if checkForUpdates directly rejects and there is no subsequent error event,
+        // Just writing the log will cause the pop-up window to stop at checking. Here, the failed convergence logic is reused to restore the state and feed it back to the strong update monitor.
         handleAutoUpdateFailure(err, `${reason} check failed`);
       })
       .finally(() => {
@@ -1549,8 +1522,8 @@ export async function initAutoUpdater(options: InitAutoUpdaterOptions = {}): Pro
     logger.info(`[auto-update] new version available: ${info.version}`);
     const infoChannel = readUpdateInfoReleaseChannel(info);
     if (shouldIgnoreStaleAvailableUpdate(infoChannel)) {
-      // 用户切换“接收 preview 版本”时，旧通道的 manifest 请求可能晚于新请求返回。
-      // 旧结果如果继续写 menuState，或提前结束当前 generation，会让独立更新弹窗继续显示旧版本/旧 release notes。
+      // When the user switches "Receive preview version", the manifest request from the old channel may be returned later than the new request.
+      // If you continue to write menuState for old results, or end the current generation early, the independent update pop-up window will continue to display the old version/old release notes.
       logger.info(
         `[auto-update] ignore stale update channel=${infoChannel} expected=${activeAutoUpdateCheckChannel ?? availableUpdateChannel} version=${info.version}`,
       );
@@ -1584,10 +1557,10 @@ export async function initAutoUpdater(options: InitAutoUpdaterOptions = {}): Pro
 
       availableUpdateReleaseNotes = toPostUpdateReleaseNotesPayload(info);
       if (readyUpdateRestoredFromPendingReleaseNotes) {
-        // pendingPostUpdateReleaseNotes 只能证明“曾经下载完成并持久化了版本说明”，
-        // 不能恢复当前进程里的 electron-updater downloadedUpdateHelper、Squirrel.Mac proxy server
-        // 或 native staged update。遇到 manifest 再次确认同版本可用时必须清掉伪 ready，
-        // 重新 downloadUpdate，让缓存命中/重新下载后的 update-downloaded 建立真实安装上下文。
+        // pendingPostUpdateReleaseNotes can only prove that "the download has been completed and the version notes have been persisted",
+        // Unable to restore electron-updater downloadedUpdateHelper and Squirrel.Mac proxy server in the current process
+        // or native staged update. When you encounter the manifest and confirm again that the same version is available, you must clear the pseudo ready.
+        // Re-downloadUpdate to allow the cache hit/re-downloaded update-downloaded to establish the real installation context.
         clearReadyUpdateState();
       }
       setAutoUpdaterMenuState(
@@ -1600,8 +1573,8 @@ export async function initAutoUpdater(options: InitAutoUpdaterOptions = {}): Pro
       }
 
       if (await shouldAutoDownloadAndInstallUpdates(options.settingService)) {
-        // 功能原因：自动下载偏好属于 main 进程更新状态机，不能依赖 renderer 弹窗是否打开。
-        // 检测到更新后复用手动下载入口，保持取消、缓存命中、失败恢复等行为完全一致。
+        // Function reason: The automatic download preference belongs to the main process update state machine and cannot depend on whether the renderer pop-up window is open.
+        // After an update is detected, the manual download entry is reused to keep cancellation, cache hit, and failure recovery behaviors completely consistent.
         downloadAvailableUpdate("auto-download");
         return;
       }
@@ -1631,7 +1604,7 @@ export async function initAutoUpdater(options: InitAutoUpdaterOptions = {}): Pro
       clearAvailableUpdateState();
       clearDownloadingUpdateState();
       setAutoUpdaterMenuState({ kind: "idle", enabled: true });
-      // 强制升级弹窗复用启动期检查时，也必须在无可用更新时给出闭环反馈，避免一直停在 checking。
+      // When the forced upgrade pop-up window reuses the startup check, it must also give closed-loop feedback when no updates are available to avoid stopping at checking.
       notifyForceAutoUpdate({
         kind: "error",
         message: getForceAutoUpdateNoUpdateMessage(),
@@ -1644,8 +1617,8 @@ export async function initAutoUpdater(options: InitAutoUpdaterOptions = {}): Pro
   });
 
   autoUpdater.on("download-progress", (progress) => {
-    // 用户快速取消下载后，electron-updater 可能还会补发旧下载流的 progress。
-    // 如果继续接收这个陈旧事件，UI 会从“可更新”被重新推回“下载中”，看起来像取消后卡住。
+    // After the user quickly cancels the download, the electron-updater may also reissue the progress of the old download stream.
+    // If you continue to receive this stale event, the UI will be pushed back from "updatable" to "downloading", which will look like it is stuck after cancellation.
     if (!downloadCancellationToken || downloadCancellationToken.cancelled) {
       return;
     }
@@ -1719,8 +1692,8 @@ export async function initAutoUpdater(options: InitAutoUpdaterOptions = {}): Pro
 
   autoUpdater.on("error", (err) => {
     if (shouldIgnoreCancelledDownloadError(err)) {
-      // electron-updater 在取消下载后可能异步补发 error("cancelled")。
-      // 用户取消已经把状态恢复到可重试的 update-available，迟到取消事件不能再清空入口。
+      // electron-updater may reissue error("cancelled") asynchronously after canceling the download.
+      // User cancellation has restored the status to retryable update-available, and late cancellation events can no longer clear the entry.
       logger.info("[auto-update] ignore delayed error from cancelled download");
       return;
     }
@@ -1731,8 +1704,8 @@ export async function initAutoUpdater(options: InitAutoUpdaterOptions = {}): Pro
   });
 
   ipcMain.handle(PlatformChannels.QuitAndInstallUpdate, () =>
-    // renderer 只有在 IPC reject 时才知道安装器没有接管。ready 失效或
-    // 退出准备失败不能返回成功 ACK，否则“重启以更新”会永久保持 pending。
+    // The renderer only knows that the installer is not taking over if IPC rejects. ready failed or
+    // Failure to exit preparation cannot return a successful ACK, otherwise "restart to update" will remain pending forever.
     quitAndInstallUpdate(true),
   );
   ipcMain.on(PlatformChannels.QuitAndInstallUpdate, () => {
@@ -1774,12 +1747,12 @@ export function requestForceAutoUpdate(
 
   activeForceAutoUpdateListener = onStateChange;
   forceAutoUpdateLastLoggedProgressBucket = null;
-  logger.info(`[force-update] 自动升级开始 reason=${reason}`);
+  logger.info(`[force-update] automatic update started reason=${reason}`);
   onStateChange({ kind: "checking" });
 
   if (!canUseAutoUpdaterInCurrentRuntime()) {
     const message = "not packaged";
-    logger.info(`[force-update] 自动升级跳过：${message}`);
+    logger.info(`[force-update] automatic update skipped: ${message}`);
     onStateChange({ kind: "dev-skipped", message });
     return dispose;
   }
@@ -1805,7 +1778,7 @@ export function requestForceAutoUpdate(
   }
 
   if (checkForUpdatesInFlight) {
-    logger.info(`[force-update] 自动升级复用进行中的更新检查`);
+    logger.info(`[force-update] automatic update reused the in-flight update check`);
     return dispose;
   }
 
@@ -1858,7 +1831,7 @@ export function checkForUpdateMenuClick(originWindow?: BrowserWindow | null) {
   }
 
   if (autoUpdaterDisabledForProductFlavor) {
-    // 入口本应已按产品身份隐藏；这里是最后一道闸，不让未初始化的 updater 实例向占位 feed 发请求。
+    // The entrance should have been hidden by product identity; this is the last gate to prevent uninitialized updater instances from making requests to the placeholder feed.
     logger.info("[auto-update] skip manual check: updater disabled for this product flavor");
     targetWindow.webContents.send(PlatformChannels.UpdateCheckResult, {
       kind: "dev-skipped",
@@ -1867,9 +1840,9 @@ export function checkForUpdateMenuClick(originWindow?: BrowserWindow | null) {
   }
 
   if (menuState.kind === "update-downloaded") {
-    // 菜单文案已经切到“重启以更新”，如果仍只发 ready toast，
-    // 用户点击系统菜单不会安装更新，而顶部按钮会安装，两个入口语义不一致。
-    // 这里复用按钮背后的安装逻辑，让菜单点击真正触发重启安装。
+    // The menu text has been switched to "Restart to update". If it still only sends ready toast,
+    // The update will not be installed when the user clicks on the system menu, but will be installed on the top button. The semantics of the two entries are inconsistent.
+    // The installation logic behind the button is reused here, so that menu clicks actually trigger a restart of the installation.
     void quitAndInstallUpdate();
     return;
   }
@@ -1902,9 +1875,9 @@ export function checkForUpdateMenuClick(originWindow?: BrowserWindow | null) {
 
   manualCheckWebContentsId = targetWindow.webContents.id;
   const manualCheckChannel = getAutoUpdaterReleaseChannelForCurrentState();
-  // Windows 自绘菜单不能只等 electron-updater 的 checking 事件。
-  // 某些环境里用户点击后会先重新打开菜单，如果事件尚未送达 renderer，就仍显示“检查更新”。
-  // 这里在发起手动检查前先落一份稳定状态，后续 download-progress 再覆盖成百分比。
+  // Windows self-drawn menus cannot just wait for the checking event of electron-updater.
+  // In some environments, the menu will be reopened after the user clicks it. If the event has not yet been sent to the renderer, "Check for Updates" will still be displayed.
+  // Here, before initiating manual inspection, a stable state is first set, and then download-progress is overwritten as a percentage.
   setAutoUpdaterMenuState({ kind: "checking", enabled: false });
   const checkId = beginAutoUpdateCheck();
   void (async () => {

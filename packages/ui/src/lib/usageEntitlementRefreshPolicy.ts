@@ -42,7 +42,7 @@ const entitlementFailureBackoff = new WeakMap<
 >();
 const entitlementAccessRequests = new WeakMap<IUsageStatsService, Map<string, number>>();
 
-// 购买使同一身份的所有旧请求失效，不能仅依赖单个 hook 的 requestVersion。
+// Purchase invalidates all old requests for the same identity and cannot rely solely on the requestVersion of a single hook.
 const entitlementGenerations = new WeakMap<IUsageStatsService, Map<string, number>>();
 
 export function beginSharedEntitlementRequest(params: {
@@ -182,7 +182,7 @@ export function recordSharedEntitlementFailure(params: {
     failureCount,
     nextAllowedAt,
   });
-  // 查询失败也是共享事实；否则设置页失败后，推荐入口仍认为旧余额查询成功。
+  // If the query fails, it is also a shared fact; otherwise, after the settings page fails, the recommendation portal will still consider the old balance query to be successful.
   for (const listener of entitlementSubscribers
     .get(params.usageStatsService)
     ?.get(params.freshnessKey) ?? []) {

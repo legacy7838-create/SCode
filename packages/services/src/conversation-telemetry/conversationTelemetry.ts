@@ -8,8 +8,9 @@ export interface ConversationTelemetryWorkspaceTarget {
 }
 
 /**
- * 对话埋点的 workspace 级只读服务面。它只包装已完成 clientMode 鉴权的 connection-scoped
- * agent service，不另开 RPC channel，也不让 Web/mobile 绕过 desktop-continuous 门禁。
+ * Workspace-level read-only service surface for conversation telemetry. It only wraps the
+ * connection-scoped agent service after clientMode authorization has completed; it opens no
+ * additional RPC channel and never lets Web/mobile bypass the desktop-continuous gate.
  */
 export interface IConversationTelemetryService {
   onFact(target: ConversationTelemetryWorkspaceTarget): Event<ConversationTelemetryFact>;
@@ -20,8 +21,8 @@ export function createConversationTelemetryService(
 ): IConversationTelemetryService {
   return {
     onFact: (target) =>
-      // 带 workspace 参数的 RPC Event 必须使用 onDynamic* 命名，
-      // 否则 ProxyChannel 会把它当普通 Event，并把 target 误当 listener。
+      // RPC Events with workspace parameters must be named onDynamic*.
+      // Otherwise ProxyChannel will treat it as a normal Event and mistake the target as a listener.
       zcodeAgentService.onDynamicConversationTelemetryFact(target),
   };
 }

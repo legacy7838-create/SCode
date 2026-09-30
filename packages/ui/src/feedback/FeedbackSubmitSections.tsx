@@ -34,8 +34,8 @@ export function DescriptionSection({
           rows={5}
           maxLength={max}
           placeholder={formatMessage("feedback.submit.simple.descriptionPlaceholder")}
-          // Textarea 默认的 field-sizing-content 会让无换行长文本撑大输入框宽度。
-          // 反馈弹窗宽度固定，这里切到固定尺寸并允许长词换行，避免整窗横向溢出。
+          // Textarea's default field-sizing-content will make long text without line breaks expand the width of the input box.
+          // The width of the feedback pop-up window is fixed. Here it is cut to a fixed size and allows long words to wrap to prevent the entire window from overflowing horizontally.
           className="field-sizing-fixed h-[136px] max-h-[136px] min-w-0 max-w-full resize-none overflow-y-auto rounded-xl border-input-border bg-input text-ui-base leading-6 whitespace-pre-wrap break-words text-foreground placeholder:text-foreground-subtlest hover:border-input-border-hover focus-visible:border-input-border-focused focus-visible:bg-input-focused"
         />
       </Field>
@@ -63,8 +63,8 @@ export function ContactSection({
           autoComplete="email"
           value={value}
           onChange={(event) => {
-            // 联系方式是可选项，但用户一旦填过就希望下次自动带出。
-            // 这里随输入实时持久化，不再依赖提交成功，避免网络失败或用户关闭弹窗导致记忆丢失。
+            // Contact information is optional, but once users fill it out they expect it to be automatically brought out next time.
+            // Here, the input is persisted in real time and no longer relies on successful submission to avoid memory loss caused by network failure or the user closing the pop-up window.
             onChange(rememberFeedbackContactInput(event.target.value));
           }}
           maxLength={max}

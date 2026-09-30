@@ -1,9 +1,9 @@
 // ============================================================
-// 设置轮的两处文字
+// Set the two text of the wheel
 // ============================================================
-// 一次「配置」在两个面上留下记录：转写里 run 卡上方的一行「已调整设置 · 子代理改用 X · 最多 N 个
-// 同时运行」，与详情页的来龙去脉块「由你调整设置」下的 from → to 两行。两处读同一块 `amend` 元数据，
-// 措辞规则只在这里写一次。纯函数 + 注入的 formatMessage / providerName，与 subagent-model-label 同规。
+// A "configuration" leaves a record on both sides: the line above the run card in the transcription "Settings adjusted · Subagents changed to use X · Up to N
+// Run simultaneously", and the two lines from → to under the context block "Adjust settings by you" on the details page. Reading the same piece of `amend` metadata from two places,
+// Wording rules are written here only once. Pure function + injected formatMessage / providerName, the same as subagent-model-label.
 
 import type { WorkflowSettingsAmendMeta } from "@zcode/shared/zcode-protocol-v4";
 import {
@@ -11,14 +11,19 @@ import {
   type WorkflowSubagentModelDeps,
 } from "./subagent-model-label.js";
 
-/** 模型的屏幕名：只要名字（档位留给 tooltip），与 run 卡上的模型段同一个词。 */
+/**
+ * The model's on-screen name: just the name (the tier is left to the tooltip), the same word as the
+ * model segment on a run card.
+ */
 function modelName(canonical: string, deps: WorkflowSubagentModelDeps): string {
   return describeWorkflowSubagentModel(canonical, deps).name;
 }
 
 /**
- * 转写行的各段（不含开头的「已调整设置」与末尾时刻）：只有改过的设置在场，模型在前、上限在后。
- * 上限的 `to` 缺席或不低于天花板，都读作「上限恢复为本机默认」。
+ * The segments of the transcript row (excluding the leading "settings adjusted" and the trailing
+ * timestamp): only the settings that changed are present, the model first and the limit after it. A
+ * missing `to` on the limit, or one not below the ceiling, both read as "the limit was restored to
+ * this machine's default".
  */
 export function workflowSettingsChangeSegments(
   amend: WorkflowSettingsAmendMeta,
@@ -52,13 +57,14 @@ export function workflowSettingsChangeSegments(
 export interface WorkflowSettingsProvenanceRow {
   key: "model" | "limit";
   label: string;
-  /** 「{from} → {to}」。 */
+  /** "{from} → {to}". */
   value: string;
 }
 
 /**
- * 详情页来龙去脉块的 from → to 行。缺席的一端写默认：模型写「会话模型」，上限写本机上限（知道
- * 天花板时带上数字，「13（本机上限）→ 4」）。
+ * The from → to rows of the detail page's provenance block. A missing end is written as the
+ * default: the model writes "session model", the limit writes this machine's limit (with the number
+ * when the ceiling is known, e.g. "13 (machine limit) → 4").
  */
 export function workflowSettingsProvenanceRows(
   amend: WorkflowSettingsAmendMeta,

@@ -29,8 +29,8 @@ export function SubagentReasoningField({
 
   useEffect(() => {
     if (!interactive) {
-      // Radix Root 的 disabled 只禁用 trigger，不会关闭已 portal
-      // 的菜单。字段失去 catalog 写权限时必须同步收回交互状态。
+      // Radix Root's disabled only disables the trigger and does not close the portal.
+      // menu. When a field loses catalog write permission, the interactive state must be recovered synchronously.
       setOpen(false);
     }
   }, [interactive]);

@@ -8,9 +8,10 @@ interface PromptScrollFocusPolicyInput {
 }
 
 /**
- * 新 prompt 只有真正走立即发送路径时才聚焦时间线底部。
- * 原因：enqueue 表达未来意图，用户此刻可能正在阅读上文，入队不能抢走阅读位置；
- * held choice 的两个显式 disposition 都会立即 startNow，因此与普通直发相同。
+ * A new prompt focuses the bottom of the timeline only when it truly takes the send-now path. The
+ * reason: enqueue expresses future intent, and the user may be reading the text above at that
+ * moment, so queueing must not steal the reading position; both explicit dispositions of a held
+ * choice start immediately with startNow, so they behave like an ordinary direct send.
  */
 export function shouldFocusTimelineAfterComposerSend(input: PromptScrollFocusPolicyInput): boolean {
   if (input.draftMode) return true;

@@ -8,8 +8,8 @@
   !define ZCODE_INSTALLER_ELEVATED_LOG_PATH "$WINDIR\Logs\ZCode-installer.log"
 !endif
 !ifndef ZCODE_INSTALLER_IS_ELEVATED_INNER
-  ; 来源只在测试夹具模拟内层，正式默认恒假会让提权进程继续使用调用方 /LOG。
-  ; 使用 electron-builder 同一 UAC 判据；隔离夹具仍可显式替换，不改变真正的提权流程。
+  ; The inner instance is only simulated by test fixtures; in production the default is always false, so the elevated process keeps using the caller's /LOG.
+  ; It uses the same UAC criterion as electron-builder; the isolation fixture can still override it explicitly without changing the real elevation flow.
   !include UAC.nsh
   !define ZCODE_INSTALLER_IS_ELEVATED_INNER `${UAC_IsInnerInstance}`
 !endif
@@ -28,7 +28,7 @@
 !ifdef BUILD_UNINSTALLER
   Var ZCodeUninstallerLogUnavailable
 
-  ; 卸载器只在更新时删除旧文件；单独记录清理阶段，避免外层把权限/空间错误误报成应用仍在运行。
+  ; The uninstaller deletes old files only during updates; log the cleanup phase separately so the outer layer does not misreport permission/space errors as "app still running".
   !macro ZCodeReportUninstallerStage MESSAGE
     DetailPrint "ZCode: ${MESSAGE}"
     Push "${MESSAGE}"
@@ -52,7 +52,7 @@
       FileClose $R1
       Goto zcodeUninstallerLogDone
     zcodeUninstallerLogFailed:
-      ; 日志不可写不应改变卸载结果，保留原始清理错误供外层处理。
+      ; An unwritable log must not change the uninstall result; keep the original cleanup error for the outer layer to handle.
       StrCpy $ZCodeUninstallerLogUnavailable "1"
       ClearErrors
     zcodeUninstallerLogDone:
@@ -72,8 +72,8 @@
 !endif
 
 !macro customRemoveFiles
-  ; electron-builder 默认在更新时递归删除整个 $INSTDIR，用户放入的无关文件也会被清掉。
-  ; 只按上一版本随包生成的所有权清单删除，清单缺失时迁移旧版本采用 fail-open 保留策略。
+  ; By default electron-builder recursively deletes the whole $INSTDIR on updates, wiping unrelated files the user put there.
+  ; Delete only what the previous version's bundled ownership manifest lists; if the manifest is missing, migrating from an older version fails open and keeps files.
   ${if} ${isUpdated}
     !ifdef BUILD_UNINSTALLER
       !insertmacro customRemoveFilesDiagnosticsStart
@@ -86,11 +86,11 @@
       ClearErrors
       FileRead $R0 $R1
       IfErrors zcodeManifestClose
-      ; NSIS FileRead 保留行尾 CRLF；打包清单统一使用换行结尾，先去掉两个行尾字符。
+      ; NSIS FileRead keeps the trailing CRLF; the packaged manifest consistently uses newline endings, so strip the two trailing characters first.
       StrCpy $R1 $R1 -2
       StrCmp $R1 "" zcodeManifestRead
 
-      ; 拒绝绝对路径和 .. 前缀，避免损坏或篡改清单越界删除。
+      ; Reject absolute paths and .. prefixes so a corrupted or tampered manifest cannot delete outside the install directory.
       StrCpy $R2 $R1 1
       StrCmp $R2 "\\" zcodeManifestRead
       StrCmp $R2 "/" zcodeManifestRead
@@ -100,7 +100,7 @@
       GetFullPathName $R2 "$INSTDIR\$R1"
       StrCmp $R2 "$INSTDIR\$R1" 0 zcodeManifestRead
 
-      ; 当前版本卸载器与外层安装器是两个进程；逐项记录到卸载器日志，便于核对真正尝试删除的文件。
+      ; The current uninstaller and the outer installer are separate processes; log every item to the uninstaller log so it is possible to check which files were actually targeted for deletion.
       !ifdef BUILD_UNINSTALLER
         !insertmacro ZCodeReportUninstallerStage "cleanup-file path=$R1"
       !endif
@@ -114,14 +114,14 @@
       !ifdef BUILD_UNINSTALLER
         !insertmacro ZCodeReportUninstallerStage "cleanup-failed reason=permission-or-disk-space"
       !endif
-      Abort "无法删除旧版本文件：$INSTDIR\$R1"
+      Abort "Failed to delete old-version files: $INSTDIR\$R1"
 
     zcodeManifestClose:
       FileClose $R0
       Goto zcodeManifestDone
 
     zcodeManifestMissing:
-      ; 首次从旧版本升级时没有清单，不能猜测所有权并删除用户文件。
+      ; The first upgrade from an old version has no manifest; ownership must not be guessed and user files deleted.
       !ifdef BUILD_UNINSTALLER
         !insertmacro ZCodeReportUninstallerStage "cleanup-skipped reason=manifest-missing action=preserve"
       !endif
@@ -132,7 +132,7 @@
         !insertmacro customRemoveFilesDiagnosticsComplete
       !endif
   ${else}
-    ; 普通卸载仍保持 electron-builder 的全量删除语义；ownership 清单只约束覆盖更新。
+    ; A normal uninstall keeps electron-builder's full-delete semantics; the ownership manifest only governs overwrite updates.
     SetOutPath $TEMP
     RMDir /r $INSTDIR
   ${endIf}
@@ -145,7 +145,7 @@
   Var ZCodeUninstallerDetailsUnavailable
   Var ZCodePreviousUninstallerSupportsManifest
 
-  ; 详情面板和文件日志共用同一条阶段事件，避免静默安装丢失关键上下文。
+  ; The details pane and the file log share the same stage event so silent installs do not lose key context.
   !macro ZCodeReportInstallerStage MESSAGE
     SetDetailsPrint listonly
     DetailPrint "ZCode: ${MESSAGE}"
@@ -197,7 +197,7 @@
       FileClose $R0
       Goto zcodeUninstallerDetailsResetDone
     zcodeUninstallerDetailsResetFailed:
-      ; 外层详情不能读取旧卸载器日志时仍继续安装，文件日志和退出码仍是最终依据。
+      ; Keep installing even when the outer details pane cannot read the old uninstaller log; the file log and the exit code remain authoritative.
       StrCpy $ZCodeUninstallerDetailsUnavailable "1"
       ClearErrors
     zcodeUninstallerDetailsResetDone:
@@ -242,8 +242,8 @@
     zcodeInstallerInitDone:
   !macroend
 
-  ; 这些宏由打包时的 electron-builder installSection.nsh 补丁按安装顺序调用。
-  ; 只有阶段 marker 写入详情和日志，解压文件明细由 NSIS 的 File 命令在 listonly 模式输出。
+  ; These macros are called in install order by the electron-builder installSection.nsh patch applied at packaging time.
+  ; Only stage markers are written to the details and the log; the extracted-file listing comes from NSIS's File command in listonly mode.
   !macro customInstallSectionStarted
     !insertmacro ZCodeReportInstallerStage "install-started"
   !macroend
@@ -276,13 +276,13 @@
 
   Function ZCodeDetectPreviousUninstallerCapabilities
     StrCpy $ZCodePreviousUninstallerSupportsManifest "0"
-    ; manifest 是卸载器能力标记：存在即表示旧卸载器会按清单选择性删除。
+    ; The manifest is an uninstaller capability marker: its presence means the old uninstaller deletes selectively per the manifest.
     IfFileExists "$INSTDIR\${ZCODE_INSTALL_MANIFEST_NAME}" 0 zcodePreviousUninstallerCapabilityCheckNested
       StrCpy $ZCodePreviousUninstallerSupportsManifest "1"
       Return
 
     zcodePreviousUninstallerCapabilityCheckNested:
-      ; assisted installer 的目录页会在后续 instfilesPre 才补上 APP_FILENAME 子目录，提前兼容两种形态。
+      ; The assisted installer's directory page only gains the APP_FILENAME subdirectory later, in instfilesPre; accommodate both shapes up front.
       IfFileExists "$INSTDIR\${APP_FILENAME}\${ZCODE_INSTALL_MANIFEST_NAME}" 0 zcodePreviousUninstallerCapabilityDone
         StrCpy $ZCodePreviousUninstallerSupportsManifest "1"
 
@@ -290,23 +290,23 @@
   FunctionEnd
 
   !macro customUnInstallCheck
-    ; handleUninstallResult 会把旧卸载器的退出码放在 $R0；失败时显示清理诊断，
-    ; 不再复用 appCannotBeClosed（该文案只适用于进程占用）。
+    ; handleUninstallResult puts the old uninstaller's exit code in $R0; on failure show the cleanup diagnostics,
+    ; do not fall back to appCannotBeClosed (that text only applies when a process is holding files).
     ${if} $R0 != 0
-      ; 静默自动更新无人值守，未设置 /SD 的模态框会一直等待用户点击，
-      ; 使明确的退出码无法返回 electron-updater。静默时自动采用 IDOK，交互时仍显示提示。
+      ; Silent auto-updates are unattended: a modal box without /SD set waits forever for a click,
+      ; so a clear exit code would never reach electron-updater. Use IDOK automatically when silent, still prompt when interactive.
       SetDetailsPrint listonly
       DetailPrint "ZCode: cleanup-failed exit-code=$R0"
       Call ZCodeShowUninstallerCleanupDetails
-      MessageBox MB_OK|MB_ICONSTOP "旧版本清理失败（错误码 $R0）。可能是文件被占用、权限不足或磁盘空间不足。详细日志：${ZCODE_UNINSTALLER_LOG_PATH}" /SD IDOK
+      MessageBox MB_OK|MB_ICONSTOP "Old-version cleanup failed (error code $R0). A file may be locked, permissions may be insufficient, or disk space may be low. Full log: ${ZCODE_UNINSTALLER_LOG_PATH}" /SD IDOK
       SetErrorLevel 2
       Quit
     ${endif}
   !macroend
 
   !macro customUnInstallCheckCurrentUser
-    ; per-machine 安装切换到 HKCU 旧版本时，electron-builder 会走另一条 hook；
-    ; 复用同一诊断，避免同一个清理失败因注册表根键不同又退回默认文案。
+    ; When a per-machine install switches to an older HKCU version, electron-builder takes a different hook;
+    ; reuse the same diagnostics so the same cleanup failure does not fall back to the default text just because the registry root differs.
     !insertmacro customUnInstallCheck
   !macroend
 !endif
@@ -315,8 +315,8 @@
 
 !macro customHeader
   !ifndef BUILD_UNINSTALLER
-    ; 异步生成的 header 可能先 include 本文件，再注册 UAC 插件目录。
-    ; 在 customHeader 展开函数，确保插件已注册；preInit 仍调用同一函数和真实 UAC 判据。
+    ; The asynchronously generated header may include this file before the UAC plugin directory is registered.
+    ; Expand the function in customHeader so the plugin is registered; preInit still calls the same function with the real UAC criterion.
     Function ZCodeInitializeInstallerLog
       Push $R0
       Push $R1
@@ -348,22 +348,22 @@
       Pop $R0
     FunctionEnd
 
-    ; electron-builder 的 common.nsh 先设置 ShowInstDetails nevershow；
-    ; hide 在该模板组合下仍可能留下空白列表且没有可展开入口，因此直接常显阶段详情。
+    ; electron-builder's common.nsh sets ShowInstDetails nevershow first;
+    ; with hide, this template combination can still leave a blank list with no way to expand it, so show the stage details permanently.
     ShowInstDetails show
     !ifdef allowToChangeInstallationDirectory
-      ; electron-builder 已在 assistedInstaller.nsh 中用该开关生成安装目录页面，
-      ; 但 installUtil.nsh 随后还会用它禁止无 --updated 的手动覆盖保留快捷方式，导致旧卸载器
-      ; 调用 UninstShortcut 注销开始菜单固定项。页面生成后撤掉开关，让自动更新和手动覆盖
-      ; 在同一安装目录覆盖时都通过 KeepShortcuts 保留同一个 .lnk。
+      ; electron-builder already used that switch in assistedInstaller.nsh to generate the install-directory page,
+      ; but installUtil.nsh later also uses it to stop manual overwrites without --updated from keeping shortcuts, which makes the old uninstaller
+      ; call UninstShortcut to unregister Start Menu pinned items. Remove the switch after the page is generated so auto-updates and manual overwrites
+      ; that reinstall into the same directory both keep the same .lnk via KeepShortcuts.
       !undef allowToChangeInstallationDirectory
     !endif
   !endif
 !macroend
 
 !ifndef BUILD_UNINSTALLER
-  ; electron-builder 会先编译卸载器，但快捷方式目标读取只在安装更新流程中调用。
-  ; 若把函数带入卸载器，NSIS 会产生 6010 未引用告警，并在 /WX 下直接中断 Windows CI。
+  ; electron-builder compiles the uninstaller first, but the shortcut-target read is only called in the update-install flow.
+  ; If the function is pulled into the uninstaller, NSIS raises a 6010 unreferenced warning and aborts Windows CI under /WX.
   Function ZCodeReadShortcutTarget
     Exch $R9
     Push $R1
@@ -395,8 +395,8 @@
     Pop $R0
     StrCmp $R0 "$appExe" ${LABEL_PREFIX}Done 0
 
-    ; 历史版本可能留下指向已移动 exe 的 .lnk，但无条件覆盖正确快捷方式会让
-    ; 部分 Windows 11 丢失“所有应用”索引或用户固定关系，因此只修复目标不一致的项。
+    ; Older versions may leave .lnk files pointing at a moved exe, but unconditionally overwriting correct shortcuts makes
+    ; some Windows 11 installs lose the "All apps" index or the user\'s pin relationship, so only fix entries whose target mismatches.
     ClearErrors
     CreateShortCut "${SHORTCUT_PATH}" "$appExe" "" "$appExe" 0 "" "" "${APP_DESCRIPTION}"
     IfErrors ${LABEL_PREFIX}Failed ${LABEL_PREFIX}Succeeded
@@ -406,7 +406,7 @@
       Goto ${LABEL_PREFIX}Done
     ${LABEL_PREFIX}Succeeded:
       WinShell::SetLnkAUMI "${SHORTCUT_PATH}" "${APP_ID}"
-      ; 重写后的 .lnk 必须在最后一次写入后通知 Shell，避免开始菜单继续使用旧索引。
+      ; The rewritten .lnk must notify the Shell after the last write so the Start Menu does not keep using the old index.
       System::Call 'Shell32::SHChangeNotify(i 0x00002000, i 0x0005, w "${SHORTCUT_PATH}", p 0)'
     ${LABEL_PREFIX}Done:
   ${endIf}
@@ -427,9 +427,9 @@
     !endif
   ${endIf}
 
-  ; 手动覆盖没有 --updated，继承旧快捷方式时仍需检查目标；首次安装没有旧项，
-  ; 不应额外启动 PowerShell。用户已删除的快捷方式也不会重建。
-  ; assisted installer 完成页始终直接运行本次安装落盘的 exe。
+  ; Manual overwrites have no --updated, so inherited shortcuts still need a target check; a first install has no previous entries,
+  ; so PowerShell must not be launched for nothing. Shortcuts the user deleted are not recreated either.
+  ; The assisted installer's finish page always runs the exe this install wrote to disk.
   StrCpy $launchLink "$appExe"
   !ifndef BUILD_UNINSTALLER
     !insertmacro ZCodeReportInstallerStage "install-completed"
@@ -453,8 +453,8 @@
     IntCmp $7 ${ZCODE_INSTALL_DIR_BACK_BUTTON_WIDTH} zcodeResizeInstallDirBackButtonDone zcodeResizeInstallDirBackButtonResize zcodeResizeInstallDirBackButtonDone
 
     zcodeResizeInstallDirBackButtonResize:
-      ; 阻断页把“上一步”改成中文动作文案，NSIS 默认按钮宽度可能裁掉文字。
-      ; 保持右边缘不动向左扩宽，避免和右侧“安装/取消”按钮重叠。
+      ; The blocking page relabels "Back" with a custom action label, and NSIS's default button width may clip the text.
+      ; Widen it leftward while keeping the right edge fixed so it does not overlap the "Install/Cancel" buttons.
       IntOp $3 $5 - ${ZCODE_INSTALL_DIR_BACK_BUTTON_WIDTH}
       System::Call "user32::MoveWindow(p r1, i r3, i r4, i ${ZCODE_INSTALL_DIR_BACK_BUTTON_WIDTH}, i r8, i 1)"
 
@@ -506,8 +506,8 @@
     Call ZCodeDetectPreviousUninstallerCapabilities
     StrCmp $ZCodePreviousUninstallerSupportsManifest "1" zcodeInstallDirDataBlockSkip
 
-    ;  用户可能把数据存储目录放进安装目录，Windows 更新覆盖安装目录时会清掉 .zcode。
-    ; assisted installer 会把不含应用名的选择目录补成 "$INSTDIR\${APP_FILENAME}"，所以这里按相同规则计算最终安装目录。
+    ; Users may put the data storage directory inside the install directory; Windows updates wipe .zcode when they replace the install directory.
+    ; The assisted installer pads a chosen directory without the app name to "$INSTDIR\${APP_FILENAME}", so the final install directory is computed by the same rule here.
     ${StrContains} $R1 "${APP_FILENAME}" "$INSTDIR"
     StrCmp $R1 "" 0 zcodeInstallDirDataBlockUseSelectedDir
     StrCpy $R0 "$INSTDIR\${APP_FILENAME}"
@@ -517,8 +517,8 @@
       StrCpy $R0 "$INSTDIR"
 
     zcodeInstallDirDataBlockCheckDir:
-      ; 旧阻断只检查最终安装目录直属的 .zcode，漏掉 data\.zcode 等子目录数据。
-      ; 安装器覆盖安装时会管理整个安装目录树，递归命中任意 .zcode 都必须阻断。
+      ; The old guard only checked the .zcode directly under the final install directory, missing data under subdirectories such as data\.zcode.
+      ; The installer manages the whole install-directory tree when overwriting, so any .zcode found recursively must block.
       Push "$R0"
       Call ZCodeFindNestedDataDir
       StrCmp $R2 "" zcodeInstallDirDataBlockSkip zcodeInstallDirDataBlockFound
@@ -526,28 +526,28 @@
     zcodeInstallDirDataBlockFound:
       IfSilent zcodeInstallDirDataBlockSilent
 
-      !insertmacro MUI_HEADER_TEXT "需要修改安装目录" "当前安装目录或其子目录包含 ZCode 数据目录"
+      !insertmacro MUI_HEADER_TEXT "Install directory must be changed" "The current install directory or one of its subdirectories contains a ZCode data directory"
       nsDialogs::Create 1018
       Pop $0
       StrCmp $0 error zcodeInstallDirDataBlockDialogFailed 0
 
-      ${NSD_CreateLabel} 0u 0u 300u 44u "检测到该安装目录或其子目录中存在 .zcode 数据目录：$\r$\n$R2"
+      ${NSD_CreateLabel} 0u 0u 300u 44u "A .zcode data directory exists in this install directory or one of its subdirectories: $\r$\n$R2"
       Pop $1
-      ${NSD_CreateLabel} 0u 54u 300u 70u "为避免历史会话和配置被安装器清理，请返回上一步选择其他安装目录。$\r$\n$\r$\n当前目录不能继续安装。"
+      ${NSD_CreateLabel} 0u 54u 300u 70u "To keep past sessions and configuration from being cleared by the installer, go back and choose a different install directory.$\r$\n$\r$\nInstallation cannot continue in this directory."
       Pop $1
 
       GetDlgItem $1 $HWNDPARENT 1
       EnableWindow $1 0
       GetDlgItem $1 $HWNDPARENT 3
       EnableWindow $1 1
-      SendMessage $1 ${WM_SETTEXT} 0 "STR:重选目录"
+      SendMessage $1 ${WM_SETTEXT} 0 "STR:Choose another folder"
       Call ZCodeResizeInstallDirBackButton
 
       nsDialogs::Show
       Return
 
     zcodeInstallDirDataBlockDialogFailed:
-      MessageBox MB_OK|MB_ICONSTOP "检测到安装目录或其子目录中存在 .zcode 数据目录，安装已停止。请重新运行安装器并选择其他安装目录。"
+      MessageBox MB_OK|MB_ICONSTOP "A .zcode data directory exists in this install directory or one of its subdirectories, so installation has stopped. Re-run the installer and choose a different install directory."
       SetErrorLevel 1
       Quit
 
@@ -560,8 +560,8 @@
   FunctionEnd
 
   Function ZCodeBlockInstallDirContainsDataLeave
-    ; 阻断页的下一步按钮已禁用，但自动化或系统快捷键仍可能触发下一页。
-    ; leave 回调只处理继续前进的路径，这里强制留在当前页，确保用户只能返回修改安装目录。
+    ; The blocking page's Next button is disabled, but automation or system hotkeys could still trigger the next page.
+    ; The leave callback only handles the continue path, so it forces staying on this page, ensuring the user can only go back to change the install directory.
     Abort
   FunctionEnd
 

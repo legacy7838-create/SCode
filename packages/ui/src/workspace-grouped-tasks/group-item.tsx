@@ -1,4 +1,7 @@
-/* eslint-disable max-lines -- group header 的颜色菜单、右键菜单、rename 焦点保护和组内 task 渲染共享同一个 group 上下文，后续再按交互域继续拆。 */
+/* eslint-disable max-lines -- The group header's colour menu, context menu, rename focus
+ * protection, and in-group task rendering all share the same group context; the further split by
+ * interaction domain comes later.
+ */
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
@@ -133,11 +136,11 @@ export function GroupItem({
   const shouldShowEmptyDropZone = !hasDraftTask && node.tasks.length === 0;
   const visualCollapsed = collapsed;
   const titleEditorText = renameDraft || node.group.title;
-  // 系统分组（cron / 闲时）：固定归类，禁止重命名与删除(解散)；颜色可改（与 cron 既有行为一致）。
+  // System grouping (cron/idle time): fixed classification, prohibiting renaming and deletion (disbanding); color can be changed (consistent with cron’s existing behavior).
   const isCronGroup = node.group.id === CRON_DEFAULT_GROUP_ID;
   const isOffPeakGroup = node.group.id === OFF_PEAK_DEFAULT_GROUP_ID;
   const isSystemGroup = isCronGroup || isOffPeakGroup;
-  // 系统分组的标题按语言环境本地化展示，忽略 DB 里存的固定占位标题（'cron' / 'off-peak'）。
+  // The system grouped titles are displayed according to the locale localization, and the fixed placeholder titles ('cron' / 'off-peak') stored in the DB are ignored.
   const displayTitle = getTaskGroupDisplayTitle(node.group, {
     cron: intl.formatMessage({ id: "taskGroup.cronGroupName" }),
     offPeak: intl.formatMessage({ id: "offPeak.sidebar.groupTitle" }),
@@ -299,8 +302,8 @@ export function GroupItem({
 
   const handleContextMenuCloseAutoFocus = useCallback(
     (event: Event) => {
-      // Radix context menu 关闭时会把焦点还给 trigger。
-      // Rename 需要把焦点交给新出现的 input；这里先阻止默认 focus restore，再进入编辑态。
+      // Radix context menu returns focus to trigger when closed.
+      // Rename needs to give focus to the newly appeared input; here first prevent the default focus restore, and then enter the editing state.
       if (consumePendingMenuRename()) {
         event.preventDefault();
       }
@@ -331,8 +334,8 @@ export function GroupItem({
             nativeEvent: event.nativeEvent,
           })
         ) {
-          // group 重命名里中文输入法用 Enter 确认候选词时也会冒出 keydown。
-          // 这不是用户要提交重命名，不能 blur，否则 blur 会继续触发 commitRename。
+          // Keydown will also appear when using Enter to confirm candidate words in the Chinese input method during group renaming.
+          // This does not mean that the user wants to submit a rename, and cannot be blurred, otherwise blur will continue to trigger commitRename.
           logger.debug("[WorkspaceGroupedTasksSection] ignore group rename enter during IME", {
             groupId: node.group.id,
           });
@@ -342,7 +345,7 @@ export function GroupItem({
         return;
       }
       if (event.key === "Escape") {
-        // group 标题编辑态按 Esc 只取消本次重命名，不能冒泡到外层弹层快捷键。
+        // Pressing Esc in the group title editing mode will only cancel this renaming, and cannot bubble to the outer elastic layer shortcut key.
         event.preventDefault();
         event.stopPropagation();
         cancelRename();
@@ -353,8 +356,8 @@ export function GroupItem({
 
   const handleRenameBlur = useCallback(() => {
     if (menuRenameFocusGuardRef.current) {
-      // ContextMenu 的关闭动画和 focus restore 可能在 input 首次 focus 后继续触发 blur。
-      // 这是菜单收尾阶段的焦点竞争，不代表用户结束重命名；保护窗口内保持编辑态并回焦。
+      // ContextMenu's closing animation and focus restore may continue to trigger blur after the input is first focused.
+      // This is a focus competition at the end of the menu, and does not mean that the user has finished renaming; the editing state remains in the protection window and the focus is returned.
       logger.debug(
         "[WorkspaceGroupedTasksSection] keep group rename focus after context menu blur",
         {
@@ -365,8 +368,8 @@ export function GroupItem({
       return;
     }
     if (newGroupInitialFocusGuardRef.current) {
-      // 新建 group 会同时打开颜色菜单；Radix DropdownMenu 可能在打开瞬间抢焦，
-      // 这个 blur 不代表用户结束命名，只在初始展开窗口内把焦点还给 name input。
+      // Creating a new group will open the color menu at the same time; the Radix DropdownMenu may grab focus the moment it is opened.
+      // This blur does not mean that the user has finished naming, but only returns the focus to the name input in the initial expanded window.
       logger.debug("[WorkspaceGroupedTasksSection] keep new group initial name focus", {
         groupId: node.group.id,
       });
@@ -390,9 +393,9 @@ export function GroupItem({
   const handleColorMenuOpenChange = useCallback(
     (open: boolean) => {
       if (!open && newGroupInitialFocusGuardRef.current) {
-        // 新建 group 同时要求 name input 保持焦点、color menu 自动展开。
-        // Radix 在 input 回焦时会把这次初始展开判成外部焦点移动并请求关闭；
-        // 只忽略初始窗口内的这一次关闭，窗口结束后点击空白仍按正常关闭处理。
+        // Creating a new group also requires the name input to maintain focus and the color menu to automatically expand.
+        // When Radix returns focus to the input, it will judge this initial expansion as an external focus movement and request to close it;
+        // Only this close in the initial window is ignored. After the window ends, clicking on the blank space will still be processed as a normal close.
         logger.debug("[WorkspaceGroupedTasksSection] keep new group initial color menu open", {
           groupId: node.group.id,
         });
@@ -567,8 +570,8 @@ export function GroupItem({
                     tabIndex={-1}
                     aria-hidden="true"
                     className="pointer-events-none absolute left-0 top-0 invisible overflow-hidden rounded-sm px-1 text-left text-ui-base text-foreground"
-                    // 测量节点不能跟随 label 的 max-w-full，否则输入变长时会被当前宽度反向卡住。
-                    // 外层 label 继续用 max-w-full 负责视觉裁剪，这里只测真实内容宽度。
+                    // The measurement node cannot follow the max-w-full of label, otherwise it will be stuck by the current width when the input becomes longer.
+                    // The outer label continues to use max-w-full to be responsible for visual cropping, and only the actual content width is measured here.
                     style={{ whiteSpace: "pre" }}
                   >
                     {titleEditorText}
@@ -672,9 +675,11 @@ export function GroupItem({
         )}
       >
         <div className="min-h-0 overflow-hidden">
-          {/* grouped task 的折叠内容不再走 Radix Collapsible。
-                Radix Presence 和高度变量会在频繁挂载时重放动画；这里用本地受控容器，
-                并在收起动画后卸载组内 task。 */}
+          {/* The collapsed content of grouped tasks no longer goes through Radix Collapsible.
+                Radix Presence and the height variable replay the animation on frequent mounts; a
+                local controlled container is used here instead, and the in-group tasks are
+                unmounted after the collapse animation finishes.
+                */}
           {shouldRenderGroupContent ? (
             <div
               className={cn(

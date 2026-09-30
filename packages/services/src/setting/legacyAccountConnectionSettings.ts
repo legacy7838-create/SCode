@@ -16,7 +16,7 @@ export interface LegacyTeamConnection {
   readonly projectId: string;
 }
 
-/** 仅迁移器解释旧键；组织信息由 Host 的只读 OAuth 查询注入。退役旧版后删除。 */
+/** Only the migrator interprets the legacy keys; organization info is injected by the Host's read-only OAuth query. Delete once the legacy version is retired. */
 export function readIncompleteLegacyTeamConnections(value: unknown): LegacyTeamConnection[] {
   if (!needsLegacyAccountConnectionMigration(value)) return [];
   const raw = record(value);
@@ -60,7 +60,7 @@ export function needsLegacyAccountConnectionMigration(value: unknown): boolean {
   );
 }
 
-/** 仅在 settings 文件读取边界导入旧连接；运行时代码不能再解释旧导航 key。 */
+/** Legacy connections are imported only at the settings file read boundary; runtime code must no longer interpret legacy navigation keys. */
 export function migrateLegacyAccountConnectionSettings(value: unknown): unknown {
   if (!needsLegacyAccountConnectionMigration(value)) return value;
   const raw = record(value);
@@ -68,7 +68,7 @@ export function migrateLegacyAccountConnectionSettings(value: unknown): unknown 
   const keys = record(raw.modelProviderFamilySelectedKeys);
   const selections: ProviderFamilyConnectionSelectionSettings = {};
   for (const family of ["zai", "bigmodel"] as const) {
-    // API 实例由 Provider 配置迁移负责；旧 API 模式不是一个账号套餐。
+    // API instances are responsible for provider configuration migration; the old API model is not an account package.
     if (modes[family] === "apiKey") continue;
     const key = typeof keys[family] === "string" ? keys[family].trim() : "";
     if (key === `coding-plan:builtin:${family}-start-plan`) {
@@ -83,19 +83,19 @@ export function migrateLegacyAccountConnectionSettings(value: unknown): unknown 
           .slice(prefix.length)
           .split(":")
           .map((part) => decodeURIComponent(part).trim());
-        // 旧 project-only key 无法确定组织，保留原字段而非捏造新版 Team 身份。
+        // The old project-only key cannot determine the organization, so keep the original fields instead of fabricating the new Team identity.
         if (parts.length !== 3 || parts.some((part) => !part)) continue;
         const [productId, organizationId, projectId] = parts as [string, string, string];
         selections[family] = { kind: "team-coding-plan", productId, organizationId, projectId };
       } catch {
-        // 损坏的编码只影响这一项，不能让整个 setting.json 回退成默认值。
+        // The broken encoding only affects this one item and cannot make the entire setting.json fall back to the default value.
       }
     }
   }
   return { ...raw, providerFamilyConnectionSelections: selections };
 }
 
-/** 旧字段仅供回滚保留，禁止暴露回 AppSettings 或参与当前运行判断；退役旧版后删除。 */
+/** The legacy fields exist only for rollback; they must never be exposed back into AppSettings or take part in current runtime decisions. Delete once the legacy version is retired. */
 export function retainLegacyAccountConnectionFields(value: unknown): Record<string, unknown> {
   const raw = record(value);
   return Object.fromEntries(

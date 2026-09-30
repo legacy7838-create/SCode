@@ -16,8 +16,9 @@ export function buildSelectionSideChatKey(workspaceKey: string, parentSessionId:
 }
 
 /**
- * 同一个用户手势在 command pending 期间只创建一次；完成后立即释放 parent scope，
- * 让固定入口的下一次点击可以创建新的 child，而不是退化回旧的单例绑定。
+ * The same user gesture creates at most one child while the command is pending; the parent scope is
+ * released immediately on completion, so the next click on the fixed entry point can create a new
+ * child instead of degrading back to the old singleton binding.
  */
 export async function createSelectionSideChat(
   key: string,
@@ -61,9 +62,11 @@ export function subscribeSelectionSideChatRuntime(listener: () => void): () => v
 }
 
 /**
- * Side Pane 的固定入口位于会话 Provider 外，不能自己拼协议命令。
- * 由已挂载的主 SessionPane 注册创建能力，launcher 只按 workspace + parent 路由；
- * 同一父会话被多个分屏展示时优先交给 focused pane，保持命令 owner 与当前输入焦点一致。
+ * The fixed entry point of the Side Pane sits outside the session Provider and cannot compose
+ * protocol commands on its own. The mounted primary SessionPane registers the create capability and
+ * the launcher only routes by workspace + parent; when the same parent session is shown in several
+ * split panes the focused pane is preferred, keeping the command owner consistent with the current
+ * input focus.
  */
 export function registerSelectionSideChatOpener(
   key: string,

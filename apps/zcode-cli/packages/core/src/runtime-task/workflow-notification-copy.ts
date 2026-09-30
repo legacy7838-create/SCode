@@ -1,18 +1,19 @@
 // ============================================================
-// workflow run 的 run 中通知与 provider 停下文案表
+// Notification and provider stop copy table in run of workflow run
 // ============================================================
-// 从 notification.ts 拆出（eslint max-lines 400 行门）：那个文件承载四种任务的终态通知骨架，
-// 这里是 dwf 专属的三段文案——升级问答、run 级停滞与
-// provider 停下；后者由终态通知与 GetWorkflowRun 共用。
+// Detached from notification.ts (eslint max-lines 400 lines): That file carries the final notification skeleton of four tasks,
+// Here are three paragraphs of copywriting exclusive to dwf - upgrade Q&A, run-level stagnation and
+// provider stops; the latter is shared by final notifications and GetWorkflowRun.
 
 import type { DynamicWorkflowRunError } from "@zcode/contracts";
 import { escapeXml, truncateTaskNotification } from "./notification.js";
 
 /**
- * `stopped(provider)` 的 `<error>` 块：
- * 按 `providerStop.kind` 选两句（什么错了 / 做什么），后接固定的事实行与 provider 原文行。
- * 文案里的每个占位都有兜底（provider 显示名缺席用 providerId，再缺席用 "the provider"）——
- * 一条通知绝不因为少一个字段就退化成空句。GetWorkflowRun 的 `<error>` 块共用同一函数。
+ * The `<error>` block for `stopped(provider)`: two sentences chosen by `providerStop.kind` (what
+ * went wrong / what to do), followed by a fixed fact line and the provider's verbatim line. Every
+ * placeholder in the copy has a fallback (a missing provider display name falls back to providerId,
+ * and a missing providerId to "the provider") - a notification never degrades into an empty
+ * sentence just because one field is missing. GetWorkflowRun's `<error>` block shares this function.
  */
 export function formatWorkflowProviderStopError(
   failure: DynamicWorkflowRunError,
@@ -85,10 +86,12 @@ export function formatWorkflowProviderStopError(
 }
 
 /**
- * run 级停滞的 run 中通知。与升级问答同族：
- * 播报的不是终态而是一个正在发生的事实——run 还在跑、只是 20 分钟没有一次模型请求成功。
- * 文案必须把两件事说死：它**不需要**模型做任何事（尤其不要取消 / 重建），以及用户若在等
- * 就该被告知。每个 stall 段恰好一条，不催办。
+ * The in-run notification for a run-level stall. It is of the same family as the escalation
+ * question: what it announces is not a terminal state but a fact that is happening right now - the
+ * run is still going, it is just that no model request has succeeded for 20 minutes. The copy must
+ * state two things flat out: it **requires** nothing of the model (in particular, do not cancel or
+ * rebuild), and a user who is waiting should be told. Exactly one entry per stall segment; no
+ * nagging.
  */
 export interface WorkflowStallNotificationInput {
   runLabel: string;
@@ -129,22 +132,26 @@ export function formatWorkflowStallNotification(input: WorkflowStallNotification
 }
 
 /**
- * 一个 actor 从**正在跑的** run 里升级上来的阻塞问题。
+ * A blocking question escalated from a **running** run by one actor.
  *
- * 与上面几个 formatter 的关键差别：它们播报的是**终态**（活干完了，读一下结果），这条播报的
- * 是**一个还没被满足的义务**——有一个 actor 此刻正停在那儿等回答，而且没有超时会替它兜底。
- * 所以文案必须把三件事说死：问题是什么、逐字的下一步（带 qid 的工具调用）、以及 run 并没有
- * 因此停下（否则模型会误以为整条工作流在等它，从而放下手上一切事）。
+ * The key difference from the formatters above: those announce a **terminal state** (the work is
+ * done, read the result), while this one announces **an obligation that is not yet met** - some
+ * actor is parked right now waiting for an answer, and no timeout will cover for it. The copy
+ * therefore has to state three things flat out: what the question is, the next step verbatim (a
+ * tool call carrying the qid), and the fact that the run has not stopped for it (otherwise the
+ * model would think the whole workflow is waiting on it and drop everything else it is doing).
  *
- * 结构化那半用 XML-ish 节（与 `<task-notification>` 同族，字段可被人和模型稳定定位），
- * 散文那半给下一步与边界条件。**不重发、不催办**：丢弃兜底是快照查询，不是重试。
+ * The structured half uses an XML-ish section (of the same family as
+ * `<task-notification>`, with fields that a human and a model can locate stably), and the
+ * prose half gives the next step and the boundary conditions. **No resending, no nagging**:
+ * the discard fallback is a snapshot query, not a retry.
  */
 export interface WorkflowEscalationNotificationInput {
-  /** run 的展示名（registry 里的 description；缺席时调用方已回落到 runId）。 */
+  /** The run's display name (the description in the registry; when absent the caller has already fallen back to the runId). */
   runLabel: string;
   runId: string;
   qid: string;
-  /** actor 的人类可读名；匿名 actor 缺席，调用方给结构化 ref 作兜底。 */
+  /** The actor's human-readable name; it is absent for an anonymous actor, and the caller supplies a structured ref as the fallback. */
   actor: string;
   question: string;
   context?: string;

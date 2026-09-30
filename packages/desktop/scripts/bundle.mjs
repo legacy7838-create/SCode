@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 /* eslint-disable max-lines */
-// 该脚本聚合了打包入口、重试策略、计时与产物校验逻辑，短期内拆文件会影响 CI 稳定性。
-// 先保留集中实现，后续再按“参数解析/构建执行/产物校验”拆分模块。
+// This script integrates packaging entry, retry strategy, timing and product verification logic. Disassembling files in the short term will affect CI stability.
+// Keep the centralized implementation first, and then split the modules according to "parameter analysis/build execution/product verification".
 
 import { spawn } from "node:child_process";
 import { readdirSync, statSync } from "node:fs";
@@ -88,32 +88,32 @@ const commandStdoutMaxBuffer = 64 * 1024 * 1024;
 const requiredRuntimeModules = [
   "module-details-from-path",
   "pngjs",
-  // Bugfix: telemetry 的 OTLP exporter 在启动阶段依赖 sdk-metrics；开发态 hoist 会掩盖
-  // electron-builder 漏包。最终产物必须机械校验该闭包，禁止可生成但无法启动的安装包流出。
+  // Bugfix: telemetry's OTLP exporter relies on sdk-metrics during the startup phase; development state hoist will cover up
+  // electron-builder leaks. The final product must mechanically verify this closure and prohibit the flow of installation packages that can be generated but cannot be started.
   "@opentelemetry/sdk-metrics",
-  // 与注入闭包同口径：校验 OTLP proto 导出链（exporter → otlp-transformer → protobufjs）完整进包。
+  // The same caliber as the injection closure: verify that the OTLP proto export chain (exporter → otlp-transformer → protobufjs) is completely included in the package.
   "@opentelemetry/exporter-trace-otlp-proto",
   "@opentelemetry/exporter-metrics-otlp-proto",
-  // @arms/rum-core 运行时会从 CJS 入口继续 require('@babel/runtime/helpers/*')。
-  // 它把 @babel/runtime 挂在 peerDependencies，pnpm workspace 开发态通常能解析，
-  // 但如果生产包没把该 peer 运行时带进 app.asar，已安装应用会在主进程启动阶段直接崩溃。
-  // 这里把 @babel/runtime 纳入 bundle 后机械校验，防止坏包继续流出。
+  // The @arms/rum-core runtime will continue require('@babel/runtime/helpers/*') from the CJS entry.
+  // It hangs @babel/runtime on peerDependencies, which can usually be parsed in the pnpm workspace development state.
+  // But if the production package does not bring the peer runtime into app.asar, the installed application will crash directly during the startup phase of the main process.
+  // Here @babel/runtime is included in the bundle for mechanical verification to prevent bad packages from continuing to flow out.
   "@babel/runtime",
-  // services 里的代理探测会在运行时 require("undici")。
-  // 如果这里只校验 pngjs/ssh2 依赖，打包链路就会放过“产物能生成但主进程启动即缺 undici”的坏包。
-  // 这里把 undici 纳入机械校验，让 bundle 阶段就能把问题拦下来。
+  // Proxy detection in services will require("undici") at runtime.
+  // If only the pngjs/ssh2 dependency is checked here, the packaging link will miss the bad package that "the product can be generated but undici is missing when the main process starts".
+  // Here, undici is included in the mechanical verification, so that the problem can be stopped in the bundle stage.
   "undici",
-  // app 自签 CA 生成用 node-forge，它内部动态 require("crypto") 内联进 ESM main bundle 会崩，
-  // 因此作为外部依赖保留；生产包必须显式校验 app.asar 中存在该包，避免漏打导致启动即崩。
+  // The app's self-signed CA is generated using node-forge, which internally dynamically requires("crypto") and is inlined into the ESM main bundle will crash.
+  // Therefore, it is retained as an external dependency; the production package must explicitly verify that the package exists in app.asar to avoid missing the package and causing a crash at startup.
   "node-forge",
-  // 与 tsup external 对齐，保留 ZIP 解包器的 CommonJS 运行时边界。
+  // Aligned with tsup external, preserving the CommonJS runtime boundaries of the ZIP unpacker.
   "yauzl",
-  // Bugfix: 飞书 SDK 为了避开 Electron ESM 动态 require 崩溃会作为外部依赖保留，
-  // 生产包必须显式校验 app.asar 中存在该 scoped 包。
+  // Bugfix: In order to avoid the crash of Electron ESM dynamic require, Feishu SDK will be retained as an external dependency.
+  // Production packages must explicitly verify that the scoped package exists in app.asar.
   "@larksuiteoapi/node-sdk",
-  // ssh2 的关键依赖链（asn1/bcrypt-pbkdf/tweetnacl）若缺失，
-  // 连接远程 workspace 时会在 keyParser 阶段直接抛 MODULE_NOT_FOUND。
-  // 这里把 ssh2 关键依赖链纳入机械校验，避免坏包流出。
+  // If the key dependency chain of ssh2 (asn1/bcrypt-pbkdf/tweetnacl) is missing,
+  // When connecting to a remote workspace, MODULE_NOT_FOUND will be thrown directly in the keyParser stage.
+  // Here, the ssh2 key dependency chain is included in mechanical verification to prevent bad packets from flowing out.
   "asn1",
   "bcrypt-pbkdf",
   "tweetnacl",
@@ -151,8 +151,8 @@ export function resolveElectronMirror(env = process.env) {
 export function createElectronRuntimeMirrorEnv(mirror) {
   return {
     ZCODE_ELECTRON_RUNTIME_MIRROR: mirror,
-    // @electron/get 的 Electron runtime 环境变量是全局读取的。
-    // 如果传给 electron-builder 主进程，会覆盖 dmg-builder 等 generic artifact 的 mirrorOptions。
+    // The Electron runtime environment variables of @electron/get are read globally.
+    // If passed to the main process of electron-builder, the mirrorOptions of generic artifacts such as dmg-builder will be overridden.
     ELECTRON_MIRROR: "",
     NPM_CONFIG_ELECTRON_MIRROR: "",
     npm_config_electron_mirror: "",
@@ -174,8 +174,8 @@ export function resolveElectronBuilderBinariesMirror(env = process.env) {
     env.ELECTRON_BUILDER_BINARIES_MIRROR;
   if (existingMirror?.trim()) {
     if (isMisconfiguredNpmMirrorElectronRuntimeMirror(existingMirror)) {
-      // electron-builder binaries mirror 若被配成 Electron runtime 镜像，
-      // 两类资源目录结构不同，dmg-builder 会被拼到 runtime 目录下导致 404。
+      // If the electron-builder binaries mirror is configured as an Electron runtime mirror,
+      // The directory structures of the two types of resources are different. dmg-builder will be moved to the runtime directory, resulting in 404.
       return NPMMIRROR_ELECTRON_BUILDER_BINARIES_MIRROR;
     }
 
@@ -187,8 +187,8 @@ export function resolveElectronBuilderBinariesMirror(env = process.env) {
 
 export function createElectronBuilderBinariesMirrorEnv(mirror) {
   return {
-    // electron-builder 的 DOWNLOAD_OVERRIDE_URL 优先级高于 mirror。
-    // CI 若把它误配到 Electron runtime 目录，会完全绕过 mirror fallback 并继续 404。
+    // The DOWNLOAD_OVERRIDE_URL priority of electron-builder is higher than that of mirror.
+    // If CI misallocates it to the Electron runtime directory, it will completely bypass the mirror fallback and continue with 404.
     ELECTRON_BUILDER_BINARIES_DOWNLOAD_OVERRIDE_URL: "",
     ELECTRON_BUILDER_BINARIES_MIRROR: mirror,
     NPM_CONFIG_ELECTRON_BUILDER_BINARIES_DOWNLOAD_OVERRIDE_URL: "",
@@ -227,9 +227,9 @@ export function resolveElectronBuilderBinariesFallbackMirror(output, mirror, env
     return null;
   }
 
-  // CI 曾把 ELECTRON_BUILDER_BINARIES_MIRROR 误配到 Electron runtime 镜像目录，
-  // 该目录缺 dmg-builder/appimage/nsis 等 builder 辅助包。registry.npmmirror 的 binary
-  // electron-builder-binaries 路径包含这些文件，优先用国内源避免 macOS 打包 cache miss。
+  // CI once misallocated ELECTRON_BUILDER_BINARIES_MIRROR to the Electron runtime image directory.
+  // This directory lacks builder auxiliary packages such as dmg-builder/appimage/nsis. registry.npmmirror binary
+  // The electron-builder-binaries path contains these files. Domestic sources are preferred to avoid macOS packaging cache misses.
   return NPMMIRROR_ELECTRON_BUILDER_BINARIES_MIRROR;
 }
 
@@ -238,37 +238,37 @@ function escapeRegExp(value) {
 }
 
 export function artifactNameMatchesArch(fileName, archHint) {
-  // 部分环境的安装包会在架构后追加后缀（如 mac-arm64_TEST.dmg）。
-  // 体积审计必须接受 "_" 作为架构后的分隔符，否则包已生成但审计阶段会误报找不到产物。
+  // The installation packages of some environments will append a suffix after the architecture (such as mac-arm64_TEST.dmg).
+  // Volume auditing must accept "_" as the delimiter after the schema, otherwise the package will be generated but the audit phase will falsely report that the product cannot be found.
   return new RegExp(`-${escapeRegExp(archHint.toLowerCase())}(?:[._-])`, "i").test(fileName);
 }
 
 function printHelp() {
-  console.log(`桌面端打包脚本
+  console.log(`Desktop packaging script
 
-用法:
+Usage:
   pnpm bundle:desktop
   pnpm bundle:desktop -- --os mac --arch x64
   pnpm bundle:desktop -- linux arm64
 
-参数:
-  --os, -o <mac|win|linux>     目标操作系统，默认 mac
-  --arch, -a <x64|arm64>       目标 CPU 架构，默认 arm64
-  --skip-prepare               跳过 prepare:runtime-assets
-  --skip-build                 跳过 pnpm build
-  --dry-run                    只打印最终命令，不执行打包
-  -h, --help                   查看帮助
+Parameters:
+  --os, -o <mac|win|linux> target operating system, default mac
+  --arch, -a <x64|arm64> Target CPU architecture, default arm64
+  --skip-prepare skip prepare:runtime-assets
+  --skip-build skip pnpm build
+  --dry-run only prints the final command and does not perform packaging
+  -h, --help View help
 
-环境变量:
-  ZCODE_TARGET_OS              与 --os 等价
-  ZCODE_TARGET_ARCH            与 --arch 等价
+Environment variables:
+  ZCODE_TARGET_OS is equivalent to --os
+  ZCODE_TARGET_ARCH is equivalent to --arch
 `);
 }
 
 function normalizeOs(rawOs) {
   const normalizedOs = osAliasMap.get(rawOs.toLowerCase());
   if (!normalizedOs) {
-    throw new Error(`不支持的目标操作系统: ${rawOs}`);
+    throw new Error(`Unsupported target operating system: ${rawOs}`);
   }
   return normalizedOs;
 }
@@ -276,7 +276,7 @@ function normalizeOs(rawOs) {
 function normalizeArch(rawArch) {
   const normalizedArch = archAliasMap.get(rawArch.toLowerCase());
   if (!normalizedArch) {
-    throw new Error(`不支持的目标 CPU 架构: ${rawArch}`);
+    throw new Error(`Unsupported target CPU architecture: ${rawArch}`);
   }
   return normalizedArch;
 }
@@ -341,7 +341,7 @@ function parseArgs(argv) {
     }
 
     if (arg.startsWith("-")) {
-      throw new Error(`不支持的参数: ${arg}`);
+      throw new Error(`Unsupported parameters: ${arg}`);
     }
 
     options.positionals.push(arg);
@@ -351,7 +351,7 @@ function parseArgs(argv) {
   const positionalArch = options.positionals[1];
 
   if (options.positionals.length > 2) {
-    throw new Error(`参数过多: ${options.positionals.join(" ")}`);
+    throw new Error(`Too many parameters: ${options.positionals.join(" ")}`);
   }
 
   const resolvedOs = normalizeOs(options.os ?? positionalOs ?? DEFAULT_TARGET_OS);
@@ -408,7 +408,9 @@ function findBuiltArtifact(os, arch) {
   }
 
   if (candidates.length === 0) {
-    throw new Error(`未找到 ${os}/${arch} 的打包产物文件，无法执行体积审计`);
+    throw new Error(
+      `The packaged product file of ${os}/${arch} was not found and the volume audit could not be performed.`,
+    );
   }
 
   candidates.sort((left, right) => right.mtimeMs - left.mtimeMs);
@@ -418,9 +420,9 @@ function runAndReadStdout(command, args) {
   return runCommandAndReadStdout(command, args, {
     cwd: desktopRoot,
     env: process.env,
-    // `asar list app.asar` 在当前桌面包里会输出大量文件路径，
-    // Node.js spawnSync 默认 1MiB stdout 缓冲不够用，会直接 ENOBUFS。
-    // 显式放大缓冲，避免“校验逻辑自身读输出失败”把正常打包误报成失败。
+    // `asar list app.asar` will output a large number of file paths in the current desktop package.
+    // The default 1MiB stdout buffer of Node.js spawnSync is not enough, so it will directly ENOBUFS.
+    // Explicitly amplify the buffer to avoid "verification logic's own failure to read the output" from falsely reporting normal packaging as a failure.
     maxBuffer: commandStdoutMaxBuffer,
     stdio: ["ignore", "pipe", "inherit"],
   });
@@ -491,8 +493,8 @@ async function runElectronBuilderWithRetry(args, envPatch) {
         cwd: desktopRoot,
         env: mergedEnv,
         stdio: ["inherit", "pipe", "pipe"],
-        // spawn-command 已经不再导出 resolveSpawnCommand，也不希望这里把 pnpm 再改写成 *.cmd。
-        // 直接复用同一套 runtime 选项，让 Windows 仍通过 shell 解析 shim，避免 CI dry-run / 真打包在模块加载阶段崩掉。
+        // spawn-command no longer exports resolveSpawnCommand, and we do not want to rewrite pnpm into *.cmd here.
+        // Directly reuse the same set of runtime options, allowing Windows to still parse the shim through the shell to avoid CI dry-run/real packaging crashing during the module loading stage.
         ...resolveSpawnRuntimeOptions(pnpmCommand),
       });
 
@@ -501,8 +503,8 @@ async function runElectronBuilderWithRetry(args, envPatch) {
       let lastOutputAt = startedAt;
       const heartbeatTimer = setInterval(() => {
         const now = Date.now();
-        // macOS codesign 阶段会长时间没有 stdout/stderr，CI 看起来像“卡死”。
-        // 周期性心跳日志用于确认进程仍在运行，并给出总耗时和静默时长。
+        // There will be no stdout/stderr in the macOS codesign stage for a long time, and the CI will look like "stuck".
+        // Periodic heartbeat logs are used to confirm that the process is still running, and give the total time taken and the length of silence.
         console.log(
           `[bundle][heartbeat] electron-builder running elapsed_ms=${now - startedAt} idle_ms=${now - lastOutputAt}`,
         );
@@ -565,16 +567,16 @@ async function runElectronBuilderWithRetry(args, envPatch) {
       !didFallbackElectronBuilderMirror &&
       fallbackElectronBuilderMirror
     ) {
-      // 自建镜像源可能漏同步新架构资源，
-      // 或 CI 把 builder mirror 误配到 Electron runtime 镜像目录。404 不是构建代码错误，
-      // 这里只对已知缺文件/误配镜像切到 registry.npmmirror，其他显式 mirror 仍保持用户配置。
+      // Self-built mirror sources may miss synchronization of new architecture resources.
+      // Or CI misallocates the builder mirror to the Electron runtime mirror directory. 404 is not a build code error,
+      // Here, only the known missing files/mismatched mirrors are switched to registry.npmmirror. Other explicit mirrors still maintain user configuration.
       Object.assign(
         retryEnvPatch,
         createElectronBuilderBinariesMirrorEnv(fallbackElectronBuilderMirror),
       );
       didFallbackElectronBuilderMirror = true;
       console.warn(
-        `[bundle] electron-builder 二进制镜像缺文件，切换到 registry.npmmirror 后重试 (${attempt}/${electronBuilderRetryCount})`,
+        `[bundle] The electron-builder binary image is missing files, switch to registry.npmmirror and try again (${attempt}/${electronBuilderRetryCount})`,
       );
       await sleep(electronBuilderRetryDelayMs);
       continue;
@@ -592,11 +594,11 @@ async function runElectronBuilderWithRetry(args, envPatch) {
       );
     }
 
-    // Windows 打包机偶发在下载 NSIS 资源时被 GitHub 连接中断，electron-builder 会把这类瞬时网络错误
-    // 统一折叠成 ERR_ELECTRON_BUILDER_CANNOT_EXECUTE，导致流水线把可恢复抖动误判成配置失败。
-    // 这里仅对下载类信号做有限次重试，既提高首轮 cache miss 时的稳定性，也避免把真实构建错误无限吞掉。
+    // The Windows packager is occasionally interrupted by the GitHub connection when downloading NSIS resources. The electron-builder will report such transient network errors.
+    // Unifiedly folded into ERR_ELECTRON_BUILDER_CANNOT_EXECUTE, causing the pipeline to misjudge recoverable jitter as configuration failure.
+    // Here, only a limited number of retries are made for download signals, which not only improves the stability of the first round of cache misses, but also avoids swallowing real build errors indefinitely.
     console.warn(
-      `[bundle] electron-builder 下载资源失败，${electronBuilderRetryDelayMs}ms 后重试 (${attempt}/${electronBuilderRetryCount})`,
+      `[bundle] electron-builder failed to download resources, try again after ${electronBuilderRetryDelayMs}ms (${attempt}/${electronBuilderRetryCount})`,
     );
     await sleep(electronBuilderRetryDelayMs);
   }
@@ -635,23 +637,23 @@ function resolveAppAsarPath(os, arch) {
     );
   }
 
-  throw new Error(`不支持的目标操作系统: ${os}`);
+  throw new Error(`Unsupported target operating system: ${os}`);
 }
 
 function verifyPackagedRuntimeDependencies(os, arch) {
   const appAsarPath = resolveAppAsarPath(os, arch);
   if (!existsSync(appAsarPath)) {
-    throw new Error(`打包产物缺少 app.asar: ${appAsarPath}`);
+    throw new Error(`The packaged product is missing app.asar: ${appAsarPath}`);
   }
 
-  // pnpm hoisted 依赖布局下，electron-builder 可能把运行时代码本体装进 app.asar，
-  // 却漏掉它真正解析时仍要去根 node_modules 找的子依赖。
-  // 之前这里漏过 module-details-from-path，这次又出现了 @fiahfy/icns 缺 pngjs，
-  // 结果都是安装包能生成，但用户启动后主进程才因为 Cannot find module 崩溃。
-  // 这里在 bundle 后做一次机械校验，避免坏包继续流出去。
+  // Under pnpm hoisted dependency layout, electron-builder may load the runtime code body into app.asar.
+  // But it misses the sub-dependencies that it still needs to find in the root node_modules when actually parsing.
+  // Module-details-from-path was missing here before, but this time @fiahfy/icns is missing pngjs.
+  // The result is that the installation package can be generated, but the main process crashes because of Cannot find module after the user starts it.
+  // Here, a mechanical check is done after the bundle to prevent bad packages from continuing to flow out.
   const asarEntriesWithPackState = parseAsarListWithPackState(
-    // pnpm exec 会把 workspace engine warning 混进 stdout，严格的 asar 行解析会误判失败。
-    // 直接执行锁定版本的 CLI，让 stdout 只包含 asar pack state，不靠放宽解析器吞掉未知输出。
+    // pnpm exec will mix workspace engine warning into stdout, and strict asar line parsing will misjudge failure.
+    // Execute the locked version of the CLI directly so that stdout only contains asar pack state, without relying on relaxing the parser to swallow unknown output.
     runAndReadStdout(process.execPath, [asarCliPath, "list", "--is-pack", appAsarPath]),
   );
   const asarEntries = asarEntriesWithPackState.map((entry) => entry.path);
@@ -662,9 +664,11 @@ function verifyPackagedRuntimeDependencies(os, arch) {
     targetPlatformKey,
   );
   if (nativePackageViolations.length > 0) {
-    // afterPack 之外再对最终 unpacked 产物做一次机械校验，避免后续 hook 或 builder
-    // 重新带入其他平台 native，或者把 unpack 文件又写回 app.asar payload。
-    throw new Error(`打包产物包含越界 native 资源:\n- ${nativePackageViolations.join("\n- ")}`);
+    // In addition to afterPack, do a mechanical verification of the final unpacked product to avoid subsequent hooks or builders
+    // Re-introduce native to other platforms, or write the unpack file back to app.asar payload.
+    throw new Error(
+      `The packaged product contains out-of-bounds native resources:\n- ${nativePackageViolations.join("\n- ")}`,
+    );
   }
 
   const runtimeModules = collectRuntimeModuleClosureEntries(
@@ -673,8 +677,8 @@ function verifyPackagedRuntimeDependencies(os, arch) {
   );
   const resolvableRuntimeModules = runtimeModules.filter((entry) => {
     if (!entry.sourceModulePath) {
-      // afterPack 会按当前平台实际可解析依赖注入；bundle 校验也需保持同口径。
-      // 否则在某些 CI 安装布局中会出现“注入阶段已跳过，但校验阶段仍硬失败”的误报。
+      // afterPack will inject dependencies according to the actual resolvable dependencies of the current platform; bundle verification must also maintain the same caliber.
+      // Otherwise in some CI installation layouts you will get a false positive of "Injection phase skipped, but verification phase still hard failed".
       console.warn(
         `[bundle] runtime module not found in workspace, skip verify: ${entry.moduleName}; searched=${runtimeModuleLookupRoots
           .map((lookupRoot) => resolve(lookupRoot, "node_modules", entry.moduleName))
@@ -687,16 +691,18 @@ function verifyPackagedRuntimeDependencies(os, arch) {
 
   for (const { moduleName } of resolvableRuntimeModules) {
     const moduleRoot = `/node_modules/${moduleName}`;
-    // @electron/asar 在 Windows 下列目录时会通过 path.join 产出反斜杠路径，
-    // 之前这里按 POSIX 路径做精确匹配，导致模块其实已经打进 app.asar，校验却仍然误报缺失。
-    // 先统一归一化成正斜杠，避免 Windows 打包机被这道机械校验误伤。
+    // @electron/asar will generate a backslash path through path.join in the following directories on Windows.
+    // Previously, exact matching was performed based on the POSIX path. As a result, the module was actually entered into app.asar, but the verification was still falsely reported as missing.
+    // First normalize them to forward slashes to prevent the Windows packager from being accidentally damaged by this mechanical verification.
     const hasModule = asarEntries.some(
       (entry) => entry === moduleRoot || entry.startsWith(`${moduleRoot}/`),
     );
 
     if (!hasModule) {
-      // 校验也按依赖闭包展开，确保 afterPack 注入逻辑遗漏子依赖时能在 bundle 阶段直接失败。
-      throw new Error(`打包产物缺少运行时依赖 ${moduleName}: ${appAsarPath}`);
+      // The verification is also expanded based on dependency closures to ensure that if the afterPack injection logic omits sub-dependencies, it can directly fail in the bundle phase.
+      throw new Error(
+        `The packaged product is missing runtime dependency ${moduleName}: ${appAsarPath}`,
+      );
     }
   }
 }

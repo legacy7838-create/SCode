@@ -41,7 +41,7 @@ const TASK_GROUP_TITLE_CLASS =
 const TASK_GROUP_COUNT_BADGE_CLASS =
   "inline-flex min-w-5 shrink-0 items-center justify-center rounded-full bg-tag/50 px-1.5 py-0.5 text-ui-sm font-medium leading-none text-foreground-subtle";
 const TASK_GROUP_CONTENT_CLASS = "ml-4 border-l py-px pl-2";
-// 行是纵向列：首行（标题 + 右侧元信息）固定 28px，其下可挂工作流运行行，所以外层只定 min-h。
+// Rows are vertical columns: the first row (title + meta information on the right) is fixed at 28px, and the workflow running row can be hung below it, so the outer layer is only set to min-h.
 const TASK_GROUP_ROW_CLASS =
   "flex min-h-7 w-full min-w-0 flex-col justify-center rounded-lg border border-transparent pl-2.5 pr-1 text-left text-ui-base transition-[background-color,border-color,color,opacity]";
 const TASK_GROUP_ROW_LINE_CLASS = "flex h-7 w-full min-w-0 items-center gap-2";

@@ -99,7 +99,7 @@ function AgentActivitySection({
           {label}
         </h4>
         <div className="overflow-auto max-h-64" data-markdown-table-sticky-scrollbar="disabled">
-          {/* Agent 活动内容同样可能包含长代码/路径，允许横向滚动避免窄屏截断。*/}
+          {/* Agent activity content may also contain long code/paths, allowing horizontal scrolling to avoid truncation on narrow screens.*/}
           <MessageResponse
             className="px-3 py-2 min-w-0 break-words text-ui-base [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
             workspacePath={workspacePath}
@@ -130,8 +130,8 @@ function AgentNameText({ color, name }: { color: AgentColor; name: string }) {
   return (
     <span
       className={cn(
-        // 子智能体名在 tool summary 行内不能依赖字体基线对齐。
-        // inline-flex 负责垂直居中，1.5 倍行高保持和周围摘要文字一致的阅读节奏。
+        // Subagent names cannot rely on font baseline alignment within tool summary lines.
+        // inline-flex is responsible for vertical centering, and the 1.5x line height maintains a consistent reading rhythm with the surrounding summary text.
         "inline-flex max-w-36 items-center truncate font-mono text-ui-base font-medium leading-[1.5]",
         SUBAGENT_TEXT_COLOR_CLASS[color],
       )}
@@ -161,19 +161,25 @@ function BackgroundAgentProcessSection({
   const msg = (id: string, fallback: string) => formatAgentMessage(intl, id, fallback);
   const launchStatus =
     status === "failed"
-      ? msg("chat.toolCall.agent.backgroundLaunchFailed", "启动失败")
+      ? msg("chat.toolCall.agent.backgroundLaunchFailed", "Launch failed")
       : status === "pending"
-        ? msg("chat.toolCall.agent.backgroundLaunching", "启动中")
-        : msg("chat.toolCall.agent.backgroundLaunched", "已启动");
+        ? msg("chat.toolCall.agent.backgroundLaunching", "Launching")
+        : msg("chat.toolCall.agent.backgroundLaunched", "Launched");
   const launchStatusKind =
     status === "failed" ? "failed" : status === "pending" ? "pending" : "launched";
   const activityStatus = isRunning
     ? hasActivity
-      ? msg("chat.toolCall.agent.backgroundActivityStreaming", "后台运行中，正在同步输出")
-      : msg("chat.toolCall.agent.backgroundActivityRunningWaiting", "后台运行中，等待输出")
+      ? msg(
+          "chat.toolCall.agent.backgroundActivityStreaming",
+          "Running in background, syncing output",
+        )
+      : msg(
+          "chat.toolCall.agent.backgroundActivityRunningWaiting",
+          "Running in background, waiting for output",
+        )
     : hasActivity
-      ? msg("chat.toolCall.agent.backgroundActivityReceived", "已收到子智能体回传")
-      : msg("chat.toolCall.agent.backgroundActivityWaiting", "等待子智能体回传");
+      ? msg("chat.toolCall.agent.backgroundActivityReceived", "SubAgent output received")
+      : msg("chat.toolCall.agent.backgroundActivityWaiting", "Waiting for SubAgent output");
   const activityStatusKind = isRunning
     ? hasActivity
       ? "streaming"
@@ -189,17 +195,19 @@ function BackgroundAgentProcessSection({
       className="rounded-lg border border-border bg-background-alt/40 p-3 text-ui-base"
     >
       <div className="font-medium text-foreground-subtle">
-        {msg("chat.toolCall.agent.backgroundProcess", "后台 Agent 过程")}
+        {msg("chat.toolCall.agent.backgroundProcess", "Background Agent process")}
       </div>
       <div className="mt-2 space-y-2">
-        <BackgroundAgentProcessRow label={msg("chat.toolCall.agent.backgroundLaunch", "启动")}>
+        <BackgroundAgentProcessRow label={msg("chat.toolCall.agent.backgroundLaunch", "Launch")}>
           {launchStatus}
         </BackgroundAgentProcessRow>
-        <BackgroundAgentProcessRow label={msg("chat.toolCall.agent.backgroundActivity", "活动")}>
+        <BackgroundAgentProcessRow
+          label={msg("chat.toolCall.agent.backgroundActivity", "Activity")}
+        >
           {activityStatus}
         </BackgroundAgentProcessRow>
         {outputFile ? (
-          <BackgroundAgentProcessRow label={msg("chat.toolCall.agent.outputFile", "输出文件")}>
+          <BackgroundAgentProcessRow label={msg("chat.toolCall.agent.outputFile", "Output file")}>
             <span className="block break-all rounded-md bg-background px-2 py-1 font-mono text-foreground-subtle">
               {outputFile}
             </span>
@@ -221,8 +229,8 @@ export function AgentToolCallBlock(context: ToolCallBlockRenderContext) {
     const candidates = Object.values(state.contexts).filter(
       (candidate) => candidate.workspacePath === context.workspacePath && candidate.loaded,
     );
-    // 同一 remote path 可能对应多个 workspaceIdentity；缺少 identity 时宁可回退默认色，
-    // 也不能猜一个桶并把另一远端 workspace 的 Agent 配置串进来。
+    // The same remote path may correspond to multiple workspaceIdentities; when identity is missing, it is better to fall back to the default color.
+    // Nor can you guess a bucket and string in the Agent configuration of another remote workspace.
     return candidates.length === 1 ? candidates[0]?.agents : undefined;
   });
   const configuredAgentsFromHook = useSubagentsStore((state) => state.agents);
@@ -248,9 +256,9 @@ export function AgentToolCallBlock(context: ToolCallBlockRenderContext) {
     : null;
   const agentNameDetail =
     agentName && agentColor ? <AgentNameText color={agentColor} name={agentName} /> : null;
-  // Agent 父块的完成/进行中边界只由父 Agent tool 决定。
-  // 子 tool 是展开区明细，不能反向续住父块运行态，否则父 Agent completed 后
-  // 仍会显示渐变和子工具摘要，和协议里的父工具生命周期不一致。
+  // The done/in-progress boundary of an Agent parent block is determined solely by the parent Agent tool.
+  // The child tool is an expanded area detail and cannot be continued in the running state of the parent block, otherwise after the parent Agent completed
+  // Gradient and child tool summaries are still displayed, which is inconsistent with the parent tool life cycle in the protocol.
   const isAgentVisuallyRunning = context.isRunning;
   const collapsedChildSummary = isAgentVisuallyRunning
     ? getLatestExploreChildSummaryFromChildren(intl, childToolCalls, context, {
@@ -260,8 +268,8 @@ export function AgentToolCallBlock(context: ToolCallBlockRenderContext) {
   const backgroundAgentInfo = readBackgroundAgentInfo(toolCall);
   const activityContent = getAgentActivityContent(toolCall);
   const activityThought = toolCall.thought?.trim();
-  // Agent 块和它内部的子工具都已经通过层级表达了来源，
-  // 继续显示子智能体来源 badge 会制造重复噪音。
+  // The Agent block and the sub-tools within it have expressed sources through hierarchies,
+  // Continuing to display the subagent source badge creates repetitive noise.
   const sourceLabel = undefined;
   const collapsedPrimaryText = useMemo(
     () => <span className="truncate">{primaryText}</span>,
@@ -372,8 +380,8 @@ export function AgentToolCallBlock(context: ToolCallBlockRenderContext) {
         canToggle={false}
         forceOpen={false}
         summaryAction={summaryAction}
-        // 产品边界：Agent/Task 在父对话中只保留单行摘要；完整 child timeline 统一从
-        // 右侧 tab / 手机抽屉查看，因此这里既不自动展开，也不提供手动展开入口。
+        // Product boundaries: Agent/Task only retains a single-line summary in the parent conversation; the complete child timeline is unified from
+        // The right tab / mobile phone drawer is viewed, so there is neither automatic expansion nor manual expansion entry.
         kindLabel={fallbackLabel}
         expandedKindLabel={fallbackLabel}
         kindDetail={agentNameDetail}

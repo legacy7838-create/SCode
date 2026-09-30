@@ -47,8 +47,8 @@ export function usePromptEditorDragState({
     };
     const scheduleDragFeedbackReset = () => {
       clearResetDragFeedbackTimer();
-      // 取消 OS 文件拖拽或把 file tree 拖拽拖出窗口时，Electron/浏览器不一定派发 drop/dragend。
-      // dragover 在拖拽仍停留窗口内时会持续触发；一旦心跳停止，就主动撤销输入框高亮，避免视觉反馈卡住。
+      // When canceling OS file drag or dragging the file tree out of the window, Electron/browser may not dispatch drop/dragend.
+      // dragover will continue to be triggered while the dragging is still within the window; once the heartbeat stops, the highlight of the input box will be automatically canceled to avoid visual feedback being stuck.
       resetDragFeedbackTimerRef.current = window.setTimeout(resetDragFeedback, 300);
     };
     const handleWorkspaceFileDragState = (event: Event) => {
@@ -65,8 +65,8 @@ export function usePromptEditorDragState({
       if (!event.dataTransfer) {
         return;
       }
-      // 有些拖拽路径不会先触发目标输入框的 dragover。
-      // 监听窗口级 dragover 后，只要拖拽数据可识别，就提前亮出所有可投放输入框。
+      // Some drag paths do not trigger the dragover of the target input box first.
+      // After monitoring window-level dragover, as long as the drag data can be recognized, all droppable input boxes will be displayed in advance.
       if (enableWorkspaceFileDrop && hasWorkspaceFileDragPayload(event.dataTransfer)) {
         setWorkspaceFileDragging(true);
         scheduleDragFeedbackReset();

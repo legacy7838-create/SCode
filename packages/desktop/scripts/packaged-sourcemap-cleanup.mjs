@@ -13,9 +13,9 @@ import { tmpdir } from "node:os";
 import { extname, resolve } from "node:path";
 
 const SOURCEMAP_REFERENCE_EXTENSIONS = new Set([".js", ".cjs", ".mjs", ".css"]);
-// 只清理位于行首的 sourceMappingURL 注释。压缩后的 bundle 可能在模板字符串里内嵌
-// 这段文本（例如内嵌 TypeScript 编译器的 emitter 源码），行中匹配会把该行剩余内容整段
-// 吞掉，直接产出语法损坏的产物；真实的 sourcemap 注释总是由构建工具单独成行输出。
+// Only clean sourceMappingURL comments at the beginning of the line. The compressed bundle may be embedded in the template string
+// For this text (such as the emitter source code of the embedded TypeScript compiler), matching within the line will complete the remaining content of the line.
+// Swallow, directly output a syntactically corrupted product; real sourcemap comments are always output on a separate line by the build tool.
 const SOURCE_MAPPING_URL_LINE_RE = /(?:^|\r?\n)[ \t]*\/\/[#@][ \t]*sourceMappingURL=[^\r\n]*/g;
 const SOURCE_MAPPING_URL_BLOCK_RE =
   /(?:^|\r?\n)[ \t]*\/\*[#@][ \t]*sourceMappingURL=[\s\S]*?\*\/[ \t]*/g;

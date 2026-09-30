@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 原生搜索构建步骤按依赖顺序共享同一套编译环境，集中维护更容易审计。 */
+/* eslint-disable max-lines -- Native search and build steps share the same compilation environment in dependency order, making centralized maintenance easier to audit. */
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { cpus, tmpdir } from "node:os";
 import { basename, dirname, join, relative } from "node:path";
@@ -18,7 +18,7 @@ import { downloadAndExtractSources, run, runCapture } from "./native-search-tool
 import { verifyBuiltNativeSearchProducerOutputs } from "./native-search-tools-verify.mjs";
 
 const MACOS_BFS_CPP_FLAGS = Object.freeze([
-  // macOS 26 SDK 会让 bfs 优先选择 26.0 才存在的标准函数；屏蔽后沿用 10.15 起可用的 _np 版本。
+  // The macOS 26 SDK will let bfs give priority to the standard functions that only exist in 26.0; after blocking, the _np version available since 10.15 will be used.
   "-Dposix_spawn_file_actions_addfchdir=__bfs_poison_addfchdir_macos_26_0",
   "-Dfdclosedir=__bfs_poison_fdclosedir_macos_26_4",
 ]);
@@ -64,8 +64,8 @@ function verifyLinuxNativeSearchBuildEnvironment(config) {
     .trim()
     .replace(/^glibc\s+/u, "");
   const gccVersion = runCapture(config.cc, ["-dumpfullversion"]).trim();
-  // ugrep 由 CXX 编译；只检查 CC 会让 CXX=g++-13 等混合 toolchain
-  // 绕过 producer 门禁，并把非 GCC Toolset 12 的 C++ 产物写入固定 release。
+  // ugrep is compiled by CXX; checking only CC will make mixed toolchains like CXX=g++-13
+  // Bypass the producer access control and write non-GCC Toolset 12 C++ products into fixed release.
   const cxxVersion = runCapture(config.cxx, ["-dumpfullversion"]).trim();
   assertLinuxNativeSearchBuildEnvironment({
     nodeVersion: process.versions.node,
@@ -111,7 +111,7 @@ export function resolveNativeUnixBuildConfig({
   const targetCompilerArgs =
     normalizedPlatform === "darwin" ? ["-arch", normalizedArch === "x64" ? "x86_64" : "arm64"] : [];
   const ugrepConfigureArgs = [
-    // Rosetta 构建时 config.guess 仍看到 arm64 runner，必须显式声明 x64 host 才能写入正确的平台身份。
+    // When Rosetta is built, config.guess still sees the arm64 runner and the x64 host must be explicitly declared to write the correct platform identity.
     ...(usesRosettaCrossBuild ? ["--host=x86_64-apple-darwin"] : []),
     ...(normalizedArch === "x64" ? ["--disable-avx2"] : []),
   ];
@@ -129,7 +129,7 @@ export function resolveNativeUnixBuildConfig({
       normalizedPlatform === "darwin" ? MACOS_NATIVE_SEARCH_DEPLOYMENT_TARGET : undefined,
     brotliOsDefine: normalizedPlatform === "darwin" ? "OS_MACOSX" : "OS_LINUX",
     bfsCppFlags: normalizedPlatform === "darwin" ? MACOS_BFS_CPP_FLAGS : [],
-    // Linux 可执行文件以 PIE 链接静态 PCRE2；非 PIC archive 会在最终链接阶段失败。
+    // Linux executables link static PCRE2 with PIE; non-PIC archives fail at the final link stage.
     pcre2ConfigureArgs:
       normalizedPlatform === "linux" ? ["--enable-jit", "--with-pic"] : ["--disable-jit"],
     ugrepConfigureArgs,
@@ -183,7 +183,7 @@ function buildZlib(sourcePath, prefix, jobs, env, quiet) {
 
 function buildBzip2(sourcePath, prefix, jobs, env, quiet, config) {
   console.log("==> Build bzip2 (static)");
-  // release sidecar 不携带调试信息，避免 DWARF 记录随机构建目录。
+  // The release sidecar does not carry debugging information to avoid DWARF recording random build directories.
   run(
     "make",
     [
@@ -296,9 +296,9 @@ export function createBfsBuildEnvironment({ sourcePath, prefix, env, config }) {
       .join(" "),
     EXTRA_LDFLAGS: appendFlags(env.EXTRA_LDFLAGS, [`-L${join(relativePrefix, "lib")}`]),
     EXTRA_LDLIBS: appendFlags(env.EXTRA_LDLIBS, ["-lonig"]),
-    // bfs 会把最终 flags 写入版本信息；使用显式相对路径，避免随机工作目录进入产物。
+    // bfs will write the final flags into the version information; use explicit relative paths to avoid random working directories entering the product.
     PKG_CONFIG: "true",
-    // CC 通过构建环境固定 release patch version，避免 --version 出现在 CONFFLAGS 中。
+    // CC fixes the release patch version through the build environment to avoid --version appearing in CONFFLAGS.
     VERSION: NATIVE_SEARCH_TOOL_VERSIONS.bfs,
   };
 }
@@ -376,8 +376,8 @@ export function buildNativeSearchToolsUnix({
     outputDir,
   });
   if (config.platform === "linux") {
-    // 只靠最终 binary smoke 会让高版本 runner 产出的 GLIBC_2.34/2.36
-    // 误进入固定 release。下载源码前先锁住 producer 环境，产物阶段再由 readelf gate 复核。
+    // Only relying on the final binary smoke will make the higher version runner produce GLIBC_2.34/2.36
+    // Fixed release entered by mistake. Before downloading the source code, lock the producer environment first, and then review it with the readelf gate during the production stage.
     verifyLinuxNativeSearchBuildEnvironment(config);
   }
   const workDir = mkdtempSync(join(tmpdir(), "zcode-native-search-build-"));

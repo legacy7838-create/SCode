@@ -156,8 +156,8 @@ async function resolveFocusedTarget(
       }
       if (!frameId) return { attachedSessionIds, target };
 
-      // 同进程 iframe 与 OOPIF 不能共享顶层 execution context。先按 Chromium 的
-      // OOPIF targetId=frameId 尝试 attach；失败才在当前 target 为同进程 frame 建 isolated world。
+      // Same-process iframes and OOPIF cannot share top-level execution context. First click on Chromium
+      // OOPIF targetId=frameId tries to attach; if it fails, create an isolated world in the current target for the same process frame.
       const attachedSessionId = await tryAttachFrameTarget(view, frameId);
       if (attachedSessionId) {
         attachedSessionIds.push(attachedSessionId);
@@ -179,8 +179,8 @@ async function resolveFocusedTarget(
         continue;
       }
 
-      // OOPIF navigation 时 DOM node 的 frameId 可能先于 Target registry 可见。
-      // 用有界 getTargets 轮询等待目标可用，禁止错误回落到顶层输入。
+      // During OOPIF navigation, the frameId of the DOM node may be visible before the Target registry.
+      // Use bounded getTargets polling to wait for a target to become available, preventing errors from falling back to the top-level input.
       const delayedSessionId = await waitForOopifTarget(view, frameId);
       if (!delayedSessionId)
         throw new Error(`Browser Use could not resolve an input target for frame ${frameId}`);

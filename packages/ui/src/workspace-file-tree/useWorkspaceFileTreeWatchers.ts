@@ -27,7 +27,7 @@ export function useWorkspaceFileTreeWatchers({
     ) => {
       registration.subscription.dispose();
       void registration.unwatch().catch((error) => {
-        logger.warn("[WorkspaceFileTree] 停止监听目录失败", {
+        logger.warn("[WorkspaceFileTree] failed to stop watching directory", {
           path: directoryPath,
           error: error instanceof Error ? error.message : String(error),
         });
@@ -86,7 +86,7 @@ export function useWorkspaceFileTreeWatchers({
         })
         .catch((error) => {
           pendingWatcherDirectoryPathsRef.current.delete(directoryPath);
-          logger.warn("[WorkspaceFileTree] 监听目录失败", {
+          logger.warn("[WorkspaceFileTree] failed to watch directory", {
             path: directoryPath,
             error: error instanceof Error ? error.message : String(error),
           });
@@ -103,7 +103,7 @@ export function useWorkspaceFileTreeWatchers({
       for (const [directoryPath, registration] of watcherRegistrationsRef.current) {
         registration.subscription.dispose();
         void registration.unwatch().catch((error) => {
-          logger.warn("[WorkspaceFileTree] 停止监听目录失败", {
+          logger.warn("[WorkspaceFileTree] failed to stop watching directory", {
             path: directoryPath,
             error: error instanceof Error ? error.message : String(error),
           });

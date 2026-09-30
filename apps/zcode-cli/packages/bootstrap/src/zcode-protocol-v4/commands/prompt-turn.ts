@@ -1,8 +1,8 @@
-// 原生 prompt turn 运行器。
+// Native prompt turn runner.
 //
-// Core admission 只负责接受输入并建立 session-scoped reservation；本文件不再拥有
-// activeAbortController，也不等待 projection commit。这样 TurnStarted 之后的任意 Core
-// starting/active 状态都会继续挡住同一 session 的第二次 start。
+// Core admission is only responsible for accepting input and establishing session-scoped reservation; this file no longer owns
+// activeAbortController does not wait for projection commit. In this way, any Core after TurnStarted
+// The starting/active status will continue to block the second start of the same session.
 import { type TurnBackgroundAttribution, type TurnInputIntentMetadata } from "@zcode/contracts";
 import type { TurnAttachment } from "@zcode/core";
 import type { ZCodeAutomationBotDeliveryTarget } from "@zcode/shared";
@@ -12,32 +12,32 @@ import type { V4CommandCoreHost, V4SessionRecordView } from "./types.js";
 
 interface StartPromptTurnParamsBase {
   content: string;
-  /** v4 锚点：inputId=queryId=commandId（权威数据 sourceCommandId 对账）。 */
+  /** v4 anchor: inputId=queryId=commandId (sourceCommandId reconciles against the authoritative data). */
   inputId: string;
   inputPresentation?: SendInputOptions["inputPresentation"];
-  /** 附件命令面：AttachmentRef 已在 handler 层映射为 core TurnAttachment。 */
+  /** Attachment command surface: AttachmentRef has already been mapped to a core TurnAttachment at the handler layer. */
   attachments?: TurnAttachment[];
   browserAmbientContext?: SendInputOptions["browserAmbientContext"];
   intent?: TurnInputIntentMetadata;
-  /** 标准 Selection 的单次执行约束；不会改写 Session Selection。 */
+  /** A one-shot execution constraint for a standard Selection; it does not rewrite the Session Selection. */
   modelExecution?: SendInputOptions["modelExecution"];
   sharedContextRefs?: SendInputOptions["sharedContextRefs"];
   toolDisallowlist?: readonly string[];
-  /** sendQueuedNow 已持有 Core promotion lease，要求这次 admission 只能占用空闲位。 */
+  /** sendQueuedNow already holds the Core promotion lease, so this admission is required to take an idle slot only. */
   requireIdle?: boolean;
-  /** Bot 入站 turn 的稳定回推地址；仅在本 turn 内暴露给 CronCreate。 */
+  /** The stable push-back address of an inbound Bot turn; exposed to CronCreate only within this turn. */
   botDeliveryTarget?: ZCodeAutomationBotDeliveryTarget;
 }
 
 type StartPromptTurnParams = StartPromptTurnParamsBase & TurnBackgroundAttribution;
 
 interface PromptTurnStartResult {
-  /** Core admission 已完成；不等待 TurnStarted 或 projection commit。 */
+  /** Core admission is complete; it does not wait for TurnStarted or a projection commit. */
   turnStarted: Promise<void>;
-  /** Core 真实完成 promise，仅供生命周期清理使用，不属于 ACK 边界。 */
+  /** The promise of Core's real completion, used only for lifecycle cleanup; it is not part of the ACK boundary. */
   completion?: Promise<unknown>;
   admission: SendInputResult;
-  /** 兼容旧调用方；初始 ACK 不再依赖 messageId。 */
+  /** Kept for legacy callers; the initial ACK no longer depends on messageId. */
   messageId?: string;
 }
 
@@ -54,8 +54,8 @@ export class V4PromptRejectedError extends Error {
 }
 
 /**
- * 入口只做模型/持久化前置校验，然后调用 app -> Core admission。Core 返回 started 时，
- * 后台生命周期等待 completion 清理 turn 归因和广播状态；RPC 本身立即返回 admission receipt。
+ * The entry point only performs model/persistence pre-validation, then calls app -> Core admission. When Core returns started,
+ * the background lifecycle waits for completion to clean up turn attribution and broadcast state; the RPC itself returns the admission receipt immediately.
  */
 export async function startPromptTurn(
   host: V4CommandCoreHost,
@@ -64,12 +64,12 @@ export async function startPromptTurn(
 ): Promise<PromptTurnStartResult> {
   const usesExecutionSelection = params.modelExecution?.selectionScope === "execution";
   if (!usesExecutionSelection && record.restoreWarning) {
-    // app 重启后冷恢复可能跑在 provider registry 推送
-    // 之前，record 创建时判「模型不可解析」挂上告警；registry 随后到达时 runtime
-    // 早已可服务，但这个一次性标志没人回来清——发送被永久拒（用户只能手动切模型
-    // 解锁）。闸前经宿主能力重评：已有可用目标则清除过期告警，随后仍由
-    // ensureModelReady 校验当前选择；不能在这里兜底换模型或清空持久选择。
-    // 仍无可用模型/宿主不支持 → 维持拒绝。
+    // After the app is restarted, cold recovery may run in the provider registry push
+    // Previously, when the record was created, a "model cannot be parsed" alarm was raised; when the registry subsequently arrived, the runtime
+    // It has been available for service for a long time, but no one came back to clear this one-time mark - the delivery was permanently rejected (the user can only manually cut the model
+    // unlocked). Before the gate is re-evaluated by the host's ability: If the target is available, the expired alarm will be cleared, and then the
+    // ensureModelReady verifies the current selection; you cannot change models or clear persistent selections here.
+    // Still no model available/host not supported → Maintain rejection.
     if (host.hasUsableRuntimeModelTarget?.(record) === true) {
       host.logger?.info?.("v4 restoreWarning cleared by model catalog recovery", {
         sessionId: record.app.sessionId,
@@ -98,7 +98,7 @@ export async function startPromptTurn(
   );
   if (activeAutomationId) record.activeAutomationId = activeAutomationId;
   if (activeOffPeakTaskId) {
-    // 闲时派发轮同型标记，供 offpeak-port 在工具执行前拒绝递归 OffPeakCreate。
+    // Dispatch round-robin flags at idle times for offpeak-port to reject recursive OffPeakCreate before the tool executes.
     record.activeOffPeakTaskId = activeOffPeakTaskId;
   }
   record.activeBotDeliveryTarget = params.botDeliveryTarget;
@@ -111,8 +111,8 @@ export async function startPromptTurn(
         ...(params.attachments ? { attachments: params.attachments } : {}),
       },
       {
-        // Bootstrap controller 曾经被当成 Core busy 真相，并由 projection watchdog
-        // 清理它；现在 Core admission 自己持有 reservation，Stop 也直接调用 Core execution。
+        // Bootstrap controller was once regarded as Core busy truth and was replaced by projection watchdog
+        // Clean it up; now Core admission holds the reservation itself, and Stop calls Core execution directly.
         delivery: "start_turn",
         ...(params.intent?.requestedDelivery === "guide"
           ? { queueDelivery: "guide" as const }
@@ -124,7 +124,7 @@ export async function startPromptTurn(
         ...(params.inputPresentation ? { inputPresentation: params.inputPresentation } : {}),
         ...turnBackgroundAttributionOf({
           automationId: activeAutomationId,
-          // 归因用解析后的 id：resume 段仅靠 inputId 前缀兜底时也要进 core loop state。
+          // Attribution uses the parsed id: the resume segment also needs to enter the core loop state when it only relies on the inputId prefix.
           offPeakTaskId: activeOffPeakTaskId,
           offPeakRunType: params.offPeakRunType,
         }),
@@ -208,7 +208,7 @@ function clearPromptRecordState(
   previousBotDeliveryTarget: V4SessionRecordView["activeBotDeliveryTarget"],
 ): void {
   record.activeAutomationId = previousAutomationId;
-  // 闲时轮身份与 automation 同规则随 turn 还原，防止跨轮残留误拒 OffPeakCreate。
+  // The same rules of idle wheel identity and automation are restored with the turn, preventing cross-round residuals from accidentally rejecting OffPeakCreate.
   record.activeOffPeakTaskId = previousOffPeakTaskId;
   record.activeBotDeliveryTarget = previousBotDeliveryTarget;
 }
@@ -220,12 +220,12 @@ function buildTurnToolDisallowlist(
 ): readonly string[] | undefined {
   const tools = new Set(params.toolDisallowlist ?? []);
   if (activeAutomationId) {
-    // automation 派发漏传身份时，后续 model step 会重新暴露 Cron 写工具。
+    // When automation dispatches the missing identity, the subsequent model step will re-expose the Cron writing tool.
     for (const toolName of AUTOMATION_MUTATION_TOOL_NAMES) tools.add(toolName);
   }
   if (activeOffPeakTaskId) {
-    // 闲时派发轮隐藏 OffPeakCreate（防递归自我派生）；OffPeakList 只读保留。
-    // automation 轮不加此项——cron 轮放行 OffPeakCreate（定时派生闲时任务）。
+    // OffPeakCreate (anti-recursive self-derivation) is hidden when the dispatch wheel is idle; OffPeakList is read-only and reserved.
+    // The automation round does not add this item - the cron round releases OffPeakCreate (scheduled idle time task).
     for (const toolName of OFF_PEAK_MUTATION_TOOL_NAMES) tools.add(toolName);
   }
   return tools.size > 0 ? [...tools] : undefined;
@@ -248,8 +248,8 @@ function resolveTurnOffPeakTaskId(
 ): string | undefined {
   const explicit = params.offPeakTaskId?.trim();
   if (explicit) return explicit;
-  // 兜底：续跑派发的 inputId 形如 `offpeak-<uuid>:resume:<uuid>`；首段派发无固定前缀，
-  // 主信号必须是显式 offPeakTaskId（host 派发一律显式传）。
+  // Bottom line: the inputId distributed in the continuation is in the shape of `offpeak-<uuid>:resume:<uuid>`; there is no fixed prefix for the first segment of distribution.
+  // The main signal must be explicit offPeakTaskId (host dispatch must be passed explicitly).
   const inputId = params.inputId.trim();
   if (!inputId.startsWith(OFF_PEAK_INPUT_ID_PREFIX)) return undefined;
   const separatorIndex = inputId.indexOf(":");
@@ -274,8 +274,8 @@ export function turnBackgroundAttributionOf(params: {
 
 const AUTOMATION_INPUT_ID_PREFIX = "automation-";
 const AUTOMATION_MUTATION_TOOL_NAMES = ["CronCreate", "CronUpdate", "CronDelete"] as const;
-// 独立常量，绝不并入 AUTOMATION_MUTATION_TOOL_NAMES（cron 轮放行 OffPeakCreate）。
-// 与 core turn-loop-state 同值——闲时轮同时隐藏 SendMessage / Workflow（两者会在本轮
-// modelExecution 之外重启子 Agent）。
+// Standalone constant, never merged into AUTOMATION_MUTATION_TOOL_NAMES (cron release OffPeakCreate).
+// Same value as core turn-loop-state - idle wheel hides SendMessage / Workflow at the same time (both will be in this round
+// Restart the child Agent outside of modelExecution).
 const OFF_PEAK_INPUT_ID_PREFIX = "offpeak-";
 const OFF_PEAK_MUTATION_TOOL_NAMES = ["OffPeakCreate", "SendMessage", "Workflow"] as const;

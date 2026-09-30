@@ -1,42 +1,37 @@
-import type { Locale } from "@zcode/shared";
-
 /**
- * Windows CUA 操作提示条的呈现层：文案、尺寸与 HTML。
+ * The presentation layer of the Windows CUA action tooltip: copy, dimensions, and HTML.
  *
- * 与窗口生命周期分开，是因为两者的变更理由不同——这里跟着文案与视觉走，
- * `windowsCuaOperationIndicator.ts` 跟着显示/隐藏时机与 Electron 窗口行为走。
+ * It is separated from the window life cycle because the reasons for the change of the two are different - follow the copywriting and visuals here,
+ * `windowsCuaOperationIndicator.ts` follows the show/hide timing and Electron window behavior.
  */
 
 const INDICATOR_CARD_HEIGHT = 38;
 export const INDICATOR_CARD_TOP_OFFSET = 12;
 export const INDICATOR_SHADOW_INSET = { top: 6, right: 8, bottom: 12, left: 8 } as const;
 
-function indicatorCopy(locale: Locale): { text: string; width: number } {
-  return locale === "zh-CN"
-    ? { text: "ZCode 正在操作电脑", width: 234 }
-    : { text: "ZCode is controlling your computer", width: 308 };
-}
+const INDICATOR_COPY = {
+  text: "ZCode is controlling your computer",
+  width: 308,
+};
 
-export function indicatorWindowSize(locale: Locale): { width: number; height: number } {
-  const { width } = indicatorCopy(locale);
+export function indicatorWindowSize(): { width: number; height: number } {
   return {
-    width: width + INDICATOR_SHADOW_INSET.left + INDICATOR_SHADOW_INSET.right,
+    width: INDICATOR_COPY.width + INDICATOR_SHADOW_INSET.left + INDICATOR_SHADOW_INSET.right,
     height: INDICATOR_SHADOW_INSET.top + INDICATOR_CARD_HEIGHT + INDICATOR_SHADOW_INSET.bottom,
   };
 }
 
 function escapeHtml(value: string): string {
   return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
-function indicatorHtml(locale: Locale): string {
-  const copy = indicatorCopy(locale);
+function indicatorHtml(): string {
   return `<!doctype html>
-<html lang="${locale}" data-state="active">
+<html lang="en-US" data-state="active">
 <head>
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
@@ -73,10 +68,10 @@ function indicatorHtml(locale: Locale): string {
     }
   </style>
 </head>
-<body><div class="indicator" role="status" aria-live="polite"><span class="dots" aria-hidden="true"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span><span>${escapeHtml(copy.text)}</span></div></body>
+<body><div class="indicator" role="status" aria-live="polite"><span class="dots" aria-hidden="true"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span><span>${escapeHtml(INDICATOR_COPY.text)}</span></div></body>
 </html>`;
 }
 
-export function indicatorDataUrl(locale: Locale): string {
-  return `data:text/html;base64,${Buffer.from(indicatorHtml(locale), "utf8").toString("base64")}`;
+export function indicatorDataUrl(): string {
+  return `data:text/html;base64,${Buffer.from(indicatorHtml(), "utf8").toString("base64")}`;
 }

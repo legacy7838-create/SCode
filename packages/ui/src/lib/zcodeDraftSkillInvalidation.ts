@@ -23,8 +23,8 @@ export async function invalidateDeferredDraftSessionForRuntimeChange(
     params.workspacePath,
     workspaceIdentity,
   ).draftSessionId;
-  // protocol-v4 的草稿 session 由 pane 本地预热，draftSessionId 会保持 null。
-  // 无论 legacy session 是否存在，都要先发布 workspace 隔离的运行时失效版本。
+  // Protocol-v4 draft sessions are preheated locally by pane, and draftSessionId will remain null.
+  // Regardless of whether the legacy session exists, a runtime-invalidated version of the workspace isolation must be released first.
   store.invalidateDraftRuntime(params.workspacePath, workspaceIdentity);
   if (!draftSessionId) {
     return;

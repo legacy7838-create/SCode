@@ -1,4 +1,6 @@
-/* eslint-disable max-lines -- 定时任务管理 store 集中维护列表/运行历史/CRUD 与立即运行等操作，稳定后再拆分。 */
+/* eslint-disable max-lines -- the scheduled task management store centrally maintains the list /
+ * run history / CRUD and operations such as run-now, and will be split once it stabilizes.
+ */
 import { create } from "zustand";
 import {
   AUTOMATION_CREATE_LIMIT,
@@ -12,10 +14,10 @@ import {
 import type { IZCodeAgentService } from "@zcode/services";
 import { logger } from "@/logger.js";
 
-// 定时任务(automation)管理 store：走 zcode-agent RPC（列表 / 创建 / 编辑 / 启停 / 重跑 / 删除 + 运行历史）。
-// 与 pluginManagementStore 同一范式：按 workspace 缓存，切换时后台刷新避免闪烁。
+// Scheduled task (automation) management store: use zcode-agent RPC (list/create/edit/start/stop/rerun/delete + running history).
+// The same paradigm as pluginManagementStore: cached by workspace, refreshed in the background when switching to avoid flickering.
 
-/** 单条 automation 的运行历史缓存（按 automationId 记 loading/data/error）。 */
+/** Run history cache for a single automation (loading/data/error recorded per automationId). */
 export interface AutomationRunsEntry {
   status: "loading" | "loaded" | "error";
   runs?: ZCodeAutomationRun[];
@@ -34,7 +36,7 @@ export interface CreateAutomationInput {
   maxRuns?: number;
   endAt?: number;
   scheduleRule?: ZCodeAutomationScheduleRule;
-  // 目标项目;缺省用 store 当前列表所在项目。创建整页可在项目下拉里改。
+  // Target project; by default, store the project where the current list is located. Creating a full page can be changed under Project.
   workspacePath?: string;
   workspaceIdentity?: string;
 }
@@ -58,7 +60,7 @@ interface AutomationManagementState {
   automations: ZCodeAutomation[];
   loading: boolean;
   error: string | null;
-  // 正在进行的写操作标记，用于禁用对应按钮（如 `automation:delete:<id>`）。
+  // Flag of an ongoing write operation, used to disable the corresponding button (e.g. `automation:delete:<id>`).
   operationId: string | null;
   runsCache: Record<string, AutomationRunsEntry>;
   initialize: (params: {
@@ -83,7 +85,7 @@ interface AutomationManagementState {
     agentService: IZCodeAgentService,
   ) => Promise<void>;
   restartAutomation: (automationId: string, agentService: IZCodeAgentService) => Promise<void>;
-  /** 立即运行一次；queued / duplicate / failed 均由调用方 toast。 */
+  /** Runs once immediately; queued / duplicate / failed are all surfaced as a toast by the caller. */
   runAutomationNow: (
     automationId: string,
     agentService: IZCodeAgentService,
@@ -140,7 +142,7 @@ async function loadInto(
 ): Promise<void> {
   const { workspacePath, workspaceIdentity, agentService, requestId } = params;
   try {
-    // 定时任务管理视图展示所有项目的任务，不按当前 workspace 过滤（创建/编辑仍带项目）。
+    // The scheduled task management view displays tasks for all projects and is not filtered by the current workspace (creation/editing still includes projects).
     const automations = await agentService.listAllAutomations();
     if (
       requestId !== automationLoadSeq ||
@@ -184,12 +186,12 @@ export const useAutomationManagementStore = create<AutomationManagementState>((s
     set({
       workspacePath,
       workspaceIdentity: normalizedIdentity,
-      // 有缓存时后台刷新、保留列表，避免切 workspace 闪烁；无缓存才显示阻塞 loading。
+      // When there is cache, the background refreshes and retains the list to avoid flickering when switching workspaces; only when there is no cache, blocking loading is displayed.
       loading: !hasCache,
       error: null,
       operationId: null,
       automations: hasCache ? current.automations : [],
-      // 切换 workspace 时清运行历史缓存（历史按 automationId 记，跨 workspace 无意义）。
+      // Clear the running history cache when switching workspaces (history is recorded by automationId, meaningless across workspaces).
       ...(hasCache ? {} : { runsCache: {} }),
     });
     await loadInto(set, get, {
@@ -217,8 +219,8 @@ export const useAutomationManagementStore = create<AutomationManagementState>((s
     const { automations, workspacePath, workspaceIdentity } = get();
     if (!workspacePath) return null;
     if (automations.length >= AUTOMATION_CREATE_LIMIT) {
-      // 创建入口分散在表单、模板和会话，单独禁用某个按钮仍可绕过。
-      // store 以管理页的全量列表做快速拒绝，服务层事务继续承担最终一致性校验。
+      // Entries are created in forms, templates, and sessions, and can still be bypassed by disabling a button individually.
+      // The store uses the full list of management pages for quick rejection, and the service layer transactions continue to bear the final consistency check.
       set({
         error: `[${AUTOMATION_CREATE_LIMIT_ERROR_CODE}] automation limit reached`,
       });
@@ -343,8 +345,8 @@ export const useAutomationManagementStore = create<AutomationManagementState>((s
         automationId,
         enabled,
       });
-      // 编辑页持有打开时的 automation 对象；如果只等 listAllAutomations
-      // 回源，菜单文案会在点击暂停/恢复后继续显示旧状态。
+      // The edit page holds the automation object when it is opened; if you just wait for listAllAutomations
+      // Back to the source, the menu copy will continue to display the old state after clicking Pause/Resume.
       set({
         automations: get().automations.map((automation) =>
           automation.automationId === automationId
@@ -417,9 +419,9 @@ export const useAutomationManagementStore = create<AutomationManagementState>((s
     if (inFlightRunNowAutomationIds.has(automationId)) {
       return "duplicate";
     }
-    // React 禁用按钮存在一次渲染延迟，连续点击会在 UI 更新前重入。
-    // 这里只在当前 RPC 请求期间使用同步内存锁；请求返回后恢复入口，
-    // 活动 run 的重复触发继续交由 host single-flight 返回 duplicate。
+    // There is a rendering delay in the React disabled button, and continuous clicks will reenter before the UI is updated.
+    // Synchronous memory locks are only used here during the current RPC request; the entry is restored after the request returns.
+    // Repeated triggering of activity run continues to be handed over to host single-flight to return duplicate.
     inFlightRunNowAutomationIds.add(automationId);
     set({ operationId: `automation:runNow:${automationId}`, error: null });
     try {

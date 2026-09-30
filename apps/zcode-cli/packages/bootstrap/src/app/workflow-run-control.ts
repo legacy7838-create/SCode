@@ -1,29 +1,29 @@
 // ============================================================
-// run 的活体控制面：一次命令同时落到引擎与座位闸门
+// run's living control surface: one command falls to both the engine and the seat gate
 // ============================================================
-// 一个在飞 run 的两个执行点住在不同的
-// 层里——调度器在引擎（`@zcode/dynamic-workflow`），座位闸门在 driver 之下（本包）——而发命令的
-// 那一侧（run service 的 `retuneConcurrency`）两个都够不着：引擎是 harness 在子进程装配起来之后
-// 才存在的，闸门是 launch 造的。
+// The two execution points of a run on the fly live in different
+// In the layer - the scheduler is in the engine (`@zcode/dynamic-workflow`), the seat gate is under the driver (this package) - and the command is issued
+// That side (`retuneConcurrency` of the run service) is out of reach of both: the engine is harnessed after the child process is assembled
+// It only exists, and the gate is made by launch.
 //
-// 所以 run service 先造一个**空的**句柄放进注册表条目，两边各自在自己出生的那一刻把自己接上去：
-// harness 拿到 `bind(engine)`（与 `signal` 同一条缝递进去），launch 拿到 `bindSeatGate(gate)`。
-// 句柄本身不判断任何事：存活判定、no-op 语义与落库全在引擎的 `setMaxConcurrency` 里，闸门只在
-// 引擎说"这次真的改了"之后才跟着换上界——两个执行点因此不可能各执一词。
+// So run service first creates an **empty** handle and puts it into the registry entry, and both parties connect themselves at the moment they are born:
+// The harness gets `bind(engine)` (passed through the same gap as `signal`), and the launch gets `bindSeatGate(gate)`.
+// The handle itself does not judge anything: survival judgment, no-op semantics and dropout are all in the engine's `setMaxConcurrency`, and the gate is only in
+// The engine said "it's really changed this time" before changing the upper bound - so it is impossible for the two execution points to insist on each other's opinions.
 //
-// 顺序是载荷性的：**引擎先**。引擎的布尔值就是这次命令的裁决（已结算 / 值没变 ⇒ false，什么也
-// 没发生），闸门若抢在前面换了上界，一个已经结算的 run 就会留下一个与 journal 行不符的内存上界。
+// The order is payload-based: **engine first**. The boolean value of the engine is the verdict of this command (settled / value unchanged ⇒ false, nothing
+// did not happen), if the gate changes the upper bound beforehand, a settled run will leave a memory upper bound that is inconsistent with the journal row.
 
 import type { RunControlBinding } from "@zcode/dynamic-workflow-runtime";
 import type { WorkflowRunSeatGate } from "./workflow-seat-gate.js";
 
 export interface WorkflowRunControl extends RunControlBinding {
   /**
-   * 就地改本 run 自己的并发上界。返回**这次是否真的改了**：`false` 即什么也没发生——引擎还没
-   * 接上（launch 之前的那几个微任务）、run 已结算，或新值与当前值相同。调用方据此回落。
+   * Modify run's own concurrency upper bound in place. Returns **Whether it is really changed this time**: `false` means nothing happened - the engine has not yet
+   * It is connected (those microtasks before launch), the run has been resolved, or the new value is the same as the current value. The caller falls back accordingly.
    */
   setMaxConcurrency(maxConcurrency: number): boolean;
-  /** launch 造好座位闸门之后接上去；缺席即这个 run 只有调度器一个执行点。 */
+  /** Launch is connected after the seat gate is built; the absence means that this run has only one execution point of the scheduler. */
   bindSeatGate(gate: Pick<WorkflowRunSeatGate, "setLimit">): void;
 }
 

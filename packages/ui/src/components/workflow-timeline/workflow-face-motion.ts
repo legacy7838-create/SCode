@@ -24,7 +24,10 @@ const SPECIAL: Record<FaceState, readonly EyeExpression[]> = {
   sad: [],
 };
 
-/** 一张脸只有一个待执行计时器；DOM 动作不触发整个工作流的 React 重渲染。 */
+/**
+ * A single face has only one pending timer; DOM actions do not trigger a React re-render of the
+ * whole workflow.
+ */
 export function startFaceMotion(face: SVGSVGElement, state: FaceState): () => void {
   const media = window.matchMedia?.("(prefers-reduced-motion: reduce)");
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -58,7 +61,7 @@ export function startFaceMotion(face: SVGSVGElement, state: FaceState): () => vo
       cycle,
     );
   };
-  // 闭眼时换轮廓，避免从圆眼直接跳到斜切眼；返回基础表情也使用同样的过渡。
+  // Change the outline when the eyes are closed to avoid jumping directly from round eyes to slanted eyes; use the same transition when returning to the basic expression.
   const morph = (expression: EyeExpression, next: () => void) => {
     motion("morph");
     later(80, () => {
@@ -77,7 +80,7 @@ export function startFaceMotion(face: SVGSVGElement, state: FaceState): () => vo
       return;
     }
     const choices = SPECIAL[state].filter((e) => e !== previous);
-    // 只有一种偶发表情的结果态也要经过两轮基础动作，不能连续换脸。
+    // The resulting state of only one occasional expression must go through two rounds of basic actions, and faces cannot be changed continuously.
     const pool = choices.length ? choices : SPECIAL[state];
     const expression = pool[Math.floor(Math.random() * pool.length)]!;
     previous = expression;
@@ -87,7 +90,7 @@ export function startFaceMotion(face: SVGSVGElement, state: FaceState): () => vo
   };
   const glance = () => {
     motion("glance");
-    // 平移要换到脸的另一侧；旧的 ±0.65 微移只像眼睛抖动，看不出左右驻留。
+    // Panning has to be swapped to the other side of the face; the old ±0.65 nudge only looks like eye jitters, with no visible left-right dwell.
     lookingLeft = !lookingLeft;
     face.style.setProperty("--wf-face-x", lookingLeft ? "-4px" : "0px");
     later(360, maybeExpression);

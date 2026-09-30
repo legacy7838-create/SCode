@@ -1,44 +1,44 @@
 export type FeedbackTicketType = "bug" | "usage" | "feature" | "performance";
 
 export type FeedbackTicketStatus =
-  | "已提交"
-  | "信息不足"
-  | "已采纳"
-  | "答复关闭"
-  | "已归档"
-  | "已拒绝"
-  | "开发中"
-  | "已解决"
-  | "已上线";
+  | "Submitted"
+  | "Insufficient Info"
+  | "Accepted"
+  | "Response Closed"
+  | "Archived"
+  | "Rejected"
+  | "In Progress"
+  | "Resolved"
+  | "Shipped";
 
 export type FeedbackAttachmentKind = "log" | "image" | "other";
 
 export type FeedbackTicketModule =
   | "Plugin / MCP"
-  | "Agent任务执行失败"
-  | "模型配置 / API Key"
-  | "模型调用报错"
-  | "权限 / 配置保存"
-  | "SSH连接失败"
-  | "WSL连接失败"
-  | "UI布局 / 交互"
-  | "模型响应慢 / 额度"
-  | "崩溃 / Internal Error"
-  | "文档 / 使用咨询"
-  | "其它";
+  | "Agent Task Execution Failure"
+  | "Model Config / API Key"
+  | "Model Call Error"
+  | "Permission / Config Save"
+  | "SSH Connection Failure"
+  | "WSL Connection Failure"
+  | "UI Layout / Interaction"
+  | "Model Slow / Quota"
+  | "Crash / Internal Error"
+  | "Docs / Usage Inquiry"
+  | "Other";
 
 export type FeedbackTicketFramework = "zcode-agent";
 
 /**
- * UI 层 Select 不允许空字符串作为可选项 value（Radix 会抛错），
- * 这里给『未指定』提供一个 sentinel；提交工单前会被转换成 undefined。
+ * A UI-layer Select does not allow an empty string as an option value (Radix throws),
+ * so "unspecified" gets a sentinel here; it is converted to undefined before the ticket is submitted.
  */
 export const FEEDBACK_FRAMEWORK_NONE = "none" as const;
 export type FeedbackTicketFrameworkSelectValue =
   | FeedbackTicketFramework
   | typeof FEEDBACK_FRAMEWORK_NONE;
 
-export type FeedbackTicketSeverity = "P1-高" | "P2-中" | "P3-低";
+export type FeedbackTicketSeverity = "P1-High" | "P2-Medium" | "P3-Low";
 
 export interface FeedbackReporter {
   user_id?: string;
@@ -57,17 +57,17 @@ export interface FeedbackDeviceInfo {
   osRelease?: string;
   osVersion?: string;
   osArch?: string;
-  /** 提交反馈时的当前 Agent。单 ZCode Agent 模式下固定为 ZCode Agent。 */
+  /** The Agent in use when the feedback is submitted. Fixed to the ZCode Agent in single-ZCode-Agent mode. */
   agentProvider?: string;
-  /** 提交反馈时归一到反馈平台的框架标识，当前固定为 zcode-agent。 */
+  /** Framework identifier normalized for the feedback platform when the feedback is submitted, currently fixed to zcode-agent. */
   agentFramework?: FeedbackTicketFramework;
-  /** 提交反馈时当前模型配置里的原始选中值。 */
+  /** The raw selected value in the current model configuration when the feedback is submitted. */
   agentModel?: string;
-  /** 提交反馈时从模型列表匹配到的展示名；没有时回退到 agentModel。 */
+  /** Display name matched from the model list when the feedback is submitted; falls back to agentModel when absent. */
   agentModelDisplay?: string;
-  /** 提交反馈时当前模型列表的可选项数量。 */
+  /** Number of options in the current model list when the feedback is submitted. */
   agentModelOptionCount?: number;
-  /** 提交反馈时当前模型列表的展示名预览，用于排查配置上下文。 */
+  /** Preview of the display names in the current model list when the feedback is submitted, used to diagnose the configuration context. */
   agentModelOptionsPreview?: string[];
   hostname?: string;
   deviceMid?: string;
@@ -83,10 +83,9 @@ export interface CreateFeedbackTicketInput {
   source?: string;
   reporter?: FeedbackReporter;
   device?: FeedbackDeviceInfo;
-  /** 用户选填的联系方式（邮箱或其他社交账号），后端不强制要求。 */
+  /** Contact detail the user optionally fills in (email or another social account); the backend does not require it. */
   contact?: string;
-  /** 当前界面语言，仅用于请求头透传，不写入后端工单正文。 */
-  locale?: "zh-CN" | "en-US";
+  /** Current UI language, only passed through in request headers, never written into the backend ticket body. */
 }
 
 export interface FeedbackTicketSummary {
@@ -97,13 +96,13 @@ export interface FeedbackTicketSummary {
   module?: FeedbackTicketModule;
   status: FeedbackTicketStatus;
   assignee_id?: string | null;
-  /** 当前处理人的展示名（由后端填充）；未指派为 null */
+  /** Display name of the current assignee (filled in by the backend); null when unassigned */
   assignee_display?: string | null;
-  /** 后端返回的报告人展示名 */
+  /** Display name of the reporter returned by the backend */
   reporter_display?: string | null;
-  /** 自上次查看以来是否有新动作 */
+  /** Whether there has been new activity since it was last viewed */
   unread?: boolean;
-  /** 最近一次用户动作时间 */
+  /** Time of the most recent user activity */
   last_user_activity_at?: string | null;
   created_at: string;
   updated_at: string;
@@ -149,7 +148,7 @@ export interface FeedbackCommentAttachment {
 
 export interface FeedbackComment {
   id: number;
-  /** 后端 message_id，用于补充消息创建后继续把附件绑定到该 message。 */
+  /** Backend message_id, used to keep binding attachments to that message after the message is created. */
   message_id?: string;
   author_user_id?: string | null;
   author_display_name?: string | null;
@@ -185,27 +184,31 @@ export interface FeedbackListResult {
 
 export const FEEDBACK_TICKET_MODULES: FeedbackTicketModule[] = [
   "Plugin / MCP",
-  "Agent任务执行失败",
-  "模型配置 / API Key",
-  "模型调用报错",
-  "权限 / 配置保存",
-  "SSH连接失败",
-  "WSL连接失败",
-  "UI布局 / 交互",
-  "模型响应慢 / 额度",
-  "崩溃 / Internal Error",
-  "文档 / 使用咨询",
-  "其它",
+  "Agent Task Execution Failure",
+  "Model Config / API Key",
+  "Model Call Error",
+  "Permission / Config Save",
+  "SSH Connection Failure",
+  "WSL Connection Failure",
+  "UI Layout / Interaction",
+  "Model Slow / Quota",
+  "Crash / Internal Error",
+  "Docs / Usage Inquiry",
+  "Other",
 ];
 
 export const FEEDBACK_TICKET_TYPES: { value: FeedbackTicketType; label: string }[] = [
-  { value: "bug", label: "Bug 反馈" },
-  { value: "usage", label: "使用问题" },
-  { value: "feature", label: "功能建议" },
-  { value: "performance", label: "性能问题" },
+  { value: "bug", label: "Bug Report" },
+  { value: "usage", label: "Usage Issue" },
+  { value: "feature", label: "Feature Request" },
+  { value: "performance", label: "Performance Issue" },
 ];
 
-export const FEEDBACK_TICKET_SEVERITIES: FeedbackTicketSeverity[] = ["P1-高", "P2-中", "P3-低"];
+export const FEEDBACK_TICKET_SEVERITIES: FeedbackTicketSeverity[] = [
+  "P1-High",
+  "P2-Medium",
+  "P3-Low",
+];
 
 export const DEFAULT_FEEDBACK_TICKET_FRAMEWORK: FeedbackTicketFramework = "zcode-agent";
 
@@ -214,8 +217,11 @@ export const FEEDBACK_TICKET_FRAMEWORK_OPTIONS: {
   label: string;
 }[] = [{ value: "zcode-agent", label: "ZCode Agent" }];
 
-/** 含「未指定」的完整列表，供管理端等场景使用。 */
+/** Full list including "Unspecified", for use by the management console and similar surfaces. */
 export const FEEDBACK_TICKET_FRAMEWORKS: {
   value: FeedbackTicketFrameworkSelectValue;
   label: string;
-}[] = [{ value: FEEDBACK_FRAMEWORK_NONE, label: "未指定" }, ...FEEDBACK_TICKET_FRAMEWORK_OPTIONS];
+}[] = [
+  { value: FEEDBACK_FRAMEWORK_NONE, label: "Unspecified" },
+  ...FEEDBACK_TICKET_FRAMEWORK_OPTIONS,
+];

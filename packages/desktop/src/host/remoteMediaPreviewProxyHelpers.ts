@@ -6,7 +6,7 @@ export function waitForDrainOrDisconnect(
   request: IncomingMessage,
   response: ServerResponse,
 ): Promise<DrainWaitResult> {
-  // 只等待 drain 时，客户端在背压期间 close 不会结算 Promise，最终无法释放 Host 全局槽位。
+  // When only waiting for drain, the client's close will not resolve the Promise during the back pressure period, and ultimately cannot release the Host global slot.
   const isClosed = () => request.aborted || response.destroyed || response.writableEnded;
   if (isClosed()) return Promise.resolve("closed");
 

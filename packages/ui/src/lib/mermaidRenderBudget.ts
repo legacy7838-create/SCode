@@ -107,8 +107,8 @@ export function resolveMermaidAutoRenderDecision(
   const maxLines = options.maxLines ?? MERMAID_AUTO_RENDER_MAX_LINES;
   const maxComplexityScore = options.maxComplexityScore ?? MERMAID_AUTO_RENDER_MAX_COMPLEXITY_SCORE;
 
-  // Mermaid/DOMPurify 渲染会在 native 层构造大 DOM/SVG 字符串，事后 catch 或截断无法阻止 OOM。
-  // 因此必须在进入 Mermaid render 前按源码规模和页面可见性做预算门禁。
+  // Mermaid/DOMPurify rendering will construct large DOM/SVG strings in the native layer, and subsequent catch or truncation cannot prevent OOM.
+  // Therefore, budget gates must be made based on source code size and page visibility before entering Mermaid render.
   if (documentVisibilityState !== "visible" && documentVisibilityState !== "unknown") {
     return {
       shouldRender: false,

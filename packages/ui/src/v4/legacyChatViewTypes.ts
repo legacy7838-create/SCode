@@ -1,4 +1,7 @@
-/** 竖切后 ChatView 已删；保留 shell / command-center 仍引用的最小类型。 */
+/**
+ * ChatView was removed in the vertical cut; these are the minimal types still referenced by the
+ * shell / command-center.
+ */
 export interface ChatSearchResultHighlightRequest {
   requestId: number;
   taskId: string;

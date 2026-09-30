@@ -55,8 +55,8 @@ export function CuaToolCallDetails({
 }) {
   const { intl } = useZCodeIntl();
   const typedCount = readText(asRecord(toolCall.input), "text")?.length ?? 0;
-  // 完整 tool call JSON 混入了面向用户的 CUA 详情，暴露内部生命周期字段并制造无效入口。
-  // 原始数据继续保留在协议与持久化层；这里仅渲染用户完成操作所需的信息。
+  // The full tool call JSON mixes in user-facing CUA details, exposing internal lifecycle fields and creating invalid entries.
+  // The original data continues to remain in the protocol and persistence layers; only the information required by the user to complete the operation is rendered here.
   return (
     <div className="space-y-3 rounded-xl border border-border bg-surface/40 p-3">
       {model.actionRows.length > 0 ? (

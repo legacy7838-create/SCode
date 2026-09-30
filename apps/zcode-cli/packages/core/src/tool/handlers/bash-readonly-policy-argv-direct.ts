@@ -1,5 +1,4 @@
 import { READONLY_ALLOW_ANY_ARG_COMMAND_PREFIXES } from "./bash-readonly-policy-commands.js";
-import { hasDangerousDockerOption } from "./bash-readonly-policy-callbacks.js";
 
 const FIND_WRITE_OPTIONS = new Set([
   "-delete",
@@ -68,8 +67,6 @@ const FIND_VALUE_OPTIONS = new Set([
 
 export function evaluateDirectReadonlyArgv(argv: readonly string[]): boolean | undefined {
   if (argvMatchesAny(argv, READONLY_EXACT_ARGV_COMMANDS)) return true;
-  if (argv[0] === "docker" && argvMatchesAnyPrefix(argv, READONLY_ALLOW_ANY_ARG_COMMAND_PREFIXES))
-    return !hasDangerousDockerOption(argv);
   if (argv[0] === "printf") return isSafePrintfArgv(argv);
   if (argv[0] === "find") return isSafeFindArgv(argv);
   if (argv[0] === "history")

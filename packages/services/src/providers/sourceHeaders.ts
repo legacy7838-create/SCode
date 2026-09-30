@@ -57,7 +57,7 @@ function readExistingDeviceMid(): string | undefined {
     cachedDeviceMid = { stateFile, value: deviceMid };
     return deviceMid;
   } catch {
-    // deviceMid 的生命周期由 desktop/telemetry 负责；这里仅复用已存在值，不生成新身份。
+    // The life cycle of deviceMid is taken care of by desktop/telemetry; here only existing values ​​are reused and no new identities are generated.
     return undefined;
   }
 }

@@ -1,4 +1,6 @@
-/* eslint-disable max-lines -- 共享能力外壳聚合 Scope，并承载 Plugin tabs 与独立 Commands 入口。 */
+/* eslint-disable max-lines -- The shared capability shell aggregates Scope and hosts the Plugin
+ * tabs plus the standalone Commands entry.
+ */
 import { PluginAddMenu } from "@/settings/PluginAddMenu.js";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -167,8 +169,8 @@ function PluginList({
     target?.remoteTarget,
   );
   const baseServices = useBaseWorkspaceServices();
-  // Scope 可选择非激活 workspace，若继续从当前 ServiceProvider 取服务，
-  // 会把 B 的路径发往 A 的 host。插件读写必须和 Scope target 共用同一服务解析结果。
+  // Scope can choose to deactivate the workspace. If you continue to obtain services from the current ServiceProvider,
+  // Will send B's path to A's host. Plug-in reading and writing must share the same service parsing result as the Scope target.
   const { pluginManagementService } = targetServiceResolution.services;
   const plugins = usePluginManagementStore((state) => state.plugins);
   const installedPlugins = usePluginManagementStore((state) => state.installedPlugins);
@@ -194,8 +196,8 @@ function PluginList({
   const [pluginOptionsDrafts, setPluginOptionsDrafts] = useState<
     Record<string, Record<string, PluginOptionDraftValue>>
   >({});
-  // 设置页重构后只保留了 Plugin 管理列表，漏掉了旧版插件页的远端同步入口。
-  // 同步目标必须沿用当前 Scope 的 target services，不能回退到激活 workspace 的 host。
+  // After the settings page was reconstructed, only the Plugin management list was retained, and the remote synchronization entry of the old version of the plug-in page was missed.
+  // The synchronization target must inherit the target services of the current Scope and cannot fall back to the host where the workspace is activated.
   const connectedRemoteSyncTarget =
     targetServiceResolution.rpcReady &&
     shouldShowRemoteSyncActions({
@@ -207,8 +209,8 @@ function PluginList({
     target?.workspacePath
       ? target.remoteTarget
       : null;
-  // 设置页重构时只迁移了插件远程同步操作，遗漏了当前远端工作区提示，
-  // 用户无法确认插件列表实际对应的是哪个远程目标。
+  // When the settings page was reconstructed, only the plug-in remote synchronization operation was migrated, and the current remote workspace prompt was omitted.
+  // The user cannot confirm which remote target the plug-in list actually corresponds to.
   const remotePluginSyncTargetLabel = connectedRemoteSyncTarget
     ? formatRemoteSkillSyncTarget(connectedRemoteSyncTarget, target?.workspacePath ?? "")
     : "";
@@ -378,7 +380,7 @@ function PluginList({
     [pluginManagementService, refreshAfterPluginChange, updatePlugin],
   );
   const selectedPlugin = plugins.find((plugin) => plugin.id === selectedPluginId) ?? null;
-  // 插件自身 warning 诊断（如声明的技能路径扫描为空）：详情高级区展示，避免静默失败。
+  // Plug-in's own warning diagnosis (for example, the declared skill path scan is empty): Details are displayed in the advanced area to avoid silent failure.
   const pluginWarningsForSelected = selectedPlugin
     ? pluginDiagnostics.filter(
         (diagnostic) =>
@@ -425,7 +427,7 @@ function PluginList({
       plugin,
       pluginOptionsDrafts[plugin.id] ?? {},
     );
-    // 没有显式修改时不写入空的 Workspace 配置，避免无操作保存制造配置足迹。
+    // Empty Workspace configurations are not written when there are no explicit modifications to avoid saving manufacturing configuration footprints without operations.
     if (Object.keys(options).length === 0 && clearOptionKeys.length === 0) return;
     const configured = await configurePlugin(
       plugin.id,
@@ -434,7 +436,7 @@ function PluginList({
       configScope,
       clearOptionKeys,
     );
-    // 保存失败时保留用户输入和敏感字段清除意图，避免 RPC 错误后 UI 看起来像已提交。
+    // Preserve user input and sensitive fields clear intent when save fails to avoid UI looking like submitted after RPC error.
     if (!configured) return;
     setPluginOptionsDrafts((current) => {
       const next = { ...current };
@@ -667,8 +669,8 @@ function PluginList({
   if (selectedPlugin && selectedStoreItem && targetServiceResolution.rpcReady) {
     const pluginBreadcrumbLabel = resolvePluginDisplayName(selectedStoreItem, locale);
     const pluginsBreadcrumbLabel = intl.formatMessage({ id: "settings.plugins.title" });
-    // Plugin 不打开仅含管理字段的简化弹窗：那会与插件商店详情形成两套内容模型，
-    // 导致介绍、Hero、示例提示词与能力清单缺失。这里直接复用权威商店详情页，只注入已安装态高级配置。
+    // Plugin does not open a simplified pop-up window with only management fields: that would form two sets of content models with the plug-in store details,
+    // As a result, the introduction, hero, example prompt words and ability list are missing. The authoritative store details page is directly reused here, and only the installed advanced configuration is injected.
     return (
       <section className="space-y-5">
         <SettingsBreadcrumbReporter
@@ -983,8 +985,8 @@ export function PluginsSection({
         (tab) => workspaceKey(tab) === (activeWorkspaceIdentity?.trim() || activeWorkspacePath),
       )
     ) {
-      // 启动恢复可能先恢复 activeWorkspacePath，再异步补齐 tabs；此时不能把
-      // Workspace 配置范围误显示成不可用，否则用户无法读取/修改项目配置。
+      // When starting recovery, it is possible to restore activeWorkspacePath first, and then complete tabs asynchronously; this cannot be done at this time.
+      // The Workspace configuration scope is incorrectly displayed as unavailable, otherwise users cannot read/modify the project configuration.
       scopedTabs.push({
         id: `__active_workspace__:${activeWorkspaceIdentity?.trim() || activeWorkspacePath}`,
         kind: "workspace",
@@ -1042,8 +1044,8 @@ export function PluginsSection({
   }, [selectedScopeKey, workspaceTabs]);
   const openPluginStoreForSelectedScope = useCallback(
     (_returnScopeKey?: string, intent?: "add-marketplace") => {
-      // Workspace 是已安装 Plugin 的配置视图，不提供 Marketplace 入口；市场只在 User
-      // 视图中负责 package/cache 生命周期。
+      // Workspace is the configuration view of installed Plugin and does not provide Marketplace entrance; the market is only available under User
+      // The view is responsible for the package/cache life cycle.
       if (selectedScope.kind !== "user") return;
       onOpenPluginStore("user", intent);
     },
@@ -1055,8 +1057,8 @@ export function PluginsSection({
   const effectiveMcpWorkspace = workspaceTabs.find(
     (tab) => workspaceKey(tab) === effectiveMcpScopeKey,
   );
-  // 编辑器锁定的 Workspace 断连后，回退 preferredHost 会把保存请求发到
-  // 另一个项目。失效当帧先移除写入目标，随后 effect 关闭编辑器，避免配置写错位置。
+  // After the editor-locked Workspace is disconnected, the fallback preferredHost will send the save request to
+  // Another project. When the frame fails, the write target is first removed, and then the effect closes the editor to avoid configuring the wrong location.
   const mcpEditorWorkspaceMissing = Boolean(
     mcpEditorOpen && mcpFormScopeKey && mcpFormScopeKey !== "user" && !effectiveMcpWorkspace,
   );
@@ -1093,8 +1095,8 @@ export function PluginsSection({
       pickedScopeKey !== "user" &&
       !workspaceTabs.some((tab) => workspaceKey(tab) === pickedScopeKey)
     ) {
-      // 市场返回记录的是具体 workspace identity；目标已关闭或断连时，
-      // 静默选中 User 会让用户误以为 Workspace 配置仍在展示，因此提示并显式切换。
+      // The market return records the specific workspace identity; when the target is closed or disconnected,
+      // Silently selecting User will make the user mistakenly think that the Workspace configuration is still displayed, so prompt and explicitly switch.
       setPickedScopeKey("user");
       toast(
         intl.formatMessage({

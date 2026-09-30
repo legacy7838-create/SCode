@@ -25,7 +25,10 @@ function clonePreference(
   };
 }
 
-/** Browser 显示边界：普通 human tab 持久化偏好，Agent popup 使用独立默认 viewport。 */
+/**
+ * Browser display bounds: a regular human tab persists its preference, while the Agent popup uses a
+ * separate default viewport.
+ */
 export function HumanBrowserView(props: HumanBrowserViewProps): React.JSX.Element {
   const { agentOpened, ...unifiedProps } = props;
   const { loading, settings, update } = useSettings();
@@ -52,7 +55,7 @@ export function HumanBrowserView(props: HumanBrowserViewProps): React.JSX.Elemen
     void updateRef
       .current({ embeddedBrowserViewportPreference: clonePreference(preference) })
       .catch((error) => {
-        logger.warn("[browser] 保存人类浏览器显示偏好失败", {
+        logger.warn("[browser] failed to save human browser display preference", {
           error: error instanceof Error ? error.message : String(error),
         });
       });
@@ -72,7 +75,7 @@ export function HumanBrowserView(props: HumanBrowserViewProps): React.JSX.Elemen
       pendingPreferenceRef.current = clonePreference(preference);
       if (source === "viewport") {
         clearPendingWrite();
-        // resize handle 每帧都会产生 CSS viewport；只合并 settings IO，不改变 guest 实时更新。
+        // resize handle generates CSS viewport every frame; only merges settings IO, does not change guest real-time update.
         writeTimerRef.current = window.setTimeout(() => {
           writeTimerRef.current = null;
           const pendingPreference = pendingPreferenceRef.current;

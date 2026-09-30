@@ -54,17 +54,17 @@ function createLocalClaimToken(): string {
 }
 
 /**
- * 广播服务 Node 实现 —— 运行在 host process 中
+ * Node implementation of the broadcast service — runs in the host process
  *
- * send() 时：
- *   1. 触发本地 emitter（本窗口的 Renderer 通过 RPC event 收到）
- *   2. 通过 parentPort 发给 main 进程（由 BroadcastHub 中转给其他窗口）
+ * On send():
+ *   1. Fires the local emitter (this window's Renderer receives it through an RPC event)
+ *   2. Sends it to the main process via parentPort (BroadcastHub relays it to the other windows)
  *
- * 收到 main 转发的广播时：
- *   触发本地 emitter → Renderer 通过 RPC event 收到
+ * When a broadcast forwarded by main arrives:
+ *   Fires the local emitter → the Renderer receives it through an RPC event
  *
- * @param parentPort - Electron host process 的 parentPort（Electron.ParentPort）
- *                     传 null 表示无跨窗口能力（如 web server 模式）
+ * @param parentPort - The host process's parentPort (Electron.ParentPort)
+ *                     Passing null means no cross-window capability (e.g. web server mode)
  */
 export function createBroadcastService(
   parentPort: {
@@ -97,11 +97,11 @@ export function createBroadcastService(
     try {
       parentPort.postMessage({ type, key: lease.key, claimToken: lease.token });
     } catch {
-      // host 正在退出时允许失败；Main 会在 unregister 时回收未 commit reservation。
+      // Failure is allowed while the host is exiting; Main will recycle uncommitted reservations when unregistering.
     }
   };
 
-  // 监听 main 进程转发的广播和跨窗口 claim 结果。
+  // Listen to the broadcast and cross-window claim results forwarded by the main process.
   if (parentPort) {
     parentPort.on("message", (e: { data: unknown }) => {
       const broadcastResult = hostBroadcastEnvelopeSchema.safeParse(e.data);
@@ -123,8 +123,8 @@ export function createBroadcastService(
       if (pending.cleanupTimeout) {
         clearTimeout(pending.cleanupTimeout);
       }
-      // 请求已超时但 Main 稍后授予 reservation 时，必须用原 key/token 主动释放；
-      // 否则已经没有组件持有该 lease，只能等 TTL 才能让其他窗口继续争抢。
+      // If the request has timed out but Main later grants the reservation, the original key/token must be used to actively release it;
+      // Otherwise, no component holds the lease, and we have to wait for the TTL before other windows can continue to compete.
       if (pending.timedOut) {
         if (claimResult.data.status === "acquired") {
           postClaimControl(HostResponseTypes.BroadcastClaimRelease, {
@@ -182,8 +182,8 @@ export function createBroadcastService(
 
     const requestId = createClaimRequestId();
     return new Promise<BroadcastClaimAcquireResult>((resolve) => {
-      // claim 超时不能乐观播放；Main 可能已经把同一 key 授予另一窗口。
-      // 迟到的 acquired 结果会在消息处理器中按 token 主动 release。
+      // Claim timeouts cannot be played optimistically; Main may have already granted the same key to another window.
+      // Late acquired results will be actively released according to token in the message processor.
       const timeout = setTimeout(() => {
         const pending = pendingClaims.get(requestId);
         if (pending) {
@@ -242,9 +242,9 @@ export function createBroadcastService(
   return {
     async send(message: BroadcastMessage): Promise<void> {
       const validatedMessage = broadcastMessageSchema.parse(message);
-      // 1. 通知本窗口的 Renderer
+      // 1. Notify the Renderer of this window
       emitter.fire(validatedMessage);
-      // 2. 发给 main 进程做跨窗口中转
+      // 2. Send to main process for cross-window transfer
       if (parentPort) {
         parentPort.postMessage({ type: HostResponseTypes.Broadcast, message: validatedMessage });
       }

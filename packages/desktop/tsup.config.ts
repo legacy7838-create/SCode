@@ -5,14 +5,14 @@ import { pathToFileURL } from "node:url";
 import { defineConfig } from "tsup";
 import { getBuildMetadata } from "./scripts/build-metadata.mjs";
 import { resolveDesktopProductFlavor } from "./scripts/desktop-product-identity.mjs";
-// tsup 会先打包配置文件；动态加载构建工具，避免其 import.meta.dirname 被重定位到 desktop。
+// tsup will package the configuration file first; dynamically load the build tool to prevent its import.meta.dirname from being relocated to the desktop.
 const { loadBuiltinProviderConfig } = await import(
   pathToFileURL(resolve(import.meta.dirname, "../../scripts/builtin-provider-config.mjs")).href
 );
 
 const buildMetadata = getBuildMetadata();
 
-// 手动加载 .env 文件，tsup 不像 Vite 会自动读取 .env.*；这些文件只提供链接常量。
+// Manually load .env files, tsup does not automatically read .env.* unlike Vite; these files only provide link constants.
 function loadEnvFiles(): Record<string, string> {
   const vars: Record<string, string> = {};
   const files = ["../../.env", "../../.env.local"];
@@ -29,11 +29,11 @@ function loadEnvFiles(): Record<string, string> {
       }
     }
   }
-  // 真实环境变量优先级最高
+  // Real environment variables have the highest priority
   if (process.env.ZCODE_ENV) vars.ZCODE_ENV = process.env.ZCODE_ENV;
   if (process.env.ZCODE_BASE_URL) vars.ZCODE_BASE_URL = process.env.ZCODE_BASE_URL;
   if (process.env.VITE_ZCODE_BASE_URL) vars.VITE_ZCODE_BASE_URL = process.env.VITE_ZCODE_BASE_URL;
-  // OAuth origin/client_id 由 host runtime 读取；这里保留覆盖入口，方便开发构建时观察统一 env 来源。
+  // OAuth origin/client_id is read by the host runtime; the coverage entry is reserved here to facilitate observation of the unified env source during development and build.
   if (process.env.ZAI_OAUTH_CLIENT_ID) vars.ZAI_OAUTH_CLIENT_ID = process.env.ZAI_OAUTH_CLIENT_ID;
   if (process.env.ZAI_OAUTH_ORIGIN) vars.ZAI_OAUTH_ORIGIN = process.env.ZAI_OAUTH_ORIGIN;
   if (process.env.ZAI_BUSINESS_BASE_URL) {
@@ -60,7 +60,7 @@ function loadEnvFiles(): Record<string, string> {
 
 const env = loadEnvFiles();
 const { environment: zcodeEnv } = await loadBuiltinProviderConfig();
-// 安装包身份与后端环境分轴：ZCODE_PREVIEW_IDENTITY=1 让生产后端的构建仍以 ZCode Preview 身份打包运行。
+// Separate the installation package identity from the backend environment: ZCODE_PREVIEW_IDENTITY=1 allows the production backend build to still be packaged and run as ZCode Preview.
 const zcodeProductFlavor = resolveDesktopProductFlavor({ ...process.env, ZCODE_ENV: zcodeEnv });
 console.log(`[tsup] ZCODE_ENV=${zcodeEnv} ZCODE_PRODUCT_FLAVOR=${zcodeProductFlavor}`);
 
@@ -70,13 +70,13 @@ export function resolveDesktopTsupBundleSecurityOptions(
   const isProduction = runtimeEnv.NODE_ENV === "production";
   const isE2ECoverageBuild = runtimeEnv.ZCODE_E2E_COVERAGE === "1";
   return {
-    // 发布包的 main/host/preload 之前没有随 NODE_ENV=production 压缩，
-    // 产物保留大量源码注释与格式化换行，增加逆向和内部实现暴露风险。
+    // The main/host/preload of the release package was not compressed with NODE_ENV=production before.
+    // The product retains a large number of source code comments and formatted line breaks, increasing the risk of reverse engineering and internal implementation exposure.
     keepNames: isProduction && !isE2ECoverageBuild,
     minify: isProduction && !isE2ECoverageBuild,
-    // 生产包不随包发布 sourcemap，继续生成 sourceMappingURL 会暴露无效映射路径。
-    // E2E coverage build 只会进入隔离 app cache，需要保留 map 才能把 V8 bundle range
-    // 还原到 TypeScript 源码；正常发布构建仍保持无 sourcemap。
+    // The production package does not publish the sourcemap with the package, and continuing to generate sourceMappingURL will expose invalid mapping paths.
+    // E2E coverage build will only enter the isolated app cache, and you need to retain the map to put the V8 bundle range
+    // Revert to TypeScript source; normal release builds remain sourcemap-less.
     sourcemap: isE2ECoverageBuild || !isProduction,
   };
 }
@@ -87,8 +87,8 @@ type DesktopTsupEsbuildOptions = {
 };
 
 export function applyDesktopTsupEsbuildSecurityOptions(options: DesktopTsupEsbuildOptions) {
-  // 生产压缩时 esbuild 默认可能保留 license/legal 注释，
-  // 发布包不应在 main/host/preload 里留下源码注释或 sourcemap 入口注释。
+  // When producing compression, esbuild may retain license/legal comments by default.
+  // Release packages should not leave source code comments or sourcemap entry comments in main/host/preload.
   options.legalComments = "none";
 }
 
@@ -102,13 +102,13 @@ function createSharedDefines() {
     __ZCODE_ENV__: JSON.stringify(zcodeEnv),
     __ZCODE_ENDPOINT_ENV__: JSON.stringify(pickProductEndpointEnv(env)),
     __ZCODE_PRODUCT_FLAVOR__: JSON.stringify(zcodeProductFlavor),
-    // Computer Use Helper build identity — helperInstaller 读它决定下载哪个 Helper bundle。
-    // 缺失时 installer 抛 "Packaged ZCode is missing its embedded Computer Use Helper build identity"。
-    // CI 构建时通过 ZCODE_CUA_HELPER_BUILD_ID env 注入；dev 为空串走兜底（dev helper 不走下载）。
+    // Computer Use Helper build identity — read by helperInstaller to determine which Helper bundle to download.
+    // When missing, the installer throws "Packaged ZCode is missing its embedded Computer Use Helper build identity".
+    // When CI is built, it is injected through ZCODE_CUA_HELPER_BUILD_ID env; dev is an empty string to avoid downloading (the dev helper does not download).
     __ZCODE_CUA_HELPER_BUILD_ID__: JSON.stringify(
       process.env.ZCODE_CUA_HELPER_BUILD_ID?.trim() ?? "",
     ),
-    // 客户端只有一个 CDN 配置，与发布端 OSS 目标列表分离。
+    // There is only one CDN configuration on the client side, separate from the OSS target list on the publisher side.
     __ZCODE_CDN_BASE_URL__: JSON.stringify(env.ZCODE_CDN_BASE_URL?.trim() || ""),
   };
 }
@@ -120,17 +120,17 @@ const desktopNodeRuntimeExternals = [
   "undici",
   "@larksuiteoapi/node-sdk",
   "yaml",
-  // node-forge 内部用动态 require("crypto")，内联进 ESM main/host bundle 后 Electron 会报
-  // Dynamic require of "crypto" is not supported。和 undici 同样保留为运行时外部依赖。
+  // Node-forge uses dynamic require("crypto") internally. After inlining into the ESM main/host bundle, Electron will report
+  // Dynamic require of "crypto" is not supported. and undici are also reserved as runtime external dependencies.
   "node-forge",
-  // ZIP 解包器内部依赖 CommonJS require("fs")，不能内联到 ESM main/host 产物。
+  // The ZIP unpacker internally relies on CommonJS require("fs") and cannot be inlined into the ESM main/host product.
   "yauzl",
 ];
 
 function createDevReadyMarkerHook(target: "main" | "host" | "preload"): string {
-  // CLI 级 --onSuccess 在多 config watch 模式下会被每个子构建分别触发。
-  // 之前 preload 先成功时就提前写入 ready 标记，Electron 仍会在 main/host 未完成时启动。
-  // 这里改成每个 config 自己在成功后写独立 marker，让 dev 启动脚本能精确等待全部构建完成。
+  // CLI-level --onSuccess will be triggered separately for each sub-build in multi-config watch mode.
+  // Previously, when preload succeeded, the ready mark was written in advance, and Electron would still start before main/host was completed.
+  // Here, each config is changed to write its own independent marker after success, so that the dev startup script can accurately wait for all builds to be completed.
   return `node scripts/write-dev-ready-marker.mjs ${target}`;
 }
 
@@ -141,16 +141,16 @@ export default defineConfig([
       "main/index": "src/main/index.ts",
       "main/browserWebmRecorder": "src/main/browserView/electronBrowserWebmRecorder.ts",
       "main/zcodeDataSizeWorker": "src/main/zcodeDataSizeWorker.ts",
-      // 资源管理器「存储」tab 的扫描 Worker：main 持有 StorageService，遍历放独立线程，供 new Worker(new URL()) 解析。
+      // Scanning of the "Storage" tab of the resource manager Worker: main holds the StorageService and traverses it in an independent thread for new Worker (new URL()) to parse.
       "main/storageScanWorker": "src/main/storageScanWorker.ts",
     },
     outDir: "out",
     format: "esm",
     platform: "node",
     target: "node22",
-    // undici 如果被 main ESM bundle 直接内联，运行时会落到它内部的 CommonJS require("assert")，
-    // Electron 加载 main 产物时会报 Dynamic require of "assert" is not supported。
-    // desktop 保持 undici 为外部依赖，remote 单文件 bundle 再单独内联。
+    // If undici is directly inlined by the main ESM bundle, the runtime will fall into CommonJS require("assert") inside it.
+    // When Electron loads the main product, it will report that Dynamic require of "assert" is not supported.
+    // desktop keeps undici as an external dependency, and the remote single file bundle is inlined separately.
     external: desktopNodeRuntimeExternals,
     noExternal: [
       "@zcode/server",
@@ -158,20 +158,24 @@ export default defineConfig([
       "@zcode/rpc",
       "@zcode/services",
       "@zcode/client",
-      // Provider Refactor 的 workspace 包导出 TypeScript 源码；Electron 生产运行时没有
-      // TS loader，必须随 Desktop bundle 内联，不能留下指向 src/index.ts 的裸包引用。
+      // Provider Refactor's workspace package exports TypeScript source code; Electron production runtime does not
+      // The TS loader must be inlined with the Desktop bundle and cannot leave a bare package reference pointing to src/index.ts.
       "@zcode/provider",
       "@zcode/provider-node",
-      // services 已内联进 main，但其 producer import 曾被保留为裸包引用；
-      // electron-builder 又会排除 node_modules/@zcode，导致安装包启动即 ERR_MODULE_NOT_FOUND。
-      // producer 的 JS broker 必须跟随 services 一起内联，原生 addon 仍只存在于独立 Helper。
+      // services has been inlined into main, but its producer import was retained as a bare package reference;
+      // electron-builder will exclude node_modules/@zcode, causing the installation package to start with ERR_MODULE_NOT_FOUND.
+      // The producer's JS broker must be inlined along with the services, and the native addon still only exists in the independent Helper.
       "@zcode/zcode-cua",
+      // The Rust native ports are only a JS wrapper around a compiled `.node` binary. The wrapper must stay inlined;
+      // externalizing it would leave a bare `@zcode/rust/git` import pointing at the package's TypeScript sources.
+      // The binary itself is resolved at runtime by `loadNative()` from the package directory.
+      "@zcode/rust",
     ],
-    // OTLP 端点与鉴权只在运行时读取；构建环境中的凭据不能写进公开安装包。
+    // OTLP endpoints and authentication are only read at runtime; credentials from the build environment cannot be written into the public installation package.
     define: createSharedDefines(),
-    // main/host 同时 watch 且共享 out 根目录时，默认 chunk 命名会互相覆盖，
-    // 可能让 main 的 import 指向被 host 刚重写的 chunk，触发“缺少命名导出”的偶发启动报错。
-    // 这里按目标分目录输出 chunk，确保并发构建下产物隔离。
+    // When main/host is watched at the same time and shares the out root directory, the default chunk naming will overwrite each other.
+    // It is possible to make the import of main point to the chunk just rewritten by the host, triggering the occasional startup error of "missing named export".
+    // Here, chunks are output according to target directories to ensure product isolation under concurrent builds.
     esbuildOptions(options) {
       applyDesktopTsupEsbuildSecurityOptions(options);
       options.chunkNames = "main/chunk-[hash]";
@@ -213,8 +217,8 @@ export default defineConfig([
     format: "esm",
     platform: "node",
     target: "node22",
-    // host 与 main 共用同一套 services 图，继续内联 undici 会在 Electron ESM runtime 里触发同样的 dynamic require 崩溃。
-    // 这里同样保留为外部依赖，避免 desktop 开发态和打包态 host 进程启动失败。
+    // host and main share the same set of services graph, and continuing to inline undici will trigger the same dynamic require crash in the Electron ESM runtime.
+    // This is also retained as an external dependency to avoid failure to start the desktop development state and packaged host process.
     external: desktopNodeRuntimeExternals,
     noExternal: [
       "@zcode/server",
@@ -225,9 +229,12 @@ export default defineConfig([
       "@zcode/provider",
       "@zcode/provider-node",
       "@zcode/zcode-cua",
+      // Same as main: keep the native-port wrapper inlined so `loadNative()` can resolve the `.node` binary
+      // through `@zcode/rust/package.json` instead of a bare TypeScript package import.
+      "@zcode/rust",
     ],
     define: createSharedDefines(),
-    // 与 main 保持一致的 chunk 隔离策略，避免 host/main 产物相互覆盖。
+    // Maintain a consistent chunk isolation strategy with main to avoid host/main products from overwriting each other.
     esbuildOptions(options) {
       applyDesktopTsupEsbuildSecurityOptions(options);
       options.chunkNames = "host/chunk-[hash]";
@@ -242,8 +249,8 @@ export default defineConfig([
     format: "esm",
     platform: "node",
     target: "node22",
-    // 与 host 同构：常驻 cron scheduler 进程复用 @zcode/services（tasks-index + cron），
-    // 同样保留 undici 等为外部依赖，避免 Electron ESM runtime 的 dynamic require 崩溃。
+    // Isomorphic with host: resident cron scheduler process reuse @zcode/services (tasks-index + cron),
+    // Also retain undici and others as external dependencies to avoid the dynamic require crash of Electron ESM runtime.
     external: desktopNodeRuntimeExternals,
     noExternal: [
       "@zcode/server",
@@ -254,6 +261,8 @@ export default defineConfig([
       "@zcode/provider",
       "@zcode/provider-node",
       "@zcode/zcode-cua",
+      // Same as main: the resident scheduler reuses @zcode/services, which loads the Rust ports at startup.
+      "@zcode/rust",
     ],
     define: createSharedDefines(),
     esbuildOptions(options) {

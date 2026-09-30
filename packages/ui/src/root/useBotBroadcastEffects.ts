@@ -28,9 +28,9 @@ export function syncBotTaskConfigOptionsToStore(params: {
   taskId: string;
   configOptions: ZCodeConfigOption[];
 }) {
-  // Bugfix: Bot /mode 不经过 ChatInputToolbar/useTaskStreamEvents。
-  // setTaskConfigOptions 会按 activeTaskId 决定是否同步到 workspace configOptions，
-  // 当前 mode 再由 configOptions 派生，避免 UI 维护第二份模式状态。
+  // Bugfix: Bot /mode does not pass ChatInputToolbar/useTaskStreamEvents.
+  // setTaskConfigOptions will determine whether to synchronize to workspace configOptions based on activeTaskId.
+  // The current mode is then derived from configOptions to prevent the UI from maintaining a second copy of the mode state.
   params.zcodeSessionStore.setTaskConfigOptions(
     params.workspacePath,
     params.taskId,
@@ -43,9 +43,9 @@ export function shouldRefreshBotTaskList(
   event: string,
   hasTaskMeta: boolean,
 ): boolean {
-  // Bugfix: Bot 新建任务时会随 created 广播携带 task meta，当前实现因此跳过整表刷新。
-  // 但如果对应 workspace 的 task query cache 还没建立，增量写入没有落点，侧栏列表就不会主动拉到这个新任务。
-  // created 事件频率低，保留一次版本 bump 作为兜底；其它高频事件仍优先走增量缓存更新，避免列表闪烁回归。
+  // Bugfix: When Bot creates a new task, it will carry task meta with the created broadcast. The current implementation therefore skips refreshing the entire table.
+  // However, if the task query cache corresponding to the workspace has not yet been established and there is no landing point for incremental writing, the sidebar list will not actively pull in this new task.
+  // The frequency of the created event is low, and a version bump is retained as a backup; other high-frequency events are still prioritized for incremental cache updates to avoid list flickering and regression.
   if (event === "created") {
     return true;
   }
@@ -64,8 +64,8 @@ export function shouldMirrorBotTaskStreamToStore(params: {
     return true;
   }
 
-  // Bugfix: 远端 Bot task 的 stream 来自 bot runtime host，不一定会被当前 ChatView 的 ZCode Agent stream 订阅收到。
-  // 之前 active task 直接跳过 bot broadcast，导致消息内容要切换任务重新拉 snapshot 后才显示。
+  // Bugfix: The stream of the remote Bot task comes from the bot runtime host and may not be received by the ZCode Agent stream subscription of the current ChatView.
+  // Previously, the active task directly skipped the bot broadcast, causing the message content to be displayed after switching tasks and pulling the snapshot again.
   return Boolean(params.workspaceIdentity?.trim());
 }
 
@@ -95,10 +95,10 @@ export function useBotBroadcastEffects(
           return;
         }
 
-        // Bot task 在后台运行或远端 runtime 中运行时，本窗口不一定订阅到同一条流。
-        // 消息正文不再回放进 renderer 本地 store——bot 发的 prompt
-        // 走 v4 命令后，消息由 conversation 投影（订阅该 session 的 pane）自然呈现；
-        // 这里只同步运行态/权限/用量等 A 区状态，供侧栏与弹窗消费。
+        // When the Bot task is running in the background or in the remote runtime, this window may not necessarily be subscribed to the same stream.
+        // The message body is no longer played back into the renderer local store - the prompt sent by the bot
+        // After running the v4 command, the message is naturally presented by the conversation projection (subscribing to the pane of the session);
+        // Here, only the status of Area A such as running status/permissions/usage are synchronized for sidebar and pop-up window consumption.
         const event = stream.event;
         switch (event.type) {
           case "agent_message_chunk":
@@ -184,8 +184,8 @@ export function useBotBroadcastEffects(
               );
               const previousUsage =
                 workspaceState.taskRuntimeByTaskId[stream.taskId]?.usage ?? null;
-              // taskMessagesByTaskId 已随消息回放一并退役，估算用不到最近一条
-              // 用户输入时走 fallback 估算（该分支只影响 usage 弹窗的比例展示兜底）。
+              // taskMessagesByTaskId has been retired along with message playback. It is estimated that the latest one will not be used.
+              // Use fallback estimation when the user inputs (this branch only affects the proportional display of the usage pop-up window).
               const incomingUsage = {
                 size: event.size,
                 used: event.used,
@@ -239,8 +239,8 @@ export function useBotBroadcastEffects(
       if (!refresh) {
         return;
       }
-      // Bots 在 host 侧创建/推进 task，不会挂载聊天视图里的 stream 订阅。
-      // 因此除了刷新列表，还要同步 task 运行态；否则 sidebar 能看到新 task，却不会显示进行中状态。
+      // Bots create/advance tasks on the host side and will not mount the stream subscription in the chat view.
+      // Therefore, in addition to refreshing the list, the task running status must also be synchronized; otherwise, the sidebar can see the new task, but will not display the in-progress status.
       const zcodeSessionStore = useZCodeSessionStore.getState();
       const workspaceState = zcodeSessionStore.getWorkspaceState(
         refresh.workspacePath,
@@ -249,9 +249,9 @@ export function useBotBroadcastEffects(
       const provider = refresh.task?.provider ?? refresh.provider;
       const shouldSyncVisibleTaskConfig = workspaceState.activeTaskId === refresh.taskId;
       if (provider && shouldSyncVisibleTaskConfig) {
-        // Bugfix: /model、/mode 可以从第三方 Bot 修改当前 task 的真实 ZCode Agent 状态。
-        // 这些操作不经过 ChatInputToolbar，本地 store 以前不会同步 provider/configOptions，
-        // 导致 Bot 回复已切换但 UI 下拉仍显示旧状态。
+        // Bugfix: /model, /mode can modify the real ZCode Agent status of the current task from a third-party Bot.
+        // These operations do not go through the ChatInputToolbar, and the local store will not synchronize provider/configOptions before.
+        // Causes the Bot reply to be toggled but the UI dropdown still shows the old state.
         zcodeSessionStore.bindRuntimeProvider(
           refresh.workspacePath,
           provider,
@@ -275,9 +275,9 @@ export function useBotBroadcastEffects(
         refresh.workspaceIdentity,
       );
       if (refresh.task) {
-        // Bugfix: Bot 状态变化以前靠 bumpTaskListVersion 整表重查。
-        // prompt_sent / completed 等连续事件会让 sidebar queryKey 反复换新，旧缓存短暂失效导致任务列表闪烁。
-        // 这里有 task meta 时直接增量写入 task/query cache，只在缺少 meta 的旧广播上保留整表刷新兜底。
+        // Bugfix: Before Bot status changes, rely on bumpTaskListVersion to recheck the entire table.
+        // Continuous events such as prompt_sent / completed will cause the sidebar queryKey to be updated repeatedly, and the old cache will temporarily become invalid, causing the task list to flicker.
+        // When there is task meta here, it is written incrementally to the task/query cache directly, and only the old broadcast that lacks meta is retained for the entire table to be refreshed.
         const membership = { pinned: false, archived: false };
         if (refresh.event === "created") {
           insertTaskIntoTaskCaches({
@@ -296,9 +296,9 @@ export function useBotBroadcastEffects(
           });
         }
       }
-      // prompt_sent 不再向 renderer 本地补写 user message——bot 发的
-      // prompt 经 v4 命令进入 session 事件日志，订阅该 session 的 conversation 投影
-      // 会自然出现该消息；本地拼装面（zcodeChatMessages）随旧 ChatView 退役。
+      // prompt_sent no longer writes user messages locally to the renderer—sent by the bot
+      // prompt enters the session event log via the v4 command and subscribes to the conversation projection of the session
+      // This message will appear naturally; the local assembly surface (zcodeChatMessages) is retired with the old ChatView.
       if (refresh.event === "permission_request" && refresh.permissionRequest) {
         zcodeSessionStore.setTaskPermissionRequest(
           refresh.workspacePath,
@@ -314,8 +314,8 @@ export function useBotBroadcastEffects(
           refresh.workspaceIdentity,
         );
       } else if (refresh.event === "elicitation_request" && refresh.elicitationRequest) {
-        // Bugfix: Bot channel 消费 AskUserQuestion 后，下一题只会先到 Bot runtime。
-        // 当前 UI 窗口不一定有同一条 ZCode Agent stream 订阅，必须把新的 elicitation_request 显式写回 store。
+        // Bugfix: After Bot channel consumes AskUserQuestion, the next question will only arrive in Bot runtime first.
+        // The current UI window does not necessarily have the same ZCode Agent stream subscription, and the new elicitation_request must be explicitly written back to the store.
         zcodeSessionStore.setTaskElicitationRequest(
           refresh.workspacePath,
           refresh.taskId,
@@ -323,8 +323,8 @@ export function useBotBroadcastEffects(
           refresh.workspaceIdentity,
         );
       } else if (refresh.event === "elicitation_resolved" && refresh.requestId) {
-        // Bugfix: Bot 代用户提交 AskUserQuestion 时，当前 UI 窗口不一定能收到 ZCode Agent stream 的
-        // elicitation_response。通过 bots:task 明确同步 requestId 出队，避免问答弹窗一直挂着。
+        // Bugfix: When Bot submits AskUserQuestion on behalf of the user, the current UI window may not receive the ZCode Agent stream.
+        // elicitation_response. Explicitly synchronize the requestId out of the queue through bots:task to avoid the Q&A pop-up window from hanging all the time.
         zcodeSessionStore.removeTaskElicitationRequest(
           refresh.workspacePath,
           refresh.taskId,

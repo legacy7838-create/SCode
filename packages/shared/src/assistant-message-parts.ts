@@ -19,8 +19,8 @@ export function appendAssistantMessagePart(
   const currentParts = parts ?? [];
   const lastPart = currentParts[currentParts.length - 1];
 
-  // UI latestPart 和第三方完成消息都依赖消息 part 边界。
-  // 连续文本 chunk 必须合并成同一个 content/thought part，否则第三方会按 token 边界误判最新正文。
+  // Both UI latestPart and third-party completion messages rely on message part boundaries.
+  // Continuous text chunks must be merged into the same content/thought part, otherwise the third party will misjudge the latest text based on token boundaries.
   if (
     lastPart &&
     lastPart.type === nextPart.type &&

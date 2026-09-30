@@ -22,8 +22,8 @@ export async function waitForServerStopped(
     const stopped =
       persisted.status?.state === "stopped" || persisted.status?.state === "uninstalled";
     const freshSnapshot = persisted.status !== null && persisted.status.updatedAt > minUpdatedAt;
-    // stopped 落盘早于 lock.release，陈旧的 stopped 快照不能作为立即注册新服务的依据。
-    // 迁移必须同时确认新快照和锁已释放；只有离线卸载且没有任何快照时才允许仅凭缺锁继续。
+    // The stopped disk was released earlier than lock.release, and the stale stopped snapshot cannot be used as a basis for immediate registration of new services.
+    // The migration must confirm both the new snapshot and the lock being released; only an offline uninstall without any snapshots is allowed to continue with the missing lock alone.
     if (
       lockReleased &&
       ((stopped && (!requireFreshSnapshot || freshSnapshot)) ||

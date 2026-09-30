@@ -1,6 +1,7 @@
 /**
- * 卷探测：用 stat().dev 识别物理卷，向上遍历找到挂载点，再 statfs 取容量。
- * 任何一步失败都返回 null（UI 只展示占用、不展示容量），不抛错。
+ * Volume probe: identifies a physical volume via stat().dev, walks upward to find the mount point,
+ * then uses statfs to read its capacity.
+ * Any step that fails returns null (the UI only shows usage, never capacity) instead of throwing.
  */
 import { stat, statfs } from "node:fs/promises";
 import { dirname } from "node:path";
@@ -11,7 +12,7 @@ async function probeStorageVolume(path: string): Promise<StorageVolume | null> {
   try {
     const deviceId = (await stat(path)).dev;
     let mountPoint = path;
-    // 逐级向上：父目录仍在同一 dev 上就继续；到根或 dev 变化即为挂载点（Windows 会停在盘符根）。
+    // Go up level by level: continue while the parent directory is still on the same dev; reaching the root or a dev change is the mount point (Windows stops at the drive letter root).
     for (;;) {
       const parent = dirname(mountPoint);
       if (parent === mountPoint) break;

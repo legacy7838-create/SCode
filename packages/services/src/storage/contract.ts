@@ -1,11 +1,13 @@
 /**
- * storage 模块公开契约：资源管理器「存储」tab 使用的服务接口与类型再导出。
- * 只允许从这里 import；实现细节（Worker、fs、catalog 规则）都在模块内部。
+ * Public contract of the storage module: re-exports the service interface and types used by the
+ * resource manager's "Storage" tab.
+ * Importing from here is the only option; implementation details (Worker, fs, catalog rules) stay
+ * inside the module.
  */
 import type { Event } from "@zcode/rpc";
 import type { StorageManagementApi, StorageUsageSnapshot } from "@zcode/shared";
 
-// 数据类型的唯一事实源在 @zcode/shared（renderer 桥与 main 共用）；这里再导出方便 services 内部引用。
+// The single source of truth for data types is in @zcode/shared (shared by renderer bridge and main); re-exported here for convenient use within services.
 export type {
   StorageCategoryId,
   StorageCategoryUsage,
@@ -25,11 +27,12 @@ export type {
 } from "@zcode/shared";
 
 /**
- * 存储服务实例接口。当前由 desktop main 持有一个实例（资源管理器窗口专用），
- * 不再作为 host RPC 服务注册；因此没有 ServiceDescriptor / channel。
+ * The storage service instance interface. Currently desktop main holds a single instance (dedicated
+ * to the resource manager window); it is no longer registered as a host RPC service, so there is
+ * no ServiceDescriptor / channel.
  */
 export interface IStorageService extends StorageManagementApi {
   onScanProgress: Event<StorageUsageSnapshot>;
-  /** 取消进行中的扫描并释放事件源。 */
+  /** Cancels the in-flight scan and releases the event source. */
   dispose(): void;
 }

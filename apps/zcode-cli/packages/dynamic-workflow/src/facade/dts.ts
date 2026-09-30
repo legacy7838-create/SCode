@@ -6,15 +6,15 @@
  * One noun (the actor), one verb
  * (the task). Runtime shims are injected by the runtime layer, never imported.
  *
- * 段式组织：facade 拆成命名段常量，`FACADE_DTS`
- * 与 `SNIPPET_FACADE_DTS` 都由段**拼接**而成——单一事实源，子集绝不手抄。拼接结果对
- * 拆分前的 `FACADE_DTS` 逐字节不变。每段以
- * 单个换行开头结尾，段间拼接自然形成原有的空行分隔。
+ * Sectioned organization: the facade is split into named section constants, and both `FACADE_DTS` and `SNIPPET_FACADE_DTS`
+ * are **assembled** from those sections — a single source of truth, with the subset never hand-copied.
+ * The assembled result is byte-for-byte identical to the `FACADE_DTS` of before the split. Each section
+ * starts and ends with a single newline, so concatenating sections naturally reproduces the original blank-line separation.
  */
 
 export const FACADE_FILE_NAME = "workflow-facade.d.ts";
 
-/** actor 族：Node / AgentPersona / Agent / agent()。snippet 刻意不含。 */
+/** The actor family: Node / AgentPersona / Agent / agent(). Deliberately absent from the snippet. */
 const FACADE_ACTOR_SEGMENT = String.raw`
 /**
  * A node: one task assigned to an actor, producing a typed result.
@@ -65,13 +65,13 @@ declare interface Agent {
 declare function agent(name?: string, persona?: string | AgentPersona): Agent;
 `;
 
-/** 进度叙事：log()。两个 facade 都含。 */
+/** Progress narration: log(). Present in both facades. */
 const FACADE_LOG_SEGMENT = String.raw`
 /** Emit a progress message to the user. */
 declare function log(message: string): void;
 `;
 
-/** 渐进产物：report()。journal 化、run 面板 Results 区；snippet 刻意不含。 */
+/** Incremental artifacts: report(). Journaled, shown in the run panel's Results section; deliberately absent from the snippet. */
 const FACADE_REPORT_SEGMENT = String.raw`
 /**
  * Publish one intermediate result while the run is still going. Like log() it
@@ -104,13 +104,13 @@ declare function report(item: unknown, artifactId?: string): void;
 `;
 
 /**
- * 产物：artifact.*。脚本交给**用户**的产出——
- * 内容成员（`file` / `markdown`）是效应，预置成员（`chart` / `table` / `metrics` / `board`）
- * 是声明。snippet 刻意不含：片段是世界读取 + 纯逻辑的工作台，没有 run 可以往上挂交付物，
- * 所以片段里的 `artifact.file(...)` 得到 TS2304，教删除（与 `agent` / `report` 同姿态）。
+ * Artifacts: artifact.*. What the script hands to the **user** — The content members (`file` / `markdown`) are effects, the preset members (`chart` /
+ * `table` / `metrics` / `board`) are declarations. Deliberately absent from the snippet: a snippet is a
+ * workbench of world reads plus pure logic with no run to hang a deliverable on, so
+ * `artifact.file(...)` in a snippet yields TS2304, teaching deletion (the same stance as for `agent` / `report`).
  *
- * ⚠ 术语：这一段里的 artifact 全是**用户面产物**；引擎内部同名的那个
- * artifact（顶层返回值 / 站点的类型化输出）在 facade 上是 `Node<T>` 的 T，两者不相干。
+ * ⚠ Terminology: every artifact in this section is a **user-facing artifact**; the engine-internal artifact of the same name (the top-level
+ * return value / a site's typed output) is the T of `Node<T>` on the facade, and the two are unrelated.
  */
 const FACADE_ARTIFACT_SEGMENT = String.raw`
 /** A published artifact version: the id it was published under, and which version this call minted. */
@@ -210,10 +210,10 @@ declare const artifact: {
 `;
 
 /**
- * 阶段标注：phase()。展示用的分组标记——
- * 无站点、无 journal 行；lowering 改写成 `__host.enterPhase`，引擎只发一条进入事件
- * 。snippet 刻意不含：片段是世界读取 + 纯逻辑的工作台，不画图，
- * 所以片段里的 `phase()` 得到 TS2304，教删除。
+ * Phase markers: phase(). Grouping markers for presentation —
+ * no site, no journal row; lowering rewrites them into `__host.enterPhase` and the engine emits a single
+ * enter event. Deliberately absent from the snippet: a snippet is a workbench of world reads plus pure logic and
+ * draws no graph, so `phase()` in a snippet yields TS2304, teaching deletion.
  */
 const FACADE_PHASE_SEGMENT = String.raw`
 /**
@@ -227,9 +227,9 @@ const FACADE_PHASE_SEGMENT = String.raw`
  *
  * Name phases for the user, in the language the user is speaking in this session: a short
  * natural phrase saying what the stage accomplishes ("Research each changed file in parallel",
- * "汇总并产出最终报告"). Graph-building vocabulary the user never chose — "fan-out", "gate",
+ * "and produce the final report"). Graph-building vocabulary the user never chose — "fan-out", "gate",
  * "aggregate" — is not a name; the user approves stages by what they do. Say it the way you
- * would tell a colleague what is happening: "确认测试仍然通过", not "执行测试验证任务".
+ * would tell a colleague what is happening: "confirm the tests still pass", not "execute the test verification task".
  *
  * The scope is the rest of the enclosing block: the marker claims every step issued
  * from it to the end of the block it stands in — nested blocks and inlined helper
@@ -256,7 +256,7 @@ const FACADE_PHASE_SEGMENT = String.raw`
 declare function phase(name: string): void;
 `;
 
-/** 世界读取：files.* 与 git.*。两个 facade 都含（snippet 的保真核心）。 */
+/** World reads: files.* and git.*. Present in both facades (the fidelity core of the snippet). */
 const FACADE_WORLD_SEGMENT = String.raw`
 /** One matching line found by files.grep. */
 declare interface GrepMatch {
@@ -366,8 +366,8 @@ declare const git: {
 `;
 
 /**
- * journal 化命令执行：world.run。两个 facade 都含
- * ——snippet 正是测试这些调用的工作台（gate 逻辑在提交前先对真命令跑通）。
+ * Journaled command execution: world.run. Present in both facades
+ * — the snippet is exactly the workbench for exercising these calls (the gate logic is proven against real commands before submit).
  */
 const FACADE_WORLD_RUN_SEGMENT = String.raw`
 /** The outcome of one world.run command, including nonzero exits. */
@@ -405,7 +405,7 @@ declare const world: {
 };
 `;
 
-/** 运行实参：saved workflow 的声明式参数。两个 facade 都含（snippet 里恒为 `{}`）。 */
+/** The runtime arguments: the declarative parameters of a saved workflow. Present in both facades (always `{}` in the snippet). */
 const FACADE_ARGS_SEGMENT = String.raw`
 /**
  * The run's arguments: the values supplied when this workflow was started.
@@ -435,15 +435,15 @@ export const FACADE_DTS =
   FACADE_WORLD_RUN_SEGMENT;
 
 /**
- * snippet（EvalWorkflowSnippet）的 scratch facade：生产 facade 减去 actor 族 / report /
- * artifact / phase。留下的是脚本自己
- * 能单测的那部分：世界读取 + world.run +
- * 纯计算 + log。`agent(...)` 在这份 facade 下是普通的 TS2304（Cannot find name），拒绝发生
- * 在编译期而不是运行期。
+ * The scratch facade of the snippet (EvalWorkflowSnippet): the production facade minus the actor
+ * family / report / artifact / phase. What is left is the part
+ * of the script that can be unit-tested by itself: world reads + world.run +
+ * pure computation + log. `agent(...)` under this facade is an ordinary TS2304
+ * (Cannot find name), so the rejection happens at compile time rather than at runtime.
  *
- * 注入编译器时必须仍以 {@link FACADE_FILE_NAME} 为文件名：facade 身份在五处按声明文件名
- * 判定（registry / sites / facade-misuse / lowering），换名字会让站点收集静默变空——
- * snippet 编译通过却什么都不做。
+ * When injecting it into the compiler it must still use {@link FACADE_FILE_NAME} as the file name: the facade
+ * identity is decided in five places by the declaring file name (registry / sites / facade-misuse / lowering), and
+ * changing the name makes the site collection silently come up empty — the snippet compiles and then does nothing.
  */
 export const SNIPPET_FACADE_DTS =
   FACADE_ARGS_SEGMENT + FACADE_LOG_SEGMENT + FACADE_WORLD_SEGMENT + FACADE_WORLD_RUN_SEGMENT;

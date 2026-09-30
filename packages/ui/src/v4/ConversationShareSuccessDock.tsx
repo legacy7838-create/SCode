@@ -33,11 +33,11 @@ export function ConversationShareSuccessDock({
   onCopy,
   onDismiss,
 }: ConversationShareSuccessDockProps) {
-  const { intl, locale } = useZCodeIntl();
+  const { intl } = useZCodeIntl();
 
   return (
-    // 分享 dock 曾在同一输入区额外叠加 popover ring、阴影和固定宽度，
-    // 切换时会产生不必要的层级光晕；这里只继承普通 Composer 的基础输入 surface。
+    // Share dock used to overlay popover ring, shadow and fixed width in the same input area.
+    // Unnecessary layer halo will be generated when switching; only the basic input surface of ordinary Composer is inherited here.
     <section
       data-conversation-share-keep-open="success-dock"
       data-testid="conversation-share-success-dock"
@@ -103,10 +103,10 @@ export function ConversationShareSuccessDock({
                   {
                     turnOrdinal: issue.turnOrdinal ?? "—",
                     artifactDisplayName: issue.artifactDisplayName ?? "—",
-                    artifactType: formatConversationShareArtifactType(issue, locale),
+                    artifactType: formatConversationShareArtifactType(issue, "en-US"),
                     extension: issue.extension ?? "—",
                     mimeType: issue.mimeType ?? "—",
-                    allowedFormats: formatConversationShareAllowedArtifacts(issue, locale),
+                    allowedFormats: formatConversationShareAllowedArtifacts(issue, "en-US"),
                     actual: formatValue(issue.actual, issue.code),
                     limit: formatValue(issue.limit, issue.code),
                     phase: issue.phase ?? "—",

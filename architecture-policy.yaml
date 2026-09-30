@@ -1,6 +1,6 @@
 version: 1
 
-# 存量模块先标记为 legacy；新模块或完成迁移的模块设置 managed: true。
+# Existing modules are first marked as legacy; new modules or modules that have completed migration set managed: true.
 modules:
   - id: rpc
     roots: [packages/rpc/src]
@@ -17,6 +17,7 @@ modules:
   - id: services
     roots: [packages/services/src]
     managed: false
+    requires: [rust]
   - id: session
     roots: [packages/services/src/session]
     managed: false
@@ -52,9 +53,14 @@ modules:
   - id: formal-proof
     roots: [packages/formal-proof/src]
     managed: false
+  - id: rust
+    roots: [packages/rust/src]
+    managed: false
+    publicEntrypoints: [packages/rust/src/index.ts]
   - id: zcode-cli
     roots: [apps/zcode-cli]
     managed: false
+    requires: [rust]
 
 global:
   maxFileLines: 400

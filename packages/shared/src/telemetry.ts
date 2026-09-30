@@ -26,7 +26,7 @@ export interface ArmsCustomEventPayload {
   properties?: Record<string, string | number | boolean | undefined>;
 }
 
-/** desktop main 实际传给 armsRum.sendCustom 的最终参数。 */
+/** The final arguments desktop main actually passes to armsRum.sendCustom. */
 export interface FinalArmsCustomEventPayload {
   name: string;
   type: "custom";
@@ -35,7 +35,7 @@ export interface FinalArmsCustomEventPayload {
   properties: Record<string, string>;
 }
 
-/** 仅 E2E test bridge 可读取的 main-process 内存记录。 */
+/** In-memory record in the main process, readable only by the E2E test bridge. */
 export interface FinalArmsCustomEventE2EEntry {
   sequence: number;
   recordedAt: number;
@@ -43,13 +43,14 @@ export interface FinalArmsCustomEventE2EEntry {
 }
 
 export interface ConfigureFinalArmsCustomEventE2ERequest {
-  /** 命中后仍进入 ring，但不调用真实 armsRum.sendCustom。 */
+  /** A match still enters the ring but does not call the real armsRum.sendCustom. */
   suppressedEventNames: string[];
 }
 
 /**
- * URL 配置进入业务埋点前只允许提取 hostname。
- * 无效值和非 HTTP(S) 协议返回空串，避免误把完整 URL、userinfo 或任意文本带入 payload。
+ * Only the hostname may be extracted from a URL before it reaches business telemetry.
+ * Invalid values and non-HTTP(S) protocols return an empty string, so a full URL, userinfo, or arbitrary text
+ * can never slip into the payload by mistake.
  */
 export function resolveSafeTelemetryHostname(value: string | null | undefined): string {
   const normalized = value?.trim();
@@ -63,7 +64,7 @@ export function resolveSafeTelemetryHostname(value: string | null | undefined): 
   }
 }
 
-/** 错误原文可能带任意格式密钥；整体丢弃，不用正则猜测秘密边界。 */
+/** The raw error text may carry secrets in any format; it is dropped wholesale instead of guessing secret boundaries with a regex. */
 export function sanitizeTelemetryErrorMessage(value: string | null | undefined): string {
   return value ? "[redacted]" : "";
 }
@@ -71,14 +72,14 @@ export function sanitizeTelemetryErrorMessage(value: string | null | undefined):
 function sanitizeLoginHostname(value: string): string {
   const hostname = resolveSafeTelemetryHostname(value);
   if (hostname) return hostname;
-  // UI 已取过 hostname 时 Core 仍需幂等；只接受精确 hostname，不放行无协议的路径或凭据。
+  // When the UI has obtained the hostname, the Core still needs to be idempotent; it only accepts the exact hostname and does not allow non-protocol paths or credentials.
   const normalized = value.trim().toLowerCase();
   return normalized && resolveSafeTelemetryHostname(`https://${normalized}`) === normalized
     ? normalized
     : "";
 }
 
-/** 只清洗上报副本；业务错误、授权地址和调用方持有的 detail 不得被修改。 */
+/** Only the reported copy is sanitized; the business error, the authorization address, and the detail held by the caller must not be modified. */
 export function sanitizeTelemetryEventDetail(
   elementName: string,
   detail: Readonly<Record<string, string>>,

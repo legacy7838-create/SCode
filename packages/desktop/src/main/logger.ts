@@ -13,7 +13,7 @@ function getLogDir() {
   return join(getAppConfigDir(), "logs");
 }
 
-// 启动时确保日志目录存在
+// Make sure the log directory exists on startup
 const LOG_DIR = getLogDir();
 mkdirSync(LOG_DIR, { recursive: true });
 
@@ -39,8 +39,8 @@ function isBrokenPipeError(error: unknown): boolean {
 }
 
 function ignoreBrokenPipeStreamError(error: Error): void {
-  // WDIO / dev runner 结束后可能先关闭 stdout/stderr 管道，随后主进程日志还在刷新。
-  // stream error 是异步事件，try/catch 包 console.log 不一定兜得住；这里统一吞掉 EPIPE。
+  // After WDIO/dev runner ends, the stdout/stderr pipe may be closed first, and then the main process log is still being refreshed.
+  // Stream error is an asynchronous event, and the try/catch package console.log may not be able to handle it; EPIPE will be swallowed here.
   if (!isBrokenPipeError(error)) {
     throw error;
   }
@@ -55,8 +55,8 @@ function safeConsoleWrite(level: LogLevel, ...args: unknown[]): void {
   try {
     consoleFn(...args);
   } catch (error) {
-    // dev 脚本或父终端退出后，Electron main 的 stdout/stderr 管道可能已关闭。
-    // 这时 console.* 会抛 EPIPE，不能让日志输出反过来杀掉主进程；文件日志仍会继续写入。
+    // Electron main's stdout/stderr pipes may have been closed after the dev script or the parent terminal exited.
+    // At this time, console.* will throw EPIPE, and the log output cannot be used to kill the main process; the file log will still continue to be written.
     if (!isBrokenPipeError(error)) {
       throw error;
     }
@@ -80,23 +80,23 @@ function write(level: LogLevel, source: string, ...args: unknown[]) {
   mkdirSync(logDir, { recursive: true });
   const filePath = join(logDir, `${formatDate(now)}.log`);
 
-  // 同时保留 console 输出，方便开发调试；console 也加时间戳和 PID，与文件格式对齐
+  // At the same time, the console output is retained to facilitate development and debugging; the console also adds timestamp and PID to align with the file format.
   safeConsoleWrite(level, `[${ts}] [pid:${pid}] [${source}]`, ...args);
 
   try {
     maybeThrowInjectedFsFault({ operation: "appendFile", path: filePath });
     appendFileSync(filePath, line);
   } catch {
-    // 日志写入失败不应影响应用运行
+    // Log writing failure should not affect application operation
   }
 }
 
 /**
- * main 进程日志，默认写入 ~/.zcode/v2/logs/YYYY-MM-DD.log；E2E 测试使用 worker 专属目录。
- * 同时保留 console 输出方便开发调试
+ * Main-process logging, written to ~/.zcode/v2/logs/YYYY-MM-DD.log by default; E2E tests use a worker-specific directory.
+ * Console output is kept as well, for convenient development debugging
  */
 export const logger = {
-  // 高频 browser/CDP 等协议细节只在本地开发记录，避免生产日志量与命令流同数量级。
+  // High-frequency browser/CDP and other protocol details are only recorded locally to avoid production log volume being of the same order of magnitude as the command flow.
   debug: (...args: unknown[]) => {
     if (process.env.NODE_ENV !== "production") {
       write("debug", "main", ...args);
@@ -106,6 +106,6 @@ export const logger = {
   warn: (...args: unknown[]) => write("warn", "main", ...args),
   error: (...args: unknown[]) => write("error", "main", ...args),
 
-  /** renderer 日志通过 IPC 传入后调用此方法写入同一文件 */
+  /** Renderer logs come in over IPC and are written into the same file through this method */
   fromRenderer: (level: LogLevel, args: unknown[]) => write(level, "renderer", ...args),
 };

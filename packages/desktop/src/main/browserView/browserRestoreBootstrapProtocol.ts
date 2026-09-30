@@ -8,8 +8,9 @@ interface BrowserRestoreProtocol {
 }
 
 /**
- * 恢复态 webview 必须先有 src 才创建 guest，但该导航不能在 pageState 前提交。
- * handler 延迟返回只作为有界兜底；正常路径会在 attach 后 stop provisional request。
+ * A webview in restore state only creates its guest once it has a src, but that navigation must
+ * not commit before pageState. The handler's delayed response is only a bounded fallback; the
+ * normal path stops the provisional request after attach.
  */
 export function installBrowserRestoreBootstrapProtocol(
   protocol: BrowserRestoreProtocol,

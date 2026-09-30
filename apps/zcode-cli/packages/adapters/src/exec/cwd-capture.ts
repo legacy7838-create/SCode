@@ -29,8 +29,8 @@ export function createCwdCapturePlan(
   mkdirSync(cwdCaptureDir, { recursive: true });
   const cwdFilePath = join(cwdCaptureDir, `zcode-${crypto.randomUUID()}-cwd`);
 
-  // 每次 Bash 仍启动新 shell；成功后只把最终 pwd -P 写回主进程，不能持久化 env/alias/function。
-  // 默认 shell、hooks、background command 不走这个分支，避免改变其它执行面。
+  // Bash still starts a new shell every time; after success, only the final pwd -P is written back to the main process, and env/alias/function cannot be persisted.
+  // By default, shell, hooks, and background commands do not take this branch to avoid changing other execution surfaces.
   const wrappedCommand =
     options.dialect === "cmd"
       ? createWindowsCmdCwdCaptureCommand(request.command.command, cwdFilePath)
@@ -84,7 +84,7 @@ export function readCapturedCwd(
     try {
       unlinkSync(cwdFilePath);
     } catch {
-      // cwd 捕获只影响内部会话状态，清理失败不能影响工具结果。
+      // cwd capture only affects internal session state, cleanup failures cannot affect tool results.
     }
   }
 }

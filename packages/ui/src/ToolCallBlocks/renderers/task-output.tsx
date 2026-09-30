@@ -77,7 +77,7 @@ export function TaskOutputToolCallBlock(context: ToolCallBlockRenderContext) {
   } else if (normalizedTaskStatus && normalizedTaskStatus !== "completed") {
     outcomeLabel = taskStatus ?? normalizedTaskStatus;
   } else if (taskOutputDisplay?.retrievalStatus === "success") {
-    // 类别标签只能说明这是 TaskOutput，不能替代 display 已确认的成功读取结果。
+    // The category label only indicates that this is a TaskOutput and cannot replace the display of confirmed successful read results.
     outcomeLabel = intl.formatMessage({ id: "chat.toolCall.taskOutput.retrieved" });
   }
   const kindLabel = intl.formatMessage({

@@ -89,9 +89,9 @@ const INHERITED_LOGIN_SHELL_ENV_KEY_PATTERNS = [
   /^PYENV_VERSION$/i,
   /^PYENV_VIRTUALENV_[A-Z0-9_]+$/i,
   /^PIP_CONFIG_FILE$/i,
-  // shell init snapshot 会保存 cd/chpwd/precmd hook 函数；
-  // 这些 hook 常依赖版本管理器的 root/state env。
-  // 这里只补已知 hook 必需变量，避免恢复宽继承把 NODE_OPTIONS 等带进 host/agent runtime。
+  // Shell init snapshot will save the cd/chpwd/precmd hook function;
+  // These hooks often rely on the version manager's root/state env.
+  // Only required variables for known hooks are added here to avoid restoring wide inheritance and bringing NODE_OPTIONS, etc. into the host/agent runtime.
   /^DIRENV_[A-Z0-9_]+$/i,
   /^MISE_[A-Z0-9_]+$/i,
   /^rvm_[A-Za-z0-9_]+$/i,
@@ -137,7 +137,7 @@ export function normalizeRuntimeProcessEnv(
   let pathValue: string | undefined;
   for (const [key, value] of Object.entries(baseEnv)) {
     if (key.toUpperCase() === "PATH" && value !== undefined) {
-      // 后出现的值优先，使 {...dotenv, ...process.env} 保持真实进程环境优先语义。
+      // The value that appears last takes precedence, so that {...dotenv, ...process.env} maintains real process environment precedence semantics.
       pathValue = value;
     }
   }
@@ -174,9 +174,9 @@ export function buildRuntimeProcessEnvPatch(
   });
 
   const runtimeToolPathEntries = runtimeToolEnvPatch.PATH?.split(delimiter).filter(Boolean) ?? [];
-  // 远端 server 可能由非交互 SSH /bin/sh 启动，原始 PATH 只有系统目录；
-  // login shell 探测失败时如果继续沿用该 PATH，后续 mcp/list 的 app-server 直接 spawn("npx")
-  // 会找不到 Homebrew/NVM 里的 npx。POSIX 下把 bootstrap PATH 也作为最终兜底，而不是只用于探测。
+  // The remote server may be started by non-interactive SSH /bin/sh, and the original PATH only has the system directory;
+  // If the PATH continues to be used when the login shell detection fails, the subsequent app-server of mcp/list will directly spawn("npx")
+  // npx in Homebrew/NVM will not be found. Under POSIX, bootstrap PATH is also used as a final backup instead of just for detection.
   const fallbackPathBase =
     platform === "win32" ? normalizedBaseEnv.PATH : buildShellBootstrapPath(normalizedBaseEnv.PATH);
   const pathBase = loginShellPath ?? fallbackPathBase;
@@ -247,8 +247,8 @@ export function initializeRuntimeProcessEnv(
 
   const normalizedProcessEnv = normalizeRuntimeProcessEnv(process.env);
   if (process.platform === "win32") {
-    // Host 同时持有继承的 Path 与 Main patch 的 PATH 时，Windows 子进程只会保留其中一项。
-    // 在任何 Git/terminal/Agent spawn 前统一成一个键，避免用户 PATH 被短 patch 覆盖。
+    // When the Host holds both the inherited Path and the PATH of the Main patch, the Windows child process will only retain one of them.
+    // Unify into one key before any Git/terminal/Agent spawn to prevent user PATH from being overwritten by short patches.
     for (const key of Object.keys(process.env)) {
       if (key.toUpperCase() === "PATH") {
         delete process.env[key];
@@ -260,8 +260,8 @@ export function initializeRuntimeProcessEnv(
   }
   const runtimeProcessEnvPatch =
     preparedRuntimeProcessEnvPatch ?? buildRuntimeProcessEnvPatch(normalizedProcessEnv);
-  // host/agent 运行时不能直接继承用户 shell 里的 NODE_ENV、http_proxy 或证书变量。
-  // 网络变量会先封存为 ZCODE_TOOL_ENV_PASSTHROUGH_JSON，只有 Bash/tool 子进程边界才恢复原名。
+  // The host/agent runtime cannot directly inherit NODE_ENV, http_proxy or certificate variables in the user shell.
+  // The network variable will be archived as ZCODE_TOOL_ENV_PASSTHROUGH_JSON first, and only the Bash/tool ​​sub-process boundary will restore the original name.
   sanitizeZCodeRuntimeEnvInPlace(process.env);
   Object.assign(process.env, runtimeProcessEnvPatch);
 }

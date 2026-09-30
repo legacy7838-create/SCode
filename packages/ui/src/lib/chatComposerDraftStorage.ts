@@ -1,10 +1,12 @@
 /**
- * 旧 composer 草稿的 localStorage 持久化清理。
+ * Cleanup of localStorage persistence for legacy composer drafts.
  *
- * store 收尾：composer 草稿的内存态（composerDraftByScopeId）与持久化写入
- * （persistComposerDraft/readPersistedComposerDraft）已随旧 ChatView/composer 删除，
- * v4 composer 不做本地持久化。这里仅保留删除 task 时清理历史版本残留草稿键的
- * janitor 逻辑，避免旧安装升级后 localStorage 里的已删任务草稿永久残留。
+ * Wrapping up the store: the in-memory state for composer drafts (composerDraftByScopeId) and the
+ * persistence writes (persistComposerDraft/readPersistedComposerDraft) were removed along with the
+ * old ChatView/composer, and the v4 composer does no local persistence. Only the janitor logic that
+ * clears leftover draft keys from older versions when a task is deleted is kept here, so that
+ * drafts of deleted tasks do not linger forever in localStorage after an existing install is
+ * upgraded.
  */
 import { logger } from "@/logger.js";
 
@@ -47,7 +49,7 @@ function readPersistedDraftFile(
   try {
     rawValue = storage?.getItem(key) ?? null;
   } catch (error) {
-    logger.warn("[chatComposerDraftStorage] 读取 composer 草稿持久化失败", {
+    logger.warn("[chatComposerDraftStorage] failed to read persisted composer draft", {
       error: error instanceof Error ? error.message : String(error),
       key,
     });
@@ -86,7 +88,7 @@ export function clearPersistedComposerDraft(
       storage?.setItem(key, JSON.stringify(file));
     }
   } catch (error) {
-    logger.warn("[chatComposerDraftStorage] 清理 composer 草稿持久化失败", {
+    logger.warn("[chatComposerDraftStorage] failed to clear persisted composer draft", {
       error: error instanceof Error ? error.message : String(error),
       key,
     });

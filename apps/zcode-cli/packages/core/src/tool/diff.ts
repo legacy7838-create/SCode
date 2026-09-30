@@ -1,8 +1,11 @@
-import { structuredPatch } from "diff";
+import { loadDiff } from "@zcode/rust/diff";
 import type { DiffHunk } from "@zcode/contracts";
 
 const CONTEXT_LINES = 3;
-const DIFF_TIMEOUT_MS = 5_000;
+
+// Local TS implementation has been migrated to the Rust native engine (spec: docs/specs/rust-native-diff.md).
+// loadDiff() throws directly when the native binary is missing/corrupted (no JS fallback, spec invariant 1).
+const nativeDiff = loadDiff();
 
 export const createStructuredPatch = ({
   filePath,
@@ -13,20 +16,10 @@ export const createStructuredPatch = ({
   newContent: string;
   oldContent: string;
 }): DiffHunk[] => {
-  const patch = structuredPatch(
-    filePath,
-    filePath,
-    oldContent,
-    newContent,
-    undefined,
-    undefined,
-    {
-      context: CONTEXT_LINES,
-      timeout: DIFF_TIMEOUT_MS,
-    },
-  );
-
-  return patch?.hunks ?? [];
+  // filePath 在旧实现中仅进入被丢弃的 patch 头（oldFileName/newFileName），
+  // hunk 内容与文件名无关；保留签名以兼容调用方，此处不再使用。
+  void filePath;
+  return nativeDiff.structuredPatch(oldContent, newContent, CONTEXT_LINES);
 };
 
 export const countPatchLines = (

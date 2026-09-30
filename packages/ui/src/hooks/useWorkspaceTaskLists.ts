@@ -1,4 +1,7 @@
-/* eslint-disable max-lines -- workspace 行任务列表需要把分片查询、缓存展示和跨端 membership 订阅保持在同一 hook 内，拆分会增加缓存一致性风险。 */
+/* eslint-disable max-lines -- the workspace row task list needs to keep sharded querying, cached
+ * display, and cross-device membership subscription inside one hook; splitting it up would add
+ * cache-consistency risk.
+ */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { IServiceAccessor } from "@zcode/services";
 import type { ZCodeWorkspaceEvent } from "@zcode/shared";
@@ -96,14 +99,17 @@ function updateBlockingLoadingState(
   return Object.fromEntries(uniqueKeys.map((workspaceKey) => [workspaceKey, true]));
 }
 
-// workspace 分组结果以 tasks-index task rows 为持久行，sessions-index 只补 activity/detail。
-// remote shard 使用自己的 endpoint task service，返回与旧协议同形的 group map。
+// Workspace grouping treats tasks-index task rows as the persistent rows; sessions-index only backfills activity/detail.
+// A remote shard uses its own endpoint task service and returns a group map shaped like the old protocol.
 async function buildWorkspaceGroupsFromSessions(params: {
   service: IServiceAccessor["zcodeTaskService"];
   scopes: Array<{ workspacePath: string; workspaceIdentity?: string }>;
   sessions: ZCodeTaskMeta[];
   sortBy: "created" | "updated";
-  /** 差量更新：membership 只随 membershipVersion 变化，按版本缓存避免每次内容帧都重拉。 */
+  /**
+   * Incremental update: membership only changes with membershipVersion, so caching per version
+   * avoids refetching on every content frame.
+   */
   membershipCacheKey: string;
 }): Promise<Map<string, WorkspaceTaskListGroupResult>> {
   const {
@@ -128,7 +134,7 @@ async function buildWorkspaceGroupsFromSessions(params: {
     const scopeTaskIndexItems = taskIndexItems.filter(
       (task) => buildTaskWorkspaceKey(task.workspacePath, task.workspaceIdentity) === scopeKey,
     );
-    // "workspace" 视图规则 = !pinned && !archived，与 "timeline" 同（matchesTaskMembership）。
+    // The "workspace" view rule = !pinned && !archived, same as "timeline" (matchesTaskMembership).
     const result = buildTaskListResult({
       taskIndexItems: scopeTaskIndexItems,
       sessions: scopeSessions,
@@ -148,8 +154,8 @@ async function buildWorkspaceGroupsFromSessions(params: {
       items: result.items,
       total: result.total,
       hasMore: false,
-      // workspace task 会先分页再进入 query cache；若只检查可见 items，
-      // 收起行会漏掉分页窗口之外的未读。这里在完整 regular-task 结果上先固化成员 key。
+      // Workspace tasks are paginated before entering the query cache; checking only the visible items
+      // would make collapsed rows miss unread beyond the pagination window. Solidify the membership keys over the complete regular-task result first.
       unreadTaskKeys: result.items
         .filter((task) => typeof task.unreadAt === "number")
         .map((task) => buildTaskEntityKey(task)),
@@ -159,8 +165,9 @@ async function buildWorkspaceGroupsFromSessions(params: {
 }
 
 /**
- * 依赖 sessions-index 聚合层的引用稳定化：条目引用不变 = 内容等价。
- * 前后两轮 items 里引用有出入的条目所属的 workspace 才算"有变化"。
+ * Reference stabilization for the sessions-index aggregation layer it depends on: an unchanged
+ * entry reference means equivalent content. Only the workspaces owning entries whose references
+ * differ between the previous and the current `items` count as "changed".
  */
 function diffChangedWorkspaceKeys(previous: ZCodeTaskMeta[], next: ZCodeTaskMeta[]): Set<string> {
   const changed = new Set<string>();
@@ -274,9 +281,9 @@ export function useWorkspaceTaskLists(params: {
       ? { workspaceIdentity: params.activeWorkspaceIdentity }
       : {}),
   });
-  // 切换 workspace 时，旧 workspace 会保留自己的 activeTaskId；终态订阅又按
-  // endpoint/workspace 集合长期复用。回调若只看旧 workspace 的 activeTaskId，或捕获首次 render
-  // 的全局焦点，就会把已经退到后台的 task 误判成“仍在阅读”，从而漏掉未读标识。
+  // When switching workspaces the old workspace keeps its own activeTaskId; the terminal-state subscription is also
+  // reused long-term per endpoint/workspace set. A callback that only looks at the old workspace's activeTaskId, or captures the global
+  // focus from the first render, would misjudge a task that has moved to the background as "still being read" and miss the unread badge.
   activeWorkspaceRef.current = {
     workspacePath: params.activeWorkspacePath,
     ...(params.activeWorkspaceIdentity
@@ -313,10 +320,10 @@ export function useWorkspaceTaskLists(params: {
           isRemoteWorkspace,
           visibleLimit,
           descriptor,
-          // 之前每个 workspace 分组的 queryKey 都拼上“所有 tabs 的版本签名”。
-          // archive 一个本地 task 后，其它 workspace 的 queryKey 也会同时换新，旧缓存瞬间失效，
-          // 连接远端时刷新更慢，就会看到所有本地 workspace 变成 No tasks yet。
-          // 这里改成只使用当前 workspace 自己的版本，避免无关 workspace 被连带清空。
+          // Previously every workspace group's queryKey spliced in a "version signature of all tabs".
+          // After archiving a local task, other workspaces' queryKeys changed at the same time and the old cache
+          // was invalidated instantly; with a remote connection the refresh was even slower, and every local workspace showed No tasks yet.
+          // Now only the current workspace's own version is used, so unrelated workspaces are not cleared along with it.
           queryKey:
             buildTaskListCacheKeyFromDescriptor(descriptor) +
             `::version=${taskListVersionByWorkspaceKey.get(workspaceKey) ?? 0}`,
@@ -377,9 +384,9 @@ export function useWorkspaceTaskLists(params: {
     () => buildWorkspaceEventSubscriptionSignature(endpointShards),
     [endpointShards],
   );
-  // 列表数据源 = sessions-index。remote shard（web/手机远控/SSH workspace）
-  // 也走 sessions-index——scope 携带 endpoint 维度与该 endpoint 的 agentService proxy；
-  // 尚未解析到远端 session 的 tab（断连占位）不在 endpointShards 内，等重连后自动补订阅。
+  // List data source = sessions-index. Remote shards (web/mobile remote control/SSH workspaces)
+  // also go through sessions-index — the scope carries the endpoint dimension and that endpoint's agentService proxy;
+  // tabs whose remote session is not yet resolved (disconnected placeholders) are not in endpointShards and get subscribed automatically after reconnect.
   const sessionsIndexScopes = useMemo(
     () =>
       endpointShards.flatMap((shard) =>
@@ -396,7 +403,7 @@ export function useWorkspaceTaskLists(params: {
   );
   const { items: sessionsIndexItems, sourceRevisionByScopeKey } =
     useWorkspaceSessionsIndexItems(sessionsIndexScopes);
-  // pin/archive 归属版本：mutation（本端乐观或它端事件）后 bump，驱动权威 re-filter。
+  // pin/archive membership version: bumped after a mutation (local optimistic or remote event), driving the authoritative re-filter.
   const membershipVersion = useTaskListMembershipVersion();
   const [loading, setLoading] = useState<Record<string, boolean>>({});
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -407,9 +414,9 @@ export function useWorkspaceTaskLists(params: {
     });
     const activePending = pending.filter((config) => config.workspaceKey === activeWorkspaceKey);
     if (activePending.length > 0) {
-      // 冷启动时若一次性查询所有历史 workspace，会和当前 workspace 的模型 readState 抢资源，
-      // 导致输入框底部持续显示“管理模型/加载中”。这里先保证当前 workspace 的任务列表和模型状态完成，
-      // 其他 workspace 等当前缓存落盘后再后台补齐。
+      // On cold start, querying every historical workspace at once competes with the current workspace's model readState for resources,
+      // leaving "Managing model/Loading" stuck at the bottom of the input box. Ensure the current workspace's task list and model state finish first here,
+      // and backfill other workspaces in the background once the current cache lands.
       return activePending;
     }
     return pending;
@@ -476,9 +483,9 @@ export function useWorkspaceTaskLists(params: {
     const currentFlight = inFlightRequestRef.current;
     if (currentFlight) {
       if (currentFlight.signature !== requestSignature) {
-        // 相同列表查询的 membership RPC 在途时，sessions-index 仍可能从
-        // running 收敛到 completed/error。只按 query signature single-flight 时，
-        // 第二次失效被吞掉；这里记录最新输入到达，当前 flight 收口后必须再跑一轮。
+        // While a membership RPC for the same list query is in flight, sessions-index can still converge from
+        // running to completed/error. With single-flight keyed only on the query signature, the second invalidation
+        // would be swallowed; record here that the latest input arrived, and after the current flight closes another round must run.
         rerunRequestedRef.current = true;
       }
       return;
@@ -499,10 +506,10 @@ export function useWorkspaceTaskLists(params: {
         resultsByQueryKey[config.queryKey]?.invalidationVersion ?? 0,
       ]),
     );
-    // sessions-index 的状态/标题变化会把已有 query 标为 stale 并后台重算。
-    // stale 结果仍然能安全展示；如果这里也置 loading，点击/恢复历史任务就会让整条 workspace 行
-    // 跟着切换 loading prop，再叠加硬失效时会直接闪成“正在获取任务”。只有完全没有缓存的
-    // 首次 hydration 才是 blocking loading，已有缓存统一走 stale-while-revalidate。
+    // A status/title change in sessions-index marks existing queries stale and recomputes them in the background.
+    // Stale results are still safe to display; setting loading here too would make clicking/restoring a historical task switch the whole
+    // workspace row's loading prop, and combined with a hard invalidation it would flash straight to "Fetching tasks". Only the very first
+    // hydration with no cache at all is a blocking loading; existing caches uniformly use stale-while-revalidate.
     const blockingWorkspaceKeys = pendingConfigs
       .filter((config) => {
         if (resultsByQueryKey[config.queryKey] != null) {
@@ -526,8 +533,8 @@ export function useWorkspaceTaskLists(params: {
               return [];
             }
 
-            // 本机和 remote shard 都以各自 endpoint 的 tasks-index 行为集合，
-            // 再用同 endpoint/workspace 的 sessions-index activity/detail enrich。
+            // Both the local and remote shards build membership sets from their own endpoint's tasks-index rows,
+            // then enrich with activity/detail from the same endpoint/workspace's sessions-index.
             const groupByWorkspaceKey = await buildWorkspaceGroupsFromSessions({
               service: shard.services.zcodeTaskService,
               scopes: shardConfigs.map((config) => config.scope),
@@ -564,11 +571,11 @@ export function useWorkspaceTaskLists(params: {
         )
       ).flat();
 
-      // 之前每个 workspace queryKey 都单独 set 一次 cache，
-      // effect 又依赖整个 resultsByQueryKey，导致“刚写入第一组结果就判定还有缺失，再触发下一轮 refresh”。
-      // 这里改成一次批量写入，保证同一轮查询只产生一次 store 更新，切断连环刷新。
-      // 远端 workspace 的任务索引在远端 sqlite，不能用 base services 查询本地 sqlite。
-      // 这里按 remoteSessionId 分片请求；远端 session 尚未注册时不写空缓存，等 session 到位后自动重查。
+      // Previously each workspace's queryKey set the cache individually, and the effect depended on the whole
+      // resultsByQueryKey, so "just wrote the first group of results and already judged more missing, triggering another refresh round".
+      // Now write in one batch so a single query round produces exactly one store update, breaking the refresh chain.
+      // A remote workspace's task index lives in remote sqlite; base services must not be used to query local sqlite.
+      // Requests are sharded by remoteSessionId here; while the remote session is not yet registered no empty cache is written, and the query reruns once the session arrives.
       const latestInput = latestRefreshInputRef.current;
       const canCommit =
         inFlightRequestRef.current?.requestId === requestId &&
@@ -578,11 +585,11 @@ export function useWorkspaceTaskLists(params: {
       if (entries.length > 0 && canCommit) {
         setQueryResults(entries);
       } else if (!canCommit) {
-        // 旧 activity/membership 结果禁止写 entity cache 或清 stale；由 finally 触发最新轮。
+        // Stale activity/membership results must not write to the entity cache or clear stale; the finally block triggers the latest round.
         rerunRequestedRef.current = true;
       }
     } catch (error) {
-      logger.error("[useWorkspaceTaskLists] 加载 workspace task 列表失败", error);
+      logger.error("[useWorkspaceTaskLists] failed to load the workspace task list", error);
     } finally {
       if (inFlightRequestRef.current?.requestId === requestId) {
         inFlightRequestRef.current = null;
@@ -618,10 +625,10 @@ export function useWorkspaceTaskLists(params: {
     void refresh();
   }, [pendingConfigs.length, refresh, refreshTrigger, requestSignature]);
 
-  // sessions-index 列表变化 / pin-archive 归属版本变化 → 标脏本地 scope 缓存，
-  // 触发上面的 refresh 用新数据重算。sessions-index 是 conflated 低频列表事件，非高频 snapshot。
-  // 防环：cache 标脏会引发 re-render，若父组件每次渲染重建 workspaceTabs 数组，
-  // scope 数组身份会跟着换新；这里只认「items 引用 / 归属版本」的真实变化，避免 setState 死循环。
+  // A sessions-index list change / pin-archive membership version change → mark the local scope cache stale,
+  // triggering the refresh above to recompute with new data. sessions-index is a conflated low-frequency list event, not a high-frequency snapshot.
+  // Cycle prevention: marking the cache stale causes a re-render, and if the parent rebuilds the workspaceTabs array on every render,
+  // the scope array identity changes with it; only a real change in "items reference / membership version" is recognized here to avoid a setState infinite loop.
   const lastSessionsRefreshRef = useRef<{
     items: ZCodeTaskMeta[];
     membershipVersion: number;
@@ -644,10 +651,10 @@ export function useWorkspaceTaskLists(params: {
       markTaskQueryCacheScopesStale(sessionsIndexScopes);
       return;
     }
-    // sessions-index 聚合层已做引用稳定化——条目引用不变即内容等价。
-    // 之前任一帧到达都把所有 workspace 的行缓存整体打成 stale 重查，
-    // 表现为"打开/收口一个任务，左侧所有 workspace 列表一起重新加载"。
-    // 这里 diff 出真正有变化的 workspace，只标脏对应 scope。
+    // The sessions-index aggregation layer already stabilizes references — an unchanged item reference means equivalent content.
+    // Previously any arriving frame marked every workspace's row cache stale for a refetch, showing up as
+    // "open/collapse a task and every workspace list on the left reloads together".
+    // Now diff out the workspaces that actually changed and mark only the matching scopes stale.
     const changedWorkspaceKeys = diffChangedWorkspaceKeys(previousItems, sessionsIndexItems);
     if (changedWorkspaceKeys.size === 0) {
       return;
@@ -698,16 +705,16 @@ export function useWorkspaceTaskLists(params: {
             return;
           }
 
-          // Web 远控发起归档/置顶时，桌面 workspace 行没有本地乐观 mutation；
-          // 这里只监听低频归属类事件并标脏对应 workspace 查询，避免消息流事件触发整表重拉。
+          // When an archive/pin originates from web remote control, the desktop workspace row has no local optimistic mutation;
+          // listen only for low-frequency membership events and mark the matching workspace query stale here, so message-stream events do not trigger a full-table refetch.
           logger.info(
-            `[useWorkspaceTaskLists] 收到无法增量处理的 workspace_task_list_changed，刷新 workspace 行 workspace=${config.scope.workspacePath} reason=${event.reason}`,
+            `[useWorkspaceTaskLists] received a workspace_task_list_changed that cannot be applied incrementally, refreshing the workspace row workspace=${config.scope.workspacePath} reason=${event.reason}`,
           );
-          // pin/archive/unread 归属持久化在 tasks-index，sessions-index 不感知；
-          // 归属类事件（本端 mutation 也会 emit；unread/rename 走 task_meta_changed）
-          // bump 版本号让派生列表重新拉取归属 join 面。
-          // 同一事件也会被 useGlobalTaskList 的共享订阅转发并 bump，
-          // 按事件内容去重，一条事件只触发一轮全局归属重拉。
+          // pin/archive/unread membership is persisted in tasks-index; sessions-index does not know about it;
+          // membership events (local mutations emit them too; unread/rename go through task_meta_changed)
+          // bump the version so the derived list refetches the membership join surface.
+          // The same event is also forwarded and bumped by useGlobalTaskList's shared subscription;
+          // deduplicated by event content, so one event triggers exactly one round of global membership refetch.
           bumpTaskListMembershipVersionForWorkspaceEvent(event);
           markTaskQueryCacheScopesStale([config.scope]);
         });

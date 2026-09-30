@@ -20,18 +20,19 @@ type IgnoreFileState = {
 };
 
 /**
- * 工作区文件搜索忽略规则（.zcodeignore）编辑页。
- * 规则文件是目录排除的单一真相源：编辑保存即生效（下次扫描读取新内容）；
- * 「从 .gitignore 同步」与「恢复默认规则」是分区操作：只重写各自标记区
- * （gitignore 同步区 / 默认排除段），用户自定义规则区不受影响；结果填入编辑框，
- * 仍需保存才落盘。
+ * Edit page for the workspace file search ignore rules (.zcodeignore). The rules file is the single
+ * source of truth for directory exclusions: an edit takes effect as soon as it is saved (the next
+ * scan reads the new content); "Sync from .gitignore" and "Restore default rules" are partitioned
+ * operations: each rewrites only its own marked section (the gitignore sync section / the default
+ * exclusion block), leaving the user's custom rules section untouched; the result is filled into
+ * the editor, and still has to be saved before it reaches disk.
  */
 export function WorkspaceFileSearchSection({
   workspacePath,
   workspaceIdentity,
 }: WorkspaceFileSearchSectionProps) {
-  // 无 workspace 时直接提示，不挂 workspace 服务解析 hook 链（同 SessionPluginReferenceIconBoundary
-  // 的分层先例），避免无谓的 services/tabStore context 依赖。
+  // Prompt directly when there is no workspace, and do not hang the workspace service parsing hook chain (same as SessionPluginReferenceIconBoundary
+  // (layered precedent) to avoid unnecessary dependencies on services/tabStore context.
   if (!workspacePath) {
     return <NoWorkspaceFileSearchHint />;
   }
@@ -91,7 +92,7 @@ function ActiveWorkspaceFileSearchEditor({
       if (loadVersionRef.current !== version) {
         return;
       }
-      logger.warn("[WorkspaceFileSearchSection] 读取 .zcodeignore 失败", {
+      logger.warn("[WorkspaceFileSearchSection] read .zcodeignore failed", {
         error: error instanceof Error ? error.message : String(error),
       });
       toast(intl.formatMessage({ id: "settings.workspaceFileSearch.loadFailed" }));
@@ -102,8 +103,8 @@ function ActiveWorkspaceFileSearchEditor({
     }
   }, [intl, rpcReady, services, workspacePath]);
 
-  // 分区操作：只重写对应标记区（sync-gitignore 重写 gitignore 同步区；reset-defaults
-  // 重置默认排除段），用户自定义规则区不受影响；结果填充编辑框，保存才落盘。
+  // Partition operation: only rewrite the corresponding mark area (sync-gitignore rewrites the gitignore synchronization area; reset-defaults
+  // Reset the default excluded segment), the user-defined rule area will not be affected; fill in the edit box with the results, and save them before placing them on the disk.
   const applyTransform = useCallback(
     async (transform: "sync-gitignore" | "reset-defaults") => {
       if (!workspacePath || !rpcReady) {
@@ -119,13 +120,13 @@ function ActiveWorkspaceFileSearchEditor({
         if (loadVersionRef.current !== version) {
           return;
         }
-        // 只更新编辑框内容；loaded 保持不变，dirty 语义由内容差异自然产生。
+        // Only the edit box content is updated; loaded remains unchanged, and dirty semantics arise naturally from content differences.
         setDraft(result.content);
       } catch (error) {
         if (loadVersionRef.current !== version) {
           return;
         }
-        logger.warn("[WorkspaceFileSearchSection] 应用 .zcodeignore 分区操作失败", {
+        logger.warn("[WorkspaceFileSearchSection] apply .zcodeignore section transform failed", {
           transform,
           error: error instanceof Error ? error.message : String(error),
         });
@@ -144,7 +145,7 @@ function ActiveWorkspaceFileSearchEditor({
     setLoaded(null);
     setDraft("");
     void load();
-    // load 是依赖 workspace/services 的回调；workspace 切换时先重置再拉取。
+    // load is a callback that relies on workspace/services; when the workspace is switched, it is reset first and then pulled.
   }, [load, rpcReady, workspacePath]);
 
   const handleSave = useCallback(async () => {
@@ -160,7 +161,7 @@ function ActiveWorkspaceFileSearchEditor({
       setLoaded({ content: draft, source: "file" });
       toast(intl.formatMessage({ id: "settings.workspaceFileSearch.saved" }));
     } catch (error) {
-      logger.warn("[WorkspaceFileSearchSection] 保存 .zcodeignore 失败", {
+      logger.warn("[WorkspaceFileSearchSection] save .zcodeignore failed", {
         error: error instanceof Error ? error.message : String(error),
       });
       toast(intl.formatMessage({ id: "settings.workspaceFileSearch.saveFailed" }));
@@ -169,15 +170,15 @@ function ActiveWorkspaceFileSearchEditor({
     }
   }, [draft, intl, services, workspacePath]);
 
-  // 保存语义是"把编辑框内容落盘"：template 态（.zcodeignore 尚未创建）即使未编辑也允许保存，
-  // 否则用户第一次进页面什么都不改就永远无法创建文件；已落盘态才按"有修改才可保存"门控。
+  // The saving semantics is "push the contents of the edit box to disk": template state (.zcodeignore has not been created yet) allows saving even if it is not edited.
+  // Otherwise, if the user enters the page for the first time without changing anything, he will never be able to create the file; he will click the "Save only if modifications are required" gate after the file has been saved.
   const canSave = loaded === null || loaded.source === "template" || draft !== loaded.content;
-  // "有未保存的修改"提示只表达真实差异（template 态未编辑时不显示）。
+  // The "There are unsaved changes" prompt only expresses the real differences (it is not displayed when the template state is not edited).
   const dirty = loaded !== null && loaded.source === "file" && draft !== loaded.content;
 
-  // 「打开文件位置」：.zcodeignore 位于 workspace 根，打开根目录即所在位置
-  // （与 WindowsCaptionMenuButton/ModelTrajectoryPane 先例一致传目录）。
-  // 远程 workspace 的规则文件在远端机器，本地文件管理器无法打开，按钮不展示。
+  // "Open file location": .zcodeignore is located at the workspace root, and the root directory is where it is.
+  // (Pass the directory consistent with the WindowsCaptionMenuButton/ModelTrajectoryPane example).
+  // The rule file of the remote workspace is on the remote machine. The local file manager cannot open it and the button is not displayed.
   const isLocalWorkspace = !workspaceIdentity?.trim();
   const revealTargetReady = loaded?.source === "file";
   const handleReveal = useCallback(async () => {
@@ -188,8 +189,8 @@ function ActiveWorkspaceFileSearchEditor({
   }, [intl, platform, workspacePath]);
 
   return (
-    // 排版对齐设置页统一规范：导语 + SettingsGroupCard 卡片，
-    // 文字统一 text-ui-base；textarea 因内容是规则文本保留等宽字体。
+    // Unified standard for layout alignment settings page: Introduction + SettingsGroupCard card,
+    // Text unified text-ui-base; textarea retains fixed-width fonts because the content is regular text.
     <div className="space-y-3">
       <div className="text-ui-base font-medium text-foreground-subtle">
         {intl.formatMessage({ id: "settings.workspaceFileSearch.description" })}
@@ -205,8 +206,8 @@ function ActiveWorkspaceFileSearchEditor({
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
-              // 保存快捷键：编辑器内 Ctrl/Cmd+S 与点保存按钮等价（preventDefault
-              // 阻止浏览器默认行为）；门控与按钮一致（canSave）。
+              // Save shortcut key: Ctrl/Cmd+S in the editor is equivalent to clicking the save button (preventDefault
+              // Prevent browser default behavior); the gate is consistent with the button (canSave).
               if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
                 event.preventDefault();
                 if (canSave && !saving && !loading) {

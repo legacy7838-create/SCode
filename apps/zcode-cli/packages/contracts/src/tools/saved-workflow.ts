@@ -1,48 +1,48 @@
 // ============================================================
-// Saved workflows - 保存的 dwf 定义的共享词汇表
+// Saved workflows - A shared vocabulary of saved dwf definitions
 // ============================================================
 //
-// 本模块**只**声明「一个保存的 workflow 是什么」：名字的合法形状、文件落点、参数声明与
-// 元数据。三个工具（SaveWorkflow 写、ListSavedWorkflows 读、CreateWorkflow 以 `saved`
-// 源运行）都以它为契约，core 侧的 store 也从这里取 schema——元数据形状一旦在写侧与读侧
-// 各自演化，症状是「刚保存的 workflow 列不出来」，而那是最难被单侧测试抓住的一类分叉。
+// This module **only** declares "what a saved workflow is": the legal shape of the name, file placement, parameter declaration and
+// metadata. Three tools (SaveWorkflow for writing, ListSavedWorkflows for reading, CreateWorkflow with `saved`
+// Source run) all use it as a contract, and the store on the core side also takes the schema from here - once the metadata shape is changed between the write side and the read side
+// They evolve separately, and the symptom is "the newly saved workflow cannot be listed", and that is the most difficult type of fork to be caught by one-sided testing.
 
 import { z } from "zod";
 
 /**
- * 保存文件的扩展名。`.dwf.ts` 而不是 `.ts`：编辑器按 TypeScript 高亮（frontmatter 是块注释，
- * 语法上合法），而 `.dwf` 这一段让扫描不必打开文件就能把它与项目源码区分开。
+ * The extension of a saved file. `.dwf.ts` rather than `.ts`: editors highlight it as TypeScript (the frontmatter is a block comment,
+ * so it is syntactically legal), while the `.dwf` stretch lets a scan tell it apart from project source without opening the file.
  */
 export const SAVED_WORKFLOW_FILE_EXTENSION = ".dwf.ts";
 
-/** 项目作用域的存放目录（相对会话工作目录）。 */
+/** The project-scoped storage directory (relative to the session working directory). */
 export const SAVED_WORKFLOW_PROJECT_DIR = ".zcode/workflows";
 
 /**
- * 草稿目录（相对会话工作目录）。模型在两次提交之间就地编辑的脚本文件落在这里，是
- * `.zcode/workflows/`（用户保存的定义）的兄弟目录，机器自有、自带 `.gitignore: *`。
+ * The draft directory (relative to the session working directory). Script files the model edits in place between two submits land here; it is a
+ * sibling directory of `.zcode/workflows/` (the user-saved definitions), owned by the machine and carrying its own `.gitignore: *`.
  */
 export const WORKFLOW_DRAFTS_DIR = ".zcode/workflow-drafts";
 
 /**
- * 全局作用域的存放目录（相对 agent 进程的家目录）。落点 `~/.zcode/workflows/<name>.dwf.ts`
- * ——与 legacy Workflow 工具的用户根同一处，对所有项目可见。
+ * The global-scoped storage directory (relative to the agent process's home directory). The landing spot is `~/.zcode/workflows/<name>.dwf.ts`
+ * -- the very same user root as the legacy Workflow tool, visible from every project.
  */
 export const SAVED_WORKFLOW_GLOBAL_DIR = ".zcode/workflows";
 
 /**
- * 名字的合法形状。与旧 `Workflow` 工具的解析器同一条模式（script-workflow-tool-port.ts）——
- * 名字要同时当文件名用，所以斜杠、`..`、空白一概不允许：这条正则**就是**路径穿越的防线，
- * 不是风格偏好。
+ * The legal shape of a name. The very same pattern as the old `Workflow` tool's parser (script-workflow-tool-port.ts) --
+ * the name has to double as a file name, so slashes, `..` and whitespace are flatly disallowed: this regex **is** the defence against path traversal,
+ * not a stylistic preference.
  */
 export const SAVED_WORKFLOW_NAME_PATTERN = /^[A-Za-z0-9_.-]+$/u;
 
-/** 名字长度上限。文件名要在各平台都成立，64 远在任何 PATH_MAX 之内且足够描述性。 */
+/** The upper bound on name length. A file name has to hold up on every platform; 64 is far inside any PATH_MAX and descriptive enough. */
 export const SAVED_WORKFLOW_MAX_NAME_CHARS = 64;
 
 /**
- * 作用域。两档：`project` 落在项目的 `.zcode/workflows/`，只在那个项目里可见；`global`
- * 落在 `~/.zcode/workflows/`（agent 进程的家目录），对所有项目可见。一个文件的作用域由它所在的目录推得，frontmatter 不存。
+ * The scope. Two levels: `project` lands in the project's `.zcode/workflows/` and is visible only inside that project; `global`
+ * lands in `~/.zcode/workflows/` (the agent process's home directory) and is visible from every project. A file's scope is inferred from the directory it sits in, the frontmatter does not store it.
  */
 export const SAVED_WORKFLOW_SCOPES = ["project", "global"] as const;
 
@@ -51,9 +51,9 @@ export const SavedWorkflowScopeSchema = z.enum(SAVED_WORKFLOW_SCOPES);
 export type SavedWorkflowScope = z.infer<typeof SavedWorkflowScopeSchema>;
 
 /**
- * 遮蔽事实：另一档已有同名定义。保存时算出，供确认窗展示。
- * `hides_global`：这次保存的是项目档，它会在本项目里遮蔽同名的全局档；
- * `hidden_by_project`：这次保存的是全局档，本项目已有同名的项目档会遮蔽它。
+ * The shadowing fact: the other scope already has a definition with the same name. Computed at save time, for the confirmation window to show.
+ * `hides_global`: this save is the project one, and it will shadow the same-named global one inside this project;
+ * `hidden_by_project`: this save is the global one, and a same-named project one already in this project will shadow it.
  */
 export const SAVED_WORKFLOW_SHADOWING = ["hides_global", "hidden_by_project"] as const;
 
@@ -62,8 +62,8 @@ export const SavedWorkflowShadowingSchema = z.enum(SAVED_WORKFLOW_SHADOWING);
 export type SavedWorkflowShadowing = z.infer<typeof SavedWorkflowShadowingSchema>;
 
 /**
- * 参数的类型词汇表。三个原语加一个 `json` 兜底：原语能被校验成"传错了"，`json` 明确表示
- * "这里什么都收"，于是「没校验」与「不校验」在声明里就是两件不同的事，而不是同一个洞。
+ * The type vocabulary for parameters. Three primitives plus a `json` catch-all: a primitive can be validated into "you passed the wrong thing", while `json` states outright
+ * "anything goes here", so that "not validated" and "deliberately not validated" are two different things in the declaration instead of one and the same hole.
  */
 export const SAVED_WORKFLOW_ARG_TYPES = ["string", "number", "boolean", "json"] as const;
 
@@ -84,8 +84,8 @@ export const SavedWorkflowArgDeclarationSchema = z
       .boolean()
       .optional()
       .describe("When true the workflow cannot run without this argument."),
-    // `default` 刻意是 unknown 而不是按 `type` 判别的联合：默认值的类型正确性由
-    // validateWorkflowArgs 在**应用默认值之后**与传入值走同一条校验，一处规则而不是两处。
+    // `default` is deliberately unknown rather than a union by `type`: the type correctness of the default value is determined by
+    // validateWorkflowArgs goes through the same verification as the incoming value after applying the default value, one rule instead of two.
     default: z.unknown().optional().describe("Value used when the caller omits this argument."),
   })
   .strict();
@@ -97,8 +97,8 @@ export const SavedWorkflowArgsDeclarationSchema = z.record(SavedWorkflowArgDecla
 export type SavedWorkflowArgsDeclaration = z.infer<typeof SavedWorkflowArgsDeclarationSchema>;
 
 /**
- * frontmatter 里的元数据体。`.strict()` 让「拼错一个键」成为一条可见的 invalid 行，而不是
- * 一个被静默丢弃的字段——保存的文件是用户会手改的，错字必须能被指出来。
+ * The metadata body in the frontmatter. `.strict()` turns a mistyped key into a visible invalid line rather than
+ * a field silently dropped -- the saved files are ones users will hand-edit, so a typo has to be pointable.
  */
 export const SavedWorkflowMetaSchema = z
   .object({
@@ -110,7 +110,7 @@ export const SavedWorkflowMetaSchema = z
 
 export type SavedWorkflowMeta = z.infer<typeof SavedWorkflowMetaSchema>;
 
-/** 列表里的一行：元数据 + 落点，**不含脚本正文**（枚举不是读取）。 */
+/** One row in a listing: metadata + landing spot, **without the script body** (enumerating is not reading). */
 export const SavedWorkflowEntrySchema = z
   .object({
     name: z.string().min(1),
@@ -125,8 +125,8 @@ export const SavedWorkflowEntrySchema = z
 export type SavedWorkflowEntry = z.infer<typeof SavedWorkflowEntrySchema>;
 
 /**
- * 一个存在但读不出来的文件。列表**不因为一个坏文件而失败**：用户手改坏了一个 frontmatter
- * 时，其余 workflow 必须照常可用，而那个坏文件必须被指名道姓，否则它只是消失了。
+ * A file that exists but cannot be read. The listing **does not fail because of one bad file**: when a user hand-edits a frontmatter into
+ * a broken state, the remaining workflows must stay usable, and the bad file has to be named outright, otherwise it has merely vanished.
  */
 export const SavedWorkflowInvalidEntrySchema = z
   .object({
@@ -137,10 +137,10 @@ export const SavedWorkflowInvalidEntrySchema = z
 
 export type SavedWorkflowInvalidEntry = z.infer<typeof SavedWorkflowInvalidEntrySchema>;
 
-/** 名字是否可用作文件名（即是否可能指向一个保存的 workflow）。 */
+/** Whether a name is usable as a file name (that is, whether it could point at a saved workflow). */
 export function isValidSavedWorkflowName(name: string): boolean {
   if (name.length === 0 || name.length > SAVED_WORKFLOW_MAX_NAME_CHARS) return false;
   if (!SAVED_WORKFLOW_NAME_PATTERN.test(name)) return false;
-  // `.` 与 `..` 通过了上面的字符集检查却是目录项，不是名字。
+  // `.` and `..` pass the above character set check but are directory entries, not names.
   return name.replaceAll(".", "").length > 0;
 }

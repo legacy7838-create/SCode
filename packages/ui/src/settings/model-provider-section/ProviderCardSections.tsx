@@ -1,4 +1,6 @@
-/* eslint-disable max-lines -- 模型供应商卡片仍在迁移期集中维护多个紧耦合区块，后续拆分时再移除。 */
+/* eslint-disable max-lines -- the model provider card still maintains several tightly coupled
+ * blocks together during the migration period; remove this once they are split apart.
+ */
 import {
   useCallback,
   useRef,
@@ -143,7 +145,7 @@ export function ProviderCardHeader({
             <DropdownMenuContent
               align="end"
               onCloseAutoFocus={(event) => {
-                // 重命名后的焦点交给输入框，不能被菜单关闭时重新抢回触发按钮。
+                // The renamed focus is given to the input box, and the trigger button cannot be regained when the menu is closed.
                 if (renameRequestedRef.current) {
                   event.preventDefault();
                   renameRequestedRef.current = false;
@@ -333,7 +335,7 @@ function createEmptyModel(): ProviderSettingsFormModel {
     modelId: "",
     builtin: false,
     personalConfig: {},
-    // 空 ID 尚未解析模型配置，硬编码档位会被误认为智能推荐。
+    // The empty ID has not resolved the model configuration, and the hard-coded gear will be mistaken for smart recommendations.
     config: {
       properties: { supportsToolCall: true },
     },
@@ -423,7 +425,7 @@ export function ProviderModelsSection({
 
   const handleAddDialogOpenChange = useCallback(
     (open: boolean) => {
-      // 保存中的关闭/再打开会让旧请求结束掉新草稿，等待本次提交完成再结束编辑。
+      // Closing/reopening during saving will end the old request and replace the new draft, waiting for this submission to be completed before ending editing.
       if (addSavingRef.current) return;
       if (!open) {
         cancelAddDialog();
@@ -445,7 +447,7 @@ export function ProviderModelsSection({
         setAddDraftErrorField(result.field);
         return false;
       }
-      // 过去只发起异步添加就关闭弹窗，失败后输入也丢了；以实际保存完成作为结束边界。
+      // In the past, only the asynchronous addition was initiated and the pop-up window was closed. After failure, the input was lost; the actual saving was completed as the end boundary.
       await onAddModel(result.model);
       setAddDialogOpen(false);
       editor.reset(createEmptyModel());

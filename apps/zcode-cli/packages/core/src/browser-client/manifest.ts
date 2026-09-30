@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- public API manifest、动态裁剪策略和 Proxy 合同集中维护，拆分会增加对象图漂移风险。 */
+/* eslint-disable max-lines -- the public API manifest, the dynamic trimming strategy and the Proxy contract are maintained together; splitting them would add object-graph drift risk. */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type {
@@ -60,8 +60,8 @@ const FALLBACK_MANIFEST: BrowserApiManifest = {
           kind: "method" as const,
           signature: `${name}(...)`,
         })),
-        // open() 是默认导航入口（同站复用 + 激活 + 原地跳转）；不声明会被 hideUnknown
-        // 代理隐藏，REPL 里 agent.browsers.open 变 undefined（与插件 docs/api.json 同步维护）。
+        // open() is the default navigation entrance (same site reuse + activation + in-situ jump); if not declared, it will be hideUnknown
+        // The agent is hidden, and agent.browsers.open in the REPL becomes undefined (maintained synchronously with the plug-in docs/api.json).
         {
           name: "open",
           kind: "method" as const,
@@ -514,7 +514,7 @@ export class BrowserApiPolicy {
     if (supported && member.declarations?.length) {
       supported = member.declarations.some((declaration) => this.supportsRequirement(declaration));
     }
-    // connection 级 override 是最后裁决；用于灰度或 adapter 的精确能力修正。
+    // Connection-level override is the final word; precise capability correction for grayscale or adapter.
     return this.descriptor.apiSupportOverrides?.[key] ?? supported;
   }
 
@@ -554,13 +554,13 @@ export class BrowserApiPolicy {
         if (scope === "browser") return !this.browserCapabilities.has(id);
         if (scope === "tab") return !this.tabCapabilities.has(id);
       }
-      // 兼容旧 manifest 的无 scope capability id；新版应显式使用 browser:/tab:。
+      // Compatible with old manifest's scopeless capability ids; newer versions should explicitly use browser:/tab:.
       return !this.browserCapabilities.has(capability) && !this.tabCapabilities.has(capability);
     });
   }
 }
 
-/** unsupported member 在读取和 `in` 检查时都不可见，而不是调用后才抛 NotImplemented。 */
+/** An unsupported member is invisible both on read and in an `in` check, rather than throwing NotImplemented after it has been called. */
 export function createBrowserApiProxy<T extends object>(
   target: T,
   objectName: string,
@@ -576,7 +576,7 @@ export function createBrowserApiProxy<T extends object>(
     get(current, property, receiver) {
       if (isHidden(property)) return undefined;
       const value = Reflect.get(current, property, receiver);
-      // strict facade 隐藏内部 helper/field；公开 method 绑定原对象，避免 method 内部读取被 proxy 拦截。
+      // The strict facade hides the internal helper/field; exposes the method to bind the original object to prevent the internal reading of the method from being intercepted by the proxy.
       return options.hideUnknown && typeof value === "function" ? value.bind(current) : value;
     },
     has(current, property) {

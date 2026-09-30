@@ -1,5 +1,5 @@
-// node-forge 1.4.0 没有自带类型，也未安装 @types/node-forge。
-// 这里只声明 appCaCert.ts 用到的最小 pki/md 子集，避免引入额外依赖。
+// node-forge 1.4.0 does not have its own types, and @types/node-forge is not installed.
+// Only the minimum pki/md subset used by appCaCert.ts is declared here to avoid introducing additional dependencies.
 declare module "node-forge" {
   interface ForgeKey {
     n?: unknown;

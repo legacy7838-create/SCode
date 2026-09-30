@@ -1,18 +1,18 @@
 import type { TraceContext } from "../tracing/tracer.js";
 
 /**
- * BrowserControlPort —— agent 侧浏览器控制端口。
+ * BrowserControlPort -- the browser control port on the agent side.
  *
- * browser-client 库把 agent.browsers.* 的每个调用构造成 BrowserCommand，经此端口执行；
- * 实现（ProtocolBrowserControlBroker）把它翻译成 ZCode Protocol 的
- * interaction/browserExecute 反向请求，由 app（host→main WebContentsView/CDP）执行。
+ * The browser-client library turns every agent.browsers.* call into a BrowserCommand and executes it through this port;
+ * the implementation (ProtocolBrowserControlBroker) translates it into a ZCode Protocol
+ * interaction/browserExecute reverse request, executed by the app (host->main WebContentsView/CDP).
  *
- * 类型说明：BrowserCommand/BrowserCommandResult 与 @zcode/shared 的 browser-use 契约同构。
- * 此处定义结构镜像（不 import @zcode/shared，避免 agent contracts 的 zod v3 与 shared zod v4
- * 跨包耦合）；协议边界用 shared 的 zod schema 做运行时校验，两侧一致性由 round-trip 测保证。
+ * On types: BrowserCommand/BrowserCommandResult are isomorphic to the browser-use contract in @zcode/shared.
+ * A structural mirror is defined here (without importing @zcode/shared, to avoid coupling agent contracts' zod v3 to shared's zod v4
+ * across packages); the protocol boundary validates at runtime with shared's zod schema, and a round-trip test guarantees the two sides agree.
  */
 
-/** Playwright 是 Tab API 层，不是 backend family。 */
+/** Playwright is the Tab API layer, not a backend family. */
 export type BrowserBackendType = "iab" | "extension" | "cdp";
 
 export interface BrowserCapabilityDescriptor {
@@ -20,9 +20,7 @@ export interface BrowserCapabilityDescriptor {
   description: string;
 }
 
-/**
- * 完成握手且真实可达的 backend descriptor；id 是运行时 connection identity，不能用 type 代替。
- */
+/** A backend descriptor whose handshake completed and which is genuinely reachable; the id is the runtime connection identity and cannot be replaced by the type. */
 export interface BrowserBackendDescriptor {
   id: string;
   generation: number;
@@ -36,7 +34,7 @@ export interface BrowserBackendDescriptor {
   metadata?: Record<string, string>;
 }
 
-/** ZCode Protocol 使用包装结果；BrowserControlPort.list 会解包并直接返回 browsers。 */
+/** ZCode Protocol uses a wrapped result; BrowserControlPort.list unwraps it and returns the browsers directly. */
 export interface BrowserBackendListResult {
   browsers: BrowserBackendDescriptor[];
 }
@@ -44,7 +42,7 @@ export interface BrowserBackendListResult {
 export type BrowserClientMode = "desktop-continuous" | "web-remote-replayable";
 export type BrowserSessionContextKind = "live" | "cached";
 
-/** 与 Desktop 自由尺寸视口保持同一组 CSS px 边界。 */
+/** Keeps the same set of CSS px bounds as the Desktop free-size viewport. */
 export const BROWSER_VIEWPORT_LIMITS = {
   minWidth: 320,
   maxWidth: 3840,
@@ -57,7 +55,7 @@ export interface BrowserViewportSize {
   height: number;
 }
 
-/** backend discovery 使用的完整 workspace/session 隔离上下文。 */
+/** The full workspace/session isolation context used by backend discovery. */
 export interface BrowserDiscoveryContext {
   requestId: string;
   workspaceKey: string;
@@ -70,7 +68,7 @@ export interface BrowserDiscoveryContext {
   sessionContext: BrowserSessionContextKind;
 }
 
-/** execute 比 discovery 多一个精确 runtime browser identity。 */
+/** execute carries one more thing than discovery: an exact runtime browser identity. */
 export interface BrowserSessionContext extends BrowserDiscoveryContext {
   browserId: string;
   browserGeneration: number;
@@ -263,8 +261,8 @@ export interface BrowserRecordingOptions {
   actions?: BrowserRecordingAction[];
 }
 
-// tabId（可选）：agent 对象模型用于寻址指定受控 tab（含 human 开的 tab）；缺省作用于会话默认 view。
-// 与 @zcode/shared 的 browserCommandSchema 各变体结构镜像同步。
+// tabId (optional): The agent object model is used to address the specified controlled tab (including tabs opened by human); the default is used for the session default view.
+// Synchronized with @zcode/shared browserCommandSchema variant structure mirroring.
 export type BrowserCommand =
   | { method: "navigate"; url: string; tabId?: string }
   | { method: "back"; tabId?: string }
@@ -371,9 +369,9 @@ export type BrowserCommand =
   | { method: "turnEnded"; turnId?: string }
   | { method: "closeSession" }
   | { method: "cancelRequest"; requestId: string }
-  // close：关闭指定受控 tab；manager 层处理。
+  // close: Close the specified controlled tab; handled by the manager layer.
   | { method: "close"; tabId?: string }
-  // list：枚举当前会话窗口下所有受控 tab 摘要，manager 层拦截处理，返回 tabs。
+  // list: enumerates the summary of all controlled tabs under the current session window, the manager layer intercepts and processes, and returns tabs.
   | { method: "list" };
 
 export type BrowserErrorCode =
@@ -436,14 +434,14 @@ export interface BrowserSnapshot {
   domTruncated?: boolean;
 }
 
-/** 受控 tab 摘要（list 命令返回）；与 @zcode/shared 的 browserTabSummarySchema 镜像同步。 */
+/** A controlled tab summary (returned by the list command); kept in sync as a mirror of browserTabSummarySchema in @zcode/shared. */
 export interface BrowserTabSummary {
   tabId: string;
   url: string;
   title: string;
-  /** guest 当前真实 CSS viewport；normal/free-size 均必须返回。 */
+  /** The guest's real current CSS viewport; both normal and free-size must return it. */
   viewport: BrowserViewportSize;
-  /** 当前可见/激活的内置浏览器 tab；agent 用它优先读取用户正在看的页面。 */
+  /** The currently visible/active built-in browser tab; the agent uses it to read preferentially the page the user is looking at. */
   active?: boolean;
   lifecycle?: "active" | "deliverable" | "handoff";
 }
@@ -467,7 +465,7 @@ export interface BrowserResponseMeta {
   lifecycle?: "active" | "deliverable" | "handoff" | "closed";
 }
 
-/** JS 弹窗信息（getDialog 返回）。 */
+/** JS dialog information (returned by getDialog). */
 export interface BrowserDialog {
   type: "alert" | "confirm" | "prompt" | "beforeunload";
   message: string;
@@ -500,15 +498,15 @@ export interface BrowserCommandResult {
   state?: BrowserPageState;
   snapshot?: BrowserSnapshot;
   image?: { base64: string; mimeType: "image/png" };
-  /** list 命令返回：当前会话窗口下所有受控 tab 的摘要。 */
+  /** What the list command returns: summaries of all controlled tabs under the current session window. */
   tabs?: BrowserTabSummary[];
   userTabs?: BrowserUserTabInfo[];
   tab?: BrowserTabSummary;
-  /** evaluate 返回：页面表达式的可 JSON 序列化结果。 */
+  /** What evaluate returns: the JSON-serializable result of the page expression. */
   value?: unknown;
-  /** elementInfo 返回：坐标命中元素的信息（未命中则省略）。 */
+  /** What elementInfo returns: information about the element under the coordinates (omitted when nothing was hit). */
   element?: BrowserSnapshotElement;
-  /** getDialog 返回：当前 JS 弹窗信息；无弹窗时为 null。 */
+  /** What getDialog returns: the current JS dialog information; null when there is no dialog. */
   dialog?: BrowserDialog | null;
   recording?: BrowserRecordingJob;
   error?: { code: BrowserErrorCode; message: string; sideEffect?: "none" | "uncertain" };
@@ -517,7 +515,7 @@ export interface BrowserCommandResult {
 }
 
 export interface BrowserControlExecuteInput {
-  /** 精确 runtime backend id；不能只传 iab/extension/cdp family。 */
+  /** The exact runtime backend id; passing only the iab/extension/cdp family is not enough. */
   browserId: string;
   browserGeneration: number;
   sessionId: string;
@@ -535,11 +533,11 @@ export interface BrowserControlListInput {
 }
 
 export interface BrowserControlPort {
-  /** 只返回完成握手且当前 context 可达的 backend，不允许伪造 stub。 */
+  /** Only returns backends whose handshake completed and that are reachable from the current context; faked stubs are not allowed. */
   list(input: BrowserControlListInput): Promise<BrowserBackendDescriptor[]>;
   execute(input: BrowserControlExecuteInput): Promise<BrowserCommandResult>;
-  /** turn 结束时取消该 turn 尚未完成的 IAB 请求，不跨 session 清 tab。 */
+  /** At the end of a turn, cancels that turn's unfinished IAB requests; tabs are not cleared across sessions. */
   turnEnded?(input: BrowserControlListInput): Promise<void>;
-  /** session 关闭时释放 browser guest、pending request 与 lease。 */
+  /** Releases the browser guest, pending requests and leases when the session closes. */
   closeSession?(input: BrowserControlListInput): Promise<void>;
 }

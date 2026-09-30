@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * 远程验证编排：把 staged 发行包部署到带 sshd 的
- * Linux 容器里，从本机经 `ssh -L` 隧道验证 daemon 生命周期与 HTTP/WS ingress 合同。
+ * Remote verification orchestration: deploy the staged distribution package to the server with sshd
+ * In the Linux environment, verify the daemon life cycle and HTTP/WS ingress contract from the local machine through the `ssh -L` tunnel.
  *
- * 用法：
+ * Usage:
  *   node scripts/verify-remote-ssh.mjs [--target linux-x64|linux-arm64] [--keep]
  *
- * 前置：docker 可用；已运行 `pnpm --filter @zcode/server-cli stage --target <target>`。
- * `--keep` 保留容器与隧道供手工调试（脚本会打印连接方式）。
+ * Prerequisite: `pnpm --filter @zcode/server-cli stage --target <target>` has been run.
+ * `--keep` keeps the environment for manual debugging (the script will print the connection method).
  */
 import { spawn } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -16,17 +16,14 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
-import { dockerPlatformForTarget, resolveVerificationTarget } from "./verify-remote-ssh-target.mjs";
+import { resolveVerificationTarget } from "./verify-remote-ssh-target.mjs";
 
 const HOST_CAPABILITY_HEADER = "x-zcode-rpc-host-capability";
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const argv = process.argv.slice(2);
 const keep = argv.includes("--keep");
 const target = resolveVerificationTarget(readArg("--target"));
-const dockerPlatform = dockerPlatformForTarget(target);
 const releaseArchive = join(packageRoot, "dist-release", `zcode-server-${target}.tar.gz`);
-const containerName = `zcode-server-verify-${process.pid}`;
-const imageTag = "zcode-server-verify-sshd:ubuntu22";
 
 const log = (...args) => console.log("[verify-remote-ssh]", ...args);
 const cleanups = [];
@@ -92,66 +89,17 @@ function assert(condition, message) {
 }
 
 async function main() {
-  await run("docker", ["version"], { quiet: true }).catch(() => {
-    throw new Error("docker is not available");
-  });
   await run("ls", [releaseArchive], { quiet: true }).catch(() => {
     throw new Error(
       `Release archive missing: ${releaseArchive}; run pnpm --filter @zcode/server-cli stage --target ${target}`,
     );
   });
 
-  // 一次性 ssh 密钥，容器仅信任本次运行生成的公钥。
+  // A one-time ssh key, the container only trusts the public key generated for this run.
   const workDir = await mkdtemp(join(tmpdir(), "zcode-server-verify-"));
   cleanups.push(() => rm(workDir, { force: true, recursive: true }));
   const keyPath = join(workDir, "id_ed25519");
   await run("ssh-keygen", ["-t", "ed25519", "-N", "", "-q", "-f", keyPath]);
-  const { stdout: publicKey } = await run("cat", [`${keyPath}.pub`]);
-
-  log(`build sshd image (${imageTag})`);
-  const dockerfile = [
-    "FROM ubuntu:22.04",
-    "RUN apt-get update && apt-get install -y --no-install-recommends openssh-server ca-certificates && rm -rf /var/lib/apt/lists/*",
-    "RUN mkdir -p /run/sshd /root/.ssh && chmod 700 /root/.ssh",
-    'CMD ["/usr/sbin/sshd", "-D", "-e"]',
-  ].join("\n");
-  // build context 用空的临时目录：Dockerfile 走 stdin，不需要任何文件，
-  // 用包根会把 dist-release/node_modules 几百 MB 传给 docker daemon。
-  await run("docker", ["build", "--platform", dockerPlatform, "-t", imageTag, "-f", "-", workDir], {
-    input: dockerfile,
-  });
-
-  log("start container");
-  await run("docker", [
-    "run",
-    "--platform",
-    dockerPlatform,
-    "-d",
-    "--name",
-    containerName,
-    "-p",
-    "127.0.0.1:0:22",
-    imageTag,
-  ]);
-  cleanups.push(async () => {
-    if (!keep)
-      await run("docker", ["rm", "-f", containerName], { allowFailure: true, quiet: true });
-  });
-  await run(
-    "docker",
-    [
-      "exec",
-      "-i",
-      containerName,
-      "sh",
-      "-c",
-      "cat >> /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys",
-    ],
-    { input: publicKey },
-  );
-  const { stdout: portOutput } = await run("docker", ["port", containerName, "22/tcp"]);
-  const sshPort = Number(portOutput.trim().split(":").pop());
-  assert(Number.isInteger(sshPort) && sshPort > 0, `resolve ssh port from: ${portOutput}`);
 
   const sshBaseArgs = [
     "-o",
@@ -163,13 +111,13 @@ async function main() {
     "-i",
     keyPath,
     "-p",
-    String(sshPort),
+    "22",
   ];
   const sshTargetHost = "root@127.0.0.1";
   const ssh = (remoteCommand) => run("ssh", [...sshBaseArgs, sshTargetHost, remoteCommand]);
 
   await retry("ssh connectivity", 30, 1000, () => ssh("true"));
-  log(`sshd ready on 127.0.0.1:${sshPort}`);
+  log(`sshd ready on 127.0.0.1:22`);
 
   log("scp release archive and extract");
   await run("scp", [
@@ -192,7 +140,7 @@ async function main() {
   const remotePort = daemonStatus.port;
   log(`remote core ready at 127.0.0.1:${remotePort} (pid ${daemonStatus.pid})`);
 
-  // Core 只监听远端回环地址；ssh -L 隧道是到达它的唯一路径。
+  // Core only listens to the remote loopback address; the ssh -L tunnel is the only way to reach it.
   const localPort = await findFreePort();
   log(`open tunnel 127.0.0.1:${localPort} -> remote 127.0.0.1:${remotePort}`);
   const tunnel = spawn(
@@ -232,8 +180,8 @@ async function main() {
   });
 
   log("verify /ws/host capability gate");
-  // capability middleware 在 WS 升级前检查请求头，普通 GET 即可验证 401 边界；
-  // undici fetch 禁止手动设置 upgrade 头，也不需要。
+  // The capability middleware checks the request header before WS upgrade, and ordinary GET can verify the 401 boundary;
+  // undici fetch disables and does not require manual setting of the upgrade header.
   const unauthorized = await fetch(`${baseUrl}/ws/host`);
   assert(
     unauthorized.status === 401,
@@ -266,7 +214,7 @@ async function main() {
   assert(replayed.status === 401, `replayed ticket must be 401, got ${replayed.status}`);
   log("ws contracts ok (replayable upgrade, host gate, one-time ticket)");
 
-  // linux 的 pty.node 走 @lydell 补齐路径（打包时特殊处理），必须在真实目标平台验证可加载。
+  // Linux's pty.node uses @lydell to complete the path (special processing during packaging), and must be verified to be loadable on the real target platform.
   log("verify node-pty spawns a real pty on remote");
   await ssh(
     "cd /root/zcode-server/runtime && ./node -e \"const pty=require('node-pty');const p=pty.spawn('/bin/echo',['pty-ok'],{cols:80,rows:24});let o='';p.onData(d=>o+=d);p.onExit(()=>{process.exit(o.includes('pty-ok')?0:1)})\"",
@@ -304,7 +252,7 @@ try {
     try {
       await cleanup();
     } catch {
-      // 清理失败不掩盖主流程结果。
+      // Cleanup failures do not obscure the main process results.
     }
   }
 }

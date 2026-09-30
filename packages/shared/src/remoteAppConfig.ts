@@ -54,7 +54,6 @@ export function getCommunityUrlsFromConfig(config: unknown): LocaleUrlMap {
   }
 
   return {
-    "zh-CN": sanitizeUrl(rawCommunityUrls["zh-CN"]),
     "en-US": sanitizeUrl(rawCommunityUrls["en-US"]),
   };
 }
@@ -72,8 +71,8 @@ export function getCommunityUrlFromConfigs(
   const remoteUrls = getCommunityUrlsFromConfig(remoteConfig);
   const localUrls = getCommunityUrlsFromConfig(localConfig);
 
-  // 社群渠道具有语言边界。只允许远端覆盖同语言的内置入口，
-  // 对应语言缺失时保持隐藏，避免中文和英文用户被导向错误渠道。
+  // Social channels have language boundaries. Only the remote end is allowed to override the built-in entry in the same language.
+  // Keep it hidden when the corresponding language is missing to prevent Chinese and English users from being directed to the wrong channel.
   return remoteUrls[locale] ?? localUrls[locale];
 }
 

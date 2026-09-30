@@ -1,8 +1,9 @@
 /**
- * ZCode Session Store 导航切片 —— 任务前进/后退历史管理
+ * ZCode Session Store navigation slice —— task forward/back history management
  *
- * 从 zcodeSessionStore.ts 拆分出来，封装所有任务导航相关的初始状态和 action。
- * 通过 createNavigationSlice(set, get) 返回可直接展开到 store 的对象。
+ * Split out of zcodeSessionStore.ts, wrapping all the initial state and actions related to task
+ * navigation. It returns an object that can be spread straight into the store via
+ * createNavigationSlice(set, get).
  */
 import {
   createTaskNavigationHistory,
@@ -25,8 +26,8 @@ type SetFn = (
 type GetFn = () => ZCodeSessionStoreState;
 
 /**
- * 创建导航切片，供 store creator 展开使用：
- * `...createNavigationSlice(set, get)`
+ * Create the navigation slice, for the store creator to spread: `...createNavigationSlice(set,
+ * get)`
  */
 export function createNavigationSlice(set: SetFn, get: GetFn) {
   return {

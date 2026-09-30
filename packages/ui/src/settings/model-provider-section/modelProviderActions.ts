@@ -18,7 +18,7 @@ export async function confirmAndDeleteModelProvider({
     return;
   }
 
-  logger.info("[ModelProviderSection] 请求删除自定义模型供应商", {
+  logger.info("[ModelProviderSection] request delete custom model provider", {
     providerId: provider.providerId,
     providerName: getProviderFormLabel(provider),
   });
@@ -37,7 +37,7 @@ export async function confirmAndDeleteModelProvider({
     cancelLabel: intl.formatMessage({ id: "common.cancel" }),
   });
   if (!confirmed) {
-    logger.info("[ModelProviderSection] 用户取消删除自定义模型供应商", {
+    logger.info("[ModelProviderSection] user cancelled delete custom model provider", {
       providerId: provider.providerId,
       providerName: getProviderFormLabel(provider),
     });
@@ -47,7 +47,7 @@ export async function confirmAndDeleteModelProvider({
   try {
     await deleteProvider(provider.providerId);
   } catch (error) {
-    logger.error("[ModelProviderSection] 删除模型供应商失败", error);
+    logger.error("[ModelProviderSection] delete model provider failed", error);
   }
 }
 
@@ -58,8 +58,8 @@ export async function refreshModelProviderSection({
   refresh: () => Promise<void>;
   refreshTeamPlanProducts?: () => Promise<void>;
 }) {
-  // Model Provider 顶部刷新是账号权益刷新入口。
-  // Team Plan 连接方式来自企业 pricing/customerInfo，不会被普通 provider list refresh 更新。
+  // The top refresh of Model Provider is the entrance to refresh the account rights.
+  // The Team Plan connection method comes from enterprise pricing/customerInfo and will not be updated by normal provider list refresh.
   await Promise.all([refresh(), refreshTeamPlanProducts?.()]);
 }
 
@@ -86,8 +86,8 @@ export async function refreshProviderPanelAfterAuthChange({
       refreshTeamPlanProducts({ force: true }),
     ]);
   } else {
-    // 切换连接方式只是保存本地连接选择和刷新目标 provider key。
-    // 不能顺手刷新今日余额/套餐快照，否则 Start Plan balance 与 entitlement 查询会并发放大。
+    // Switching connection methods simply saves the local connection selection and refreshes the target provider key.
+    // You cannot easily refresh today's balance/package snapshot, otherwise Start Plan balance and entitlement queries will be issued simultaneously.
     await refreshModelProviders();
   }
   refreshCodingPlanProducts();

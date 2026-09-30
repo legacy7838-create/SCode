@@ -38,22 +38,22 @@ function cloneFinalPayload(payload: FinalArmsCustomEventPayload): FinalArmsCusto
 
 function normalizeSuppressedEventNames(value: unknown): string[] {
   if (!Array.isArray(value) || value.length > MAX_SUPPRESSED_EVENT_NAMES) {
-    throw new Error("suppressedEventNames 必须是最多 100 项的字符串数组");
+    throw new Error("suppressedEventNames must be an array of at most 100 strings");
   }
   const names = value.map((item) => {
     if (typeof item !== "string") {
-      throw new Error("suppressedEventNames 只能包含字符串");
+      throw new Error("suppressedEventNames may only contain strings");
     }
     const normalized = item.trim();
     if (!normalized || normalized.length > MAX_EVENT_NAME_LENGTH) {
-      throw new Error("suppressedEventNames 包含空值或超长 event name");
+      throw new Error("suppressedEventNames contains an empty or overlong event name");
     }
     return normalized;
   });
   return [...new Set(names)];
 }
 
-/** Main-process 内存 ring；不写磁盘，也不进入 renderer store。 */
+/** Main-process memory ring; does not write to disk, nor enter renderer store. */
 function createFinalArmsCustomEventE2EController(
   options: {
     capacity?: number;
@@ -106,10 +106,10 @@ function createFinalArmsCustomEventE2EController(
 }
 
 /**
- * main 侧共享的 E2E 捕获环。
+ * E2E capture ring shared on the main side.
  *
- * renderer 经 IPC 来的自定义事件与 main 自己发出的资源 / 稳定性事件必须进同一个环，
- * 否则 E2E 只能看到 renderer 那一半。由 `desktopMainIpcRemote` 在双门禁下开启。
+ * The custom events sent by renderer via IPC and the resource/stability events sent by main itself must enter the same loop.
+ * Otherwise E2E can only see the renderer half. Opened by `desktopMainIpcRemote` under double access control.
  */
 let sharedFinalArmsCustomEventE2E: FinalArmsCustomEventE2EController | null = null;
 
@@ -161,7 +161,7 @@ export function buildFinalArmsCustomEventPayload(params: {
   };
 }
 
-/** 捕获发生在 sendCustom 调用前，网络抑制只跳过目标 event name。 */
+/** Capture happens before the sendCustom call; network suppression only skips the target event name. */
 export function dispatchFinalArmsCustomEvent(params: {
   payload: ArmsCustomEventPayload;
   context: Parameters<typeof buildFinalArmsCustomEventPayload>[0]["context"];

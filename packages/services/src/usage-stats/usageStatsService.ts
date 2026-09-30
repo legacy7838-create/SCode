@@ -38,11 +38,11 @@ interface UsageStatsServiceDependencies {
   ) => Promise<UsageApiAuthorization | null>;
   credentialService?: Pick<ICredentialService, "load">;
   env?: NodeJS.ProcessEnv;
-  /** App Usage 经 ZCode Protocol 读取 agent 数据库真实统计。 */
+  /** App Usage reads real statistics from the agent database via ZCode Protocol. */
   zcodeAgentService: Pick<IZCodeAgentService, "getAppUsageStats">;
   /**
-   * 官方 Server MCP 额度的凭证来源（与 server MCP 调用同一套 5 个身份头）。
-   * 缺省时 entitlement 快照不含 MCP 额度。
+   * The credential source for official Server MCP quota (same set of 5 identity headers as server MCP calls).
+   * When absent, the entitlement snapshot does not include MCP quota.
    */
   officialMcpCredentialSource?: OfficialMcpCredentialSource;
 }
@@ -67,8 +67,8 @@ export function createUsageStatsService(
 
   return {
     async getAppUsageSnapshot(request: AppUsageRequest): Promise<AppUsageSnapshot> {
-      // App Usage 现读取 agent 数据库真实统计（model_usage/turn_usage/tool_usage），
-      // 经 ZCode Protocol usage/stats 取回。不再读本地 session JSON 估算。
+      // App Usage now reads real statistics from the agent database (model_usage/turn_usage/tool_usage),
+      // retrieved via ZCode Protocol usage/stats. No longer reads local session JSON for estimation.
       return dependencies.zcodeAgentService.getAppUsageStats({
         range: request.range,
         timeZone: request.timeZone,
@@ -78,8 +78,8 @@ export function createUsageStatsService(
       request: CodingPlanUsageRequest,
     ): Promise<CodingPlanUsageSnapshot> {
       if (!isCodingPlanProviderId(request.preferredProviderId)) {
-        // Coding Plan 页面只允许预置的 Z.AI/BigModel Coding Plan 账号。
-        // 普通 provider id 不能进入 monitor 链路，避免误读 API Key 或环境变量。
+        // The Coding Plan page only allows preset Z.AI/BigModel Coding Plan accounts.
+        // Regular provider ids cannot enter the monitor chain to avoid mistakenly reading API Keys or environment variables.
         throw new Error("no_bigmodel_api_key");
       }
       return quotaProvider.getCodingPlanUsageSnapshot(request);
@@ -115,8 +115,8 @@ export function createUsageStatsService(
       await quotaProvider.markCodingPlanResetHistoryRead(request);
     },
     async getSnapshot(request: UsageStatsRequest): Promise<UsageStatsSnapshot> {
-      // App Usage 已迁移到 getAppUsageSnapshot（agent 数据库）。getSnapshot 仅服务 Coding Plan monitor 链路。
-      // 任何 monitor 失败都不能回退本地数据，保持数据源隔离。
+      // App Usage has been migrated to getAppUsageSnapshot (agent database). getSnapshot only serves the Coding Plan monitor chain.
+      // Any monitor failure must not fall back to local data, maintaining data source isolation.
       return quotaProvider.getUsageStatsSnapshot(request);
     },
     async getEntitlementSnapshot(

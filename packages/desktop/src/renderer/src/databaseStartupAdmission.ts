@@ -1,6 +1,6 @@
 import { databaseStartupPortPayloadSchema, type DatabaseStartupState } from "@zcode/shared";
 
-/** 页面只做同代准入；ready(A) 不能与端口(B) 拼成一次完成事实。 */
+/** The page only performs same-generation admission; a ready (A) must never be stitched together with the port (B) into one completion fact. */
 export class DatabaseStartupAdmission {
   state: DatabaseStartupState | null = null;
   private pending?: { startupId: string; port: MessagePort };

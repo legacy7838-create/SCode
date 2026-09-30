@@ -104,7 +104,7 @@ const HookDetailItemRow = memo(function HookDetailItemRow({ item }: { item: Hook
               <HookStatusIcon status={item.status} />
               {intl.formatMessage({ id: `chat.hooks.state.${item.status}` })}
               {item.blockReason ? (
-                <span className="min-w-0 break-words text-warning">：{item.blockReason}</span>
+                <span className="min-w-0 break-words text-warning">{`: ${item.blockReason}`}</span>
               ) : null}
             </span>
           ) : null}

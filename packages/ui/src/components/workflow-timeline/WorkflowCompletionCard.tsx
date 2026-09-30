@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from
 import { buildPresetLabels } from "@/app-shell/workflow-artifacts/artifactPresentation.js";
 import { cn } from "@/components/lib/utils.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
-import { workDurationParts, workDurationUnitSeparator } from "@/lib/workDuration.js";
+import { workDurationParts } from "@/lib/workDuration.js";
 import type { WorkflowCompletionArtifact } from "./WorkflowArtifactTile.js";
 import {
   WORKFLOW_RUN_KIND_ID,
@@ -19,20 +19,26 @@ import { PILL_STAGGER_MS } from "./WorkflowTimeline.js";
 export { COMPLETION_INDEX_MAX } from "./WorkflowCompletionArtifacts.js";
 
 /**
- * 完成卡：主代理消化一条 **completed** 工作流通知的那一轮，
- * 轮尾落下这张卡。顺序即论点——表头 → 这次 run **交付了什么**（交付物行）→ **还做了什么**（产物索引，
- * 一件一行）→ **花了多少**（四格数字）。三段之间各隔一条细线，像一张收据。产物区在 `WorkflowCompletionArtifacts`。
+ * Completion card: the turn in which the main agent digests a **completed** workflow notification
+ * drops this card at the end of the turn. The order is the argument — header → what this run
+ * **delivered** (the deliverables row) → what **else** it produced (the artifact index, one row per
+ * artifact) → **what it cost** (the four numbers). A hairline separates the three sections, like a
+ * receipt. The artifact area is `WorkflowCompletionArtifacts`.
  *
- * 纯展示：产物清单、四个数字、每件产物的预览都由宿主交进来（预览要读字节，那是宿主的活）。
- * 没有 chevron——没有可展开的东西；整卡不是开关。
+ * Pure presentation: the artifact list, the four numbers, and each artifact's preview are all
+ * handed in by the host (a preview has to read bytes, which is the host's job). There is no chevron
+ * — there is nothing to expand; the whole card is not a toggle.
  *
- * 数字的诚实：拿不到的格写 `—`，不写 0。
+ * Honest numbers: a cell that cannot be obtained reads `—`, never 0.
  */
 export interface WorkflowCompletionFigures {
   durationMs?: number;
   tokens?: number;
   subagents?: number;
-  /** 进过的阶段数（`run.phases`）；没有 phase() 标记的脚本拿不到，写 `—`。 */
+  /**
+   * Number of phases entered (`run.phases`); a script with no phase() markers cannot supply it, so
+   * it reads `—`.
+   */
   phases?: number;
 }
 
@@ -40,21 +46,28 @@ export interface WorkflowCompletionCardProps {
   name: string;
   figures: WorkflowCompletionFigures;
   artifacts: readonly WorkflowCompletionArtifact[];
-  /** 发射侧砍过：「还有 N 个」的 N 写 `…`。 */
+  /** Truncated on the emit side: the N in "N more" is written as `…`. */
   artifactsTruncated?: boolean;
-  /** 画出来的框的预览（只有交付物行有框）；缺席（或回 undefined）即纸页字形。 */
+  /**
+   * A preview of the drawn frame (only the deliverables row has one); absent (or returning
+   * undefined) means the paper-page glyph.
+   */
   renderPreview?: (artifact: WorkflowCompletionArtifact) => ReactNode;
   onOpenRun?: () => void;
   onOpenArtifact?: (artifactId: string) => void;
   testIdKey: string;
 }
 
-/** 数字翻上来的时长；四格同一拍，与条上药丸依次落地的节奏相接。 */
+/**
+ * How long the numbers take to roll up; all four cells land on the same beat, continuing the rhythm
+ * of the pills dropping in sequence on the strip.
+ */
 const COUNT_UP_MS = 640;
 
 /**
- * tokens 的紧凑写法：`812` / `386.4k` / `1.30M`。千位一位小数、百万两位——固定位数让四格
- * 的等宽数字在 run 与 run 之间对得齐。全值进 title。
+ * Compact token notation: `812` / `386.4k` / `1.30M`. One decimal place for thousands, two for
+ * millions — the fixed digit count keeps the four cells' monospaced numbers aligned from run to
+ * run. The full value goes in the title.
  */
 export function formatCompactCount(count: number): { value: string; unit: string } {
   if (count < 1_000) return { value: count.toLocaleString(), unit: "" };
@@ -66,7 +79,10 @@ function easeOutCubic(t: number): number {
   return 1 - (1 - t) ** 3;
 }
 
-/** 只在浏览器**明确**说了「不减少运动」时才翻数字；问不到（静态渲染、jsdom）就直接落终值。 */
+/**
+ * The numbers roll only when the browser has **explicitly** said to reduce motion; when the
+ * question cannot be asked (static rendering, jsdom) they go straight to their final values.
+ */
 function motionAllowed(): boolean {
   return (
     typeof window !== "undefined" &&
@@ -76,8 +92,9 @@ function motionAllowed(): boolean {
 }
 
 /**
- * 数字从 0 翻到目标值。**首帧就是目标值**（静态渲染、测试、reduced-motion 看到的都是终值），
- * 挂载之后才回到 0 再翻上来——「页面在静止时是完整的」。
+ * Rolls a number from 0 up to its target. **The first frame is the target value** (static
+ * rendering, tests, and reduced-motion all see the final value); only after mounting does it go
+ * back to 0 and roll up again — "the page is complete at rest".
  */
 function useCountUp(target: number | undefined): number | undefined {
   const [shown, setShown] = useState(target);
@@ -109,7 +126,7 @@ function Figure({
 }: {
   testKey: string;
   label: string;
-  /** `[数字, 单位]` 交替；缺席即 `—`。 */
+  /** Alternates `[number, unit]`; when absent, `—`. */
   parts: readonly { value: string; unit: string }[] | undefined;
   title?: string;
   delayMs: number;
@@ -161,7 +178,7 @@ export function WorkflowCompletionCard({
   renderPreview,
   testIdKey,
 }: WorkflowCompletionCardProps) {
-  const { intl, locale } = useZCodeIntl();
+  const { intl } = useZCodeIntl();
   const format = intl.formatMessage.bind(intl);
   const labels = useMemo(
     () => buildPresetLabels((descriptor, values) => intl.formatMessage(descriptor, values)),
@@ -173,18 +190,17 @@ export function WorkflowCompletionCard({
     [artifacts, artifactsTruncated],
   );
 
-  // 四格的数字翻上来；时长翻的是毫秒，再拆成「11m 48s」。
+  // Turn up the four-digit number; turn up the duration in milliseconds, and then split it into "11m 48s".
   const durationMs = useCountUp(figures.durationMs);
   const tokens = useCountUp(figures.tokens);
   const subagents = useCountUp(figures.subagents);
   const phases = useCountUp(figures.phases);
-  const separator = workDurationUnitSeparator(locale);
   const timeParts =
     durationMs === undefined
       ? undefined
       : workDurationParts(durationMs, format).map((part) => ({
           value: String(part.value),
-          unit: `${separator}${part.unit}`,
+          unit: part.unit,
         }));
   const tokenParts = tokens === undefined ? undefined : [formatCompactCount(tokens)];
   const plain = (value: number | undefined) =>

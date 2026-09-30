@@ -82,8 +82,8 @@ export function cleanupExpiredLogFiles(
 
       const filePath = join(logDir, entry.name);
       try {
-        // 主日志目前只有按天切分，没有保留期，旧文件会无限累积。
-        // 这里在启动时清理 14 天前的日志，先用最小成本把磁盘增长控制住。
+        // The main log is currently only segmented by day and has no retention period. Old files will accumulate indefinitely.
+        // Here, the logs from 14 days ago are cleared at startup, and the disk growth is controlled at the minimum cost.
         unlinkSync(filePath);
         deletedFiles.push(entry.name);
       } catch {

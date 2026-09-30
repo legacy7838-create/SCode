@@ -30,19 +30,19 @@ interface FeedbackUiState {
   featureRequestOpen: boolean;
   tab: FeedbackTab;
   submitDraft: FeedbackSubmitDraft | null;
-  /** 仅查看指定后台提交时设置；新建反馈必须保持为 null */
+  /** Set when viewing only specified background submissions; new feedback must remain null */
   submissionJobId: string | null;
-  /** 打开"我的反馈"列表时，可选地高亮某条工单 */
+  /** Optionally highlight a ticket when opening the "My Feedback" list */
   selectedTicketId: string | null;
-  /** 打开后立刻聚焦到提交表单 */
+  /** Immediately after opening, focus on the submission form */
   openSubmit: (draft?: FeedbackSubmitDraft) => void;
-  /** 打开指定后台提交任务的进度弹窗 */
+  /** Open the progress pop-up window of the specified background submission task */
   openSubmissionJob: (jobId: string) => void;
-  /** 打开独立产品需求反馈弹窗 */
+  /** Open independent product demand feedback pop-up window */
   openFeatureRequest: () => void;
-  /** 打开后立刻聚焦到工单列表，可选 highlight */
+  /** Immediately focus on the work order list after opening, optional highlight */
   openTickets: (ticketId?: string) => void;
-  /** 切换 Tab，但不关闭 dialog */
+  /** Switch tabs without closing dialog */
   setTab: (tab: FeedbackTab) => void;
   setSelectedTicketId: (ticketId: string | null) => void;
   close: () => void;
@@ -57,8 +57,8 @@ export const useFeedbackStore = create<FeedbackUiState>((set) => ({
   selectedTicketId: null,
   openSubmit: (draft) =>
     set({
-      // “问题上报”是新建入口，不能隐式续接上一次仍在上传的 job，
-      // 否则新表单会继承旧 job 的 submitting 状态并阻止用户继续提交。
+      // "Problem Reporting" is a new entry, and cannot implicitly continue the job that is still being uploaded last time.
+      // Otherwise the new form will inherit the submitting status of the old job and prevent the user from continuing to submit.
       open: true,
       featureRequestOpen: false,
       tab: "submit",
@@ -77,7 +77,7 @@ export const useFeedbackStore = create<FeedbackUiState>((set) => ({
     }),
   openFeatureRequest: () =>
     set({
-      // 需求反馈和问题上报是两个独立 Dialog，必须互斥打开，避免后台浮层或快捷入口叠出双弹窗。
+      // Demand feedback and problem reporting are two independent Dialogs that must be opened mutually exclusive to avoid double pop-up windows in the background floating layer or quick entry.
       open: false,
       featureRequestOpen: true,
       submitDraft: null,

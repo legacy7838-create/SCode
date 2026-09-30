@@ -1,8 +1,10 @@
 /**
- * 草稿态空态问候：时间问候语 + ZCode Logo。
- * 自旧版 ChatView/ChatViewEmptyState.tsx 恢复（该组件随旧 ChatView 删除，
- * i18n key `chat.empty.greeting.*` 一直保留）；边界时刻自动换档逻辑保真。
- * 手机远控复用同一组件，但继续保留 20px 紧凑标题；桌面草稿首页才按标题自身宽度适配。
+ * The empty-state greeting for draft mode: a time-of-day greeting + the ZCode logo. Restored from
+ * the old ChatView/ChatViewEmptyState.tsx (that component was deleted along with the old ChatView,
+ * but the i18n keys `chat.empty.greeting.*` were kept all along); the logic that switches tiers
+ * automatically at boundary moments is preserved faithfully. Mobile remote control reuses the same
+ * component but keeps the compact 20px heading; only the desktop draft home page sizes to the
+ * heading's own width.
  */
 import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from "react";
 import darkEmptyStateLogoUrl from "@/assets/Z.svg";
@@ -126,12 +128,15 @@ export function ConversationDraftEmptyState({ className }: { className?: string 
         if (currentFontSizePx === nextFontSizePx) {
           return currentFontSizePx;
         }
-        logger.debug("[v4-draft-greeting] 标题自身可用宽度变化，更新字号", {
-          availableWidthPx: Math.round(availableWidthPx),
-          naturalTextWidthPx: Math.round(naturalTextWidthPx),
-          previousFontSizePx: currentFontSizePx,
-          nextFontSizePx,
-        });
+        logger.debug(
+          "[v4-draft-greeting] heading's own available width changed, updating font size",
+          {
+            availableWidthPx: Math.round(availableWidthPx),
+            naturalTextWidthPx: Math.round(naturalTextWidthPx),
+            previousFontSizePx: currentFontSizePx,
+            nextFontSizePx,
+          },
+        );
         return nextFontSizePx;
       });
     };
@@ -154,8 +159,8 @@ export function ConversationDraftEmptyState({ className }: { className?: string 
       };
     }
 
-    // 标题字号曾直接绑定整个视口宽度，最小窗口里文字两侧仍有大量空间却被
-    // 强制缩到 20px。分别观察标题容器和 30px 原始文案，只在两者真实相撞时缩小。
+    // The title font size was directly bound to the entire viewport width. In the smallest window, there is still a lot of space on both sides of the text but it is
+    // Forced to shrink to 20px. Observe the title container and the 30px original copy separately, only shrinking when the two actually collide.
     const observer = new ResizeObserver(scheduleMeasure);
     observer.observe(container);
     observer.observe(measurement);
@@ -212,7 +217,7 @@ export function ConversationDraftEmptyState({ className }: { className?: string 
 function ZCodeEmptyStateLogo({ className }: { className?: string }) {
   return (
     <>
-      {/* 夜间资源已自带渐变和透明度，公共容器叠加遮罩会让它重复变淡；渐隐效果只属于浅色线框。*/}
+      {/* The night asset already carries its own gradient and opacity, so layering a mask on the shared container would fade it twice; the fade-out effect belongs to the light wireframe only. */}
       <svg
         aria-hidden="true"
         className={cn(
@@ -234,7 +239,7 @@ function ZCodeEmptyStateLogo({ className }: { className?: string }) {
           stroke="currentColor"
         />
       </svg>
-      {/* 深色资源包含专用渐变与模糊效果，不能通过 currentColor 复刻；主题类保证两套 Logo 互斥显示。 */}
+      {/* The dark asset contains dedicated gradient and blur effects that cannot be reproduced through currentColor; the theme classes guarantee that the two logos are shown mutually exclusively. */}
       <img
         aria-hidden="true"
         className={cn(className, "hidden dark:block")}

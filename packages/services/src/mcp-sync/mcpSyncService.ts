@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- MCP 同步服务集中维护用户目录读写、远端导入和 filesystem 路径改写，拆分会增加远端配置同步回归面。 */
+/* eslint-disable max-lines -- The MCP sync service centrally maintains user directory reads/writes, remote imports and filesystem path rewriting; splitting it would increase the regression surface for remote config sync. */
 import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -59,9 +59,9 @@ const AGENTS_MCP_DESCRIPTOR: DirectoryMcpDescriptor = {
 };
 
 const ENABLED_KEY = "enabled";
-// 历史遗留：桌面端早期把停用状态写成 enable，而 CLI 契约字段（contracts McpServerConfigBase）
-// 一直是 enabled，导致同一条 server 出现两套口径、停用后仍被 agent 拉起。
-// 现在读写逻辑一律只认 enabled，这里只保留一次性迁移；存量配置清空后整块删除。
+// Historical legacy: In the early days of the desktop, the deactivation status was written as enable, and the CLI contract field (contracts McpServerConfigBase)
+// It is always enabled, resulting in two sets of calibers appearing on the same server, and it is still pulled up by the agent after it is disabled.
+// Now the read and write logic only recognizes enabled, and only one-time migration is retained here; the entire block is deleted after the stock configuration is cleared.
 const LEGACY_ENABLE_KEY = "enable";
 const SECRET_CONFIG_FILE_MODE = 0o600;
 const DIRECTORY_MCP_DESCRIPTORS: readonly DirectoryMcpDescriptor[] = [
@@ -71,9 +71,10 @@ const DIRECTORY_MCP_DESCRIPTORS: readonly DirectoryMcpDescriptor[] = [
 
 interface McpSyncServiceDependencies {
   /**
-   * MCP server 运行态状态检查的执行面。真实 connect/listTools 必须发生在
-   * agent 进程（workspace 的 PATH/cwd 环境），host 侧没有可替代实现；无该依赖的
-   * 构造（纯目录同步用途/单测）调用 listWorkspaceMcpServerStatuses 会显式抛错。
+   * The execution surface for checking MCP server runtime state. A real connect/listTools must
+   * happen in the agent process (the workspace's PATH/cwd environment); there is no substitute
+   * implementation on the host side. Constructions without this dependency (directory-sync-only
+   * uses / unit tests) explicitly throw when calling listWorkspaceMcpServerStatuses.
    */
   listMcpServerStatuses?: IMcpSyncService["listWorkspaceMcpServerStatuses"];
 }
@@ -398,8 +399,8 @@ async function writeServerEnabledToFile(
   if (!isRecord(currentServer)) {
     return;
   }
-  // MCP 自身已有 mcp.servers/mcpServers 结构；禁用状态写在 server 配置对象内，
-  // 避免把目录路径写到 mcp 顶层后和真实 MCP 配置混在一起。
+  // MCP itself already has the mcp.servers/mcpServers structure; the disabled state is written in the server configuration object.
+  // Avoid writing the directory path to the top level of mcp and mixing it with the real MCP configuration.
   const nextServerMap = {
     ...serverMap,
     [name]: setServerEnabled(currentServer as McpServerConfig, enabled) as Record<string, unknown>,
@@ -460,8 +461,8 @@ function readServerEnabled(config: Record<string, unknown>): boolean {
 }
 
 function setServerEnabled(config: McpServerConfig, enabled: boolean): McpServerConfig {
-  // 启用是默认态，不落盘冗余字段；同时清掉可能残留的 legacy enable，
-  // 避免再产出 enable:false + enabled:true 这类自相矛盾的配置。
+  // Enable is the default state, and redundant fields will not be written to the disk; at the same time, clear any remaining legacy enable.
+  // Avoid contradictory configurations such as enable:false + enabled:true.
   const { [LEGACY_ENABLE_KEY]: _legacyEnable, [ENABLED_KEY]: _enabled, ...rest } = config;
   if (enabled) {
     return rest;
@@ -482,8 +483,8 @@ function migrateLegacyEnableFlag(serverMap: Record<string, Record<string, unknow
       continue;
     }
     changed = true;
-    // 两个字段冲突时以「停用」为准：桌面端写 enable:false 时不会清理外部导入残留的
-    // enabled:true，若按 enabled 取值会把用户关掉的 server 重新拉起。
+    // When two fields conflict, "disable" shall prevail: writing enable:false on the desktop will not clean up the remaining external imports.
+    // enabled: true, if enabled value is used, the server that the user shut down will be restarted.
     const disabled = config[LEGACY_ENABLE_KEY] === false || config[ENABLED_KEY] === false;
     migrated[name] = setServerEnabled(config as McpServerConfig, !disabled) as Record<
       string,
@@ -495,8 +496,10 @@ function migrateLegacyEnableFlag(serverMap: Record<string, Record<string, unknow
 }
 
 /**
- * 读取 server map，顺带把存量 enable 就地折叠成 enabled 并落盘。
- * 没有残留字段时不写文件，保证幂等；写盘失败不阻断读取，内存结果已是正确口径，下次加载会重试。
+ * Reads the server map and, along the way, collapses the legacy enable field in place into enabled
+ * and writes it back to disk. When no legacy field remains, nothing is written, which keeps it
+ * idempotent; a failed write does not block the read, since the in-memory result is already correct
+ * and the next load will retry.
  */
 async function readServerMapWithLegacyMigration(
   filePath: string,
@@ -752,8 +755,8 @@ function joinRemotePath(remoteBasePath: string, relativePath: string): string {
     return remoteBasePath;
   }
   const segments = relativePath.split(/[\\/]+/u).filter(Boolean);
-  // MCP 同步运行在本机进程里，但 remoteWorkspacePath 描述的是远端主机路径。
-  // 不能用 process.platform 决定拼接风格，否则 Windows 客户端同步到 Linux/WSL 时会把 /srv/... 写成 \srv\...。
+  // MCP synchronization runs in the local process, but remoteWorkspacePath describes the remote host path.
+  // Process.platform cannot be used to determine the splicing style, otherwise the Windows client will write /srv/... as \srv\... when synchronizing to Linux/WSL.
   const normalizedBasePath = remoteBasePath.trim();
   if (normalizedBasePath.startsWith("/")) {
     return posix.join(normalizedBasePath.replaceAll("\\", "/"), ...segments);
@@ -780,19 +783,19 @@ async function readJsonObject(filePath: string): Promise<Record<string, unknown>
     if (isErrnoException(error) && error.code === "ENOENT") {
       return null;
     }
-    throw new Error(`无法读取 MCP 配置文件 ${filePath}: ${formatErrorMessage(error)}`);
+    throw new Error(`failed to read MCP config file ${filePath}: ${formatErrorMessage(error)}`);
   }
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw) as unknown;
   } catch (error) {
-    // 远端 MCP 导入必须先确认现有 config.json 可读可合并；
-    // JSON 损坏时如果当作空对象继续写，会静默覆盖 provider、MCP 和 secret 配置。
-    throw new Error(`无法解析 MCP 配置文件 ${filePath}: ${formatErrorMessage(error)}`);
+    // The remote MCP import must first confirm that the existing config.json is readable and mergeable;
+    // If JSON is damaged and continues to be written as an empty object, the provider, MCP and secret configurations will be silently overwritten.
+    throw new Error(`failed to parse MCP config file ${filePath}: ${formatErrorMessage(error)}`);
   }
   if (!isRecord(parsed)) {
-    throw new Error(`MCP 配置文件 ${filePath} 必须是 JSON 对象`);
+    throw new Error(`MCP config file ${filePath} must be a JSON object`);
   }
   return parsed;
 }
@@ -812,8 +815,8 @@ async function writeTextAtomic(filePath: string, content: string): Promise<void>
     `${basename(filePath)}.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`,
   );
   try {
-    // 远端 MCP 配置会持久化 env/header/token 等 secret；
-    // 临时文件权限不能依赖远端 umask，否则 rename 后 config.json 可能被同组或其他用户读取。
+    // The remote MCP configuration will persist secrets such as env/header/token;
+    // Temporary file permissions cannot rely on remote umask, otherwise config.json may be read by the same group or other users after rename.
     await writeFile(tempPath, content, {
       encoding: "utf-8",
       mode: SECRET_CONFIG_FILE_MODE,

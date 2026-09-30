@@ -114,8 +114,8 @@ export function isMainAgentToolProjectionSource(...candidates: unknown[]): boole
     if (!isRecord(candidate)) {
       continue;
     }
-    // subagent / workflow 会把子工具镜像进父 session；这些 TodoWrite
-    // 只属于对应父工具树，不能覆盖主任务顶部 todo 摘要。
+    // subagent / workflow will mirror the subagent into the parent session; these TodoWrite
+    // It only belongs to the corresponding parent tool tree and cannot cover the todo summary at the top of the main task.
     if (readString(candidate.source) === "subagent") {
       return false;
     }

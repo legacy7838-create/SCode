@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 导出日志流程涉及文件收集、脱敏与打包，集中维护便于排查与一致性 */
+/* eslint-disable max-lines -- The log export flow spans file collection, redaction, and packaging; keeping it in one place makes troubleshooting easier and keeps behavior consistent */
 import { constants, createReadStream, createWriteStream } from "node:fs";
 import {
   access,
@@ -41,9 +41,9 @@ function getZCodeCliLogDir() {
 }
 
 /**
- * Computer Use Helper 的运行目录。macOS 上 Helper 由 LaunchServices 启动，stderr 被系统丢弃，
- * 所以它把生命周期与后台输入诊断 tee 到 `<socket>.exit.log`（见 zcode-cua
- * helperExitLogPathFor）。同目录下还有 `.tokens` broker 凭据，收集时必须按文件名白名单。
+ * The directory where Computer Use Helper is run. Helper on macOS is started by LaunchServices, stderr is discarded by the system,
+ * So it puts the lifecycle and background input diagnostic tee into `<socket>.exit.log` (see zcode-cua
+ * helperExitLogPathFor). There are also `.tokens` broker credentials in the same directory, which must be whitelisted by file name when collecting.
  */
 function getCuaHelperRunDir() {
   return join(homedir(), ".zcode", "computer-use", "run");
@@ -150,9 +150,9 @@ const EXCLUDED_ARCHIVE_DIRECTORY_NAMES = new Set(["debug"]);
 const DEFAULT_LOG_EXPORT_LOOKBACK_DAYS = 3;
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
 const REDACTED_PLACEHOLDER = "***REDACTED***";
-// 敏感键名“族”：只要键名里包含这些子串就视为敏感（兜底通配），
-// 从而覆盖自定义命名（如 db_password、my_secret、x-conn-string 等）而不必逐个精确列举。
-// 注意：`token` / `auth` 等是宽松子串，配合下方白名单排除误伤项（如 input_tokens、author）。
+// Sensitive key name "family": as long as the key name contains these substrings, it is considered sensitive (all-inclusive),
+// This allows overriding custom naming (such as db_password, my_secret, x-conn-string, etc.) without having to enumerate them exactly one by one.
+// Note: `token` / `auth`, etc. are loose substrings. Use the whitelist below to exclude accidental items (such as input_tokens, author).
 const SENSITIVE_KEY_SUBSTRING_PATTERN = [
   "password",
   "passwd",
@@ -171,10 +171,10 @@ const SENSITIVE_KEY_SUBSTRING_PATTERN = [
   "db(?:_|-)?url",
 ].join("|");
 const SENSITIVE_KEY_NAME_REGEX = new RegExp(`(?:${SENSITIVE_KEY_SUBSTRING_PATTERN})`, "i");
-// 白名单：命中敏感子串但实际并非密钥的常见键名，避免脱掉排障需要的上下文。
-// 不能把任意 "*_tokens" 都白名单化，否则 access_tokens/session_tokens 会被原样导出；
-// max_tokens/budget_tokens 是模型输出与思考预算，不是凭据，需保留用于判断 provider 请求是否撞限；
-// 因此这里只放行明确的 LLM token 计数/预算字段，以及 author/authority 这类含 "auth" 的普通词。
+// Whitelist: Common key names that hit sensitive substrings but are not actually keys to avoid removing the context needed for troubleshooting.
+// Any "*_tokens" cannot be whitelisted, otherwise access_tokens/session_tokens will be exported unchanged;
+// max_tokens/budget_tokens is the model output and thinking budget, not the credentials, and needs to be retained to determine whether the provider request hits the limit;
+// Therefore, only clear LLM token count/budget fields and common words containing "auth" such as author/authority are allowed here.
 const NON_SENSITIVE_KEY_NAME_ALLOWLIST_REGEX =
   /^(?:public(?:_|-)?key|keywords?|tokenizer|token(?:_|-)?count|(?:prompt|completion|total|input|output|cached|reasoning|max|budget|accepted(?:_|-)?prediction|rejected(?:_|-)?prediction|tool(?:_|-)?use(?:_|-)?prompt)(?:_|-)?tokens|author(?:s|ity|ed)?)$/i;
 
@@ -185,8 +185,8 @@ function isSensitiveKeyName(keyName: string): boolean {
   return SENSITIVE_KEY_NAME_REGEX.test(keyName);
 }
 
-// 以下正则先宽松捕获“键名 + 值”，再由 isSensitiveKeyName 决定是否脱敏，
-// 这样键名黑名单不再是硬编码列表，而是“敏感族 + 通配 + 白名单例外”。
+// The following regular expression first loosely captures "key name + value", and then uses isSensitiveKeyName to determine whether to desensitize it.
+// In this way, the key name blacklist is no longer a hard-coded list, but "sensitive families + wildcards + whitelist exceptions".
 const JSON_STYLE_SENSITIVE_VALUE_REGEX =
   /(["'])([A-Za-z0-9_.-]+)\1(\s*:\s*)("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^,\r\n}\]]+)/g;
 const ASSIGNMENT_STYLE_SENSITIVE_VALUE_REGEX =
@@ -196,10 +196,10 @@ const HEADER_STYLE_SENSITIVE_VALUE_REGEX =
 const BEARER_TOKEN_REGEX = /(Bearer\s+)([^\s"']+)/g;
 const QUERY_TOKEN_REGEX =
   /([?&](?:key|api(?:_|-)?key|access(?:_|-)?token|refresh(?:_|-)?token|token|password|passwd|pwd|secret|client(?:_|-)?secret|auth(?:_|-)?token|session(?:_|-)?token)=)([^&#\s]+)/gi;
-// 按“值形态”脱敏：连接串 scheme://user:pass@host 里的凭据部分，
-// 不依赖键名即可覆盖 postgres/mysql/mongodb/redis/amqp 等数据库连接信息。保留 scheme 与 host 便于排障。
-// 用户名段允许为空以覆盖 redis://:password@host；口令段贪婪匹配到最后一个 @（host 段不含 @），
-// 这样口令里含裸 @（如 P@ssw0rd）也能整段脱敏，不残留片段。
+// Desensitization by "value form": the credential part in the connection string scheme://user:pass@host,
+// Database connection information such as postgres/mysql/mongodb/redis/amqp can be covered without relying on key names. Keep scheme and host for easy troubleshooting.
+// The username field is allowed to be empty to cover redis://:password@host; the password field is greedily matched to the last @ (the host field does not contain @),
+// In this way, passwords containing naked @ (such as P@ssw0rd) can be completely desensitized without any remaining fragments.
 const CONNECTION_STRING_CREDENTIALS_REGEX =
   /\b([a-z][a-z0-9+.-]*:\/\/)([^:/\s]*):([^/\s]+)@(?=[^@/\s])/gi;
 const TEXT_DETECTION_SAMPLE_BYTES = 64 * 1024;
@@ -249,11 +249,11 @@ function redactConnectionStringCredentials(rawContent: string): string {
 }
 
 function sanitizeSensitiveLogContent(rawContent: string): string {
-  // 导出日志不能按文件原样拷贝：会把用户配置和协议日志里的 token/apiKey 一并带出。
-  // 线上排障需要“保留文件结构和上下文”，但不应该泄露密钥本体；
-  // 这里在导出阶段统一对常见敏感值做脱敏，字段和日志行仍完整保留，支持继续定位问题。
-  // 键名不再是硬编码黑名单，而是“敏感键名族 + 子串通配 + 白名单例外”（isSensitiveKeyName），
-  // 并叠加按值形态的连接串脱敏，以覆盖数据库连接串等自定义命名的敏感信息。
+  // The export log cannot be copied as the file is: the user configuration and token/apiKey in the protocol log will be brought out together.
+  // Online troubleshooting needs to "preserve the file structure and context", but the key ontology should not be leaked;
+  // Here, common sensitive values ​​are uniformly desensitized during the export phase, and fields and log lines are still intact, supporting continued problem locating.
+  // The key name is no longer a hard-coded blacklist, but "sensitive key name family + substring wildcard + whitelist exception" (isSensitiveKeyName),
+  // And overlay value-based connection string desensitization to cover custom-named sensitive information such as database connection strings.
   return redactConnectionStringCredentials(rawContent)
     .replace(
       JSON_STYLE_SENSITIVE_VALUE_REGEX,
@@ -456,9 +456,9 @@ function detectUtf16EncodingByAsciiPairPattern(sample: Buffer): SupportedTextEnc
   let utf16LeAsciiRunScore = 0;
   let utf16BeAsciiRunScore = 0;
 
-  // CJK 文本里会出现“单个码元低字节刚好是 0”的情况（如 U+4E00），
-  // 直接统计 `0x00 + ASCII` 配对会把这些离散噪声误判成另一端字节序。
-  // 这里改为统计“连续 ASCII-零字节 run”，只把成段英文 token（api key/header）作为有效信号。
+  // There will be a situation in CJK text that "the low byte of a single code element is exactly 0" (such as U+4E00),
+  // Direct counting of `0x00 + ASCII` pairs will misinterpret these discrete noises as other endianness.
+  // Here the statistics are changed to "continuous ASCII-zero byte runs", and only segments of English tokens (api key/header) are used as valid signals.
   const flushRunScore = (runLength: number): number => (runLength >= 3 ? runLength : 0);
 
   for (let index = 0; index + 1 < sample.length; index += 2) {
@@ -536,17 +536,17 @@ function detectTextFileEncoding(sample: Buffer): TextFileEncodingInfo | null {
     return { encoding: "utf-8", bomLength: 0, bomBytes: EMPTY_BOM };
   }
 
-  // CJK 占比高的 UTF-16 无 BOM 文本，空字节比例可能很低，
-  // 仅靠 null-ratio 会被误判为“非文本”并走原样复制，导致敏感字段漏脱敏。
-  // 这里增加“ASCII-零字节对”兜底检测（例如 `OPENAI_API_KEY=\r\n`），覆盖真实日志中的混合文本场景。
+  // UTF-16 text with a high CJK proportion without BOM may have a low proportion of null bytes.
+  // Null-ratio alone will be misjudged as "non-text" and copied as it is, causing sensitive fields to be desensitized.
+  // Here, "ASCII-zero byte pair" covert detection (such as `OPENAI_API_KEY=\r\n`) is added to cover mixed text scenarios in real logs.
   const utf16Encoding =
     detectUtf16EncodingByAsciiPairPattern(sample) ??
     detectUtf16EncodingByNullPattern(sample) ??
     detectUtf16EncodingByDecodedTextScore(sample);
   if (!utf16Encoding) {
-    // 无 BOM 且不含空字节的 UTF-16 文本，在纯 CJK 内容里经常出现。
-    // 这类样本 UTF-8 fatal decode 会失败；此时按 UTF-8 处理会产生乱码并漏掉敏感字段匹配。
-    // 兜底策略：UTF-8 合法则按 UTF-8，非法且无法识别成 UTF-16 时才视为二进制。
+    // UTF-16 text with no BOM and no null bytes, often seen in pure CJK content.
+    // The UTF-8 fatal decode of this type of sample will fail; processing it as UTF-8 will produce garbled characters and miss sensitive field matching.
+    // Cover-up strategy: If UTF-8 is legal, it will be treated as UTF-8. If it is illegal and cannot be recognized as UTF-16, it will be regarded as binary.
     if (isValidUtf8Sample(sample)) {
       return { encoding: "utf-8", bomLength: 0, bomBytes: EMPTY_BOM };
     }
@@ -721,35 +721,35 @@ function isExcludedDirectoryArchivePath(relativePath: string): boolean {
 
 function isExcludedRelativePath(relativePath: string): boolean {
   const normalizedRelativePath = normalizeArchivePath(relativePath);
-  // 完整日志导出过去只做内容脱敏，仍会把 credentials.json 文件本身放进包。
-  // 凭据存储文件不是排障日志，且不同提供商可能复用同名文件；因此在收集清单阶段按文件名跳过。
+  // In the past, complete log export only did content desensitization, and the credentials.json file itself was still put into the package.
+  // The credential store file is not a troubleshooting log, and different providers may reuse files with the same name; therefore it is skipped by file name during the collection inventory phase.
   if (isSensitiveCredentialArchivePath(normalizedRelativePath)) {
     return true;
   }
-  // debug 目录通常是模型/运行时高频轨迹，不是用户要交付的日志包材料。
-  // 过去显式收集 ~/.zcode/cli/debug 会把这类上下文带进手动导出和反馈完整日志，这里按目录段统一跳过。
+  // The debug directory is usually a model/runtime high-frequency trace, not a log package material to be delivered by the user.
+  // In the past, explicit collection of ~/.zcode/cli/debug would bring this type of context into manual export and feedback of complete logs, which are skipped here by directory segment.
   if (isExcludedDirectoryArchivePath(normalizedRelativePath)) {
     return true;
   }
   if (isNonLogStateArchivePath(normalizedRelativePath)) {
     return true;
   }
-  // ~/.zcode/v2/dev 保存 stdio-traffic 等高频协议流，真实机器上会累计到 GB 级。
-  // 远超反馈附件的大小上限，不应随诊断包带出。
+  // ~/.zcode/v2/dev saves high-frequency protocol streams such as stdio-traffic, which will accumulate to GB level on a real machine.
+  // Far exceeds the maximum size limit for feedback attachments and should not be included with the diagnostic kit.
   if (isHighVolumeRuntimeArchivePath(normalizedRelativePath)) {
     return true;
   }
-  // docshot 历史备份和素材目录体积可达 GB 级，
-  // 且不属于用户反馈所需的诊断日志。
+  // The size of docshot historical backup and material directory can reach GB level.
+  // and are not diagnostic logs required for user feedback.
   if (isDocshotArchivePath(normalizedRelativePath)) {
     return true;
   }
-  // ACP runtime 目录已退役，老用户数据里仍可能残留数百 MB 抓包和旧鉴权文件。
-  // 当前运行态配置已经迁到 agent-config；继续导出这些旧目录会让导出长时间无反馈，还可能带出旧代理证书私钥。
+  // The ACP runtime directory has been retired, and hundreds of MB of packet captures and old authentication files may still remain in old user data.
+  // The current running configuration has been moved to agent-config; continuing to export these old directories will cause the export to be without feedback for a long time, and may also bring out the old agent certificate private key.
   if (isRetiredAcpRuntimePath(normalizedRelativePath)) {
     return true;
   }
-  // Library/Caches 是运行时缓存，不是排障所需日志；导出它只会放大日志包。
+  // Library/Caches is a runtime cache, not a log required for troubleshooting; exporting it will only enlarge the log package.
   if (isExcludedCachePath(normalizedRelativePath)) {
     return true;
   }
@@ -789,9 +789,9 @@ async function filterRecentLogArchiveFiles(
     }
 
     const fileStats = await stat(file.absolutePath).catch(() => null);
-    // 导出日志过去按目录全量打包，长时间运行后旧 diagnostics 会把日志包放大到数百 MB。
-    // 这里仅对“可由时间窗口复现现场”的日志类文件按 mtime 保留近 3 天；
-    // settings 等排障配置不参与过滤，避免久未修改但仍影响当前行为的配置丢失。
+    // Exported logs used to be packaged in full by directory. After running for a long time, old diagnostics would enlarge the log package to hundreds of MB.
+    // Here, only log files that can be reproduced in a time window are retained for the past 3 days based on mtime;
+    // Troubleshooting configurations such as settings do not participate in filtering to avoid the loss of configurations that have not been modified for a long time but still affect the current behavior.
     if (fileStats?.isFile() && fileStats.mtimeMs >= cutoffMs) {
       recentFiles.push(file);
     }
@@ -814,7 +814,7 @@ function logSkippedLogArchiveDirectory(
   archivePath: string,
   error: unknown,
 ): void {
-  logger.warn("[export-logs] 日志目录不可读，已在导出时自动跳过", {
+  logger.warn("[export-logs] the log directory is unreadable, skipping it during export", {
     absolutePath,
     archivePath,
     error: formatErrorMessage(error),
@@ -834,8 +834,8 @@ async function walkLogArchiveDirectory(
   visitedDirs.add(resolvedDir);
 
   const dirents = await readdir(absoluteDir, { withFileTypes: true }).catch((error: unknown) => {
-    // 用户目录下的日志来源可能包含被系统或第三方 CLI 限制权限的子目录。
-    // 单个目录 scandir 失败时跳过该目录，避免一次 EACCES 把整个日志包导出中断。
+    // Log sources under the user directory may contain subdirectories with restricted permissions by the system or third-party CLI.
+    // When a single directory scandir fails, the directory will be skipped to avoid interrupting the export of the entire log package by EACCES.
     logSkippedLogArchiveDirectory(absoluteDir, relativeDir, error);
     return null;
   });
@@ -870,8 +870,8 @@ async function walkLogArchiveDirectory(
       continue;
     }
 
-    // 日志目录里存在 provider 共享资源的软链入口。
-    // 这里按目标类型处理并配合 realpath 去重，避免递归跟随时把同一份内容重复打进包，甚至形成循环遍历。
+    // There is a soft link entry for provider shared resources in the log directory.
+    // This is processed according to the target type and combined with realpath deduplication to avoid repeatedly packaging the same content during recursive follow-up, or even forming a loop traversal.
     if (targetStats.isDirectory()) {
       await walkLogArchiveDirectory(absolutePath, archivePath, visitedDirs, files);
       continue;
@@ -898,9 +898,9 @@ async function collectLogArchiveFilesFromDirectory(
 }
 
 /**
- * 按文件名白名单收集单层目录，不递归。用于运行目录这类"诊断文件与凭据同放"的场景：
- * 递归收集会把 .tokens 之类的机密带进用户会转发出去的日志包，而 EXCLUDED 名单是
- * 事后补救、天然滞后。白名单则默认拒绝——目录里以后多出什么都不会跟着漏出去。
+ * Collect single-level directories by file name whitelist, without recursion. Used for scenarios such as "diagnostic files and credentials are placed together" in the running directory:
+ * Recursive collection will bring secrets such as .tokens into the log packet that the user will forward, and the EXCLUDED list is
+ * Remedial after the fact, natural lag. The whitelist is rejected by default - nothing more in the directory will be leaked out in the future.
  */
 async function collectLogArchiveFilesByName(
   absoluteDir: string,
@@ -958,8 +958,8 @@ async function createLogArchiveArtifacts(
   await collectLogArchiveFilesFromDirectory(sourceDir, "", visitedDirs, files);
 
   const zcodeCliLogDir = getZCodeCliLogDir();
-  // GLM / zcode-cli 的运行日志写在 ~/.zcode/cli/log，不在应用主数据目录 ~/.zcode/v2 下。
-  // 如果导出日志只扫描 v2，定位 agent CLI 启动、协议或崩溃问题时会缺少最关键的原生侧日志。
+  // The running log of GLM/zcode-cli is written in ~/.zcode/cli/log, not in the application main data directory ~/.zcode/v2.
+  // If the exported logs only scan v2, the most critical native-side logs will be missing when locating agent CLI startup, protocol, or crash issues.
   await collectLogArchiveFilesFromDirectory(
     zcodeCliLogDir,
     posix.join(".zcode", "cli", "log"),
@@ -968,9 +968,9 @@ async function createLogArchiveArtifacts(
   );
 
   const zcodeCliDir = getZCodeCliDir();
-  // 排查 agent CLI 问题还需要它的运行配置与模型 IO 轨迹。
-  // config.json 是当前生效配置；rollout 是 model-io 调用轨迹，
-  // 二者都不在 ~/.zcode/cli/log 下，需要额外收集才能完整还原现场。
+  // Troubleshooting agent CLI issues also requires its running configuration and model IO trace.
+  // config.json is the current effective configuration; rollout is the model-io calling trace.
+  // Both are not under ~/.zcode/cli/log, and additional collection is required to fully restore the scene.
   await collectLogArchiveFile(
     join(zcodeCliDir, "config.json"),
     posix.join(".zcode", "cli", "config.json"),
@@ -983,11 +983,11 @@ async function createLogArchiveArtifacts(
     files,
   );
 
-  // Computer Use Helper 的结构化诊断必须进日志包：否则反馈包里
-  // grep "background keyboard begin rejected" 命中 0，
-  // 因为 Helper 由 LaunchServices 启动、stderr 被系统丢弃，它把诊断 tee 到
-  // ~/.zcode/computer-use/run/<socket>.exit.log，既不在 app data 也不在 ~/.zcode/cli 下。
-  // 同目录下有 .tokens broker 凭据，因此按文件名白名单只收 *.exit.log，不递归该目录。
+  // The structured diagnosis of Computer Use Helper must be included in the log package: otherwise it will be included in the feedback package
+  // grep "background keyboard begin rejected" hits 0,
+  // Because the Helper is started by LaunchServices and stderr is discarded by the system, it sets the diagnostic tee to
+  // ~/.zcode/computer-use/run/<socket>.exit.log, neither under app data nor ~/.zcode/cli.
+  // There are .tokens broker credentials in the same directory, so only *.exit.log is included in the whitelist by file name, and the directory is not recursed.
   await collectLogArchiveFilesByName(
     getCuaHelperRunDir(),
     posix.join(".zcode", "computer-use", "run"),
@@ -1041,8 +1041,8 @@ async function copyLogArchiveFilesToDirectory(
     }
 
     try {
-      // 这里改为“采样识别编码 + 流式脱敏”，避免全量 readFile 带来的大文件内存峰值。
-      // 同时显式支持 UTF-16 文本（含 BOM/无 BOM 常见形态），防止被误判成二进制后原样泄露敏感字段。
+      // This is changed to "sampling recognition encoding + streaming desensitization" to avoid large file memory peaks caused by full readFile.
+      // At the same time, UTF-16 text (common forms with BOM/no BOM) is explicitly supported to prevent sensitive fields from being leaked as they are after being misjudged as binary.
       const sourceSample = await readFileSample(file.absolutePath);
       const textEncodingInfo = detectTextFileEncoding(sourceSample);
       if (!textEncodingInfo) {
@@ -1061,9 +1061,9 @@ async function copyLogArchiveFilesToDirectory(
             .then(() => true)
             .catch(() => false)
         : false;
-      // telemetry/agent 日志文件可能在“扫描完待导出列表”之后被后台轮转、删除或改权限，
-      // 软链目标也可能在这段窗口里失效。复制失败后再核一次源文件可读性；
-      // 如果源头已经不可读，就把它当成坏文件跳过，避免单个 ENOENT/EACCES 让导出整体失败。
+      // The telemetry/agent log file may be rotated, deleted or have permissions changed in the background after "scanning the list to be exported".
+      // Soft link targets may also fail during this window. After copying fails, check the readability of the source file again;
+      // If the source is no longer readable, skip it as a bad file to prevent a single ENOENT/EACCES from causing the entire export to fail.
       if (!sourceReadableAfterFailure) {
         skippedFiles.push({
           absolutePath: file.absolutePath,
@@ -1084,7 +1084,7 @@ function logSkippedLogArchiveFiles(skippedFiles: LogArchiveSkippedFileEntry[]): 
     return;
   }
 
-  logger.warn("[export-logs] 检测到不可读日志文件，已在导出时自动跳过", {
+  logger.warn("[export-logs] unreadable log files were detected, skipping them during export", {
     skippedCount: skippedFiles.length,
     skippedFiles: skippedFiles.slice(0, 10),
   });
@@ -1099,9 +1099,9 @@ async function writeLogArchiveZip(
   await mkdir(stageRootDir, { recursive: true });
   const stagingDir = await mkdtemp(join(stageRootDir, "stage-"));
   try {
-    // yazl.addFile 内部会再次对源路径执行 fs.stat/createReadStream。
-    // 对于软链目标或正在被轮转的 telemetry 文件，这一步仍然可能异步抛错并触发未监听的 error 事件。
-    // 这里先把可读文件稳定复制到临时目录，再从临时目录压缩，保证 zip 阶段只面对我们自己控制的常规文件。
+    // yazl.addFile internally executes fs.stat/createReadStream on the source path again.
+    // For soft chain targets or telemetry files being rotated, this step may still throw errors asynchronously and trigger unlistened error events.
+    // Here, the readable files are stably copied to the temporary directory, and then compressed from the temporary directory to ensure that the zip stage only faces regular files controlled by ourselves.
     await writeLogArchiveDirectory(stagingDir, artifacts);
 
     const zipFile = new ZipFile();
@@ -1181,7 +1181,7 @@ export async function exportLogs(
     const zipPath = join(outputDir, `${exportBaseName}.zip`);
     const directoryPath = join(outputDir, exportBaseName);
 
-    logger.info("[export-logs] 开始打包日志", {
+    logger.info("[export-logs] starting to package the logs", {
       source: sourceDir,
       zipDest: zipPath,
       directoryDest: directoryPath,
@@ -1192,7 +1192,7 @@ export async function exportLogs(
       await writeZip(zipPath, artifacts, { stageRootDir: getStageRootDir() });
       await showItemInFolder(zipPath);
 
-      logger.info("[export-logs] 日志导出完成", {
+      logger.info("[export-logs] log export completed", {
         path: zipPath,
         format: "zip",
       });
@@ -1200,9 +1200,9 @@ export async function exportLogs(
     } catch (zipError) {
       const zipErrorMessage = zipError instanceof Error ? zipError.message : String(zipError);
 
-      // Windows 的压缩能力不再依赖 PowerShell/.NET，但归档写入仍可能被杀软、磁盘策略等外部因素打断。
-      // 这里回退为目录导出，保证用户至少能稳定拿到原始日志，而不是直接报错。
-      logger.warn("[export-logs] zip 导出失败，回退到目录导出", {
+      // The compression capabilities of Windows no longer rely on PowerShell/.NET, but archive writing may still be interrupted by external factors such as antivirus and disk policies.
+      // The fallback here is directory export to ensure that users can at least get the original log stably instead of reporting an error directly.
+      logger.warn("[export-logs] zip export failed, falling back to directory export", {
         error: zipErrorMessage,
         zipPath,
         fallbackPath: directoryPath,
@@ -1214,11 +1214,13 @@ export async function exportLogs(
       } catch (directoryError) {
         const directoryErrorMessage =
           directoryError instanceof Error ? directoryError.message : String(directoryError);
-        throw new Error(`zip 导出失败：${zipErrorMessage}；目录导出失败：${directoryErrorMessage}`);
+        throw new Error(
+          `zip export failed: ${zipErrorMessage}; directory export failed: ${directoryErrorMessage}`,
+        );
       }
 
       await showItemInFolder(directoryPath);
-      logger.info("[export-logs] 日志导出完成", {
+      logger.info("[export-logs] log export completed", {
         path: directoryPath,
         format: "directory",
       });
@@ -1226,7 +1228,7 @@ export async function exportLogs(
     }
   } catch (err) {
     const message = formatErrorMessage(err);
-    logger.error("[export-logs] 日志导出失败", { error: message });
+    logger.error("[export-logs] log export failed", { error: message });
     return { success: false, error: message };
   }
 }

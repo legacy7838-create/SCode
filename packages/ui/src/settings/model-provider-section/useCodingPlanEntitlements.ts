@@ -75,8 +75,8 @@ function useProviderFamilyEntitlements(params: {
     accountAccess?.access,
     params.selection,
   );
-  // Team 查询身份还包含 product/org/project。只使用 Registry 静态 Access
-  // 会让切换团队后复用上一项目的权益缓存，因此 cache identity 必须包含执行期账号上下文。
+  // The Team query identity also contains product/org/project. Only use Registry static access
+  // This will reuse the equity cache of the previous project after switching teams, so the cache identity must contain the execution account context.
   const codingFingerprint = registryFingerprint
     ? JSON.stringify([registryFingerprint, entitlementAccess])
     : "";
@@ -109,8 +109,8 @@ function useProviderFamilyEntitlements(params: {
       startPlanProviderId,
       startProviderFingerprint,
     }),
-    // Family 编排重构后这里每次渲染都返回新对象，导致上层等价权益事实
-    // 失去引用稳定性，并把套餐状态更新放大成 Provider 设置页的 access refresh 循环。
+    // After the Family orchestration is reconstructed, new objects are returned every time it is rendered, resulting in the fact that the upper layer has equal rights and interests.
+    // Loss of reference stability and amplification of package status updates into the access refresh cycle of the Provider settings page.
     [
       coding.error,
       coding.loading,
@@ -135,7 +135,7 @@ function resolveEntitlementAccountAccess(
   selection: ProviderFamilyConnectionSelection | undefined,
 ): ZCodeProviderAccountAccess | ZCodeAccountAccess | undefined {
   if (access?.mode !== "team-coding-plan" || selection?.kind !== "team-coding-plan") {
-    // 展示查询针对这个套餐自身，不让执行期的 current 解析器改成当前另一套餐。
+    // The display query is for this package itself, and does not allow the current parser to be changed to another current package during execution.
     return access && (access.mode === "start-plan" || access.mode === "individual-coding-plan")
       ? { type: "zhipu-account", family: access.accountType, planKind: access.mode }
       : access;
@@ -161,8 +161,8 @@ export function useCodingPlanAccessRefresh({
     if (!selectedPlanKey) {
       return;
     }
-    // 原 effect 依赖整个 selectedNavItem，额度和 loading 的投影变化也会
-    // 被误判为用户重新打开套餐。这里只响应稳定的套餐选择身份。
+    // The original effect depends on the entire selectedNavItem, and the projection changes of the amount and loading will also
+    // It was mistakenly determined that the user reopened the package. Only stable package selection identities will be responded here.
     void refresh({ silent: true, reason: "access" });
   }, [refresh, selectedPlanKey]);
 }
@@ -177,13 +177,13 @@ export function useCodingPlanEntitlements({
   suppressProviderFingerprintAutoRefresh?: boolean;
 }): {
   entitlements: Partial<Record<string, CodingPlanEntitlementState>>;
-  /** 当前具备 Account Access、能够独立查询权益的 Start Plan Provider。 */
+  /** There is currently a Start Plan Provider with Account Access and the ability to independently query benefits. */
   enabledStartPlanProviderIds: string[];
   refresh: (options?: UsageEntitlementRefreshOptions) => Promise<void>;
 } {
   const skippedProviderFingerprintAutoRefreshRef = useRef("");
   const loading = providerSettingsView === null;
-  // React Hook 必须保持固定调用顺序，因此显式调用两个 Family，而不是动态遍历 Spec。
+  // React Hooks must maintain a fixed calling order, so call both families explicitly instead of dynamically traversing the Spec.
   const zaiFamily = useProviderFamilyEntitlements({
     familySpec: getModelProviderFamilySpec("zai"),
     selection: connectionSelections.zai,
@@ -197,7 +197,7 @@ export function useCodingPlanEntitlements({
 
   const refresh = useCallback(
     (options: UsageEntitlementRefreshOptions = {}) => {
-      // Start/Coding 使用独立 provider id 与 cache key；两边都可用时并行刷新。
+      // Start/Coding uses independent provider id and cache key; refresh in parallel when both are available.
       const refreshJobs: Array<Promise<void>> = [];
       if (zaiFamily.codingEnabled) {
         refreshJobs.push(zaiFamily.coding.refresh(options));
@@ -257,8 +257,8 @@ export function useCodingPlanEntitlements({
       return;
     }
 
-    // provider 配置异步加载或保存后，首次 entitlement 快照可能还是旧的。
-    // 连接方式同步会单独刷新 Account Access，不能把同一次变化再扩散成套餐/余额刷新。
+    // After the provider configuration is loaded or saved asynchronously, the first entitlement snapshot may still be stale.
+    // Connection method synchronization will refresh Account Access separately, and the same change cannot be diffused into package/balance refresh.
     refresh({ force: true, silent: true, reason: "auth" });
   }, [providerFingerprint, loading, refresh, suppressProviderFingerprintAutoRefresh]);
 

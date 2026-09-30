@@ -108,13 +108,15 @@ export class ProviderRegistry {
     const modelByProviderId = new Map<ProviderId, Map<ModelId, ProviderModel>>();
     for (const provider of this.#view.providers) {
       if (providerById.has(provider.providerId)) {
-        throw new Error(`Registry 中存在重复 Provider: ${provider.providerId}`);
+        throw new Error(`Registry contains a duplicate Provider: ${provider.providerId}`);
       }
       providerById.set(provider.providerId, provider);
       const models = new Map<ModelId, ProviderModel>();
       for (const model of provider.models) {
         if (models.has(model.modelId)) {
-          throw new Error(`Registry 中存在重复 Model: ${provider.providerId}/${model.modelId}`);
+          throw new Error(
+            `Registry contains a duplicate Model: ${provider.providerId}/${model.modelId}`,
+          );
         }
         models.set(model.modelId, model);
       }
@@ -125,9 +127,9 @@ export class ProviderRegistry {
   }
 }
 
-/** Registry 与默认选择初始化共用同一套通用 Model Option 校验。 */
+/** The Registry and the default-selection initialization share the same generic Model Option validation. */
 export function validateModelSelectionOptions(
-  // 只依赖发布给 Renderer 的 Option 事实，避免 UI 另写一份档位校验或构造领域类。
+  // Only rely on the Option fact published to Renderer to avoid the UI having to write another gear check or construct a domain class.
   model: {
     readonly config: {
       readonly optionSpecs: { readonly reasoningLevel: { readonly values: readonly string[] } };
@@ -162,7 +164,7 @@ function freezeView(revision: number, providers: readonly Provider[]): ProviderR
   const frozenProviders = providers.map((provider) =>
     Object.freeze({
       providerId: provider.providerId,
-      // 名称与模板已从 config 外移；冻结时漏拷贝会让所有 Selection View 丢失元数据。
+      // Names and templates have been moved out of config; missing copies while frozen will cause all Selection Views to lose metadata.
       providerName: provider.providerName,
       templateId: provider.templateId,
       config: provider.config,

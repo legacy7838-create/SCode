@@ -23,11 +23,11 @@ export function createCliProviderRefreshReporter(
   return {
     onBuiltinRefreshError(error: unknown) {
       stderr.write(
-        `ZCode Built-in 刷新失败: ${error instanceof Error ? error.message : "unknown error"}\n`,
+        `ZCode Built-in refresh failed: ${error instanceof Error ? error.message : "unknown error"}\n`,
       );
     },
     onBuiltinRefreshResult(event: ZCodeBuiltinRefreshEvent) {
-      // TTL 检查不是生产事件；成功更新才默认留痕，不能输出 CDN URL 查询参数或内容。
+      // TTL checks are not a production event; successful updates only leave traces by default and cannot output CDN URL query parameters or content.
       if (event.result === "updated" || process.env.NODE_ENV !== "production") {
         stderr.write(
           `ZCode Built-in ${event.result}${event.reason ? ` (${event.reason})` : ""}${event.revision === undefined ? "" : ` revision=${event.revision} source=CDN`}\n`,
@@ -49,7 +49,7 @@ interface PrepareCliProviderRuntimeEnvOptions {
   readonly platform?: string;
 }
 
-/** 为运行 Core 或写入模型选择的 CLI Entry 定位同一 Environment 的 Provider Config。 */
+/** Locate the Provider Config of the same Environment for the CLI Entry that runs Core or writes a model choice. */
 export async function prepareCliProviderRuntimeEnv(
   options: PrepareCliProviderRuntimeEnvOptions,
 ): Promise<Record<string, string>> {
@@ -88,7 +88,7 @@ export async function prepareCliProviderRuntimeEnv(
     activeFilePath: cachePaths.activeFilePath,
     watch: false,
   });
-  // 入口只准备资源和路径；下载由 Prompt/TUI 长生命周期 Runtime 持有并取消。
+  // The entry only prepares resources and paths; the download is held and canceled by the Prompt/TUI long-life cycle Runtime.
   try {
     await source.read();
   } finally {
@@ -143,8 +143,9 @@ async function resolveBundledZCodeBuiltinProviderConfig(input: {
   }
 
   const entrypoint = input.entrypoint?.trim();
-  if (!entrypoint) throw new Error("无法定位 CLI ZCode Built-in Provider Config：缺少入口路径");
-  // 全局 bin 可以是软链接，随包配置必须相对真实入口定位。
+  if (!entrypoint)
+    throw new Error("Cannot locate the CLI ZCode Built-in Provider Config: missing entrypoint path");
+  // The global bin can be a soft link, and the package configuration must be positioned relative to the real entry.
   const entryDirectory = dirname(realpathSync(resolve(entrypoint)));
   const candidates = [
     join(entryDirectory, "provider", "zcode-builtin.json"),
@@ -152,7 +153,7 @@ async function resolveBundledZCodeBuiltinProviderConfig(input: {
   ];
   const candidate = candidates.find((filePath) => existsSync(filePath));
   if (candidate) return candidate;
-  throw new Error(`无法定位 CLI ZCode Built-in Provider Config：${candidates.join(", ")}`);
+  throw new Error(`Cannot locate the CLI ZCode Built-in Provider Config: ${candidates.join(", ")}`);
 }
 
 function getSeaProviderConfigAssets(): SeaProviderConfigAssets | undefined {

@@ -14,8 +14,8 @@ import {
 
 interface UseWebElementPickerOptions {
   /**
-   * 传输无关的脚本执行出口：把选择脚本送到目标网页并回传结果。
-   * UnifiedBrowserView 走 main IPC（executeJavaScript）。
+   * Transport-agnostic script execution outlet: sends the picking script to the target page and returns the result.
+   * UnifiedBrowserView goes through main IPC (executeJavaScript).
    */
   executeJs: (script: string) => Promise<unknown>;
   workspacePath: string;
@@ -68,7 +68,7 @@ export function useWebElementPicker({
 }: UseWebElementPickerOptions) {
   const [isPicking, setIsPicking] = useState(false);
   const activePickerRunRef = useRef(0);
-  // executeJs 引用可能随每次渲染变化；用 ref 固定，避免 useCallback 依赖它而频繁重建。
+  // The executeJs reference may change on every render; pin it with a ref so useCallback does not depend on it and rebuild frequently.
   const executeJsRef = useRef(executeJs);
   executeJsRef.current = executeJs;
 
@@ -79,7 +79,7 @@ export function useWebElementPicker({
     try {
       await executeJsRef.current(buildCancelWebElementPickerScript());
     } catch (error) {
-      logger.debug("[UnifiedBrowserView] 取消网页元素选择失败", {
+      logger.debug("[UnifiedBrowserView] failed to cancel web element picking", {
         error: error instanceof Error ? error.message : String(error),
       });
     }
@@ -89,7 +89,7 @@ export function useWebElementPicker({
     const runId = activePickerRunRef.current + 1;
     activePickerRunRef.current = runId;
     setIsPicking(true);
-    logger.info("[UnifiedBrowserView] 开始网页元素选择");
+    logger.info("[UnifiedBrowserView] starting web element picking");
 
     try {
       const result = await executeJsRef.current(
@@ -100,12 +100,12 @@ export function useWebElementPicker({
       }
 
       if (!isWebElementPickerScriptResult(result)) {
-        logger.warn("[UnifiedBrowserView] 网页元素选择返回了无法识别的结果");
+        logger.warn("[UnifiedBrowserView] web element picking returned an unrecognized result");
         return;
       }
 
       if (result.status === "cancelled") {
-        logger.info("[UnifiedBrowserView] 网页元素选择已取消");
+        logger.info("[UnifiedBrowserView] web element picking cancelled");
         return;
       }
 
@@ -115,17 +115,17 @@ export function useWebElementPicker({
         workspaceIdentity,
       });
       if (!payload) {
-        logger.warn("[UnifiedBrowserView] 网页元素上下文无效，已丢弃");
+        logger.warn("[UnifiedBrowserView] web element context is invalid, dropped");
         return;
       }
 
       dispatchWebElementContextAddToChat(payload);
-      logger.info("[UnifiedBrowserView] 网页元素上下文已加入聊天", {
+      logger.info("[UnifiedBrowserView] web element context added to chat", {
         tagName: payload.tagName,
         url: sanitizeUrlForLog(payload.pageUrl),
       });
     } catch (error) {
-      logger.warn("[UnifiedBrowserView] 网页元素选择失败", {
+      logger.warn("[UnifiedBrowserView] web element picking failed", {
         error: error instanceof Error ? error.message : String(error),
       });
       throw error;
@@ -155,8 +155,8 @@ export function useWebElementPicker({
       }
 
       event.preventDefault();
-      // 受控视图获得焦点时由注入脚本处理 Esc；焦点还在外层工具栏时，
-      // 这里兜底取消，保证选择态不会因为焦点位置不同而卡住。
+      // When the controlled view has focus the injected script handles Esc; while focus is still on the outer toolbar,
+      // cancel as a fallback here so the picking state cannot get stuck depending on where focus is.
       void cancelPicking();
     };
 

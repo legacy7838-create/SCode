@@ -7,7 +7,7 @@ import type {
   OAuthUserProfile,
 } from "@zcode/shared";
 
-/** Provider 执行上下文 */
+/** Provider execution context */
 export interface OAuthProviderContext {
   providerId: OAuthProviderId;
   state: string;
@@ -15,7 +15,7 @@ export interface OAuthProviderContext {
   now: () => number;
 }
 
-/** OAuth provider 适配器：隔离协议差异 */
+/** OAuth provider adapter: isolates protocol differences */
 export interface OAuthProviderAdapter {
   readonly providerId: OAuthProviderId;
   readonly meta: OAuthProviderMeta;
@@ -25,12 +25,12 @@ export interface OAuthProviderAdapter {
   parseCallbackParams(url: string): OAuthCallbackParams;
   buildAuthorizeUrl(context: OAuthProviderContext): string;
   exchangeToken(params: OAuthCallbackParams, context: OAuthProviderContext): Promise<OAuthTokenSet>;
-  /** 将后端 polling 返回的 provider token 归一化为 Desktop 持久化语义。 */
+  /** Normalizes the provider token returned by backend polling into Desktop persistence semantics. */
   normalizePolledTokenSet?(tokenSet: OAuthTokenSet): Promise<OAuthTokenSet>;
   fetchUserInfo?(tokenSet: OAuthTokenSet, context: OAuthProviderContext): Promise<OAuthUserProfile>;
   refreshToken?(tokenSet: OAuthTokenSet, context: OAuthProviderContext): Promise<OAuthTokenSet>;
 
-  /** provider 级 legacy 凭据读取（用于升级兼容） */
+  /** provider-level legacy credential read (for upgrade compatibility) */
   loadLegacyTokenSet?(
     loadCredential: (key: string) => Promise<string | null>,
   ): Promise<OAuthTokenSet | null>;

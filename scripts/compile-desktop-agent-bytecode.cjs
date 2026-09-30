@@ -11,14 +11,15 @@ const {
 async function compile() {
   const [entryPath, outputPath] = process.argv.slice(2);
   const runtime = configureBytecodeRuntime();
-  if (!runtime.electron) throw new Error("桌面 Agent 字节码必须由 Electron Node 模式编译");
+  if (!runtime.electron)
+    throw new Error("Desktop Agent bytecode must be compiled with Electron Node mode");
   const source = await readFile(entryPath, "utf8");
   const wrapped = Module.wrap(source.replace(/^#![^\r\n]*/, ""));
   const script = new vm.Script(wrapped, {
     filename: entryPath,
     importModuleDynamically: vm.constants.USE_MAIN_CONTEXT_DEFAULT_LOADER,
   });
-  // 仅编译，不调用模块；不能为了预热缓存触发 CLI 的存储、网络或进程副作用。
+  // Only compiles, does not call modules; cannot trigger storage, network, or process side effects of the CLI for cache warm-up.
   const cachedData = script.createCachedData();
   await writeFile(outputPath, cachedData);
   process.stdout.write(

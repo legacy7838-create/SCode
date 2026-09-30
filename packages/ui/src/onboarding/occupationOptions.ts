@@ -31,7 +31,7 @@ export const occupations = [
 
 export type OccupationValue = (typeof occupations)[number];
 
-/** 步骤 2 模式选择用的图标：coding / office。 */
+/** Icons for the mode selection in step 2: coding / office. */
 export const modeOptionIcons = {
   coding: Code2,
   office: PanelsTopLeft,

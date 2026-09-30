@@ -7,7 +7,7 @@ const { readFile } = require("node:fs/promises");
 const { basename, dirname, join } = require("node:path");
 
 function configureBytecodeRuntime() {
-  // 字节码不带可重新编译的源码，必须完整编译并保留字节码；编译器和加载器共用这一处配置。
+  // The bytecode does not come with recompilable source code and must be completely compiled and preserved; the compiler and loader share this configuration.
   v8.setFlagsFromString("--no-lazy --no-flush-bytecode");
   return {
     electron: process.versions.electron ?? null,
@@ -27,31 +27,31 @@ async function loadBytecode(metadata, targetModule, targetRequire) {
   const runtime = configureBytecodeRuntime();
   if (JSON.stringify(runtime) !== JSON.stringify(metadata.runtime)) {
     throw new Error(
-      "字节码运行时不匹配，请用当前 Electron 重新运行 pnpm build:desktop-agent:bytecode",
+      "The bytecode runtime does not match, please rerun pnpm build:desktop-agent:bytecode with the current Electron",
     );
   }
   const directory = dirname(targetModule.filename);
   if (basename(metadata.bytecodeFile) !== metadata.bytecodeFile) {
-    throw new Error("无效的字节码文件名");
+    throw new Error("Invalid bytecode file name");
   }
   const cachedData = await readFile(join(directory, metadata.bytecodeFile));
   if (bytecodeDigest(cachedData) !== metadata.bytecodeSha256) {
-    throw new Error("字节码摘要不匹配，请重新构建桌面 Agent");
+    throw new Error("Bytecode digest mismatch, please rebuild desktop agent");
   }
-  // 使用 ASCII 空格而非双字节零宽字符。这里只消除明文源码，仍保留等长占位内存。
+  // Use ASCII spaces instead of double-byte zero-width characters. Here only the plaintext source code is eliminated, and the equal-length placeholder memory is still retained.
   const source = " ".repeat(metadata.sourceLength);
   const filename = join(directory, metadata.sourceFile);
   const script = new vm.Script(source, {
     cachedData,
     filename,
-    // 动态 import 必须交回 Node，继续按原 bundle 的 URL 解析外置 ESM 与原生依赖。
+    // Dynamic import must be returned to Node, and external ESM and native dependencies will continue to be parsed according to the URL of the original bundle.
     importModuleDynamically: vm.constants.USE_MAIN_CONTEXT_DEFAULT_LOADER,
   });
   if (script.cachedDataRejected) {
-    throw new Error("V8 拒绝字节码缓存，请重新构建桌面 Agent");
+    throw new Error("V8 refuses bytecode caching, please rebuild the desktop agent");
   }
   const run = script.runInThisContext();
-  if (typeof run !== "function") throw new Error("字节码不是 CommonJS 模块");
+  if (typeof run !== "function") throw new Error("Bytecode is not a CommonJS module");
   run.call(
     targetModule.exports,
     targetModule.exports,

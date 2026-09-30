@@ -1,21 +1,21 @@
 // V4 wire 的跨 Node/browser 二进制纯函数。独立成小模块，避免 codec 主文件
 // 同时承载 schema、分片状态机和编码细节。
 import { z } from "zod";
+import { rpcBytesPort } from "@zcode/rpc";
 
 export const topicWireBase64Schema = z
   .string()
   .min(4)
   .regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u);
 
+// CRC32 delegates to the @zcode/rpc byte port. The renderer binding is the table-driven
+// JavaScript (renderer cannot host a `.node`; spec invariant 9). Node entrypoints bind the
+// hardware-CRC32 Rust implementation via `@zcode/rpc/native`, so the frame producer and the
+// assembler get the 66–73x path automatically — the same singleton, no per-call branch and no
+// JS fallback (there is exactly one binding per process). Byte-identical either way (asserted by
+// packages/rpc/scripts/check-bytes-port-parity.mjs).
 export function crc32WireBytes(bytes: Uint8Array): string {
-  let crc = 0xffffffff;
-  for (const byte of bytes) {
-    crc ^= byte;
-    for (let bit = 0; bit < 8; bit += 1) {
-      crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
-    }
-  }
-  return ((crc ^ 0xffffffff) >>> 0).toString(16).padStart(8, "0");
+  return rpcBytesPort().crc32Hex(bytes);
 }
 
 const BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";

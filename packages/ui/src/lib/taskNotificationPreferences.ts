@@ -18,7 +18,7 @@ function persistStoredBoolean(key: string, value: boolean): void {
   try {
     localStorage.setItem(key, String(value));
   } catch {
-    // localStorage 不可用时静默忽略，保持 UI 主流程可继续工作。
+    // When localStorage is unavailable, it is silently ignored, allowing the main UI process to continue working.
   }
 }
 
@@ -31,10 +31,10 @@ export function isTaskNotificationSoundPreferenceEnabled(): boolean {
 }
 
 export function isTaskNotificationSoundEnabled(): boolean {
-  // 通知声音是任务通知的子能力，之前只有一个总开关时，
-  // UI 无法表达“保留桌面通知但关闭提示音”，运行时也不知道声音必须依附通知存在。
-  // 这里把声音偏好拆出来，但读取最终生效值时仍强制叠加通知总开关，
-  // 保证设置页禁用态和实际播放行为一致，不会出现“通知关了却还能响”的错位。
+  // Notification sound is a sub-capability of task notification. Previously, when there was only one main switch,
+  // The UI has no way of saying "keep desktop notifications but turn off the sound", and the runtime doesn't know that the sound must exist attached to the notification.
+  // The sound preference is separated here, but when the final effective value is read, the notification master switch is still forced to be superimposed.
+  // Ensure that the disabled state of the settings page is consistent with the actual playback behavior, and there will be no misalignment of "the notification is turned off but still sounds".
   return isTaskNotificationEnabled() && isTaskNotificationSoundPreferenceEnabled();
 }
 

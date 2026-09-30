@@ -1,4 +1,4 @@
-/* eslint-disable max-lines, @typescript-eslint/no-explicit-any -- 该函数会序列化后在隔离的浏览器页面上下文执行，不能引用 host 闭包。 */
+/* eslint-disable max-lines, @typescript-eslint/no-explicit-any -- the function is serialized and then executed in an isolated browser page context, so it cannot reference host closures. */
 import type { BrowserCommandResult, BrowserPlaywrightAction } from "@zcode/shared";
 import { buildViewportScreenshotParams } from "./browserCommandPageHandlers.js";
 import type { ControlledView } from "./browserCommandTypes.js";
@@ -228,13 +228,13 @@ export async function handlePlaywrightAction(
   signal?: AbortSignal,
 ): Promise<BrowserCommandResult> {
   if (action.name === "domSnapshot") {
-    // 只 clone documentElement 返回的 outerHTML 噪声较多，缺少交互语义。
-    // 通过隔离环境中的 Playwright 生成 AI/ARIA 快照，再展开 iframe 并归一化结果。
+    // The outerHTML returned by just clone documentElement is noisy and lacks interactive semantics.
+    // Generate AI/ARIA snapshots from Playwright in an isolated environment, expand the iframe and normalize the results.
     const value = await captureBrowserDomSnapshot(view, signal);
     return done({ ok: true, value });
   }
   if (action.name === "elementInfo") {
-    // DOM 探测必须在 isolated world 执行，避免页面覆写全局对象或 getter 改变结果。
+    // DOM probing must be performed in an isolated world to avoid the page overwriting global objects or getters changing the results.
     const value = await evaluateInPlaywrightIsolatedWorld(
       view,
       serializeRuntimeCall(elementInfoRuntime, action),

@@ -32,9 +32,15 @@ const EMPTY_SCOPED_STATE: ScopedPluginReferenceCatalogState = {
 
 interface PluginReferenceCatalogOptions {
   preferredRemoteSessionId?: string;
-  /** 显式重试代次；菜单重开时重新查询，关闭菜单不清空已加载的目录。 */
+  /**
+   * Explicit retry generation; the catalog is re-queried when the menu reopens, and closing the
+   * menu does not clear what has already loaded.
+   */
   refreshRevision?: number;
-  /** 仅合并当前 runtime 内尚未完成的同一 Session 请求；settle 后立即释放。 */
+  /**
+   * Only not-yet-settled requests for the same Session within the current runtime are coalesced;
+   * released immediately once settled.
+   */
   dedupeSessionRequest?: boolean;
   suppressErrorLog?: boolean;
 }
@@ -50,9 +56,9 @@ function releaseSessionCatalogRequest(
   requestKey: string,
   request: Promise<ZCodePluginsReferenceCatalogResult>,
 ): void {
-  // 成功 Promise 曾永久驻留，并在 Agent runtime 换代后继续冒充新
-  // runtime 的 Session authority。缓存只能做挂载期的 in-flight 单飞；旧请求
-  // settle/unmount 时也不能误删同 key 下已经替换的新请求。
+  // A successful Promise used to linger forever and keep impersonating the new runtime's Session authority
+  // after the Agent runtime was replaced. The cache may only serve as an in-flight single-flight guard during mount;
+  // when an old request settles or the component unmounts, it must not delete the newer request already stored under the same key.
   if (serviceCache.get(requestKey) !== request) return;
   serviceCache.delete(requestKey);
   if (serviceCache.size === 0) {
@@ -71,11 +77,12 @@ function releaseSessionCatalogRequestWhenSettled(
 }
 
 /**
- * Plugin 对话引用 catalog。
- * authority 由 sessionId 决定：null（新建草稿）→ workspace 当前 catalog；
- * 非 null（已有 Session）→ 该 Session 创建时冻结的 session-owned catalog。
- * 异步结果按 `workspaceKey + sessionId + runtime restart 代次 + 请求序号` 校验：key 变化或新请求发出后，
- * 旧 workspace/session/进程代次的返回一律丢弃，不得回填到新目标。
+ * The catalog of references available in a Plugin conversation. The authority is determined by
+ * sessionId: null (a freshly created draft) → the workspace's current catalog; non-null (an
+ * existing Session) → the session-owned catalog frozen when that Session was created. Async results
+ * are validated by `workspaceKey + sessionId + runtime restart generation + request sequence`: once
+ * the key changes or a new request has been issued, returns from an old workspace/session/process
+ * generation are discarded outright and must not be backfilled into the new target.
  */
 export function usePluginReferenceCatalog(
   workspacePath: string,
@@ -93,12 +100,12 @@ export function usePluginReferenceCatalog(
     useState<ScopedPluginReferenceCatalogState>(EMPTY_SCOPED_STATE);
   const [runtimeRevision, setRuntimeRevision] = useState(0);
   const requestSeqRef = useRef(0);
-  // 身份/隔离语义统一 workspaceKey = workspaceIdentity?.trim() || workspacePath。
+  // Identity/isolation semantics unified as workspaceKey = workspaceIdentity?.trim() || workspacePath.
   const workspaceKey = workspaceIdentity?.trim() || workspacePath;
   const remoteSessionId =
     resolution.remoteSessionId ?? options?.preferredRemoteSessionId ?? undefined;
-  // remote attachment 也是 authority 边界。同一 workspace/session 切换远端 runtime 时
-  // 不得复用旧进程冻结的 catalog Promise。
+  // The remote attachment is also an authority boundary. When the same workspace/session
+  // switches remote runtimes, the catalog Promise frozen by the old process must not be reused.
   const requestKey = `${workspaceKey}|${remoteSessionId ?? "local"}|${sessionId ?? "draft"}|runtime:${runtimeRevision}|refresh:${options?.refreshRevision ?? 0}`;
   const services = resolution.services;
   const rpcReady = resolution.rpcReady;
@@ -107,15 +114,15 @@ export function usePluginReferenceCatalog(
     if (!enabled || !workspacePath || !sessionId || !rpcReady) return;
     const subscription = services.zcodeAgentService.onAgentRuntimeRestarted((event) => {
       if (event.workspaceKey !== workspaceKey) return;
-      // Runtime restart 后 workspace/session/attachment 都可能保持不变；显式推进代次，
-      // 让旧 authority 首帧失效并保证新 runtime 必须重新执行 RPC。
+      // After a runtime restart the workspace/session/attachment may all stay unchanged; explicitly bump the generation
+      // so the old authority's first frame is invalidated and the new runtime must re-run the RPC.
       setRuntimeRevision((current) => current + 1);
     });
     return () => subscription.dispose();
   }, [enabled, rpcReady, services, sessionId, workspaceKey, workspacePath]);
-  // 每次 Picker 重新打开、workspace/session/remote attachment 改变，或 services
-  // 实例重连时都创建新的请求身份。渲染只接受同一 scope 的结果，因此 effect 尚未
-  // 发出新请求的首帧也不会短暂泄露上一 authority 的 catalog。
+  // A fresh request identity is created whenever the Picker reopens, the workspace/session/remote attachment
+  // changes, or the services instance reconnects. Rendering only accepts results from the same scope, so even the
+  // first frame before the effect issues the new request never briefly leaks the previous authority's catalog.
   const requestScope = useMemo(
     () => ({}),
     [enabled, remoteSessionId, requestKey, rpcReady, services, workspacePath],
@@ -171,9 +178,9 @@ export function usePluginReferenceCatalog(
       .catch((error: unknown) => {
         if (cancelled || seq !== requestSeqRef.current) return;
         const message = error instanceof Error ? error.message : String(error);
-        // fail closed：查询失败时 Picker 显示错误态，不回退到其它 authority 的数据。
+        // Fail closed: on a query failure the Picker shows an error state instead of falling back to another authority's data.
         if (!options?.suppressErrorLog) {
-          logger.warn("[usePluginReferenceCatalog] 拉取 Plugin 引用 catalog 失败", {
+          logger.warn("[usePluginReferenceCatalog] failed to fetch the plugin reference catalog", {
             error: message,
             requestKey,
           });
@@ -194,7 +201,7 @@ export function usePluginReferenceCatalog(
         releaseSessionCatalogRequest(services, requestServiceCache, requestKey, request);
       }
     };
-    // requestKey 已涵盖 workspaceKey 与 sessionId 的组合变化。
+    // requestKey already covers every combination change of workspaceKey and sessionId.
   }, [
     enabled,
     options?.dedupeSessionRequest,

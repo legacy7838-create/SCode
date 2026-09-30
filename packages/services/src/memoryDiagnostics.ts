@@ -6,10 +6,11 @@ import {
 } from "@zcode/shared";
 
 /**
- * services 进程级内存诊断计数器注册表。
+ * Process-level memory diagnostics counter registry for services.
  *
- * 各 service 工厂在创建时注册纯读取 provider，disposeAll 时注销；Host 每 60 秒 collect 一次
- * 写本地日志。不放在 service 接口上是为了不把诊断方法暴露到 RPC channel。
+ * Each service factory registers a read-only provider when it is created and unregisters on
+ * disposeAll; the Host collects once every 60 seconds and writes a local log. It is kept off the
+ * service interfaces so that diagnostics methods are not exposed on the RPC channel.
  */
 export const memoryDiagnosticsRegistry: MemoryDiagnosticsRegistry =
   createMemoryDiagnosticsRegistry();

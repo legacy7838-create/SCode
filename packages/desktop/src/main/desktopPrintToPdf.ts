@@ -2,7 +2,7 @@ import type { PrintPageToPdfResult } from "@zcode/shared";
 import { PlatformChannels } from "@zcode/shared";
 import { ipcMain } from "electron";
 
-/** 同一 webContents 的打印请求串行化，防止重复触发 Chromium 打印管线 */
+/** Serialize print requests for the same webContents to prevent repeated triggering of the Chromium print pipeline */
 const inFlightSenderIds = new Set<number>();
 
 export function registerDesktopPrintToPdfIpcHandler(logger: {
@@ -17,16 +17,16 @@ export function registerDesktopPrintToPdfIpcHandler(logger: {
     try {
       const buffer = await event.sender.printToPDF({
         printBackground: true,
-        // 页面尺寸完全由 renderer 注入的 @page CSS 决定，main 端不接受 renderer 参数
+        // The page size is completely determined by @page CSS injected by renderer. The main side does not accept renderer parameters.
         preferCSSPageSize: true,
         margins: { top: 0, bottom: 0, left: 0, right: 0 },
       });
-      // Buffer 可能是池化视图，切出独立 ArrayBuffer 再走 structured clone
+      // Buffer may be a pooled view, cut out an independent ArrayBuffer and then use structured clone
       const data = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
       return { success: true, data };
     } catch (error) {
       logger.warn(
-        `[print-to-pdf] 导出失败 error=${error instanceof Error ? error.message : String(error)}`,
+        `[print-to-pdf] export failed error=${error instanceof Error ? error.message : String(error)}`,
       );
       return { success: false, error: "print_failed" };
     } finally {

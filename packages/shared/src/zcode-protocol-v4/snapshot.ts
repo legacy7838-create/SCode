@@ -1,6 +1,6 @@
 /* oxlint-disable max-lines -- v4 snapshot schema is a frozen cross-process contract; additions stay grouped here. */
-// ConversationSnapshot A 区。
-// A 区更新语义 = 字段级整体替换（state.updated），绝不深合并——深合并是错乱之母。
+// ConversationSnapshot Area A.
+// Area A update semantics = field-level overall replacement (state.updated), never deep merge - deep merge is the mother of confusion.
 import { z } from "zod";
 import { sharedContextImportStateSchema } from "./shared-context-import.js";
 export { sharedContextImportStateSchema } from "./shared-context-import.js";
@@ -26,8 +26,8 @@ export {
 } from "./session-config.js";
 // ── SessionControl ──
 export const sessionPhaseSchema = z.enum([
-  // draft 裁决保留——纯内存态、sessions-index 可见、无 row、
-  // 不落盘、CLI 重启即消失；firstInput 到达 → prewarming/running。
+  // draft ruling reserved - pure memory state, sessions-index visible, no row,
+  // It will disappear when the CLI is restarted without downloading; firstInput arrives → prewarming/running.
   "draft",
   "prewarming",
   "running",
@@ -64,7 +64,7 @@ export const activeWorkSummarySchema = z.object({
 });
 export type ActiveWorkSummary = z.infer<typeof activeWorkSummarySchema>;
 
-// 错误码分为 fault.*、proto.* 与 guard.*。
+// Error codes are divided into fault.*, proto.* and guard.*.
 export const errorAttributionSchema = z
   .object({
     source: z.enum(["provider", "runtime", "tool", "network"]).optional(),
@@ -127,23 +127,23 @@ export type ApiRetryState = z.infer<typeof apiRetryStateSchema>;
 
 export const sessionControlSchema = z.object({
   phase: sessionPhaseSchema,
-  // 派生值（= phase ∈ completed*），为 UI 便利保留。
+  // Derived value (= phase ∈ completed*), reserved for UI convenience.
   sessionEnded: z.boolean(),
   canStop: z.boolean(),
   stopState: z.enum(["idle", "stoppable", "stopping"]),
   stopTargetKind: stopTargetKindSchema,
-  // 轻量证据/悬浮提示用，UI 不得据此推导 flag。
-  // hasBackgroundWork 不在载荷内：客户端按 backgroundWorks.some(w => w.status === "running") 一行派生。
+  // Used for lightweight evidence/suspended prompts, the UI must not deduce the flag based on this.
+  // hasBackgroundWork is not in the payload: the client derives by the line backgroundWorks.some(w => w.status === "running") .
   activeWorks: z.array(activeWorkSummarySchema),
   lastError: sessionErrorInfoSchema.nullable(),
   apiRetry: apiRetryStateSchema.nullable(),
 });
 export type SessionControl = z.infer<typeof sessionControlSchema>;
 
-// ── availability 与 inputRouting ──
+// ── availability and inputRouting ──
 export const actionAvailabilitySchema = z.discriminatedUnion("allowed", [
   z.object({ allowed: z.literal(true) }),
-  // reasonCode = product-protocol guard id，驱动禁用态 tooltip。
+  // reasonCode = product-protocol guard id, driver disabled tooltip.
   z.object({ allowed: z.literal(false), reasonCode: z.string() }),
 ]);
 export type ActionAvailability = z.infer<typeof actionAvailabilitySchema>;
@@ -161,31 +161,31 @@ export const sessionActionAvailabilitySchema = z.object({
 export type SessionActionAvailability = z.infer<typeof sessionActionAvailabilitySchema>;
 
 export const inputRoutingSchema = z.object({
-  // choice：held（completed+queue>0+autoDrain=false）下
-  // 输入不静默入队，客户端呈现「清空 queue 后发送 / 保留 queue 立即发送」。
+  // choice: held (completed+queue>0+autoDrain=false)
+  // The input is not queued silently, and the client displays "clear the queue and send it/retain the queue and send it immediately".
   mode: z.enum(["startNow", "enqueue", "guide", "reject", "choice"]),
-  // mode=reject 必带；enqueue/guide/choice 可带（如 guide 不合格回退原因）。
+  // mode=reject is required; enqueue/guide/choice can be included (such as guide unqualified fallback reason).
   reasonCode: z.string().optional(),
 });
 export type InputRouting = z.infer<typeof inputRoutingSchema>;
 
-// ── meta（会话级元信息：标题）。renameSession/自动标题落此。──
+// ── meta (session-level meta information: title). renameSession/automatic title falls here. ──
 export const sessionMetaStateSchema = z.object({
   title: z.string(),
-  // default = 未命名；generated = 模型自动生成；custom = 用户显式重命名（不再被自动标题覆盖）。
+  // default = unnamed; generated = model automatically generated; custom = explicit renamed by user (no longer overridden by automatic title).
   titleSource: z.enum(["default", "generated", "custom"]),
 });
 export type SessionMetaState = z.infer<typeof sessionMetaStateSchema>;
 
 /**
- * 分享导入的只读来源标记。
+ * Share imported read-only source tags.
  *
- * shared_context 正文只给模型使用，不能通过 userInput row 伪造到会话气泡里；
- * 这个 additive 元数据让 Desktop 在新会话中仍能明确告诉用户上下文来自哪里。
+ * The shared_context text is only used by the model and cannot be forged into the conversation bubble through userInput row;
+ * This additive metadata allows Desktop to still tell the user exactly where the context came from in a new session.
  */
 export type { SharedContextImportState } from "./shared-context-import.js";
 
-// ── usage。conflation：值未变不下发──
+// ─ Usage. conflation: If the value remains unchanged, it will not be issued──
 export const sessionUsageStateSchema = z.object({
   contextWindow: z
     .object({
@@ -205,7 +205,7 @@ export const sessionUsageStateSchema = z.object({
 });
 export type SessionUsageState = z.infer<typeof sessionUsageStateSchema>;
 
-// ── queue（不持久化，裁决：CLI 进程死亡即丢，客户端对账后由用户决定重发）──
+// ── queue (not persistent, ruling: the CLI process will be lost when it dies, and the user will decide to resend after the client reconciles the account)──
 export const queueItemSchema = conversationInputIntentSchema.extend({
   dispatch: conversationInputDispatchSchema.extend({
     state: z.enum(["queued", "reserved", "promoting"]),
@@ -216,14 +216,14 @@ export type QueueItem = z.infer<typeof queueItemSchema>;
 
 export const queueStateSchema = z.object({
   items: z.array(queueItemSchema),
-  // stop 后 = false（暂停队列）；setAutoDrain 恢复。
+  // After stop = false (pause queue); setAutoDrain resumes.
   autoDrain: z.boolean(),
-  // additive：旧快照缺省时 UI 使用通用暂停文案；Stop/TurnError 可显示原因文案。
+  // Additive: The UI of old snapshots uses universal pause text by default; Stop/TurnError can display the reason text.
   pauseReason: z.enum(["stopped", "manual", "error"]).optional(),
 });
 export type QueueState = z.infer<typeof queueStateSchema>;
 
-// ── pendingInteractions（阻塞交互 → 状态）──
+// ── pendingInteractions (blocking interaction → status)──
 export const MAX_PERMISSION_FEEDBACK_CHARS = 4_096;
 
 export const PERMISSION_FULL_ACCESS_OPTION_ID = "fullAccess";
@@ -240,13 +240,13 @@ export const permissionRequestPayloadSchema = z.object({
   toolName: z.string(),
   summary: z.string(),
   detail: z.unknown(),
-  // additive：旧 snapshot 缺省时 UI 不显示反馈输入；V4 新投影可显式开启。
+  // Additive: The UI of the old snapshot does not display feedback input by default; the new projection of V4 can be explicitly turned on.
   freeText: z.boolean().optional(),
   origin: zcodeInteractionRequestOriginSchema.optional(),
-  // 工具自报的确认预览，复用 row 的 display 投影（同一有界形状）。缺省 = 纯文本 ask。
-  // 同样不设门：预览解析失败退化成纯文本 ask，不拒整份 snapshot（见 toolDisplay.ts 注释）。
+  // The confirmation preview reported by the tool reuses the display projection of row (the same bounded shape). Default = plain text ask.
+  // There is also no gate: the preview parsing fails and is reduced to a plain text ask, and the entire snapshot is not rejected (see toolDisplay.ts comments).
   display: toolCallDisplaySchema.optional().catch(undefined),
-  // 独立 additive 能力：旧 UI 忽略此字段，仍只显示原 options，不出现半实现授权入口。
+  // Independent additive capabilities: The old UI ignores this field and still only displays the original options, without the semi-implemented authorization entry.
   fullAccessOption: permissionOptionSchema
     .extend({
       optionId: z.literal(PERMISSION_FULL_ACCESS_OPTION_ID),
@@ -278,7 +278,7 @@ export const userInputRequestPayloadSchema = z.object({
   prompt: z.string(),
   freeText: z.boolean(),
   options: z.array(z.object({ optionId: z.string(), label: z.string() })).optional(),
-  // true → 输入框按密码处理，客户端不入草稿/历史。
+  // true → The input box is processed according to the password, and the client does not enter the draft/history.
   sensitive: z.boolean().optional(),
   toolName: z.string().optional(),
   toolCallId: z.string().optional(),
@@ -311,7 +311,7 @@ export const pendingInteractionSchema = z
   .object({
     interactionId: z.string(),
     kind: z.enum(["permission", "userInput", "workspaceHookReview"]),
-    // null = 会话级（如 provider 交互和 workspace Hook review）。
+    // null = session level (such as provider interactions and workspace Hook review).
     anchorRowId: z.number().nullable(),
     createdAt: timestampSchema,
     autoResolution: interactionAutoResolutionSchema.optional(),
@@ -361,14 +361,14 @@ export type CommandStateSummary = z.infer<typeof commandStateSummarySchema>;
 
 export const backgroundWorkSummarySchema = z.object({
   workId: z.string(),
-  // workflow = workflow run（CreateWorkflow）。**闭集加值的偏斜代价**：
-  // 旧桌面收到未知值时整个 state.updated patch 解析失败（已知键的非法值是错误，不是剥离），
-  // 于是整帧被 assembler 拒收，且 resync 的 snapshot 携带同一个值、同样失败——不能优雅降级。
-  // CLI 与桌面同批发布才使它可接受。
+  // workflow = workflow run(CreateWorkflow). **Skew cost of closed set addition**:
+  // The entire state.updated patch parsing fails when the old desktop receives an unknown value (illegal values for known keys are errors, not stripping),
+  // So the entire frame is rejected by the assembler, and the resync snapshot carries the same value and fails too - it cannot be degraded gracefully.
+  // The CLI is released in the same batch as the desktop to make it acceptable.
   kind: z.enum(["bash", "subagent", "workflow"]),
   title: z.string(),
-  // resultPending = 已完成、结果在 continuation inbox 等待前台空闲；
-  // 投递后条目消失（结果本体成为 origin=backgroundResult 的 userInput row）。
+  // resultPending = completed, the result is waiting in the continuation inbox for the foreground to be idle;
+  // After delivery, the entry disappears (the result body becomes the userInput row of origin=backgroundResult).
   status: z.enum(["running", "resultPending", "failed", "cancelled"]),
   startedAt: timestampSchema,
   endedAt: timestampSchema.optional(),
@@ -379,8 +379,8 @@ export const backgroundWorkSummarySchema = z.object({
 });
 export type BackgroundWorkSummary = z.infer<typeof backgroundWorkSummarySchema>;
 
-// subagent 运行态属于 conversation 权威投影，而不是 renderer 查询缓存。
-// ended 详情保持 cursor query；snapshot 只携带目录总数，避免运行中并发数量依赖查询时序。
+// The subagent running state belongs to the conversation authority projection, not the renderer query cache.
+// The ended details remain in the cursor query; the snapshot only carries the total number of directories to prevent the number of concurrent runs from depending on the query timing.
 export const runningSubagentSummarySchema = z.object({
   childSessionId: z.string(),
   agentId: z.string().optional(),
@@ -417,14 +417,14 @@ export const goalIterationStateSchema = z.object({
 export type GoalIterationState = z.infer<typeof goalIterationStateSchema>;
 
 export const goalStateSchema = z.object({
-  // default 仅用于旧快照兼容；新投影始终携带当前 target 身份和计时事实。
+  // default is only for compatibility with old snapshots; new projections always carry the current target identity and timing facts.
   targetId: z.string().default(""),
   objective: z.string(),
   summaryTitle: z.string().nullable().default(null),
   timeUsedSeconds: z.number().int().nonnegative().default(0),
   activeRunStartedAtMs: z.number().int().nonnegative().nullable().default(null),
-  // paused：stop 作用于任何 foreground work 时 target 强制进入（stopPausesActiveGoalTarget）。
-  // notSatisfied 与 failed 分离：前者是有效结论，后者是验证过程失败。
+  // paused: stop acts on any foreground work when the target is forced to enter (stopPausesActiveGoalTarget).
+  // notSatisfied is separated from failed: the former is a valid conclusion, the latter is a failure of the verification process.
   status: z.enum(["active", "paused", "verifying", "verified", "notSatisfied", "failed"]),
   iteration: z.number(),
   verifications: z.array(
@@ -447,19 +447,19 @@ export const planStateSchema = z.object({
 });
 export type PlanState = z.infer<typeof planStateSchema>;
 
-// ── Snapshot 总览 ──
+// ── Snapshot Overview ──
 export const rowsWindowSchema = z.object({
-  // 尾部窗口，rowId 升序。
+  // Tail window, rowId ascending order.
   window: z.array(conversationRowSchema),
-  // 当前全序行数（截断后会减小；仅用于滚动条估计）。
+  // Current total sequence number of rows (reduced after truncation; used for scrollbar estimation only).
   totalCount: z.number(),
-  // 全序第一行 rowId；window 首行等于它 ⇔ 已到顶（游标分页判定）。
+  // The rowId of the first row in total order; the first row of the window is equal to it ⇔ has reached the top (cursor paging determination).
   firstRowId: z.number().nullable(),
 });
 export type RowsWindow = z.infer<typeof rowsWindowSchema>;
 
-// 软门禁(Soft Gate)：会话级待审核 hook 准入状态。
-// snapshot 与 StatePatch(delta.ts)共用,保证投影补丁与快照字段同构。
+// Soft Gate: Session-level pending hook access status.
+// snapshot is shared with StatePatch (delta.ts) to ensure that the projected patch and snapshot fields are isomorphic.
 export const workspaceHookAdmissionStateSchema = z.object({
   pendingCount: z.number().int().nonnegative(),
   bundleDigest: z.string(),
@@ -471,39 +471,39 @@ export const conversationSnapshotSchema = z.object({
   protocolVersion: z.literal(1),
   sessionId: z.string(),
   logEpoch: z.string(),
-  // 快照对齐水位（= 所在帧 toSeq；从内存投影原子取值）。
+  // Snapshot alignment water level (= frame toSeq; value from memory projection atom).
   seq: z.number(),
   revision: z.number(),
-  // A 区
+  // Area A
   control: sessionControlSchema,
   availability: sessionActionAvailabilitySchema,
   inputRouting: inputRoutingSchema,
-  // meta 是冻结 schema之后的
-  // additive 新增，必须带 default 才不破坏旧快照/旧发送端的解析——备份分支曾把它设为
-  // 必填，shared 的 round-trip 测试在该分支上一直是红的（当时未跑 root vitest 漏网）。
+  // meta is after freezing the schema
+  // Additive is new, and default must be used in order not to destroy the resolution of the old snapshot/old sender - the backup branch once set it to
+  // Required, the round-trip test of shared is always red on this branch (the root vitest was not run at that time and was missed).
   meta: sessionMetaStateSchema.default({ title: "", titleSource: "default" }),
-  // Additive：旧 CLI/旧快照不带该字段时仍按普通会话处理。
+  // Additive: If the old CLI/old snapshot does not have this field, it will still be processed as a normal session.
   sharedContextImport: sharedContextImportStateSchema.optional(),
   config: sessionConfigStateSchema,
-  // 持久化稳定事实供 live 客户端识别一次性提示；旧快照缺字段时不触发。
+  // Persistent stable facts are used for live clients to identify one-time prompts; they are not triggered when old snapshots have missing fields.
   modelTransition: sessionModelTransitionSchema.nullable().default(null),
   usage: sessionUsageStateSchema,
   queue: queueStateSchema,
   pendingInteractions: z.array(pendingInteractionSchema),
   pendingCommands: z.array(commandStateSummarySchema),
   backgroundWorks: z.array(backgroundWorkSummarySchema),
-  // optional 只服务旧快照 wire 兼容；新 CLI 的初始态和每次投影都始终携带该字段。
+  // optional Only serves old snapshot wire compatibility; the initial state of the new CLI and each projection always carry this field.
   subagents: subagentProjectionStateSchema.optional(),
-  // 冷快照必须携带 workflowRuns：漏这一处，刷新/重连后正在跑的 run 会静默消失
-  // （详情页因此空白，而 run 本身仍在飞）。optional 同样只服务旧快照 wire 兼容。
+  // Cold snapshots must carry workflowRuns: If you miss this point, the running run will disappear silently after refreshing/reconnecting.
+  // (The details page is therefore blank, while the run itself is still flying). optional also only serves old snapshot wire compatibility.
   workflowRuns: workflowRunsStateSchema.optional(),
   goal: goalStateSchema.nullable(),
   plan: planStateSchema.nullable(),
-  // 软门禁(Soft Gate)：additive 字段,必须带 default(null)。
-  // 旧快照/旧发送端不携带此字段 → 解析得 null,不破坏兼容性(遵守冻结规则)。
-  // pendingCount === 0 时投影层置 null(提示条消失)。
+  // Soft Gate: additive field, must have default (null).
+  // Old snapshots/old senders do not carry this field → parsed to null, which does not break compatibility (comply with freezing rules).
+  // When pendingCount === 0, the projection layer is set to null (the prompt bar disappears).
   workspaceHookAdmission: workspaceHookAdmissionStateSchema.nullable().default(null),
-  // B 区
+  // Area B
   rows: rowsWindowSchema,
 });
 export type ConversationSnapshot = z.infer<typeof conversationSnapshotSchema>;

@@ -39,7 +39,7 @@ function detectPathKind(path: string): PathKind {
       return "directory";
     }
   } catch {
-    // 非本地路径或路径不存在时保留 unknown，交给后续 fallback 处理。
+    // If the path is non-local or does not exist, keep unknown and leave it to the subsequent fallback for processing.
   }
   return "unknown";
 }
@@ -72,7 +72,7 @@ async function resolveWslDistroName(
     const distros = await listWSLDistros();
     return distros.find((distro) => distro.isDefault)?.name ?? distros[0]?.name ?? null;
   } catch (error) {
-    logger.warn("[editors] 解析默认 WSL distro 失败", {
+    logger.warn("[editors] failed to resolve the default WSL distro", {
       error: stringifyError(error),
     });
     return null;
@@ -108,8 +108,8 @@ function buildVSCodeSshFolderUri(
   path: string,
   target: Extract<OpenInEditorRemoteTarget, { kind: "ssh" }>,
 ) {
-  // 手填 SSH 目标没有 alias 时，authority 里可能包含 `@` 和 `:`。
-  // 直接拼进 URI 会被解析成 userinfo/host/port，必须按 Remote-SSH authority 组件整体编码。
+  // When the manual SSH target does not have alias, the authority may contain `@` and `:`.
+  // Directly typing into the URI will be parsed into userinfo/host/port, which must be encoded as a whole according to the Remote-SSH authority component.
   const encodedAuthority = encodeURIComponent(resolveVSCodeSshRemoteAuthority(target));
   return `vscode-remote://ssh-remote+${encodedAuthority}${encodeRemotePath(path)}`;
 }
@@ -136,8 +136,8 @@ async function openVSCodeRemoteSshFolder(
   remoteTarget: Extract<OpenInEditorRemoteTarget, { kind: "ssh" }>,
   pathKind: OpenInEditorOptions["pathKind"],
 ): Promise<OpenInEditorResult> {
-  // 远程文件和目录以前共用 folder URI，导致文件路径被 VS Code 当成目录；
-  // pathKind 只决定 CLI URI 参数，远端路径与 workspace identity 保持原样。
+  // Remote files and directories previously shared folder URIs, causing the file path to be treated as a directory by VS Code;
+  // pathKind only determines the CLI URI parameters, the remote path and workspace identity remain unchanged.
   const args = [
     pathKind === "file" ? "--file-uri" : "--folder-uri",
     buildVSCodeSshFolderUri(path, remoteTarget),
@@ -156,7 +156,7 @@ async function openVSCodeRemoteSshFolder(
         await execFileAsync("open", ["-a", appPath, "--args", ...args]);
         return { success: true };
       } catch (fallbackError) {
-        logger.warn("[editors] 打开 VS Code 远程工作区失败", {
+        logger.warn("[editors] failed to open the VS Code remote workspace", {
           editorId,
           path,
           args,
@@ -176,7 +176,7 @@ async function openVSCodeRemoteSshFolder(
     }
     return { success: true };
   } catch (error) {
-    logger.warn("[editors] 打开 VS Code 远程工作区失败", {
+    logger.warn("[editors] failed to open the VS Code remote workspace", {
       editorId,
       path,
       args,
@@ -214,7 +214,7 @@ async function openVSCodeRemoteWslFolder(
         await execFileAsync("open", ["-a", appPath, "--args", ...args]);
         return { success: true };
       } catch (fallbackError) {
-        logger.warn("[editors] 打开 VS Code WSL 工作区失败", {
+        logger.warn("[editors] failed to open the VS Code WSL workspace", {
           editorId,
           path,
           args,
@@ -234,7 +234,7 @@ async function openVSCodeRemoteWslFolder(
     }
     return { success: true };
   } catch (error) {
-    logger.warn("[editors] 打开 VS Code WSL 工作区失败", {
+    logger.warn("[editors] failed to open the VS Code WSL workspace", {
       editorId,
       path,
       args,
@@ -263,9 +263,9 @@ async function openWslPathInExplorer(
       await execFileAsync(appPath, args);
       return { success: true };
     } catch (error) {
-      // explorer.exe 会把请求委托给已运行的资源管理器进程，窗口已经打开时
-      // 子进程仍可能以 code=1 退出。不能只按数字退出码吞错；必须同时核对 Windows
-      // 平台、进程状态、stderr 和本次完整命令，避免路径/权限/UNC 错误跳过候选 fallback。
+      // explorer.exe will delegate the request to the running explorer process when the window is already open.
+      // The child process may still exit with code=1. You cannot just press the numerical exit code to swallow the error; you must also check Windows
+      // Platform, process status, stderr and this complete command to avoid path/permission/UNC error skip candidate fallback.
       if (await isDelegatedWindowsExplorerExit(error, appPath, args, candidate)) {
         return { success: true };
       }
@@ -273,7 +273,7 @@ async function openWslPathInExplorer(
     }
   }
 
-  logger.warn("[editors] 打开 WSL 工作区资源管理器失败", {
+  logger.warn("[editors] failed to open the WSL workspace in File Explorer", {
     path,
     candidates,
     error: lastError,
@@ -291,7 +291,7 @@ async function openWindowsEditor(
     await execFileAsync(appPath, args);
     return { success: true };
   } catch (error) {
-    logger.warn("[editors] 打开 Windows 编辑器失败", {
+    logger.warn("[editors] failed to open the Windows editor", {
       editorId,
       args,
       appPath,
@@ -303,7 +303,7 @@ async function openWindowsEditor(
 }
 
 /**
- * 用指定编辑器打开路径。
+ * Opens a path in the given editor.
  */
 export async function openInEditor(
   editorId: string,
@@ -317,8 +317,8 @@ export async function openInEditor(
 
   const appPath = resolveEditorDefAppPath(def) ?? def.appPath;
   if (options?.remoteTarget?.kind === "ssh" && isVSCodeEditor(editorId)) {
-    // SSH 工作区的 workspacePath 是远端文件系统路径，不能按本机路径执行 `code /root/...`。
-    // VS Code Remote-SSH 需要 folder URI 才会连接对应 SSH Host 并打开远端目录。
+    // The workspacePath of the SSH workspace is the remote file system path, and `code /root/...` cannot be executed according to the local path.
+    // VS Code Remote-SSH requires the folder URI to connect to the corresponding SSH Host and open the remote directory.
     return openVSCodeRemoteSshFolder(
       editorId,
       appPath,
@@ -330,8 +330,8 @@ export async function openInEditor(
   }
 
   if (options?.remoteTarget?.kind === "wsl" && isVSCodeEditor(editorId)) {
-    // WSL 工作区的 workspacePath 是 Linux 路径，不能直接传给 Windows 侧 `code`。
-    // VS Code Remote-WSL 需要 folder URI，才能在指定 distro 内打开同一个 Linux 目录。
+    // The workspacePath of the WSL workspace is the Linux path and cannot be directly passed to the Windows side `code`.
+    // VS Code Remote-WSL requires a folder URI to open the same Linux directory within a specified distro.
     return openVSCodeRemoteWslFolder(
       editorId,
       appPath,
@@ -343,8 +343,8 @@ export async function openInEditor(
   }
 
   if (options?.remoteTarget?.kind === "wsl" && editorId === "explorer") {
-    // Windows 资源管理器无法理解 `/home/...` 这类 WSL 内部路径。
-    // 仅在打开宿主应用的边界把路径转成 UNC，远端 host / agent 仍保留 Linux 路径语义。
+    // Windows Explorer does not understand WSL internal paths like `/home/...`.
+    // The path is converted to UNC only at the boundary where the host application is opened, and the remote host/agent still retains Linux path semantics.
     return openWslPathInExplorer(appPath, path, options.remoteTarget, options.pathKind);
   }
 
@@ -363,8 +363,8 @@ export async function openInEditor(
       return openPathViaShell(path);
     }
 
-    // Explorer 已委托打开请求后仍可能非零退出，按退出码回退会重复打开窗口。
-    // 本地文件直接使用系统定位 API，只发出一次打开所在目录并选中文件的请求。
+    // Explorer may still exit non-zero after the open request has been delegated, and falling back with an exit code will open the window repeatedly.
+    // Local files directly use the system location API and only issue one request to open the directory and select the file.
     shell.showItemInFolder(path);
     return { success: true };
   }
@@ -382,7 +382,7 @@ export async function openInEditor(
         await execFileAsync("open", ["-a", appPath, path]);
         return { success: true };
       } catch (fallbackError) {
-        logger.warn("[editors] 打开编辑器失败", {
+        logger.warn("[editors] failed to open the editor", {
           editorId,
           path,
           error: stringifyError(error),
@@ -401,7 +401,7 @@ export async function openInEditor(
     }
     return { success: true };
   } catch (error) {
-    logger.warn("[editors] 打开编辑器失败", {
+    logger.warn("[editors] failed to open the editor", {
       editorId,
       path,
       error: stringifyError(error),

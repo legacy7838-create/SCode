@@ -1,4 +1,6 @@
-/* eslint-disable max-lines -- 远程连接向导的状态编排暂集中在同一组件，后续有独立拆分计划。 */
+/* eslint-disable max-lines -- the remote connection wizard's state orchestration is temporarily
+ * kept in one component, with a separate split planned later.
+ */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createUuid, type RemoteTarget, type RemoteWorkspaceSessionEntry } from "@zcode/shared";
 import {
@@ -110,15 +112,11 @@ export function RemoteConnectionDialog({
     privateKeyPassphrase,
     wslDistro,
     wslUser,
-    dockerContainer,
-    manualDockerContainer,
     sshConfigAliases,
     sshConfigAliasesLoading,
     sshConfigAliasesError,
     selectedSshConfigAlias,
-    dockerAvailable,
     wslDistros,
-    dockerContainers,
     availableKinds,
     setKind,
     setHost,
@@ -131,9 +129,6 @@ export function RemoteConnectionDialog({
     setPrivateKeyPassphrase,
     setWslDistro,
     setWslUser,
-    setDockerContainer,
-    setManualDockerContainer,
-    refreshDockerContainers,
     applySshConfigAlias,
     clearSelectedSshConfigAlias,
     currentRuntimeOptionsLoading,
@@ -192,7 +187,7 @@ export function RemoteConnectionDialog({
       try {
         await onCancelSession(sessionId);
       } catch (sessionError) {
-        logger.warn("[SSHDialog] 释放未确认的远程 session 失败:", {
+        logger.warn("[SSHDialog] failed to release unconfirmed remote session:", {
           sessionId,
           error: sessionError,
         });
@@ -207,7 +202,7 @@ export function RemoteConnectionDialog({
       if (!options?.preserveSession && sessionId) {
         void handleCancelSession(sessionId);
       } else if (!options?.preserveSession && loading && currentStep === "connecting") {
-        // 连接过程里 sessionId 尚未返回时，关闭弹窗会只重置 UI；这里补上显式取消，确保后台下载同步停止。
+        // When the sessionId has not been returned during the connection process, closing the pop-up window will only reset the UI; add explicit cancellation here to ensure that the background download stops synchronously.
         void cancelPendingRemoteConnection(connectingRequestId ?? undefined);
       }
       resetFeedback();
@@ -268,8 +263,8 @@ export function RemoteConnectionDialog({
     const nextTarget = withDefaultRemoteResourcePackages(target);
 
     if (loading) {
-      // React 还没来得及把按钮置 disabled 时，快速重复点击会启动多个 SSH host process。
-      // 这里在事件入口再做一次并发保护，避免同一个 dialog 产生多条部署流并把上传进度混在一起。
+      // Before React has time to set the button to disabled, rapid repeated clicks will start multiple SSH host processes.
+      // Here, concurrency protection is implemented again at the event entry to prevent the same dialog from generating multiple deployment flows and mixing the upload progress.
       return;
     }
 
@@ -308,8 +303,8 @@ export function RemoteConnectionDialog({
 
   const handleConnect = async () => {
     if (loading) {
-      // React 还没来得及把按钮置 disabled 时，快速重复点击会启动多个 SSH host process。
-      // 这里在事件入口再做一次并发保护，避免同一个 dialog 产生多条部署流并把上传进度混在一起。
+      // Before React has time to set the button to disabled, rapid repeated clicks will start multiple SSH host processes.
+      // Here, concurrency protection is implemented again at the event entry to prevent the same dialog from generating multiple deployment flows and mixing the upload progress.
       return;
     }
 
@@ -326,12 +321,10 @@ export function RemoteConnectionDialog({
       selectedSshConfigAlias,
       wslDistro,
       wslUser,
-      dockerContainer,
-      manualDockerContainer,
     });
     if (!nextTarget) {
-      // 必填项缺失属于表单校验，不应该和真实连接失败共用 destructive 错误样式。
-      // 这里单独落到 settings 步骤内的 warning 提示，用户能更快理解是“缺少输入”而不是“连接出错”。
+      // Missing required fields belong to form validation and should not share the destructive error style with real connection failures.
+      // The warning prompt in the settings step is here alone. Users can understand more quickly that it is "lack of input" rather than "connection error".
       setValidationMessage(errorMessage ?? "Connection failed");
       return;
     }
@@ -373,8 +366,8 @@ export function RemoteConnectionDialog({
         return;
       }
 
-      // 选中远程目录后还要做 realpath、provider 同步、session 持久化和任务列表刷新。
-      // 这些异步步骤之前没有独立的提交中状态，用户会看到按钮无响应；这里在入口设置状态并用 ref 防重复提交。
+      // After selecting the remote directory, realpath, provider synchronization, session persistence and task list refresh must be performed.
+      // These asynchronous steps did not have an independent submission state before, and the user will see that the button is unresponsive; here, the state is set at the entrance and ref is used to prevent repeated submissions.
       selectingDirectoryRef.current = true;
       setSelectingDirectory(true);
       resetFeedback();
@@ -389,7 +382,7 @@ export function RemoteConnectionDialog({
       } catch (selectionError) {
         const failureState = getRemoteConnectionDirectoryFailureState({
           connectedSessionId,
-          // 事件处理器只在失败时读取一次最新 snapshot，避免为了回调判断新增重复 Zustand 订阅。
+          // The event processor only reads the latest snapshot once upon failure to avoid adding duplicate Zustand subscriptions for callback judgment.
           sessionStillRegistered: Boolean(
             useRemoteWorkspaceSessionStore.getState().sessionsById[connectedSessionId],
           ),
@@ -471,14 +464,14 @@ export function RemoteConnectionDialog({
                   onMinimize={
                     flowActive
                       ? () => {
-                          // 连接慢时用户只能关闭弹窗，关闭会取消 pending 连接并丢失当前步骤。
-                          // 这里把“收起”明确拆成仅隐藏 dialog，不重置状态、不取消后台连接，后续入口可恢复到当前步骤。
+                          // When the connection is slow, the user can only close the pop-up window. Closing it will cancel the pending connection and lose the current step.
+                          // Here, "Collapse" is clearly broken down to only hide the dialog, without resetting the status or canceling the background connection. Subsequent entries can be restored to the current step.
                           applyOpenState(false);
                         }
                       : undefined
                   }
                   onClose={() => {
-                    // 关闭和收起的语义不同。关闭仍走确认和取消逻辑，避免已连接但未选目录的 session 泄漏。
+                    // The semantics of closing and collapsing are different. Close the confirmation and cancellation logic to avoid leakage of sessions that are connected but have not selected a directory.
                     void handleCloseRequest();
                   }}
                 />
@@ -487,8 +480,8 @@ export function RemoteConnectionDialog({
               {error && currentStep !== "connecting" ? (
                 <div
                   data-testid={TID_SSH_ERROR}
-                  // 远程连接的错误提示以前直接拼接颜色 token，和全局状态反馈样式不一致。
-                  // 这里统一改成 destructive 语义色对，避免 SSH/Docker 两种模式出现不同的错误视觉。
+                  // The remote connection error prompt used to directly splice color tokens, which was inconsistent with the global status feedback style.
+                  // Here, the colors are changed to destructive semantic color pairs to avoid different visual errors in SSH mode.
                   className="flex items-start gap-3 rounded-xl bg-destructive px-4 py-3 text-ui-base text-destructive-foreground"
                 >
                   <AlertTriangleIcon className="mt-0.5 size-4 shrink-0" />
@@ -524,10 +517,6 @@ export function RemoteConnectionDialog({
                     wslDistro={wslDistro}
                     wslUser={wslUser}
                     wslDistros={wslDistros}
-                    dockerContainer={dockerContainer}
-                    manualDockerContainer={manualDockerContainer}
-                    dockerContainers={dockerContainers}
-                    dockerAvailable={dockerAvailable}
                     sshConfigAliases={sshConfigAliases}
                     sshConfigAliasesLoading={sshConfigAliasesLoading}
                     sshConfigAliasesError={sshConfigAliasesError}
@@ -551,9 +540,6 @@ export function RemoteConnectionDialog({
                     onPrivateKeyPassphraseChange={setPrivateKeyPassphrase}
                     onWslDistroChange={setWslDistro}
                     onWslUserChange={setWslUser}
-                    onDockerContainerChange={setDockerContainer}
-                    onManualDockerContainerChange={setManualDockerContainer}
-                    onDockerContainersRefresh={refreshDockerContainers}
                     onApplySshConfigAlias={applySshConfigAlias}
                     onClearSelectedSshConfigAlias={clearSelectedSshConfigAlias}
                     onConnect={() => {

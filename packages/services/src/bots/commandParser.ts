@@ -27,27 +27,25 @@ export function parseBotCommand(text: string): BotCommand {
     case "bind":
       return rest ? { type: "bind", code: rest } : { type: "unknown", name, raw: text };
     case "help":
-    case "帮助":
       return { type: "help" };
     case "cancel":
-    case "取消":
+    case "Cancel":
       return { type: "selection.cancel" };
     case "status":
-    case "状态":
+    case "Status":
       return { type: "status" };
     case "new":
     case "clear":
-    case "新建":
+    case "New":
       return { type: "new" };
     case "reconnect":
-    case "重连":
+    case "Reconnect":
       return { type: "reconnect" };
     case "workspace":
     case "project":
-    case "项目":
+    case "Project":
       return rest ? { type: "workspace.set", value: rest } : { type: "workspace.list" };
     case "model":
-    case "模型":
       if (!rest) {
         return { type: "model.list" };
       }
@@ -59,31 +57,27 @@ export function parseBotCommand(text: string): BotCommand {
       }
       return { type: "model.set", value: rest };
     case "mode":
-    case "模式":
       return rest ? { type: "mode.set", value: rest } : { type: "mode.list" };
     case "thoughtlevel":
     case "thought_level":
     case "thought-level":
     case "think":
-    case "思考":
       return rest ? { type: "thoughtLevel.set", value: rest } : { type: "thoughtLevel.list" };
     case "task":
       return rest ? { type: "task.set", value: rest } : { type: "task.list" };
     case "reply":
-    case "回复":
+    case "Reply":
       return rest ? { type: "reply.set", value: rest } : { type: "reply.list" };
     case "stop":
-    case "停止":
       return { type: "stop" };
     case "permission":
       return rest ? { type: "permission.respond", value: rest } : { type: "unknown", name, raw: text };
     case "elicitation":
     case "answer":
-    case "回答":
       if (!rest) {
         return { type: "unknown", name, raw: text };
       }
-      if (["submit", "done", "完成", "提交"].includes(rest.toLowerCase())) {
+      if (["submit", "done", "Complete", "Submit"].includes(rest.toLowerCase())) {
         return { type: "elicitation.submit" };
       }
       return { type: "elicitation.respond", value: rest };

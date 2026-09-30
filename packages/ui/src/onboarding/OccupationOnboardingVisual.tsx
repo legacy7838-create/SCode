@@ -21,12 +21,12 @@ export function OccupationOnboardingVisual({
   useEffect(() => {
     if (!isMacDesktop || !platform.getDesktopWindowChromeState) return;
     let disposed = false;
-    // 系统版本在会话内固定；复用主界面的版本查询和圆角规则，未知版本沿用其保守值。
+    // The system version is fixed within the session; the version query and rounding rules of the main interface are reused, and unknown versions use their conservative values.
     void platform.getDesktopWindowChromeState().then(
       (state) => {
         if (!disposed) setMacOSMajorVersion(state.macOSMajorVersion ?? null);
       },
-      (error) => logger.warn("[onboarding] 读取窗口圆角信息失败", { error }),
+      (error) => logger.warn("[onboarding] failed to read window corner radius info", { error }),
     );
     return () => {
       disposed = true;

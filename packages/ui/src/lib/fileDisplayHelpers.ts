@@ -1,4 +1,4 @@
-// 纯工具函数和常量，从 fileDisplay.tsx 提取以控制文件行数
+// Pure utility functions and constants, extracted from fileDisplay.tsx to control file line count
 
 export const DEFAULT_FILE_ICON_NAME = "document";
 
@@ -6,7 +6,6 @@ const ICON_COLOR_MAP: Record<string, { accent: string; background: string }> = {
   audio: { accent: "#7C3AED", background: "#EDE9FE" },
   css: { accent: "#1572B6", background: "#E0F2FE" },
   database: { accent: "#7C3AED", background: "#EDE9FE" },
-  docker: { accent: "#1D63ED", background: "#DBEAFE" },
   document: { accent: "#64748B", background: "#E2E8F0" },
   editorconfig: { accent: "#F59E0B", background: "#FEF3C7" },
   eslint: { accent: "#4F46E5", background: "#E0E7FF" },
@@ -53,7 +52,6 @@ const FILE_NAME_ICON_ALIASES: Record<string, string> = {
   "bun.lock": "lock",
   cargo: "rust",
   "cargo.lock": "lock",
-  dockerfile: "docker",
   eslint: "eslint",
   "eslint.config": "eslint",
   gemfile: "gemfile",
@@ -69,16 +67,16 @@ const FILE_NAME_ICON_ALIASES: Record<string, string> = {
   yarn: "yarn",
 };
 
-// material-icons 里的图标名和文件扩展名并不总是一一对应，
-// 比如 tsx 实际素材叫 react_ts 而不是 react_tsx。这里集中做 alias，避免 mention panel 和输入框 token 出现扩展名对不上图标的问题。
+// The icon names and file extensions in material-icons do not always correspond one-to-one.
+// For example, the actual material of tsx is called react_ts instead of react_tsx. We focus on alias here to avoid the problem that the extension of the mention panel and input box token does not match the icon.
 const EXTENSION_ICON_ALIASES: Record<string, string> = {
   backup: "document",
   bash: "console",
   cjs: "javascript",
   cts: "typescript",
   css: "css",
-  // Office 扩展名与 Material Icons 素材名不一致，直接用扩展名拼路径会选错图标；
-  // 这里显式收敛到同一套产品语义，旧版与新版 Word 文件也共用 word 图标。
+  // The Office extension is inconsistent with the Material Icons material name. Directly using the extension to spell the path will select the wrong icon;
+  // This clearly converges to the same set of product semantics, and the old and new versions of Word files also share word icons.
   doc: "word",
   docx: "word",
   go: "go",
@@ -145,9 +143,9 @@ export function resolveIconName(filePath: string): string {
 
   const fileNameAliasCandidates = new Set<string>([normalizedLeaf, fileNameWithoutExtension]);
 
-  // 之前只会匹配完整文件名和"去掉最后一个扩展名"的结果，
-  // 像 vitest.config.ts / tsconfig.base.json / .env.local 这类多段文件名会提前退回扩展名图标，
-  // 导致配置文件语义丢失。这里逐段回退 stem，让常见配置文件能稳定命中更准确的图标。
+  // Previously, only the results of the complete file name and "remove the last extension" were matched.
+  // Multi-segment file names like vitest.config.ts / tsconfig.base.json / .env.local will return the extension icon in advance.
+  // Causes configuration file semantics to be lost. Here, stem is rolled back piece by piece, so that common configuration files can stably hit more accurate icons.
   let stemCandidate = fileNameWithoutExtension;
   while (stemCandidate.includes(".")) {
     stemCandidate = stemCandidate.slice(0, stemCandidate.lastIndexOf("."));

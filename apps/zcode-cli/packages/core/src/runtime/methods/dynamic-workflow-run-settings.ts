@@ -38,8 +38,8 @@ import {
 export { buildSettingsMessageText } from "./dynamic-workflow-run-settings-turn.js";
 
 /**
- * GUI「配置」的请求。两项设置守工具的三态：
- * 省略 = 沿用，`null` = 回到默认（会话模型 / 本机上限），值 = 设定。
+ * The GUI's "configure" request. The two settings guard the tool's three states:
+ * omitted = inherit, `null` = back to the default (session model / machine limit), a value = set it.
  */
 export interface AmendWorkflowRunSettingsInput {
   runId: string;
@@ -48,7 +48,7 @@ export interface AmendWorkflowRunSettingsInput {
   traceContext?: TraceContext;
 }
 
-/** 拒绝词表与 shared 的 `workflowRunSettingsRejectionReasonSchema` 逐字相同。 */
+/** The rejection vocabulary is verbatim identical to shared's `workflowRunSettingsRejectionReasonSchema`. */
 export type AmendWorkflowRunSettingsRejection =
   | "not_found"
   | "not_configurable"
@@ -64,18 +64,20 @@ export type AmendWorkflowRunSettingsResult =
   | { ok: false; reason: AmendWorkflowRunSettingsRejection; message?: string };
 
 /**
- * GUI「配置」：以同一份脚本、新的设置修订一个 run。
+ * The GUI's "configure": it revises a run with the same script and new settings.
  *
- * 它是 `port.amend` 与 `port.retuneConcurrency` 的**第二个调用方**，与 `AmendWorkflow` 工具同构：
- * 同一段三态归一（`resolveAmendSubagentModelChoice` / `resolveAmendMaxConcurrency`，不复制）、同一条
- * 路由、同一个编译、同一个后台追踪器（合成一个 AmendWorkflow 描述子）。区别只在：不经模型轮、不开
- * 确认窗（用户在弹层里点「应用」就是同意，脚本也是他批准过的那一份），实参沿用前驱
- * （`inheritArgs`），并用一条排队的 controlOnly「设置轮」把这件事记进会话。
+ * It is the **second caller** of `port.amend` and `port.retuneConcurrency`, isomorphic to the `AmendWorkflow` tool: the
+ * same three-state normalization (`resolveAmendSubagentModelChoice` / `resolveAmendMaxConcurrency`, not copied), the
+ * same route, the same compilation, the same background tracker (synthesizing an AmendWorkflow descriptor). The only
+ * differences: no model turn, no confirmation window (the user clicking "Apply" in the popover is the consent, and
+ * the script is the one he already approved), the arguments are inherited from the predecessor
+ * (`inheritArgs`), and a queued controlOnly "settings turn" records the fact into the session.
  *
- * 只改并发、run 又还在飞时在下面那个分叉处**就地生效**：同一个 runId、不停、不铸后继。
+ * When only concurrency changes and the run is still in flight, it takes effect **in place** at the fork below: the
+ * same runId, no stop, no successor minted.
  *
- * 顺序固定：直到 `port.amend` / `port.retuneConcurrency` 之前的每一步失败都是零副作用——旧 run
- * 照旧在跑、没有新行、没有消息。
+ * The order is fixed: every step failing before `port.amend` / `port.retuneConcurrency` has zero side effects — the old
+ * run keeps running, there is no new row and no message.
  */
 export async function amendWorkflowRunSettings(
   this: AgentRuntimeInternal,
@@ -84,20 +86,20 @@ export async function amendWorkflowRunSettings(
   const traceContext = input.traceContext ?? this.rootTraceContext;
   const port = this.dynamicWorkflowRunPort;
   if (port === undefined || typeof port.amend !== "function") {
-    // 能力只在端口带 amend 与 getScript 时注册；到这里还缺，是接线故障而不是用户输入。
+    // The capability is only registered when the port has amend and getScript; the lack of it here is due to a wiring fault rather than user input.
     return { ok: false, reason: "start_failed", message: "dynamic workflow amend unavailable" };
   }
 
-  // (1) 这个 run 必须存在、且属于本会话——命令发给哪个会话，就只能改那个会话自己的 run。
+  // (1) This run must exist and belong to this session - whichever session the command is sent to, you can only change that session's own run.
   const snapshot = await port.getTask(input.runId);
   if (snapshot === undefined || snapshot.parentSessionId !== this.sessionId) {
     return { ok: false, reason: "not_found" };
   }
-  // (2) 已完成的 run 每个 ask 都会从缓存重放，新设置无处生效；被替代的 run 活的是它的后继。
+  // (2) Each ask of the completed run will be replayed from the cache, and the new settings will not take effect; the replaced run will be its successor.
   if (snapshot.runStatus === "completed" || snapshot.supersededBy !== undefined) {
     return { ok: false, reason: "not_configurable" };
   }
-  // (3)(4) 两项设置的三态归一，与工具同一段代码。
+  // (3)(4) The three-state normalization of the two settings is the same code as the tool.
   const current = runSettingsOfSnapshot(snapshot);
   const model = resolveAmendSubagentModelChoice(
     input.subagentModel,
@@ -105,8 +107,8 @@ export async function amendWorkflowRunSettings(
     this.modelCatalogPort,
   );
   if (!model.ok) {
-    // 目录缺席时的那句话是写给模型的（「omit subagent_model」），GUI 只要原因码；有目录时的
-    // 解析诊断（候选名等）对人同样有用，随 message 走。
+    // The sentence when the directory is absent is written to the model ("omit subagent_model"), and the GUI only needs the reason code; when there is a directory
+    // Parsing diagnostics (candidate names, etc.) is also useful for people, just go with the message.
     return {
       ok: false,
       reason: "model_unavailable",
@@ -115,8 +117,8 @@ export async function amendWorkflowRunSettings(
   }
   const ceiling = port.concurrencyCeiling?.();
   const bound = resolveAmendMaxConcurrency(input.maxConcurrency, current.maxConcurrency, ceiling);
-  // 等于天花板的界就是「没有自己的界」：快照只在低于天花板时带 maxConcurrency，两边同一个读法，
-  // 「未改」的比较才成立（弹层把步进器推到顶也发 null，这里兜住直接给数的调用方）。
+  // A bound that is equal to the ceiling means "it has no bounds of its own": the snapshot only has maxConcurrency when it is lower than the ceiling, and the pronunciation is the same on both sides.
+  // The "unchanged" comparison is only valid (the elastic layer also sends null when the stepper is pushed to the top, which covers the caller who directly gives the number).
   const nextBound =
     bound.max_concurrency === undefined || bound.max_concurrency === ceiling
       ? undefined
@@ -125,17 +127,17 @@ export async function amendWorkflowRunSettings(
     ...(model.canonical === undefined ? {} : { subagentModel: model.canonical }),
     ...(nextBound === undefined ? {} : { maxConcurrency: nextBound }),
   };
-  // (5) 什么都没变就不起新 run：一次修订会停下在飞的 run，没有理由为零改动付这个代价。
+  // (5) If nothing has changed, you can’t afford a new run: One revision will stop the running run, and there is no reason to pay this price for zero changes.
   const modelChanged = next.subagentModel !== current.subagentModel;
   const boundChanged = next.maxConcurrency !== current.maxConcurrency;
   if (!modelChanged && !boundChanged) return { ok: false, reason: "unchanged" };
 
-  // (6) 分叉：只有并发变了、run 又在飞，就地
-  // 生效——同一个 runId，不停、不铸后继、不导入缓存。端口答 not_live（已结算，或 pending 但引擎
-  // 还没建）就顺着这张表往下走，落成今天那次修订。
+  // (6) Fork: only the concurrency has changed and the run is flying again, in place
+  // Effective - same runId, no stopping, no successor casting, no cache import. port answer not_live (settled, or pending but engine
+  // It hasn’t been built yet) Just follow this list and complete today’s revision.
   if (boundChanged && !modelChanged && typeof port.retuneConcurrency === "function") {
-    // 弹层的 `null` 原样递到端口：天花板那个数只有端口知道，这里不猜第二遍。缺席只可能来自
-    // 「沿用的界高过本机天花板」（run 是在更大的机器上起的），那时要的也正是回到天花板。
+    // The `null` of the elastic layer is passed to the port as it is: only the port knows the number of the ceiling, so I won’t guess it a second time. Absence can only come from
+    // "The inheritance boundary is higher than the ceiling of the local machine" (run was started on a larger machine), and what was wanted at that time was to get back to the ceiling.
     const answer = await port.retuneConcurrency({
       runId: input.runId,
       maxConcurrency: input.maxConcurrency ?? null,
@@ -151,15 +153,15 @@ export async function amendWorkflowRunSettings(
     if (answer.reason === "unchanged") return { ok: false, reason: "unchanged" };
   }
 
-  // (7) 沿用的脚本（「Keeping the predecessor's script」同一条读路）。读在分叉**之后**：就地调
-  // 并发跑的还是同一段脚本，一个没有存档脚本、或脚本已经编不过的 run 因此照样调得动上界。
+  // (7) Inherited script (the same reading path as "Keeping the predecessor's script"). Read after forking **: in-place tuning
+  // The same script is still run concurrently. A run that does not have an archived script or the script cannot be compiled can still be adjusted to the upper bound.
   const script =
     typeof port.getScript === "function" ? await port.getScript(input.runId) : undefined;
   if (script === undefined || script.length === 0) {
     return { ok: false, reason: "script_missing" };
   }
 
-  // (8) 编译。存下的脚本可能是在更早的 facade 上写的；编不过就停在这里，旧 run 不动。
+  // (8) Compile. The saved script may have been written on an earlier facade; if you can't edit it, it will stop here, and the old run will not move.
   const analysis = analyzeScript(script);
   if (!analysis.ok || analysis.diagnostics.length > 0) {
     return {
@@ -172,12 +174,12 @@ export async function amendWorkflowRunSettings(
     };
   }
 
-  // —— 到此为止零副作用。——
+  // ——Zero side effects so far. ——
 
-  // 新 run 的脚本文件，与工具沿用脚本时同一条规则、
-  // 同一段代码：前驱的脚本文件此刻仍是这份字节就继续记它，否则照「不来自文件的脚本」写一份新草稿。
-  // 不记的话，模型之后要修订这个 run 就只剩把整份脚本内联再抄一遍这一条路。草稿尽力而为：写不成
-  // 即缺席，run 照常起。它是 amend 之前唯一的落盘，留下的至多是一个没人引用的草稿文件。
+  // The new run script file follows the same rules as when the tool inherits the script.
+  // The same piece of code: If the predecessor script file still has this byte, continue to remember it, otherwise write a new draft as a "script not from the file".
+  // If you don't remember, the only way to revise this run after the model is to inline the entire script and copy it again. The draft was my best effort: I couldn’t write it.
+  // In case of absence, run will continue as usual. It was the only release before amend, leaving at best a draft document that no one cited.
   const graph = boundGraphOfAnalysis(analysis);
   const keptFile = await resolveKeptScriptFile({
     cwd: this.workingDirectory,
@@ -194,7 +196,7 @@ export async function amendWorkflowRunSettings(
       })
     )?.path;
 
-  // (8) 修订。`settings-` 前缀让日志与卡片分得出它与模型工具调用（`tool_*`）、中枢启动（`launch-`）。
+  // (8) Revision. The `settings-` prefix allows logs and cards to distinguish it from model tool calls (`tool_*`) and hub launches (`launch-`).
   const toolCallId = `settings-${randomUUID()}`;
   const phaseNames = createWorkflowPhaseNames(graph);
   const phaseAlongside = phaseNames === undefined ? undefined : createWorkflowPhaseAlongside(graph);
@@ -212,7 +214,7 @@ export async function amendWorkflowRunSettings(
       ...(next.maxConcurrency === undefined ? {} : { maxConcurrency: next.maxConcurrency }),
       ...(subagentModel === undefined ? {} : { subagentModel }),
       ...(scriptPath === undefined ? {} : { scriptPath }),
-      // 重跑的是前驱自己的脚本，它读的正是前驱启动时的实参。
+      // What is re-run is the precursor's own script, which reads the actual parameters when the precursor is started.
       inheritArgs: true,
       trace: traceContext,
     });
@@ -230,9 +232,9 @@ export async function amendWorkflowRunSettings(
     };
   }
 
-  // 名字只取 run 自己的：没起过名的 run 就不带名字，卡片、侧板与通知照任何无名 run 的规矩换用兜底词。
-  // 这里曾兜底成 `run <id>`，设置轮的卡片与侧板标题于是成了一串 run id，
-  // 而且这个假名会沿修订链一路传下去。
+  // Only use the run's own name: unnamed runs do not have names, and cards, side panels, and notifications follow the rules of any unnamed run and use the underwords instead.
+  // Here it is basically `run <id>`, and the setting wheel card and side panel title become a string of run ids.
+  // And this pseudonym is passed down the revision chain.
   const name = displayNameOfSnapshot(snapshot);
   const amend: WorkflowSettingsAmendMeta = {
     predecessorRunId: input.runId,
@@ -243,10 +245,10 @@ export async function amendWorkflowRunSettings(
     ...(ceiling === undefined ? {} : { ceiling }),
   };
 
-  // (9)(10) 之后的失败只记日志不回滚：新 run 已在飞，可在侧板停下；撤回它反而制造孤儿。
+  // (9)(10) Subsequent failures will only be logged and not rolled back: the new run is already flying and can be stopped on the side panel; withdrawing it will create orphans.
   try {
-    // 后台追踪：合成一个 AmendWorkflow 描述子走 executor 的同一条登记（registry、终态 waiter、
-    // 结算通知）。`input.name` 喂通知主题，工具名让分派归 "workflow"。
+    // Background tracking: Synthesize an AmendWorkflow descriptor to go through the same registration of the executor (registry, final state waiter,
+    // settlement notice). `input.name` feeds the notification topic, the tool name to assign to "workflow".
     const toolCall: ExecutableToolCall = {
       id: toolCallId,
       name: AMEND_WORKFLOW_TOOL_NAME,
@@ -276,7 +278,7 @@ export async function amendWorkflowRunSettings(
         })(),
         amend,
       }),
-      // 会话此时必已落库（它名下有 run），标题种子不会被用上；给一个诚实的值即可。
+      // The session must be logged out at this point (it has run in its name), and the title seed will not be used; just give it an honest value.
       titleInput: name ?? input.runId,
       traceContext,
     });
@@ -303,12 +305,14 @@ export async function amendWorkflowRunSettings(
 }
 
 /**
- * 就地生效的收尾：同一个 runId、没有
- * `supersededRunId`，**不登记第二个后台任务**——这个 run 本来就在追踪器里，再登记一次会按
- * AmendWorkflow 的 rearm 规则把一个从没停过的 run 的结算面清空。
+ * The tail end of the in-place effect: the same runId, no
+ * `supersededRunId`, and **no second background task registered** — this run is already in the tracker, and
+ * registering it again would clear the settlement surface of a run that never stopped, under AmendWorkflow's
+ * rearm rule.
  *
- * 设置轮照记，但 `amend` 块不带 `predecessorRunId`：缺席即「就地生效」，渲染端据此只画一行、
- * 不再画一张 run 卡（同一个 run 两张卡会读成两次运行）。也没有 `display`——这条路不编译。
+ * The settings turn is recorded as usual, but the `amend` block carries no `predecessorRunId`: absent means
+ * "in place", and the renderer uses that to draw only one line instead of a whole run card (two cards for one
+ * run would read as two runs). There is no `display` either — this path never compiles one.
  */
 function retunedSettings(
   this: AgentRuntimeInternal,
@@ -321,8 +325,8 @@ function retunedSettings(
 ): AmendWorkflowRunSettingsResult {
   const { answer, name, runId, traceContext } = options;
   const toolCallId = `settings-${randomUUID()}`;
-  // 等于天花板的那一端就是「默认」，于是整端缺席——与修订那条路同一个读法（弹层把步进器推到顶
-  // 发的是 `null`，端口答回来的却永远是绝对值，折算只能在这里做）。
+  // The end equal to the ceiling is the "default", so the entire end is absent - the same reading as the revised road (the elastic layer pushes the stepper to the top
+  // What is sent is `null`, but what is returned by the port is always an absolute value, and the conversion can only be done here).
   const amend: WorkflowSettingsAmendMeta = {
     maxConcurrency: fromTo(
       answer.previous === answer.ceiling ? undefined : answer.previous,
@@ -349,7 +353,7 @@ function retunedSettings(
       traceContext,
     });
   } catch (error) {
-    // 记完日志就走：上界**已经**生效了，回滚一条记录换不回它，撤销这次调整更不是用户要的。
+    // After recording the log, leave: the upper bound has taken effect. Rolling back a record cannot replace it. Undoing this adjustment is not what the user wants.
     this.logger?.error(
       "Workflow run retuned but the settings turn could not be queued",
       error instanceof Error ? error : new Error(String(error)),
@@ -365,7 +369,7 @@ function retunedSettings(
   return { ok: true, runId, toolCallId };
 }
 
-/** run 自己的名字（无名即缺席）：设置轮与合成追踪都按这一条，绝不拿 run id 当标题。 */
+/** The run's own name (absent when it has none): both the settings turn and the synthesized tracking use exactly this, and never take the run id as a title. */
 function displayNameOfSnapshot(snapshot: { name?: string }): string | undefined {
   const trimmed = snapshot.name?.trim();
   return trimmed === undefined || trimmed.length === 0 ? undefined : trimmed;

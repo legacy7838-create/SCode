@@ -26,10 +26,10 @@ export type {
 } from "./browserScreenshotSurfaceContracts.js";
 
 /**
- * Desktop main 与 owner renderer 之间的瞬时截图表面握手。
+ * The handshake for the ephemeral screenshot surface between Desktop main and the owning renderer.
  *
- * 同一 guest 的并发截图复用一份 renderer 表面，避免相互覆盖；不同 guest 必须串行，
- * 否则单个背景 capture layer 会在同一窗口内同时指向两个 webview，导致 ready 归属不确定。
+ * Concurrent screenshots of the same guest share one renderer surface so they cannot overwrite each other; different guests must be serialized,
+ * otherwise a single background capture layer would point at two webviews inside the same window at once, making it ambiguous which one a ready signal belongs to.
  */
 export class DesktopBrowserScreenshotSurfaceCoordinator implements BrowserScreenshotSurfaceCoordinator {
   private readonly timeoutMs: number;
@@ -116,7 +116,7 @@ export class DesktopBrowserScreenshotSurfaceCoordinator implements BrowserScreen
       }, this.timeoutMs);
       request.abortListener = failForAbort;
 
-      // 必须先登记再发送：测试替身和真实 IPC 都可能在 sendPrepare 同步期间回传 ready。
+      // Must register before sending: both test avatars and real IPC may return ready during sendPrepare synchronization.
       group.requests.add(request);
       input.signal.addEventListener("abort", failForAbort, { once: true });
 
@@ -163,7 +163,7 @@ export class DesktopBrowserScreenshotSurfaceCoordinator implements BrowserScreen
       return;
     }
 
-    // 首个完整 scope 的可信 renderer 一经确认即冻结，防止另一个窗口的迟到回执接管请求。
+    // The first trusted renderer for the full scope is frozen as soon as it is confirmed, preventing late acknowledgment takeover requests from another window.
     group.senderWebContentsId ??= input.senderWebContentsId;
     if (!sameBrowserScreenshotViewport(expected.viewport, input.payload.viewport)) {
       this.options.log?.("[browser-screenshot-surface] ignored ready with unstable viewport");
@@ -177,8 +177,8 @@ export class DesktopBrowserScreenshotSurfaceCoordinator implements BrowserScreen
       expected.surfaceScaleMode === "unscaled" &&
       Math.abs(input.payload.surfaceScale - 1) > UNSCALED_SURFACE_EPSILON
     ) {
-      // 录制器会把 Fit 后的小 surface 放大到目标 canvas，文件分辨率虽然正确但画面已模糊。
-      // Main 必须在握手边界拒绝非 100% 回执，避免 renderer 回归时静默产出伪高清录像。
+      // The recorder will enlarge the small surface after Fit to the target canvas. Although the file resolution is correct, the picture is blurred.
+      // Main must reject non-100% receipts at the handshake boundary to avoid silently producing pseudo-HD video when the renderer returns.
       this.options.log?.(
         "[browser-screenshot-surface] ignored ready with scaled recording surface",
       );
@@ -280,13 +280,13 @@ export class DesktopBrowserScreenshotSurfaceCoordinator implements BrowserScreen
         );
       }, activityTimeoutMs);
     }
-    // 即使 sendPrepare 返回 false，也要 release；renderer 可能已处理了消息但发送端感知到失败。
+    // Release is required even if sendPrepare returns false; the renderer may have processed the message but the sender sensed the failure.
     group.prepareSent = true;
     let sent = false;
     try {
       sent = this.options.sendPrepare(group.windowId, group.payload);
     } catch {
-      // sendPrepare 允许测试替身同步 ready；此时 lease 已有效，后续发送异常不能提前释放它。
+      // sendPrepare allows the test avatar to synchronize ready; at this time, the lease is valid, and subsequent send exceptions cannot release it early.
       if (!group.ready && !group.released) {
         this.finishGroupError(
           group,
@@ -401,8 +401,8 @@ export class DesktopBrowserScreenshotSurfaceCoordinator implements BrowserScreen
         );
       }
     } catch {
-      // release 发生在 timeout/abort/backend finally 中，transport 同步异常不能让
-      // activeGroup 永久占位，也不能阻止 screenshot activity lease 恢复后台节流。
+      // release occurs in timeout/abort/backend finally, transport synchronization exception cannot be allowed
+      // activeGroup permanently occupies space and cannot prevent screenshot activity lease from resuming background throttling.
       this.options.log?.("[browser-screenshot-surface] release send failed");
     } finally {
       for (const release of group.leaseReleases) release();

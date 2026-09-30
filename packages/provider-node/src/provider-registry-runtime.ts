@@ -17,7 +17,7 @@ export interface NodeProviderRegistryRuntimeOptions extends NodeProviderConfigRu
   ) => ProviderSource<AccountProviderConfigSnapshot>;
 }
 
-/** 一个 Node.js 进程内共享的 Config + Registry 生命周期。 */
+/** The Config + Registry lifecycle shared inside one Node.js process. */
 export class NodeProviderRegistryRuntime {
   readonly configService: NodeProviderConfigRuntime["configService"];
   readonly registryService: ProviderRegistryService;
@@ -69,7 +69,7 @@ export class NodeProviderRegistryRuntime {
   }
 
   #assertNotDisposed(): void {
-    if (this.#disposed) throw new Error("NodeProviderRegistryRuntime 已 dispose");
+    if (this.#disposed) throw new Error("NodeProviderRegistryRuntime has been disposed");
   }
 }
 

@@ -37,11 +37,11 @@ function parseLockMetadata(raw: string, observedAt: number): FileLockMetadata {
   try {
     const parsed = JSON.parse(raw) as { createdAt?: unknown; pid?: unknown };
     return {
-      // 非有限、负数或明显未来的 createdAt 会让 ownerless 锁永久达不到 stale。
-      // 元数据非法时交给调用方回退到同样受校验的文件 mtime。
+      // Non-finite, negative, or clearly future createdAt would make an ownerless lock permanently unable to reach stale.
+      // When metadata is invalid, let the caller fall back to the equally validated file mtime.
       createdAt: parseLockTimestamp(parsed.createdAt, observedAt),
-      // 0、负数、小数或非有限 PID 传给 process.kill 后可能被误判为活进程，
-      // 导致损坏锁永久无法回收。只有操作系统可用的正安全整数才具有 owner 语义。
+      // Passing 0, negative, decimal, or non-finite PID to process.kill may be misjudged as a live process,
+      // making a damaged lock permanently unrecoverable. Only positive safe integers usable by the operating system have owner semantics.
       pid:
         typeof parsed.pid === "number" && Number.isSafeInteger(parsed.pid) && parsed.pid > 0
           ? parsed.pid
@@ -104,8 +104,8 @@ async function removeAbandonedLock(
           return { removed: false };
         }
 
-        // 按唯一 owner 文件删除相当于所有权校验。旧锁目录被替换后，新 owner 的
-        // 文件名不同，当前 rm 不会命中新锁；随后 rmdir 也会因目录非空而拒绝删除。
+        // Deleting by unique owner file is equivalent to ownership validation. After the old lock directory is replaced, the new owner's
+        // filename is different, so the current rm would not hit the new lock; subsequently rmdir would also refuse to delete because the directory is not empty.
         await rm(ownerFile, { force: true });
         await rmdir(lockFile);
         return { removed: true };
@@ -130,8 +130,8 @@ async function removeAbandonedLock(
         }
       }
 
-      // mkdir 成功后、owner 文件落盘前崩溃会留下空目录；损坏目录也可能
-      // 包含多个 owner。只清理 stale 时观察到的条目，后来 owner 新增会让 rmdir 失败。
+      // A crash after mkdir succeeds but before the owner file is persisted leaves an empty directory; a damaged directory may also
+      // contain multiple owners. Only clean entries observed during stale detection; later owner additions would make rmdir fail.
       await Promise.all(entries.map((entry) => rm(join(lockFile, entry), { force: true })));
       await rmdir(lockFile);
       return { removed: true };
@@ -142,7 +142,7 @@ async function removeAbandonedLock(
       return { removed: false };
     }
 
-    // 兼容升级前遗留的单文件锁。新实现创建的是非空目录，旧路径删除无法移除新 owner。
+    // Compatible with single-file locks left over from before the upgrade. The new implementation creates a non-empty directory, and the old path deletion cannot remove the new owner.
     if ((await readFile(lockFile, "utf-8")) !== raw) {
       return { removed: false };
     }
@@ -216,7 +216,7 @@ export async function acquireFileLock(
         });
       }
       return async () => {
-        // 只删除本 writer 的唯一 owner 文件；锁已被接管时不会碰到后来 writer 的 token。
+        // Only delete this writer's unique owner file; when the lock has been taken over, it will not touch the later writer's token.
         await rm(ownerFile, { force: true }).catch(() => {});
         await rmdir(lockFile).catch(() => {
           // best-effort cleanup
@@ -232,14 +232,14 @@ export async function acquireFileLock(
         throw error;
       }
 
-      // 等待者自身已等待多久不能证明当前锁 stale，否则旧锁释放后可能误删
-      // 后来 writer 的新锁。这里只回收 owner 已退出或无 PID 且超过短 grace 的锁，
-      // 其余竞争等待到 maxWaitMs，并保留明确的权限错误或锁超时。
+      // How long the waiter itself has waited cannot prove the current lock is stale, otherwise after the old lock is released it might mistakenly delete
+      // the later writer's new lock. Here we only reclaim locks whose owner has exited or has no PID and has exceeded a short grace period,
+      // the rest compete until maxWaitMs, preserving explicit permission errors or lock timeouts.
       const elapsedMs = Date.now() - startedAt;
       if (elapsedMs >= maxWaitMs) {
-        // 旧顺序会在达到 maxWaitMs 后仍先做一次 stale 回收。
-        // 损坏 ownerless 锁可能恰好在这次检查跨过 grace，导致超时 waiter 越过
-        // 等待上限删除后来 writer 的锁。达到上限后直接超时，避免跨实例误删。
+        // The old order would still do a stale reclaim after reaching maxWaitMs.
+        // A damaged ownerless lock might happen to cross the grace period during this check, causing a timed-out waiter to exceed
+        // the waiting limit and delete the later writer's lock. After reaching the limit, timeout directly to avoid cross-instance mistaken deletion.
         const removalErrorCode = getErrorCode(lastRemovalError);
         if (removalErrorCode === "EACCES" || removalErrorCode === "EPERM") {
           throw lastRemovalError;

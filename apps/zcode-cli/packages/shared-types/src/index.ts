@@ -13,8 +13,8 @@ export type RunContext = {
   stdout: NodeJS.WriteStream;
 };
 
-export type GlobalLocale = "auto" | "en-US" | "zh-CN";
-export type GlobalDetectedLocale = Exclude<GlobalLocale, "auto">;
+export type GlobalLocale = "en-US";
+export type GlobalDetectedLocale = GlobalLocale;
 
 /**
  * How a headless run reports itself.

@@ -44,8 +44,8 @@ function resolveResponsiveFileChipCount({
   gap: number;
 }) {
   if (chipWidths.length === 0) return 0;
-  // 零可用宽度表示当前一枚 chip 都放不下，不能误解为无需裁剪。
-  // 返回 0 才会保留完整的 +N 提示，避免窄屏只露出被截断的文件名。
+  // Zero available width means that the current chip cannot be accommodated, and cannot be misunderstood to mean that no cropping is required.
+  // Returning 0 will retain the complete +N prompt to prevent narrow screens from showing only the truncated file name.
   if (availableWidth <= 0) return 0;
   const allChipsWidth =
     chipWidths.reduce((total, width) => total + width, 0) +
@@ -57,7 +57,7 @@ function resolveResponsiveFileChipCount({
   for (const chipWidth of chipWidths) {
     const nextCount = visibleCount + 1;
     const nextVisibleWidth = visibleWidth + chipWidth;
-    // 仍有隐藏项时，布局包含 visible chips、+N 和两者之间的所有 gap。
+    // While there are still hidden items, the layout includes visible chips, +N, and all gaps in between.
     const requiredWidth = nextVisibleWidth + gap * nextCount + overflowWidth;
     if (requiredWidth > availableWidth) break;
     visibleWidth = nextVisibleWidth;
@@ -87,8 +87,8 @@ function ResponsiveFileChipList({
     if (!container) return;
     const boundary = container.closest<HTMLElement>("[data-tool-call-id]");
     const updateVisibleCount = () => {
-      // summary 是 shrink-to-content，按自身宽度测量会在隐藏 chip 后继续收缩。
-      // 以整行 ToolCall 的右边界计算，才能稳定得到当前真正可用的空间。
+      // summary is shrink-to-content, measured by its own width, it will continue to shrink after hiding the chip.
+      // Only by calculating the right boundary of the entire row of ToolCall can the currently truly available space be stably obtained.
       const containerRect = container.getBoundingClientRect();
       const boundaryRight = boundary?.getBoundingClientRect().right ?? containerRect.right;
       const nextVisibleCount = resolveResponsiveFileChipCount({
@@ -185,8 +185,8 @@ export function ChangesGroupToolCallBlock(context: ToolCallBlockRenderContext) {
   const latestFile = latest?.summaries.at(-1);
   const hasResolvedFiles = files.length > 0;
   const count = hasResolvedFiles ? files.length : childToolCalls.length;
-  // Write/Edit 的流式 JSON 可能先到 content、后到 file_path。
-  // 路径尚不可解析时按已进入分组的 tool 计数，避免悬空分隔符和误导性的 0 files。
+  // The streaming JSON of Write/Edit may go to content first and then to file_path.
+  // Count by tools that have been grouped when the path is not yet resolvable, to avoid dangling delimiters and misleading 0 files.
   const countText = intl.formatMessage(
     {
       id: hasResolvedFiles

@@ -52,8 +52,8 @@ export async function setPluginEnabledOptimistically(
   };
 
   const previousPlugin = get().plugins.find((plugin) => plugin.id === pluginId);
-  // 启停 RPC 和后续列表刷新存在可感知延迟。先投影最终状态，让开关立刻响应；失败时
-  // 在 catch 中恢复快照，避免用户把正常的异步写入误判成“点了没反应”。
+  // There is a perceptible delay in starting and stopping RPCs and subsequent list refreshes. Project the final state first to let the switch respond immediately; when it fails
+  // Restore the snapshot in the catch to prevent users from misjudging normal asynchronous writing as "no response after clicking".
   set({
     togglingPluginId: pluginId,
     error: null,
@@ -89,8 +89,8 @@ export async function setPluginEnabledOptimistically(
     });
     return isCurrentRequest();
   } catch (error) {
-    // 启停失败时必须返回 false 并恢复 optimistic projection，避免
-    // 调用方继续刷新其它能力，或让界面把失败的切换误报成成功。
+    // When start/stop fails, false must be returned and optimistic projection restored to avoid
+    // The caller continues to refresh other capabilities, or allows the interface to falsely report failed switching as successful.
     logger.error("[plugins] setEnabled failed", { pluginId, enabled, error: toMessage(error) });
     if (isCurrentRequest()) {
       set({

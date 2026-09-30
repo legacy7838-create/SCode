@@ -1,6 +1,8 @@
-/* 闲时任务 History tab：
-   一行汇总一次完整执行（3h 续跑分段对用户透明）：Instructions / Triggered /
-   Status / Duration + 行菜单 Go to session / Delete；无执行记录 → 「No history yet.」 */
+/* Off-peak task History tab:
+   one row summarizes one complete execution (the 3h continuation segments are transparent to the
+   user): Instructions / Triggered / Status / Duration + the row menu Go to session / Delete; no
+   execution records → "No history yet."
+   */
 import { isOffPeakTerminalStatus, type ZCodeOffPeakTask } from "@zcode/shared";
 import {
   DropdownMenu,
@@ -19,7 +21,7 @@ import {
   AutomationTrashIcon,
 } from "@/settings/AutomationDesignPrimitives.js";
 
-// 状态用「圆点 + 彩色文字」呈现（Scheduled 历史表密度规格）。
+// The status is presented as "dots + colored text" (Scheduled history table density specification).
 const STATUS_INDICATOR_CLASS = {
   succeeded: { dot: "bg-success", text: "text-success" },
   failed: { dot: "bg-destructive", text: "text-destructive" },
@@ -46,7 +48,7 @@ export function OffPeakHistoryTab({
   onDelete?: (task: ZCodeOffPeakTask) => void;
 }) {
   const { intl } = useZCodeIntl();
-  // 执行记录 = 首段派发起跑过（startedAt 存在）；纯排队/暂停中的任务无历史。
+  // Execution record = the first segment dispatched (startedAt exists); tasks that are purely queued/paused have no history.
   if (!task?.startedAt || task.historyDeletedAt !== undefined) {
     return (
       <AutomationHistoryEmptyState>
@@ -59,7 +61,7 @@ export function OffPeakHistoryTab({
   const durationMin = Math.max(1, Math.round((endAt - task.startedAt) / 60_000));
   return (
     <div className="overflow-x-auto rounded-[8px]">
-      {/* History 表格字号可缩放，使用相对行高避免大字号内容被固定 18px 行盒裁切。*/}
+      {/* The History table's font size is scalable, so it uses a relative line-height to keep large text from being clipped by a fixed 18px line box.*/}
       <table className="w-full text-left text-ui-base font-normal leading-snug tracking-[-0.08px]">
         <thead className="bg-surface text-foreground-subtle">
           <tr className="h-[30px] border-b border-border">
@@ -123,7 +125,7 @@ export function OffPeakHistoryTab({
                       <AutomationMoreHorizontalIcon className="size-4" aria-hidden="true" />
                     </button>
                   </DropdownMenuTrigger>
-                  {/* 旧版按触发器右缘对齐且沿用紧凑菜单内距，导致浮层向表格内侧偏移并少 17.5px。 */}
+                  {/* The old version aligned to the right edge of the trigger and kept the compact menu padding, which pushed the overlay inward into the table and left it 17.5px short. */}
                   <DropdownMenuContent
                     align="start"
                     alignOffset={-10}

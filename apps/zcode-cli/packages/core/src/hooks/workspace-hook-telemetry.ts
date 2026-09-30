@@ -12,8 +12,8 @@ export type WorkspaceHookTelemetryEvent =
   | "workspace_hook.trust_store_failure"
   | "workspace_hook.toggle_failure"
   | "workspace_hook.config_rebuild_failure"
-  // revoke 需要专门观测：排查「撤销后面板失效」时，必须能从日志判断
-  // 撤销是否成功、并区分随后的失败属于撤销还是授权，否则定位缓慢。
+  // revoke requires special observation: when troubleshooting "panel failure after revoke", you must be able to judge from the log
+  // Check whether the revocation is successful and distinguish whether the subsequent failure belongs to revocation or authorization, otherwise the positioning will be slow.
   | "workspace_hook.revoked"
   | "workspace_hook.stale_response";
 
@@ -26,30 +26,35 @@ export interface WorkspaceHookTelemetryFields {
   action?: string;
   generation?: number;
   /**
-   * 调用侧传入的 errorMessage 需要透传：否则原始错误在 emit 时被静默丢弃，
-   * 日志里只剩 reasonCode，实际排查无法定位真实 cause。
-   * 仅承载领域错误自身的短消息，不携带命令、脚本内容或 Trust payload。
+   * The errorMessage passed in by the caller has to be forwarded: otherwise the original error is
+   * silently dropped at emit time and the log keeps only the reasonCode, so a real investigation
+   * cannot locate the true cause.
+   * It carries only the domain error's own short message - never the command, script contents or
+   * the Trust payload.
    */
   errorMessage?: string;
   /**
-   * Trust 落盘条数诊断：store 写入少于已选择声明时，decisionAccepted
-   * 未抛错），日志无从判断是 request 少带了 item 还是写入阶段丢了记录。
+   * Diagnostics for how many Trust records reached the store: when the store writes fewer than the
+   * declared-and-selected set (decisionAccepted did not throw), the log cannot tell whether the
+   * request carried too few items or the write stage lost records.
    *
-   * requestItemCount / requestEnabledCount 记录审核请求实际携带的条数；
-   * grantedRecordCount 记录本次真正写入的条数。三者对不上即为静默丢失。
+   * requestItemCount / requestEnabledCount record how many entries the review request actually
+   * carried; grantedRecordCount records how many were really written this time. If the three do
+   * not line up, records were silently lost.
    */
   requestItemCount?: number;
   requestEnabledCount?: number;
   grantedRecordCount?: number;
-  /** revoke 实际撤销的声明条数（与 grantedRecordCount 分开，避免语义混用）。 */
+  /** The number of declarations revoke actually revoked (kept separate from grantedRecordCount so the two meanings are not conflated). */
   revokedCount?: number;
 }
 
 const MAX_TELEMETRY_ERROR_MESSAGE_LENGTH = 300;
 
 /**
- * Workspace Hook 的观测统一复用现有 Logger Port。
- * 只发送稳定 reason、generation 和摘要，不发送命令、脚本内容、路径或 Trust payload。
+ * Workspace Hook observability uniformly reuses the existing Logger Port. Only a stable reason,
+ * the generation and a summary are sent - never the command, script contents, paths or the
+ * Trust payload.
  */
 export function emitWorkspaceHookTelemetry(
   logger: Logger | undefined,
@@ -90,11 +95,12 @@ export function digestSummary(value: string): string {
 }
 
 /**
- * workspace identity 的 SHA-256 短摘要。
+ * A short SHA-256 digest of the workspace identity.
  *
- * 本实现的 identity 就是绝对路径，明文要求 telemetry 不上传
- * 完整 workspace path、不记录 source path，因此任何要进入 telemetry 的文本
- * （含领域错误的 message）都必须先经此脱敏，而不是依赖下游过滤。
+ * The identity in this implementation is simply the absolute path, and the plain-text requirement
+ * says telemetry must not upload the full workspace path and must not record the source path, so
+ * any text that is to enter telemetry (including a domain error's message) must first pass
+ * through this redaction, rather than relying on downstream filtering.
  */
 export function workspaceIdentitySummary(value: string): string {
   return createHash("sha256").update(value).digest("hex").slice(0, 12);

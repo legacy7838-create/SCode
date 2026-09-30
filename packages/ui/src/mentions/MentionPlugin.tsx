@@ -61,7 +61,7 @@ interface MentionPluginProps {
   container?: HTMLElement | null;
   workspacePath: string;
   workspaceIdentity?: string;
-  /** 已有 Session 的 id；null/undefined = 新建草稿。决定 Plugins 分组的 catalog authority。 */
+  /** There is already a Session id; null/undefined = create a new draft. Determines the catalog authority for Plugins grouping. */
   sessionId?: string | null;
   disabled?: boolean;
   onWhiteboardMentionSelected?: (boardId: string) => void | Promise<void>;
@@ -72,14 +72,14 @@ function getWrappedMentionIndex(currentIndex: number, delta: number, itemCount: 
     return 0;
   }
 
-  // mention 面板的上下键导航以前会把边界直接 clamp 到首/尾项。
-  // 这里改成循环取模，保证按上键能从第一项跳到最后一项，按下键也能从最后一项回到第一项。
+  // The up and down key navigation of the mention panel used to clamp the boundary directly to the first/last item.
+  // Here it is changed to loop modulo, ensuring that pressing the up key can jump from the first item to the last item, and pressing the key can also return from the last item to the first item.
   return (currentIndex + delta + itemCount) % itemCount;
 }
 
 /**
- * 在循环导航的基础上跳过禁选项（V1 同名 Plugin 冲突项）。
- * 全部禁选时保持原地不动，Enter/Tab 的选择守卫会拒绝插入。
+ * Skip forbidden options based on circular navigation (V1 Plugin conflicts with the same name).
+ * When all are disabled, they remain in place and the Enter/Tab selection guard will refuse to insert.
  */
 function getNextEnabledMentionIndex(
   currentIndex: number,
@@ -100,9 +100,9 @@ function getNextEnabledMentionIndex(
 }
 
 /**
- * 候选首次出现或异步分组更新时，把选中项收敛到可选条目。
- * 根因：冲突 Plugin 保持可见后可能占据 flatItems[0]；若仍默认选中 0，
- * 第一次 Enter/Tab 会命中禁选项并回落编辑器默认行为，而不是继续键盘导航。
+ * Convergence selected items to selectable items when a candidate first appears or when an asynchronous grouping is updated.
+ * Root cause: Conflict Plugin may occupy flatItems[0] after remaining visible; if 0 is still selected by default,
+ * The first time Enter/Tab hits the disabled option and falls back to the editor's default behavior, rather than continuing keyboard navigation.
  */
 function coerceEnabledMentionIndex(
   currentIndex: number,
@@ -120,10 +120,10 @@ function coerceEnabledMentionIndex(
 }
 
 /**
- * IME 组合期间（拼音未上屏）是否冻结 @ 面板重算：中间态字母会被当作 query 逐字过滤一轮，
- * 面板闪烁且中间态结果错误；composition 提交后 Lexical 会再派发一次 update 完成重算。
- * Android 例外：Chrome + Gboard 对拉丁词也走 composition（整词到空格才 compositionend），
- * 冻结会让手机 Web 的 @ 面板失去逐字过滤，因此 Android 保持实时重算。
+ * Whether to freeze during IME combination (Pinyin is not on the screen) @Panel recalculation: Intermediate letters will be filtered word by word as query.
+ * The panel flickers and the intermediate state result is wrong; after the composition is submitted, Lexical will send another update to complete the recalculation.
+ * Android exception: Chrome + Gboard also uses composition for Latin words (the whole word is composed until it reaches a space),
+ * Freezing causes the mobile web's @ panel to lose verbatim filtering, so Android keeps recalculating in real time.
  */
 function shouldFreezeMentionRecalcWhileComposing(isComposing: boolean, userAgent: string): boolean {
   return isComposing && !/Android/i.test(userAgent);
@@ -146,9 +146,9 @@ export function MentionPlugin({
   const activeSignatureRef = useRef<string | null>(null);
   const activeTokenRef = useRef<ActivePromptInputTokenSnapshot | null>(null);
   const activeQuery = activeTrigger?.query ?? "";
-  // 候选过滤会在渲染线程扫描大型 workspace；输入框与搜索共用同一个 query
-  // 时，快速输入/删除会让每次按键都同步承担搜索成本。deferred query 只延后候选派生，
-  // 不延后编辑器 token、触发器和最终插入，因此输入始终跟手，结果最终收敛到最新 query。
+  // Candidate filtering scans a large workspace in the rendering thread; the input box and search share the same query
+  // , fast typing/delete imposes a simultaneous search cost on each keystroke. deferred query only deferred candidate derivation,
+  // Editor tokens, triggers, and final inserts are not delayed, so input always follows and results eventually converge to the latest query.
   const deferredActiveQuery = useDeferredValue(activeQuery);
   const hasActiveQuery = hasMentionQuery(activeQuery);
   const activeSignature = useMemo(
@@ -164,8 +164,8 @@ export function MentionPlugin({
   const isSessionTrigger = activeTrigger?.trigger === "#";
   const isSkillTrigger = activeTrigger?.trigger === "$";
 
-  // 修复说明：之前把 @ 面板拆成了两层，导致用户输入 query 后还要再确认一次，
-  // 实际感受像“按回车之后才开始搜”。现在改成单层分组面板，query 一变化就直接展示各分组结果。
+  // Repair instructions: Previously, the @ panel was split into two layers, causing the user to confirm again after entering the query.
+  // The actual feeling is like "press Enter before starting the search." Now it is changed to a single-layer grouping panel, and the results of each grouping are directly displayed as soon as the query changes.
   const skillsResult = useSkillsMentionProvider(
     workspacePath,
     workspaceIdentity,
@@ -207,8 +207,8 @@ export function MentionPlugin({
     intl.formatMessage({ id: "chat.mention.sessions.empty" }),
     intl.formatMessage({ id: "chat.mention.sessions.title" }),
   );
-  // Plugins 分组：新建草稿（sessionId=null）读 workspace
-  // 当前 catalog，已有 Session 读 session-owned 冻结 catalog；冲突项由 provider 标记禁选。
+  // Plugins group: Create a new draft (sessionId=null) and read the workspace
+  // In the current catalog, there is already a Session reading session-owned frozen catalog; conflicting items are marked and disabled by the provider.
   const pluginsResult = usePluginsMentionProvider(
     workspacePath,
     workspaceIdentity,
@@ -263,8 +263,8 @@ export function MentionPlugin({
       },
     } satisfies Record<MentionPanelGroupId, MentionResultGroup<MentionItem>>;
 
-    // 产品约束：@ 固定为 Plugin → 文件 → 对话 → 画板；旧 # / $ 面板继续走
-    // 原单分组 provider。这里仅重排发现入口，候选自身的 canonical markdown 不变。
+    // Product constraints: @ is fixed to Plugin → File → Dialog → Artboard; the old # / $ panel continues
+    // Original grouping provider. Here only the discovery entry is rearranged, and the canonical markdown of the candidate itself remains unchanged.
     return buildVisibleMentionGroups(
       getMentionPanelGroupOrder(activeTrigger?.trigger).map((groupId) => groupsById[groupId]),
     );
@@ -308,18 +308,18 @@ export function MentionPlugin({
           id: item.id,
           label: item.displayLabel ?? item.label,
           description: item.description,
-          // 冲突 Plugin 等禁选项：面板可见但不可选择，行内展示原因（V1 fail closed）。
+          // Conflicting Plugin and other prohibited options: the panel is visible but cannot be selected, and the reason is displayed inline (V1 fail closed).
           disabled: item.disabled,
           disabledReason: item.disabledReason,
-          // @ 面板之前只用 label/description 自己拼文件行，导致图标、文件名和路径展示
-          // 跟输入框里的 mention token 不一致。这里统一复用 fileDisplay，让面板和 token 使用同一套文件语义展示。
+          // @ The panel previously only used label/description to spell the file lines by itself, resulting in the icon, file name and path being displayed.
+          // It is inconsistent with the mention token in the input box. FileDisplay is reused here uniformly, so that panels and tokens use the same set of file semantics for display.
           content:
             item.category === "files" ? (
               <ContextMentionOptionContent item={item} workspacePath={workspacePath} />
             ) : item.category === "skills" ? (
               <span className="min-w-0 flex flex-1 items-center gap-2">
-                {/* skills 候选项需要和命令类项保持一致的主次信息密度，
-                    这里保留图标 + 名称主文案，再把描述压成右侧弱信息，而不是额外占第二行。 */}
+                {/* Skills candidates need to maintain the same primary and secondary information density as the command category items.
+                    The main copy of the icon + name is retained here, and the description is compressed into weak information on the right side instead of occupying an extra second line. */}
                 <WandSparkles className="size-3.5 shrink-0 text-foreground" />
                 <span className="shrink-0 whitespace-nowrap text-ui-base font-medium text-foreground">
                   {item.label}
@@ -578,7 +578,7 @@ export function MentionPlugin({
       if (!nextItem) {
         return false;
       }
-      // 禁选项（同名冲突 Plugin）不可插入：键盘 Enter/Tab 与鼠标点击都走这里统一拒绝。
+      // Forbidden options (conflicting Plugins with the same name) cannot be inserted: keyboard Enter/Tab and mouse clicks are all rejected here.
       if (nextItem.disabled) {
         return false;
       }
@@ -666,8 +666,8 @@ export function MentionPlugin({
       COMMAND_PRIORITY_CRITICAL,
     );
 
-    // 调试说明：先注释掉 blur 自动关闭逻辑，方便观察 panel 在焦点切换时的实际行为。
-    // 当前只移除“失焦即消失”这一路径，Esc / 选中项 / trigger 失效等关闭逻辑仍然保留。
+    // Debugging instructions: First comment out the blur automatic closing logic to facilitate observing the actual behavior of the panel when the focus switches.
+    // Currently, only the path "disappear when out of focus" is removed, and the closing logic such as Esc / selected item / trigger invalidation is still retained.
     const unregisterBlur = editor.registerCommand(
       BLUR_COMMAND,
       () => {

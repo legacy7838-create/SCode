@@ -189,7 +189,7 @@ function resolveNativeSearchArchiveTarget(platform, arch) {
   }
 }
 
-// 只有完成对应构建与发布校验的 platform key 才能进入 desktop 发行链路。
+// Only platform keys that have completed corresponding build and release verification can enter the desktop release link.
 const ENABLED_NATIVE_SEARCH_PLATFORM_KEYS = Object.freeze([
   "darwin-arm64",
   "darwin-x64",

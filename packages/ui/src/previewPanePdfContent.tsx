@@ -1,8 +1,8 @@
 import { Suspense, lazy } from "react";
 import type { PdfViewerLabels, PdfViewerSource } from "@/components/ui/pdf-viewer.js";
 
-// react-pdf（含 pdf.js 与 worker）体积较大，懒加载让它只在首次打开 PDF 预览时进入 bundle，
-// 不拖慢没有用到 PDF 的会话的启动。
+// react-pdf (including pdf.js and worker) is large in size, and lazy loading allows it to enter the bundle only when the PDF preview is opened for the first time.
+// Don't slow down the launch of sessions that don't use PDFs.
 const PdfViewer = lazy(() =>
   import("@/components/ui/pdf-viewer.js").then((module) => ({
     default: module.PdfViewer,

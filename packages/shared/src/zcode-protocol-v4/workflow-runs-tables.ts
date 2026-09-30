@@ -1,27 +1,30 @@
 // ============================================================
-// workflowRuns 里几张**有界表**的 upsert 语义
+// Upsert semantics of several **bounded tables** in workflowRuns
 // ============================================================
-// 纯函数，负责表项更新与容量判断，不读取时钟或执行 I/O。
+// Pure function, responsible for table entry update and capacity judgment, and does not read the clock or perform I/O.
 //
-// 这两个函数说的是同一句话的两半：一张表怎么认「这是同一条记录」，以及装不下时怎么办。
-// 触界的语义是**拒新、仍更新已有**——把一个正在跑的实例的相位冻结在 "queued" 上，比少列一个
-// 实例更容易误导读者（图上那一格会永远显示没开始）。谁可以为新人让位则是另一件事，在
-// workflow-runs-eviction.ts。
+// These two functions talk about two halves of the same sentence: how to recognize "this is the same record" in a table, and what to do when it cannot be loaded.
+// The semantics of hitting the boundary are to reject new ones and still update existing ones - freezing the phase of a running instance on "queued", which is one less than queued
+// Examples are more likely to mislead readers (the box on the picture will always show that it has not started). Who can make way for the newcomer is another matter.
+// workflow-runs-eviction.ts.
 
 import type { WorkflowRunPendingQuestion } from "./workflow-runs.js";
 
-/** 一次有界 upsert 的结果。`truncated` = 这条记录**没能进表**（而不是「表里已有、原地更新」）。 */
+/** The result of one bounded upsert. `truncated` = this record **did not make it into the table** (rather than "already in the table, updated in place"). */
 export interface BoundedUpsert<T> {
   list: T[];
   truncated: boolean;
 }
 
 /**
- * 按 (siteId, ordinal) upsert 进有界列表（actors / nodes / reports 三张表的去重键都是它）。
+ * Upserts into a bounded list by (siteId, ordinal) (that is the dedup key of all three tables:
+ * actors / nodes / reports).
  *
- * `admitNew: false` 把「不收新条目」这件事从界扩到别的理由（重放的事件、一条表外实例的中间
- * 相位；见归约里节点分支的 `born`），产出与触界被拒**逐字相同**——因为它说的是同一件事：
- * 这条实例不在表里。调用方据此照常计数。
+ * `admitNew: false` widens "do not accept new entries" beyond the bound to other reasons (a
+ * replayed event, an intermediate phase of an off-table instance; see `born` in the node branch
+ * of the reducer), and produces **word-for-word the same** result as a bound rejection —
+ * because it says the same thing: this instance is not in the table. The caller counts it as
+ * usual on that basis.
  */
 export function upsertBoundedByInstance<T extends { siteId: string; ordinal: number }>(
   list: readonly T[],
@@ -44,11 +47,13 @@ export function upsertBoundedByInstance<T extends { siteId: string; ordinal: num
 }
 
 /**
- * 按 `qid` upsert 进有界的停驻问题表。
+ * Upserts into the bounded table of parked questions by `qid`.
  *
- * 与 {@link upsertBoundedByInstance} 是同一条触界语义（拒新、仍更新已有），只是键不同：升级没有
- * 站点实例身份，qid 才是它的键。没有把两者合并成一个泛型函数，是因为键的**取法**正是这里
- * 唯一要说的事——合并之后调用点要传一个取键函数，读者反而看不出"这张表按什么去重"。
+ * Same bound semantics as {@link upsertBoundedByInstance} (refuse new, still update existing),
+ * only the key differs: an escalation has no site-instance identity, and the qid is its key.
+ * The two were not merged into one generic function because **how the key is derived** is the
+ * only thing this file has to say — after merging, the call sites would have to pass a key
+ * extractor and the reader would lose sight of "what this table is deduped by".
  */
 export function upsertBoundedByQid(
   list: readonly WorkflowRunPendingQuestion[],

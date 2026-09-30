@@ -42,8 +42,9 @@ function encodedBytes(value: unknown): number {
 }
 
 /**
- * Window Host 的被动 sessions-index 观察器。它只使用 existing-only，缺少 runtime 时保持
- * dormant；ACK 前 physical wire 有界暂存，避免初始 snapshot 早于 RPC response 时丢失。
+ * Passive sessions-index observer for the Window Host. It only ever uses existing-only mode and
+ * stays dormant while the runtime is missing; before the ACK it buffers a bounded amount on the
+ * physical wire, so an initial snapshot that arrives ahead of the RPC response is not lost.
  */
 export function createWindowHostSessionsIndexObserver(options: {
   agentService: SessionsIndexAgentService;
@@ -160,8 +161,8 @@ export function createWindowHostSessionsIndexObserver(options: {
       stagedWires.length + 1 > MAX_STAGED_WIRES ||
       stagedBytes + bytes > MAX_STAGED_BYTES
     ) {
-      // 初始 frame 可早于 subscribe ACK；截断头部会留下可通过类型校验但缺片的
-      // snapshot。越界时必须整批作废，待 ACK 后取消该订阅并等待下一次 runtime lifecycle。
+      // The initial frame can be earlier than subscribe ACK; truncating the header will leave a frame that can pass type verification but is missing fragments.
+      // snapshot. When crossing the boundary, the entire batch must be invalidated. After ACK, the subscription is canceled and waits for the next runtime lifecycle.
       stagedWires = [];
       stagedBytes = 0;
       stagingOverflowed = true;
@@ -260,8 +261,8 @@ export function createWindowHostSessionsIndexObserver(options: {
       const wasDormant = dormant;
       dormant = false;
       if (startPromise) {
-        // 同一次 existing-only subscribe 可能在 ACK 前发布 available；这不是旧 runtime
-        // 换代。只有先观察到 unavailable 的 pending 才需要在当前请求收口后重订阅。
+        // The same existing-only subscribe may publish available before ACK; this is not the old runtime
+        // Replacement. Only unavailable pending needs to be resubscribed after the current request is closed.
         if (wasDormant) restartAfterPending = true;
       } else if (!activeSubscriptionId) void start();
     });
@@ -281,8 +282,8 @@ export function createWindowHostSessionsIndexObserver(options: {
     stagedWires = [];
     stagedBytes = 0;
     stagingOverflowed = false;
-    // 先把 pending ownership 写入 startPromise，再进入 subscribe；Agent 可能在 RPC Promise
-    // 返回前同步发布 runtime available，不能让 lifecycle callback 递归进入第二次 start。
+    // First write pending ownership into startPromise, and then enter subscribe; Agent may be in RPC Promise
+    // The runtime available is released synchronously before returning, and the lifecycle callback cannot be recursively entered into the second start.
     const pending = Promise.resolve().then(async () => {
       try {
         const result = await options.agentService.subscribeSessionsIndexV4({
@@ -311,7 +312,7 @@ export function createWindowHostSessionsIndexObserver(options: {
         for (const wire of initialWires) acceptOwnedWire(wire);
       } catch (error) {
         if (!disposed && isRuntimeUnavailableError(error)) {
-          // 有 lifecycle 的新 Host 等 available 再订阅，避免每次列表查询都重复打 dormant RPC。
+          // New Hosts with lifecycle will wait until available before subscribing to avoid repeatedly calling dormant RPC for each list query.
           dormant = Boolean(options.agentService.onAgentRuntimeLifecycle);
         } else if (!disposed) {
           options.onError?.(error);

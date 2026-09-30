@@ -8,58 +8,58 @@ interface StatusMeta {
 }
 
 export const STATUS_META: Record<FeedbackTicketStatus, StatusMeta> = {
-  已提交: {
+  Submitted: {
     className: "text-amber-700 dark:text-amber-300",
     dot: "bg-amber-500",
   },
-  信息不足: {
+  "Insufficient Info": {
     className: "text-orange-700 dark:text-orange-300",
     dot: "bg-orange-500",
   },
-  已采纳: {
+  Accepted: {
     className: "text-sky-700 dark:text-sky-300",
     dot: "bg-sky-500",
   },
-  答复关闭: {
+  "Response Closed": {
     className: "text-emerald-700 dark:text-emerald-300",
     dot: "bg-emerald-500",
   },
-  // 公开反馈接口会把历史「答复关闭」归一为「已归档」返回。
-  // 客户端必须同时识别两种终态，否则我的反馈列表渲染状态标记时会拿不到 meta 而崩溃。
-  已归档: {
+  // The public feedback interface will return historical "Reply Closed" as "Archived".
+  // The client must recognize both final states at the same time, otherwise my feedback list will not be able to get the meta and crash when rendering the status tag.
+  Archived: {
     className: "text-emerald-700 dark:text-emerald-300",
     dot: "bg-emerald-500",
   },
-  已拒绝: {
+  Rejected: {
     className: "text-foreground-subtle",
     dot: "bg-foreground-subtlest",
   },
-  开发中: {
+  "In Progress": {
     className: "text-violet-700 dark:text-violet-300",
     dot: "bg-violet-500",
   },
-  已解决: {
+  Resolved: {
     className: "text-emerald-700 dark:text-emerald-300",
     dot: "bg-emerald-500",
   },
-  已上线: {
+  Shipped: {
     className: "text-emerald-700 dark:text-emerald-300",
     dot: "bg-emerald-500",
   },
 };
 
 const FEEDBACK_STATUS_MESSAGE_IDS: Record<FeedbackTicketStatus, string> = {
-  已提交: "feedback.status.pendingReview",
-  信息不足: "feedback.status.needInfo",
-  已采纳: "feedback.status.accepted",
-  答复关闭: "feedback.status.closedByReply",
-  // 后端 closed 仍归一为「已归档」兼容值，但不能把接口内部命名直接暴露给用户。
-  // 这里映射到 completed 展示文案，让“我的反馈”列表和详情统一显示为「已完成」。
-  已归档: "feedback.status.completed",
-  已拒绝: "feedback.status.rejected",
-  开发中: "feedback.status.inDevelopment",
-  已解决: "feedback.status.resolved",
-  已上线: "feedback.status.released",
+  Submitted: "feedback.status.pendingReview",
+  "Insufficient Info": "feedback.status.needInfo",
+  Accepted: "feedback.status.accepted",
+  "Response Closed": "feedback.status.closedByReply",
+  // The backend closed is still normalized to the "archived" compatible value, but the internal naming of the interface cannot be directly exposed to the user.
+  // This is mapped to the completed display copy, so that the "My Feedback" list and details are uniformly displayed as "Completed".
+  Archived: "feedback.status.completed",
+  Rejected: "feedback.status.rejected",
+  "In Progress": "feedback.status.inDevelopment",
+  Resolved: "feedback.status.resolved",
+  Shipped: "feedback.status.released",
 };
 
 export function formatFeedbackStatusLabel(

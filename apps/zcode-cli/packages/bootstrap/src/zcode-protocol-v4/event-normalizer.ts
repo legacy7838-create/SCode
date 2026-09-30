@@ -68,11 +68,11 @@ export interface CanonicalUserIntentFact extends CanonicalConversationFactBase {
     | "workflowLaunch";
   originMeta?: BackgroundResultOriginMeta;
   /**
-   * 中枢直接启动已保存工作流的启动轮元数据（`inputSource === "workflow_launch"` 时在场）。
-   * 活投影据它在 turnHeader / userInput 两行上画启动卡；与消息 metadata 里的同一份对齐（冷热同形）。
+   * Launch-turn metadata for a saved workflow started directly by the hub (present when `inputSource === "workflow_launch"`).
+   * The live projection uses it to draw the launch card on the turnHeader / userInput rows; it is aligned with the very same copy in the message metadata (same shape hot and cold).
    */
   workflowLaunch?: WorkflowLaunchMeta;
-  /** `input` 从此下标起是引擎附加文本。 */
+  /** From this index on, `input` is engine-appended text. */
   epilogueStart?: number;
   sourceCommandId?: string;
   foregroundExecutionId?: string;
@@ -143,11 +143,11 @@ export interface CanonicalOpenSegmentIdentity {
 }
 
 /**
- * live SessionEvent 与 cold hydration 合成事件的唯一字段解释入口。
+ * The single place that interprets the fields of live SessionEvent and cold hydration synthesized events alike.
  *
- * 过去 ProductProjection 直接从 raw payload 分别猜 messageId、origin 与
- * visibility；cold 少一个字段时可见 row 仍会生成，但命令 target 缺失。normalizer
- * 先生成自包含 canonical fact，让 row、target、actions 使用同一份身份事实。
+ * ProductProjection used to guess messageId, origin and visibility separately straight from the raw payload; when cold
+ * was missing one field the visible row was still produced but the command target was lost. The normalizer
+ * first produces a self-contained canonical fact, so rows, targets and actions all use the same identity fact.
  */
 export function normalizeConversationEvent(
   event: SessionEvent,
@@ -219,12 +219,12 @@ function normalizeTurnStarted(
 ): CanonicalUserIntentFact {
   const transcriptMessageId = payload.messageId ? String(payload.messageId) : null;
   const origin = userInputOrigin(payload.inputSource);
-  // live 使用 runtime turnId、cold 使用 hydrate-turn-N；即使二者指向
-  // 同一条持久 user message，过去仍生成不同 productTurnId，导致行分组与命令边界
-  // 在恢复前后漂移。真实用户轮以持久 user messageId 作为稳定 product turn 身份；
-  // legacy 缺 messageId 时才保留 runtime fallback，并通过 diagnostics 暴露降级。
-  // 可见 user、goal continuation、background wake 都是 product-turn trigger；
-  // 只要有持久 messageId 就必须共用它，不能只稳定 realUser。
+  // live uses runtime turnId, cold uses hydrate-turn-N; even if both point to
+  // The same persistent user message still generated different productTurnIds in the past, resulting in line grouping and command boundaries.
+  // Drift before and after recovery. The real user turn uses the persistent user messageId as the stable product turn identity;
+  // Legacy only retains the runtime fallback when messageId is missing, and exposes downgrades through diagnostics.
+  // It can be seen that user, goal continuation, and background wake are all product-turn triggers;
+  // As long as there is a persistent messageId it must be shared, not just realUser.
   const productTurnId = transcriptMessageId ?? ids.productTurnId;
   const diagnostics: ConversationNormalizationDiagnostic[] = transcriptMessageId
     ? []
@@ -344,8 +344,8 @@ function normalizeModelStreaming(
       ...(transcriptMessageId ? { assistantResponseId: transcriptMessageId } : {}),
       ...(transcriptPartId ? { transcriptPartId } : {}),
       ...(payload.toolCallId ? { toolCallId: payload.toolCallId } : {}),
-      // 空字符串是空工具名恢复的有效原始事实；truthy 判断会把它抹成
-      // undefined，导致后续产品态过滤误把该调用物化成一个空名工具行。
+      // The empty string is a valid raw fact restored by an empty tool name; truthy judgment will erase it to
+      // undefined, causing subsequent product status filtering to mistakenly materialize the call into an empty tool row.
       ...(typeof payload.toolName === "string" ? { toolName: payload.toolName } : {}),
       ...(payload.input !== undefined ? { input: payload.input } : {}),
       ...(payload.providerExecuted !== undefined
@@ -406,7 +406,7 @@ function turnHeaderOrigin(
       return "goalContinuation";
     case "rewind":
       return "editRerun";
-    // 中枢直接启动：turnHeader 与 userInput 同用 workflowLaunch origin，UI 据此画启动卡而非用户气泡。
+    // Hub direct launch: turnHeader and userInput share the workflowLaunch origin, and the UI draws the launch card instead of the user bubble accordingly.
     case "workflow_launch":
       return "workflowLaunch";
     default:
@@ -424,15 +424,15 @@ function userInputOrigin(
       return "goalContinuation";
     case "subagent":
     case "subagent_message":
-      // child 回复是 mailbox runtime carrier，不是真实用户输入；
-      // live/cold 即使都隐藏它，也必须保留相同 canonical origin。
+      // The child reply is a mailbox runtime carrier, not real user input;
+      // live/cold must retain the same canonical origin even if both hide it.
       return "mailbox";
     case "fork":
     case "plugin_reference":
     case "rewind":
     case "todo_reminder":
       return "synthetic";
-    // 中枢直接启动：用户在中枢里的真实动作，可见 user row 但以启动卡呈现（origin 区分它与普通气泡）。
+    // Hub direct launch: The user's real actions in the hub are visible in the user row but presented as a launch card (origin distinguishes it from ordinary bubbles).
     case "workflow_launch":
       return "workflowLaunch";
     default:

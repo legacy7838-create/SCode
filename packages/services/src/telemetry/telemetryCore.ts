@@ -1,4 +1,4 @@
-/* oxlint-disable eslint(max-lines) -- telemetry state lock、deviceMid 编排和上报路径共享同一状态文件，拆分会增加锁语义漂移风险。 */
+/* oxlint-disable eslint(max-lines) -- the telemetry state lock, deviceMid orchestration, and the reporting path share the same state file; splitting them would raise the risk of lock semantics drifting apart. */
 import {
   createUuid,
   ZCODE_VERSION,
@@ -236,8 +236,8 @@ async function withTelemetryStateLock<T>(
     try {
       const handle = await open(lockFile, "wx");
       try {
-        // Bugfix: 旧锁文件只有一个空文件，崩溃后 5 分钟内无法判断是否为孤儿锁。
-        // 新锁写入 owner pid，让后续进程能安全回收“刚残留但持有进程已退出”的锁。
+        // Bugfix: The old lock file only has an empty file, and it cannot be determined whether it is an orphan lock within 5 minutes after the crash.
+        // The new lock is written to the owner pid, allowing subsequent processes to safely reclaim the lock that has just remained but the holding process has exited.
         await handle.writeFile(
           JSON.stringify({
             pid: process.pid,
@@ -260,8 +260,8 @@ async function withTelemetryStateLock<T>(
         throw error;
       }
 
-      // Bugfix: 崩溃/强退后 telemetry-state.lock 可能遗留在磁盘上，后续所有启动都会直接卡死到超时。
-      // 这里按 mtime 识别明显过期的孤儿锁并自动回收，避免用户目录里一个陈旧空文件把上报永久锁死。
+      // Bugfix: telemetry-state.lock may be left on the disk after a crash/forced retreat, and all subsequent startups will be stuck until timeout.
+      // Here, mtime is used to identify obviously expired orphan locks and automatically recycle them to avoid being permanently locked by an old empty file in the user directory.
       const removedStaleLock = await removeStaleTelemetryLockIfNeeded(lockFile, Date.now());
       if (removedStaleLock) {
         continue;
@@ -274,8 +274,8 @@ async function withTelemetryStateLock<T>(
   throw new Error("Telemetry state lock timeout");
 }
 
-// 设备身份的持久化唯一所有者是 device/deviceMid 模块：同一 telemetry-state 文件、同一把锁。
-// 这里保留旧导出名作为上报入口的稳定别名，内部直接委托，避免出现第二条写入路径。
+// The only persistent owner of the device identity is the device/deviceMid module: same telemetry-state file, same lock.
+// The old export name is retained here as a stable alias for the reporting entry, and is directly delegated internally to avoid a second writing path.
 export type { EnsureDeviceMidOptions as EnsureTelemetryDeviceMidOptions } from "../device/deviceMid.js";
 
 export function ensureTelemetryDeviceMid(options: EnsureDeviceMidOptions = {}): Promise<string> {
@@ -328,7 +328,7 @@ export function createTelemetryCore(dependencies: TelemetryCoreDependencies = {}
     try {
       authorization = (await dependencies.loadAuthorization?.(userId)) ?? null;
     } catch {
-      // 凭据不可读时匿名上报，不打印原始异常，也不阻断业务事件。
+      // When credentials are unreadable, they are reported anonymously without printing the original exception or blocking business events.
     }
     const abortController = new AbortController();
     const timeout = setTimeout(() => abortController.abort(), requestTimeoutMs);
@@ -341,7 +341,7 @@ export function createTelemetryCore(dependencies: TelemetryCoreDependencies = {}
           ...headers,
           ...(authorization ? { Authorization: authorization } : {}),
         },
-        // 不把带身份的上报转发至服务端重定向目标。
+        // Do not forward identity reports to the server redirect target.
         redirect: "error",
         body,
         signal: abortController.signal,
@@ -364,7 +364,7 @@ export function createTelemetryCore(dependencies: TelemetryCoreDependencies = {}
     userId: string,
     deviceMid: string,
   ): Promise<void> {
-    // 总开关关闭或上报端点未配置时，事件到此终止。
+    // When the main switch is turned off or the reporting endpoint is not configured, the event ends here.
     if (!ZCODE_TELEMETRY_ENABLED || !ZCODE_TELEMETRY_REPORT_ENDPOINT) {
       return;
     }
@@ -372,11 +372,11 @@ export function createTelemetryCore(dependencies: TelemetryCoreDependencies = {}
     try {
       marketingParams = await loadMarketingParams();
     } catch {
-      // 修复原因：营销归因只是 telemetry 的附加上下文，凭据损坏或暂时不可读
-      // 不应阻断原事件；同一 core 只告警一次，避免高频埋点持续刷屏。
+      // Reason for fix: Marketing attribution is just additional context for telemetry, credentials are corrupted or temporarily unreadable
+      // The original event should not be blocked; the same core will only alarm once to avoid high-frequency buried points and continuous screen refresh.
       if (!didWarnMarketingParamsLoadFailure) {
         didWarnMarketingParamsLoadFailure = true;
-        // 凭据后端异常可能带本机路径或堆栈；生产日志只保留固定、脱敏的降级事件。
+        // Credential backend exceptions may have native paths or stacks; production logs only retain fixed, desensitized degradation events.
         warn("Telemetry marketing attribution load failed; continuing without attribution");
       }
     }
@@ -388,7 +388,7 @@ export function createTelemetryCore(dependencies: TelemetryCoreDependencies = {}
       event_region: payload.eventRegion,
       event_type: payload.eventType,
       event_text: payload.eventText ?? "",
-      // 修复原因：Host/Main 或旧 Renderer 可绕过 UI 清洗，最终出网统一禁止错误原文与登录 URL 秘密。
+      // Reason for repair: Host/Main or old Renderer can bypass UI cleaning, and eventually the error original text and login URL secret are uniformly prohibited on the Internet.
       event_extra_detail: sanitizeTelemetryEventDetail(
         payload.elementName,
         payload.eventExtraDetail,
@@ -438,8 +438,8 @@ export function createTelemetryCore(dependencies: TelemetryCoreDependencies = {}
           break;
         }
 
-        // 修复原因：公共 /event/report 过去遇到瞬时网络故障会直接丢事件。这里只记录脱敏的
-        // attempt 元数据并有界重试，禁止把 payload、响应体或原始错误写入生产日志。
+        // Reason for repair: Public /event/report used to directly drop events when encountering a transient network failure. Only desensitized ones are recorded here
+        // attempt metadata and bounded retries, prohibiting writing payload, response body, or original errors to production logs.
         telemetryLogger.debug(
           undefined,
           `retry event=${payload.elementName} eventId=${eventId} attempt=${attempt} category=${lastError.category}`,
@@ -476,8 +476,8 @@ export function createTelemetryCore(dependencies: TelemetryCoreDependencies = {}
     });
 
     try {
-      // 修复原因：退出 drain 如果只拍一次 Set 快照，会漏掉屏障等待期间刚进入 Main 的 IPC
-      // 上报。每批 settled 后重新读取集合，直到为空或命中同一个总 deadline。
+      // Reason for repair: If you only take a Set snapshot once when exiting drain, the IPC that just entered Main during the barrier waiting period will be missed.
+      // Report. The collection is re-read after each batch is settled until it is empty or hits the same total deadline.
       while (!timedOut && pendingReports.size > 0) {
         await Promise.race([Promise.allSettled(pendingReports), deadline]);
       }
@@ -507,8 +507,8 @@ export function createTelemetryCore(dependencies: TelemetryCoreDependencies = {}
       return trackReport(
         (async () => {
           const userId = input.userId ?? (await loadUserId());
-          // 重复回调/跨宿主重报同一 Session 必须保留事件身份；不能每次生成随机 ID。
-          // UUIDv8 表达应用自定义的 SHA-256 映射，来源与设备变化不产生新的创建事件。
+          // Repeated callbacks/cross-host re-reporting of the same Session must retain the event identity; random IDs cannot be generated each time.
+          // UUIDv8 expresses application-customized SHA-256 mapping, and source and device changes do not generate new creation events.
           const eventId =
             input.elementName === "session_create" && input.talkId
               ? sessionCreateEventId(userId, input.talkId)
@@ -578,10 +578,10 @@ export function createTelemetryCore(dependencies: TelemetryCoreDependencies = {}
 
               const eventId = randomUUID();
               const deviceMid = await ensureDeviceMidInLockedState(state, deviceMidOptions);
-              // Bugfix: 之前 reportAppDailyActive 会在持锁状态下直接执行网络请求。
-              // 启动期 app_launch / app_daily_active / reportEvent 一旦并发，后来的调用会一直卡在锁外，
-              // 最终稳定打出 "Telemetry state lock timeout"。这里改成短锁写入 in-flight 标记，
-              // 锁外发送网络请求，成功后再短锁提交完成态，既保留跨实例去重，也不再把整个 telemetry 通道锁死。
+              // Bugfix: Previously reportAppDailyActive would directly execute network requests while holding a lock.
+              // Once app_launch / app_daily_active / reportEvent is concurrent during the startup period, subsequent calls will always be stuck outside the lock.
+              // Finally, "Telemetry state lock timeout" is printed stably. Here it is changed to short lock and written in-flight tag,
+              // Send a network request outside the lock, and then short-lock the submission completion status after success. This not only retains cross-instance deduplication, but also no longer locks the entire telemetry channel.
               state.dailyActiveInFlight = {
                 date: today,
                 startedAt: timestamp,

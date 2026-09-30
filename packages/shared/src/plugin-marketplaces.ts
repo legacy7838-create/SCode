@@ -9,7 +9,7 @@ export interface DefaultPluginMarketplace {
 
 export const ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID = "zcode-plugins-official";
 
-/** Settings 三类资源发现共用；Bootstrap 单测与官方 definition 的 defaultEnabled 机械对照。 */
+/** Shared by all three Settings resource-discovery kinds; the Bootstrap unit test checks it mechanically against defaultEnabled in the official definitions. */
 export const DEFAULT_ENABLED_OFFICIAL_PLUGIN_IDS: ReadonlySet<string> = new Set([
   "browser-use@zcode-plugins-official",
   "image-search@zcode-plugins-official",
@@ -17,22 +17,22 @@ export const DEFAULT_ENABLED_OFFICIAL_PLUGIN_IDS: ReadonlySet<string> = new Set(
   "pdf@zcode-plugins-official",
   "presentations@zcode-plugins-official",
   "spreadsheets@zcode-plugins-official",
-  // node_repl 宿主：不进市场、不对用户露出，也不贡献任何 skill/command/subagent，但必须
-  // 始终可用 —— node_repl 的注册门禁是「Browser Use 或 Computer Use 任一启用」，宿主自己
-  // 不参与那个判断。Browser Use 默认开着，宿主若默认关就等于它上来就没有宿主。
+  // node_repl host: does not enter the market, is not exposed to users, and does not contribute any skills/command/subagent, but must
+  // Always available - the registration access control of node_repl is "Either Browser Use or Computer Use is enabled", the host itself
+  // Don’t get involved in that judgment. Browser Use is on by default. If the host is off by default, it means there will be no host when it comes up.
   "node-repl-host@zcode-plugins-official",
   "skill-creator@zcode-plugins-official",
   "plugin-creator@zcode-plugins-official",
   "zcode-guide@zcode-plugins-official",
-  // 电脑控制回退为默认关闭，故 computer-use 不在此名单内。
-  // 该集合必须与 official-plugin-definitions.ts 里标了 defaultEnabled 的插件逐一对应，
-  // bootstrap 的「Settings 默认启用集合与 CLI 的官方插件声明一致」单测机械对照两者。
+  // Computer control fallback is turned off by default, so computer-use is not included in this list.
+  // This collection must correspond to the plugins marked defaultEnabled in official-plugin-definitions.ts.
+  // Bootstrap's "Settings default enabled collection is consistent with the CLI's official plug-in statement." A single test machine compares the two.
 ]);
 
 export const DEFAULT_PLUGIN_MARKETPLACES: DefaultPluginMarketplace[] = [
   {
-    // ZCode 官方唯一市场：本地 seed 分片与 CDN 分片在 Agent storage 内合并。
-    // CDN manifest 的 name 必须与该 canonical id 一致。
+    // The only official ZCode market: local seed shards and CDN shards are merged in Agent storage.
+    // The name of the CDN manifest must be consistent with the canonical id.
     id: ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID,
     source: "https://cdn-zcode.z.ai/zcode/official-plugin/marketplace.json",
     name: ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID,
@@ -41,7 +41,7 @@ export const DEFAULT_PLUGIN_MARKETPLACES: DefaultPluginMarketplace[] = [
   },
 ];
 
-// 商店「公开」分段只有一个 ZCode 官方市场 id，内置与 CDN 不再拆分身份。
+// The "public" segment of the store has only one ZCode official market ID, and the built-in and CDN identities are no longer separated.
 export const PUBLIC_STORE_MARKETPLACE_IDS = [ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID] as const;
 
 export function isPublicStoreMarketplaceId(id: string): boolean {

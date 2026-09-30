@@ -145,9 +145,9 @@ export function MessageRow({
         : []),
     ...parts.map((part, partIndex) => {
       if (part.type === "tool") {
-        // 卡片 join 按 toolCallId（与 GUI buildWorkflowRunByToolCallId 同规）。命中即渲染实时卡：
-        // 工具行自己的 status 在 CreateWorkflow 上会在 run 还在飞的时候就变成 completed
-        // （工具一launch完 run 就返回），所以状态必须读镜像，不能读 part.status。
+        // Card join by toolCallId (same as GUI buildWorkflowRunByToolCallId). Render real-time cards on hit:
+        // The tool row's own status on CreateWorkflow will change to completed while the run is still running.
+        // (Run will return as soon as the tool is launched), so the status must be read from the image, not part.status.
         const workflowCard = workflowCardsByToolCallId?.get(part.toolCallId);
         if (workflowCard) {
           return h(WorkflowRunCardView, {
@@ -158,7 +158,7 @@ export function MessageRow({
             terminalWidth,
           });
         }
-        // 无命中就回落今日的文本投影（编过但没有 run、或镜像尚未补种）。
+        // If there is no hit, it will fall back to today's text projection (edited but not run, or the image has not been replanted).
         return h(ToolTranscriptPartView, {
           key: `tool-${part.toolCallId}`,
           part,

@@ -10,23 +10,25 @@ import type { CodeViewerSource } from "@/lib/codeViewer.js";
 import type { CodePreviewSettings } from "@/lib/codePreviewSettings.js";
 import type { Theme } from "@/useTheme.js";
 import { ConversationShareReadonlyTimeline } from "@/v4/ConversationShareReadonlyTimeline.js";
-// 注入边界：只读时间线被匿名公开分享页共用，不能静态依赖 open-with 子树；
-// OpenSplitButton（platform hooks、tab store、文件树模型等 Desktop 能力）只能在本 Desktop
-// 消费侧引入并经 artifactOpenAction 注入，公开页入口图因此不含该子树。
+// Injection boundary: the read-only timeline is shared by anonymous public sharing pages and cannot statically rely on the open-with subtree;
+// OpenSplitButton (desktop capabilities such as platform hooks, tab store, file tree model, etc.) can only be used in this Desktop
+// Introduced on the consumer side and injected via artifactOpenAction, the public page entry graph therefore does not contain this subtree.
 import { OpenSplitButton } from "@/OpenSplitButton.js";
 
 const EMPTY_ARTIFACT_NAMES: ReadonlyMap<string, string> = new Map();
 const EMPTY_ARTIFACT_WORKSPACE_RELATIVE_PATHS: ReadonlyMap<string, string> = new Map();
 
 /**
- * 导入分享后，会话顶部的只读块 + 分割线。
- * 使用导入图标，避免与 Fork 标记混淆。
+ * The read-only block + divider at the top of the conversation after importing a share. It uses the
+ * import icon, so it is not confused with the Fork marker.
  *
- * 只读块直接复用分享页的渲染器，因此不需要把公开 rows 反向映射成 Message
- * （那个方向有损且未定义；Fork 之所以简单是因为它克隆真实 Message）。
+ * The read-only block reuses the share page's renderer directly, so the public rows never have to
+ * be mapped back into Messages (that direction is lossy and undefined; Fork is simple only because
+ * it clones real Messages).
  *
- * 本地结果物不走分享页的 artifactUrls/window.open；只有导入端显式传入
- * workspaceRelativePath 与 Desktop 打开回调时，才复用正常预览卡片的打开控件。
+ * Local results do not go through the share page's artifactUrls/window.open; the open control of
+ * the normal preview card is reused only when the import side explicitly passes in a
+ * workspaceRelativePath and a Desktop open callback.
  */
 export const ConversationShareImportNotice = memo(function ConversationShareImportNotice({
   rows,

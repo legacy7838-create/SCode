@@ -9,30 +9,30 @@ import type {
 import { ServiceChannels } from "@zcode/shared";
 import { createServiceDescriptor } from "../descriptors.js";
 
-// 闲时任务管理服务通道（与 automation 服务面互不复用）。
-// renderer 经 ProxyChannel 直连（codingPlanSubscription 同款范式）；
-// 轮询/取号/核销由服务内部驱动，不暴露给 renderer。
+// Free-time task management service channel (not reused with the automation service plane).
+// The renderer is directly connected via ProxyChannel (same paradigm as codingPlanSubscription);
+// Polling/number retrieval/cancellation is driven internally by the service and is not exposed to the renderer.
 
 export interface OffPeakUpdateTaskParams {
   title?: string;
   prompt?: string;
   permissionMode?: string;
-  /** undefined=不改；Off-Peak Submission 不允许清空为跟随默认。 */
+  /** undefined=Do not change; Off-Peak Submission is not allowed to be cleared to follow the default. */
   modelSelection?: ModelSelection | null;
 }
 
 export interface IOffPeakTaskService {
-  /** 当前 selected provider/connection 的脱敏支持快照；秘密不经过 renderer RPC。 */
+  /** Masking of the currently selected provider/connection supports snapshots; secrets do not go through renderer RPCs. */
   getCodingPlanSupport(): Promise<OffPeakCodingPlanSupport>;
-  /** 服务端取号额度即时快照；仅控制新建入口，POST /ticket 仍是最终准入权威。 */
+  /** Instant snapshot of the server's account quota; only new entries are controlled, POST /ticket is still the final access authority. */
   getTakeNumberAvailability(): Promise<OffPeakTakeNumberAvailability>;
-  /** 创建即取号（成功才落库）；失败返回稳定分类，不跨 RPC 传 raw error。 */
+  /** The number is obtained immediately after creation (it will be dropped into the database only after success); if it fails, the stable classification will be returned, and raw errors will not be transmitted across RPC. */
   createTask(params: ZCodeOffPeakTaskCreateParams): Promise<OffPeakTaskCreateResult>;
   cancelTask(offPeakTaskId: string): Promise<ZCodeOffPeakTask | null>;
   pauseTask(offPeakTaskId: string): Promise<ZCodeOffPeakTask | null>;
   continueTask(offPeakTaskId: string): Promise<ZCodeOffPeakTask | null>;
   deleteTask(offPeakTaskId: string): Promise<void>;
-  /** 仅隐藏本地 History 行；不删除 task/session/执行字段。 */
+  /** Only the local History row is hidden; task/session/execution fields are not deleted. */
   deleteHistory(offPeakTaskId: string): Promise<ZCodeOffPeakTask | null>;
   updateTask(
     offPeakTaskId: string,

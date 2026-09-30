@@ -1,8 +1,8 @@
-// ── 旧协议兼容面（过渡期）──────────────────────────────
-// 剩余 5 个导出：旧 configOptions 投影函数（formatModelPickerValue/normalizeAvailableZCodeMode/
+// ── Old protocol compatibility (transition period)─────────────────────────────
+// 5 exports remaining: old configOptions projection function (formatModelPickerValue/normalizeAvailableZCodeMode/
 // getZCodeAgentModeSelectOptions/getZCodeAgentAvailableModes/
-// zcodeSessionSettingsToZCodeConfigOptions）。
-// 消费者：services zcodeConfigOptions、UI zcodeSessionProjection 等旧栈。
+// zcodeSessionSettingsToZCodeConfigOptions).
+// Consumer: services zcodeConfigOptions, UI zcodeSessionProjection and other old stacks.
 import { formatModelPickerValue } from "./model-selection.js";
 import type { ZCodeSessionMode, ZCodeSessionSettingsState } from "./zcode-protocol/index.js";
 import type { ZCodeConfigOption, ZCodeTaskModeInfo } from "./zcode-task-types-core.js";
@@ -36,8 +36,8 @@ const ZCODE_AGENT_MODE_OPTIONS = [
 ] as const satisfies readonly ZCodeTaskModeInfo[];
 const ZCODE_AGENT_MODE_ID_SET = new Set<string>(ZCODE_AGENT_MODE_OPTIONS.map((mode) => mode.id));
 
-// OpenRouter 会把 `:free` 作为模型 ID 的一部分。UI/configOptions 的展示态
-// 不能再用冒号分隔 thought level，否则草稿选择会静默截断真实 modelId。
+// OpenRouter will use `:free` as part of the model ID. Display state of UI/configOptions
+// Thought levels can no longer be separated by colons, otherwise draft selection will silently truncate the real modelId.
 export function normalizeAvailableZCodeMode(mode: ZCodeSessionMode): string {
   return ZCODE_AGENT_MODE_ID_SET.has(mode) ? mode : "build";
 }

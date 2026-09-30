@@ -12,8 +12,8 @@ import {
 
 export interface ListProtocolSlashCommandsOptions extends ListZCodeCustomCommandsOptions {
   /**
-   * 动态工作流开关。只有显式 false 才从目录中剔除内置 `workflow`。
-   * 未传入该字段的调用方保留默认目录；协议服务端从 appRuntimePreferences 传入显式布尔。
+   * Dynamic workflow switches. Only explicit false excludes the built-in `workflow` from the directory.
+   * Callers that do not pass this field retain the default directory; protocol servers pass in an explicit boolean from appRuntimePreferences.
    */
   dynamicWorkflowEnabled?: boolean;
 }
@@ -21,9 +21,9 @@ export interface ListProtocolSlashCommandsOptions extends ListZCodeCustomCommand
 export async function listProtocolSlashCommands(
   options: ListProtocolSlashCommandsOptions = {},
 ): Promise<ZCodeSlashCommand[]> {
-  // 动态工作流关闭时：composer 的加号菜单与 `/` 面板都只读这份目录，剔除即两个入口一起消失。
-  // `workflow` 是内置命令且是保留名，用户/插件的同名自定义命令在下面的 reserved 过滤里一并消失，
-  // 不会在门关着时借自定义命令的身份漏回目录。
+  // When the dynamic workflow is closed: Composer's plus menu and `/` panel will only read this directory, and if they are removed, both entries will disappear together.
+  // `workflow` is a built-in command and a reserved name. User/plug-in custom commands with the same name will disappear together in the reserved filter below.
+  // It will not leak back to the directory by using the identity of the custom command when the door is closed.
   const builtins = listAppProtocolBuiltinSlashCommands().filter(
     (command) =>
       options.dynamicWorkflowEnabled !== false || command.name !== BUILTIN_WORKFLOW_COMMAND_NAME,
@@ -33,7 +33,7 @@ export async function listProtocolSlashCommands(
     const outcome = await listZCodeCustomCommands(options);
     customCommands = outcome.commands;
   } catch {
-    // 自定义命令发现失败不应阻断 session snapshot；保留可执行的内置协议命令。
+    // Failure to discover custom commands should not block session snapshots; retain executable built-in protocol commands.
     customCommands = [];
   }
 
@@ -51,7 +51,7 @@ export async function listProtocolSlashCommands(
   ];
 }
 
-/** App `/` 面板按本目录顺序展示；内置段的顺序由 APP_PROTOCOL_VISIBLE_BUILTIN_SLASH_COMMAND_NAMES 决定。 */
+/** App `/` panels are displayed in the order of this directory; the order of built-in sections is determined by APP_PROTOCOL_VISIBLE_BUILTIN_SLASH_COMMAND_NAMES. */
 function listAppProtocolBuiltinSlashCommands(): ZCodeSlashCommand[] {
   const sharedBuiltins = APP_PROTOCOL_VISIBLE_BUILTIN_SLASH_COMMAND_NAMES.flatMap((name) => {
     const command = BUILTIN_ZCODE_SLASH_COMMAND_HELP_ENTRIES.find((entry) => entry.name === name);

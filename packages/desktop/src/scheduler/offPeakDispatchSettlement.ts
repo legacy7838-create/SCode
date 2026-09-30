@@ -20,10 +20,12 @@ interface OffPeakDispatchSettlementDeps {
 }
 
 /**
- * 闲时任务派发结果结算。
+ * Settles the result of an off-peak task dispatch.
  *
- * 不能忽略 failureKind：缺模型/凭证等确定性配置错误若也无限退避，
- * 导致任务永久显示等待算力并反复消耗服务端 ticket。只有 transient 才允许回 queued。
+ * failureKind cannot be ignored: deterministic configuration errors such as a missing model or
+ * credentials must not back off forever, because the task would then show as permanently waiting
+ * for compute while repeatedly burning server-side tickets. Only transient failures are allowed to
+ * go back to queued.
  */
 export async function settleOffPeakDispatchResult(
   deps: OffPeakDispatchSettlementDeps,

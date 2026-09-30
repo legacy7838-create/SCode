@@ -10,8 +10,8 @@ function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
 
-// 标题与 JSON 围栏之间若用通配匹配 directive，正文里出现的同名标题也会命中，
-// 并把它之后的用户正文整段吞进尾块。这里改成按 directive 常量精确匹配。
+// If a wildcard matching directive is used between the title and the JSON fence, the title with the same name appearing in the text will also be hit.
+// And swallow the entire user text after it into the tail block. Here it is changed to exact matching according to directive constants.
 const PPTX_ELEMENT_COMMENT_BLOCK_PATTERN = new RegExp(
   `(?:^|\\n\\n)${escapeRegExp(PPTX_ELEMENT_COMMENT_BLOCK_TITLE)}\\s*\\n\\n${escapeRegExp(
     PPTX_ELEMENT_COMMENT_BLOCK_DIRECTIVE,

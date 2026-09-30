@@ -83,7 +83,7 @@ export function ProviderFamilyHeader({
             : familySpec.label}
         </h3>
       </div>
-      {/* 按团队全称的固有宽度参与外层换行，会让标题右侧空着却整组掉行；以操作区基础宽度参与分配，再让名称在剩余空间内收缩。*/}
+      {/* Participate in outer line wrapping according to the inherent width of the full name of the team, which will leave the right side of the title empty but the entire group will be broken; use the basic width of the operation area to participate in allocation, and then let the name shrink in the remaining space. */}
       {trailingAction ? (
         <div className="min-w-0 max-w-full flex-1 basis-64">{trailingAction}</div>
       ) : null}
@@ -145,7 +145,7 @@ export function ProviderFamilyPlanModeSwitch({
     return null;
   }
 
-  // 团队导航条目可能复用个人 provider；选中身份只来自已保存／提交中的付费选择。
+  // Team navigation entries may reuse personal providers; selected identities only come from paid selections in saved/committed ones.
   const selection = connectionSelections?.[familySpec.id];
   const selectedOption = selection
     ? options.find((option) =>
@@ -182,7 +182,7 @@ export function ProviderFamilyPlanModeSwitch({
       >
         <SelectTrigger
           size="lg"
-          // 固定最大宽度会在宽屏仍截断全称；先占用剩余空间，只有不足控件基本宽度时才换行。
+          // Fixed maximum width will truncate the full name in widescreen; the remaining space will be occupied first, and the line will wrap only when the basic width of the control is insufficient.
           className="min-w-0 max-w-fit flex-1 basis-12 justify-between"
           aria-label={connectionModeLabel}
           data-testid={TID_MODEL_PROVIDER_CONNECTION_MODE_TRIGGER}
@@ -265,6 +265,6 @@ function formatTeamPlanConnectionLabel(
   if (!normalized) {
     return fallbackLabel;
   }
-  // 团队项目名已由权益接口提供，额外拼接英文 Plan 会破坏中文和自定义名称。
+  // The team project name has been provided by the equity interface. Additional splicing of English Plan will destroy the Chinese and custom names.
   return normalized;
 }

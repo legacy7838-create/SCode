@@ -30,17 +30,17 @@ import { runUserAction, runUserActionAsync } from "@/lib/userActionTelemetry.js"
 
 interface ConversationQueuePanelProps {
   queue: QueueState;
-  /** 删除队列项（deleteQueueItem command）。 */
+  /** Delete queue items (deleteQueueItem command). */
   onDeleteItem?: (queueItemId: string) => void;
-  /** 撤回队列项到发起端 composer；权威删除成功后才恢复草稿。 */
+  /** Withdraw the queue item to the initiating composer; restore the draft only after the authoritative deletion is successful. */
   onEditItem?: (queueItemId: string) => Promise<void> | void;
-  /** 正在等待 delete ACK / composer restore 的目标项；仅锁该 row。 */
+  /** Target item awaiting delete ACK / composer restore; only locks this row. */
   pendingEditQueueItemId?: string | null;
-  /** 立即发送队列项（sendQueuedNow command，stop 当前 + 消费该项）。 */
+  /** Send the queue item immediately (sendQueuedNow command, stop current + consume the item). */
   onSendNow?: (queueItemId: string) => void;
-  /** 拖拽排序项（reorderQueueItem，移动到锚点前；null=队尾）。 */
+  /** Drag and drop the sorted item (reorderQueueItem, move to the front of the anchor point; null=the end of the queue). */
   onMoveItem?: (queueItemId: string, beforeQueueItemId: string | null) => void;
-  /** 暂停队列恢复：CLI setAutoDrain(true)，idle 立即消费、busy 仅武装。 */
+  /** Pause queue recovery: CLI setAutoDrain(true), idle consumes immediately, busy only armed. */
   onResume?: () => Promise<void> | void;
 }
 
@@ -152,8 +152,8 @@ const QueueRow = memo(function QueueRow({
         transform
           ? {
               ...transform,
-              // dnd-kit 排序时会按 over 节点尺寸附带 scale；
-              // 队列行是固定触控目标，缩放会让拖拽中的按钮和文本短暂变形。
+              // When dnd-kit sorts, it will be sorted by the over node size with scale;
+              // The queue row is a fixed touch target, and zooming will temporarily deform the buttons and text being dragged.
               scaleX: 1,
               scaleY: 1,
             }
@@ -269,8 +269,8 @@ const QueueRow = memo(function QueueRow({
 });
 
 /**
- * 竖切 queue 面板：渲染 projection.queue.items + 单项删除入口。
- * queue 在运行中的 turn 期间存在（sendText 排队），是 CLI 投影权威态（非 renderer-local）。
+ * Vertically cut the queue panel: render projection.queue.items + single-item deletion entry.
+ * The queue exists during the running turn (the sendText queue) and is the CLI projection state (non-renderer-local).
  */
 function ConversationQueuePanelImpl({
   queue,
@@ -319,7 +319,7 @@ function ConversationQueuePanelImpl({
   }, [onResume, resumePending]);
 
   if (queue.items.length === 0) return null;
-  // 补回 v4 视觉迁移时漏掉的旧队列面板 blur 层，让列表保持贴合 composer 的磨砂背景。
+  // Fill in the blur layer of the old queue panel that was missed during v4 visual migration, so that the list can keep the frosted background that fits the composer.
   return (
     <div
       data-testid={TID_V4_QUEUE}

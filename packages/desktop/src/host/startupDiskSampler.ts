@@ -7,7 +7,7 @@ const SAMPLE_INTERVAL_MS = 2000;
 type Probe = (path: string) => Promise<{ scope: string; availableBytes: number }>;
 type Scope = StartupDiskSummary & { path: string; baseline: number | null };
 
-/** 仅查询已知目录元数据；dev 只在首次解析时读取，周期内只做 statfs。 */
+/** Only query known directory metadata; dev only reads it when parsing for the first time, and only does statfs during the cycle. */
 function createProbe(): Probe {
   const resolved = new Map<string, { path: string; scope: string }>();
   return async (path) => {
@@ -66,7 +66,7 @@ export class StartupDiskSampler {
       sampledAt: null,
     };
     this.scopes.set(unknownKey, unknown);
-    // 准备只短暂等待基线；慢探测继续异步运行，结果到达时据 sealBaseline 判定是否完整。
+    // Prepare to wait only briefly for the baseline; slow probes continue to run asynchronously, and when the results arrive, they are determined to be complete based on sealBaseline.
     if (this.busy) return;
     this.busy = true;
     try {
@@ -86,7 +86,7 @@ export class StartupDiskSampler {
           quality: this.sealed.has(path) ? "partial" : "complete",
         });
     } catch {
-      /* 满盘/权限错误不要求再次读取故障磁盘才能显示失败。 */
+      /* Full disk/permission errors do not require the failed disk to be read again to show failure. */
     } finally {
       this.busy = false;
     }

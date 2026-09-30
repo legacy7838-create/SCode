@@ -11,8 +11,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * 将当前进程收到的可信 CUA ToolCallResult 投影为一次性权限观察。
- * 历史恢复没有 SessionEvent 输入，因此不能在这里补造权限 UI 副作用。
+ * Project the trusted CUA ToolCallResult received in this process into a one-shot permission observation.
+ * History recovery has no SessionEvent input, so permission UI side effects cannot be fabricated here.
  */
 export class CuaPermissionObservationNormalizer {
   normalize(sessionId: string, event: SessionEvent): CuaPermissionObservation | null {

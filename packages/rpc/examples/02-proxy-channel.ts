@@ -1,10 +1,10 @@
 /**
- * 示例 2: ProxyChannel —— 零样板代码的服务代理
+ * Example 2: ProxyChannel – a service proxy with zero boilerplate code
  *
- * 对比示例 1 中手写的 CalculatorChannel，这里用 ProxyChannel
- * 一行代码就能把 service 暴露为 channel，再一行恢复为 service。
+ * Compare the handwritten CalculatorChannel in Example 1, where ProxyChannel is used
+ * One line of code can expose a service as a channel, and another line of code can restore it to a service.
  *
- * 这就是 VS Code 里几百个 service 能轻松跨进程通信的秘密。
+ * This is the secret why hundreds of services in VS Code can easily communicate across processes.
  */
 
 import {
@@ -18,10 +18,10 @@ import {
 } from "../src/index.js";
 
 // ============================================================================
-// 定义 service 接口和实现
+// Define service interface and implementation
 // ============================================================================
 
-/** 文件系统服务接口 */
+/** File system service interface */
 interface IFileService {
   onDidChangeFile: Event<{ path: string; type: string }>;
   readFile(path: string): Promise<string>;
@@ -29,7 +29,7 @@ interface IFileService {
   listFiles(dir: string): Promise<string[]>;
 }
 
-/** 模拟的文件系统实现 */
+/** Simulated file system implementation */
 class InMemoryFileService implements IFileService {
   private files = new Map<string, string>();
   private readonly _onDidChangeFile = new Emitter<{ path: string; type: string }>();
@@ -58,63 +58,63 @@ class InMemoryFileService implements IFileService {
 }
 
 // ============================================================================
-// 演示 ProxyChannel
+// Demo ProxyChannel
 // ============================================================================
 
 async function main() {
   const [protocolA, protocolB] = createQueuePair();
   const disposables = new DisposableStore();
 
-  // ========== 服务端 ==========
+  // ========== Server ==========
   const fileService = new InMemoryFileService();
 
-  // 一行代码：把 service 变成 channel！
-  // ProxyChannel.fromService 会自动：
-  // - 把 readFile, writeFile, listFiles 映射为 call
-  // - 把 onDidChangeFile 映射为 listen
+  // One line of code: turn service into channel!
+  // ProxyChannel.fromService will automatically:
+  // - Map readFile, writeFile, listFiles to call
+  // - Map onDidChangeFile to listen
   const channel = ProxyChannel.fromService<string>(fileService, disposables);
 
   const server = new ChannelServer(protocolB, "server");
   server.registerChannel("fileService", channel);
 
-  // ========== 客户端 ==========
+  // ========== Client ==========
   const client = new ChannelClient(protocolA);
   await Event.toPromise(client.onDidInitialize);
 
-  // 一行代码：把 channel 恢复为类型安全的 service！
-  // 利用 ES6 Proxy，调用 remoteFS.readFile(...) 会自动变成 channel.call('readFile', [...])
+  // One line of code: restore the channel to a type-safe service!
+  // Using ES6 Proxy, calling remoteFS.readFile(...) will automatically become channel.call('readFile', [...])
   const remoteFS = ProxyChannel.toService<IFileService>(client.getChannel("fileService"));
 
-  // ========== 使用远程服务（就像调本地方法一样！）==========
+  // ========== Use remote services (just like calling local methods!) ==========
   console.log("--- ProxyChannel Demo ---");
-  console.log("（注意：所有调用都经过了序列化 → 传输 → 反序列化）\n");
+  console.log("(Note: All calls are serialized → transferred → deserialized)\n");
 
-  // 监听文件变更事件
+  // Listen for file change events
   const eventDisposable = remoteFS.onDidChangeFile((e) => {
     console.log(`  [file event] ${e.type}: ${e.path}`);
   });
 
-  // 写入文件
+  // write file
   await remoteFS.writeFile("/src/main.ts", 'console.log("hello")');
   await remoteFS.writeFile("/src/util.ts", "export function add(a, b) { return a + b; }");
-  await remoteFS.writeFile("/src/main.ts", 'console.log("hello world")'); // 修改
+  await remoteFS.writeFile("/src/main.ts", 'console.log("hello world")'); // Modify
 
-  // 读取文件
+  // read file
   const content = await remoteFS.readFile("/src/main.ts");
   console.log(`\nreadFile('/src/main.ts') = "${content}"`);
 
-  // 列出文件
+  // List files
   const files = await remoteFS.listFiles("/src");
   console.log(`listFiles('/src') = ${JSON.stringify(files)}`);
 
-  // 测试错误传播
+  // Test error propagation
   try {
     await remoteFS.readFile("/nonexistent");
   } catch (err: any) {
     console.log(`readFile('/nonexistent') → Error: ${err.message}`);
   }
 
-  // 清理
+  // clean up
   eventDisposable.dispose();
   client.dispose();
   server.dispose();

@@ -1,9 +1,13 @@
+import { installNativeRpcBytesPort } from "@zcode/rpc/native";
 import { createLocalServices, getAppConfigDir } from "@zcode/services/node";
 import {
   materializeBundledZCodeBuiltinProviderConfig,
   readBundledZCodeBuiltinProviderConfig,
 } from "./bundledZCodeBuiltinProviderConfig.js";
 import { createHttpServer } from "./http.js";
+
+// Node-only entrypoint: bind the RPC byte port (Rust CRC32) before any RPC traffic.
+installNativeRpcBytesPort();
 
 async function main(): Promise<void> {
   const zcodeBuiltinProviderConfigFilePath = await materializeBundledZCodeBuiltinProviderConfig({

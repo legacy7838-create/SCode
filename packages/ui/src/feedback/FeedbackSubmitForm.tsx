@@ -89,7 +89,7 @@ export function FeedbackSubmitForm({
   onViewTickets: () => void;
   onCancel: () => void;
 }) {
-  const { intl, locale } = useZCodeIntl();
+  const { intl } = useZCodeIntl();
   const formatMessage = useCallback(
     (id: string, values?: Record<string, string>) => intl.formatMessage({ id }, values),
     [intl],
@@ -161,17 +161,17 @@ export function FeedbackSubmitForm({
   useEffect(() => {
     if (submissionJob) return;
     if (!submissionJobId) return;
-    // 后台提交必须由用户点击的 card 通过 jobId 精确绑定。
-    // 新建问题上报不再猜测“最后一个活动 job”，避免旧上传状态锁住新表单。
+    // Background submission must be accurately bound by the jobId of the card clicked by the user.
+    // When reporting new issues, you no longer need to guess the "last active job" to avoid locking the new form with the old upload status.
     const selectedJob = getFeedbackSubmissionJob(submissionJobId);
     if (!selectedJob) return;
-    logger.debug("[FeedbackSubmitForm] 恢复后台反馈任务", {
+    logger.debug("[FeedbackSubmitForm] restoring background feedback job", {
       jobId: selectedJob.id,
       hasFormDraft: Boolean(selectedJob.formDraft),
       screenshotCount: selectedJob.formDraft.screenshots?.length ?? 0,
     });
-    // 恢复 job 进度时必须同时恢复该 job 的原始表单，否则问题描述为空。
-    // 表单快照随 job 保存，确保并发提交时点击不同 card 能看到各自的内容。
+    // When restoring the job progress, the original form of the job must be restored at the same time, otherwise the problem description will be empty.
+    // The form snapshot is saved with the job to ensure that you can see the respective contents when clicking on different cards during concurrent submission.
     applySubmitDraft(selectedJob.formDraft);
     activeSubmissionJobRef.current = selectedJob;
     setSubmissionJob(selectedJob);
@@ -256,7 +256,7 @@ export function FeedbackSubmitForm({
       });
       const job = await startSimplifiedFeedbackSubmission({
         feedbackService,
-        // 后端正文使用 trim 后的内容，但后台卡片恢复时必须保留用户输入原文。
+        // The backend text uses the trimmed content, but the original text input by the user must be retained when the backend card is restored.
         description,
         contact,
         screenshots,
@@ -265,7 +265,6 @@ export function FeedbackSubmitForm({
         ticketSeverity,
         ticketModule,
         modelContext,
-        locale,
         copy: submissionCopy,
         formatMessage: intl.formatMessage,
         onTicketCreated: shouldCloseOnTicketCreated
@@ -309,7 +308,6 @@ export function FeedbackSubmitForm({
     feedbackService,
     formatMessage,
     includeLogs,
-    locale,
     modelContext,
     onCancel,
     onSubmitted,

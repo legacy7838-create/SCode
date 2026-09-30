@@ -11,18 +11,18 @@ const CREDENTIAL_ERROR_PATTERNS = [
   /unauthorized/i,
   /forbidden/i,
   /\b40[13]\b/,
-  /认证|鉴权|授权|密钥|无效|过期/i,
+  /Authentication|Authentication|Authorization|Key|Invalid|Expired/i,
 ];
 
-// 团队套餐业务错误（如"仅企业主账号可查询企业汇总数据"、
-// "您当前暂无有效的团队套餐授权记录，无法创建API Key"）是远端明确的业务拒绝原因，
-// 必须原文展示。其中"授权记录"含"授权"字样，若先走 credential 判断会被
-// 误判成凭据问题（走翻译文案 + 检查 API Key 按钮），因此业务错误优先匹配。
+// Team package business errors (such as "Only the business master account can query corporate summary data",
+// "You currently do not have a valid team package authorization record and cannot create an API Key") is the clear reason for business rejection on the remote end.
+// The original text must be displayed. Among them, the "authorization record" contains the word "authorization". If you use credential first, it will be judged.
+// It was misjudged to be a credential issue (translate the copy + check the API Key button), so business errors are matched first.
 const TEAM_PLAN_BUSINESS_ERROR_PATTERNS = [
-  /企业主账号/,
-  /团队套餐/,
-  /无法创建API\s*Key/i,
-  /授权记录/,
+  /business owner account/,
+  /Team Package/,
+  /Unable to create API\s*Key/i,
+  /authorization record/,
 ];
 
 export function isUsageTeamPlanBusinessError(error: string | null | undefined): boolean {
@@ -46,16 +46,16 @@ export function formatUsageErrorMessage(
   surface: UsageErrorSurface,
   error: string | null | undefined,
 ): string {
-  // 团队套餐业务错误是远端明确的业务拒绝原因，generic 文案会掩盖真实失败原因
-  // （如"仅企业主账号可查询企业汇总数据"），用户无法判断是权限问题还是网络问题。
-  // 必须先于 credential 判断："您当前暂无有效的团队套餐授权记录…"含"授权"字样，
-  // 若后判断会被误认为凭据错误而走翻译文案。
+  // The team package business error is the clear reason for business rejection at the remote end, and the generic copy will cover up the real failure reason.
+  // (For example, "Only the business master account can query the company's summary data.") The user cannot determine whether it is a permissions issue or a network issue.
+  // It must be judged before credential: "You currently do not have a valid team package authorization record..." contains the word "authorization",
+  // If it is judged later, it will be mistaken as a wrong document and the translation copy will be used.
   if (isUsageTeamPlanBusinessError(error) && error?.trim()) {
     return error.trim();
   }
 
-  // 供应商接口会返回英文鉴权错误，直接展示会让用户不知道下一步怎么排查。
-  // 这里统一把可恢复的 key/OAuth 问题翻译成用户可执行的检查项，原始错误仍由调用方写入日志。
+  // The supplier interface will return an English authentication error, and displaying it directly will make users confused about how to troubleshoot next step.
+  // Here, recoverable key/OAuth issues are uniformly translated into user-executable check items, and the original errors are still written to the log by the caller.
   if (isUsageCredentialError(error)) {
     return intl.formatMessage({ id: `usage.error.${surface}.credential` });
   }

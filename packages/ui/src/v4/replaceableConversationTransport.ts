@@ -16,7 +16,7 @@ async function unsubscribeIgnoringFailure(
     await transport.unsubscribe(subscriptionId);
   } catch (error) {
     logger.warn(
-      `[v4-conversation] unsubscribe ${subscriptionId} 失败（忽略）: ${
+      `[v4-conversation] unsubscribe ${subscriptionId} failed (ignored): ${
         error instanceof Error ? error.message : String(error)
       }`,
     );
@@ -24,10 +24,12 @@ async function unsubscribeIgnoringFailure(
 }
 
 /**
- * 远程 service proxy 换代期间保持 renderer 侧 transport 身份稳定。
+ * Keeps the renderer-side transport identity stable while the remote service proxy is being swapped
+ * out.
  *
- * 同一 workspace 的存量 pane 会继续持有本对象；replace 后命令与订阅统一转发到
- * 最新 proxy，旧 proxy 的监听先同步解除，避免新旧 Store 竞争同一 topic ownership。
+ * Existing panes of the same workspace keep holding this object; after a replace, commands and
+ * subscriptions all forward to the newest proxy, and the old proxy's listeners are released
+ * synchronously first, so that the old and new Stores do not race for ownership of the same topic.
  */
 export class ReplaceableConversationTransport implements ConversationTransport {
   private readonly frameListeners = new Set<FrameListener>();
@@ -41,9 +43,11 @@ export class ReplaceableConversationTransport implements ConversationTransport {
   private offRuntimeLifecycle: (() => void) | null = null;
 
   /**
-   * 承载方不支持 runtime lifecycle 时本方法在构造期被抹掉，消费方据此回落 onRuntimeRestart。
-   * 能力按构造时的 current 判定：同一 workspace 的后续 transport 均由
-   * createAgentConversationTransport 产出，支持性只取决于 agentService，换代不会翻转。
+   * When the carrier does not support the runtime lifecycle, this method is erased at construction
+   * time and consumers fall back to onRuntimeRestart on that basis. The capability is decided by
+   * the `current` at construction time: every later transport for the same workspace is produced by
+   * createAgentConversationTransport, so support depends only on agentService and a swap cannot
+   * flip it.
    */
   onRuntimeLifecycle?: (listener: RuntimeLifecycleListener) => () => void = (listener) => {
     this.runtimeLifecycleListeners.add(listener);
@@ -68,8 +72,8 @@ export class ReplaceableConversationTransport implements ConversationTransport {
 
     const previous = this.current;
     this.detachCurrentListeners();
-    // 旧 proxy 上的 active subscription 必须先释放，但断线 RPC 可能永久
-    // pending；cleanup 只做 best-effort，不能阻塞新 proxy 的重订阅接管。
+    // The active subscription on the old proxy must be released first, but the disconnected RPC may be permanent
+    // pending; cleanup only does best-effort and cannot block the new proxy's re-subscription takeover.
     for (const [subscriptionId, owner] of this.transportBySubscriptionId) {
       if (owner !== previous) continue;
       this.transportBySubscriptionId.delete(subscriptionId);
@@ -78,8 +82,8 @@ export class ReplaceableConversationTransport implements ConversationTransport {
 
     this.current = transport;
     this.bindCurrentListeners();
-    // proxy 换代只会让 connection ownership 失效，CLI runtime/logEpoch 仍可能连续；
-    // 显式携带原因，让 Store 用当前水位 fresh subscribe，由服务端裁决 resume/snapshot。
+    // Proxy replacement will only invalidate connection ownership, and CLI runtime/logEpoch may still be continuous;
+    // Explicitly carry the reason, let the Store use the current water level to fresh subscribe, and the server will decide resume/snapshot.
     for (const listener of this.runtimeRestartListeners) listener("transportReplaced");
   }
 
@@ -89,7 +93,7 @@ export class ReplaceableConversationTransport implements ConversationTransport {
     const owner = this.current;
     const result = await owner.subscribe(params);
     if (owner !== this.current) {
-      // 换代前发起的迟到 ACK 不能重新写入稳定 transport 的 ownership 映射。
+      // Late ACKs initiated before the generation change cannot be rewritten to the stable transport's ownership map.
       void unsubscribeIgnoringFailure(owner, result.ack.subscriptionId);
       throw new Error("fault.subscription.transportReplaced");
     }
@@ -139,25 +143,25 @@ export class ReplaceableConversationTransport implements ConversationTransport {
     return this.current.plans(params);
   }
 
-  // workflowRunEvents 是后来（workflow run 事件日志的 RPC）加进 ConversationTransport
-  // 的成员，加的时候只落到了具体传输实现上，这个稳定身份漏掉了转发。而 pane 持的正是本对象，
-  // 于是走 service proxy 的 pane 上 `transport.workflowRunEvents` 是 undefined——run 详情页
-  // 的事件日志被静默解除，一打开就抛。接口新增成员时这里必须同步长出一条转发。
+  // workflowRunEvents was added to ConversationTransport later (RPC of workflow run event log)
+  // When adding members, it only fell on the specific transmission implementation. This stable identity missed the forwarding. And pane holds exactly this object,
+  // So on the pane of service proxy, `transport.workflowRunEvents` is undefined——run details page
+  // The event log is silently released and thrown as soon as it is opened. When a new member is added to the interface, a forwarding must be synchronized here.
   workflowRunEvents(
     params: Parameters<ConversationTransport["workflowRunEvents"]>[0],
   ): ReturnType<ConversationTransport["workflowRunEvents"]> {
     return this.current.workflowRunEvents(params);
   }
 
-  // 同一类漏接的预防：接口新增成员时，这个稳定身份必须同步长出一条转发。
+  // Prevention of missed connections of the same type: When a new member is added to the interface, this stable identity must simultaneously grow a forwarding link.
   workflowRuns(
     params: Parameters<ConversationTransport["workflowRuns"]>[0],
   ): ReturnType<ConversationTransport["workflowRuns"]> {
     return this.current.workflowRuns(params);
   }
 
-  // workflow 用户面产物的三条读接口必须在此转发；遗漏时 service proxy 上的方法为
-  // undefined，侧板调用就会抛错。
+  // The three read interfaces of workflow user interface products must be forwarded here; if omitted, the method on the service proxy is
+  // undefined, the side panel call will throw an error.
   workflowRunArtifacts(
     params: Parameters<ConversationTransport["workflowRunArtifacts"]>[0],
   ): ReturnType<ConversationTransport["workflowRunArtifacts"]> {
@@ -176,7 +180,7 @@ export class ReplaceableConversationTransport implements ConversationTransport {
     return this.current.workflowRunArtifactRead(params);
   }
 
-  // dwf 脚本 transcript 的两条读面。
+  // Two readings of the dwf script transcript.
   workflowRunWorkspace(
     params: Parameters<ConversationTransport["workflowRunWorkspace"]>[0],
   ): ReturnType<ConversationTransport["workflowRunWorkspace"]> {

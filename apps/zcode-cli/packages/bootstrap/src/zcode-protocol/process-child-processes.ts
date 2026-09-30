@@ -3,8 +3,8 @@ import type { ZCodeProcessChildProcessesResult } from "@zcode/shared";
 import { resolveOfficialPluginNameByHostMcpServerName } from "../app/official-plugin-definitions.js";
 
 /**
- * `process/childProcesses`：把 MCP 进程注册表内存里的子进程映射整理成协议结果。
- * 只做归属补齐（builtin host MCP → 官方插件名），不做任何 I/O；CPU/内存采样由桌面 Host 完成。
+ * `process/childProcesses`: organizes the child process mappings held in the MCP process registry's memory into a protocol result.
+ * It only completes attribution (builtin host MCP → the official plugin name) and performs no I/O at all; CPU/memory sampling is done by the desktop Host.
  */
 export function listChildProcesses(
   tracked: readonly McpTrackedProcess[],

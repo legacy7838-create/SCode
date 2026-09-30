@@ -96,8 +96,8 @@ function skillRootsForBase(
   scope: SkillRoot["scope"],
   nextPriority: () => number,
 ): SkillRoot[] {
-  // 合并而不是 fallback：用户可能同时安装原生 `.zcode` skill 和兼容 `.agents` skill。
-  // 同一级别仍保持 `.zcode` 优先，后续同名按 root 顺序解析。
+  // Merge instead of fallback: users may have both the native `.zcode` skill and the compatible `.agents` skill installed at the same time.
+  // The same level still maintains `.zcode` priority, and subsequent files with the same name are parsed in root order.
   return [
     root(join(baseDirectory, ZCODE_DIR, SKILLS_DIR), scope, "zcode", nextPriority()),
     root(join(baseDirectory, AGENTS_DIR, SKILLS_DIR), scope, "agents", nextPriority()),

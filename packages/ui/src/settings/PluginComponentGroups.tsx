@@ -3,21 +3,30 @@ import { cn } from "@/components/lib/utils.js";
 import { Badge } from "@/components/ui/badge.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 
-/** 详情中单个组件项：名称（mono）+ 可选描述（次行）。 */
+/** A single component entry in the details: name (mono) + optional description (second line). */
 export interface PluginComponentDisplayItem {
   name: string;
   description?: string;
 }
 
-/** 一组同类组件：类型 + 权威数量 + 可展示的名称/描述列表。 */
+/**
+ * A group of components of one kind: type + authoritative count + a displayable list of
+ * names/descriptions.
+ */
 export interface PluginComponentDisplayGroup {
   kind: ZCodePluginComponentKind;
-  /** 权威数量：优先取协议计数，缺失时取 items.length。 */
+  /**
+   * Authoritative count: prefer the protocol count, and fall back to items.length when it is
+   * missing.
+   */
   count: number;
   items: PluginComponentDisplayItem[];
 }
 
-/** 组件分组徽标配色：复用主题里已有的 Tailwind 调色板做轻量底色，深浅主题均正确。 */
+/**
+ * Component group badge colors: reuse the Tailwind palette already present in the theme for a light
+ * background, correct in both light and dark themes.
+ */
 const COMPONENT_BADGE_STYLES: Record<ZCodePluginComponentKind, string> = {
   agent: "bg-violet-500/15 text-violet-500 dark:text-violet-300",
   command: "bg-sky-500/15 text-sky-600 dark:text-sky-300",
@@ -35,8 +44,10 @@ const COMPONENT_LABEL_IDS: Record<ZCodePluginComponentKind, string> = {
 };
 
 /**
- * 共享的「组件分组 + 名称—描述两行体」渲染，供 marketplace 详情视图与已安装详情弹窗共用，
- * 保证两处呈现一致。每个组件项：首行 mono 名称，次行截断描述（无描述时只显示名称）。
+ * Shared rendering of the "component group + two-line name/description" body, used by both the
+ * marketplace details view and the installed details dialog so that the two stay consistent. Each
+ * component entry: the mono name on the first line, a truncated description on the second (name
+ * only when there is no description).
  */
 export function PluginComponentGroups({
   groups,

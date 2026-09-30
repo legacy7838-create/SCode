@@ -141,7 +141,7 @@ export type CoreCommand = z.infer<typeof coreCommandSchema>;
 
 export const releaseManifestSchema = z
   .object({
-    // version 会参与 releases/<version>-<target>-<sha> 路径拼接，不能允许 `/`、`\` 或 `..` 穿越 data root。
+    // version will participate in releases/<version>-<target>-<sha> path splicing, and `/`, `\` or `..` cannot be allowed to traverse the data root.
     version: z
       .string()
       .trim()

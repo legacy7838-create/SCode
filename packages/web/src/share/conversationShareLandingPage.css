@@ -6,8 +6,8 @@
 }
 
 /*
- * rail/row 必须撑满固定栏高度：三个元素现在沿连续几何轨道移动，不能让
- * items-center 退化为按内容高度居中，否则按钮高度变化会再次带来垂直跳动。
+ * rail/row must fill the fixed bar height: the three elements now move along a continuous geometric track;
+ * items-center must not degrade to content-height centering, otherwise button height changes would reintroduce vertical jitter.
  */
 [data-share-header-shell="true"] > [data-share-content-rail="true"] {
   display: flex;
@@ -47,7 +47,7 @@
   transform: translateY(-50%);
 }
 
-/* 首次布局测量完成前保留自然排列，避免自定义属性尚未写入时产生闪烁。 */
+/* Keep natural arrangement before the first layout measurement completes, to avoid flicker when custom properties have not yet been written. */
 [data-share-header-ready="false"] [data-share-header-row="true"] {
   display: flex;
   align-items: center;
@@ -85,9 +85,9 @@
 }
 
 /*
- * 标题是 flex-1，被拉满可用宽度后 scrollWidth 会返回盒宽而不是文字宽度
- * （短标题也会报成整条 row 宽），CTA 于是在宽屏上被误判为放不下而隐藏。
- * 这里用与 CTA 同样的隐藏测量元素取文字的固有宽度。
+ * The title is flex-1; after being stretched to the available width, scrollWidth returns the box width rather than the text width
+ * (even short titles report the full row width), so the CTA is incorrectly judged as not fitting and hidden on wide screens.
+ * Here we use the same hidden measurement element as the CTA to get the intrinsic text width.
  */
 [data-share-title-measure="true"] {
   position: absolute;

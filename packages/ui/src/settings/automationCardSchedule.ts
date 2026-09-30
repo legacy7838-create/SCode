@@ -23,7 +23,10 @@ function scheduleRuleToBuilder(rule: ZCodeAutomationScheduleRule): CronBuilderSt
   };
 }
 
-/** 卡片优先展示权威 scheduleRule；旧数据缺少规则时才从兼容 cron 生成摘要。 */
+/**
+ * The card shows the authoritative scheduleRule first; only when legacy data lacks a rule is a
+ * summary generated from the compatibility cron.
+ */
 export function describeAutomationCardSchedule(
   automation: {
     cronExpr: string;
@@ -33,13 +36,13 @@ export function describeAutomationCardSchedule(
   },
   intl: IntlLike,
 ): string {
-  // 相对时间一次性任务（如“4 分钟后提醒”）被存成 minute scheduleRule 作兼容展示，
-  // describeCronBuilder 会把它误显为“每 4 分钟”重复任务。一次性任务跑一次即结束、没有频率，
-  // 与固定日历 cron 一次性任务保持一致，统一显示为“自定义”，真实时机由“下次运行”文案承载。
+  // Relative time one-time tasks (such as "remind after 4 minutes") are saved as minute scheduleRule for compatibility display.
+  // describeCronBuilder will misrepresent this as a recurring task "every 4 minutes". A one-time task ends once it is run and has no frequency.
+  // Consistent with the fixed calendar cron one-time tasks, they are uniformly displayed as "Customized", and the real timing is carried by the "Next Run" copy.
   if (automation.recurring === false && (automation.maxRuns ?? 1) <= 1) {
     return intl.formatMessage({ id: "automations.frequency.custom" });
   }
-  // 长月度间隔的兼容 cron 固定为每月候选；只解析 cron 会把“每 30 个月”误显为“每月”。
+  // Compatible crons with long monthly intervals are fixed as monthly candidates; parsing only cron will misrepresent "every 30 months" as "monthly".
   if (automation.scheduleRule) {
     return describeCronBuilder(scheduleRuleToBuilder(automation.scheduleRule), intl);
   }

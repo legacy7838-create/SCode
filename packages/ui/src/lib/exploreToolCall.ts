@@ -158,8 +158,8 @@ export function isExploreToolCall({ kind, input }: { kind: string; input: unknow
     return true;
   }
 
-  // 有些只读探查会包在 for/while 循环里，例如批量查看 README 或递归扫目录，
-  // 这种命令本身不一定以 rg/ls 开头，但仍然属于 explore。
+  // Some read-only probes will be wrapped in for/while loops, such as batch viewing of README or recursive directory scanning.
+  // This kind of command itself does not necessarily start with rg/ls, but it still belongs to explore.
   return commands.some(
     (command) => SHELL_LOOP_RE.test(command) && EXECUTE_READ_COMMAND_RE.test(command),
   );

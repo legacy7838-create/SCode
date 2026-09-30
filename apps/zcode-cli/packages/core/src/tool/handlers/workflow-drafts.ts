@@ -1,19 +1,19 @@
 // ============================================================
-// Workflow 草稿目录的写入
+// Writing to Workflow draft directory
 // ============================================================
-// 每一段被工具收下的脚本都要在盘上有个家，那个文件就是模型两次提交之间的**把手**：诊断给
-// 的是文件行号，下一次提交只要 `path`，改一行不必把两万 token 的脚本再流一遍。内联文本因此
-// 只是一道门——`CreateWorkflow` / `AmendWorkflow` / 中枢直接启动一收到不来自文件的脚本，就在
-// 这里写一个。
+// Every script accepted by the tool must have a home on the disk, and that file is the handle between two submissions of the model: diagnosis to
+// is the file line number. You only need `path` for the next submission. You don’t have to reflow the script worth 20,000 tokens to change one line. inline text therefore
+// Just a door - `CreateWorkflow` / `AmendWorkflow` / The hub starts directly as soon as a script is received that does not come from a file.
+// Write one here.
 //
-// 落点 `<cwd>/.zcode/workflow-drafts/`，与 `.zcode/workflows/`（用户保存的定义）、
-// `.zcode/workflow-runs/`（每个 run 的编译入口）平级。目录自带一份 `.gitignore: *`，写法与
-// dynamic-workflow-runtime/src/child-entry-file.ts 逐字同构（那里的注释记着裁决）：只在缺席时
-// 写一次，用户改过就不再动它，项目自己的 `.gitignore` 一个字都不碰。
+// Drop point `<cwd>/.zcode/workflow-drafts/`, and `.zcode/workflows/` (user-saved definition),
+// `.zcode/workflow-runs/` (compilation entry for each run) is flat. The directory comes with a copy of `.gitignore: *`, written in the same way
+// dynamic-workflow-runtime/src/child-entry-file.ts verbatim isomorphism (comment there notes the verdict): only in absence
+// Write it once, and the user will not touch it again after making changes, and the project's own `.gitignore` will not touch a word.
 //
-// **尽力而为**：写不进去（只读 checkout、`.zcode` 是个普通文件、盘满）不让调用失败，返回
-// `undefined`，模型读到的退回「改好脚本再内联提交」的老话。刻意**不**回落到临时目录——一个
-// 用户在项目里找不到的草稿不值得一条路径。
+// **Best effort**: unable to write (read-only checkout, `.zcode` is an ordinary file, the disk is full) does not allow the call to fail and return
+// `undefined`, the model reads the old saying of "correct the script and then submit it inline". Deliberately **not** fall back to the temporary directory - a
+// Drafts that users can't find in the project don't deserve a path.
 
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -25,51 +25,51 @@ import {
 } from "@zcode/contracts";
 
 /**
- * 草稿文件名**不**保留的字符：任何 Unicode 字母 / 数字与 `_ . -` 之外的一切。
+ * The characters **not** kept in a draft file name: everything outside Unicode letters / digits and `_ . -`.
  *
- * 与保存定义的名字（纯 ASCII）刻意不同：保存名要当 CLI 参数与 URL 片段用，草稿名只要能在
- * 三个平台的文件系统上存在、且让人和模型认得出这是哪个工作流——而实盘里 run 名与阶段名
- * 几乎都是中文（实测：ASCII 版把每一份草稿都压成了 `workflow-N`，两个完全不同的
- * 工作流在目录里无法分辨）。字母表之外被丢掉的正是路径分隔符与 Windows 的保留字符
- * （`/ \ : * ? " < > |`）、空白与控制字符，路径穿越因此仍不可能。
+ * Deliberately different from the name used for saving (pure ASCII): a saved name has to work as a CLI argument and as a URL fragment, while a draft name only has to
+ * exist on the file systems of all three platforms and let a human and a model recognize which workflow it is — and in practice run names and phase names
+ * are almost always in Chinese (measured: the ASCII version squashed every draft into `workflow-N`, leaving two completely different
+ * workflows indistinguishable in the directory). What gets dropped outside the alphabet is exactly the path separators and the reserved Windows characters
+ * (`/ \ : * ? " < > |`), whitespace and control characters, so path traversal remains impossible.
  */
 const WORKFLOW_DRAFT_SLUG_DROP_PATTERN = /[^\p{L}\p{N}_.-]/gu;
 
-/** 空白连成一个 `-`：`PR review #12` → `PR-review-12`，比挤成一团的 `PRreview12` 认得出。 */
+/** Runs of whitespace collapse into a single `-`: `PR review #12` → `PR-review-12`, which is easier to make out than the crammed-together `PRreview12`. */
 const WORKFLOW_DRAFT_WHITESPACE_PATTERN = /\s+/gu;
 
-/** 文件名长度上限，与 `SAVED_WORKFLOW_MAX_NAME_CHARS` 同一个数，理由也同一条（各平台的 PATH_MAX）。 */
+/** The file name length limit, the same number as `SAVED_WORKFLOW_MAX_NAME_CHARS` and for the same reason (PATH_MAX on every platform). */
 const WORKFLOW_DRAFT_MAX_SLUG_CHARS = 64;
 
 /**
- * 名字里一个可用字符都不剩时的兜底（中文名是最常见的那一种）。
+ * The fallback for when not a single usable character is left in the name (a Chinese name is the most common such case).
  */
 const WORKFLOW_DRAFT_FALLBACK_SLUG = "workflow";
 
 /**
- * 同名时的后缀上界。撞满这么多次只可能是有人在拿同一个名字刷提交，此时放弃写草稿（返回
- * `undefined`）比无限循环体面——草稿是便利，不是正确性的一环。
+ * The upper bound of the suffix used on a name collision. Filling it up that many times can only mean someone is spamming submissions under the same name, and giving up on writing a draft then (returning
+ * `undefined`) is more dignified than an endless loop — a draft is a convenience, not part of correctness.
  */
 const WORKFLOW_DRAFT_MAX_ATTEMPTS = 1_000;
 
 interface WriteWorkflowDraftInput {
   /**
-   * 会话工作目录；草稿落在它的 `.zcode/workflow-drafts/` 下。缺席即宿主没有工作目录概念
-   * （端口 stub / 无会话上下文），此时无处可写，与写失败同义。
+   * The session working directory; drafts land under its `.zcode/workflow-drafts/`. Absent means the host has no concept of a working directory
+   * (port stub / no session context), so there is nowhere to write, which is the same thing as a failed write.
    */
   cwd: string | undefined;
-  /** run 的展示名，用来铸文件名。 */
+  /** The display name of the run, used to mint the file name. */
   name: string;
-  /** 要写下的字节，逐字不改（saved 来源连元数据块一起）。 */
+  /** The bytes to be written, unchanged verbatim (a saved source brings its metadata block along too). */
   source: string;
 }
 
 /**
- * 写一份草稿，返回它的绝对路径；写不成返回 `undefined`（绝不抛）。
+ * Writes one draft and returns its absolute path; returns `undefined` when it cannot be written (it never throws).
  *
- * **每次内联提交都铸一个新文件**，包括一次本该走 `path` 的提交：草稿绝不在模型背后被覆盖，
- * 否则一次手误的重复提交会把用户正在编辑的那一份抹掉。同名冲突按 `-2`、`-3`… 顺延，且用
- * `wx`（独占创建）落盘——两次并发提交因此不可能落进同一个文件，"先 stat 再写"那种写法会。
+ * **Every inline submission mints a new file**, including a submission that should have gone through `path`: a draft is never overwritten behind the model's back,
+ * otherwise one accidental duplicate submission would wipe out the copy the user is currently editing. Name collisions continue with `-2`, `-3`… and land on disk
+ * with `wx` (exclusive create) — so two concurrent submissions can never end up in the same file, which "stat first, then write" would allow.
  */
 export async function writeWorkflowDraft(
   input: WriteWorkflowDraftInput,
@@ -84,7 +84,7 @@ export async function writeWorkflowDraft(
       const fileName = `${attempt === 1 ? slug : `${slug}-${attempt}`}${SAVED_WORKFLOW_FILE_EXTENSION}`;
       const filePath = path.join(dir, fileName);
       try {
-        // `wx`：文件已在就报 EEXIST，于是"取名"与"占名"是同一个原子动作。
+        // `wx`: Report EEXIST if the file already exists, so "name" and "name" are the same atomic action.
         await writeFile(filePath, input.source, { encoding: "utf8", flag: "wx" });
         return { path: filePath };
       } catch (error) {
@@ -93,18 +93,18 @@ export async function writeWorkflowDraft(
     }
     return undefined;
   } catch {
-    // 尽力而为：目录写不进、`.zcode` 是个文件、盘满……一律当作「这次没有草稿」。调用方据此
-    // 退回旧文案，工具调用本身照常完成。
+    // Try your best: the directory cannot be written, `.zcode` is a file, the disk is full... all will be treated as "there is no draft this time". The caller accordingly
+    // The old copy is returned and the tool call itself is completed as usual.
     return undefined;
   }
 }
 
 /**
- * 草稿该叫什么：模型给的 `name` 优先；没有就取脚本第一个 `phase("…")` 的字面量——阶段是每个
- * 脚本都必须写的、且面向用户用用户语言写的（`CreateWorkflow` 描述的 Phases 规则），所以它是
- * 没有名字时最像名字的东西；连阶段都没有才落到兜底词。
+ * What the draft should be called: the model's `name` wins; without one, take the literal of the script's first `phase("…")` — a phase is something every
+ * script must write, and it is written for the user in the user's own language (the Phases rule of the `CreateWorkflow` description), so it is the closest thing to
+ * a name when there is none; only when there is no phase either does it fall back to the placeholder word.
  *
- * 刻意不用 run 标签的兜底（脚本首行）：实盘里首行多半是 `// ==== 结果类型 ====` 这种注释横幅。
+ * Deliberately not using the run label fallback (the script's first line): in practice that first line is most often a comment banner like `// ==== result type ====`.
  */
 export function resolveWorkflowDraftName(
   name: string | undefined,
@@ -115,9 +115,9 @@ export function resolveWorkflowDraftName(
 }
 
 /**
- * 名字 → 文件名主干。空白连成 `-`，字母表（Unicode 字母 / 数字 / `_ . -`）之外的一概丢掉，
- * 截到上限（按码点，不按 UTF-16 单元，免得把一个字切成半个代理对）；什么都不剩、或只剩点
- * （`.` / `..` 是目录项，不是文件名）时用兜底词。
+ * Name → file name stem. Runs of whitespace collapse into `-`, anything outside the alphabet (Unicode letters / digits / `_ . -`) is dropped outright,
+ * and the result is truncated at the limit (by code point, not by UTF-16 unit, so a character is never cut into half a surrogate pair); when nothing is left, or only dots
+ * (`.` / `..` are directory entries, not file names), the placeholder word is used.
  */
 function workflowDraftSlug(name: string): string {
   const reduced = Array.from(
@@ -133,7 +133,7 @@ function workflowDraftSlug(name: string): string {
   return reduced;
 }
 
-/** 草稿目录内的 `.gitignore`，只在缺席时写一次（用户改过就不再动它）。 */
+/** The `.gitignore` inside the drafts directory, written once only when absent (once the user has edited it, it is left alone). */
 async function writeDraftGitignore(dir: string): Promise<void> {
   try {
     await writeFile(path.join(dir, ".gitignore"), "*\n", { encoding: "utf8", flag: "wx" });

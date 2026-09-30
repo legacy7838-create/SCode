@@ -17,9 +17,9 @@ import {
   formatSummaryCompactTokenUsage,
 } from "@/settings/usage-stats/usageStatsUiParts.js";
 
-// Recharts 会在模块初始化阶段触发 decimal.js-light 的 LN10 校验，
-// 在 Electron Linux 容器里会阻断整个 renderer 启动。图表按需加载后，
-// 普通启动和 e2e 首页不会被 Usage 页图表依赖影响，打开 Usage 时也由局部边界隔离。
+// Recharts will trigger the LN10 verification of decimal.js-light during the module initialization phase.
+// In the Electron Linux container, the entire renderer will be blocked from starting. After the chart is loaded on demand,
+// Normal startup and e2e homepage are not affected by the Usage page chart dependency, and are also isolated by local boundaries when Usage is opened.
 const AppUsageDailyModelTrendChart = lazy(() =>
   import("@/settings/usage-stats/AppUsageDailyModelTrendChart.js").then((module) => ({
     default: module.AppUsageDailyModelTrendChart,
@@ -47,7 +47,7 @@ export function AppUsagePanel() {
           </div>
           <AppUsageRangeTabs range={range} onRangeChange={setRange} />
         </div>
-        {/* App Usage 只聚合本地 session 历史，不能复用 Coding Plan 的 monitor API 加载说明。*/}
+        {/* App Usage only aggregates local session history and cannot reuse Coding Plan's monitor API loading instructions.*/}
         <UsageEmptyState
           title={intl.formatMessage({ id: "settings.usage.loadingTitle" })}
           description={intl.formatMessage({

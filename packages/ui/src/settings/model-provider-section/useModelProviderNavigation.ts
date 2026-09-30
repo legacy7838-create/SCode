@@ -1,4 +1,7 @@
-/* eslint-disable max-lines -- Model Provider 导航需要集中计算分组、选中项与 Coding Plan 权益态，后续拆分时再收敛。 */
+/* eslint-disable max-lines -- Model Provider navigation needs the groups, the selected item and the
+ * Coding Plan entitlement state computed in one place; they can be narrowed down if it is split
+ * later.
+ */
 import { useEffect, useMemo } from "react";
 import type { ProviderSettingsFormProvider } from "@/lib/providerSettingsFormTypes.js";
 import { getProviderFormLabel } from "@/lib/providerSettingsFormTypes.js";
@@ -45,7 +48,8 @@ interface UseModelProviderNavigationOptions {
   presetProviders: PresetProviderWithConfig[];
   modelProviders: ProviderSettingsFormProvider[];
   /**
-   * 当前账号明确有权益的 Provider。缺省等价于尚无账号权益；生产设置页始终显式传入。
+   * The providers the current account definitely has entitlements for. Absent is equivalent to
+   * having no account entitlements yet; the production settings page always passes it explicitly.
    */
   entitledAccountProviderIds?: ReadonlySet<string>;
   modelProvidersLoading?: boolean;
@@ -85,7 +89,7 @@ export function useModelProviderNavigation({
     const allCustomProviders = modelProviders.filter(
       (provider) => provider.config.group === "standard-personal",
     );
-    // 这里复用模型菜单的展示排序，确保设置页和聊天框供应商顺序一致。
+    // The display order of the model menu is reused here to ensure that the settings page and chat box suppliers are in the same order.
     return sortModelProvidersForDisplay(allCustomProviders, displayOrder);
   }, [displayOrder, modelProviders]);
 
@@ -228,8 +232,8 @@ export function useModelProviderNavigation({
     customProviders,
     codingPlanItems,
     connectionModeCodingPlanItems,
-    // 左侧导航分组标题在这个 memo 内格式化。
-    // 语言切换时 provider/权益引用可能不变，必须依赖 intl 才能刷新旧 locale 的文案。
+    // The left navigation group title is formatted within this memo.
+    // The provider/interest reference may not change when the language is switched, and you must rely on intl to refresh the copy of the old locale.
     intl,
     connectionSelections,
     pendingConnectionSelections,
@@ -363,8 +367,8 @@ function resolvePresetFamilyStatusProvider({
   if (!connectionItem || !isPlanConnectionNavigationItem(connectionItem)) {
     return null;
   }
-  // 菜单 Team 项可能从个人项派生，携带的 provider 不是团队执行身份。
-  // 必须按具体套餐 ID 回到 Settings View，不能用菜单权益或继承的 provider 点灯。
+  // The menu Team item may be derived from the personal item, carrying a provider that is not a team execution identity.
+  // You must return to the Settings View by the specific package ID, and cannot use menu rights or inherited providers to light up.
   return (
     modelProviders.find((candidate) => candidate.providerId === connectionItem.presetId) ?? null
   );
@@ -384,12 +388,12 @@ function resolveFallbackModelProviderNodeKey({
     ? resolveSideNavigationNodeKeyForConnectionItem(initialConnectionItem)
     : null;
   if (isFamilyPresetNodeKey(selectedNodeKey) && initialSideNodeKey) {
-    // App OAuth 登录成功后会按 active provider 隐藏另一组预置入口。
-    // 当前选中项消失时使用初始化优先级回落到对应 family，而不是把连接方式塞回侧栏。
+    // After the App OAuth login is successful, another set of preset entrances will be hidden by active provider.
+    // When the currently selected item disappears, use the initialization priority to fall back to the corresponding family instead of putting the connection method back into the sidebar.
     return initialSideNodeKey;
   }
 
-  // 初始化只在没有有效选中项时发生；如果当前用户选择仍有效，上层 effect 不会调用 fallback 抢焦点。
+  // Initialization only occurs when there is no valid selection; if the current user selection is still valid, the upper effect will not call fallback to grab focus.
   return (
     initialSideNodeKey ??
     resolveSideNavigationNodeKeyForConnectionItem(selectableNavigationItems[0] ?? null)
@@ -432,8 +436,8 @@ function resolveSelectedProviderFamilyConnectionItem({
     return selectedItem;
   }
   if (familyConnectionSettingsLoading) {
-    // 从外部入口打开 Model Settings 时，settings 首次 hydrate 前不能按默认 oauth
-    // 连接方式推导 Start Plan，否则右侧连接方式会先闪成 Start 再按已保存设置纠偏。
+    // When opening Model Settings from an external portal, the settings cannot be set to the default oauth before being hydrated for the first time.
+    // The connection method deduce Start Plan, otherwise the connection method on the right side will first flash to Start and then press the saved setting to correct the deviation.
     return null;
   }
   const mergedSelections = { ...connectionSelections, ...pendingConnectionSelections };
@@ -444,8 +448,8 @@ function resolveSelectedProviderFamilyConnectionItem({
     return resolvedItem;
   }
   if (modelProvidersLoading) return null;
-  // 非法/过期连接只影响当前设置页的落点，不能让 null 被详情页当作永久 loading。
-  // 不写回 Family 偏好，不改会话 Selection；用户可在这个同 Family 页面重新选择。
+  // Illegal/expired connections only affect the landing point of the current settings page, and null cannot be treated as permanent loading by the details page.
+  // The Family preference is not written back and the session Selection is not changed; the user can reselect on this same Family page.
   return pickInitialConnectionNavigationItem(
     selectableNavigationItems.filter(
       (item) =>
@@ -538,8 +542,8 @@ export function connectionSelectionMatchesNavigationItem(
   return (
     item.type === "teamPlan" &&
     item.presetId === familySpec.teamCodingPlanProviderId &&
-    // 团队连接按平台、组织和项目定位；订阅商品会在权益快照和 pricing 校正间变化。
-    // 不能把同项目的商品更新误判为连接丢失，否则初始化会出现空选项和错误提示。
+    // Team connections are targeted by platform, organization, and project; subscription offerings change between benefit snapshots and pricing corrections.
+    // Product updates of the same item cannot be misjudged as connection loss, otherwise empty options and error prompts will appear during initialization.
     item.organizationId === selection.organizationId &&
     item.projectId === selection.projectId
   );

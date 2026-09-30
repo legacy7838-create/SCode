@@ -1426,7 +1426,6 @@ Original copyright, license and NOTICE text is retained below. Identical text is
 
 - is-decimal@2.0.1 — MIT
 
-- is-docker@3.0.0 — MIT
 
 - is-extglob@2.1.1 — MIT
 
@@ -6380,7 +6379,6 @@ SOFTWARE.
 
 - import-fresh@3.3.1: license
 
-- is-docker@3.0.0: license
 
 - is-in-ssh@1.0.0: license
 

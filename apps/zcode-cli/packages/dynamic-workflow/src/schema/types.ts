@@ -1,10 +1,10 @@
 /**
- * schema 子系统的共享词汇：我们「发射（emit）」的 JSON Schema 子集类型，以及校验器
- * 产出的违规（violation）模型。这里的 {@link JsonSchema} 不是通用 JSON Schema —— 它
- * 精确对应 {@link synthesizeAskSchemas} 会产出的关键字集合，校验器也只理解这一子集。
+ * The shared vocabulary of the schema subsystem: the subset type of JSON Schema that we "emit", and the violation
+ * model the validator produces. {@link JsonSchema} here is not general-purpose JSON Schema -- it
+ * corresponds exactly to the set of keywords {@link synthesizeAskSchemas} can produce, and the validator only understands this subset.
  */
 
-/** 任意合法 JSON 值。const/enum/default 里出现的字面量都用它表达。 */
+/** Any valid JSON value. Literals appearing in const/enum/default are all expressed with it. */
 export type JsonValue =
   | string
   | number
@@ -13,7 +13,7 @@ export type JsonValue =
   | JsonValue[]
   | { [key: string]: JsonValue };
 
-/** 我们会发射的 JSON Schema 基础类型标签。`integer` 校验器支持但合成侧不会主动产出。 */
+/** The base type tags of the JSON Schema we emit. `integer` is supported by the validator but never produced proactively by the synthesis side. */
 export type JsonSchemaType =
   | "string"
   | "number"
@@ -24,12 +24,12 @@ export type JsonSchemaType =
   | "object";
 
 /**
- * 我们发射的 JSON Schema 子集。字段是可选关键字的并集：一个具体 schema 只会用到其中
- * 与其形状相关的少数几个（例如 object schema 用 properties/required/additionalProperties，
- * 而 union 用 enum 或 anyOf）。校验器只处理这里出现的关键字。
+ * The subset of JSON Schema we emit. The fields are a union of optional keywords: a concrete schema only uses the few
+ * of them that are relevant to its shape (an object schema uses properties/required/additionalProperties,
+ * while a union uses enum or anyOf). The validator only handles the keywords that appear here.
  */
 export interface JsonSchema {
-  // 结构
+  // structure
   type?: JsonSchemaType | JsonSchemaType[];
   const?: JsonValue;
   enum?: JsonValue[];
@@ -43,48 +43,48 @@ export interface JsonSchema {
   prefixItems?: JsonSchema[];
   minItems?: number;
   maxItems?: number;
-  // string 约束
+  // string constraint
   minLength?: number;
   maxLength?: number;
   pattern?: string;
   format?: string;
-  // number 约束
+  // number constraints
   minimum?: number;
   maximum?: number;
   exclusiveMinimum?: number;
   exclusiveMaximum?: number;
-  // 注解
+  // annotation
   description?: string;
   default?: JsonValue;
-  // 递归类型：引用与定义表
+  // Recursive types: reference and definition tables
   $ref?: string;
   $defs?: Record<string, JsonSchema>;
 }
 
 /**
- * 校验器产出的单条违规，设计成可直接进入修复用的 tool_result：一行一条，包含
- * JSON 路径、期望（expected）与实得（got）。
+ * A single violation produced by the validator, designed to go straight into the tool_result used for repairs: one per line, containing
+ * the JSON path, the expectation (expected), and what was actually got (got).
  */
 export interface Violation {
-  /** 违规所在位置的 JSON 路径，形如 `$`、`$.foo`、`$.items[0]`。 */
+  /** The JSON path of where the violation sits, of the form `$`, `$.foo`, `$.items[0]`. */
   path: string;
-  /** 期望的形状/取值的简短描述。 */
+  /** A short description of the expected shape/value. */
   expected: string;
-  /** 实际取到的值的简短描述。 */
+  /** A short description of the value actually got. */
   got: string;
 }
 
-/** 合成侧诊断码。9001 已被 facade-siting 规则占用（见 analysis/sites.ts）。 */
+/** A synthesis-side diagnostic code. 9001 is already taken by the facade-siting rule (see analysis/sites.ts). */
 export const SCHEMA_DIAGNOSTIC_CODE = 9002;
 
 /**
- * union 成员数量上限。超过即视为“病态宽 union”并在 ask 站点报诊断。
+ * The cap on the number of union members. Past it the union counts as "pathologically wide" and a diagnostic is reported at the ask site.
  *
- * 取 100：既能容纳合理的枚举（状态码、国家码等常见枚举都远低于此），又能挡住
- * 明显是失控类型的情况。同时作用于字面量 union（→ enum）与一般 union（→ anyOf）的成员数。
+ * 100 is picked so that it both accommodates a reasonable enum (common enums such as status codes or country codes stay far below it) and still catches
+ * cases that are obviously out of control. It applies to the member count of both literal unions (-> enum) and ordinary unions (-> anyOf).
  *
- * 现实中触发它的通常不是手写的巨型 union，而是 checker 展开模板字面量类型（template
- * literal type）后产生的笛卡尔积——例如 `` `${Dir}-${Size}` `` 会被展开成所有组合的
- * 字面量 union，几个维度一交叉就会爆炸。
+ * In practice what trips it is usually not a hand-written giant union but the cartesian product produced after the checker expands a template literal type (template
+ * literal type) -- for example `` `${Dir}-${Size}` `` expands into a literal union of
+ * every combination, and as soon as a few dimensions cross it explodes.
  */
 export const MAX_UNION_MEMBERS = 100;

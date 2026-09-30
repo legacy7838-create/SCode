@@ -1,4 +1,4 @@
-// Command 相关类型定义
+// Command-related type definitions
 import type { SettingsDirectoryLocation } from "./settings-source.js";
 
 export type CommandSource = "user" | "plugin";

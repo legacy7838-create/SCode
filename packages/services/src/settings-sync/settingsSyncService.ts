@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- settings-sync 需要集中维护外部 skills/commands/plugins/MCP 扫描、去重和导入状态机，后续按资源类别拆分 */
+/* eslint-disable max-lines -- settings-sync centrally maintains external skills/commands/plugins/MCP scanning, deduplication, and the import state machine; it will be split by resource category later */
 import type {
   McpServerConfig,
   SettingsSyncAgent,
@@ -571,8 +571,8 @@ function getCommandFileSymlinkType(): "file" {
 }
 
 async function createDirectorySymlink(sourcePath: string, targetPath: string): Promise<void> {
-  // Windows 创建目录软链需要 junction；其它平台使用 dir。source 使用绝对路径，避免 junction
-  // 在不同 cwd 下解析目标不一致。
+  // Windows requires junction to create a directory soft link; other platforms use dir. Use absolute path for source and avoid junction
+  // The parsing target is inconsistent under different cwds.
   await symlink(resolve(sourcePath), targetPath, getSkillDirectorySymlinkType());
 }
 
@@ -583,20 +583,20 @@ async function importCommandFile(
 ): Promise<void> {
   if (importMode === "symlink") {
     if (process.platform === "win32") {
-      // Windows 创建文件级 symlink 需要管理员权限，改用硬链接。
-      // 硬链接不需要提权，且文件修改能双向同步。
-      // 跨分区（EXDEV）等硬链接失败时回退到复制。
+      // Windows requires administrator privileges to create file-level symlinks, use hard links instead.
+      // Hard links do not require privilege escalation, and file modifications can be synchronized in both directions.
+      // Fallback to replication when hard links such as cross-partition (EXDEV) fail.
       try {
         await link(resolve(sourcePath), targetPath);
-        log.info(undefined, "[importCommandFile] Windows 硬链接创建成功", {
+        log.info(undefined, "[importCommandFile] Windows hard link created", {
           sourcePath,
           targetPath,
         });
         return;
       } catch (linkError) {
-        // 记录硬链接失败原因（EXDEV 跨分区 / EACCES 权限等），便于排查
+        // Record the reasons for hard link failure (EXDEV cross-partition / EACCES permissions, etc.) to facilitate troubleshooting
         const linkErrorCode = (linkError as NodeJS.ErrnoException)?.code;
-        log.warn(undefined, "[importCommandFile] Windows 硬链接失败，回退到复制模式", {
+        log.warn(undefined, "[importCommandFile] Windows hard link failed, falling back to copy", {
           sourcePath,
           targetPath,
           linkErrorCode,
@@ -604,7 +604,7 @@ async function importCommandFile(
         });
       }
     } else {
-      // 非 Windows 平台使用 symlink，不需要提权。
+      // Non-Windows platforms use symlink and do not need to escalate privileges.
       await symlink(resolve(sourcePath), targetPath, getCommandFileSymlinkType());
       return;
     }
@@ -639,7 +639,7 @@ function getExternalSkillRoots(workspacePath?: string): SkillSourceRoot[] {
     scope: "user",
   }));
   if (!workspacePath) {
-    // 全局技能导入不应依赖当前窗口必须打开 workspace。
+    // Global skill import should not rely on the current window having a workspace open.
     return userRoots;
   }
   return [
@@ -737,8 +737,8 @@ async function pathExists(path: string): Promise<boolean> {
 }
 
 async function collectSkillMarkdownPaths(rootPath: string): Promise<string[]> {
-  // 复用共享的有界遍历（排除 node_modules 等内容目录、限制深度、软链去重），
-  // 与桌面端技能扫描保持一致，避免设置同步在巨型目录上卡死。
+  // Bounded traversal of reused shares (excluding content directories such as node_modules, limiting depth, soft link deduplication),
+  // Be consistent with desktop skills scanning to avoid settings synchronization getting stuck on huge directories.
   const discovered = new Set<string>();
   for await (const skillPath of walkSkillMarkdownPaths(rootPath)) {
     discovered.add(skillPath);
@@ -2393,8 +2393,8 @@ export function createSettingsSyncService(
 
     async markFirstRunPromptHandled(): Promise<void> {
       await dependencies.settingService.update({
-        // 这里记录的是“首启导入提示是否已经被消费”，不是“导入是否成功”。
-        // 如果把“用户点击跳过”遗漏掉，下次启动还会重复弹窗，造成首启流程打扰感。
+        // What is recorded here is “whether the first boot import prompt has been consumed”, not “whether the import was successful”.
+        // If "User clicks to skip" is omitted, the pop-up window will appear repeatedly at the next startup, making the first startup process feel disturbing.
         settingsSyncFirstRunPromptHandled: true,
       });
     },

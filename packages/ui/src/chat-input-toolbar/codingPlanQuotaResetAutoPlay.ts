@@ -10,10 +10,11 @@ type CodingPlanQuotaResetAutoPlayCoordinationResult =
   | { status: "blocked" };
 
 /**
- * 把异步 reservation 和组件展示边界串起来。
+ * Bridges the async reservation and the component display boundary.
  *
- * Main 返回 winner 时 Composer 可能已经卸载或切换 source；必须先用 isCurrent
- * 复核，再 commit played。失效 winner 只 release token，不能消费全局播放资格。
+ * By the time Main returns a winner the Composer may already be unmounted or have switched source,
+ * so isCurrent must re-verify before played is committed. A voided winner only releases its token
+ * and must not consume the global autoplay eligibility.
  */
 export async function coordinateCodingPlanQuotaResetAutoPlay(params: {
   reserve: () => Promise<CodingPlanQuotaResetAutoPlayReservationAttempt>;

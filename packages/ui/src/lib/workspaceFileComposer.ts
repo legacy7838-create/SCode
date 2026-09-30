@@ -1,5 +1,5 @@
 import type { MutableRefObject } from "react";
-// LexicalChatInput 壳恢复后回归原始句柄类型（过渡的 ComposerInputHandle 最小面退役）。
+// Returns the original handle type after LexicalChatInput shell recovery (transitional ComposerInputHandle minimal surface retirement).
 import type { LexicalChatInputHandle } from "@/LexicalChatInput.js";
 import {
   createWorkspaceFileComposerMention,

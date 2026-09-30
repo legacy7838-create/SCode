@@ -2,25 +2,33 @@ import { useCallback, useEffect, useState } from "react";
 import { recordShortcutBinding } from "@/shortcuts/bindings.js";
 
 export interface ShortcutKeySearch {
-  /** 武装态：等待用户按出组合键。 */
+  /** Armed state: waiting for the user to press the key combination. */
   armed: boolean;
-  /** 已捕获的组合（null = 未启用按键过滤）。键盘独占抑制由设置页按 armed 聚合管理。 */
+  /**
+   * The captured combination (null = key filtering not enabled). Exclusive keyboard suppression is
+   * managed centrally by the settings page based on the armed state.
+   */
   binding: string | null;
-  /** 切换武装态。激活前调用方需先取消行内录制（互斥，见 ShortcutSettingsSection）。 */
+  /**
+   * Toggles the armed state. Before activating, the caller must first cancel any inline recording
+   * (mutually exclusive, see ShortcutSettingsSection).
+   */
   toggle: () => void;
-  /** 退出武装态（保留已捕获组合的过滤）。 */
+  /** Leaves the armed state (the filter for the captured combination is kept). */
   disarm: () => void;
-  /** 清除已捕获组合（过滤回到纯文本）。 */
+  /** Clears the captured combination (the filter reverts to plain text). */
   clear: () => void;
 }
 
 /**
- * 设置页「按组合键搜索」状态机（VSCode 键盘快捷键同款）：
- * Escape 退出武装态；Backspace 清除已捕获组合；其余事件经内核录制器捕获
- * （含平台归一），成功即退出武装态、过滤保留直到手动清除。
- * 裸字母等命令表不可能出现的键（录制器 invalid）静默忽略，等待下一次有效组合。
- * 过滤命中的比较口径是 conflicts.isSamePhysicalBinding（物理等价，win 的
- * Ctrl+m ≡ CmdOrCtrl+m），与冲突检测看到的是同一张表。
+ * State machine for the settings page's "search by key combination" (the same model as the VSCode
+ * keyboard shortcuts): Escape leaves the armed state; Backspace clears the captured combination;
+ * every other event is captured by the core recorder (including platform normalization), and on
+ * success the armed state is left while the filter is kept until it is cleared manually. Keys that
+ * can never appear in the command table, such as bare letters (recorder invalid), are silently
+ * ignored while waiting for the next valid combination. Filter hits are compared with
+ * conflicts.isSamePhysicalBinding (physical equivalence, so win's Ctrl+m ≡ CmdOrCtrl+m), which is
+ * the same table that conflict detection sees.
  */
 export function useShortcutKeySearch(): ShortcutKeySearch {
   const [armed, setArmed] = useState(false);

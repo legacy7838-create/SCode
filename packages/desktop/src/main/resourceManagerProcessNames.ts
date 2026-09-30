@@ -3,7 +3,7 @@ import type { WebContents } from "electron";
 import { basename } from "node:path";
 import { formatZCodeRendererProcessName } from "@zcode/shared";
 
-/** 资源管理器里非 BrowserWindow 自带 renderer（WebContentsView / DevTools / webview）的显示名 */
+/** Display name of non-BrowserWindow built-in renderer (WebContentsView / DevTools / webview) in the resource manager */
 
 function normalizeProcessLabel(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
@@ -49,7 +49,7 @@ export function buildAuxiliaryRendererName(contents: WebContents): string {
   const pageLabel =
     title ?? pickUrlLabel(url) ?? ownerLabel ?? hostTitle ?? hostUrlLabel ?? `wc-${contentsId}`;
 
-  // 把 Electron 已知的 WebContents 元信息编码进名称里，排查 PID 时能直接看出类型和归属线索。
+  // Encode the WebContents meta information known to Electron into the name, and you can directly see the type and attribution clues when troubleshooting PID.
   if (url?.startsWith("devtools://")) {
     return formatZCodeRendererProcessName(
       `devtools-${contentsId}-${hostTitle ?? ownerLabel ?? "unknown"}`,

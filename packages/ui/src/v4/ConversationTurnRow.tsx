@@ -94,8 +94,8 @@ export function resolveAssistantCopyText(unit: ConversationTurnRenderUnit): stri
     if (row.kind !== "toolCall" || row.toolName !== "ExitPlanMode") continue;
     const markdown = extractPlanToolCallContent(toolCallRowToLegacyNode(row).toolCall, "").markdown;
     if (!markdown || includedSegments.has(markdown)) continue;
-    // 产品边界：assistant 复制代表本轮完整可见回答。计划正文来自原位结构化 tool row，
-    // 不能读取被 max-height/mask 裁切的卡片 DOM，也不能顺手混入普通工具输出。
+    // Product boundary: assistant copy represents the complete visible answer in this round. The plan body comes from the in-place structured tool row,
+    // Card DOM clipped by max-height/mask cannot be read, nor can it be easily mixed into ordinary tool output.
     segments.push(markdown);
     includedSegments.add(markdown);
   }

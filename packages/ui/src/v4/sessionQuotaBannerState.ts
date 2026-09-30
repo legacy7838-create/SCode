@@ -34,14 +34,25 @@ export interface SessionQuotaBannerState {
   providerLimitedBusinessCode: GlmQuotaBannerBusinessCode | null;
   providerLimitedMessage: string | null;
   modelName: string | null;
-  /** 官方 Server MCP 提示专用：出问题的 MCP server 名，用于文案点名。 */
+  /**
+   * Official Server MCP notice only: the name of the MCP server that is failing, used to name it in
+   * the copy.
+   */
   mcpServerName: string | null;
-  /** 官方 Server MCP 提示专用：产生该事实的 tool row，参与去重键。 */
+  /**
+   * Official Server MCP notice only: the tool row that produced this fact, which takes part in the
+   * dedupe key.
+   */
   mcpNoticeRowId: number | null;
-  /** 仅低额度提醒携带稳定桶周期键；不影响其他业务错误关闭。 */
+  /**
+   * Only the low-quota reminder carries a stable bucket-period key; it does not affect other
+   * business-error dismissals.
+   */
   reminderKey?: string;
   reminderExpiresAt?: number;
-  /** 与桶有效性一致的快照时间，不能换算为设备时钟。 */
+  /**
+   * A snapshot time consistent with bucket validity; it must not be converted to the device clock.
+   */
   reminderReferenceTime?: number;
   quotaPeriod?: string;
   remainingTokens: number | null;
@@ -87,7 +98,8 @@ function normalizeProviderLimitedBannerMessage(message: string | null | undefine
 }
 
 /**
- * 额度业务错误保持原优先级；Start Plan 低额度按桶提醒，耗尽按全部有效桶判断。
+ * Quota business errors keep their original priority; for Start Plan a low quota is reported per
+ * bucket, while exhaustion is judged across all valid buckets.
  */
 export function buildSessionQuotaBannerState(params: {
   activeProviderId: string | null;
@@ -100,7 +112,10 @@ export function buildSessionQuotaBannerState(params: {
   serverConcurrentLimitReason?: StartPlanConcurrentLimitBannerReason;
   serverProviderLimitedBusinessCode?: GlmQuotaBannerBusinessCode;
   serverProviderLimitedMessage?: string | null;
-  /** 官方 Server MCP 在本次会话内被判定不可用的事实（来自 tool row 的结构化标识）。 */
+  /**
+   * The fact that the official Server MCP was judged unavailable within this session (from the tool
+   * row's structured marker).
+   */
   mcpUnavailableNotice?: McpUnavailableNotice | null;
 }): SessionQuotaBannerState {
   if (
@@ -174,11 +189,11 @@ export function buildSessionQuotaBannerState(params: {
     };
   }
 
-  // 官方 Server MCP 不可用（额度耗尽 / 无 Coding Plan）。
+  // The official Server MCP is unavailable (limit exhausted/no Coding Plan).
   //
-  // 位置要求：必须在上面几条服务端业务错误之后（模型侧问题更紧急，不能被 MCP 提示挡住），
-  // 且必须在下面那道 Start-Plan-only 早退之前——Coding Plan 会话一定命中那道早退，
-  // 放在其后这条分支永远不会生效。
+  // Location requirements: Must be after the above server-side business errors (model-side problems are more urgent and cannot be blocked by MCP prompts),
+  // And it must be before the following Start-Plan-only early exit - the Coding Plan session must hit that early exit.
+  // This branch will never take effect if placed after it.
   if (params.mcpUnavailableNotice) {
     const mcpQuotaExhausted = params.mcpUnavailableNotice.code === "quota_exceeded";
     return {
@@ -194,7 +209,7 @@ export function buildSessionQuotaBannerState(params: {
       remainingTokens: null,
       remainingPercent: null,
       dismissible: true,
-      // MCP 不可用不影响模型对话，绝不阻断输入。
+      // Unavailability of MCP does not affect model dialogue and in no way blocks input.
       blocksSubmit: false,
       priority: mcpQuotaExhausted ? 6 : 8,
     };
@@ -280,8 +295,8 @@ export function buildSessionQuotaBannerDismissKey(
     state.providerLimitedBusinessCode ?? "",
     state.providerLimitedMessage ?? "",
     state.modelName ?? "",
-    // MCP 提示按 server + 具体调用去重：关闭一次后同一次调用不再弹，
-    // 之后再有新的失败调用（新 rowId）会重新弹。
+    // MCP prompts to press server + specific call deduplication: after closing once, the same call will no longer be played.
+    // After that, if there is a new failed call (new rowId), it will pop up again.
     state.mcpServerName ?? "",
     state.mcpNoticeRowId ?? "",
     state.remainingTokens ?? "",
@@ -296,10 +311,12 @@ export function resolveQuotaBannerUpgradeProviderId(providerId: string | null): 
 }
 
 /**
- * 该提示是否应该带升级入口。
+ * Whether this notice should carry an upgrade entry point.
  *
- * `mcp-quota-exhausted` 明确不带：今日额度用完只能等自然日重置，升级按钮会让用户以为
- * 花钱就能立刻继续，是误导。权益缺失（`mcp-plan-required`）才是升级能解决的问题。
+ * `mcp-quota-exhausted` explicitly does not: once today's quota is spent it can only wait for the
+ * natural day reset, and an upgrade button would make users think that spending money lets them
+ * continue right away, which is misleading. A missing entitlement (`mcp-plan-required`) is what an
+ * upgrade can actually solve.
  */
 export function shouldOfferQuotaBannerUpgrade(kind: SessionQuotaBannerKind | null): boolean {
   return kind !== "mcp-quota-exhausted";

@@ -1,15 +1,16 @@
 import type { ZCodeTaskMode } from "./zcode-task-types-core.js";
 import type { ModelSelection } from "./model-selection.js";
 
-// ---- 闲时任务(Off-Peak Task)领域类型 ----
-// off_peak_tasks 存 tasks-index.sqlite。
-// 与 automation 共用 scheduler 进程与派发管道，但数据表、消息类型、状态机全部独立，
-// 禁止往 ZCodeAutomation 上加字段。sqlite 列名 snake_case，此处为跨域 camelCase 领域类型。
+// ---- Off-Peak Task field type ----
+// off_peak_tasks save tasks-index.sqlite.
+// It shares the scheduler process and dispatch pipeline with automation, but the data table, message type, and state machine are all independent.
+// It is forbidden to add fields to ZCodeAutomation. sqlite column name snake_case, here is the cross-domain camelCase domain type.
 
 /**
- * 客户端执行态六态（服务端准入态 queued/ready/active/expired/settled 是另一轴）：
- * queued=排队等服务端 ready；paused=用户 Pause 停止派发；running=执行中；
- * permission/elicitation 在普通 session 内等待且聚合态保持 running；completed/failed/cancelled=终态。
+ * The six client execution states (the server admission states queued/ready/active/expired/settled
+ * are a separate axis): queued=waiting in line for the server's ready; paused=user pressed Pause so
+ * dispatch stopped; running=executing; permission/elicitation wait inside an ordinary session while
+ * the aggregate state stays running; completed/failed/cancelled=terminal states.
  */
 export type ZCodeOffPeakTaskStatus =
   | "queued"
@@ -19,7 +20,7 @@ export type ZCodeOffPeakTaskStatus =
   | "failed"
   | "cancelled";
 
-/** 终态集合：不可逆出（状态机不变量）。 */
+/** Set of terminal states: leaving them is irreversible (a state machine invariant). */
 export const OFF_PEAK_TERMINAL_STATUSES = ["completed", "failed", "cancelled"] as const;
 
 export function isOffPeakTerminalStatus(
@@ -29,15 +30,18 @@ export function isOffPeakTerminalStatus(
 }
 
 /**
- * 票据不可用（服务端 400/3102：active 3h 到期 / ready 5min 废票 / settled / 非本人）的
- * 稳定错误标记。zcode-cli 适配层把该业务码分类为不可重试失败并在错误消息里嵌入本标记；
- * host 终态回写据此改走"同 task_id 重新取号 → resume 续跑"而非落 failed。
- * 跨进程只能靠错误文本传递，标记必须全链路唯一且稳定，勿改；与
- * apps/zcode-cli/packages/adapters/src/model/offpeak-retry.ts 的同名常量跨包同值。
+ * A stable error marker for an unusable ticket (server 400/3102: the 3h active window expired, a
+ * ready ticket older than 5min, settled, or not owned by this user). The zcode-cli adapter layer
+ * classifies that business code as a non-retryable failure and embeds this marker in the error
+ * message; the host terminal write-back then switches to "re-acquire a ticket under the same
+ * task_id → resume to continue" instead of settling as failed. Across processes it can only travel
+ * through the error text, so the marker must be globally unique and stable — do not change it; it
+ * holds the same value as the identically named constant in
+ * apps/zcode-cli/packages/adapters/src/model/offpeak-retry.ts.
  */
 export const OFF_PEAK_TICKET_EXPIRED_MARKER = "off-peak-ticket-expired";
 
-/** Off-Peak Provider 与当前账号 Family 同身份；任务保存精确选择，不跨 Family 静默迁移。 */
+/** The Off-Peak Provider belongs to the same Family as the current account; tasks store the exact selection and never silently migrate across Families. */
 export const OFF_PEAK_PROVIDER_IDS = {
   zai: "account:zai-offpeak-idle-plan",
   bigmodel: "account:bigmodel-offpeak-idle-plan",
@@ -49,8 +53,8 @@ export function resolveOffPeakProviderId(
   return OFF_PEAK_PROVIDER_IDS[family];
 }
 
-/** 当前 selected connection 可供 Off-Peak 使用的真实 Coding Plan 形态。 */
-// zai/bigmodel Team Plan 对称化，新增 zai-team kind。
+/** The real Coding Plan shapes of the currently selected connection that Off-Peak may use. */
+// zai/bigmodel Team Plan is symmetrized, and zai-team kind is added.
 export type OffPeakCodingPlanKind =
   | "zai-personal"
   | "bigmodel-personal"
@@ -58,9 +62,9 @@ export type OffPeakCodingPlanKind =
   | "zai-team";
 
 /**
- * 脱敏的 Coding Plan 支持边界。renderer 只消费该结果，不读取 JWT/API Key。
- * `connection_unavailable` 同时覆盖 provider 缺失、disabled、过期和 Team runtime key 失效；
- * 这些情况都不能回退到其它缓存连接。
+ * Redacted Coding Plan support boundary. The renderer only consumes this result and never reads the
+ * JWT/API Key. `connection_unavailable` covers a missing provider, disabled, expired, and an invalid
+ * Team runtime key all at once; none of these cases may fall back to another cached connection.
  */
 export type OffPeakCodingPlanUnsupportedReason =
   | "provider_family_unselected"
@@ -85,12 +89,13 @@ export type OffPeakCodingPlanSupport =
     };
 
 /**
- * 服务端取号额度的即时快照。
- * 只用于判断能否创建新的 ticket；真实 POST /ticket 仍是最终准入权威。
+ * An instantaneous snapshot of the server's ticket-acquisition quota.
+ * It is only used to decide whether a new ticket can be created; the real POST /ticket remains the
+ * final authority on admission.
  */
 export interface OffPeakTakeNumberAvailability {
   canTakeNumber: boolean;
-  /** 当前不可取号时服务端给出的最早恢复时间，Unix 毫秒。 */
+  /** The earliest recovery time the server reports when taking a number is currently impossible, in Unix milliseconds. */
   nextTakeAt?: number;
 }
 
@@ -98,35 +103,38 @@ export function isOffPeakTicketExpiredError(message: string | undefined): boolea
   return Boolean(message?.includes(OFF_PEAK_TICKET_EXPIRED_MARKER));
 }
 
-/** 一条闲时任务：表单创建即取号排队，派发时 createTask 新建 session。 */
+/** One off-peak task: creating it from the form immediately takes a number and queues, and dispatching it has createTask open a new session. */
 export interface ZCodeOffPeakTask {
-  /** 本地主键，同时用作服务端 task_id（稳定，跨多个 ticket）。 */
+  /** Local primary key, also used as the server-side task_id (stable, spanning multiple tickets). */
   offPeakTaskId: string;
-  /** 服务端取号返回的 Snowflake ticket_id；每次重新取号（3h 到期续跑/Continue 重取）更新。 */
+  /** The Snowflake ticket_id returned by the server's number acquisition; updated on every re-acquisition (3h expiry continuation / Continue re-acquisition). */
   serverTicketId?: string;
-  /** 表单 Task title。 */
+  /** The form's Task title. */
   title: string;
-  /** 宿主对话 taskId；首次派发成功后回填（表单：新建 session；会话内创建：绑定会话首跑），非空 = 已跑过。 */
+  /** Host conversation taskId; backfilled after the first successful dispatch (from the form: a new session; created inside a session: bound to that session's first run); non-empty = it has already run. */
   conversationId?: string;
   /**
-   * 运行会话。表单创建首跑后回填；会话内创建在创建时即写入当前会话 id，
-   * 首跑 resume 该会话而不新建。续跑/中断恢复 resume 同一 session 用。
+   * The running session. Backfilled after the first run of a form-created task; a task created
+   * inside a session writes the current session id at creation time, and the first run resumes
+   * that session instead of creating a new one. Used to resume the same session on
+   * continuation/interruption recovery.
    */
   sessionId?: string;
-  /** 绑定会话的当前标题（list 时从 tasks-index 联查，只读派生，不落库）。 */
+  /** The current title of the bound session (joined from tasks-index when listing; a read-only derived value, never persisted). */
   sessionTitle?: string;
-  /** 表单 Instructions。 */
+  /** The form's Instructions. */
   prompt: string;
-  /** 权限四档全开放，映射现有 ZCodeTaskMode，默认 "default"（Ask for approval）。 */
+  /** All four permission levels are open, mapping onto the existing ZCodeTaskMode, defaulting to "default" (Ask for approval). */
   permissionMode: ZCodeTaskMode;
   /**
-   * 创建被接受时固定的结构化 Submission 选择。
+   * The structured Submission selection, frozen when the creation is accepted.
    *
-   * 旧数据库记录可能只有 model/thought_level，读取时暂时为空；这类任务必须保留给用户
-   * 修复，但在补回完整 Selection 前不能进入调度。
+   * Legacy database records may only carry model/thought_level and are temporarily empty when read;
+   * such tasks must be kept for the user to repair, but they may not enter scheduling until a
+   * complete Selection is filled back in.
    */
   modelSelection?: ModelSelection;
-  /** 旧记录无法可靠恢复 Selection 时的只读诊断事实。 */
+  /** Read-only diagnostic fact recorded when a legacy entry's Selection cannot be recovered reliably. */
   modelSelectionIssue?: {
     code: "repair-required";
     legacyModelId?: string;
@@ -137,34 +145,34 @@ export interface ZCodeOffPeakTask {
   workspacePath: string;
   workspaceIdentity?: string;
   status: ZCodeOffPeakTaskStatus;
-  /** FIFO 序依据（服务端权威序由取号顺序决定，本地仅展示/派发排序用）。 */
+  /** Basis for FIFO ordering (the authoritative server order is determined by the order numbers are taken; the local order is only for display/dispatch sorting). */
   queuedAt: number;
   startedAt?: number;
   endedAt?: number;
   failureReason?: string;
-  /** 完成通知与状态条展示；复用现有 task diff 回填。 */
+  /** Completion notification and status bar display; backfilled by reusing the existing task diff. */
   filesChanged?: number;
-  /** 终态核销服务端 ack 时间；undefined=未核销，outbox 补报。 */
+  /** The server ack time at which the terminal state was settled; undefined=not settled, the outbox re-reports it. */
   settledAt?: number;
   /**
-   * 用户删除本地 History 行的时间。
-   * 只控制 History 可见性，不删除 task/session，也不清空任何执行字段。
+   * The time the user deleted the local History row.
+   * It only controls History visibility; it deletes no task/session and clears no execution field.
    */
   historyDeletedAt?: number;
-  // -- 服务端同步快照（host offPeakTaskSync 写 / scheduler 跨进程读）--
-  /** 取号成功时间（POST /ticket ack）；undefined=未取号。 */
+  // -- Server-side synchronization snapshot (host offPeakTaskSync write / scheduler cross-process read) --
+  /** Time the number was successfully taken (POST /ticket ack); undefined=no number taken yet. */
   registeredAt?: number;
-  /** 服务端 ready（粗阀）：true = 低峰窗口开 + 排到号，scheduler 可认领派发。 */
+  /** Server ready (coarse gate): true = the off-peak window is open and a number was obtained, so the scheduler may claim it for dispatch. */
   schedulable?: boolean;
-  /** 排队位次，UI "#N in queue"。 */
+  /** Position in the queue; the UI shows "#N in queue". */
   queuePosition?: number;
-  /** 下次轮询时间（间隔由服务端 next_poll_after 下发）。 */
+  /** Next poll time (the interval is delivered by the server as next_poll_after). */
   nextPollAt?: number;
   createdAt: number;
   updatedAt: number;
 }
 
-/** 创建闲时任务的入参（workspace 由调用方从上下文注入；取号在 service 层先行，成功才落库）。 */
+/** Input for creating an off-peak task (the workspace is injected by the caller from context; the number is taken in the service layer first and only persisted on success). */
 export interface ZCodeOffPeakTaskCreateParams {
   title: string;
   prompt: string;
@@ -172,11 +180,11 @@ export interface ZCodeOffPeakTaskCreateParams {
   modelSelection: ModelSelection;
   workspacePath: string;
   workspaceIdentity?: string;
-  /** 会话内创建：绑定创建时所在会话，首跑 resume 该会话（对齐 CronCreate targetTaskId）。表单创建不传。 */
+  /** Created inside a session: binds the session it was created in, and the first run resumes that session (aligning with CronCreate targetTaskId). Omitted when created from the form. */
   boundSessionId?: string;
 }
 
-/** 创建边界返回的稳定票态；与服务端票态同值，但不暴露 server ticket ID。 */
+/** The stable ticket state returned at the creation boundary; it holds the same values as the server-side ticket state but does not expose the server ticket ID. */
 export type OffPeakTaskTicketInitialState =
   | "queued"
   | "ready"
@@ -200,8 +208,9 @@ export type OffPeakTaskCreateErrorCategory =
   | "unknown";
 
 /**
- * 创建 RPC 的判别联合。失败只保留稳定分类/业务码，禁止把 raw error 或响应体带过 RPC。
- * providerName 已在 Host 侧收窄为显式安全 hostname，不允许传完整 URL。
+ * Discriminated union of the creation RPC. Failures keep only a stable category / business code;
+ * raw errors or response bodies must never cross the RPC boundary.
+ * providerName has already been narrowed on the Host side to an explicitly safe hostname; passing a full URL is not allowed.
  */
 export type OffPeakTaskCreateResult =
   | {

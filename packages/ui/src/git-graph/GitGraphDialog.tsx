@@ -66,7 +66,7 @@ export function GitGraphDialog({ open, workspacePath, onOpenChange }: GitGraphDi
       setSelectedCommitHash(result.commits[0]?.hash ?? null);
     } catch (error: unknown) {
       const message = getErrorMessage(error);
-      logger.warn("[GitGraphDialog] 读取 Git Graph 失败", {
+      logger.warn("[GitGraphDialog] failed to load Git Graph", {
         workspacePath,
         error: message,
       });
@@ -105,7 +105,7 @@ export function GitGraphDialog({ open, workspacePath, onOpenChange }: GitGraphDi
       setSelectedCommitHash(result.commits[0]?.hash ?? null);
     } catch (error: unknown) {
       const message = getErrorMessage(error);
-      logger.warn("[GitGraphDialog] 刷新 Git Graph 失败", {
+      logger.warn("[GitGraphDialog] failed to refresh Git Graph", {
         workspacePath,
         error: message,
       });
@@ -134,7 +134,7 @@ export function GitGraphDialog({ open, workspacePath, onOpenChange }: GitGraphDi
       setHasMore(result.hasMore);
     } catch (error: unknown) {
       const message = getErrorMessage(error);
-      logger.warn("[GitGraphDialog] 读取更多 Git Graph 失败", {
+      logger.warn("[GitGraphDialog] failed to load more Git Graph", {
         workspacePath,
         loadedCommitCount: commits.length,
         error: message,

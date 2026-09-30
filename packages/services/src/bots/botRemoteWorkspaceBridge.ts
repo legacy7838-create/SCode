@@ -114,8 +114,8 @@ export function createBotRemoteWorkspaceService(params: {
       (item) => item.kind === "remote",
     );
     const entry =
-      // Bugfix: UI 建连后可能把 workspacePath 规范化为 realpath，但 bot context 仍保留旧路径。
-      // 远端身份隔离语义以 workspaceIdentity 为准，查连接信息时必须先按 identity 命中。
+      // Bugfix: After UI connects, workspacePath may be normalized to realpath, but bot context still retains the old path.
+      // Remote identity isolation semantics are based on workspaceIdentity; connection info lookup must first match by identity.
       remoteSessions.find((item) => item.workspaceIdentity === workspaceIdentity) ??
       remoteSessions.find(
         (item) =>
@@ -165,7 +165,7 @@ export function createBotRemoteWorkspaceService(params: {
       });
       setTimeout(() => {
         if (pendingConnectionStatus.delete(requestId)) {
-          resolve({ ok: false, error: "远端 workspace 连接状态查询超时。" });
+          resolve({ ok: false, error: "timed out querying remote workspace connection status." });
         }
       }, 5_000);
     });
@@ -184,8 +184,8 @@ export function createBotRemoteWorkspaceService(params: {
         return false;
       }
 
-      // Bugfix: UI 手动重连不会经过 bot 的 /reconnect，单靠本地 Set 会误判为未连接。
-      // 每次询问 main 的 live session 表，顺手清理远端断开后的陈旧 bot 标记。
+      // Bugfix: UI manual reconnection does not go through the bot's /reconnect; relying solely on a local Set would misjudge as disconnected.
+      // Each time querying main's live session table, also clean up stale bot markers after remote disconnection.
       const connected = await queryMainConnectionStatus({
         ...target,
         remoteTarget,
@@ -209,7 +209,7 @@ export function createBotRemoteWorkspaceService(params: {
       if (!remoteTarget) {
         return {
           ok: false,
-          message: "未找到该远端 workspace 的连接信息。",
+          message: "no connection info found for that remote workspace.",
         };
       }
       const requestId = `bot-reconnect-${randomUUID()}`;
@@ -228,7 +228,7 @@ export function createBotRemoteWorkspaceService(params: {
         });
         setTimeout(() => {
           if (pending.delete(requestId)) {
-            resolve({ ok: false, error: "远端 workspace 重连超时。" });
+            resolve({ ok: false, error: "timed out reconnecting the remote workspace." });
           }
         }, 60_000);
       });
@@ -250,8 +250,8 @@ export function createBotRemoteWorkspaceService(params: {
     async syncAppRuntimePreferences(preferences: ZCodeAgentAppRuntimePreferences): Promise<void> {
       latestAppRuntimePreferences = preferences;
       appRuntimePreferencesRevision += 1;
-      // 修复原因：远端 Bot runtime 不属于任何 renderer 窗口，Root 的 Agent 同步无法触达它。
-      // 这里只更新已经缓存的 runtime，避免切换设置时为了闲置 Bot 新建远端 Host/Agent。
+      // Fix reason: Remote Bot runtime does not belong to any renderer window, so Root's Agent sync cannot reach it.
+      // Here we only update already-cached runtimes to avoid creating new remote Host/Agents for idle Bots when switching settings.
       await Promise.all(
         Array.from(runtimeServicesByWorkspaceKey.values()).map((services) =>
           services.zcodeAgentService.syncAppRuntimePreferences(preferences),
@@ -259,7 +259,7 @@ export function createBotRemoteWorkspaceService(params: {
       );
     },
     dispose(): void {
-      // Bugfix: host dispose 时移除 parentPort 监听，避免窗口 reload 后旧 bot 重连 promise 继续接收结果。
+      // Bugfix: Remove parentPort listener on host dispose to avoid old bot reconnection promises continuing to receive results after window reload.
       activeParentPort.off?.("message", onMessage);
       pending.clear();
       pendingRuntimePorts.clear();
@@ -298,19 +298,19 @@ export function createBotRemoteWorkspaceService(params: {
       });
       setTimeout(() => {
         if (pendingRuntimePorts.delete(requestId)) {
-          resolve({ ok: false, error: "远端 workspace runtime 初始化超时。" });
+          resolve({ ok: false, error: "timed out initializing the remote workspace runtime." });
         }
       }, 60_000);
     });
     if (!result.ok || !result.port) {
-      throw new Error(result.error ?? "远端 workspace runtime 初始化失败。");
+      throw new Error(result.error ?? "remote workspace runtime failed to initialize.");
     }
-    // Bugfix: Bot 任务以前只知道远端 identity，却继续调用本地 task service。
-    // 这里把 main 转发来的远端 RPC 端口包装成一组 runtime services；
-    // task wrapper 命令走 IZCodeTaskService，session 主状态走 ZCode session facade。
+    // Bugfix: Bot tasks previously only knew the remote identity but continued calling the local task service.
+    // Here we wrap the remote RPC port forwarded by main into a set of runtime services;
+    // task wrapper commands go through IZCodeTaskService, and session main state goes through the ZCode session facade.
     const services = createRemoteRuntimeServicesFromPort(result.port);
-    // 远端 Bot 与 UI workspace 共用同一个远端 Environment。这里只确认远端
-    // Model Selection Facade 已就绪，Desktop 不再向远端注入完整 Provider Registry。
+    // Remote Bot and UI workspace share the same remote Environment. Here we only confirm the remote
+    // Model Selection Facade is ready; Desktop no longer injects the full Provider Registry into the remote.
     await services.modelSelectionService.getView();
     while (true) {
       const revision = appRuntimePreferencesRevision;
@@ -327,7 +327,7 @@ export function createBotRemoteWorkspaceService(params: {
         break;
       }
     }
-    // 只有远端 Registry 和 App Runtime Preferences 都已就绪后才缓存 runtime services。
+    // Only cache runtime services after both the remote Registry and App Runtime Preferences are ready.
     runtimeServicesByWorkspaceKey.set(workspaceKey, services);
     return services;
   }

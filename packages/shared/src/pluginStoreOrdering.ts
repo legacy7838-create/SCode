@@ -11,7 +11,7 @@ export const PLUGIN_STORE_CATEGORY_ORDER: readonly string[] = [
   "template",
 ];
 
-// 完整 ID 避免个人市场的同名插件被误置顶；所有展示入口复用同一默认顺序。
+// The complete ID prevents plug-ins with the same name in the personal market from being mistakenly placed at the top; all display entries reuse the same default order.
 const DOCUMENT_PLUGIN_RANKS = new Map(
   ["pdf", "presentations", "spreadsheets", "documents"].map((name, index) => [
     `${name}@${ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID}`,
@@ -23,7 +23,7 @@ export function compareDocumentPluginPriority(leftId: string, rightId: string): 
   return compareRanks(DOCUMENT_PLUGIN_RANKS, leftId, rightId);
 }
 
-/** 分类归并只影响展示，市场与引用 Picker 必须使用同一个排序键。 */
+/** Category merging only affects presentation, so the store and the reference Picker must use the same sort key. */
 export function resolvePluginStoreCategory(category: string | undefined): string | undefined {
   const normalized = category?.trim();
   return normalized === "guides" ? "utilities" : normalized || undefined;
@@ -35,7 +35,7 @@ interface PluginStoreSortEntry {
   displayName: string;
 }
 
-/** 纯展示排序：配置优先，剩余分类按产品默认顺序，类内文档插件优先，再按本地化名称稳定兜底。 */
+/** Presentation-only ordering: configured entries first, remaining categories in the product default order, document plugins first within a category, then a stable fallback by localized name. */
 export function sortPluginStoreEntries<T>(
   items: readonly T[],
   project: (item: T) => PluginStoreSortEntry,

@@ -30,8 +30,8 @@ function getWorkspaceFileTreeListMaskStyle({
     return undefined;
   }
   const hiddenHeight = stickyFolderCount * WORKSPACE_FILE_TREE_VIRTUAL_ROW_HEIGHT_PX;
-  // sticky 与虚拟列表是滚动容器内的兄弟节点，列表原行仍会从 sticky 下方经过。
-  // 遮罩通过原生 scroll 事件同步 CSS 变量，只隐藏视口顶部的吸顶高度，不改变列表布局和滚动范围。
+  // sticky and the virtual list are sibling nodes in the scroll container, and the original rows of the list will still pass under sticky.
+  // Masking synchronizes CSS variables through native scroll events, only hiding the ceiling height at the top of the viewport, and does not change the list layout and scrolling range.
   const maskImage = `linear-gradient(to bottom, transparent 0 ${hiddenHeight}px, black ${hiddenHeight}px)`;
   const maskPosition = `0 var(${WORKSPACE_FILE_TREE_MASK_OFFSET_PROPERTY})`;
   const maskSize = `100% calc(100% - var(${WORKSPACE_FILE_TREE_MASK_OFFSET_PROPERTY}))`;

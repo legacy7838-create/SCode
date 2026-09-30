@@ -15,9 +15,9 @@ export function handleDarwinWindowCloseRequest(options: {
   }
 
   if (options.win.isFullScreen()) {
-    // macOS 原生全屏会占用独立 Space，之前这里仍然沿用“点红点=隐藏窗口”。
-    // 全屏态下直接 hide() 会把窗口藏进全屏 Space，用户看到的就是黑屏，但窗口其实没真正关闭。
-    // 这里改成先退出全屏，让“点关闭”在全屏场景下退回普通窗口，避免留下黑屏 Space。
+    // The native full screen of macOS will occupy a separate Space. Previously, the "red dot = hidden window" was still used here.
+    // Directly using hide() in full-screen mode will hide the window in the full-screen Space. What the user sees is a black screen, but the window is not actually closed.
+    // Here it is changed to exit the full screen first and let "click close" return to the normal window in the full screen scene to avoid leaving a black screen Space.
     options.win.setFullScreen(false);
     options.logger.info(
       `[createWindow] fullscreen close converted to leave-full-screen (${options.label})`,

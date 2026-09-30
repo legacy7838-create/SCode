@@ -38,9 +38,9 @@ const log = createServiceLogger("server-core");
 
 async function closeWebSocketServer(wss: WebSocketServer): Promise<void> {
   for (const client of wss.clients) {
-    // HTTP server.close() 不会收敛已经 upgrade 的 WebSocket，活跃 desktop
-    // continuous 连接会让 Core 的 shutdown ack 永远发不出去。先发 close frame 给正常
-    // 客户端一个短暂排空窗口，再 terminate 兜底，保证 Supervisor 能在预算内释放资源。
+    // HTTP server.close() will not converge upgraded WebSocket, active desktop
+    // A continuous connection will prevent Core's shutdown ack from being sent forever. Send close frame to normal first
+    // The client has a short emptying window and then terminates to ensure that the Supervisor can release resources within the budget.
     client.close(1001, "Server shutting down");
   }
   const deadline = Date.now() + WEBSOCKET_DRAIN_TIMEOUT_MS;
@@ -125,7 +125,7 @@ export async function createCoreHttpServer(
   const { injectWebSocket, upgradeWebSocket, wss } = createNodeWebSocket({ app });
   const host = options.host ?? "127.0.0.1";
   if (!isLoopbackHost(host)) {
-    // 当前只有本机/SSH 隧道入口，Core 尚未接入 token middleware；对外监听必须 fail-closed。
+    // Currently, there is only the local machine/SSH tunnel entrance, and Core has not yet connected to the token middleware; external monitoring must be fail-closed.
     throw new Error(
       `Non-loopback host ${host} requires authentication before the server can listen`,
     );
@@ -142,8 +142,8 @@ export async function createCoreHttpServer(
       processResourceTelemetry: true,
     },
   };
-  // 裸 Set 无法落实 expiresAt，未消费的 capability 会一直有效并持续累积。
-  // 使用与 packages/server 兼容的 TTL 一次性 store，使有效期和消费语义与返回信息一致。
+  // A naked Set cannot implement expiresAt, and unconsumed capabilities will always be valid and continue to accumulate.
+  // Use a packages/server-compatible TTL one-time store so that the validity period and consumption semantics are consistent with the returned information.
   const capabilities = options.hostCapabilityStore ?? createHostCapabilityStore();
   app.get("/api/server-info", (context) => context.json(info));
   app.get(

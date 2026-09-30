@@ -6,7 +6,7 @@ export function gitFileNames(cwd, args) {
     const files = [];
     let pending = "";
     let stderr = "";
-    // CI 持久缓存曾让 execFile 的 1 MiB 输出缓冲区溢出；流式消费路径，NUL 分隔避免转义和空白损坏。
+    // CI persistent cache overflowed execFile's 1 MiB output buffer; streaming consumption path, NUL delimited to avoid escape and whitespace corruption.
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (chunk) => {
       const names = (pending + chunk).split("\0");

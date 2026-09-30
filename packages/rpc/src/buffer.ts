@@ -1,11 +1,12 @@
 /**
- * Layer 0.5: 跨平台 Buffer 抽象
+ * Layer 0.5: cross-platform Buffer abstraction
  *
- * VS Code 需要在 Node.js (Buffer) 和浏览器 (Uint8Array) 之间统一二进制操作。
- * VSBuffer 是对 Uint8Array 的薄封装，提供统一的读写接口。
+ * VS Code needs one set of binary operations across Node.js (Buffer) and the browser (Uint8Array).
+ * VSBuffer is a thin wrapper over Uint8Array that provides a uniform read/write interface.
  *
- * 这是序列化层和传输层的基础。
+ * This is the foundation for the serialization and transport layers.
  */
+import { rpcBytesPort } from "./bytes-port.js";
 
 export class VSBuffer {
   readonly buffer: Uint8Array;
@@ -16,46 +17,43 @@ export class VSBuffer {
     this.byteLength = buffer.byteLength;
   }
 
-  /** 分配指定大小的空 buffer */
+  /** Allocates an empty buffer of the given size */
   static alloc(byteLength: number): VSBuffer {
-    return new VSBuffer(new Uint8Array(byteLength));
+    return new VSBuffer(rpcBytesPort().alloc(byteLength));
   }
 
-  /** 包装已有的 Uint8Array */
+  /** Wraps an existing Uint8Array */
   static wrap(buffer: Uint8Array): VSBuffer {
     return new VSBuffer(buffer);
   }
 
-  /** 从字符串创建 buffer (UTF-8) */
+  /** Creates a buffer from a string (UTF-8) */
   static fromString(str: string): VSBuffer {
-    const encoder = new TextEncoder();
-    return new VSBuffer(encoder.encode(str));
+    return new VSBuffer(rpcBytesPort().stringToBytes(str));
   }
 
-  /** 拼接多个 buffer */
+  /** Concatenates multiple buffers */
   static concat(buffers: VSBuffer[], totalLength?: number): VSBuffer {
     const len = totalLength ?? buffers.reduce((sum, b) => sum + b.byteLength, 0);
-    const result = VSBuffer.alloc(len);
-    let offset = 0;
-    for (const buf of buffers) {
-      result.set(buf, offset);
-      offset += buf.byteLength;
-    }
-    return result;
+    return new VSBuffer(
+      rpcBytesPort().concat(
+        buffers.map((b) => b.buffer),
+        len,
+      ),
+    );
   }
 
-  /** 转为 UTF-8 字符串 */
+  /** Converts to a UTF-8 string */
   toString(): string {
-    const decoder = new TextDecoder();
-    return decoder.decode(this.buffer);
+    return rpcBytesPort().bytesToString(this.buffer) ?? new TextDecoder().decode(this.buffer);
   }
 
-  /** 切片 */
+  /** Returns a slice */
   slice(start: number, end?: number): VSBuffer {
-    return new VSBuffer(this.buffer.slice(start, end));
+    return new VSBuffer(rpcBytesPort().slice(this.buffer, start, end));
   }
 
-  /** 拷贝数据到 this buffer 的指定位置 */
+  /** Copies data into this buffer at the given position */
   set(source: VSBuffer | Uint8Array, offset = 0): void {
     const raw = source instanceof VSBuffer ? source.buffer : source;
     this.buffer.set(raw, offset);
@@ -70,19 +68,10 @@ export class VSBuffer {
   }
 
   readUInt32BE(offset: number): number {
-    return (
-      ((this.buffer[offset] << 24) |
-        (this.buffer[offset + 1] << 16) |
-        (this.buffer[offset + 2] << 8) |
-        this.buffer[offset + 3]) >>>
-      0
-    );
+    return rpcBytesPort().readUInt32BE(this.buffer, offset);
   }
 
   writeUInt32BE(value: number, offset: number): void {
-    this.buffer[offset] = (value >>> 24) & 0xff;
-    this.buffer[offset + 1] = (value >>> 16) & 0xff;
-    this.buffer[offset + 2] = (value >>> 8) & 0xff;
-    this.buffer[offset + 3] = value & 0xff;
+    rpcBytesPort().writeUInt32BE(this.buffer, value, offset);
   }
 }

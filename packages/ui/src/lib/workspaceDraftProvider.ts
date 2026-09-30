@@ -17,8 +17,8 @@ export function resolveWorkspaceSwitchDraftProvider({
   const workspaceKey = targetWorkspaceIdentity?.trim() || targetWorkspacePath;
   const targetWorkspaceState = workspaces[workspaceKey] ?? workspaces[targetWorkspacePath];
 
-  // 空态里切换 workspace 后直接新建草稿时，之前总把“来源 workspace 当前选中的 Agent”
-  // 强行写给目标 workspace，导致目标项目自己刚用过的 Agent 被覆盖。
-  // 这里优先沿用目标 workspace 已记住的 provider，只在目标还没建立 UI 状态时才继承当前选择。
+  // When creating a new draft directly after switching workspaces in an empty state, the "source workspace currently selected Agent" was always
+  // Forcibly writing to the target workspace will cause the Agent just used by the target project to be overwritten.
+  // Here, priority is given to the provider that has been remembered by the target workspace, and the current selection is only inherited when the target has not established UI state.
   return targetWorkspaceState?.selectedProvider ?? currentSelectedProvider;
 }

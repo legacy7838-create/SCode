@@ -1,7 +1,6 @@
-/* eslint-disable max-lines -- 强制升级提示窗口包含内联 HTML/CSS 和状态脚本，启动前不能依赖 renderer 包 */
+/* eslint-disable max-lines -- the forced-update prompt window inlines HTML/CSS and its state script, so it cannot depend on the renderer package before startup */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { type Locale } from "@zcode/shared";
 import type { ForceUpdateDialogText, ForceUpdateGuardLogger } from "./forceUpdateGuard.js";
 import type { ForceAutoUpdateState } from "./autoUpdater.js";
 
@@ -38,69 +37,39 @@ function readForceUpdatePromptIcon(): string | null {
   }
 }
 
-function buildForceUpdatePromptMessages(locale: Locale) {
-  if (locale === "zh-CN") {
-    return {
-      checkingTitle: "正在检查更新",
-      checkingMessage: "请保持此窗口打开，ZCode 正在查找可用更新。",
-      downloadingTitle: "正在下载更新",
-      downloadingVersionTitle: "正在下载更新 v{version}",
-      downloadingMessage: "下载完成后会自动安装，请勿关闭应用。",
-      readyTitle: "更新已下载",
-      readyMessage: "ZCode 正在准备重启并安装更新。",
-      installingTitle: "正在安装更新",
-      installingMessage: "ZCode 即将重启完成安装。",
-      errorTitle: "自动升级失败",
-      errorMessage: "你可以重试自动升级，或改用手动升级。",
-      devSkippedTitle: "调试环境无法自动升级",
-      devSkippedMessage: "自动升级仅在打包后的应用中可用，请使用手动升级或打包应用验证。",
-      confirmCloseTitle: "自动升级正在进行",
-      confirmCloseMessage:
-        "关闭窗口会中断当前自动升级流程，旧版本仍然无法进入主界面。你可以继续等待，或确认关闭并退出。",
-      confirmCloseButton: "确认关闭",
-      continueUpdateButton: "继续更新",
-      retryButton: "重试自动升级",
-      checkingButton: "检查中...",
-      downloadingButton: "下载中...",
-      installingButton: "安装中...",
-    };
-  }
+const FORCE_UPDATE_PROMPT_MESSAGES = {
+  checkingTitle: "Checking for updates",
+  checkingMessage: "Keep this window open while ZCode checks for updates.",
+  downloadingTitle: "Downloading update",
+  downloadingVersionTitle: "Downloading update v{version}",
+  downloadingMessage: "ZCode will install the update automatically after download.",
+  readyTitle: "Update downloaded",
+  readyMessage: "ZCode is preparing to restart and install the update.",
+  installingTitle: "Installing update",
+  installingMessage: "ZCode will restart to finish installing the update.",
+  errorTitle: "Auto update failed",
+  errorMessage: "You can retry auto update or use manual update.",
+  devSkippedTitle: "Auto update unavailable in development",
+  devSkippedMessage:
+    "Auto update is only available in packaged apps. Use manual update or test a packaged build.",
+  confirmCloseTitle: "Auto update in progress",
+  confirmCloseMessage:
+    "Closing this window will stop the current auto update flow, and this old version still cannot open the main app. You can keep waiting or close and quit.",
+  confirmCloseButton: "Close anyway",
+  continueUpdateButton: "Continue update",
+  retryButton: "Retry auto update",
+  checkingButton: "Checking...",
+  downloadingButton: "Downloading...",
+  installingButton: "Installing...",
+};
 
-  return {
-    checkingTitle: "Checking for updates",
-    checkingMessage: "Keep this window open while ZCode checks for updates.",
-    downloadingTitle: "Downloading update",
-    downloadingVersionTitle: "Downloading update v{version}",
-    downloadingMessage: "ZCode will install the update automatically after download.",
-    readyTitle: "Update downloaded",
-    readyMessage: "ZCode is preparing to restart and install the update.",
-    installingTitle: "Installing update",
-    installingMessage: "ZCode will restart to finish installing the update.",
-    errorTitle: "Auto update failed",
-    errorMessage: "You can retry auto update or use manual update.",
-    devSkippedTitle: "Auto update unavailable in development",
-    devSkippedMessage:
-      "Auto update is only available in packaged apps. Use manual update or test a packaged build.",
-    confirmCloseTitle: "Auto update in progress",
-    confirmCloseMessage:
-      "Closing this window will stop the current auto update flow, and this old version still cannot open the main app. You can keep waiting or close and quit.",
-    confirmCloseButton: "Close anyway",
-    continueUpdateButton: "Continue update",
-    retryButton: "Retry auto update",
-    checkingButton: "Checking...",
-    downloadingButton: "Downloading...",
-    installingButton: "Installing...",
-  };
-}
-
-function renderForceUpdatePromptHtml(text: ForceUpdateDialogText, locale: Locale): string {
+function renderForceUpdatePromptHtml(text: ForceUpdateDialogText): string {
   const icon = readForceUpdatePromptIcon();
-  const messages = buildForceUpdatePromptMessages(locale);
   const detailLines = text.detail
     .split("\n")
     .map((line) => `<div class="version-row">${escapeHtml(line)}</div>`)
     .join("");
-  const stateMessages = JSON.stringify(messages);
+  const stateMessages = JSON.stringify(FORCE_UPDATE_PROMPT_MESSAGES);
   const initialState = JSON.stringify({
     title: text.title,
     message: text.message,
@@ -111,7 +80,7 @@ function renderForceUpdatePromptHtml(text: ForceUpdateDialogText, locale: Locale
   });
 
   return `<!doctype html>
-<html lang="${escapeHtml(locale)}">
+<html lang="en-US">
 <head>
   <meta charset="utf-8" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
@@ -134,7 +103,7 @@ function renderForceUpdatePromptHtml(text: ForceUpdateDialogText, locale: Locale
       background: #f8f8f8;
       display: flex;
     }
-    /* 强更截图范围就是完整 BrowserWindow；外层留白加内层圆角会把宿主底色显示成黑框。*/
+    /* The enhanced screenshot range is the complete BrowserWindow; the outer white space and the inner rounded corners will display the host background as a black frame.*/
     .panel {
       width: 100%;
       height: 100%;
@@ -194,7 +163,7 @@ function renderForceUpdatePromptHtml(text: ForceUpdateDialogText, locale: Locale
       cursor: pointer;
       -webkit-app-region: no-drag;
     }
-    /* 字体字符 × 的字形基线会让视觉中心偏移，改用两条线保证和主窗口关闭按钮一致居中。*/
+    /* The glyph baseline of the font character × will shift the visual center. Use two lines instead to ensure that it is centered with the main window close button.*/
     .close::before,
     .close::after {
       content: "";
@@ -384,7 +353,7 @@ function renderForceUpdatePromptHtml(text: ForceUpdateDialogText, locale: Locale
       return kind === 'checking' || kind === 'downloading' || kind === 'ready' || kind === 'installing';
     }
     function showCloseConfirmation() {
-      // 自动升级会禁用主按钮，但关闭窗口仍应给用户二次确认，避免误关中断下载。
+      // Automatic upgrade will disable the main button, but closing the window should still give the user a second confirmation to avoid accidentally closing the window and interrupting the download.
       resizePromptHeight(${FORCE_UPDATE_PROMPT_HEIGHT});
       previousAutoState = isActiveAutoState(currentState.kind) ? currentState : previousAutoState;
       currentState = { kind: 'confirm-close' };
@@ -487,7 +456,6 @@ function renderForceUpdatePromptHtml(text: ForceUpdateDialogText, locale: Locale
 
 export async function showForceUpdatePrompt(
   text: ForceUpdateDialogText,
-  locale: Locale,
   logger: ForceUpdateGuardLogger,
   options: ShowForceUpdatePromptOptions = {},
 ): Promise<ForceUpdatePromptAction> {
@@ -535,7 +503,7 @@ export async function showForceUpdatePrompt(
       }
       const script = `window.__setForceUpdateState?.(${JSON.stringify(state)})`;
       void win.webContents.executeJavaScript(script).catch((error) => {
-        logger.warn("[force-update] 更新强制升级提示状态失败", { error });
+        logger.warn("[force-update] failed to update the force update prompt state", { error });
       });
     };
 
@@ -543,7 +511,7 @@ export async function showForceUpdatePrompt(
       if (win.isDestroyed()) {
         return;
       }
-      // 下载态隐藏版本说明后需要收回窗口高度，避免出现大片空白；确认关闭/错误态再恢复默认高度。
+      // After downloading the hidden version description, you need to restore the window height to avoid large blanks; confirm the shutdown/error state and then restore the default height.
       win.setSize(FORCE_UPDATE_PROMPT_WIDTH, height);
       win.center();
     };
@@ -568,7 +536,7 @@ export async function showForceUpdatePrompt(
       if (autoUpdateDispose) {
         autoUpdateDispose();
       }
-      logger.info("[force-update] 用户选择自动升级");
+      logger.info("[force-update] the user chose the automatic update");
       updatePromptState({ kind: "checking" });
       autoUpdateDispose =
         options.startAutoUpdate?.((state) => updatePromptState(state)) ?? undefined;
@@ -580,11 +548,11 @@ export async function showForceUpdatePrompt(
       }
       if (!shown) {
         shown = true;
-        logger.info(`[force-update] 显示强制升级提示窗口 source=${source}`);
+        logger.info(`[force-update] showing the force update prompt window source=${source}`);
       }
       win.show();
       win.focus();
-      // 启动前没有主窗口时，原生消息框在部分开发环境不可见；显式置顶保证用户能看到强制升级提示。
+      // When there is no main window before startup, the native message box is not visible in some development environments; explicitly sticking it to the top ensures that users can see the forced upgrade prompt.
       if (!parentWindow) {
         win.setAlwaysOnTop(true, "modal-panel");
       }
@@ -593,7 +561,7 @@ export async function showForceUpdatePrompt(
     win.on("closed", () => {
       autoUpdateDispose?.();
       if (!resolved) {
-        // 自动升级是异步流程，用户关闭保留中的强更窗口时仍要把最终退出动作交还给 guard。
+        // Automatic upgrade is an asynchronous process. When the user closes the retained strong update window, he still has to return the final exit action to the guard.
         resolveOnce("quit", false);
       }
     });
@@ -625,17 +593,22 @@ export async function showForceUpdatePrompt(
           `window.__setForceUpdatePromptHeight = (height) => { document.title = 'force-update-height:' + height; };`,
         )
         .catch((error) => {
-          logger.warn("[force-update] 初始化强制升级窗口高度桥失败", { error });
+          logger.warn("[force-update] failed to initialize the force update window height bridge", {
+            error,
+          });
         });
       showPromptWindow("did-finish-load");
     });
     win.webContents.once("did-fail-load", (_event, errorCode, errorDescription) => {
-      logger.warn("[force-update] 强制升级提示窗口加载失败", { errorCode, errorDescription });
+      logger.warn("[force-update] the force update prompt window failed to load", {
+        errorCode,
+        errorDescription,
+      });
       showPromptWindow("did-fail-load");
     });
     fallbackTimer = setTimeout(() => showPromptWindow("timeout"), 1000);
     win.loadURL(
-      `data:text/html;charset=utf-8,${encodeURIComponent(renderForceUpdatePromptHtml(text, locale))}`,
+      `data:text/html;charset=utf-8,${encodeURIComponent(renderForceUpdatePromptHtml(text))}`,
     );
   });
 }

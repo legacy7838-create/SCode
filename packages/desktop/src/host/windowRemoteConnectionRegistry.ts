@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 所有 transport 生命周期共享同一个 registry 状态机，必须原子演进。 */
+/* eslint-disable max-lines -- All transport lifecycles share one registry state machine and must evolve atomically. */
 import {
   buildSshRemoteHostKey,
   stripRemoteTargetSecrets,
@@ -48,14 +48,14 @@ interface WindowRemoteLogicalSessionSnapshot {
 
 class WindowRemoteConnectCancelledError extends Error {
   constructor() {
-    super("远程连接已取消");
+    super("Remote connection was cancelled");
     this.name = "WindowRemoteConnectCancelledError";
   }
 }
 
 class WindowRemoteConnectionUnavailableError extends Error {
   constructor(remoteSessionId: string) {
-    super(`远程连接当前不可用，remoteSessionId=${remoteSessionId}`);
+    super(`Remote connection is currently unavailable, remoteSessionId=${remoteSessionId}`);
     this.name = "WindowRemoteConnectionUnavailableError";
   }
 }
@@ -113,15 +113,12 @@ function normalizeWslSegment(value: string | undefined): string {
   return value?.trim() || "<default>";
 }
 
-function buildConnectionKey(target: RemoteTarget, remoteSessionId: string): string {
+function buildConnectionKey(target: RemoteTarget): string {
   switch (target.kind) {
     case "ssh":
       return `ssh:${buildSshRemoteHostKey(target)}`;
     case "wsl":
       return `wsl:${normalizeWslSegment(target.distro)}\0${normalizeWslSegment(target.user)}`;
-    case "docker":
-      // Docker 保持现有 dedicated logical session 生命周期，不按 target 复用。
-      return `${target.kind}:dedicated:${remoteSessionId}`;
   }
 }
 
@@ -231,8 +228,8 @@ export function createWindowRemoteConnectionRegistry<TServices, TCapabilities = 
           entry.workspaceRuntimeByKey.delete(workspaceKey);
         }
       });
-    // release 由 dispose/running-task 事件触发；失败由结构化回调记录，同时保留 rejecting
-    // Promise 给同 workspace 的下一代 acquire，使其 fail-closed 而不是踩过未完成清理。
+    // release is triggered by the dispose/running-task event; failure is logged by a structured callback, while rejecting is retained
+    // Promise is given to the next generation acquire of the same workspace, making it fail-closed rather than stepping on unfinished cleanup.
     void release.catch(() => undefined);
     state.releaseInFlight = release;
     return release;
@@ -290,8 +287,8 @@ export function createWindowRemoteConnectionRegistry<TServices, TCapabilities = 
     };
     if (!hasOtherOwner) {
       state.generation += 1;
-      // 上一代 release 仍因 running task 等待时，新 logical owner 已重新持有
-      // workspace；尚未开始的旧 release 必须失效，不能在 task 归零后误清新 runtime。
+      // While the previous generation release is still waiting for a running task, the new logical owner has re-held it.
+      // workspace; old releases that have not yet been started must be invalidated, and the runtime cannot be accidentally refreshed after the task is reset to zero.
     }
     state.pendingReleaseGeneration = undefined;
     session.workspaceGeneration = state.generation;
@@ -412,8 +409,8 @@ export function createWindowRemoteConnectionRegistry<TServices, TCapabilities = 
       .then(async (handle) => {
         entry.handle = handle;
         if (entry.disposed || entry.sessions.size === 0) {
-          // 底层 SSH/WSL connector 可能无法中断认证或部署。
-          // 最后一个 logical owner 取消后，迟到的成功结果必须立即释放，不能复活旧连接。
+          // The underlying SSH/WSL connector may not break authentication or deployment.
+          // After the last logical owner is canceled, the late success result must be released immediately, and the old connection cannot be resurrected.
           await disposeEntry(entry);
           return handle;
         }
@@ -479,14 +476,14 @@ export function createWindowRemoteConnectionRegistry<TServices, TCapabilities = 
     workspaceIdentity?: string;
   }): Promise<WindowHostRemoteWorkspaceDescriptor> {
     if (disposed) {
-      throw new Error("窗口 Host 的远程连接 registry 已释放");
+      throw new Error("the remote connection registry of the window host has been disposed");
     }
     if (pendingSessionsByRequestId.has(params.requestId)) {
-      throw new Error(`远程连接 requestId 重复，requestId=${params.requestId}`);
+      throw new Error(`duplicate remote connection requestId, requestId=${params.requestId}`);
     }
 
     const remoteSessionId = options.createId();
-    const key = buildConnectionKey(params.target, remoteSessionId);
+    const key = buildConnectionKey(params.target);
     const entry = resolveEntry({
       key,
       target: params.target,
@@ -542,9 +539,6 @@ export function createWindowRemoteConnectionRegistry<TServices, TCapabilities = 
         entry.sessions.delete(remoteSessionId);
         session.state = "failed";
         session.sourceAvailability = "offline";
-        if (entry.sessions.size === 0 && entry.target.kind === "docker") {
-          await disposeEntry(entry);
-        }
       }
       throw error;
     } finally {
@@ -573,9 +567,9 @@ export function createWindowRemoteConnectionRegistry<TServices, TCapabilities = 
     session.rejectCancellation(new WindowRemoteConnectCancelledError());
     if (session.entry.sessions.size === 0) {
       if (session.entry.target.kind === "ssh" && session.entry.state === "connecting") {
-        // 最后一个 waiter 取消后，旧 entry 仍以 connecting 留在复用表；立即重连会
-        // 继续等待已经 aborted 的 readiness，并沿用上一次凭据。先按对象身份退休旧 entry，
-        // 再触发底层取消；迟到的旧 completion 不能删除或复活同 key 的新连接。
+        // After the last waiter is canceled, the old entry still remains in the multiplexing table as connecting; reconnecting will occur immediately.
+        // Continue to wait for aborted readiness and use the last credentials. First retire the old entry according to the object identity,
+        // Retriggers the underlying cancellation; the late old completion cannot delete or resurrect a new connection with the same key.
         if (entriesByKey.get(session.entry.key) === session.entry) {
           entriesByKey.delete(session.entry.key);
         }
@@ -584,8 +578,8 @@ export function createWindowRemoteConnectionRegistry<TServices, TCapabilities = 
       } else if (session.entry.target.kind === "wsl" && session.entry.state === "online") {
         scheduleWslIdleDispose(session.entry, "cancelled-logical-connect");
       } else if (session.entry.target.kind === "ssh" && session.entry.state === "online") {
-        // ready SSH connection 是窗口 cache；取消一次 logical attach 不应把后续 workspace 的
-        // 复用连接一并销毁，真实窗口 Host shutdown 时统一释放。
+        // ready SSH connection is a window cache; canceling a logical attach should not cause subsequent workspace
+        // The multiplexed connections are destroyed together and released when the real window Host shuts down.
         clearIdleTimer(session.entry);
       } else if (session.entry.handle) {
         void disposeEntry(session.entry);
@@ -600,7 +594,9 @@ export function createWindowRemoteConnectionRegistry<TServices, TCapabilities = 
   }): Promise<void> {
     const session = sessionsById.get(params.remoteSessionId);
     if (!session) {
-      throw new Error(`未找到远程 logical session，remoteSessionId=${params.remoteSessionId}`);
+      throw new Error(
+        `remote logical session not found, remoteSessionId=${params.remoteSessionId}`,
+      );
     }
     const previousOwnership = {
       entry: session.entry,
@@ -625,7 +621,7 @@ export function createWindowRemoteConnectionRegistry<TServices, TCapabilities = 
     scope: WindowHostAttachmentScope,
   ): WindowRemoteConnectionHandle<TServices, TCapabilities> {
     if (scope.kind !== "remote") {
-      throw new Error("远程连接 registry 不能解析 local attachment scope");
+      throw new Error("the remote connection registry cannot resolve a local attachment scope");
     }
     const session = sessionsById.get(scope.remoteSessionId);
     if (!session) {
@@ -636,7 +632,7 @@ export function createWindowRemoteConnectionRegistry<TServices, TCapabilities = 
       session.workspaceIdentity !== scope.workspaceIdentity
     ) {
       throw new Error(
-        `远程 attachment scope 与 logical session 不匹配，remoteSessionId=${scope.remoteSessionId}`,
+        `remote attachment scope does not match the logical session, remoteSessionId=${scope.remoteSessionId}`,
       );
     }
     if (
@@ -676,8 +672,8 @@ export function createWindowRemoteConnectionRegistry<TServices, TCapabilities = 
       if (session.entry.target.kind === "wsl" && session.entry.state === "online") {
         scheduleWslIdleDispose(session.entry, "last-logical-session-disposed");
       } else if (session.entry.target.kind === "ssh" && session.entry.state === "online") {
-        // 只迁移 SSH pool 的 owner：ready connection 继续保持 window-scoped cache，
-        // logical session 清空不等于连接退出；真实窗口 Host shutdown 时统一释放。
+        // Only migrate the owner of the SSH pool: ready connection and continue to maintain the window-scoped cache.
+        // Clearing the logical session does not mean the connection is exited; the real window is released uniformly when the host shuts down.
         clearIdleTimer(session.entry);
       } else {
         await disposeEntry(session.entry);
@@ -713,7 +709,7 @@ export function createWindowRemoteConnectionRegistry<TServices, TCapabilities = 
       );
       if (onlineMatches.length > 1 || (onlineMatches.length === 0 && matches.length > 1)) {
         throw new Error(
-          `远程 workspace scope 匹配到多个 logical session，workspacePath=${params.workspacePath}`,
+          `remote workspace scope matched multiple logical sessions, workspacePath=${params.workspacePath}`,
         );
       }
       const match = onlineMatches[0] ?? matches[0];
@@ -755,7 +751,7 @@ export function createWindowRemoteConnectionRegistry<TServices, TCapabilities = 
     },
     async waitForScopedServices(scope: WindowHostAttachmentScope): Promise<TServices> {
       if (scope.kind !== "remote") {
-        throw new Error("远程连接 registry 不能解析 local attachment scope");
+        throw new Error("the remote connection registry cannot resolve a local attachment scope");
       }
       const session = sessionsById.get(scope.remoteSessionId);
       if (!session) {

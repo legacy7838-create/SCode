@@ -28,7 +28,7 @@ import {
 export interface AccountProviderConnectionSettings {
   readonly providerFamilyDomain: ProviderFamilyDomain | null;
   readonly selections: ProviderFamilyConnectionSelectionSettings;
-  /** Host 旧连接导入尚不能确定身份；仅运行时事实，不写入配置或协议。 */
+  /** Host legacy-connection import cannot yet determine identity; runtime fact only, never written into config or the protocol. */
   readonly unresolvedFamilies?: readonly ProviderFamilyDomain[];
 }
 
@@ -66,10 +66,12 @@ export interface AccountProviderConfigSourceOptions extends AccountProviderConne
 }
 
 /**
- * 把现有账号域、连接模式和套餐权益统一投影为领域层 Connection Result。
+ * Projects the existing account domains, connection modes and plan entitlements uniformly
+ * into a domain-level Connection Result.
  *
- * 该适配器不保存凭据。Personal Coding Plan Key 的物理来源由注入端决定；
- * Start/Team 的动态凭据继续由现有 availability 依赖按请求读取。
+ * This adapter stores no credentials. The physical source of a Personal Coding Plan key is
+ * decided by the injecting side; dynamic Start/Team credentials keep being read per request
+ * by the existing availability dependency.
  */
 export function createAccountProviderConnectionResolver(
   options: AccountProviderConnectionResolverOptions,
@@ -104,7 +106,7 @@ export function createAccountProviderConnectionResolver(
         );
       if (configured.length === 0) continue;
 
-      // 旧团队身份补全只限制付费访问，Start 只依赖当前登录账号。
+      // Old team identity completion only limits paid access, and Start only relies on the current login account.
       const queryable = configured.filter(({ providerId, planKind }) => {
         if (settings.unresolvedFamilies?.includes(family) && planKind !== "start-plan") {
           availabilityByProviderId.set(providerId, { kind: "unknown" });
@@ -158,7 +160,7 @@ export function createAccountProviderConnectionResolver(
         continue;
       }
       const selection = settings.selections[access.accountType];
-      // last-known-good 只对同账号、同 Team 身份成立。切账号后的网络失败不能复活旧权益。
+      // last-known-good is only true for the same account and the same Team identity. If the network fails after switching the account, the old rights cannot be restored.
       const scope = JSON.stringify([
         await loadAccountIdentity(access.accountType),
         access.mode === "team-coding-plan" && selection?.kind === "team-coding-plan"
@@ -195,21 +197,21 @@ export function createAccountProviderConnectionResolver(
       connections.push({
         providerId,
         status: availability.kind,
-        // 原因必须随连接结果一起发布。UI 拿不到原因时只能把"已登录但无套餐"
-        // 也显示成"未连接"。
+        // The reason must be published with the connection results. When the UI cannot get the reason, it can only display "Logged in but no package"
+        // Also displayed as "Not Connected".
         ...(availability.kind === "unavailable"
           ? {
               unavailableReason: resolveAccountUnavailableReason(availability.reason),
             }
           : {}),
-        // Start 跟随登录身份，付费套餐跟随连接选择；两者可同时 current，不改写权益或配置。
+        // Start follows the login identity, and the paid package follows the connection selection; both can be current at the same time without changing the rights or configuration.
         current:
           settings.providerFamilyDomain === access.accountType &&
           (access.mode === "start-plan"
             ? Boolean(await loadAccountIdentity(access.accountType))
             : selection?.kind === access.mode),
-        // 两个 Team 共用 Provider ID，观察器必须按同一快照中的完整身份比较，
-        // 不能把手动换套餐/账号误当成原套餐失效。它只进入 Account State，不进入 Config。
+        // Two Teams share a Provider ID, and observers must compare by full identity in the same snapshot.
+        // Do not mistake manually changing packages/accounts as the original package has expired. It only goes into Account State, not Config.
         connectionKey: createHash("sha256")
           .update(
             JSON.stringify([
@@ -224,9 +226,9 @@ export function createAccountProviderConnectionResolver(
         ...(resetPrevious ? { resetPrevious: true } : {}),
       });
     }
-    // 权益查询可能跨越切账号/套餐，旧设置与新身份会被拼成可发布结果。
-    // 发布前核对本轮作用域；失败时也不能推进 previousScopes，否则下一轮会把
-    // 未发布的账号误认作 last-known-good。重试继续由现有刷新事件驱动。
+    // Rights query may span all accounts/packages, and old settings and new identities will be combined into publishable results.
+    // Check the scope of this round before publishing; if it fails, you cannot advance the previousScopes, otherwise the scope of the current round will be
+    // Unpublished accounts were mistaken for last-known-good. Retries continue to be driven by existing refresh events.
     const identitiesUnchanged = await Promise.all(
       [...accountIdentityByFamily].map(
         async ([family, captured]) =>
@@ -237,7 +239,9 @@ export function createAccountProviderConnectionResolver(
       identitiesUnchanged.some((unchanged) => !unchanged) ||
       !isDeepStrictEqual(settings, await options.readSettings())
     ) {
-      throw new Error("账号查询期间连接或身份发生变化，丢弃过期结果");
+      throw new Error(
+        "Connection or identity changed during the account query; discarding the stale result",
+      );
     }
     previousScopes = scopes;
     return Object.freeze(connections);
@@ -245,17 +249,18 @@ export function createAccountProviderConnectionResolver(
 }
 
 function isCredentialRefreshReason(reason: string): boolean {
-  // ProviderSettingsFacade 会给登录刷新原因添加 settings: 前缀；漏匹配会在
-  // 同账号重新登录后继续复用失效 Key。按原因末段精确匹配，普通刷新仍复用缓存。
+  // ProviderSettingsFacade will add the settings: prefix to the login refresh reason; missing matches will be
+  // Log in again with the same account and continue to reuse the expired Key. Exact matching according to the last segment of the reason, normal refresh still reuses the cache.
   return (
     reason.includes("oauth-callback") || reason.split(":").at(-1) === "oauth-login-entitlement"
   );
 }
 
 /**
- * 把 Coding Plan 可用性原因投影为账号域原因。
- * Account State 是跨 family 的通用事实，不直接沿用 Coding Plan 内部枚举；
- * UI 只依赖这里的稳定语义，不认识套餐查询实现。
+ * Projects Coding Plan availability reasons into account-domain reasons.
+ * Account State is a cross-family fact, so the Coding Plan internal enum is not reused
+ * directly; the UI depends only on the stable semantics defined here and knows nothing
+ * about the plan-query implementation.
  */
 function resolveAccountUnavailableReason(
   reason: CodingPlanUnavailableReason,
@@ -272,7 +277,7 @@ function resolveAccountUnavailableReason(
   }
 }
 
-/** 组装 Config、账号连接解析与第三层 Account Provider Config Source。 */
+/** Assembles Config, the account connection resolution and the third-layer Account Provider Config Source. */
 export function createAccountProviderConfigSource(
   options: AccountProviderConfigSourceOptions,
 ): AccountProviderService {
@@ -282,7 +287,7 @@ export function createAccountProviderConfigSource(
   });
 }
 
-/** 用当前稳定的 Plan 查询实现生产 Family Availability Port。 */
+/** Produces the Family Availability Port using the current stable Plan-query implementation. */
 export function createCodingPlanFamilyAvailabilityResolver(
   options: CodingPlanFamilyAvailabilityResolverOptions,
 ): AccountProviderFamilyAvailabilityResolver {
@@ -299,10 +304,13 @@ export function createCodingPlanFamilyAvailabilityResolver(
 }
 
 /**
- * 把 Active Model 的静态 Access 约束投影到当前账号连接。
+ * Projects the static Access constraints of the Active Model onto the current account
+ * connection.
  *
- * Team scope 和账号版本不能冻结进 Model：账号切换后旧 Model 会错误失效。
- * 每次请求重新读取当前选择；只有 family 与 mode 兼容时才返回动态访问事实。
+ * Team scope and the account version must not be frozen into the Model: after switching
+ * accounts the old Model would incorrectly become invalid. The current selection is re-read
+ * on every request; dynamic access facts are returned only when family and mode are
+ * compatible.
  */
 export async function resolveCurrentAccountAccess(input: {
   readonly access: ZCodeProviderAccountAccess;

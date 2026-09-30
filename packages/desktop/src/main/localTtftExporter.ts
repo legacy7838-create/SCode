@@ -20,7 +20,7 @@ import {
 const MAX_QUEUE = 32;
 const EXPORT_TIMEOUT_MS = 3000;
 
-/** 只接收已冻结的观测事实；Main 不参与 session/command 状态裁决。 */
+/** Only accepts already-frozen observational facts; Main takes no part in session/command state adjudication. */
 export function createLocalTtftExporter(options: {
   env: Record<string, string | undefined>;
   now?: () => number;
@@ -202,8 +202,8 @@ export function createLocalTtftExporter(options: {
             outcome: detail.outcome ?? "completed",
           });
         }
-        // 默认体验分布在 Renderer 已确定整条输入的前后台与时钟质量后落样；
-        // 累计阶段观察另用 observation instrument，避免先报前台再切后台污染默认分布。
+        // The default experience is distributed after the Renderer has determined the front and back and clock quality of the entire input;
+        // An observation instrument is used for observation in the accumulation phase to avoid reporting to the foreground first and then switching to the background to pollute the default distribution.
         if (
           (record.kind === "first_output" || record.firstOutputKind) &&
           record.outcome === "success"

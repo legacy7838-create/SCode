@@ -24,10 +24,11 @@ interface PptxSelectionActionBarProps {
 }
 
 /**
- * PPTX 元素选择的应用层操作条。
+ * The app-level action bar for selecting PPTX elements.
  *
- * 锚点仍位于幻灯片 transform 容器内，内容通过 Popover Portal 渲染；这样既能读取
- * 缩放后的真实 DOMRect，又不会让按钮尺寸随幻灯片缩放或被页面 overflow 裁切。
+ * The anchor still lives inside the slide transform container while the content renders through a
+ * Popover Portal; that way it can read the real, post-scale DOMRect without letting the button
+ * sizes scale with the slide or get clipped by page overflow.
  */
 export function PptxSelectionActionBar({
   children,
@@ -82,11 +83,11 @@ export function PptxSelectionActionBar({
                 isComposing: event.isComposing,
               })
             ) {
-              // 中文/日文输入法下 Esc 是取消候选词，不是放弃评论。
-              // 同时读取本地 composition 状态，避免平台事件时序让 isComposing 提前变 false。
+              // Esc under the Chinese/Japanese input method cancels the candidate word, not abandons the comment.
+              // At the same time, the local composition status is read to prevent the platform event timing from making isComposing false early.
               return;
             }
-            // Esc 与“取消”同义：只丢弃本次评论草稿并回到 AI 编辑条，不连带退出元素选择。
+            // Esc is synonymous with "cancel": just discard this draft comment and return to the AI ​​editing bar, without exiting the element selection.
             onCancelAiEdit();
             return;
           }
@@ -141,7 +142,7 @@ export function PptxSelectionActionBar({
             disabled={disabled}
             className="w-full justify-start rounded-lg px-2"
             onMouseDown={(event) => {
-              // 原因：按钮获得鼠标焦点前浏览器可能清空 PPTX 文本 Selection；阻止默认 mousedown 仍保留 click/键盘激活。
+              // Reason: The browser may clear the PPTX text Selection before the button gets mouse focus; preventing the default mousedown still retains click/keyboard activation.
               event.preventDefault();
             }}
             onClick={onAiEdit}

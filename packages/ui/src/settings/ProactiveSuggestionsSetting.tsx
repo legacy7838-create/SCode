@@ -21,10 +21,10 @@ export function ProactiveSuggestionsSetting() {
       await onboardingRecordService
         ?.updateRecordPreferences({ proactiveSuggestionsEnabled: enabled })
         .catch((cause: unknown) => {
-          logger.warn("[settings] 回写引导记录失败", { error: String(cause) });
+          logger.warn("[settings] write back onboarding record failed", { error: String(cause) });
         });
     } catch (error) {
-      logger.warn("[settings] 更新主动任务推荐失败", { error: String(error) });
+      logger.warn("[settings] update proactive task suggestions failed", { error: String(error) });
       toast(intl.formatMessage({ id: "chat.officeSuggestions.saveError" }));
     } finally {
       setSaving(false);

@@ -16,7 +16,7 @@ interface EnvironmentLane {
 }
 
 /**
- * Main 进程只协调 Environment 身份和执行代际；配置与凭据始终由被选中的 Host 现读现传。
+ * The main process only coordinates the Environment identity and the execution generation; configuration and credentials are always read fresh and passed through by the selected Host.
  */
 export class ProviderProvisioningEnvironmentCoordinator {
   readonly #lanes = new Map<string, EnvironmentLane>();
@@ -75,12 +75,12 @@ export class ProviderProvisioningEnvironmentCoordinator {
         await registration.execute(trigger);
         lane.completedGeneration = targetGeneration;
       } catch (error) {
-        // 执行 Host 退出时，其注册会先被移除；同一 Environment 仍有其它 Host
-        // 就立即接管当前代际。普通远端失败不自动重试，等待下一次正式触发。
+        // When executing Host to exit, its registration will be removed first; there are still other Hosts in the same Environment
+        // Take over the current generation immediately. Ordinary remote failures do not automatically retry and wait for the next official trigger.
         if (!lane.registrations.has(registration.id) && lane.registrations.size > 0) continue;
         lane.completedGeneration = targetGeneration;
-        // 首次同步是 Remote Workspace 发布屏障，不能把失败吞成已就绪；
-        // 已连接后的同步由执行端降级为 warning，不会进入这里。
+        // The first synchronization is the Remote Workspace release barrier, and failure cannot be swallowed as ready;
+        // The synchronization after connection is downgraded from execution side to warning and will not enter here.
         if (trigger === "environment-online") throw error;
       }
     }

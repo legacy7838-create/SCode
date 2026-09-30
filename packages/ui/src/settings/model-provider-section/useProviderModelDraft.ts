@@ -14,7 +14,10 @@ import {
 } from "@/settings/model-provider-section/ProviderModelDraftState.js";
 import { useModelConfigResolution } from "@/settings/model-provider-section/useModelConfigResolution.js";
 
-/** 添加和编辑共享推荐生命周期；业务入口仅保留初始化、权限与各自的保存事务。 */
+/**
+ * Adding and editing share the recommendation lifecycle; the business entry points keep only
+ * initialization, permissions and their own save transactions.
+ */
 export function useProviderModelDraft({
   model,
   open,
@@ -30,7 +33,7 @@ export function useProviderModelDraft({
   const [draftScope, setDraftScope] = useState(scopeKey);
   const editGeneration = useRef(0);
   if (draftScope !== scopeKey) {
-    // 切换供应商必须同时丢弃旧草稿和旧请求，不能把上一供应商的用户意图带到新目标。
+    // Switching providers must discard old drafts and requests at the same time, and cannot bring the user intent of the previous provider to the new target.
     setDraftScope(scopeKey);
     setRawDraft(createProviderModelDraftValues(model));
   }
@@ -38,8 +41,8 @@ export function useProviderModelDraft({
   resolveRef.current = resolve;
   const resolveRecommended = useCallback(
     (id: string) => {
-      if (!resolveRef.current) throw new Error("Model Config Resolution 未配置");
-      // 公共草稿持有个人意图；只向 Host 取推荐基线，不用半有效表单拼装第二份 Overlay。
+      if (!resolveRef.current) throw new Error("Model Config Resolution is not configured");
+      // Public drafts hold personal intent; only take recommended baselines from the Host, without assembling a second Overlay using a semi-valid form.
       return resolveRef.current(id, {});
     },
     [scopeKey],
@@ -99,7 +102,8 @@ export function useProviderModelDraft({
     const resolution = requiresResolution
       ? (config.resolution ?? (await config.flush()))
       : config.resolution;
-    if (requiresResolution && !resolution) throw new Error("Model Config Resolution 尚未就绪");
+    if (requiresResolution && !resolution)
+      throw new Error("Model Config Resolution is not ready yet");
     const resolvedModel = modelWithResolution(resolution);
     return resolveProviderModelDraftCommit({
       currentModel: resolvedModel,

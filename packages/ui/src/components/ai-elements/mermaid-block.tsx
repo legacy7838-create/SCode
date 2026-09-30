@@ -25,8 +25,8 @@ type MermaidRenderState =
 export interface MermaidBlockProps extends HTMLAttributes<HTMLDivElement> {
   code: string;
   /**
-   * 应用主题（store 耦合剥离）：由调用方从上层状态传入。
-   * 默认 "system" 跟随操作系统，供旧调用点/待删代码兜底。
+   * Application topic (store coupling stripping): passed in from the upper state by the caller.
+   * The default "system" follows the operating system and is used for old call points/code to be deleted.
    */
   theme?: Theme;
   onOpenPreview?: () => void;
@@ -37,10 +37,10 @@ const mermaidPlugin = createMermaidPlugin();
 let mermaidRenderQueue = Promise.resolve();
 const MERMAID_COLOR_CANVAS_SENTINEL = "#010203";
 
-// Mermaid 底层的 khroma 解析器不支持 Tailwind v4 常见的 oklab/color-mix 结果。
-// 先让浏览器解析主题 token，再通过 canvas 采样成传统 rgb/rgba，避免把现代 CSS 颜色直接传给 Mermaid。
-// Web 远程控制的启动测试只提供了最小 document mock，SSR/预渲染环境也可能没有 DOM 工厂；
-// 颜色归一化是增强能力，不能让 MessageResponse 的静态导入在这些环境中直接崩溃。
+// Mermaid's underlying khroma parser does not support the common oklab/color-mix results of Tailwind v4.
+// Let the browser parse the theme token first, and then sample it into traditional rgb/rgba through canvas to avoid passing modern CSS colors directly to Mermaid.
+// The startup test of Web remote control only provides a minimal document mock, and the SSR/pre-rendering environment may not have a DOM factory;
+// Color normalization is an enhancement that does not allow static imports of MessageResponse to crash directly in these environments.
 const canCreateDomElements =
   typeof document !== "undefined" && typeof document.createElement === "function";
 const mermaidColorResolverEl: HTMLSpanElement | null = canCreateDomElements
@@ -98,7 +98,7 @@ function normalizeCssColorForMermaid(raw: string, fallback: string): string {
     mermaidColorNormalizeCtx.fillStyle = MERMAID_COLOR_CANVAS_SENTINEL;
     const sentinelFillStyle = mermaidColorNormalizeCtx.fillStyle;
     mermaidColorNormalizeCtx.fillStyle = resolved;
-    // 如果 canvas 也不支持该颜色格式，fillStyle 会停在哨兵色，直接回退到 Mermaid 可解析的安全色。
+    // If canvas does not support this color format, fillStyle will stop at the sentinel color and fall back directly to the safe color that Mermaid can parse.
     if (mermaidColorNormalizeCtx.fillStyle === sentinelFillStyle) {
       return fallback;
     }
@@ -277,13 +277,13 @@ export function MermaidBlock({
       })
       .catch((error: unknown) => {
         const message = normalizeMermaidRenderError(error);
-        logger.debug("[MermaidBlock] Mermaid 渲染失败", {
+        logger.debug("[MermaidBlock] mermaid render failed", {
           error: message,
           codeLength: trimmedCode.length,
         });
         if (!cancelled) {
-          // Mermaid 解析失败常见于模型流式输出未完成或用户粘贴了非标准语法。
-          // 退回纯文本能保留内容可读，避免用错误面板打断聊天阅读。
+          // Mermaid parsing failures are common when model streaming output is incomplete or the user has pasted non-standard syntax.
+          // Returning to plain text keeps the content readable and avoids interrupting chat reading with error panels.
           setRenderState({ status: "plaintext" });
           onPreviewSvgChange?.(null);
         }

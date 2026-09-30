@@ -1,25 +1,25 @@
 export interface IntranetProbeTcpTarget {
-  /** 目标唯一 ID；未传时默认使用 host:port */
+  /** Target unique ID; if not passed, host:port will be used by default. */
   id?: string;
   kind?: "tcp";
   host: string;
-  /** 默认 22（SSH） */
+  /** Default 22 (SSH) */
   port?: number;
-  /** 单次探测超时，默认 800ms */
+  /** Single detection timeout, default 800ms */
   timeoutMs?: number;
 }
 
 export interface IntranetProbeServiceTarget {
-  /** 目标唯一 ID；未传时默认使用 url */
+  /** Target unique ID; if not passed, the default url will be used */
   id?: string;
   kind: "service";
-  /** 内网探测服务 URL，例如 由调用方通过 .env 提供 */
+  /** Intranet detection service URL, for example provided by the caller through .env */
   url: string;
-  /** 期望服务返回 marker（可选） */
+  /** Expect the service to return a marker (optional) */
   expectedMarker?: string;
-  /** 简单 token（可选）；会放在 x-zcode-intranet-token 请求头 */
+  /** Simple token (optional); will be placed in the x-zcode-intranet-token request header */
   token?: string;
-  /** 单次探测超时，默认 800ms */
+  /** Single detection timeout, default 800ms */
   timeoutMs?: number;
 }
 
@@ -27,11 +27,11 @@ export type IntranetProbeTarget = IntranetProbeTcpTarget | IntranetProbeServiceT
 
 export interface IntranetProbeRequest {
   targets: IntranetProbeTarget[];
-  /** 每个目标最大重试次数，默认 2，范围 [1, 3] */
+  /** Maximum number of retries per target, default 2, range [1, 3] */
   attempts?: number;
   /**
-   * 命中多少个目标算“在内网”。
-   * 默认 1（任一目标可达即可）。
+   * How many targets are hit count as "internal network".
+   * Default is 1 (any target is reachable).
    */
   requiredSuccessCount?: number;
 }
@@ -42,11 +42,11 @@ export interface IntranetProbeTcpTargetResult {
   host: string;
   port: number;
   reachable: boolean;
-  /** 实际尝试次数 */
+  /** Actual number of attempts */
   attemptCount: number;
-  /** 可达时为毫秒耗时，不可达时为 null */
+  /** The time taken is milliseconds when reachable, and null when unreachable. */
   latencyMs: number | null;
-  /** 最后一次失败原因 */
+  /** Reason for last failure */
   error?: string;
 }
 
@@ -55,13 +55,13 @@ export interface IntranetProbeServiceTargetResult {
   kind: "service";
   url: string;
   reachable: boolean;
-  /** 实际尝试次数 */
+  /** Actual number of attempts */
   attemptCount: number;
-  /** 可达时为毫秒耗时，不可达时为 null */
+  /** The time taken is milliseconds when reachable, and null when unreachable. */
   latencyMs: number | null;
-  /** 服务返回 marker（如果有） */
+  /** The service returns the marker (if any) */
   marker?: string;
-  /** 最后一次失败原因 */
+  /** Reason for last failure */
   error?: string;
 }
 
@@ -70,17 +70,17 @@ export type IntranetProbeTargetResult =
   | IntranetProbeServiceTargetResult;
 
 export interface IntranetProbeResult {
-  /** 最终内网判定 */
+  /** Final intranet decision */
   isIntranet: boolean;
-  /** 探测成功的目标数 */
+  /** Number of successfully detected targets */
   reachedTargetCount: number;
-  /** 判定阈值 */
+  /** Decision threshold */
   requiredSuccessCount: number;
-  /** 参与探测的目标总数 */
+  /** Total number of targets participating in detection */
   totalTargets: number;
-  /** 时间戳（ms） */
+  /** Timestamp (ms) */
   checkedAt: number;
-  /** 当前探测策略 */
+  /** Current detection strategy */
   strategy: "tcp-connect" | "service-http" | "mixed";
   results: IntranetProbeTargetResult[];
 }

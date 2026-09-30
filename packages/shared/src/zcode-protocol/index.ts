@@ -3,21 +3,21 @@ import {
   databaseStartupErrorDetailsSchema,
   databaseMigrationFactsSchema,
 } from "../database-startup.js";
-/* oxlint-disable eslint(max-lines) -- ZCode Protocol schema 需要单文件导出，方便 app 与 agent 共享同一份协议契约。 */
-// ── 旧协议删除边界──────────────────────
-// 剩余 ~257 个导出：旧 ZCode Protocol 方法契约、请求/响应/事件 schema、
-// session/workspace state snapshot 投影等（承重类型已迁 zcode-protocol-legacy-types.ts）。
-// 已连根删除的死词（词表+schema+两侧实现）：session/steer、session/rewind、
-// session/rewindCascade、session/previewFileRewind、session/applyFileRewind、
-// prompt/enhance 全簇（含 promptEnhanceResult 通知）、plugins/marketplace/list；
-// session/fork 客户端链已删（op+schema 留存 = v4 forkSessionAtMessage 钩子消费）。
-// 消费者：services 旧栈（zcodeProtocolClient/zcodeAgent/zcodeAgentService/zcodeSession*）、
-// CLI bootstrap 旧协议 server（zcode-protocol/server-operations、plugins、session-mapper 等）、
-// UI 旧投影（zcodeSessionProjection 等读路径）。
-// 上述旧协议 client/server 组删除时，本文件整体删除。
-// 注：外部零消费 schema 多为存活 schema 联合的内部依赖，随宿主文件一起处理，勿单删。
+/* oxlint-disable eslint(max-lines) -- The ZCode Protocol schemas need a single-file export, so that app and agent share one protocol contract. */
+// ──Old protocol deletes boundaries──────────────────────
+// ~257 exports remaining: old ZCode Protocol method contract, request/response/event schema,
+// session/workspace state snapshot projection, etc. (the load-bearing type has been moved to zcode-protocol-legacy-types.ts).
+// Dead words that have been deleted (vocabulary + schema + implementation on both sides): session/steer, session/rewind,
+// session/rewindCascade,session/previewFileRewind,session/applyFileRewind,
+// prompt/enhance full cluster (including promptEnhanceResult notification), plugins/marketplace/list;
+// The session/fork client chain has been deleted (op+schema retention = v4 forkSessionAtMessage hook consumption).
+// Consumer: services old stack (zcodeProtocolClient/zcodeAgent/zcodeAgentService/zcodeSession*),
+// CLI bootstrap old protocol server (zcode-protocol/server-operations, plugins, session-mapper, etc.),
+// UI old projection (read paths such as zcodeSessionProjection).
+// When the above old protocol client/server group is deleted, this file will be deleted as a whole.
+// Note: External zero-consumption schemas are mostly internal dependencies of surviving schema unions. They are processed together with the host file and should not be deleted separately.
 import { bashOutputDisplaySchema } from "../bash-output-display.js";
-// 后台详情共享精简的只读响应 schema，不携带命令或计时元数据。
+// Backend details share a compact, read-only response schema that carries no command or timing metadata.
 export * from "../background-bash-output.js";
 import { executionOutputPreviewSchema } from "../execution-output-preview.js";
 import { z } from "zod";
@@ -29,7 +29,7 @@ import { accountProviderUnavailableReasonSchema } from "../account-provider-stat
 import { modelExecutionSchema } from "../model-execution.js";
 import { APP_USAGE_RANGES, appUsageSnapshotSchema } from "../usage-stats.js";
 import { zcodeAutomationBotDeliveryTargetSchema } from "../bots.js";
-// browser-use 命令/结果契约单一来源：agent 构造、协议校验和 main executor 共用同一 schema。
+// browser-use single source of command/result contract: agent constructor, protocol check, and main executor share the same schema.
 import { browserClientModeSchema, browserCommandSchema } from "../browser-use/commands.js";
 import {
   browserBackendListResultSchema,
@@ -72,7 +72,7 @@ export {
 
 export const ZCODE_PROTOCOL_NAME = "ZCode Protocol" as const;
 export const ZCODE_PROTOCOL_VERSION = 1 as const;
-// V4 wire 与 legacy 主协议并存；禁止为了 V4 physical framing 改写 legacy 版本。
+// V4 wire coexists with the legacy main protocol; rewriting the legacy version for V4 physical framing is prohibited.
 export const ZCODE_PROTOCOL_V4_WIRE_VERSION = 3 as const;
 export const zcodeRuntimeCapabilitiesSchema = z.object({
   independentPlanState: z.boolean().optional(),
@@ -86,8 +86,8 @@ const jsonObjectSchema = z.record(z.string(), z.unknown());
 const timestampMsSchema = z.number().int().nonnegative();
 const protocolInstantSchema = z.union([timestampMsSchema, nonEmptyString, z.date()]);
 
-// Tool result display 不受模型文本 budget 约束；Node REPL 图片必须在 Agent/App 协议边界
-// 做严格限长，避免截图把 continuous 或 replayable 消息扩成无界载荷。
+// Tool result display is not constrained by the model text budget; Node REPL images must be at the Agent/App protocol boundary
+// Strictly limit the length to prevent screenshots from expanding continuous or replayable messages into unbounded payloads.
 export const zcodeNodeReplImageToolResultDisplaySchema = z
   .object({
     kind: z.literal("node_repl_images"),
@@ -110,15 +110,15 @@ export const zcodeNodeReplImageToolResultDisplaySchema = z
   })
   .strict();
 
-// 同理：CreateWorkflow 的类型检查诊断也是 display 通道，必须在协议边界限长，
-// 避免大量诊断把 continuous/replayable 消息扩成无界载荷。
-// causalityGraph 在工具输出边界已限长，这里镜像同一组上界（与 v4 rows 保持一致）。
-// 图的词汇表刻意很小：step 卡片 + actor 车道 + 一种箭头（runs after，`back` 只标回边）+
-// 返回物标记。分析器的 kind / certainty / exact / region 不进载荷。
-// 名字只在运行时成形（`` agent(`研究员${i + 1}`) ``）时静态能拿到的形状：第一个洞之前的
-// 字面量（head）与最后一个洞之后的字面量（tail）。至少一个在场，两者都已 trim 且含实义字符。
-// Bug 修复：这两个字段随 0a8b059f40 落进 contracts 与 v4 镜像，v3 这份漏改——.strict()
-// 之下带插值名的工作流会让整个 display 验证失败、图整块消失，所以这里必须与 v4 逐字段对齐。
+// Similarly: CreateWorkflow's type check diagnosis is also a display channel, which must be bounded at the protocol boundary.
+// Avoid extensive diagnostics that expand continuous/replayable messages into unbounded payloads.
+// The causalityGraph is length-limited at the tool output bounds, mirroring the same set of upper bounds here (consistent with v4 rows).
+// The vocabulary of graphs is intentionally small: step card + actor lane + a type of arrow (runs after, `back` only marks back edges) +
+// Return object tag. The analyzer's kind / certainty / exact / region are not included in the payload.
+// The name is only shaped at runtime (`` agent(`researcher${i + 1}`) ``). The shape is statically available: before the first hole.
+// The literal (head) and the literal after the last hole (tail). At least one is present, both are trimmed and contain meaningful characters.
+// Bug fix: These two fields fell into contracts and v4 images with 0a8b059f40, and v3 missed the change——.strict()
+// The following workflow with interpolated names will cause the entire display verification to fail and the entire image to disappear, so it must be aligned with v4 field by field.
 const zcodeWorkflowNamePatternSchema = z
   .object({
     head: z.string().min(1).max(128).optional(),
@@ -126,7 +126,7 @@ const zcodeWorkflowNamePatternSchema = z
   })
   .strict();
 
-// 一条边 = runs after；step 边与阶段边同形，`back` 只标循环回边。
+// An edge = runs after; the step edge is the same shape as the stage edge, `back` only marks the loop back edge.
 const zcodeWorkflowEdgeSchema = z
   .object({
     from: z.string().min(1).max(64),
@@ -144,17 +144,17 @@ const zcodeCreateWorkflowCausalityGraphDisplaySchema = z
             id: z.string().min(1).max(64),
             kind: z.enum(["ask", "world-read"]),
             label: z.string().min(1).max(128),
-            // 内联 `agent()` receiver 让 label 落到兜底串时，那个名字的静态形状。
+            // Inline `agent()` receiver gives the static shape of the name when label falls into the string.
             labelPattern: zcodeWorkflowNamePatternSchema.optional(),
             line: z.number().int().positive().optional(),
             column: z.number().int().positive().optional(),
             lane: z.string().min(1).max(64),
             lanes: z.array(z.string().min(1).max(64)).max(32).optional(),
-            // 展开自的站点 id，只出现在 may-set 车道展开的拷贝上（实时叠加的关联键）；
-            // 加字段是 additive 的，不带它的旧载荷照常通过 .strict()。
+            // The site id expanded from, only appears on the copy of the may-set lane expansion (the associated key of the real-time overlay);
+            // The added field is additive, and old payloads without it pass .strict() as usual.
             source: z.string().min(1).max(64).optional(),
-            // 作者用 `phase("…")` 标记划入的阶段。
-            // 与图的 phases / phaseEdges / exits 同进同退：全在场或全缺席。
+            // The author uses `phase("…")` to mark the divided phases.
+            // Advance and exit simultaneously with the phases / phaseEdges / exits of the diagram: all present or all absent.
             phase: z.string().min(1).max(64).optional(),
             repeat: z.enum(["stack", "serial"]).optional(),
           })
@@ -167,7 +167,7 @@ const zcodeCreateWorkflowCausalityGraphDisplaySchema = z
           .object({
             id: z.string().min(1).max(64),
             name: z.string().min(1).max(128).optional(),
-            // `name` 缺席而 agent() 首参是带洞的模板串时的静态形状；与 name 互斥。
+            // Static shape when `name` is absent and the first parameter of agent() is a template string with holes; mutually exclusive with name.
             namePattern: zcodeWorkflowNamePatternSchema.optional(),
             line: z.number().int().positive().optional(),
             column: z.number().int().positive().optional(),
@@ -175,7 +175,7 @@ const zcodeCreateWorkflowCausalityGraphDisplaySchema = z
           .strict(),
       )
       .max(32),
-    // 参与者与交接；镜像 v4。
+    // Participants and handoffs; Mirror v4.
     participants: z
       .array(
         z
@@ -200,9 +200,9 @@ const zcodeCreateWorkflowCausalityGraphDisplaySchema = z
           .strict(),
       )
       .max(256),
-    // 阶段词汇表：作者施加的分组结构，主画面以它为节点。与 phaseEdges / exits / Step.phase
-    // 全有或全无——零标记脚本全缺席，UI 据此退回 step/车道视图。零成员阶段也在表里。
-    // `unphased` 无 name，显示名由 UI 本地化。
+    // Stage vocabulary: The grouping structure imposed by the author, with the main screen as a node. with phaseEdges/exits/Step.phase
+    // All or Nothing - The zero flag script is completely absent and the UI falls back to the step/lane view. The zero-member stage is also inside and outside.
+    // `unphased` No name, the display name is localized by the UI.
     phases: z
       .array(
         z
@@ -211,9 +211,9 @@ const zcodeCreateWorkflowCausalityGraphDisplaySchema = z
             name: z.string().min(1).max(128).optional(),
             line: z.number().int().positive().optional(),
             column: z.number().int().positive().optional(),
-            // 进入本阶段时还在跑的其他阶段（它们的 strand 尚未 join），阶段表序，不含自己，
-            // 为空时缺席。是节点事实而不是边——控制没有从那里转移过来，所以不进 phaseEdges。
-            // 时间轴据此把相邻阶段折成一条分叉的「带」，侧栏迷你轨道画成双线段。
+            // Other stages that are still running when entering this stage (their strands have not yet been joined), stage table order, excluding itself,
+            // Absent when empty. It's the node fact rather than the edge - control is not transferred from there, so phaseEdges are not entered.
+            // The timeline folds adjacent stages into a bifurcated "belt" and the sidebar mini-track is drawn as a double line segment.
             alongside: z.array(z.string().min(1).max(64)).min(1).max(32).optional(),
           })
           .strict(),
@@ -221,7 +221,7 @@ const zcodeCreateWorkflowCausalityGraphDisplaySchema = z
       .max(32)
       .optional(),
     phaseEdges: z.array(zcodeWorkflowEdgeSchema).max(128).optional(),
-    // 控制流可在其后正常完成的阶段（阶段视图的「阶段 → 返回物」箭头）；组内可为空数组。
+    // The stage in which the control flow can be completed normally (the "stage → return object" arrow in the stage view); the group can be an empty array.
     exits: z.array(z.string().min(1).max(64)).max(32).optional(),
     sink: z.array(z.string().min(1).max(64)).max(64).optional(),
     truncated: z.boolean().optional(),
@@ -342,7 +342,7 @@ export const zcodeProtocolNotifications = {
   processResourceSample: "process/resourceSample",
 } as const;
 
-/** 启动控制面独立于 task stream；数据库身份不可携带路径/凭据。 */
+/** The startup control plane is independent of the task stream; a database identity must never carry a path or credentials. */
 export const zcodeStorageStartupStateSchema = z
   .object({
     schemaVersion: z.literal(1),
@@ -351,7 +351,7 @@ export const zcodeStorageStartupStateSchema = z
     databaseId: z.string().min(1).max(128),
     databaseKind: z.enum(["session", "tasks-index"]),
     phase: z.enum(["checking", "waiting_for_lock", "migrating", "committing", "ready", "failed"]),
-    // 包含锁内、版本 SQL 之前的可选 lastAppliedMigrationId；旧通知仍可解析。
+    // Contains the optional lastAppliedMigrationId within the lock, before version SQL; old notifications can still be parsed.
     migration: databaseMigrationFactsSchema.optional(),
     elapsedMs: z.number().nonnegative().finite(),
     completed: z.number().int().nonnegative().optional(),
@@ -452,7 +452,7 @@ export const zcodeMcpTelemetryEventSchema = z.discriminatedUnion("kind", [
 ]);
 export type ZCodeMcpTelemetryEvent = z.infer<typeof zcodeMcpTelemetryEventSchema>;
 
-/** MCP 每五分钟只探测一次，周期由生产者与设备总量过期判据共用。 */
+/** MCP only probes once every five minutes; the interval is shared by the producer and the device-count expiry criterion. */
 export const ZCODE_MCP_RESOURCE_SAMPLE_INTERVAL_MS = 5 * 60_000;
 
 export const zcodeMcpResourceSampleSchema = z
@@ -473,16 +473,16 @@ export const zcodeMcpResourceSampleSchema = z
   })
   .strict();
 export type ZCodeMcpResourceSample = z.infer<typeof zcodeMcpResourceSampleSchema>;
-// 通知输入有界；main 另按每个上报窗口的 32 个 MCP 分组执行事件额度。
+// The notification input is bounded; main also executes the event quota according to the 32 MCP groups of each reporting window.
 export const zcodeMcpResourceSamplesSchema = z.array(zcodeMcpResourceSampleSchema).max(1_024);
 
 export const BASH_RESOURCE_SAMPLE_INTERVAL_MS = 15_000;
 export const BASH_RESOURCE_MAX_SAMPLES = 20;
 
-/** Bash 子进程的有界完成事实；禁止命令、路径与会话标识进入遥测旁路。 */
+/** Bounded completion facts of a Bash subprocess; commands, paths and session identifiers are forbidden from the telemetry side channel. */
 export const zcodeToolExecResourceSchema = z
   .object({
-    // 同一完成事实可能经多个 Host 转发；随机标识仅供 main 去重，旧 CLI 缺字段仍兼容。
+    // The same completion fact may be forwarded by multiple hosts; the random identifier is only used for main deduplication, and the missing fields of the old CLI are still compatible.
     completionToken: z.string().uuid().optional(),
     platform: zcodeMcpTelemetryPlatformSchema,
     toolName: z.literal("bash"),
@@ -536,8 +536,9 @@ export const zcodeProcessResourceSampleSchema = z
     cpuPercent: z.number().finite().nonnegative().max(100_000),
     rssKb: z.number().finite().nonnegative().max(Number.MAX_SAFE_INTEGER),
     /**
-     * 以下四项为遥测新增字段，全部可选：旧 CLI 发来的样本仍能通过校验，因此
-     * **不递增协议握手版本号**（握手版本是兼容性开关，不是字段版本）。
+     * The following four are newly added telemetry fields, all optional: samples from an old
+     * CLI still validate, so the **protocol handshake version is deliberately not bumped**
+     * (the handshake version is a compatibility switch, not a field version).
      */
     heapUsedKb: z.number().finite().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
     uptimeMinutes: z
@@ -548,9 +549,11 @@ export const zcodeProcessResourceSampleSchema = z
       .optional(),
     totalMemoryGb: z.number().int().nonnegative().max(1_048_576).optional(),
     /**
-     * CLI 进程启动时随机生成的实例标识，仅供 app 侧 main 统计「同时存活几个 CLI 进程」
-     * 与「最大单进程 RSS」。不进 ARMS 属性、不含 pid。收紧字符集是隐私红线的机械保障：
-     * 路径、workspace 标识这类内容不可能通过校验。
+     * An instance identifier randomly generated at CLI process startup, used only by the
+     * app-side main to count "how many CLI processes are alive at the same time" and the
+     * "largest single-process RSS". It never enters ARMS attributes and carries no pid.
+     * The narrow character set is a mechanical guarantee of the privacy red line: content
+     * such as paths or workspace identifiers can never pass validation.
      */
     instanceToken: z
       .string()
@@ -566,7 +569,7 @@ export const zcodeProcessChildProcessSchema = z
     pid: z.number().int().positive(),
     serverName: nonEmptyString,
     mcpSource: z.enum(["builtin", "plugin", "custom"]),
-    /** 官方/第三方插件的插件名（`plugin:<name>:<key>` 的 name，或官方 host MCP 对应插件）；custom 无 */
+    /** The plugin name of an official/third-party plugin (the `name` of `plugin:<name>:<key>`, or the plugin corresponding to an official host MCP); absent for custom */
     pluginName: nonEmptyString.optional(),
   })
   .strict();
@@ -581,8 +584,8 @@ export type ZCodeProcessChildProcessesResult = z.infer<
 >;
 
 export type ZCodeDeliveryKind = z.infer<typeof zcodeDeliveryKindSchema>;
-// TurnStarted 与持久 message 必须共用同一来源词表；否则 live event 能通过而 cold
-// message 在 app/agent 边界被拒绝，造成 continuous/replayable 语义分叉。
+// TurnStarted and persistent message must share the same source vocabulary; otherwise live event can pass and cold
+// The message is rejected at the app/agent boundary, causing a bifurcation of continuous/replayable semantics.
 const zcodeTurnInputSourceSchema = legacyZcodeSyntheticUserMessageSourceSchema;
 export const zcodeSessionPersistenceSchema = z.enum(["immediate", "deferred"]);
 export type ZCodeSessionPersistence = z.infer<typeof zcodeSessionPersistenceSchema>;
@@ -837,7 +840,7 @@ export const zcodeAccountAccessSchema = z.discriminatedUnion("planKind", [
 ]);
 export type ZCodeAccountAccess = z.infer<typeof zcodeAccountAccessSchema>;
 
-/** Active Model 固定的账号访问类别；当前商品和 Team scope 由账号服务在请求期解析。 */
+/** The fixed account access category for Active Model; the current offering and Team scope are resolved by the account service at request time. */
 export const zcodeProviderAccountAccessSchema = z
   .object({
     type: z.literal("zhipu-account"),
@@ -893,7 +896,7 @@ export const zcodeSessionSettingsStateSchema = z
   .object({
     model: z
       .object({
-        // 未绑定是合法恢复状态；不能为满足协议而伪造模型或阻断历史读取。
+        // Unbound is a legal recovery state; you cannot forge models or block history reads to satisfy the protocol.
         current: modelSelectionSchema.optional(),
         available: z.array(zcodeModelOptionSchema),
         lastUsed: modelSelectionSchema.optional(),
@@ -1072,10 +1075,10 @@ const zcodeComputerUseToolScheduledEventSchema = zcodeComputerUseOperationEventB
   turnId: nonEmptyString,
   toolCallId: nonEmptyString,
   toolName: nonEmptyString,
-  // 这个 cell 是否在用 Computer Use。只表达布尔事实，不再携带动作名——旧的
-  // operationAction 靠从模型源码里抽取动作名得到，SDK 面一变就整体失配（见
-  // bootstrap/src/zcode-protocol/computer-use-operation-event.ts 的 usesComputerUse）。
-  // 只挂在 scheduled 上：ToolCallStartedPayload 没有 input，start 时已拿不到模型源码。
+  // Whether this cell is using Computer Use. Only express Boolean facts, no longer carry action names - old
+  // operationAction is obtained by extracting the action name from the model source code. Once the SDK surface changes, the overall mismatch will occur (see
+  // usesComputerUse of bootstrap/src/zcode-protocol/computer-use-operation-event.ts).
+  // Only hung on scheduled: ToolCallStartedPayload has no input, and the model source code cannot be obtained when starting.
   computerUse: z.literal(true).optional(),
 });
 const zcodeComputerUseToolStartedEventSchema = zcodeComputerUseOperationEventBaseSchema.extend({
@@ -1180,7 +1183,7 @@ export const zcodeTurnStartedEventPayloadSchema = z
     foregroundExecutionId: nonEmptyString.optional(),
     intent: jsonObjectSchema.optional(),
     originMeta: jsonObjectSchema.optional(),
-    // runtime 会透传后台唤醒来源，strict schema 必须同步声明以免丢弃整条事件。
+    // The runtime will transparently transmit the background wake-up source, and strict schema must be declared synchronously to avoid discarding the entire event.
     backgroundSource: z.enum(["bash", "subagent"]).optional(),
     attachments: z.array(jsonObjectSchema).optional(),
   })
@@ -1236,8 +1239,8 @@ export const zcodeTurnCompletedEventPayloadSchema = z
     toolCallCount: z.number().int().nonnegative(),
     historyRoundCount: z.number().int().nonnegative().optional(),
     duration: z.number().nonnegative(),
-    // runtime turn.completed 会附带 cacheStats，协议 schema 之前漏掉该字段。
-    // strict 校验失败会让桌面端丢掉终态事件，表现为消息已完成但 UI 一直没有回复。
+    // runtime turn.completed will come with cacheStats, which was previously missing from the protocol schema.
+    // Failure of strict verification will cause the desktop to lose the final event, which means that the message has been completed but the UI has not responded.
     cacheStats: z
       .object({
         totalMessages: z.number().int().nonnegative(),
@@ -1250,7 +1253,7 @@ export const zcodeTurnCompletedEventPayloadSchema = z
     inputId: nonEmptyString.optional(),
     resultType: z.enum([
       "success",
-      // "cancelled": 用户主动中断属于正常结束，复用 turn.completed 上报，避免被映射成 turn.failed。
+      // "cancelled": User-initiated interruption is a normal end, reuse turn.completed to report to avoid being mapped to turn.failed.
       "cancelled",
       "error_max_turns",
       "error_max_budget",
@@ -1311,7 +1314,7 @@ const zcodeToolCallBasePayloadSchema = z
     source: z.enum(["subagent"]).optional(),
     agentId: nonEmptyString.optional(),
     agentType: nonEmptyString.optional(),
-    // subagent mirror 会携带后台归因；strict schema 漏字段会让 session/event 整条被丢弃。
+    // Subagent mirror will carry background attribution; strict schema missing fields will cause the entire session/event to be discarded.
     background: z.boolean().optional(),
     childSessionId: nonEmptyString.optional(),
     childToolCallId: nonEmptyString.optional(),
@@ -1323,7 +1326,7 @@ export const zcodeToolUpdatedEventPayloadSchema = z.discriminatedUnion("kind", [
   zcodeToolCallBasePayloadSchema
     .extend({
       kind: z.literal("scheduled"),
-      // 修复：CLI 调度事件已携带所属消息 ID；漏声明会让严格校验丢弃整条事件。
+      // Fix: CLI scheduled events already carry the corresponding message ID; missing declarations will cause strict verification to discard the entire event.
       assistantMessageId: nonEmptyString.optional(),
       toolName: nonEmptyString,
       input: z.unknown().optional(),
@@ -1570,11 +1573,11 @@ export const zcodeSessionCreateParamsSchema = z
     toolAllowlist: z.array(nonEmptyString).optional(),
     toolDenylist: z.array(nonEmptyString).optional(),
     importedHistory: zcodeSessionImportHistorySchema.optional(),
-    // host 只按本地服务装配/远程/端形态决定是否注册工具，不读取灰度；
-    // 缺省不下发 = 不注册；灰度与套餐准入在实际创建的 Host handler 校验。
+    // The host only determines whether to register the tool according to the local service assembly/remote/end configuration, and does not read grayscale;
+    // The default is not issued = no registration; grayscale and package access are verified on the actually created Host handler.
     offPeakToolEnabled: z.boolean().optional(),
-    // 动态工作流灰度：与 offPeakToolEnabled 同一
-    // 模式——host 裁决后下发，缺省不下发 = 不注册工作流工具簇（fail-closed）。
+    // Dynamic workflow grayscale: same as offPeakToolEnabled
+    // Mode - delivered after host decision, default is not delivered = does not register the workflow tool cluster (fail-closed).
     dynamicWorkflowEnabled: z.boolean().optional(),
   })
   .strict();
@@ -1584,15 +1587,15 @@ export const zcodeSessionResumeParamsSchema = z
   .object({
     sessionId: nonEmptyString,
     workspace: zcodeWorkspaceRefSchema.optional(),
-    // 旧 session 尚无 runtime/model_selection entry 时，由同 task 的索引元数据提供迁移 hint。
+    // When the old session does not have a runtime/model_selection entry, the migration hint is provided by the index metadata of the same task.
     thoughtLevel: nonEmptyString.optional(),
     mcpServers: z.array(zcodeProtocolMcpServerSchema).optional(),
-    // 冷恢复重建 runtime 时必须沿用 create 的工具面约束（否则会绕过 allow/deny，尤其 CUA 会话）。
+    // The tool surface constraints of create must be followed when rebuilding the runtime during cold recovery (otherwise allow/deny will be bypassed, especially CUA sessions).
     toolAllowlist: z.array(nonEmptyString).optional(),
     toolDenylist: z.array(nonEmptyString).optional(),
-    // 与 create 同语义；resume 不带会导致冷恢复丢 Off-Peak 工具面。
+    // The same semantics as create; resume without it will cause cold recovery to lose the Off-Peak tool surface.
     offPeakToolEnabled: z.boolean().optional(),
-    // 与 create 同语义；resume 不带会导致冷恢复丢工作流工具簇。
+    // The same semantics as create; not using resume will cause the cold recovery to lose the workflow tool cluster.
     dynamicWorkflowEnabled: z.boolean().optional(),
   })
   .strict();
@@ -1601,7 +1604,7 @@ export type ZCodeSessionResumeParams = z.infer<typeof zcodeSessionResumeParamsSc
 export const zcodeSessionListParamsSchema = z
   .object({
     workspace: zcodeWorkspaceRefSchema.optional(),
-    // 显式身份查询包含隐藏会话；普通列表仍只返回主任务，避免索引修复激活 runtime。
+    // Explicit identity queries include hidden sessions; normal lists still only return the main task to avoid index repair activating the runtime.
     sessionIds: z.array(nonEmptyString).min(1).max(64).optional(),
     includeArchived: z.boolean().default(false),
     limit: z.number().int().positive().optional(),
@@ -1696,7 +1699,7 @@ export type ZCodeSessionRequestRuntimePreferencesParams = z.infer<
 
 export const DEFAULT_ZCODE_MODEL_CONTEXT_BUDGET_STRATEGY = "preflight-v1" as const;
 
-// 3.12.2：legacy 仅为旧协议接收兼容；Runtime 一律归一为上面的共享默认策略。
+// 3.12.2: legacy is only compatible with old protocols; runtime will always be normalized to the above shared default policy.
 export const zcodeModelContextBudgetStrategySchema = z.enum(["legacy", "preflight-v1"]);
 export type ZCodeModelContextBudgetStrategy = z.infer<typeof zcodeModelContextBudgetStrategySchema>;
 
@@ -1706,7 +1709,7 @@ export const zcodeSessionRuntimePreferencesResultSchema = z
     memoryEnabled: z.boolean().default(false),
     askUserQuestionAutoResolutionEnabled: z.boolean().default(true),
     integratedTerminalShell: integratedTerminalShellSelectionSchema.optional(),
-    // 兼容旧 Host：缺少字段时在协议解析边界使用当前默认策略。
+    // Compatible with older Hosts: Use the current default policy at protocol parsing boundaries when fields are missing.
     modelContextBudgetStrategy: zcodeModelContextBudgetStrategySchema.default(
       DEFAULT_ZCODE_MODEL_CONTEXT_BUDGET_STRATEGY,
     ),
@@ -1717,8 +1720,9 @@ export type ZCodeSessionRuntimePreferencesResult = z.infer<
 >;
 
 /**
- * App 在提交 prompt 前只读采集的 IAB 可见状态。该字段只用于 provider-visible
- * ambient context，不进入用户可见 transcript；内容有界，禁止携带页面正文或凭据。
+ * The IAB visible state the App collects read-only before submitting a prompt. This field
+ * is only used for provider-visible ambient context and never enters the user-visible
+ * transcript; its content is bounded and must never carry page text or credentials.
  */
 export const zcodeBrowserAmbientContextSchema = z
   .object({
@@ -2085,14 +2089,14 @@ export const zcodeWorkspaceGenerateTextParamsSchema = z
   })
   .strict()
   .refine((value) => value.prompt !== undefined || value.messages !== undefined, {
-    message: "prompt 或 messages 至少需要提供一个",
+    message: "either prompt or messages is required",
   });
 export const zcodeWorkspaceGenerateTextResultSchema = z
   .object({
     text: z.string(),
     selection: modelSelectionSchema,
     toolCalls: z.array(zcodeWorkspaceModelToolCallSchema).optional(),
-    // 可选以兼容仍在运行的旧 app-server；新 CLI 始终返回结构化结束原因。
+    // Optional for compatibility with legacy app-servers that are still running; the new CLI always returns a structured end reason.
     finishReason: z.string().optional(),
     usage: z
       .object({
@@ -2149,9 +2153,9 @@ export const zcodeProviderUpdateAccountConfigParamsSchema = z
   .object({
     revision: nonEmptyString,
     basedOnZCodeBuiltinRevision: nonEmptyString,
-    // Provider Config 的字段校验由 @zcode/provider 负责；协议层只约束可传输信封。
+    // Provider Config field verification is handled by @zcode/provider; the protocol layer only restricts transmittable envelopes.
     providers: z.record(z.string(), z.unknown()),
-    // 账号状态与 Overlay 必须一起传递，否则 Worker 会丢失非当前套餐的执行门禁。
+    // The account status and Overlay must be passed together, otherwise the Worker will lose execution access control for non-current packages.
     states: z.record(
       z.string(),
       z
@@ -2169,7 +2173,7 @@ export const zcodeProviderUpdateAccountConfigParamsSchema = z
   .strict();
 export const zcodeProviderUpdateAccountConfigResultSchema = z
   .object({
-    // 收到账号结果不代表配套 Built-in 已到达；应用版本只能读取 Registry 快照。
+    // Receiving the account result does not mean that the package Built-in has arrived; the application version can only read the Registry snapshot.
     receivedRevision: nonEmptyString,
     providerCount: z.number().int().nonnegative(),
     status: z.enum(["received", "unchanged"]),
@@ -2254,8 +2258,8 @@ export type ZCodeWorkspaceUpdateOffPeakToolPolicyResult = z.infer<
   typeof zcodeWorkspaceUpdateOffPeakToolPolicyResultSchema
 >;
 
-// 动态工作流灰度门禁：workspace 级事实，
-// 与 Off-Peak 同一套 host→CLI 同步模式；旧 CLI method-not-found → host 降级忽略。
+// Dynamic workflow grayscale access control: workspace-level facts,
+// Same host→CLI synchronization mode as Off-Peak; old CLI method-not-found→host downgrade ignored.
 export const zcodeWorkspaceUpdateDynamicWorkflowPolicyParamsSchema = z
   .object({
     workspace: zcodeWorkspaceRefSchema,
@@ -2292,7 +2296,7 @@ export const zcodePermissionRequestParamsSchema = z
   .strict();
 export type ZCodePermissionRequestParams = z.infer<typeof zcodePermissionRequestParamsSchema>;
 
-/** Agent 请求 app 枚举当前 workspace/session 可达且已完成握手的 browser backend。 */
+/** The Agent asks the app to enumerate the browser backends reachable from the current workspace/session that have completed the handshake. */
 export const zcodeBrowserListParamsSchema = z
   .object({
     requestId: nonEmptyString,
@@ -2311,7 +2315,7 @@ export type ZCodeBrowserListParams = z.infer<typeof zcodeBrowserListParamsSchema
 export const zcodeBrowserListResultSchema = browserBackendListResultSchema;
 export type ZCodeBrowserListResult = z.infer<typeof zcodeBrowserListResultSchema>;
 
-/** Agent 把一条 browser-use 命令发送给 app 执行。 */
+/** The Agent sends one browser-use command to the app for execution. */
 export const zcodeBrowserExecuteParamsSchema = z
   .object({
     requestId: nonEmptyString,
@@ -2330,8 +2334,8 @@ export const zcodeBrowserExecuteParamsSchema = z
   .strict();
 export type ZCodeBrowserExecuteParams = z.infer<typeof zcodeBrowserExecuteParamsSchema>;
 
-// browser command result 是 app/agent 的同源协议结果；其中 duplicate_request_id 用于在真正维护
-// pending/running 生命周期的边界拒绝 correlation key 冲突，不能依赖上游 UUID 概率保证。
+// browser command result is the same origin protocol result of app/agent; where duplicate_request_id is used for real maintenance
+// The boundary of the pending/running life cycle rejects correlation key conflicts and cannot rely on the upstream UUID probability guarantee.
 export const zcodeBrowserExecuteResultSchema = browserCommandResultSchema;
 export type ZCodeBrowserExecuteResult = z.infer<typeof zcodeBrowserExecuteResultSchema>;
 
@@ -2395,7 +2399,7 @@ export type ZCodeProviderRuntimeHeadersRequestParams = z.infer<
   typeof zcodeProviderRuntimeHeadersRequestParamsSchema
 >;
 
-/** 请求取消只作用于同 workspace/session 的这一轮凭据刷新。 */
+/** Cancelling the request only affects this one round of credential refresh within the same workspace/session. */
 export const zcodeProviderRuntimeHeadersCancelledSchema = z
   .object({
     requestId: nonEmptyString,
@@ -2411,7 +2415,7 @@ export const zcodeProviderRuntimeHeadersResponseSchema = z.discriminatedUnion("h
   z
     .object({
       headersApplied: z.literal(true),
-      // 合并重接：成功必须携带当前请求的鉴权材料，不依赖旧 Registry 已被写入。
+      // Merge reconnection: Success must carry the authentication material of the current request and does not rely on the old Registry being written.
       requestAuth: z
         .object({
           apiKey: nonEmptyString.optional(),
@@ -2432,10 +2436,10 @@ export type ZCodeProviderRuntimeHeadersResponse = z.infer<
   typeof zcodeProviderRuntimeHeadersResponseSchema
 >;
 
-// ── 官方 Server MCP 鉴权──
-// Agent 进程不是用户身份权威：它把 (pluginId, mcpKey, targetOrigin) 报给 host，由 host
-// 解析当前 Coding Plan 凭证并回传本次请求的身份头。请求侧不含任何秘密。
-// 与 interaction/requestProviderRuntimeHeaders 同类：Agent 发起、host 自动响应、零 UI。
+// ── Official Server MCP authentication──
+// The Agent process is not the user identity authority: it reports (pluginId, mcpKey, targetOrigin) to the host, who
+// Parse the current Coding Plan credentials and return the identity header of this request. The request side does not contain any secrets.
+// Similar to interaction/requestProviderRuntimeHeaders: Agent initiated, host automatically responded, and zero UI.
 export const zcodeOfficialMcpAuthHeadersRequestParamsSchema = z
   .object({
     requestId: nonEmptyString,
@@ -2450,11 +2454,14 @@ export type ZCodeOfficialMcpAuthHeadersRequestParams = z.infer<
 >;
 
 /**
- * 失败原因必须可枚举，避免调用方按文本分流；因此响应不含 errorMessage。
+ * The failure reason must be enumerable, so that callers never have to route on free text;
+ * that is why the response carries no errorMessage.
  *
- * `official_mcp_origin_untrusted` 是 host 侧二次校验的拒绝原因：`targetOrigin` 不等于当前
- * ZCode API origin。判定只看 origin，`pluginId` / `mcpKey` 仅用于日志归属。与"未登录/无凭据"
- * 分开，才能在排查时区分"被拒绝"和"没身份"。
+ * `official_mcp_origin_untrusted` is the rejection reason from the host-side second
+ * validation: `targetOrigin` is not equal to the current ZCode API origin. The decision
+ * only looks at the origin; `pluginId` / `mcpKey` are used solely for log attribution.
+ * Keeping it separate from "not logged in / no credentials" is what lets troubleshooting
+ * tell "rejected" apart from "no identity".
  */
 export const zcodeOfficialMcpAuthFailureReasonSchema = z.enum(
   OFFICIAL_MCP_AUTH_PORT_FAILURE_REASONS,
@@ -2479,7 +2486,7 @@ export type ZCodeOfficialMcpAuthHeadersResponse = z.infer<
 >;
 
 // ── Plugin management (list + enable/disable) ──
-// 镜像 @zcode/contracts 的 PluginMetadata, 仅保留 UI 需要的可序列化字段。
+// Mirrors the PluginMetadata of @zcode/contracts, retaining only the serializable fields required by the UI.
 export const zcodePluginOptionValueSchema = z.union([z.string(), z.number(), z.boolean()]);
 export type ZCodePluginOptionValue = z.infer<typeof zcodePluginOptionValueSchema>;
 export const zcodePluginScopeSchema = z.enum(["user", "workspace"]);
@@ -2512,15 +2519,15 @@ export const zcodePluginUserConfigOptionSchema = z
   .strict();
 export type ZCodePluginUserConfigOption = z.infer<typeof zcodePluginUserConfigOptionSchema>;
 
-// 组件类型与详情弹窗/市场详情共用的分组顺序保持一致：agent / command / skill / hook / mcp。
-// 注意：这三个 schema 必须定义在 zcodePluginInfoSchema 之前，因为后者（.strict()）的 components 字段引用了它们。
+// The component type is consistent with the grouping order shared by detail pop-ups/market details: agent/command/skill/hook/mcp.
+// Note: These three schemas must be defined before zcodePluginInfoSchema, because the components field of the latter (.strict()) refers to them.
 export const zcodePluginComponentKindSchema = z.enum(["agent", "command", "skill", "hook", "mcp"]);
 export type ZCodePluginComponentKind = z.infer<typeof zcodePluginComponentKindSchema>;
 
 export const zcodePluginComponentItemSchema = z
   .object({
     name: nonEmptyString,
-    // 描述来自组件 frontmatter（SKILL.md / command / agent）或 manifest；缺失时省略，不伪造。
+    // Description comes from component frontmatter (SKILL.md/command/agent) or manifest; omitted when missing, not forged.
     description: z.string().optional(),
   })
   .strict();
@@ -2541,15 +2548,15 @@ export const zcodePluginInfoSchema = z
     enabled: z.boolean(),
     source: nonEmptyString,
     marketplace: nonEmptyString,
-    // manifest（plugin.json）的作者/主页回退字段；商店 listing 缺失时详情页信息区用它兜底。
+    // The author/homepage fallback field of the manifest (plugin.json); it is used in the details page information area when the store listing is missing.
     author: z.string().optional(),
     authorUrl: z.string().optional(),
     homepage: z.string().optional(),
     skillCount: z.number().int().nonnegative().optional(),
     skillRootCount: z.number().int().nonnegative(),
     commandRootCount: z.number().int().nonnegative(),
-    // 权威组件清单（名称 + 可选描述），由 CLI 对插件根目录枚举得出，与启用态无关。
-    // 详情 UI 直接展示，取代旧的「数量取协议、名称靠 UI 侧 join」脆弱方案。optional 兼容旧 payload。
+    // The authoritative component list (name + optional description), derived from the CLI enumeration of the plugin root directory, regardless of the enabled state.
+    // The details are displayed directly on the UI, replacing the old fragile solution of "the quantity is taken from the protocol, and the name is joined on the UI side". optional Compatible with old payloads.
     components: z.array(zcodePluginComponentGroupSchema).optional(),
     declaredMcpServerNames: z.array(z.string()).optional(),
     hostMcpServerNames: z.array(z.string()).optional(),
@@ -2558,7 +2565,7 @@ export const zcodePluginInfoSchema = z
     rootPath: z.string(),
     userConfig: z.record(z.string(), zcodePluginUserConfigOptionSchema).optional(),
     configuredOptions: z.record(z.string(), zcodePluginOptionValueSchema).optional(),
-    // 缺省表示 package 可用；missing 用于保留已声明但目标 Host 尚未物化的配置行。
+    // The default indicates that the package is available; missing is used to retain configuration lines that have been declared but the target Host has not yet been materialized.
     packageStatus: z.literal("missing").optional(),
     rootSource: zcodePluginScopeSchema.optional(),
     enabledSource: zcodePluginScopeSchema.optional(),
@@ -2591,33 +2598,33 @@ export const zcodePluginsListResultSchema = z
   .strict();
 export type ZCodePluginsListResult = z.infer<typeof zcodePluginsListResultSchema>;
 
-// ── Plugin 对话引用 catalog──
-// Session-scoped 只读投影：带 sessionId → 该 Session 创建时冻结的身份 catalog；
-// 不带 → workspace 当前 catalog（新建草稿 Picker）。身份与能力字段保持
-// identifiers-only，不携带 rootPath/配置等；可选 icon/displayName(I18n)/description(I18n)
-// 仅供 UI 展示与 Picker 搜索，不参与身份、权限或 runtime reminder。
+// ── Plugin dialogue reference catalog──
+// Session-scoped read-only projection: with sessionId → the identity catalog frozen when the Session was created;
+// Without → workspace current catalog (new draft Picker). Identity and capability fields maintained
+// identifiers-only, does not carry rootPath/configuration, etc.; optional icon/displayName(I18n)/description(I18n)
+// It is only for UI display and Picker search, and does not participate in identity, permissions or runtime reminders.
 export const zcodePluginReferenceCatalogEntrySchema = z
   .object({
-    // 仅 referenceCatalogWithCategory 返回；旧入口保持原结构。
+    // Only referenceCatalogWithCategory is returned; the old entry retains its original structure.
     category: nonEmptyString.optional(),
     pluginId: nonEmptyString,
     name: nonEmptyString,
     marketplace: nonEmptyString,
     icon: z.string().optional(),
-    // 商店 listing 的 display-only 本地化显示名投影（沿 icon 先例）：让 Picker 能按
-    // 中文显示名搜索/展示；locale 解析复用 shared 的 plugin-display-name helper。
+    // Display-only localized display name projection for store listings (following icon precedent): Make Picker clickable
+    // Chinese display name search/display; locale parsing and reuse shared plugin-display-name helper.
     displayName: z.string().optional(),
     displayNameI18n: z.record(z.string(), z.string()).optional(),
-    // 仅供 Picker 展示，不进入能力身份或 model-only reminder。
+    // For Picker display only, does not enter capability status or model-only reminder.
     description: z.string().optional(),
     descriptionI18n: z.record(z.string(), z.string()).optional(),
     enabled: z.boolean(),
-    // 非空 = 与其他 enabled Plugin 共享 manifest name 的 V1 fail closed 冲突：
-    // Picker 禁选并展示原因，runtime 解析按 ambiguous 跳过。
+    // non-null = conflict with V1 fail closed that shares manifest name with other enabled plugins:
+    // Picker is disabled and the reason is displayed, and runtime analysis is skipped by ambiguous.
     conflictingPluginIds: z.array(nonEmptyString),
     skillQualifiedNames: z.array(nonEmptyString),
     mcpServerNames: z.array(nonEmptyString),
-    // 旧 Host 不投影该字段时按空数组兼容；只有新 Agent 会把它用于 reminder live 交集。
+    // Old Hosts are compatible with empty arrays when not projecting this field; only new Agents will use it for reminder live intersections.
     subagentNames: z.array(nonEmptyString).default([]),
   })
   .strict();
@@ -2628,8 +2635,8 @@ export type ZCodePluginReferenceCatalogEntry = z.infer<
 export const zcodePluginsReferenceCatalogParamsSchema = z
   .object({
     workspace: zcodeWorkspaceRefSchema,
-    // 已有 Session 的 Picker 必须带 sessionId 才能拿到 session-owned catalog；
-    // session 不存在时按协议错误 fail closed，禁止静默回退 workspace authority。
+    // A Picker that already has a Session must bring sessionId to get the session-owned catalog;
+    // When the session does not exist, the protocol error fails closed, and silent rollback of the workspace authority is prohibited.
     sessionId: nonEmptyString.optional(),
   })
   .strict();
@@ -2646,10 +2653,10 @@ export type ZCodePluginsReferenceCatalogResult = z.infer<
   typeof zcodePluginsReferenceCatalogResultSchema
 >;
 
-// ── Skill 对话引用 catalog──
-// 新草稿读取 workspace 当前目录；已有 Session 读取 AgentRuntime 首次 context
-// 初始化时冻结的发现结果。该协议只承载 Composer 的只读引用投影，不替代 Settings
-// 的 Skill 管理接口，也不持久化 runtime 快照。
+// ── Skill dialogue reference catalog──
+// The new draft reads the current directory of the workspace; the existing Session reads the AgentRuntime first context
+// Discovery results frozen on initialization. This protocol only carries Composer's read-only reference projection and does not replace Settings
+// The Skill management interface does not persist runtime snapshots.
 export const zcodeSkillReferenceCatalogEntrySchema = z
   .object({
     id: nonEmptyString,
@@ -2666,8 +2673,8 @@ export type ZCodeSkillReferenceCatalogEntry = z.infer<typeof zcodeSkillReference
 export const zcodeSkillsReferenceCatalogParamsSchema = z
   .object({
     workspace: zcodeWorkspaceRefSchema,
-    // 带 sessionId 时必须命中该进程内的 resident Session；未知 Session fail closed，
-    // 禁止回退到 workspace 当前目录而把新 Skill 泄漏进旧对话。
+    // With sessionId, the resident Session in the process must be hit; unknown Session fail closed,
+    // It is forbidden to fall back to the current workspace directory and leak new skills into old sessions.
     sessionId: nonEmptyString.optional(),
   })
   .strict();
@@ -2684,11 +2691,11 @@ export type ZCodeSkillsReferenceCatalogResult = z.infer<
   typeof zcodeSkillsReferenceCatalogResultSchema
 >;
 
-// ── 已保存工作流的 GUI 中枢──
-// workspace 级、无会话的五个方法，照 skills/referenceCatalog 的先例：每次调用现扫
-// `<cwd>/.zcode/workflows/`（挂载时快照会漏掉手改的文件）。形状与 @zcode/contracts 的
-// saved-workflow.ts 逐字对齐——依赖方向是 contracts → shared，所以这里结构化地再声明一遍，
-// 而不是 import；两边的 strict 形状由 bootstrap 侧的协议测试互相钉住。
+// ── GUI hub for saved workflows──
+// Five workspace-level, session-less methods, following the precedent of skills/referenceCatalog: scan every time
+// `<cwd>/.zcode/workflows/` (the snapshot will miss manually modified files when mounting). Shapes with @zcode/contracts
+// saved-workflow.ts is aligned verbatim - the dependency direction is contracts → shared, so it is declared again in a structured manner,
+// Instead of import; the strict shapes on both sides are pinned to each other by the protocol tests on the bootstrap side.
 export const zcodeSavedWorkflowArgTypeSchema = z.enum(["string", "number", "boolean", "json"]);
 export type ZCodeSavedWorkflowArgType = z.infer<typeof zcodeSavedWorkflowArgTypeSchema>;
 export const zcodeSavedWorkflowArgDeclarationSchema = z
@@ -2717,7 +2724,7 @@ export const zcodeSavedWorkflowMetaSchema = z
   })
   .strict();
 export type ZCodeSavedWorkflowMeta = z.infer<typeof zcodeSavedWorkflowMetaSchema>;
-// 作用域两档：项目档落 `<cwd>/.zcode/workflows/`、全局档落 agent 机器的 `~/.zcode/workflows/`。作用域由文件所在目录推得，frontmatter 不存 scope。
+// There are two scope files: the project file is located in `<cwd>/.zcode/workflows/`, and the global file is located in the agent machine's `~/.zcode/workflows/`. The scope is inferred from the directory where the file is located, and frontmatter does not have scope.
 export const zcodeSavedWorkflowScopeSchema = z.enum(["project", "global"]);
 export type ZCodeSavedWorkflowScope = z.infer<typeof zcodeSavedWorkflowScopeSchema>;
 export const zcodeSavedWorkflowEntrySchema = z
@@ -2735,7 +2742,7 @@ export const zcodeSavedWorkflowInvalidEntrySchema = z
   .object({ path: nonEmptyString, reason: nonEmptyString })
   .strict();
 export type ZCodeSavedWorkflowInvalidEntry = z.infer<typeof zcodeSavedWorkflowInvalidEntrySchema>;
-/** 名字非法 / 未找到 / frontmatter 坏 / 读错——与 core store 的 resolve 失败四态逐字对应。 */
+/** Invalid name / not found / broken frontmatter / read error — the four states correspond one-to-one, word for word, to the core store's resolve failures. */
 export const zcodeSavedWorkflowFailureReasonSchema = z.enum([
   "invalid_name",
   "not_found",
@@ -2754,8 +2761,8 @@ const zcodeSavedWorkflowFailureSchema = z
 export const zcodeWorkflowsListParamsSchema = z
   .object({
     workspace: zcodeWorkspaceRefSchema,
-    // 缺省即 `project`（本项目档）。给 `global` 时改扫本机 `~/.zcode/workflows/`；此时 `workspace`
-    // 仍必填，但只是**载体运行时**——协议处理器对全局档不读它的路径。
+    // The default is `project` (this project file). When giving `global`, change the local `~/.zcode/workflows/`; at this time, `workspace`
+    // Still required, but only **vector runtime** - the protocol handler does not read the path to the global file.
     scope: zcodeSavedWorkflowScopeSchema.optional(),
   })
   .strict();
@@ -2764,7 +2771,7 @@ export const zcodeWorkflowsListResultSchema = z
   .object({
     workflows: z.array(zcodeSavedWorkflowEntrySchema),
     invalid: z.array(zcodeSavedWorkflowInvalidEntrySchema),
-    // 扫过的目录（本地绝对路径），即使目录还不存在也回：GUI 的文件监听靠它 watch。
+    // The scanned directory (local absolute path) will be returned even if the directory does not exist yet: GUI's file monitoring relies on watch.
     dir: nonEmptyString,
   })
   .strict();
@@ -2774,7 +2781,7 @@ export const zcodeWorkflowsGetParamsSchema = z
   .object({
     workspace: zcodeWorkspaceRefSchema,
     name: nonEmptyString,
-    // 缺省 `project`；`global` 时只查本机全局根。`workspace` 语义同 list（全局档只当载体）。
+    // By default, `project`; in `global`, only the global root of the local machine is checked. `workspace` has the same semantics as list (global files are only used as carriers).
     scope: zcodeSavedWorkflowScopeSchema.optional(),
   })
   .strict();
@@ -2787,7 +2794,7 @@ export const zcodeWorkflowsGetResultSchema = z.union([
       path: nonEmptyString,
       scope: zcodeSavedWorkflowScopeSchema,
       meta: zcodeSavedWorkflowMetaSchema,
-      /** 脚本本体（frontmatter 之后逐字节），即被类型检查与执行的那一份。 */
+      /** The script body (byte-for-byte after the frontmatter), i.e. the very copy that is type-checked and executed. */
       script: z.string(),
     })
     .strict(),
@@ -2800,7 +2807,7 @@ export const zcodeWorkflowsUpdateMetaParamsSchema = z
     workspace: zcodeWorkspaceRefSchema,
     name: nonEmptyString,
     meta: zcodeSavedWorkflowMetaSchema,
-    // 缺省 `project`；`global` 时只写本机全局根那一份。`workspace` 语义同 list。
+    // By default `project`; `global` only writes the copy of the local global root. `workspace` has the same semantics as list.
     scope: zcodeSavedWorkflowScopeSchema.optional(),
   })
   .strict();
@@ -2815,7 +2822,7 @@ export const zcodeWorkflowsDeleteParamsSchema = z
   .object({
     workspace: zcodeWorkspaceRefSchema,
     name: nonEmptyString,
-    // 缺省 `project`；`global` 时按 scope 选根删除（不再写死 roots[0]）。`workspace` 语义同 list。
+    // The default is `project`; in `global`, press scope to select the root and delete it (roots[0] is no longer hard-coded). `workspace` has the same semantics as list.
     scope: zcodeSavedWorkflowScopeSchema.optional(),
   })
   .strict();
@@ -2830,17 +2837,17 @@ export const ZCODE_WORKFLOWS_RUNS_MAX_LIMIT = 50;
 export const zcodeWorkflowsRunsParamsSchema = z
   .object({
     workspace: zcodeWorkspaceRefSchema,
-    /** 只要这个名字的 run（`dwf_run.name` 字面等值）；缺省即本项目全部 run。 */
+    /** Only the runs with this name (a literal equality match on `dwf_run.name`); when omitted, all runs of this project. */
     name: nonEmptyString.optional(),
     limit: z.number().int().min(1).max(ZCODE_WORKFLOWS_RUNS_MAX_LIMIT),
-    // 缺省 `project`：只查 `dwf_run.cwd === workspacePath` 的 run。`global` 时**不**按 cwd 过滤，
-    // 跨所有项目取该名字的运行历史（全局工作流在任何项目里跑，历史因此跨 cwd）；结果行带 `cwd`
-    // 供 GUI 标项目。`workspace` 语义同 list（全局档只当载体）。
+    // Default `project`: only check the run of `dwf_run.cwd === workspacePath`. **not** filter by cwd when using `global`,
+    // Take the running history of this name across all projects (the global workflow runs in any project, so the history spans cwd); the result line contains `cwd`
+    // Provides GUI icon items. `workspace` has the same semantics as list (global files are only used as carriers).
     scope: zcodeSavedWorkflowScopeSchema.optional(),
   })
   .strict();
 export type ZCodeWorkflowsRunsParams = z.infer<typeof zcodeWorkflowsRunsParamsSchema>;
-// 三终态词汇：errored = 脚本之错，stopped = 被停下（可恢复）。
+// Three final state vocabulary: errored = script error, stopped = stopped (recoverable).
 export const zcodeSavedWorkflowRunStatusSchema = z.enum([
   "pending",
   "running",
@@ -2861,23 +2868,23 @@ export const zcodeSavedWorkflowRunSchema = z
     runId: nonEmptyString,
     name: z.string().optional(),
     status: zcodeSavedWorkflowRunStatusSchema,
-    // `status === "stopped"` 才在场。
+    // `status === "stopped"` is only present.
     stopReason: zcodeSavedWorkflowRunStopReasonSchema.optional(),
     createdAt: z.number(),
     updatedAt: z.number(),
     spentTokens: z.number(),
-    /** 发起它的会话与 CreateWorkflow 工具调用：有这两个才能从中枢打开实例详情。老行可缺。 */
+    /** The session that started it and the CreateWorkflow tool call: with both of them the instance details can be opened from the hub. Older rows may lack them. */
     parentSessionId: z.string().optional(),
     toolCallId: z.string().optional(),
     args: z.record(z.string(), z.unknown()).optional(),
-    // 实际运行的项目目录（`dwf_run.cwd`）。全局档的 `workflows/runs` 跨 cwd 查询，GUI 用它给
-    // 每行标项目；项目档变体里它恒等于 workspacePath，GUI 可忽略。老行可缺。
+    // The actual running project directory (`dwf_run.cwd`). The `workflows/runs` of the global file is queried across cwd, and the GUI uses it to
+    // Each line identifies the project; in the project file variant it is always equal to the workspacePath and can be ignored by the GUI. Lao Xing is in short supply.
     cwd: z.string().optional(),
-    // 这次运行发布的**用户面产物**：中枢的运行历史行在
-    // 状态词之后画一串 kind chips，详情页头部的「最近产物」条取最近一次 completed run 的这一份。
-    // ⚠ 术语：这里的 artifact 是脚本经 `artifact.*` 发布给用户看的产出，不是脚本的顶层返回值。
-    // 只带 chip 画得下的字段（≤ 8 件，取最新版的元数据）；字节与条目经 v4 查询按需读。
-    // optional，照上面 `cwd` 的先例：老 CLI 不发，少一个键是退化不是错误。
+    // The **user interface product** released in this run: the hub’s running history is
+    // After the status word, draw a string of kind chips. The "Recent Products" bar at the head of the details page takes the most recent completed run.
+    // ⚠ Terminology: The artifact here is the output of the script published to the user through `artifact.*`, not the top-level return value of the script.
+    // Only fields that can be drawn by chip are included (≤ 8 pieces, get the latest version of metadata); bytes and entries are read on demand through v4 query.
+    // Optional, following the precedent of `cwd` above: the old CLI is not released, and one missing key is a degeneration, not an error.
     artifacts: z
       .array(
         z
@@ -2898,16 +2905,16 @@ export type ZCodeSavedWorkflowRun = z.infer<typeof zcodeSavedWorkflowRunSchema>;
 export const zcodeWorkflowsRunsResultSchema = z
   .object({
     runs: z.array(zcodeSavedWorkflowRunSchema),
-    /** 为真时才在场：还有更多 run 没进这一页（多取一条判定，不是 length === limit）。 */
+    /** Only present when true: more runs did not fit into this page (decided by fetching one extra, not by `length === limit`). */
     truncated: z.literal(true).optional(),
   })
   .strict();
 export type ZCodeWorkflowsRunsResult = z.infer<typeof zcodeWorkflowsRunsResultSchema>;
 
-// workflows/move：把本机全局根的同名文件搬到 `workspace` 项目根。**只此一向**：项目→全局不是搬文件而是模型的概括（「提升为
-// 全局」在该项目开新会话、经 SaveWorkflow 另存），所以没有 `to` 参数。同机同用户，rename 优先、EXDEV
-// 回落 copy+unlink；逐字节搬，不改内容（frontmatter 不存 scope）；`move` 不覆盖——目标已存在即拒绝
-// （覆盖是 SaveWorkflow 经确认窗才有的动作，不变式 7）。`workspace` 既是载体运行时也是目标项目。
+// workflows/move: Move the file with the same name of the local global root to the `workspace` project root. **This is the only way**: Project → The overall situation is not to move files but to summarize the model ("promoted to
+// Global" Open a new session in the project and save it via SaveWorkflow), so there is no `to` parameter. Same computer and same user, rename takes priority, EXDEV
+// Fall back to copy+unlink; move byte by byte without changing the content (frontmatter does not have scope); `move` does not overwrite - the target is rejected if it already exists
+// (Overwriting is an action that SaveWorkflow only has through the confirmation window, invariant 7). `workspace` is both the carrier runtime and the target project.
 export const zcodeWorkflowsMoveParamsSchema = z
   .object({
     workspace: zcodeWorkspaceRefSchema,
@@ -2919,17 +2926,17 @@ export const zcodeWorkflowsMoveResultSchema = z.union([
   z
     .object({
       ok: z.literal(true),
-      /** 源落点路径（全局根，搬走前）。 */
+      /** The source landing path (the global root, before the move). */
       from: nonEmptyString,
-      /** 目标落点路径（项目根，搬到处）。 */
+      /** The destination landing path (the project root, where it landed). */
       to: nonEmptyString,
     })
     .strict(),
   z
     .object({
       ok: z.literal(false),
-      // target_exists：目标档已有同名（move 不覆盖）；not_found：源档没有这个名字；
-      // read_error / write_error：搬运时的 I/O 失败；invalid_name：名字先验没过。
+      // target_exists: the target file already has the same name (move does not overwrite it); not_found: the source file does not have this name;
+      // read_error / write_error: I/O failure during transfer; invalid_name: The name has not been passed a priori.
       reason: z.enum(["invalid_name", "not_found", "target_exists", "read_error", "write_error"]),
       path: z.string().optional(),
       detail: z.string().optional(),
@@ -2938,7 +2945,7 @@ export const zcodeWorkflowsMoveResultSchema = z.union([
 ]);
 export type ZCodeWorkflowsMoveResult = z.infer<typeof zcodeWorkflowsMoveResultSchema>;
 
-// 推荐 Prompt 的可信插件解析：UI 不拆解 stableId，也不从旧目录快照推断可安装性。
+// Trusted plugin resolution for Prompt is recommended: the UI does not disassemble the stableId, nor does it infer installability from old directory snapshots.
 export const zcodePluginSuggestedReferenceStatusSchema = z.enum([
   "ready",
   "disabled",
@@ -2998,9 +3005,9 @@ export const zcodePluginsSetEnabledResultSchema = z
   .strict();
 export type ZCodePluginsSetEnabledResult = z.infer<typeof zcodePluginsSetEnabledResultSchema>;
 
-// 商店信息（Store Listing）：目录条目携带的展示性元数据（显示名/icon/分类/作者/链接/hero/
-// 示例提示词），全部可选，UI 缺失时按降级矩阵处理（字母头像/隐藏区块/省略信息行）。
-// i18n 采用 `<字段>I18n` map，locale 解析复用 shared 的 plugin-display-name helper。
+// Store Listing: Display metadata carried by directory entries (display name/icon/category/author/link/hero/
+// Example prompt words), all are optional, and when the UI is missing, it will be processed according to the degradation matrix (letter avatar/hidden block/omitted information line).
+// i18n uses the `<field>I18n` map, and locale parsing reuses the shared plugin-display-name helper.
 export const zcodePluginStoreListingSchema = z
   .object({
     displayName: z.string().optional(),
@@ -3017,9 +3024,10 @@ export const zcodePluginStoreListingSchema = z
     examplePrompts: z.array(z.string()).optional(),
     examplePromptsI18n: z.record(z.string(), z.array(z.string())).optional(),
     /**
-     * 需要付费套餐才好用的插件：市场目录条目声明 `requiresPaidPlan: true`，
-     * UI 在标题右侧展示提示图标。描述的是「使用条件」而非「插件是收费商品」——
-     * 不参与安装门禁与计费，命名也不绑定具体套餐商品名。
+     * A plugin that is only usable with a paid plan: the marketplace catalog entry declares
+     * `requiresPaidPlan: true`, and the UI shows a hint icon to the right of the title. It
+     * describes a "condition of use", not "the plugin is a paid product" — it takes no part
+     * in install gating or billing, and the name is not tied to any specific plan product.
      */
     requiresPaidPlan: z.boolean().optional(),
   })
@@ -3033,7 +3041,7 @@ export const zcodePluginsResolveSuggestedReferenceResultSchema = z
     marketplace: nonEmptyString.optional(),
     pluginName: nonEmptyString.optional(),
     sourceTrust: z.literal("official").optional(),
-    // 官方 Marketplace listing 的可选展示投影；不参与身份、安装或权限判断。
+    // Optional display projection of official Marketplace listing; does not participate in identity, installation or permission determination.
     icon: z.string().optional(),
     listing: zcodePluginStoreListingSchema.optional(),
     diagnostics: z.array(zcodePluginDiagnosticSchema),
@@ -3063,7 +3071,7 @@ export const zcodePluginMarketplaceSummarySchema = z
     lastUpdated: z.string().optional(),
     pluginCount: z.number().int().nonnegative(),
     isOfficial: z.boolean().optional(),
-    // 目录顶层 featured 策展名单（商店「公开」分段 Featured 区）。
+    // Featured curated list at the top of the directory (Featured section of the store's "Public" section).
     featured: z.array(z.string()).optional(),
     refreshFailure: z
       .object({
@@ -3293,8 +3301,8 @@ export const zcodePluginsValidateResultSchema = z
   .strict();
 export type ZCodePluginsValidateResult = z.infer<typeof zcodePluginsValidateResultSchema>;
 
-// plugins/describe：按需枚举单个插件的组件「名称 + 描述」。
-// 已安装插件读本地缓存目录；未安装候选按需解析/临时 clone 源后枚举再清理。
+// plugins/describe: Enumerate the component "name + description" of a single plugin on demand.
+// The installed plug-in reads the local cache directory; the uninstalled candidate parses/temporarily clones the source on demand and then enumerates and cleans it.
 export const zcodePluginsDescribeParamsSchema = z
   .object({
     workspace: zcodeWorkspaceRefSchema,
@@ -3306,7 +3314,7 @@ export const zcodePluginsDescribeResultSchema = z
   .object({
     components: z.array(zcodePluginComponentGroupSchema),
     diagnostics: z.array(zcodePluginDiagnosticSchema).optional(),
-    // 插件包内 plugin.json 的展示性回退字段；未安装候选详情页信息区在商店 listing 缺失时兜底。
+    // The display fallback field of plugin.json in the plug-in package; the information area of ​​the uninstalled candidate details page provides a cover when the store listing is missing.
     metadata: z
       .object({
         author: z.string().optional(),
@@ -3329,14 +3337,14 @@ export const zcodeAutomationScheduleRuleSchema = z
     anchorAt: z.number().int(),
     weekdays: z.array(z.number().int().min(0).max(6)).optional(),
     monthDays: z.array(z.number().int().min(1).max(31)).optional(),
-    /** yearly 用：1-12 人类月份。缺省回退 anchorAt 的月份（兼容未写该字段的旧记录）。 */
+    /** Used by yearly: 1-12, the human month numbers. When omitted, falls back to the month of anchorAt (compatible with older records that lack this field). */
     months: z.array(z.number().int().min(1).max(12)).optional(),
     monthlyMode: z.enum(["date", "weekday"]).optional(),
   })
   .strict();
 export type ZCodeAutomationScheduleRuleProtocol = z.infer<typeof zcodeAutomationScheduleRuleSchema>;
 
-/** 会话侧长间隔周期 carrier 的 unit 枚举（与 scheduleRule.unit 同集）。 */
+/** The unit enum of the session-side long-interval periodic carrier (the same set as scheduleRule.unit). */
 export const zcodeAutomationIntervalUnitSchema = z.enum([
   "minute",
   "hourly",
@@ -3362,8 +3370,8 @@ export const zcodeAutomationProtocolSchema = z
     runCount: z.number().int().nonnegative(),
     recurring: z.boolean(),
     maxRuns: z.number().int().positive().optional(),
-    // 自定义重复规则；缺省时调度回退到解析 cronExpr。会话卡片必须读到本字段才能展示
-    // cron 无法表达的真实间隔（如每50小时、每40天，兼容 cronExpr 只是 0 * * * *）。
+    // Customize repetition rules; by default, scheduling falls back to parsing cronExpr. Conversation cards must read this field before they can be displayed.
+    // cron cannot express real intervals (e.g. every 50 hours, every 40 days, compatible with cronExpr just 0 * * * *).
     scheduleRule: zcodeAutomationScheduleRuleSchema.optional(),
   })
   .strict();
@@ -3381,18 +3389,18 @@ export const zcodeAutomationCreateParamsSchema = z
     botDeliveryTarget: zcodeAutomationBotDeliveryTargetSchema.optional(),
     recurring: z.boolean().optional(),
     maxRuns: z.number().int().positive().optional(),
-    // 会话侧自定义重复 carrier：每 N 分钟/小时/天/周/月/年均通过此字段归一化为权威 scheduleRule，
-    // cronExpr 仅作合法兼容展示。
+    // Session-side custom repeat carrier: every N minutes/hours/days/weeks/months/years are normalized to the authoritative scheduleRule through this field,
+    // cronExpr is for legal compliance display only.
     intervalUnit: zcodeAutomationIntervalUnitSchema.optional(),
     interval: z.number().int().min(1).max(200).optional(),
   })
   .strict()
-  // intervalUnit 与 interval 必须配对提交（只传一个无法确定真实间隔）。
+  // intervalUnit and interval must be submitted in pairs (passing only one cannot determine the real interval).
   .refine((input) => (input.intervalUnit === undefined) === (input.interval === undefined), {
     message: "intervalUnit and interval must be set together",
     path: ["interval"],
   })
-  // 周期 carrier 与一次性相对延迟语义冲突，禁止同传。
+  // The periodic carrier conflicts with the one-time relative delay semantics and prohibits simultaneous interpretation.
   .refine((input) => input.intervalUnit === undefined || input.relativeDelayMinutes === undefined, {
     message: "intervalUnit cannot combine with a relative delayMinutes",
     path: ["intervalUnit"],
@@ -3420,7 +3428,7 @@ export const zcodeAutomationUpdateParamsSchema = z
     prompt: nonEmptyString.optional(),
     recurring: z.boolean().optional(),
     maxRuns: z.number().int().positive().nullable().optional(),
-    // 会话侧自定义重复 carrier（同 create 侧语义）。
+    // Customize the repeat carrier on the session side (same semantics as create side).
     intervalUnit: zcodeAutomationIntervalUnitSchema.optional(),
     interval: z.number().int().min(1).max(200).optional(),
   })
@@ -3443,7 +3451,7 @@ export const zcodeAutomationUpdateParamsSchema = z
     message: "recurring=true cannot be combined with a numeric maxRuns",
     path: ["maxRuns"],
   })
-  // intervalUnit 与 interval 必须配对提交（同 create 侧语义）。
+  // intervalUnit and interval must be submitted in pairs (same semantics as create).
   .refine((input) => (input.intervalUnit === undefined) === (input.interval === undefined), {
     message: "intervalUnit and interval must be set together",
     path: ["interval"],
@@ -3496,10 +3504,10 @@ export type ZCodeAutomationDeleteProtocolParams = z.infer<typeof zcodeAutomation
 export const zcodeAutomationDeleteResultSchema = z.object({ deleted: z.boolean() }).strict();
 export type ZCodeAutomationDeleteProtocolResult = z.infer<typeof zcodeAutomationDeleteResultSchema>;
 
-// ---- Off-Peak（闲时任务）会话内创建协议----
-// 与 automation 兄弟并列（独立域，禁止互相复用标记/表）。workspace 由 host 端从
-// 当前 session 注入，不进协议参数（对称 automation/create）。permissionMode 只开放产品
-// 四档词表；缺省解析在 host 端（yolo / allowed_models 末位 / 最高推理档）。
+// ----Off-Peak (idle time task) intra-session creation protocol----
+// Parallel with automation brothers (independent domain, no reuse of tags/tables with each other). The workspace is slaved by the host
+// Current session injection, no protocol parameters (symmetric automation/create). permissionMode only opens products
+// Four-level vocabulary list; the default resolution is on the host side (yolo / allowed_models last position / highest inference file).
 export const zcodeOffPeakPermissionModeSchema = z.enum(["build", "edit", "plan", "yolo"]);
 export type ZCodeOffPeakProtocolPermissionMode = z.infer<typeof zcodeOffPeakPermissionModeSchema>;
 
@@ -3510,14 +3518,14 @@ export const zcodeOffPeakCreateParamsSchema = z
     permissionMode: zcodeOffPeakPermissionModeSchema.optional(),
     model: nonEmptyString.optional(),
     thoughtLevel: nonEmptyString.optional(),
-    // 会话内创建绑定当前会话（对齐 automation/create 的 targetTaskId），由 CLI 端口填入。
+    // In-session creation binds the current session (aligned with the targetTaskId of automation/create), populated by the CLI port.
     boundSessionId: nonEmptyString.optional(),
   })
   .strict();
 export type ZCodeOffPeakCreateProtocolParams = z.infer<typeof zcodeOffPeakCreateParamsSchema>;
 
-// 协议侧任务快照：轮尾卡片与 OffPeakList 的最小字段面。
-// 不暴露 serverTicketId（跨边界禁带）。
+// Snapshot of the protocol side task: the minimum field surface of the tail card and OffPeakList.
+// Do not expose serverTicketId (cross-border no-go).
 export const zcodeOffPeakTaskSnapshotSchema = z
   .object({
     offPeakTaskId: nonEmptyString,
@@ -3530,8 +3538,8 @@ export const zcodeOffPeakTaskSnapshotSchema = z
   .strict();
 export type ZCodeOffPeakTaskProtocolSnapshot = z.infer<typeof zcodeOffPeakTaskSnapshotSchema>;
 
-// 失败分类跨协议保真（镜像 shared OffPeakTaskCreateResult 的判别联合，错误不降级为字符串）。
-// model 白名单预校失败复用 client_validation 分类 + errorCode "model_not_allowed"，不扩分类枚举。
+// Failure classification cross-protocol fidelity (mirror discriminant union of shared OffPeakTaskCreateResult, errors not downgraded to strings).
+// If the model whitelist pre-calibration fails, the client_validation category + errorCode "model_not_allowed" will be reused, and the category enumeration will not be expanded.
 export const zcodeOffPeakCreateResultSchema = z.discriminatedUnion("ok", [
   z.object({ ok: z.literal(true), task: zcodeOffPeakTaskSnapshotSchema }).strict(),
   z
@@ -3573,43 +3581,43 @@ export const zcodeProtocolMethods = {
   sessionEvents: "session/events",
   sessionDebug: "session/debug",
   sessionSubscribe: "session/subscribe",
-  // @deprecated（部分）：send 主路径已收敛 v4 sendText；仅剩 adapter 附件
-  // 回退分支消费（v4 attachmentRef 上传/寄存命令面未建模），待附件命令面落地后移除。
+  // @deprecated (partial): send main path has converged v4 sendText; only adapter attachment remains
+  // Roll back branch consumption (v4 attachmentRef upload/deposit command plane is not modeled) and will be removed after the attachment command plane is implemented.
   sessionSend: "session/send",
-  // @deprecated：host 客户端方法已删（stop 已收敛 v4 stop 命令）。
-  // wire case 留兼容（transport bypass 名单仍引用），随旧词整体删除时一并移除。
+  // @deprecated: The host client method has been deleted (stop has converged v4 stop command).
+  // wire case remains compatible (the transport bypass list is still referenced) and will be removed when the old words are deleted as a whole.
   sessionStop: "session/stop",
-  // @deprecated：host 客户端方法已删（已收敛 v4 cancelBackgroundWork 命令）。
-  // wire case 留兼容，随旧词整体删除时一并移除。
+  // @deprecated: The host client method has been deleted (the v4 cancelBackgroundWork command has been converged).
+  // The wire case remains compatible and will be removed when the old words are deleted as a whole.
   sessionCancelBackgroundTask: "session/cancelBackgroundTask",
-  // @deprecated：host 客户端方法已删（v4 forkAssistant 原生 handler 经
-  // forkSessionAtMessage 钩子直调 server-operations.forkSession op）。wire case 与
-  // fork params/result schema 保留＝op 存活面；fork record 归 v4 原生重写。
+  // @deprecated: The host client method has been deleted (v4 forkAssistant native handler has
+  // forkSessionAtMessage hook directly calls server-operations.forkSession op). wire case with
+  // fork params/result schema retains = op survival surface; fork record returns to v4 native rewrite.
   sessionFork: "session/fork",
   sessionCompact: "session/compact",
   sessionGoal: "session/goal",
   sessionClose: "session/close",
-  // setModel 仍被 zcodeSessionService 的 desktop 旧链路消费；replayable
-  // switchModelConfig 已直接由目标 Environment Registry 解析 Selection。
+  // setModel is still consumed by the desktop old link of zcodeSessionService; replayable
+  // switchModelConfig has Selection resolved directly by the target Environment Registry.
   sessionSetModel: "session/setModel",
-  // replayable facade 的思考深度/模式已收敛 v4 switchModelConfig/
-  // switchCollaborationMode；剩余消费 = zcodeSessionService（desktop 旧链路，随
-  // 桌面 v4 UI 收口清零）与 setMode 的 auto 值残留（v4 值域刻意排除 auto）。
+  // The depth of thinking of replayable facade/mode has converged v4 switchModelConfig/
+  // switchCollaborationMode; remaining consumption = zcodeSessionService (desktop old link, with
+  // Desktop v4 UI closing is cleared) and the auto value of setMode remains (v4 value range deliberately excludes auto).
   sessionSetThoughtLevel: "session/setThoughtLevel",
   sessionSetMode: "session/setMode",
   workspaceReadPresentation: "workspace/readPresentation",
   workspaceHookTrustGrant: "workspace/hooks/trustGrant",
-  // 进程级 Account Provider Config 与 workspace 运行目录分离。
+  // Process-level Account Provider Config is separated from the workspace running directory.
   providerUpdateAccountConfig: "provider/updateAccountConfig",
   workspaceUpdateInteractionPreferences: "workspace/updateInteractionPreferences",
   workspaceUpdateModelIoPreferences: "workspace/updateModelIoPreferences",
-  // Off-Peak 工具面门禁是 workspace 级事实（灰度 + 本地/远程），由 host 在 agent 就绪时同步；
-  // CLI 对 legacy create/resume 与 v4 冷恢复统一读取。旧 CLI method-not-found → host 降级忽略。
+  // Off-Peak tool plane access is a workspace level fact (grayscale + local/remote) synchronized by the host when the agent is ready;
+  // The CLI reads uniformly for legacy create/resume and v4 cold recovery. Old CLI method-not-found → host downgrade ignored.
   workspaceUpdateOffPeakToolPolicy: "workspace/updateOffPeakToolPolicy",
-  // 动态工作流灰度门禁：同 Off-Peak 的同步模式。
+  // Dynamic workflow grayscale access control: the same as Off-Peak’s synchronization mode.
   workspaceUpdateDynamicWorkflowPolicy: "workspace/updateDynamicWorkflowPolicy",
-  // LLM 执行面在 CLI，直连不可行；消费仅 services 内部
-  // （commit message），待 v4 workspace 查询/命令面覆盖后移除。
+  // LLM execution surface is in CLI, direct connection is not feasible; consumption is only within services
+  // (commit message), which will be removed after the v4 workspace query/command surface is covered.
   workspaceGenerateText: "workspace/generateText",
   workspaceCancelGenerateText: "workspace/cancelGenerateText",
   providerTestModelConnectivity: "provider/testModelConnectivity",
@@ -3618,13 +3626,13 @@ export const zcodeProtocolMethods = {
   pluginsReferenceCatalog: "plugins/referenceCatalog",
   pluginsReferenceCatalogWithCategory: "plugins/referenceCatalogWithCategory",
   skillsReferenceCatalog: "skills/referenceCatalog",
-  // 已保存工作流的 GUI 中枢：workspace 级、无会话。
+  // GUI hub for saved workflows: workspace level, no sessions.
   workflowsList: "workflows/list",
   workflowsGet: "workflows/get",
   workflowsUpdateMeta: "workflows/updateMeta",
   workflowsDelete: "workflows/delete",
   workflowsRuns: "workflows/runs",
-  // 在项目档 / 全局档之间移动同名文件。
+  // Move files with the same name between project files/global files.
   workflowsMove: "workflows/move",
   pluginsResolveSuggestedReference: "plugins/resolveSuggestedReference",
   pluginsSetEnabled: "plugins/setEnabled",
@@ -3646,22 +3654,22 @@ export const zcodeProtocolMethods = {
   automationCheckTaskBinding: "automation/checkTaskBinding",
   automationList: "automation/list",
   automationDelete: "automation/delete",
-  // Off-Peak 会话内创建：与 automation 兄弟并列的独立方法族。
+  // Off-Peak in-session creation: a separate family of methods alongside the automation brothers.
   offPeakCreate: "offPeak/create",
   offPeakList: "offPeak/list",
-  // @deprecated：host 消费已清零（zcodeAgentService 改走 v4/usage/stats）。
-  // 仅剩 CLI server 的 wire 兼容 case；随旧词整体删除时一并移除。
+  // @deprecated: Host consumption has been cleared (zcodeAgentService is changed to v4/usage/stats).
+  // Only the wire-compatible case of the CLI server remains; it will be removed when the old words are deleted as a whole.
   usageStats: "usage/stats",
-  // ZCode Protocol 对 agent 只暴露 session-first 方法；task 是 UI 投影概念，不能泄露进协议方法名。
-  // @deprecated：host 已改走 v4/conversation/usage；后续与 usage/stats 一并移除。
+  // ZCode Protocol only exposes session-first methods to agents; task is a UI projection concept and cannot be leaked into the protocol method name.
+  // @deprecated: The host has been changed to v4/conversation/usage; it will be removed together with usage/stats later.
   sessionUsage: "session/usage",
-  // 资源管理器：CLI 回报其 MCP 子进程 pid 与插件归属（纯内存，无 I/O），采样在 Host 侧完成。
+  // Resource Manager: CLI reports its MCP subprocess pid and plug-in ownership (pure memory, no I/O), and sampling is completed on the Host side.
   processChildProcesses: "process/childProcesses",
   interactionRequestPermission: "interaction/requestPermission",
   interactionRequestUserInput: "interaction/requestUserInput",
   interactionRequestProviderRuntimeHeaders: "interaction/requestProviderRuntimeHeaders",
   interactionRequestOfficialMcpAuthHeaders: "interaction/requestOfficialMcpAuthHeaders",
-  // browser-use 反向请求由 agent 发起，host 转给 main 中的 CDP executor。
+  // The browser-use reverse request is initiated by the agent, and the host is transferred to the CDP executor in main.
   interactionBrowserList: "interaction/browserList",
   interactionBrowserExecute: "interaction/browserExecute",
 } as const;
@@ -3670,8 +3678,8 @@ export type ZCodeProtocolMethod = (typeof zcodeProtocolMethods)[keyof typeof zco
 
 export const zcodeProtocolEmptyResultSchema = z.object({}).strict();
 
-// 最新 V4 主链已不再依赖旧版全量方法表；这里仅保留仍被兼容测试和 browser broker
-// 消费的最小契约集合，避免重新引入已移除的 legacy 方法。
+// The latest V4 main chain no longer relies on the old version of the full method table; only compatibility tests and browser brokers are retained here
+// A minimal set of contracts for consumption to avoid reintroducing removed legacy methods.
 export const zcodeProtocolSessionMethodContracts = {
   [zcodeProtocolMethods.workspaceHookTrustGrant]: {
     params: zcodeWorkspaceHookTrustGrantParamsSchema,
@@ -3696,7 +3704,7 @@ export const zcodeProtocolSessionMethodContracts = {
 export type ZCodeProtocolSessionMethodContract =
   (typeof zcodeProtocolSessionMethodContracts)[keyof typeof zcodeProtocolSessionMethodContracts];
 
-/** 仅存储准备子进程的私有控制帧，原始路径不进入业务事件或遥测。 */
+/** Private control frames for the storage-preparation subprocess only; raw paths never enter business events or telemetry. */
 export const zcodeStoragePreparationFrameSchema = z.discriminatedUnion("method", [
   z
     .object({
@@ -3716,5 +3724,5 @@ export const zcodeStoragePathReadySchema = z
   .strict();
 export * from "../localTtft.js";
 
-// 桌面本地 TTFT 的严格事实合同；检查点不能替代实际内容帧。
+// Strict de facto contract for desktop-native TTFT; checkpoints are not a substitute for actual content frames.
 export { localTtftFactsSchema } from "../localTtft.js";

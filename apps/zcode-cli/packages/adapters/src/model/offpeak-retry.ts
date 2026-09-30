@@ -1,31 +1,32 @@
-/* off-peak（闲时任务）排队协议的适配层特判。
-   语义只对 Model Config 显式声明 off-peak-queue 协议的请求生效——业务码 3105/3102
-   在其它 bigmodel API 可能另有含义，禁止写进全局 failure-provider-business-codes 映射表。
+/* An adapter-layer special case for the off-peak (idle-time task) queue protocol.
+   The semantics apply only to requests whose Model Config explicitly declares the off-peak-queue protocol — business codes 3105/3102
+   may mean something else in other bigmodel APIs, so they must never be written into the global failure-provider-business-codes mapping.
 
-   - 429（含业务码 3105）= 排队应答：单次等待 min(Retry-After, 5min) 钳制 × 无限幂等探测；
-     调用方冻结 attempt 预算（否则默认 11 次后被误判为 API 失败）；abort 贯穿 sleep。
-   - 400/3102 = 票据不可用（active 3h 到期 / ready 废票）：立即以稳定标记落败，
-     desktop 端识别标记改走"同 task_id 重取号 → resume 续跑"，不是普通失败。
-   - 首派弃派不在适配层实现：首派挂网关时 ready 5min TTL 到期自然触发
-     3102 → 续跑回队，等待上界 ≈ TTL + 一次钳制探测 ≤ 10min，满足规则意图且少一套状态。 */
+   - 429 (including business code 3105) = a queue acknowledgement: a single wait clamped to min(Retry-After, 5min) x unbounded idempotent probing;
+     the caller freezes the attempt budget (otherwise the default 11 attempts get misjudged as an API failure); abort runs through the sleep.
+   - 400/3102 = ticket unavailable (active 3h expiry / a dead ready ticket): fail immediately with a stable marker; the
+     desktop end recognizes the marker and switches to "refetch the number for the same task_id, then resume and keep running", not an ordinary failure.
+   - Abandoning the first dispatch is not implemented at the adapter layer: when the first dispatch hangs at the gateway, the ready 5min
+     TTL expires on its own and naturally triggers 3102, the resumed run re-enters the queue, and the wait bound ≈ TTL + one clamped probe
+     ≤ 10min, which satisfies the intent of the rule while keeping one less set of state. */
 import type { ClassifiedModelFailure } from "./failure-classifier.js";
 import { isProviderBusinessError } from "./model-execution.js";
 
 /**
- * ⚠ 与 desktop 侧 @zcode/shared/src/off-peak-types.ts 的同名常量跨包同值（wire 契约）：
- * providerId 随 per-turn runtimeModel 注入，错误标记随 task 终态错误文本回传，改动须两侧同步。
+ * ⚠ Kept at the same value across packages with the same-named constant on the desktop side in @zcode/shared/src/off-peak-types.ts (a wire contract):
+ * the providerId is injected along with the per-turn runtimeModel, and the error marker travels back in the task's terminal error text, so a change must be made on both sides.
  */
 export const OFF_PEAK_TICKET_EXPIRED_MARKER = "off-peak-ticket-expired";
 
-/** 单次排队等待钳制：min(Retry-After, 5min)；无 Retry-After 时保守 60s 探测。 */
+/** The clamp for a single queue wait: min(Retry-After, 5min); without a Retry-After, probe conservatively at 60s. */
 const OFF_PEAK_QUEUE_WAIT_CAP_MS = 5 * 60_000;
 const OFF_PEAK_QUEUE_WAIT_DEFAULT_MS = 60_000;
 
 type OffPeakFailureDecision = { kind: "queued"; delayMs: number } | { kind: "ticketExpired" };
 
 /**
- * 判定 off-peak 特有失败语义；非 idle plan provider 一律返回 null（零影响）。
- * error 需传 unwrapRetryError 之后的原始错误（ProviderBusinessError 才能读到业务码）。
+ * Decide whether a failure carries off-peak-specific semantics; any non-idle-plan provider returns null unconditionally (zero impact).
+ * error must be the original error after unwrapRetryError (only a ProviderBusinessError exposes the business code).
  */
 export function resolveOffPeakFailureDecision(params: {
   offPeak: boolean;
@@ -36,11 +37,11 @@ export function resolveOffPeakFailureDecision(params: {
   const businessCode = isProviderBusinessError(params.error)
     ? params.error.providerCode
     : undefined;
-  // 服务端最新契约使用 3102；保留 3001 兼容滚动发布期间的旧网关响应。
+  // Server-side latest contract uses 3102; retain 3001 for compatibility with old gateway responses during rolling releases.
   if (businessCode === "3102" || businessCode === "3001") {
     return { kind: "ticketExpired" };
   }
-  // 排队真实信号 = HTTP 429（3105 带 Retry-After）；无业务码的裸 429 同样按排队处理。
+  // Queued real signal = HTTP 429 (3105 with Retry-After); naked 429 without business code is also processed as queued.
   if (businessCode === "3105" || params.failure.statusCode === 429) {
     return {
       kind: "queued",

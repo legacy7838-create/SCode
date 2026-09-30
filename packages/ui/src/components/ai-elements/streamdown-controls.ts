@@ -1,5 +1,5 @@
-// 交互调整：表格本身已经能在消息流里完整浏览，再保留 fullscreen 入口会把阅读路径打断。
-// 这里统一关闭表格放大，只保留复制/导出等轻量操作，消息正文和推理面板共用同一份配置。
+// Interaction adjustment: The table itself can be fully browsed in the message flow, and retaining the fullscreen entry will interrupt the reading path.
+// Here, table magnification is turned off uniformly, and only light operations such as copy/export are retained. The message body and inference panel share the same configuration.
 export const STREAMDOWN_CONTROLS = {
   table: {
     fullscreen: false,

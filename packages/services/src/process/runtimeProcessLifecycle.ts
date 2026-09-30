@@ -1,7 +1,7 @@
 import type { ZCodeProcessDiagnostic } from "@zcode/shared/process-diagnostic";
 
 export interface RuntimeProcessSpawnEvent {
-  /** 进程泳道（如 mcp-status）；缺省为 chat 主泳道。同 cwd、同 command 的多 lane 进程靠它归因。 */
+  /** Process swim lane (such as mcp-status); the default is the chat main swim lane. Multi-lane processes with the same cwd and the same command rely on it to attribute. */
   lane?: string;
   pid: number;
   provider: string;
@@ -14,7 +14,7 @@ export interface RuntimeProcessSpawnEvent {
 }
 
 export interface RuntimeProcessReadyEvent {
-  /** 进程泳道（如 mcp-status）；缺省为 chat 主泳道。同 cwd、同 command 的多 lane 进程靠它归因。 */
+  /** Process swim lane (such as mcp-status); the default is the chat main swim lane. Multi-lane processes with the same cwd and the same command rely on it to attribute. */
   lane?: string;
   pid: number;
   provider: string;
@@ -26,7 +26,7 @@ export interface RuntimeProcessReadyEvent {
 }
 
 export interface RuntimeProcessExitEvent {
-  /** 进程泳道（如 mcp-status）；缺省为 chat 主泳道。同 cwd、同 command 的多 lane 进程靠它归因。 */
+  /** Process swim lane (such as mcp-status); the default is the chat main swim lane. Multi-lane processes with the same cwd and the same command rely on it to attribute. */
   lane?: string;
   pid: number;
   provider: string;
@@ -45,7 +45,7 @@ export interface RuntimeProcessExitEvent {
 }
 
 export interface RuntimeProcessErrorEvent {
-  /** 进程泳道（如 mcp-status）；缺省为 chat 主泳道。同 cwd、同 command 的多 lane 进程靠它归因。 */
+  /** Process swim lane (such as mcp-status); the default is the chat main swim lane. Multi-lane processes with the same cwd and the same command rely on it to attribute. */
   lane?: string;
   pid: number | null;
   provider: string;

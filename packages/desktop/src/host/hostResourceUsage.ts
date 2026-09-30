@@ -16,7 +16,7 @@ interface CreateHostResourceUsageResponderOptions {
   postMessage: (message: HostResourceUsageSnapshotResultResponse) => void;
   hostPid?: number;
   sampler?: ProcessResourceSampler;
-  /** Host 直管的内置插件进程（如 Windows CUA Helper）：pid → 插件名 */
+  /** Built-in plug-in process directly managed by Host (such as Windows CUA Helper): pid → plug-in name */
   getBuiltinPluginPids?: () => ReadonlyMap<number, string>;
   now?: () => number;
 }
@@ -27,9 +27,9 @@ interface HostResourceUsageResponder {
 }
 
 /**
- * 资源管理器 Host 侧响应器。
- * 只在 main 发来请求时采样一次：读整机进程表 → 向每个本地 Agent 要 MCP 子进程映射 → 按 Host 子树归属 → 回帖。
- * 最多执行一轮，不保存采样队列；关窗取消后不发布迟到结果。
+ * Host-side responder for the resource manager.
+ * Samples exactly once, only when main sends a request: read the whole-machine process table → ask every local Agent for its MCP child process map → attribute by Host subtree → reply.
+ * At most one round runs, and no sampling queue is kept; late results are never published after a window-close cancellation.
  */
 export function createHostResourceUsageResponder(
   options: CreateHostResourceUsageResponderOptions,
@@ -73,7 +73,7 @@ export function createHostResourceUsageResponder(
     async handleRequest(message) {
       let current: typeof active;
       try {
-        // Main 展示超时不代表底层结束，不能把每秒查询变成无界 FIFO。
+        // Main display timeout does not mean the end of the bottom layer, and queries per second cannot be turned into unbounded FIFO.
         if (active) {
           options.postMessage({
             type: HostResponseTypes.ResourceUsageSnapshotResult,
@@ -87,7 +87,7 @@ export function createHostResourceUsageResponder(
         active = current;
         await respond(message, current.controller.signal);
       } catch {
-        // 观测失败或退出时回帖失败只丢弃本轮，不能以未处理异常影响 Host 生命周期。
+        // If the observation fails or the reply fails when exiting, only the current round will be discarded, and the Host life cycle cannot be affected by unhandled exceptions.
       } finally {
         if (current && active === current) active = undefined;
       }

@@ -6,31 +6,31 @@ import { DYNAMIC_WORKFLOW_SKILL_NAME } from "@zcode/contracts";
 import { candidateBaseDirs } from "./bundled-plugins.js";
 
 /**
- * 随 CLI 内置的技能包（apps/zcode-cli/packages/bundled-skills）。
+ * The skill pack bundled inside the CLI (apps/zcode-cli/packages/bundled-skills).
  *
- * 它不是插件：不进官方市场目录、没有启停开关、不能卸载，也不出现在设置页与 `$` 引用面板。
- * 产品功能的工具由 runtime 注册，配套技能随 CLI 分发，避免卸载插件后缺少工具使用说明。
+ * It is not a plugin: it is not in the official marketplace catalog, has no enable/disable switch, cannot be uninstalled, and never appears in the settings page or the `$` reference panel.
+ * The tools of a product feature are registered by the runtime, and the matching skills ship with the CLI, so that uninstalling a plugin cannot leave a tool without usage instructions.
  *
- * 三种运行形态解析到同一个 skills 目录：
- * - 开发态 / Electron 桌面：沿官方插件同款候选目录在入口旁找到 `packages/bundled-skills`，原地读取，不拷贝。
- * - SEA 二进制：资产内嵌在 `zcode-bundled-skills/` 前缀下，首启按内容 hash 解压到
- *   `<cli storage>/bundled-skills/<hash>/`；目录名即内容身份，重复启动幂等，并发只会有一个赢家。
- * - 远端主机：prepare-prebuilds 把目录 stage 到远端 zcode.cjs 旁，与桌面同路。
+ * All three run shapes resolve to the same skills directory:
+ * - dev mode / Electron desktop: find `packages/bundled-skills` next to the entry point through the same candidate directories as official plugins, read in place, no copying.
+ * - SEA binary: the assets are embedded under the `zcode-bundled-skills/` prefix and are unpacked by content hash on first launch into
+ *   `<cli storage>/bundled-skills/<hash>/`; the directory name is the content identity, so repeated launches are idempotent and concurrent ones have a single winner.
+ * - remote host: prepare-prebuilds stages the directory next to the remote zcode.cjs, the same route as the desktop.
  */
 
 export const BUNDLED_SKILL_PACK_DIRECTORY_NAME = "bundled-skills";
 export const BUNDLED_SKILL_PACK_SKILLS_DIRECTORY = "skills";
-/** 门与技能包共用一个名字：常量住在 contracts（core 的技能门也读它），这里只转出。 */
+/** The gate shares one name with the skill pack: the constant lives in contracts (core's skill gate reads it too), it is only re-exported here. */
 export { DYNAMIC_WORKFLOW_SKILL_NAME };
 
-/** 技能包里每个文件都是必需资产：丢任何一个都拒绝整包，而不是装出一个引用文件缺失的技能。 */
+/** Every file in the pack is a required asset: losing any one of them rejects the whole pack, rather than installing a skill whose file references are missing. */
 export const BUNDLED_SKILL_PACK_REQUIRED_PATHS = [
   `skills/${DYNAMIC_WORKFLOW_SKILL_NAME}/SKILL.md`,
   `skills/${DYNAMIC_WORKFLOW_SKILL_NAME}/patterns.md`,
   `skills/${DYNAMIC_WORKFLOW_SKILL_NAME}/examples.md`,
 ] as const;
 
-/** 与 official-plugin-definitions 的 rootCandidates 同形，覆盖 monorepo src/dist、cli/dist 与桌面 resources/glm 布局。 */
+/** Shaped like official-plugin-definitions' rootCandidates, covering the monorepo src/dist, cli/dist and desktop resources/glm layouts. */
 const BUNDLED_SKILL_PACK_ROOT_CANDIDATES = [
   `packages/${BUNDLED_SKILL_PACK_DIRECTORY_NAME}`,
   `../${BUNDLED_SKILL_PACK_DIRECTORY_NAME}`,
@@ -43,8 +43,8 @@ const SEA_BUNDLED_SKILL_MANIFEST_ASSET_KEY = `${SEA_BUNDLED_SKILL_ASSET_PREFIX}m
 const SEED_MARKER_FILE = ".zcode-bundled-skills-seed.json";
 
 /**
- * 排在所有插件根之后（adapters 的插件根从 FIRST_PLUGIN_PRIORITY 起步进）：同名技能按发现顺序取先者，
- * 用户/项目/插件里的同名技能都应压过内置包。
+ * Ordered after every plugin root (the adapters plugin roots start at FIRST_PLUGIN_PRIORITY and count up): for same-named skills the first one in discovery order wins,
+ * so a same-named skill in the user/project/plugin should always beat the bundled pack.
  */
 const BUNDLED_SKILL_ROOT_PRIORITY = 1_000_000;
 
@@ -57,7 +57,7 @@ interface SeaBundledSkillManifest {
 type SeaModule = typeof import("node:sea");
 
 export interface ResolveBundledSkillRootsOptions {
-  /** `getCliStorageRoot(storage.dir)`；仅 SEA 解压需要。 */
+  /** `getCliStorageRoot(storage.dir)`; only SEA unpacking needs it. */
   cliStorageRoot: string;
   logger?: Logger;
 }
@@ -69,7 +69,7 @@ export async function resolveBundledSkillRoots(
     (await materializeSeaBundledSkillPack(options)) ??
     (await resolveFilesystemBundledSkillPackRoot());
   if (!packRoot) {
-    // 内置技能包缺席会让脚本编写被技能门拒绝；记录诊断，便于定位不完整的分发资产。
+    // The absence of built-in skill packages will cause scripting to be rejected by the skill gate; recording diagnostics makes it easier to locate incomplete distribution assets.
     options.logger?.warn("Bundled skill pack unavailable", {
       module: "bootstrap.bundled_skills",
       requiredPaths: [...BUNDLED_SKILL_PACK_REQUIRED_PATHS],
@@ -131,8 +131,8 @@ async function materializeSeaBundledSkillPack(
   const targetRoot = join(packsRoot, manifest.hash);
   if (await isSeedComplete(targetRoot, manifest.hash)) return targetRoot;
 
-  // 目录名就是内容 hash：写进唯一临时目录再 rename，rename 失败且目标已完整即并发赢家先到，
-  // 直接复用；其他失败回退到任一已完整的旧包（升级中途掉盘仍有技能可用）。
+  // The directory name is the content hash: write to the unique temporary directory and then rename. If the rename fails and the target is complete, the concurrent winner comes first.
+  // Direct reuse; otherwise, fall back to any complete old package (skills will still be available if the disk is dropped during the upgrade).
   const temporaryRoot = `${targetRoot}.tmp-${process.pid}-${randomUUID()}`;
   try {
     await mkdir(temporaryRoot, { recursive: true });
@@ -196,7 +196,7 @@ async function findUsableSeededPack(packsRoot: string): Promise<string | undefin
         return packRoot;
       }
     } catch {
-      // 损坏的旧缓存不参与降级，继续查找完整的技能包。
+      // Corrupted old caches do not participate in downgrades and continue to look for complete skill packs.
     }
   }
   return undefined;

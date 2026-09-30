@@ -1,5 +1,7 @@
-/* oxlint-disable eslint(max-lines) -- footer 聚合账户、主题、模式和快捷键菜单。 */
-import type { Locale, UserInfo } from "@zcode/shared";
+/* oxlint-disable eslint(max-lines) -- the footer aggregates the account, theme, mode, and shortcut
+ * menus.
+ */
+import type { UserInfo } from "@zcode/shared";
 import { memo, useCallback, useEffect, useState } from "react";
 import {
   DesktopCommandIds,
@@ -27,7 +29,6 @@ import {
 } from "@/components/ui/dropdown-menu.js";
 import {
   PencilRuler,
-  Globe,
   Loader2,
   LogInIcon,
   LogOut,
@@ -86,8 +87,6 @@ function getAvatarFallbackText(user: UserInfo | null | undefined): string {
 
 export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterComponent({
   theme,
-  localeMenuValue,
-  onLocaleChange,
   onThemeChange,
   onSettingsButtonClick,
   onUsageClick,
@@ -104,8 +103,6 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
   className,
 }: {
   theme: Theme;
-  localeMenuValue: Locale | "system";
-  onLocaleChange: (value: string) => void;
   onThemeChange: (value: string) => void;
   onSettingsButtonClick?: () => void;
   onUsageClick?: () => void;
@@ -149,9 +146,11 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
             avatarFallbackText
           ) : showAuthRestoreLoading ? (
             <>
-              {/* OAuth 启动恢复未落定前，footer 之前会直接显示未登录头像，
-                  用户很容易把“还在校验”误判成“已经退出”。
-                  这里用 loading 图标明确表达“状态确认中”，等恢复成功或失败后再展示最终状态。 */}
+              {/* Until the OAuth startup restore settles, the footer previously showed the signed-out avatar
+                  directly, which made it easy for users to read "still verifying" as "already
+                  signed out". A loading icon now states "confirming status" explicitly, and the
+                  final state is only shown once the restore succeeds or fails.
+                  */}
               <Loader2 className="size-4 animate-spin" />
               <span className="sr-only">{intl.formatMessage({ id: "common.loading" })}</span>
             </>
@@ -214,13 +213,16 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
   const canZoomOut = desktopZoomLevel > DESKTOP_ZOOM_MIN_LEVEL;
 
   return (
-    // footer 被 Settings 复用，页面专属边距由调用方传入，避免修改共享默认样式。
+    // The footer is reused by Settings, and the page-specific margins are passed in by the caller to avoid modifying the shared default style.
     <footer className={cn("flex shrink-0 flex-col gap-2.5 px-4 pt-2 pb-4", className)}>
       <div className="flex min-w-0 gap-2">
         <DropdownMenu open={profileMenuOpen} onOpenChange={setProfileMenuOpen}>
           <DropdownMenuTrigger asChild>
-            {/* 头像和 Login 之前直接绑定到登录动作，导致用户无法从这里打开偏好设置。
-              现在把这一块改成统一的设置菜单入口，登录/退出留在菜单项里，交互职责更清晰。 */}
+            {/* The avatar and Login were previously wired straight to the sign-in action, which left users
+              unable to open preferences from here. This section is now a single settings menu entry
+              point, with sign in / sign out kept as menu items, so the interaction's role is
+              clearer.
+              */}
             <Button
               type="button"
               variant="ghost"
@@ -229,38 +231,15 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
               data-testid={TID_LOGIN_TRIGGER}
               aria-label={profileBadge}
             >
-              {/* Button 默认 shrink-0 且带 whitespace-nowrap，超长用户名会把 footer 撑出 sidebar。
-                这里让触发按钮和文本列都允许收缩，并只在用户名自身做单行截断。 */}
+              {/* Button defaults to shrink-0 with whitespace-nowrap, so an overlong user name pushes the footer
+                outside the sidebar. Here both the trigger button and the text column are allowed to
+                shrink, and the single-line truncation is applied only to the user name itself.
+                */}
               {profileContent}
             </Button>
           </DropdownMenuTrigger>
-          {/* 菜单内容保持挂载，避免每次点击头像菜单都重建 footer 内部状态。*/}
+          {/* Menu content stays mounted, so opening the avatar menu does not rebuild footer-internal state on every click. */}
           <DropdownMenuContent align="start" className="w-max min-w-50" forceMount>
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger>
-                <Globe className="size-4" />
-                {intl.formatMessage({ id: "settings.locale" })}
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent className="w-48">
-                <DropdownMenuRadioGroup value={localeMenuValue} onValueChange={onLocaleChange}>
-                  <DropdownMenuRadioItem value="system">
-                    {intl.formatMessage({
-                      id: "sidebar.settings.systemDefault",
-                    })}
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="en-US">
-                    {intl.formatMessage({
-                      id: "sidebar.settings.locale.en-US",
-                    })}
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="zh-CN">
-                    {intl.formatMessage({
-                      id: "sidebar.settings.locale.zh-CN",
-                    })}
-                  </DropdownMenuRadioItem>
-                </DropdownMenuRadioGroup>
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
                 <Palette className="size-4" />
@@ -305,10 +284,13 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
                 </DropdownMenuRadioGroup>
               </DropdownMenuSubContent>
             </DropdownMenuSub>
-            {/* 快捷键设置：缩放子菜单 label 读生效表，设置页改绑后即时跟随 */}
-            {/* 收口重复缩放子菜单时误留了语言之后的那份，导致菜单顺序变成
-                语言→缩放→主题；账户菜单分组顺序固定为 语言→主题→界面模式→缩放→用量→登录/登出，
-                这里把唯一一份（读生效表）挪回用量摘要之前，不要再补第二份缩放子菜单。 */}
+            {/* Shortcut settings: the zoom submenu label reads the effective table, so it follows a rebinding in settings immediately */}
+            {/* When the duplicate zoom submenus were collapsed, the copy after Language was left behind by
+                mistake, which turned the menu order into Language→Zoom→Theme. The account menu's
+                group order is fixed at Language→Theme→Interface mode→Zoom→Usage→Sign in/Sign out,
+                so the single copy (the one reading the effective table) is moved back ahead of the
+                usage summary; do not add a second zoom submenu.
+                */}
             {isDesktop ? (
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger>
@@ -343,7 +325,7 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
                 </DropdownMenuSubContent>
               </DropdownMenuSub>
             ) : null}
-            {/* 升级入口状态不再以菜单开关为生命周期边界。*/}
+            {/* The upgrade entry's state no longer uses the menu toggle as its lifecycle boundary. */}
             <WorkspaceSidebarFooterUsageSummaryContent
               state={usageSummaryState}
               onUsageClick={usageButtonClick}

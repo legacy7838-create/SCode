@@ -54,34 +54,34 @@ function registerRuntimeBuiltInTools(runtime: AgentRuntimeInternal, deps: AgentR
     includeSendMessage: runtime.subagentPort?.sendMessage !== undefined,
     includeRespondToCoordinator:
       runtime.config.taskType === "subagent_child" && Boolean(deps.coordinatorResponsePort),
-    // submit_result 只在注入了 workflowSubmitPort 的 workflow actor 会话注册。以端口存在为门，
-    // 与 taskType 无关：workflow actor 是 workflow_child，其 runtimeScope 目前是 "main"。
+    // submit_result is only registered in workflow actor sessions where workflowSubmitPort is injected. Taking port existence as a gate,
+    // TaskType independent: the workflow actor is workflow_child whose runtimeScope is currently "main".
     includeSubmitResult: Boolean(deps.workflowSubmitPort),
-    // mono 子代理：typed 声明。门仍是端口。
+    // mono subagent: typed declaration. Doors are still ports.
     ...(deps.workflowSubmitSchema === undefined
       ? {}
       : { submitResultSchema: deps.workflowSubmitSchema }),
-    // escalate 与 submit_result 同门同理由：端口在场即注册（不做 opt-in：最可能撞墙的 actor 恰是作者没标记的那个）。
+    // escalate is the same as submit_result for the same reason: the port is registered when it is present (without opt-in: the actor most likely to hit the wall is the one that the author has not marked).
     includeEscalate: Boolean(deps.workflowEscalatePort),
     includeWorkflow: Boolean(deps.workflowPort),
     includeAutomation: Boolean(deps.automationPort) && runtime.config.taskType !== "subagent_child",
-    // offPeakPort 只在 host 下发 offPeakToolEnabled 时注入（灰度/远程门在 host 端），
-    // 端口存在即代表曝光允许；subagent 子会话与 automation 同规则不暴露。
+    // offPeakPort is only injected when the host issues offPeakToolEnabled (grayscale/remote gate is on the host side),
+    // The existence of the port means that the exposure is allowed; the subagent sub-session is not exposed according to the same rules as automation.
     includeOffPeak: Boolean(deps.offPeakPort) && runtime.config.taskType !== "subagent_child",
-    // 动态工作流灰度门：与 off-peak 相反，
-    // 这里不能用端口在场做判据——十个工具的端口在任何 CLI 里都装配齐全，灰度是 Host 的决定。
-    // 取值收在 tool-allowlist.ts，与分支刷新那个入口共用同一个推导。
+    // Dynamic workflow gray gate: the opposite of off-peak,
+    // The port presence cannot be used as a criterion here - the ports of the ten tools are fully equipped in any CLI, and the grayscale is decided by the Host.
+    // The value is stored in tool-allowlist.ts and shares the same derivation as the branch refresh entry.
     includeDynamicWorkflow: resolveRuntimeDynamicWorkflowToolsIncluded(runtime.config),
-    // browserControlPort 只是宿主能力，不应隐式暴露高权限 node_repl。
-    // node_repl/browser-use 由 ZCode 官方 browser-use 插件启停推导出的 runtimeFeatures 控制。
+    // browserControlPort is only a host capability and should not implicitly expose high-privilege node_repl.
+    // node_repl/browser-use is controlled by the runtimeFeatures deduced by starting and stopping the ZCode official browser-use plug-in.
     includeNodeRepl: nodeReplEnabled,
     includeBrowserUse: browserUseEnabled,
     embeddedSearchEnabled: resolveRuntimeEmbeddedSearchEnabled(runtime),
     agentProfiles: runtime.config.subagents?.profiles,
     allowedTools: resolveBuiltInToolAllowlist(runtime.config),
-    // workflow_child 的结构性禁用（CreateWorkflow/SaveWorkflow 因 alwaysAsk 隐形挂起；
-    // ResumeWorkflowRun 已免确认但因「child 内不得再编排」仍在列）在 helper
-    // 里与 turn 级名单合并，见 tool-allowlist.ts 的根因注释。
+    // Structural disabling of workflow_child (CreateWorkflow/SaveWorkflow is invisible suspended due to alwaysAsk;
+    // ResumeWorkflowRun has been exempted from confirmation but is still listed due to "child cannot be re-arranged") in the helper
+    // It is merged with the turn-level list, see the root comment of tool-allowlist.ts.
     disallowedTools: resolveRuntimeDisallowedTools(runtime.config),
   });
 }
@@ -178,7 +178,7 @@ function createRuntimeToolExecutor(
     fileSystemPort: deps.fileSystemPort,
     httpClientPort: deps.httpClientPort,
     imageProcessorPort: deps.imageProcessorPort,
-    // 合并删除旧模型连接时曾漏掉此端口；Read 分页渲染与整份 PDF 页数检查仍依赖宿主注入。
+    // This port was missed when merging and deleting old model connections; Read paged rendering and entire PDF page count check still rely on host injection.
     pdfDocumentPort: deps.pdfDocumentPort,
     embeddedSearchBackend: runtime.config.embeddedSearchBackend,
     nativeSearchEnhancementsEnabled: runtime.config.nativeSearchEnhancementsEnabled,
@@ -198,9 +198,9 @@ function createRuntimeToolExecutor(
     modelCatalogPort: deps.modelCatalogPort,
     runtimeTaskRegistry: runtime.runtimeTaskRegistry,
     readFileState: runtime.readFileState,
-    // 工作流创作工具的技能门（tool/handlers/workflow-skill-gate.ts）：按模型此刻看得见的历史回答
-    // 「读过技能没有」。只在会话真有 Skill 工具时给探针——没有 skillPort 的会话装不上那个技能，
-    // 门若仍然在场就成了一道谁也过不去的墙。
+    // Skill gate of workflow creation tool (tool/handlers/workflow-skill-gate.ts): historical answers visible according to the model at the moment
+    // "Have you read the skills?" Only give the probe if the session actually has a Skill tool - a session without a skillPort cannot be equipped with that skill,
+    // If Men were still there, it would become a wall that no one could get through.
     ...(deps.skillPort === undefined
       ? {}
       : {

@@ -155,7 +155,7 @@ export function ModelTrajectoryPane({
         return;
       }
 
-      logger.warn("[ModelTrajectoryPane] 打开调用轨迹目录失败", {
+      logger.warn("[ModelTrajectoryPane] failed to open trajectory directory", {
         taskId,
         path: sourceDirectory,
         sourceFiles: sourceFiles ?? [],
@@ -163,7 +163,7 @@ export function ModelTrajectoryPane({
       });
       toast(intl.formatMessage({ id: "appHeader.openInFileManagerFailed" }));
     } catch (openError) {
-      logger.warn("[ModelTrajectoryPane] 打开调用轨迹目录失败", {
+      logger.warn("[ModelTrajectoryPane] failed to open trajectory directory", {
         taskId,
         path: sourceDirectory,
         sourceFiles: sourceFiles ?? [],
@@ -291,7 +291,7 @@ export function ModelTrajectoryPane({
       </header>
       <div data-trajectory-header-divider="" className="h-px shrink-0 bg-border" />
 
-      {/* Radix ScrollArea 会注入 display: table 的内容层，使长轨迹参与异常宽度计算；这里仅需原生纵向滚动。 */}
+      {/* Radix ScrollArea injects display: table into the content layer, allowing long tracks to participate in exception width calculations; only native vertical scrolling is required here. */}
       <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
         {error ? (
           <EmptyState

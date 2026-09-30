@@ -15,7 +15,10 @@ import { resolveStartPlanRecommendation } from "@/lib/startPlanRecommendation.js
 import { toast } from "@/components/ui/toast.js";
 import { logger } from "@/logger.js";
 
-/** 推荐只编辑本次提交的选择；设置与额度仍由 App/Host 的原服务拥有。 */
+/**
+ * The recommendation only edits the choices from this submission; settings and quotas remain owned
+ * by the App/Host's original services.
+ */
 export function useStartPlanRecommendation(
   view: ModelSelectionView | null | undefined,
   surface?: "subagent",
@@ -23,7 +26,7 @@ export function useStartPlanRecommendation(
   const services = useOptionalBaseWorkspaceServices();
   const { intl } = useZCodeIntl();
   const requestChoice = useConfirmDialogStore((state) => state.requestChoice);
-  // Registry 已完成登录品牌、权益、模型配置校验，不从展示名称推测执行身份。
+  // The Registry has already validated login brand, entitlement, and model configuration; do not infer the execution identity from the display name.
   const start = view?.providers.find((provider) => isStartPlanModelProviderId(provider.providerId));
   const settings = useProviderSettingsView();
   const entitlement = useUsageEntitlementWithService(services?.usageStatsService, {
@@ -36,18 +39,21 @@ export function useStartPlanRecommendation(
   });
   return useCallback(
     async (selection: ModelSelection): Promise<ModelSelection | null> => {
-      // 提交不等待网络；过期额度跳过推荐，访问刷新沿用一分钟节流与失败退避。
+      // Submission does not wait on the network; an expired quota skips the recommendation, and the access refresh keeps the one-minute throttle and failure backoff.
       void entitlement.refresh({ silent: true, reason: "access" });
       const candidate = entitlement.error
         ? null
         : resolveStartPlanRecommendation(selection, view, entitlement.snapshot);
       if (!candidate || !services) return selection;
       try {
-        // 每次读同一 Host 的偏好，覆盖另一入口或手机刚勾选后的下一次提交。
+        // Read the same Host's preference each time so it picks up a change made at another entry point or just checked on mobile before this submission.
         if ((await services.settingService.get()).startPlanRecommendationDismissed)
           return selection;
       } catch (error) {
-        logger.warn("[StartRecommendation] 无法读取推荐偏好，继续原选择", { error });
+        logger.warn(
+          "[StartRecommendation] failed to read the recommendation preference, keeping the current selection",
+          { error },
+        );
         return selection;
       }
       let dismissed = false;
@@ -79,7 +85,9 @@ export function useStartPlanRecommendation(
         try {
           await services.settingService.update({ startPlanRecommendationDismissed: true });
         } catch (error) {
-          logger.warn("[StartRecommendation] 保存推荐偏好失败", { error });
+          logger.warn("[StartRecommendation] failed to save the recommendation preference", {
+            error,
+          });
           toast(intl.formatMessage({ id: "startPlan.recommendation.preferenceSaveFailed" }));
         }
       }

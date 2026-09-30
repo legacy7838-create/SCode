@@ -1,10 +1,10 @@
 /**
- * scheduler.ts 顶到 oxlint max-lines 上限（400 行），把调度器的内部类型（Deferred /
- * AskNode / Actor）与引擎注入的依赖面 SchedulerHost 拆到本文件；公开面仍从 scheduler.ts 导出
- * （SchedulerHost 在那里原地再导出，engine.ts 的导入路径不变）。
+ * scheduler.ts has hit oxlint's max-lines limit (400 lines), so the scheduler's internal types (Deferred /
+ * AskNode / Actor) and the dependency surface SchedulerHost injected by the engine are split into this file; the public surface is still exported from scheduler.ts
+ * (SchedulerHost is re-exported in place there, so engine.ts's import path is unchanged).
  *
- * 单独成文件的理由不只是行数：scheduler-submit.ts 里的自由函数也要拿到 AskNode / SchedulerHost，
- * 从这里导入，两侧都不必反向 import 调度器本体。
+ * The reason for a file of its own is not just the line count: the free functions in scheduler-submit.ts also need AskNode / SchedulerHost,
+ * and importing them from here means neither side has to import the scheduler body backwards.
  */
 
 import { INSTRUCTIONS_HEAD_MAX_CHARS, refToString, WorkflowError } from "./types.js";
@@ -23,7 +23,7 @@ import type {
   WorkflowDriver,
 } from "./types.js";
 
-/** 一个可外部结算的 promise。 */
+/** A promise that can be settled from the outside. */
 export interface Deferred<T> {
   promise: Promise<T>;
   resolve: (value: T) => void;
@@ -40,47 +40,47 @@ export function defer<T>(): Deferred<T> {
   return { promise, resolve, reject };
 }
 
-/** 引擎注入给调度器的依赖面。 */
+/** The dependency surface the engine injects into the scheduler. */
 export interface SchedulerHost {
   readonly runId: string;
   /**
-   * 本 run 的并发上界。**每次派发前现读**，不是构造时抄下的一份：`setMaxConcurrency` 会整份
-   * 换掉引擎持有的 caps，
-   * 而调度器的派发判据必须看见新值。引擎侧因此以 getter 实现这个属性。
+   * The concurrency upper bound of this run. **Read fresh before every dispatch**, not a copy taken down at construction time: `setMaxConcurrency` replaces
+   * the whole caps object the engine holds,
+   * and the scheduler's dispatch decision has to see the new value. The engine side therefore implements this property as a getter.
    */
   readonly caps: Caps;
   readonly driver: WorkflowDriver;
   readonly validate: ValidateFn;
-  /** 分配某站点的下一个执行序号（与 world-read/actor 共用一套计数器）。 */
+  /** Allocates the next execution ordinal for a site (sharing one set of counters with world-read/actor). */
   nextOrdinal(siteId: string): number;
   /**
-   * 受 replay 结算次序约束地释放一次命中。
-   * 非 resume、或次序表里没有这个实例时立即执行 `release`。
+   * Releases one hit, subject to the replay settlement order.
+   * Not a resume, or the instance missing from the order table, executes `release` immediately.
    */
   holdForReplay(instance: InstanceRef, release: () => void): void;
-  /** 事件既落 journal 又扇出（Boundary C）。 */
+  /** An event that is both journaled and fanned out (Boundary C). */
   record(event: RunEvent): void;
   isRunSettled(): boolean;
-  /** run 已结算时用于 reject 的错误。 */
+  /** The error used to reject once the run has settled. */
   runError(): WorkflowError;
-  /** run 级失败。 */
+  /** A run-level failure. */
   failRun(error: WorkflowError): void;
   /**
-   * 导入缓存是否已关闭（amend-resume）。关门由引擎自己做
-   * （driver 上报 askMutating、或 live 的 world-run），调度器只读这个位——一个 ask 转 live 本身
-   * **不**关门：它还什么都没改。
+   * Whether import caching has already been turned off (amend-resume). The engine itself does the turning off
+   * (the driver reporting askMutating, or a live world-run), and the scheduler only reads this bit — an ask turning live does **not** turn it off
+   * by itself: it has not changed anything yet.
    */
   importCacheClosed(): boolean;
-  /** 该记录行在崩溃前是否 live 跑过（resume 时引擎从事件恢复；非 resume 恒 false）。 */
+  /** Whether this record row ran live before the crash (on resume the engine recovers it from the events; without a resume it is always false). */
   wasLiveBeforeResume(instance: InstanceRef): boolean;
   /**
-   * 该记录行的准入是否发生在导入缓存关闭**之前**（按事件次序恢复，见 engine-world.ts 的
-   * recoverImportClosure）。续跑前驱在飞 ask 的判定要它才能在 resume 时精确复原；非 resume 恒 false。
+   * Whether this record row's admission happened **before** import caching was turned off (recovered by event order, see recoverImportClosure in engine-world.ts).
+   * Deciding whether a continuation may run a predecessor's in-flight ask needs it to be restored precisely on resume; without a resume it is always false.
    */
   wasQueuedBeforeImportClose(instance: InstanceRef): boolean;
 }
 
-/** 一个 live（需真正派发执行）的 ask 节点。 */
+/** An ask node that is live (and really has to be dispatched for execution). */
 export interface AskNode {
   instance: InstanceRef;
   actor: Actor;
@@ -95,55 +95,55 @@ export interface AskNode {
   dispatched: boolean;
   lastStats?: AskStats;
   /**
-   * 准入时算好的指令开头（{@link AskNode.instructions} 的前 N 字符）。存在节点上而不是两处
-   * 各算一次：`node-queued` 与 `node-dispatched` 必须带**同一个**串（派发重复出生事实，
-   * 见 types.ts 的 `node-dispatched`），存下来这件事就由构造保证，不靠两处调用保持同步。
+   * The head of the instructions, computed at admission time (the first N characters of {@link AskNode.instructions}). It lives on the node instead of being
+   * computed in two places: `node-queued` and `node-dispatched` must carry the **same** string (dispatch repeats a birth fact,
+   * see `node-dispatched` in types.ts), and storing it makes that a construction-time guarantee rather than something two call sites have to keep in sync.
    */
   instructionsHead?: string;
 }
 
-/** 调度器维护的 actor 运行态。 */
+/** The running state of an actor, maintained by the scheduler. */
 export interface Actor {
   ref: ActorRef;
   id: ActorId;
   persona: PersonaSpec;
   name?: string;
-  /** journal 中该 actor 已记录的 ask 节点数——replay 时 live 节点须等其全部准入后才放行。 */
+  /** The number of ask nodes already recorded for this actor in the journal — on replay a live node must wait until all of them are admitted. */
   recordedCount: number;
-  /** 下一个待准入的 actorSeq。 */
+  /** The next actorSeq waiting for admission. */
   nextAdmitSeq: number;
-  /** 已到达但未准入的记录节点释放动作，按 actorSeq 挂起（hold 规则）。 */
+  /** The release action of a record node that has arrived but is not yet admitted, held per actorSeq (the hold rule). */
   pendingRecorded: Map<number, () => void>;
-  /** 已到达但在等记录节点排空的 live 节点释放动作，按到达顺序。 */
+  /** The release action of a live node that has arrived but is waiting for the record nodes to drain, in arrival order. */
   pendingLive: Array<() => void>;
-  /** 已准入待派发的 live 节点（FIFO = 准入顺序）。 */
+  /** Live nodes that are admitted and waiting for dispatch (FIFO = admission order). */
   liveQueue: AskNode[];
-  /** 正在执行的 live 节点（actor 串行，至多一个）。 */
+  /** The live node currently executing (actors run serially, at most one). */
   current?: AskNode;
-  /** 会话惰性创建，缓存其 promise（每 actor 一次）。 */
+  /** Created lazily, with its promise cached (once per actor). */
   sessionPromise?: Promise<SessionRef>;
   session?: SessionRef;
   /**
-   * amend-resume 的导入消费态（引擎在 createActor 里按名 + persona 匹配后挂上，见
-   * imported-cache.ts 的 `matchImportedActor`）。缺席即该 actor 全新重跑。
+   * The import consumption state of amend-resume (attached by the engine inside createActor after matching by name + persona, see
+   * `matchImportedActor` in imported-cache.ts). Absent means that actor reruns from scratch.
    */
   imported?: ImportedActorState;
 }
 
-// 合入后按当前格式化规则展开会超过调度器的 400 行限制；纯辅助函数与现有 defer 一起收在此处，行为不变。
-/** replay 命中但 inputHash 不一致——纯度契约被破坏，run 大声失败。 */
+// Expanding according to the current formatting rules after merging would exceed the scheduler's 400-line limit; pure helper functions are included here with the existing defer, and the behavior is unchanged.
+/** A replay hit whose inputHash does not match — the purity contract is broken, and the run fails loudly. */
 export function hashMismatch(instance: InstanceRef, expected: string, got: string): WorkflowError {
   return new WorkflowError(
     "InputHashMismatch",
     `Replay hit at ${refToString(instance)} but inputHash differs (expected ${expected}, got ` +
       `${got}): the script is not deterministic, so the journal cannot be replayed.`,
-    // 结构化 mismatch 与 ScriptHashMismatch 对齐：两个哈希不一致错误共用同一个字段，
-    // 读端不必再从 message 文本里抠哈希。
+    // Structured mismatch aligns with ScriptHashMismatch: two hash mismatch errors share the same field,
+    // The reader no longer has to extract the hash from the message text.
     { mismatch: { expected, got } },
   );
 }
 
-/** cause → 一行有界文本（Error 取 message，其余 String()；空则给占位）。 */
+/** cause → one line of bounded text (an Error takes its message, everything else String(); an empty one gets a placeholder). */
 export function describeCause(cause: unknown): string {
   const text = cause instanceof Error ? cause.message : String(cause);
   const trimmed = text.trim();
@@ -152,8 +152,8 @@ export function describeCause(cause: unknown): string {
 }
 
 /**
- * 作者指令的开头（{@link INSTRUCTIONS_HEAD_MAX_CHARS} 个字符，去两端空白，**不加省略号**）。
- * 空指令返回 undefined：缺席的键比一个空串诚实——读面据此退回「不知道它被交代了什么」。
+ * The head of the author's instructions ({@link INSTRUCTIONS_HEAD_MAX_CHARS} characters, trimmed at both ends, **with no ellipsis**).
+ * Empty instructions return undefined: an absent key is more honest than an empty string — the read surfaces then fall back to "I don't know what it was told".
  */
 export function headOfInstructions(instructions: string): string | undefined {
   const trimmed = instructions.trim();
@@ -163,7 +163,7 @@ export function headOfInstructions(instructions: string): string | undefined {
     : trimmed.slice(0, INSTRUCTIONS_HEAD_MAX_CHARS);
 }
 
-/** 按原有准入顺序清空 actor 队列；派发仍由调度器唯一负责。 */
+/** Empties the actor queues in the existing admission order; dispatching remains the scheduler's sole responsibility. */
 export function drainActorAdmission(actor: Actor): void {
   let progressed = true;
   while (progressed) {

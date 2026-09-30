@@ -10,7 +10,7 @@ const EXECUTE_GROUP_ICON = (
   <SquareTerminalIcon className="size-4 shrink-0 text-foreground-subtle" />
 );
 
-// V4 row 进入共享 renderer 前会把 inputStreaming/pendingApproval 统一适配为 pending。
+// V4 row will uniformly adapt inputStreaming/pendingApproval to pending before entering the shared renderer.
 const ACTIVE_STATUSES = new Set(["pending", "in_progress"]);
 
 function formatCompletedSummary(
@@ -66,8 +66,8 @@ export function ExecuteGroupToolCallBlock(context: ToolCallBlockRenderContext) {
   const runningSecondaryText = useMemo(
     () =>
       latestCommand ? (
-        // Tailwind v4 preflight 会给 code 默认 mono 字体，
-        // 不显式指定时运行态命令会和 execute/explore 收起态的 sans 约定不一致。
+        // Tailwind v4 preflight will give the code a default mono font.
+        // If not specified explicitly, the running state command will be inconsistent with the sans convention of the execute/explore closed state.
         <code className="min-w-0 truncate font-sans">{latestCommand}</code>
       ) : undefined,
     [latestCommand],
@@ -105,7 +105,7 @@ export function ExecuteGroupToolCallBlock(context: ToolCallBlockRenderContext) {
     ],
   );
 
-  // 只在 Execute 阶段运行时滚动新增 command；阶段结束必须立即清空旧队列并显示最终统计。
+  // New commands are only added on a rolling basis when the Execute phase is running; the old queue must be cleared immediately after the phase ends and the final statistics are displayed.
   return (
     <ToolLayout
       toolId={toolCall.toolId}
@@ -120,8 +120,8 @@ export function ExecuteGroupToolCallBlock(context: ToolCallBlockRenderContext) {
       secondaryText={isRunning ? runningSecondaryText : undefined}
       summaryContentSeparator="·"
       expandedPrimaryText={completedSummary}
-      // ToolLayout 默认会在展开态沿用 secondaryText，导致命令数量后残留当前命令。
-      // 父组展开后由子 tool summary 表达当前命令，因此这里必须显式清空。
+      // By default, ToolLayout will inherit secondaryText in the expanded state, resulting in the current command remaining after the number of commands.
+      // After the parent group is expanded, the child tool summary expresses the current command, so it must be cleared explicitly here.
       expandedSecondaryText={null}
       animateSummaryContent={isRunning}
       disableSummaryContentAnimation={context.disableSummaryContentAnimation}

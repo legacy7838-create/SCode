@@ -177,20 +177,20 @@ export function buildConversationTurnNavigatorItems(
   };
 
   return units.flatMap((unit, unitIndex) => {
-    // provider/store 的物理 role=user 还包含 background/goal/mailbox
-    // 等系统上下文；目录代表用户主动 query，只能使用投影明确裁决的 realUser。
+    // The physical role=user of provider/store also contains background/goal/mailbox
+    // and other system contexts; the directory represents the user's active query, and only realUser whose projection is explicitly determined can be used.
     const realUserInputs = unit.visibleUserInputs.filter((row) => row.origin === "realUser");
     if (unit.timelineOnly || realUserInputs.length === 0) {
       return [];
     }
 
-    // 导航项按 query 拆分，但 hover 的 assistant 摘要保持旧产品语义：
-    // 取所属 product turn 的文本结果，不在 renderer 猜测 guide 回复分段。
+    // Navigation items are split by query , but the assistant summary for hover maintains the old product semantics:
+    // Get the text result of the corresponding product turn, instead of guessing the guide reply segment in the renderer.
     const { assistantPreview, assistantPreviewKind } = buildAssistantPreview(unit, resolvedOptions);
     return realUserInputs.map((row, queryIndex) => ({
-      // 不能以 product turn 为目录粒度，并把同一 turn 的 steer query
-      // 全部拼进一个 preview。目录真正导航的是用户可见 query，必须用稳定 row
-      // 身份逐条建项，turnId 只负责把虚拟列表先定位到所属容器。
+      // You cannot use product turn as the directory granularity and put the steer query of the same turn
+      // All put together into a preview. The real navigation of the directory is the query visible to the user, which must use stable row
+      // Identities are created item by item, and turnId is only responsible for locating the virtual list to the container it belongs to.
       key: `${unit.key}:query:${row.entityId ?? row.rowId}`,
       turnId: unit.turnId,
       unitIndex,
@@ -203,8 +203,8 @@ export function buildConversationTurnNavigatorItems(
       }),
       assistantPreview,
       assistantPreviewKind,
-      // 同一 running product turn 可能已有多个已结束 guide segment；只有最后一条
-      // query 仍代表当前工作，避免所有旧 query 一起呈现 running 强调。
+      // There may be multiple ended guide segments for the same running product turn; only the last one
+      // query still represents the current job, avoiding all old queries to be rendered together with running emphasis.
       isRunning: unit.isRunning && queryIndex === realUserInputs.length - 1,
     }));
   });

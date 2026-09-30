@@ -1,14 +1,10 @@
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
-import type { Locale } from "@zcode/shared";
 
 const MENU_KEY_NAME = "ZCode.OpenInZCode";
 const DIRECTORY_MENU_KEY = `HKCU\\Software\\Classes\\Directory\\shell\\${MENU_KEY_NAME}`;
 const DRIVE_MENU_KEY = `HKCU\\Software\\Classes\\Drive\\shell\\${MENU_KEY_NAME}`;
-const MENU_LABELS: Record<Locale, string> = {
-  "zh-CN": "在ZCode中打开",
-  "en-US": "Open in ZCode",
-};
+const MENU_LABEL = "Open in ZCode";
 
 type Logger = {
   info: (...args: unknown[]) => void;
@@ -17,10 +13,6 @@ type Logger = {
 
 interface WindowsOpenFolderRegistryOperation {
   args: string[];
-}
-
-function getWindowsOpenFolderMenuName(locale: Locale): string {
-  return MENU_LABELS[locale] ?? MENU_LABELS["en-US"];
 }
 
 function quoteWindowsCommandArg(value: string): string {
@@ -42,15 +34,13 @@ function buildWindowsOpenFolderCommand(
 function buildWindowsOpenFolderRegistryOperations(options: {
   executablePath: string;
   appArgs?: readonly string[];
-  locale: Locale;
 }): WindowsOpenFolderRegistryOperation[] {
   const command = buildWindowsOpenFolderCommand(options.executablePath, options.appArgs ?? []);
-  const menuName = getWindowsOpenFolderMenuName(options.locale);
   const menuKeys = [DIRECTORY_MENU_KEY, DRIVE_MENU_KEY];
 
   return menuKeys.flatMap((menuKey) => [
-    { args: ["add", menuKey, "/ve", "/d", menuName, "/f"] },
-    { args: ["add", menuKey, "/v", "MUIVerb", "/t", "REG_SZ", "/d", menuName, "/f"] },
+    { args: ["add", menuKey, "/ve", "/d", MENU_LABEL, "/f"] },
+    { args: ["add", menuKey, "/v", "MUIVerb", "/t", "REG_SZ", "/d", MENU_LABEL, "/f"] },
     { args: ["add", menuKey, "/v", "Icon", "/t", "REG_SZ", "/d", options.executablePath, "/f"] },
     { args: ["add", `${menuKey}\\command`, "/ve", "/d", command, "/f"] },
   ]);
@@ -80,7 +70,6 @@ export async function installWindowsOpenFolderContextMenu(options: {
   executablePath: string;
   argv: readonly string[];
   isDefaultApp: boolean;
-  locale: Locale;
   logger: Logger;
 }): Promise<void> {
   if (options.platform !== "win32") {
@@ -88,25 +77,26 @@ export async function installWindowsOpenFolderContextMenu(options: {
   }
 
   const appArgs =
-    // 开发态 Windows 的 process.execPath 是 Electron 可执行文件。
-    // 注册表命令必须同时带上应用入口，否则 Explorer 右键菜单只能启动空 Electron。
+    // The process.execPath of development Windows is the Electron executable file.
+    // The registry command must also bring an application entry, otherwise the Explorer right-click menu can only launch empty Electron.
     options.isDefaultApp && options.argv[1] ? [resolve(options.argv[1])] : [];
   const operations = buildWindowsOpenFolderRegistryOperations({
     executablePath: options.executablePath,
     appArgs,
-    locale: options.locale,
   });
 
   try {
     await Promise.all(operations.map((operation) => runRegAdd(operation.args)));
 
-    options.logger.info("[open-folder] Windows Explorer 右键菜单已安装或更新", {
-      executablePath: options.executablePath,
-      hasDefaultAppEntry: appArgs.length > 0,
-      locale: options.locale,
-    });
+    options.logger.info(
+      "[open-folder] the Windows Explorer context menu was installed or updated",
+      {
+        executablePath: options.executablePath,
+        hasDefaultAppEntry: appArgs.length > 0,
+      },
+    );
   } catch (error) {
-    options.logger.warn("[open-folder] Windows Explorer 右键菜单安装失败", {
+    options.logger.warn("[open-folder] failed to install the Windows Explorer context menu", {
       error: error instanceof Error ? error.message : String(error),
     });
   }

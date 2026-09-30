@@ -13,14 +13,14 @@ export function SidePaneTerminalPane({
 }: {
   services: IServiceAccessor;
   /**
-   * 保活：sessionId 复用 tab.id（跨 workspace 稳定），同时作为 TerminalSession 的 persistentKey。
-   * 让 xterm+PTY 所有权进 sidePaneTerminalSessionRegistry 模块级单例，
-   * 组件卸载只 detach、不 dispose；重挂按 key 复用，scrollback 跨 workspace 保活。
+   * Keep alive: sessionId reuses tab.id (stable across workspaces) and serves as the persistentKey of TerminalSession.
+   * Let xterm+PTY ownership go into the sidePaneTerminalSessionRegistry module-level singleton,
+   * When components are uninstalled, they are only detachable and not disposed; when remounted, they are reused by key, and scrollback is kept alive across workspaces.
    */
   sessionId: string;
   /**
-   * workspace 身份隔离 key（= workspaceIdentity?.trim() || workspacePath）。
-   * 写入 registry entry.workspaceKey，workspace tab 关闭时按此批量回收 PTY。
+   * workspace identity isolation key (= workspaceIdentity?.trim() || workspacePath).
+   * Write registry entry.workspaceKey and press this to recycle PTY in batches when the workspace tab is closed.
    */
   workspaceKey?: string;
   cwd?: string;
@@ -29,8 +29,8 @@ export function SidePaneTerminalPane({
   onOpenBrowserUrl: (url: string) => void;
 }) {
   const handleShellLabelChange = useCallback(() => {
-    // 业务说明：side pane 外层 tab 已经承载终端标题，这里只需要单个 shell 实例，
-    // 不再显示或同步第二层 terminal tab 标题，避免形成嵌套 tabs。
+    // Business description: The outer tab of the side pane already carries the terminal title. Only a single shell instance is needed here.
+    // The second-level terminal tab titles are no longer displayed or synchronized to avoid nested tabs.
   }, []);
 
   return (

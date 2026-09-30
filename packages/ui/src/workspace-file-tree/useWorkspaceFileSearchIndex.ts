@@ -32,7 +32,7 @@ export function useWorkspaceFileSearchIndex({
     workspaceRemoteSessionId,
     workspaceIdentity,
   );
-  // packed 直存（Host 返回列式字符串）：树渲染用 useMemo unpack，搜索态直透 worker。
+  // Packed direct storage (Host returns a columnar string): Use Memo unpack for tree rendering, and the search state is passed through the worker.
   const [packed, setPacked] = useState("");
   const entries = useMemo<WorkspaceFileEntry[]>(
     () => unpackWorkspaceFileEntries(packed, workspacePath),
@@ -105,10 +105,10 @@ export function useWorkspaceFileSearchResults({
   query: string;
   workspacePath: string;
 }): WorkspaceFileEntry[] {
-  // 打分在 Web Worker 执行（与 @ 文件候选共用同一过滤语义与降级路径）。
-  // 入参是树已解包的 entries（渲染复用），这里重新 pack 一次（~31ms@37 万）
-  // 交给 worker——避免调用方为搜索单独维护一份 packed 状态。
-  // requireQuery: true 保持"空 query 不出结果"的文件树搜索行为。
+  // Scoring is performed in a Web Worker (shares the same filtering semantics and degradation paths as @file candidates).
+  // The input parameters are the unpacked entries of the tree (rendering reuse), which are repacked here (~31ms@370,000)
+  // Leave it to the worker - to prevent the caller from maintaining a separate packed state for the search.
+  // requireQuery: true maintains the file tree search behavior of "no results for an empty query".
   const packed = useMemo(() => packWorkspaceFileEntries(entries), [entries]);
   const { items } = useWorkspaceFileSearchFilterEntries(
     packed,

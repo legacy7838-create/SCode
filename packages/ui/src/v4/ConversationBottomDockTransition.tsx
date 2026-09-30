@@ -65,16 +65,16 @@ export function ConversationBottomDockTransition({
 
   return (
     <div data-testid="conversation-bottom-dock-transition" className="grid w-full">
-      {/* chat 与确认区高度不同；共享 grid 单元并底部对齐，避免父高度切换时退出层先跳位再动画。*/}
+      {/* The chat and confirmation area have different heights; they share the grid unit and are aligned at the bottom to avoid the exit layer jumping first and then animating when the parent height is switched.*/}
       <AnimatePresence initial={false} mode="sync">
         <motion.div
           key={mode}
           data-testid="conversation-bottom-dock-transition-layer"
           data-conversation-bottom-dock-mode={mode}
-          // grid 子项默认 min-width:auto，最小尺寸等于内容的 min-content；
-          // 隐式列轨道是 auto，其下限被这个最小尺寸顶住，于是面板收窄时 composer
-          // 仍按 min-content（约 465px）撑开轨道，超出容器宽度后右侧被裁掉。
-          // min-w-0 关掉自动最小尺寸，轨道才能跟随容器一起收缩。
+          // The grid sub-item defaults to min-width:auto, and the minimum size is equal to the min-content of the content;
+          // The implicit column track is auto, and its lower limit is held up by this minimum size, so when the panel shrinks composer
+          // Still press min-content (about 465px) to expand the track, and the right side will be cropped after it exceeds the width of the container.
+          // min-w-0 turns off the automatic minimum size so that the track can shrink with the container.
           className="col-start-1 row-start-1 w-full min-w-0 origin-bottom self-end will-change-transform"
           initial={motionConfig.initial}
           animate={motionConfig.animate}

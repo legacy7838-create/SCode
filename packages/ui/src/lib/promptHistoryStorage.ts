@@ -59,8 +59,8 @@ export function persistPromptHistoryEntries(
 ) {
   const normalizedEntries = normalizePromptHistoryEntries(entries);
 
-  // 之前聊天输入历史只挂在 ChatView 内存里，刷新页面或重启窗口后就会整段丢失，
-  // 用户按上键也拿不到刚发过的消息。这里改成按 workspace 写入 localStorage，
-  // 既保留重开后的历史，又避免不同项目之间把提示词历史串在一起。
+  // Previously, the chat input history was only stored in the ChatView memory. After refreshing the page or restarting the window, the entire chat input history will be lost.
+  // The user cannot get the message they just sent even if they press the key. Here it is changed to write to localStorage according to workspace.
+  // It not only retains the history after reopening, but also avoids stringing together the prompt word history between different projects.
   storage?.setItem(getPromptHistoryStorageKey(workspacePath), JSON.stringify(normalizedEntries));
 }

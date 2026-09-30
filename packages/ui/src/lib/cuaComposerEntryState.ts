@@ -1,46 +1,59 @@
 /**
- * CUA 输入框常驻入口按钮的状态推导（零依赖纯函数）。
+ * State derivation for the CUA composer's resident entry button (a zero-dependency pure function).
  *
- * 为什么抽成纯函数：状态组合是「平台 × 隐藏开关 × 插件态 × 权限态 × session busy」的笛卡尔积，
- * 放在组件或 hook 里就只能靠搭 store mock 来测，覆盖不全。这里不 import React、不读 store，
- * 全部输入由调用方（useCuaComposerEntry）注入。
+ * Why it is extracted as a pure function: the state combination is the cartesian product of
+ * "platform × hidden toggle × plugin state × permission state × session busy"; inside a component
+ * or hook the only way to test it is to build store mocks, which cannot cover the whole product.
+ * Nothing here imports React or reads a store — every input is injected by the caller
+ * (useCuaComposerEntry).
  */
 import { isCuaPermissionStatusAvailable, type CuaPermissionStatusResult } from "@zcode/services";
 import { isCuaPermissionTccGranted } from "@/lib/cuaPermissionStatusStore.js";
 import type { StatusDotTone } from "@/settings/StatusDot.js";
 
 /**
- * 对外 4 个 UI 态；内部细分状态只用于日志，不直接暴露给用户。
+ * The 4 UI states exposed outward; the finer internal states are only used for logging and are
+ * never exposed to the user.
  *
- * 无 "disabled"（插件未启用）态：电脑控制默认关闭后，未启用
- * 不再渲染成灰点拉新按钮，而是整个不渲染（见 isEntryVisible 的插件门），该态因此不可达。
+ * There is no "disabled" (plugin not enabled) state: now that computer use is off by default, "not
+ * enabled" no longer renders as a grey dot that pulls a fresh version — the entry is not rendered
+ * at all (see the plugin gate in isEntryVisible), which makes that state unreachable.
  */
 export type CuaComposerEntryUiState =
   | "starting"
-  /** 懒启动：Helper 未运行（正常空闲，首次使用自动启动）——中性灰点，不是错误。 */
+  /**
+   * Lazy start: the Helper is not running (a normal idle state, it auto-starts on first use) — a
+   * neutral grey dot, not an error.
+   */
   | "idle"
   | "permission-required"
   | "ready"
   | "error";
 
 interface CuaComposerEntryInputs {
-  /** macOS 本地桌面且具备 CUA onboarding 能力（UA + preload capability 双判）。 */
+  /** Local macOS desktop with CUA onboarding capability (judged by both UA + preload capability). */
   macLocalDesktop: boolean;
-  /** Windows 本地桌面。 */
+  /** Local Windows desktop. */
   windowsLocalDesktop: boolean;
-  /** 设置页「在输入框显示电脑操作按钮」已关闭（内部 hidden 态）。 */
+  /**
+   * The Settings page option "show the computer-use button in the composer" is off (the internal
+   * hidden state).
+   */
   hiddenBySettings: boolean;
-  /** cuaPermissionService 是否存在；远端 host 上为 false。 */
+  /** Whether cuaPermissionService exists; false on a remote host. */
   permissionServiceAvailable: boolean;
-  /** zcode-cua 插件启用态。 */
+  /** Whether the zcode-cua plugin is enabled. */
   pluginEnabled: boolean;
-  /** zcode-cua 插件正在切换中。 */
+  /** The zcode-cua plugin is mid-toggle. */
   pluginToggling: boolean;
-  /** 最近一次 zcode-cua 插件操作失败。 */
+  /** The most recent zcode-cua plugin operation failed. */
   pluginError: boolean;
-  /** Helper 权限状态。入口不查询权限，恒为 null（idle 中性态）；真值只在设置页读。 */
+  /**
+   * Helper permission state. The entry does not query permissions and is always null (the idle
+   * neutral state); the real value is read only on the Settings page.
+   */
   permissionStatus: CuaPermissionStatusResult | null;
-  /** 当前 workspace 内任一 task 的 turn 正在运行。 */
+  /** A turn of any task in the current workspace is running. */
   sessionBusy: boolean;
 }
 
@@ -53,11 +66,15 @@ export type CuaComposerEntryView =
       spinning: boolean;
       tooltipMessageId: string;
       /**
-       * open-settings = 跳设置页 computerUse 区；none = 仅 hover tooltip。
-       * 可见态一律 open-settings，只有 session-busy 覆盖时为 none（见 resolve 函数尾部注释）。
+       * open-settings = jump to the computerUse section of the Settings page; none = hover tooltip
+       * only. Every visible state is open-settings; only the session-busy override makes it none
+       * (see the comment at the tail of the resolve function).
        */
       clickAction: "open-settings" | "none";
-      /** session-busy 覆盖：置灰且不响应点击。不改 uiState 与 tone。 */
+      /**
+       * session-busy override: greyed out and unresponsive to clicks. Leaves uiState and tone
+       * unchanged.
+       */
       interactionDisabled: boolean;
     };
 
@@ -72,58 +89,61 @@ const TOOLTIP_MESSAGE_ID: Record<CuaComposerEntryUiState, string> = {
 const BUSY_TOOLTIP_MESSAGE_ID = "chat.toolbar.computerUse.tooltip.sessionBusy";
 
 /**
- * 四层可见性门。任一不过 → 不渲染 DOM，而不是渲染成 disabled 按钮：
- * 不可用场景下留一个灰按钮会误导用户以为「装了就能用」。
+ * The four-layer visibility gate. Failing any one of them → no DOM is rendered, rather than a
+ * disabled button: leaving a grey button in an unavailable scenario would mislead users into
+ * thinking "install it and it works".
  */
 function isEntryVisible(inputs: CuaComposerEntryInputs): boolean {
-  // 平台门：remote workspace / linux 本地 / 普通 Web / 手机远控都不满足。
+  // Platform door: remote workspace / linux local / ordinary Web / mobile phone remote control are not satisfied.
   if (!inputs.macLocalDesktop && !inputs.windowsLocalDesktop) return false;
-  // 设置门：用户显式隐藏后不再渲染，且不因重启或版本更新自愈。
+  // Setting gate: It will no longer be rendered after the user explicitly hides it, and it will not self-heal due to restart or version update.
   if (inputs.hiddenBySettings) return false;
-  // 服务门：mac 的状态全部来自 Helper；服务缺失时按钮无法反映任何真值。
-  // Windows 无 TCC、不读 Helper 权限，因此不受此门约束。
+  // Service Gate: Mac status all comes from Helper; the button cannot reflect any true value when the service is missing.
+  // Windows does not have TCC or read Helper permissions, so it is not subject to this gate.
   if (inputs.macLocalDesktop && !inputs.permissionServiceAvailable) return false;
-  // 电脑控制插件未启用时不显示入口，避免默认关闭或用户手动关闭后，
-  // 输入框仍常驻一个用于推广的灰色按钮，让关闭状态难以辨认。
-  // 例外是切换中：toggling 时 pluginEnabled 还是切换前的旧值，一并挡掉会让「开启中」
-  // 的 spinner 消失成空档，用户从设置页切回会话时看不到任何进度。
+  // The entrance will not be displayed when the computer control plug-in is not enabled to avoid being closed by default or manually closed by the user.
+  // The input box still has a gray button used for promotion, making the closed state difficult to identify.
+  // The exception is switching: when toggling, pluginEnabled is still the old value before switching. Blocking it all will make "enabled"
+  // The spinner disappears into a gap, and the user cannot see any progress when switching back to the session from the settings page.
   if (!inputs.pluginEnabled && !inputs.pluginToggling) return false;
   return true;
 }
 
 /**
- * 内部态判定，自上而下短路（优先级自高到低固定）。
+ * Internal state determination, short-circuiting from the top down (a fixed highest-to-lowest
+ * priority).
  *
- * 前置条件：调用方已过 isEntryVisible，因此这里必然满足 pluginEnabled || pluginToggling。
- * 「插件未启用」不再是一个 UI 态，而是不渲染，所以本函数不再有对应分支。
+ * Precondition: the caller has already passed isEntryVisible, so pluginEnabled || pluginToggling
+ * necessarily holds here. "Plugin not enabled" is no longer a UI state but a not-rendered case, so
+ * this function has no corresponding branch any more.
  */
 function resolveUiState(inputs: CuaComposerEntryInputs): CuaComposerEntryUiState {
-  // toggling 优先级最高：切换过程中的中间态不应被旧的 enabled/权限值覆盖。
-  // 它同时兜住了「未启用 + 切换中」这唯一能过插件门的未启用组合。
+  // toggling has the highest priority: the intermediate state during the switching process should not be overwritten by the old enabled/permission value.
+  // It also captures the only unactivated combination that can pass the plug-in door, which is "unactivated + switching".
   if (inputs.pluginToggling) return "starting";
   if (inputs.pluginError) return "error";
 
-  // Windows 无 TCC：插件启用即就绪，不参与权限判定。
+  // Windows does not have TCC: the plug-in is ready when enabled and does not participate in permission determination.
   if (!inputs.macLocalDesktop) return "ready";
 
-  // 懒启动入口不承载状态展示，permissionStatus 恒为 null——
-  // 不存在「冷启动查询中」的中间态（查询会按需启动 Helper，挂载即查等于打开 app
-  // 就拉起 Helper）。null 归入 idle 中性态；真值只在设置页（打开时查询）读取。
+  // The lazy start entry does not carry status display, and permissionStatus is always null——
+  // There is no intermediate state of "cold start query" (the query will start the Helper on demand, and mounting the query is equivalent to opening the app
+  // Just pull up Helper). null is classified into the idle neutral state; the true value is only read in the settings page (query when opening).
   if (inputs.permissionStatus === null) return "idle";
 
-  // Helper 不健康（状态里没有 accessibility 字段）→ 错误态，对应「Helper 启动失败」。
+  // Helper is unhealthy (there is no accessibility field in the status) → Error status, corresponding to "Helper startup failed".
   if (!isCuaPermissionStatusAvailable(inputs.permissionStatus)) {
-    // 带 idle 标记的 unavailable 是 Helper 空闲自退后的正常回包（300s 无访问），
-    // 不是错误。只有拿到明确失败（无 idle 标记）才报 error。
+    // The unavailable marked with idle is the normal return packet after the Helper is idle (no access for 300s).
+    // Not an error. An error will be reported only if there is a clear failure (no idle mark).
     if ((inputs.permissionStatus as { idle?: true }).idle === true) return "idle";
     return "error";
   }
 
-  // 权限是否可用需要实测，但常驻入口只能走只读刷新：主动截图探针必须是显式
-  // 用户意图（上游 shouldRunCuaScreenCaptureProbe 要求 includeFunctionalProbes），
-  // 后台刷新拿到的 screenCaptureProbeOk 恒为 false。若拿它判就绪，已完成授权的用户会永远
-  // 停在「缺少 macOS 权限」黄点。这里与设置页权限行同源改用 TCC 口径；真正不可用时工具
-  // 返回普通错误，由模型按原始原因恢复，Renderer 不自动触发权限引导。
+  // Whether the permissions are available needs to be tested, but the permanent entrance can only be read-only refreshed: the active screenshot probe must be explicit
+  // User intent (upstream shouldRunCuaScreenCaptureProbe requires includeFunctionalProbes),
+  // screenCaptureProbeOk obtained by background refresh is always false. If it is used to determine readiness, users who have completed authorization will always
+  // Stops at the "Lack of macOS permissions" yellow dot. This is the same as the settings page permission line. Instead, use the TCC caliber; when the tool is truly unavailable,
+  // Returns a normal error, restored by the model according to the original reason, and the Renderer does not automatically trigger permission guidance.
   return isCuaPermissionTccGranted(inputs.permissionStatus) ? "ready" : "permission-required";
 }
 
@@ -131,10 +151,10 @@ export function resolveCuaComposerEntryView(inputs: CuaComposerEntryInputs): Cua
   if (!isEntryVisible(inputs)) return { visible: false };
 
   const uiState = resolveUiState(inputs);
-  // session-busy 是可交互性覆盖：切换插件会让该 workspace 全部会话的工具集变化、
-  // prompt 缓存失效，运行中代价最大。它不改 uiState / tone，全部 turn 结束后自动恢复。
-  // 简化（用户决策）：输入框入口不再承载状态色点——固定可点、固定进设置页；
-  // 状态展示职责完全交给设置页（打开即按需启动 Helper 并读真值）。sessionBusy 不再禁用点击。
+  // session-busy is an interactive overlay: switching plug-ins will change the tool set of all sessions in the workspace.
+  // The prompt cache is invalid and the cost is the highest during operation. It does not change uiState/tone and will be automatically restored after all turns are completed.
+  // Simplification (user decision-making): The entry of the input box no longer carries the status color point - fixed to be clickable and fixed to the settings page;
+  // The status display responsibility is completely handed over to the settings page (open it to start the Helper on demand and read the true value). sessionBusy no longer disables clicks.
   const interactionDisabled = false;
 
   return {
@@ -143,12 +163,12 @@ export function resolveCuaComposerEntryView(inputs: CuaComposerEntryInputs): Cua
     tone: "subtle",
     spinning: uiState === "starting",
     tooltipMessageId: interactionDisabled ? BUSY_TOOLTIP_MESSAGE_ID : TOOLTIP_MESSAGE_ID[uiState],
-    // 过去只有「未启用」与
-    // permission-required 可点，ready / starting / error 三态是纯状态灯。
-    // 线上表现是用户走完授权、按钮变绿后再点毫无反应，
-    // 读起来像坏了；而设置页 computerUse 区在任何状态下都有可做的事——插件开关、权限行、
-    // 错误详情全在那儿。故取消可点态白名单，可见即可跳，只有 session-busy 覆盖时不响应
-    // （那时按钮已置灰并换成「会话进行中」tooltip，再允许跳转会与视觉表现矛盾）。
+    // In the past, there were only "not enabled" and
+    // permission-required can be clicked, and the three states of ready / starting / error are pure status lights.
+    // The online performance is that after the user completes the authorization process and the button turns green, there is no response when clicking again.
+    // It reads like it's broken; and the computerUse section of the settings page has things to do in any state - plug-in switches, permission lines,
+    // The error details are all there. Therefore, cancel the clickable whitelist, jump when visible, and it will not respond only when session-busy is overridden.
+    // (At that time, the button has been grayed out and replaced with a "Session in progress" tooltip. Allowing the jump to continue would be inconsistent with the visual performance).
     clickAction: interactionDisabled ? "none" : "open-settings",
     interactionDisabled,
   };

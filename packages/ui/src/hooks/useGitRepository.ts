@@ -327,8 +327,8 @@ function buildLastTurnDataset(options: {
     id: "last-turn",
     readonly: true,
     turnIndex: options.turnIndex,
-    // 关键业务逻辑：上一轮更改继续优先复用 ZCode Agent 已持久化的单轮文件快照，
-    // 这样 Git pane 接入真实仓库数据后，agent 视角的只读审阅链路仍然保持独立稳定。
+    // Key business logic: last round's changes continue to preferentially reuse the ZCode Agent's persisted per-turn file snapshots,
+    // so once the Git pane plugs into real repository data, the agent-perspective read-only review path stays independent and stable.
     sections: options.summary
       ? [
           {
@@ -366,8 +366,8 @@ function shouldRefreshLiveGitData(
     return true;
   }
 
-  // 关键业务逻辑：Git pane 关闭时不应该因为“少拿 branch/identity”反向触发一轮真实 Git。
-  // 只有从关闭 -> 打开时，才补拉扩展数据；task/last-turn 的切换则只走本地数据重组。
+  // Key business logic: while the Git pane is closed, "missing branch/identity" must not retroactively trigger a real Git run.
+  // Extended data is fetched only on the closed -> open transition; switching tasks/last-turn only reorganizes local data.
   return !previous.includeExtendedData && next.includeExtendedData;
 }
 
@@ -401,9 +401,9 @@ export function useGitRepository(options: {
     remoteTarget,
   });
   const workspaceKey = workspaceIdentity?.trim() || workspacePath;
-  // store 收尾：per-turn 变更摘要 map（setPerTurnSummaries/setPerTurnFileChanges）
-  // 的写入链路随旧 ChatView 流订阅删除，store 不再保存该派生态（删除前也恒为空）。
-  // "last-turn" 数据集保留空态骨架，待 v4 投影的 per-turn 变更面接入后回填。
+  // Store cleanup: the write path for the per-turn change summary map (setPerTurnSummaries/setPerTurnFileChanges)
+  // was deleted along with the old ChatView stream subscription; the store no longer holds that derived state (it was always empty before deletion anyway).
+  // The "last-turn" dataset keeps an empty-state skeleton, to be backfilled once the v4 projection's per-turn change surface lands.
   const [repositoryState, setRepositoryState] = useState<GitPaneRepositoryState>(() =>
     createInitialState(workspacePath, { workspaceKey }),
   );
@@ -424,8 +424,8 @@ export function useGitRepository(options: {
     if (!workspaceRpcEnabled) {
       requestVersionRef.current += 1;
       lastLiveRefreshInputRef.current = nextRefreshInput;
-      // 断连远端 workspace 可以展示 Git 面板空壳，但不能在 session 未恢复前
-      // 主动查询远端 Git，否则会把断连代理错误放大成每次首屏挂载的日志噪音。
+      // A disconnected remote workspace may show an empty Git pane shell, but must not actively query remote Git
+      // before the session is restored — otherwise disconnection-proxy errors would amplify into log noise on every first-screen mount.
       setRepositoryState((current) =>
         createInitialState(workspacePath, {
           workspaceKey,
@@ -460,17 +460,17 @@ export function useGitRepository(options: {
         : createInitialState(workspacePath, { workspaceKey }),
     );
 
-    // agent 写文件会触发 Git 自动刷新。这里不能拆成 summary/unstaged/staged
-    // 三个 RPC，因为服务端每个 RPC 都会重新跑 git status，日志里会形成一轮一组三连。
-    // 统一走 refresh，让一次状态快照产出 header 和 Git pane 需要的基础数据。
+    // Agent file writes trigger Git auto-refresh. This must not be split into three RPCs — summary/unstaged/staged —
+    // because the server re-runs git status for each RPC, producing a burst of three per round in the logs.
+    // Go through refresh uniformly so a single status snapshot produces the base data the header and Git pane need.
     const refreshPromise = gitService.refresh({
       workspacePath,
       includeIdentity: includeExtendedData,
       includeBranchComparison: includeExtendedData,
     });
 
-    // 关键业务逻辑：header 常驻时只需要 summary + staged/unstaged 统计；
-    // branch comparison 与 identity 只在真正展开 Git pane 后再拉取，避免首屏预取整套 Git pane 数据。
+    // Key business logic: while the header is always visible it only needs summary + staged/unstaged stats;
+    // branch comparison and identity are fetched only after the Git pane is actually expanded, avoiding prefetching the whole Git pane dataset on first screen.
     void refreshPromise
       .then(({ summary, identity, unstagedChanges, stagedChanges, branchComparison }) => {
         if (disposed || requestVersionRef.current !== requestVersion) {
@@ -507,7 +507,7 @@ export function useGitRepository(options: {
         }
 
         const message = getErrorMessage(error);
-        logger.warn("[useGitRepository] 读取 Git 仓库状态失败", {
+        logger.warn("[useGitRepository] failed to read git repository state", {
           workspacePath,
           error: message,
         });
@@ -535,8 +535,8 @@ export function useGitRepository(options: {
   ]);
 
   return useMemo(() => {
-    // useEffect 在 workspace 切换后的 commit 才会清理旧状态。render 阶段先按
-    // workspaceKey 投影为空状态，避免旧机器的 Git 路径通过新远端 fileWatcherService 注册。
+    // useEffect only cleans up the old state after the workspace switch commits. During render, first project
+    // an empty state by workspaceKey, preventing the old machine's Git paths from being registered through the new remote fileWatcherService.
     const currentRepositoryState =
       repositoryState.workspaceKey === workspaceKey
         ? repositoryState

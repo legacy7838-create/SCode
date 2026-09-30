@@ -28,11 +28,12 @@ interface LegacyPersonalModelMember {
 }
 
 /**
- * 从旧 Effective Store 中只提取仍能确认的 Personal 用户意图。
+ * Extracts only the still-confirmable Personal user intent from the legacy Effective Store.
  *
- * 旧 Store 把 Built-in、Catalog enrichment、设置页默认值和用户输入写在同一
- * 个模型对象里。迁移整份对象或与当前 Built-in 求差异，都会把系统生成事实冻结成
- * Personal Overlay；因此这里只保留自定义 Provider 调用配置、成员顺序和 context。
+ * The legacy Store wrote Built-in, Catalog enrichment, settings-page defaults and user input
+ * into the same model object. Migrating the whole object, or diffing it against the current
+ * Built-in, would freeze system-generated facts into a Personal Overlay; so only custom Provider
+ * invocation config, member order and context are kept here.
  */
 export function importLegacyPersonalProviderConfig(
   input: LegacyPersonalProviderConfigImportInput,
@@ -43,8 +44,8 @@ export function importLegacyPersonalProviderConfig(
   for (const legacy of input.legacyProviders) {
     const providerId = legacy.id.trim();
     if (!providerId) continue;
-    // 已发布 config.json 也把 builtin:* 标成 custom；保留身份必须先于 source。
-    // 只有按量 API 的 Key 是用户输入，模板关联使用当前身份；旧文件仅为回滚保留，不持续双写。
+    // Published config.json also marks builtin:* as custom; retention identity must precede source.
+    // Only the key of the volume API is user input, and the template association uses the current identity; the old file is only reserved for rollback, and double writing is not continued.
     const apiTemplateId =
       providerId === "builtin:bigmodel"
         ? BUILTIN_PROVIDER_TEMPLATE_IDS.bigmodel
@@ -65,8 +66,8 @@ export function importLegacyPersonalProviderConfig(
       continue;
     }
     if (providerId.startsWith("builtin:") || providerId.startsWith("account:")) continue;
-    // Built-in 整体由当前 ZCode Built-in Config 与 Account Overlay 重建；models-dev 已
-    // 退役，workspace 也不是全局 Personal 输入。只允许旧自定义 Provider 进入新文件。
+    // Built-in is rebuilt as a whole from the current ZCode Built-in Config and Account Overlay; models-dev has been
+    // Retired, workspace is not a global Personal input either. Only old custom providers are allowed into the new file.
     if (legacy.source !== undefined && legacy.source !== "custom") continue;
 
     const members = collectLegacyPersonalModelMembers(legacy.models);
@@ -74,7 +75,7 @@ export function importLegacyPersonalProviderConfig(
     const providerName = legacy.name.trim();
     providers = providers.setRule({
       providerId,
-      // 旧启停是用户意图；遗漏 false 会被统一默认值重新启用，必须保留在规则外层。
+      // The old start and stop are user intentions; omitting false will be re-enabled by the unified default value and must be kept outside the rules.
       ...(legacy.enabled !== undefined ? { enabled: legacy.enabled } : {}),
       ...(providerName && providerName !== providerId ? { providerName } : {}),
       config: createPersonalProviderConfig(legacy, modelIds),

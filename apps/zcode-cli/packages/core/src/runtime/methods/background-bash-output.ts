@@ -1,7 +1,7 @@
 import type { BackgroundBashOutputResult } from "@zcode/shared";
 import type { AgentRuntimeInternal } from "../internal.js";
 
-/** 执行记录按启动时 sessionId 验证归属，祖先 runtime 也不能读到其他会话的 workId。 */
+/** Execution records verify ownership against the sessionId captured at launch, so even an ancestor runtime cannot read another session's workId. */
 export async function readBackgroundBashOutput(
   this: AgentRuntimeInternal,
   workId: string,

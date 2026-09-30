@@ -2,9 +2,9 @@ import { Buffer } from "node:buffer";
 import { readFileSync } from "node:fs";
 
 /**
- * 只提取这些键（或前缀），避免把 dump 里的其它字符串当注解误报。
- * `v8-oom-*` 是 V8 在 FatalProcessOutOfMemory 时写入 crashpad 的堆快照注解；
- * process_type / ptype / pid / renderer_foreground 来自 Chromium 的 simple annotations。
+ * Extract only these keys (or prefixes) to avoid falsely reporting other strings in the dump as annotations.
+ * `v8-oom-*` is the heap snapshot annotation written by V8 to crashpad when FatalProcessOutOfMemory;
+ * process_type / ptype / pid / renderer_foreground Simple annotations from Chromium.
  */
 const ANNOTATION_KEY_PREFIXES = [
   "v8-oom-",
@@ -15,7 +15,7 @@ const ANNOTATION_KEY_PREFIXES = [
 ] as const;
 const MAX_ANNOTATION_KEY_LENGTH = 64;
 const MAX_ANNOTATION_VALUE_LENGTH = 64 * 1024;
-/** 超过这个大小的 dump 不在主进程同步读取解析。 */
+/** Dumps exceeding this size are not read and parsed synchronously by the main process. */
 const CRASH_DUMP_ANNOTATION_MAX_BYTES = 64 * 1024 * 1024;
 
 const CODE_CAGE_EXHAUSTED_THRESHOLD_BYTES = 4 * 1024 * 1024;
@@ -38,8 +38,9 @@ export interface CrashDumpV8OomSummary {
   processType: string | null;
   location: string;
   /**
-   * code_space_exhausted：256MB JIT 代码区（code cage）用尽，old-space 通常还有大量空闲，
-   * 典型来源是长期持有的巨型正则原生代码；js_heap_exhausted：普通 JS 堆撞上限。
+   * code_space_exhausted: the 256MB JIT code space (code cage) is used up while old-space usually
+   * still has plenty free, the typical cause being native code from a long-lived giant regex;
+   * js_heap_exhausted: the ordinary JS heap hit its limit.
    */
   oomKind: CrashDumpOomKind;
   isMainIsolate: boolean | null;
@@ -117,10 +118,10 @@ function readAnnotationAt(buffer: Buffer, index: number): { key: string; value: 
 }
 
 /**
- * Crashpad 把注解写成 MinidumpUTF8String(name) + MinidumpByteArray(value)，两者都是
- * `u32 长度 + 内容`（UTF8String 额外带 NUL 结尾），按 4 字节对齐；simple annotations 的
- * key/value 也是同样的 UTF8String 布局。这里不解析完整 minidump 目录，只按已知键名定位并
- * 校验长度前缀，格式对不上就跳过，绝不抛出。同一个键只取第一次出现的值。
+ * Crashpad writes the annotation as MinidumpUTF8String(name) + MinidumpByteArray(value), both
+ * `u32 length + content` (UTF8String with additional NUL termination), aligned by 4 bytes; simple annotations
+ * The key/value is also the same UTF8String layout. The complete minidump directory is not parsed here, only the known key names are located and
+ * Verify the length prefix. If the format does not match, skip it and never throw it. Only the first occurrence of the same key is taken.
  */
 function extractCrashDumpAnnotations(dump: Uint8Array): CrashDumpAnnotations {
   const buffer = Buffer.isBuffer(dump)
@@ -146,8 +147,8 @@ function extractCrashDumpAnnotations(dump: Uint8Array): CrashDumpAnnotations {
 }
 
 /**
- * 超过大小上限的 dump 不在主进程同步读取；读取或解析失败一律返回空对象，
- * 取证信息缺失不能阻断 dump 归档。
+ * Dumps over the size cap are not read synchronously in the main process; any read or parse failure
+ * returns an empty object, because missing forensic data must never block archiving the dump.
  */
 export function readCrashDumpAnnotationsFromFile(
   dumpPath: string,
@@ -163,7 +164,7 @@ export function readCrashDumpAnnotationsFromFile(
   }
 }
 
-/** 解析 V8 注解里的 "284.93MB" / "0B" / "1023.94KB" 这类大小文本，单位按 1024 进位。 */
+/** When parsing "284.93MB" / "0B" / "1023.94KB" text in V8 annotations, the unit is rounded up to 1024. */
 function parseV8SizeAnnotation(value: string | undefined): number | null {
   if (!value) {
     return null;
@@ -226,7 +227,7 @@ function resolveOomKind(summary: {
   return "unknown";
 }
 
-/** 没有 `v8-oom-location` 说明不是 V8 OOM（例如 GPU/native 崩溃），返回 null。 */
+/** A missing `v8-oom-location` means this is not a V8 OOM (a GPU/native crash, for example), so return null. */
 export function summarizeCrashDumpAnnotations(
   annotations: CrashDumpAnnotations,
 ): CrashDumpV8OomSummary | null {

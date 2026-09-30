@@ -1,7 +1,7 @@
 /**
- * ZCode Agent Slash Commands 便捷 hook
+ * Convenience hook for ZCode Agent slash commands
  *
- * 返回当前 workspace 下 Agent 广播的可用 slash commands 列表。
+ * Returns the list of available slash commands broadcast by the Agent in the current workspace.
  */
 import { useZCodeSessionStore, selectWorkspaceZCodeState } from "../store/zcodeSessionStore.js";
 

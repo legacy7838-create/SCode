@@ -1,6 +1,6 @@
 import { BrowserWindow, screen } from "electron";
 import type { BrowserWindowConstructorOptions, Display, Point, Rectangle } from "electron";
-import type { HostCuaOperationStateResponse, Locale } from "@zcode/shared";
+import type { HostCuaOperationStateResponse } from "@zcode/shared";
 import {
   INDICATOR_CARD_TOP_OFFSET,
   INDICATOR_SHADOW_INSET,
@@ -10,11 +10,11 @@ import {
 
 const HIDE_ANIMATION_MS = 120;
 /**
- * 兜底隐藏时限。主导隐藏的是 turn 终态 / session 关闭 / runtime 不可用 / workspace 销毁
- * 这几条显式清除路径，这个计时器只在它们全部失约时收场，保证浮层不会无限期停留。
+ * Hidden time limit. The main hidden ones are turn final state/session closed/runtime unavailable/workspace destroyed
+ * For these explicit clearing paths, this timer will only end when they all fail to ensure that the floating layer will not stay indefinitely.
  *
- * 取 30s 而不是更短：CUA 事实现在按 cell 上报（每个 node_repl cell 一次），同一 turn 内
- * 后续 cell 会刷新计时器，但单个 cell 本身可以跑很久，10s 会让浮层在操作中途熄灭。
+ * Take 30s instead of shorter: CUA facts are now reported per cell (once per node_repl cell), within the same turn
+ * Subsequent cells will refresh the timer, but a single cell itself can run for a long time, and 10s will cause the floating layer to go out in the middle of the operation.
  */
 const AUTO_HIDE_MS = 30_000;
 const CREATE_RETRY_MS = 250;
@@ -38,7 +38,6 @@ interface WindowsCuaOperationIndicator {
   handleState(source: object, event: HostCuaOperationStateResponse): void;
   clearSource(source: object): void;
   ownsWindow(candidate: object): boolean;
-  refreshContent(): void;
   dispose(): void;
 }
 
@@ -49,7 +48,6 @@ interface IndicatorLogger {
 
 interface WindowsCuaOperationIndicatorOptions {
   platform?: NodeJS.Platform;
-  getLocale: () => Locale;
   logger: IndicatorLogger;
   createWindow?: (options: BrowserWindowConstructorOptions) => WindowsCuaOperationIndicatorWindow;
   getCursorScreenPoint?: () => Point;
@@ -135,8 +133,8 @@ export function createWindowsCuaOperationIndicator(
       const sourceKeys = activeTurnKeysBySource.get(source);
       if (!sourceKeys?.delete(key)) return;
       if (sourceKeys.size === 0) activeTurnKeysBySource.delete(source);
-      // 安全计时器是 fail-hidden 边界：即使 runtime 没有补发 inactive，也不能让
-      // 原生浮层无限期可见；后续 CUA tool-started 会重新建立该键并重新计时。
+      // Safety timers are fail-hidden bounds: even if the runtime does not reissue inactive, it cannot
+      // The native floating layer is visible indefinitely; subsequent CUA tool-started will re-establish the key and re-time.
       if (!hasActiveTurns()) beginHide();
     }, AUTO_HIDE_MS);
     timers.set(key, timer);
@@ -169,7 +167,7 @@ export function createWindowsCuaOperationIndicator(
   }
 
   function positionWindow(target: WindowsCuaOperationIndicatorWindow): void {
-    const { width, height } = indicatorWindowSize(options.getLocale());
+    const { width, height } = indicatorWindowSize();
     const point = getCursorScreenPoint();
     const { workArea } = getDisplayNearestPoint(point);
     target.setBounds({
@@ -189,8 +187,8 @@ export function createWindowsCuaOperationIndicator(
 
   function showWindowOnTop(target: WindowsCuaOperationIndicatorWindow): void {
     target.showInactive();
-    // Windows 隐藏透明窗口后可能清除 WS_EX_TOPMOST；showInactive 只恢复可见性，
-    // 不会恢复原生 Z-order，因此每次显示后都必须重新声明层级并移到该层级最前方。
+    // Windows may clear WS_EX_TOPMOST after hiding a transparent window; showInactive only restores visibility,
+    // The native Z-order is not restored, so the hierarchy must be re-declared and moved to the front after each display.
     target.setAlwaysOnTop(true, "screen-saver");
     target.moveTop();
   }
@@ -199,14 +197,14 @@ export function createWindowsCuaOperationIndicator(
     try {
       positionWindow(target);
       void target
-        .loadURL(indicatorDataUrl(options.getLocale()))
+        .loadURL(indicatorDataUrl())
         .then(() => {
           if (disposed || target !== window || target.isDestroyed()) return;
           windowReady = true;
           setupRetryAvailable = false;
           if (!hasActiveTurns()) {
-            // refreshContent 可能发生在窗口已经隐藏之后；HTML 默认是 active，必须在
-            // 无活跃 turn 时显式恢复离场状态，避免后续错误 show() 暴露假提示。
+            // There may be no active turns when content loading is complete (all between window creation and loadURL completion),
+            // The exit state must be restored explicitly to avoid false prompts exposed by subsequent erroneous show().
             setDocumentState("leaving");
             return;
           }
@@ -227,7 +225,7 @@ export function createWindowsCuaOperationIndicator(
     if (window && !window.isDestroyed()) {
       if (repositionExisting) positionWindow(window);
       setDocumentState("active");
-      // 根因：退场只隐藏而不销毁窗口；后续 turn 复用时必须重新显示已加载的窗口。
+      // Root cause: Exiting only hides but does not destroy the window; the loaded window must be redisplayed during subsequent turn reuse.
       if (windowReady && !windowShown) {
         showWindowOnTop(window);
         windowShown = true;
@@ -238,15 +236,15 @@ export function createWindowsCuaOperationIndicator(
 
     let created: WindowsCuaOperationIndicatorWindow | null = null;
     try {
-      const { width, height } = indicatorWindowSize(options.getLocale());
+      const { width, height } = indicatorWindowSize();
       created = createWindow({
         width,
         height,
         alwaysOnTop: true,
         focusable: false,
         frame: false,
-        // 旧窗口只给 CSS shadow 留 1px 透明边，并叠加默认 DWM 矩形阴影，
-        // 导致圆角阴影被裁成硬边和灰带；扩大透明画布后由 CSS 独占阴影。
+        // The old window only leaves a 1px transparent edge for CSS shadow, and overlays the default DWM rectangular shadow.
+        // Causes the rounded shadow to be clipped to hard edges and gray bands; the shadow is exclusive to CSS after expanding the transparent canvas.
         hasShadow: false,
         resizable: false,
         show: false,
@@ -279,7 +277,7 @@ export function createWindowsCuaOperationIndicator(
           windowShown = false;
         }
         if (failedDuringSetup || disposed || !hasActiveTurns() || reconcileTimer) return;
-        // 原因：系统意外关闭窗口时 Host 的 turn 仍然活跃，必须主动重建，不能等下一条状态。
+        // Reason: When the system unexpectedly closes the window, the Host's turn is still active and must be actively rebuilt without waiting for the next status.
         setupRetryAvailable = true;
         reconcileTimer = schedule(() => {
           reconcileTimer = null;
@@ -300,8 +298,8 @@ export function createWindowsCuaOperationIndicator(
       windowShown = false;
       return;
     } catch (error) {
-      // 关闭是这个浮层的安全底线：它在声称"ZCode 正在操作电脑"，隐藏失败就等于向用户
-      // 撒谎。hide() 抛错时降级为销毁窗口——下一个 CUA cell 会由 ensureWindow 重建。
+      // Closing is the bottom line of safety for this floating layer: it is claiming that "ZCode is operating the computer", and hiding failure is tantamount to exposing the user to
+      // Lie. When hide() throws an error, it downgrades to destroying the window - the next CUA cell will be rebuilt by ensureWindow.
       options.logger.warn("[cua-operation-indicator] hide failed, destroying window", error);
     }
     if (window === target) {
@@ -349,7 +347,7 @@ export function createWindowsCuaOperationIndicator(
       nextKeys.add(key);
       activeTurnKeysBySource.set(source, nextKeys);
       scheduleAutoHide(source, key);
-      // 只有 aggregate 从空变为非空时按当前鼠标显示器重定位，避免并行 source 让窗口跳动。
+      // Only when the aggregate changes from empty to non-empty is it relocated according to the current mouse monitor to avoid parallel sources making the window jump.
       ensureWindow(!wasActive);
       return;
     }
@@ -366,12 +364,6 @@ export function createWindowsCuaOperationIndicator(
       cancelAutoHide(source, key);
     }
     if (!hasActiveTurns()) beginHide();
-  }
-
-  function refreshContent(): void {
-    if (disposed || platform !== "win32" || !window || window.isDestroyed()) return;
-    if (hasActiveTurns()) setupRetryAvailable = true;
-    loadContent(window);
   }
 
   function ownsWindow(candidate: object): boolean {
@@ -399,5 +391,5 @@ export function createWindowsCuaOperationIndicator(
     if (target && !target.isDestroyed()) target.destroy();
   }
 
-  return { handleState, clearSource, ownsWindow, refreshContent, dispose };
+  return { handleState, clearSource, ownsWindow, dispose };
 }

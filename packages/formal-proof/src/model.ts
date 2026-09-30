@@ -4,8 +4,8 @@ export type CompactMemory = "never" | "compactable" | "justCompacted" | "notNeed
 export type GoalState = "none" | "active" | "verifying" | "verified" | "failed";
 export type TurnTarget = "latest" | "old" | "none";
 export type CandidateKind = "user" | "system";
-// held 状态输入不静默入队，
-// 由用户选择「清空 queue 后发送 / 保留 queue 立即发送」。
+// The held status input is not queued silently.
+// It is up to the user to select "clear the queue and then send/keep the queue and send immediately".
 export type DecisionKind = "allow" | "reject" | "enqueue" | "choice" | "system" | "undefined";
 export type NodeKind = "state" | "candidate" | "guard" | "effect" | "case" | "summary";
 
@@ -70,7 +70,7 @@ export interface ModelProfile {
 export const profiles: ModelProfile[] = [
   {
     id: "running",
-    label: "running：消息发送中",
+    label: "running: sending a message",
     context: {
       runPhase: "running",
       queue: "empty",
@@ -83,7 +83,7 @@ export const profiles: ModelProfile[] = [
   },
   {
     id: "completed",
-    label: "completed：消息已完成",
+    label: "completed: message finished",
     context: {
       runPhase: "completed",
       queue: "empty",
@@ -96,7 +96,7 @@ export const profiles: ModelProfile[] = [
   },
   {
     id: "goal-verifying",
-    label: "goalVerifying：goal 验证中",
+    label: "goalVerifying: verifying the goal",
     context: {
       runPhase: "goalVerifying",
       queue: "empty",
@@ -109,7 +109,7 @@ export const profiles: ModelProfile[] = [
   },
   {
     id: "compacting",
-    label: "compacting：正在 compact",
+    label: "compacting: compacting",
     context: {
       runPhase: "compacting",
       queue: "empty",
@@ -122,7 +122,7 @@ export const profiles: ModelProfile[] = [
   },
   {
     id: "just-compacted-noop",
-    label: "justCompacted：刚压缩完，不需要继续压缩",
+    label: "justCompacted: just compacted, no need to compact again",
     context: {
       runPhase: "completed",
       queue: "empty",
@@ -135,7 +135,7 @@ export const profiles: ModelProfile[] = [
   },
   {
     id: "just-compacted-more",
-    label: "justCompacted：刚压缩完，但还能继续压缩",
+    label: "justCompacted: just compacted, but can compact again",
     context: {
       runPhase: "completed",
       queue: "empty",
@@ -149,68 +149,80 @@ export const profiles: ModelProfile[] = [
 ];
 
 export const userCandidates: Candidate[] = [
-  { id: "sendText", kind: "user", label: "继续发送文字", target: "none", surface: "composer" },
-  { id: "slashCompact", kind: "user", label: "输入 /compact", target: "none", surface: "composer" },
-  { id: "setGoal", kind: "user", label: "设置 goal", target: "none", surface: "goal control" },
-  { id: "compact", kind: "user", label: "点击 compact", target: "none", surface: "toolbar" },
+  { id: "sendText", kind: "user", label: "Keep sending text", target: "none", surface: "composer" },
+  { id: "slashCompact", kind: "user", label: "Type /compact", target: "none", surface: "composer" },
+  { id: "setGoal", kind: "user", label: "Set a goal", target: "none", surface: "goal control" },
+  { id: "compact", kind: "user", label: "Click compact", target: "none", surface: "toolbar" },
   {
     id: "forkLatest",
     kind: "user",
-    label: "fork 最新轮次",
+    label: "Fork the latest turn",
     target: "latest",
     surface: "turn actions",
   },
-  { id: "forkOld", kind: "user", label: "fork 老轮次", target: "old", surface: "turn actions" },
+  {
+    id: "forkOld",
+    kind: "user",
+    label: "Fork an older turn",
+    target: "old",
+    surface: "turn actions",
+  },
   {
     id: "editLatest",
     kind: "user",
-    label: "编辑最新 query",
+    label: "Edit the latest query",
     target: "latest",
     surface: "message actions",
   },
-  { id: "editOld", kind: "user", label: "编辑老 query", target: "old", surface: "message actions" },
+  {
+    id: "editOld",
+    kind: "user",
+    label: "Edit an older query",
+    target: "old",
+    surface: "message actions",
+  },
 ];
 
 const systemCandidates: Candidate[] = [
   {
     id: "assistantComplete",
     kind: "system",
-    label: "assistant 完成当前 run",
+    label: "assistant finishes the current run",
     target: "none",
     surface: "runtime event",
   },
   {
     id: "compactComplete",
     kind: "system",
-    label: "compact 完成",
+    label: "compact completes",
     target: "none",
     surface: "runtime event",
   },
   {
     id: "compactNoop",
     kind: "system",
-    label: "compact 判断不需要继续",
+    label: "compact decides not to continue",
     target: "none",
     surface: "runtime event",
   },
   {
     id: "goalVerifyStart",
     kind: "system",
-    label: "开始 goal 验证",
+    label: "Start goal verification",
     target: "none",
     surface: "goal runtime",
   },
   {
     id: "goalVerifyPass",
     kind: "system",
-    label: "goal 验证通过",
+    label: "goal verification passes",
     target: "none",
     surface: "goal runtime",
   },
   {
     id: "goalVerifyFail",
     kind: "system",
-    label: "goal 验证失败",
+    label: "goal verification fails",
     target: "none",
     surface: "goal runtime",
   },
@@ -342,7 +354,8 @@ function buildStateNode(
     kind: "state",
     title: `S${round}: ${context.runPhase}`,
     subtitle: contextLabel(context),
-    detail: "可见产品上下文。下一层会对所有候选动作做笛卡尔积枚举，再用产品 guard 剪枝。",
+    detail:
+      "The visible product context. The next level enumerates the Cartesian product of all candidate actions, then prunes it with product guards.",
     context,
     children: [],
   });
@@ -350,15 +363,19 @@ function buildStateNode(
   if (round > maxRounds) {
     return makeCaseNode(
       node,
-      "到达轮次上限",
-      "这条 trace 已到达当前枚举深度，需要人工 review 是否继续展开。",
+      "Reached the round limit",
+      "This trace has reached the current enumeration depth and needs a manual review of whether to keep expanding.",
     );
   }
 
   const loopKey = `${round}:${contextKey(context)}`;
   const visited = seen.get(loopKey) ?? 0;
   if (visited > 1) {
-    return makeCaseNode(node, "重复上下文", "模型再次到达相同上下文；这里应判断是否合并为等价类。");
+    return makeCaseNode(
+      node,
+      "Repeated context",
+      "The model reached the same context again; this is where it should decide whether to merge it into an equivalence class.",
+    );
   }
   const nextSeen = new Map(seen);
   nextSeen.set(loopKey, visited + 1);
@@ -383,7 +400,7 @@ function buildCandidateNode(
     kind: "candidate",
     title: candidate.label,
     subtitle: `${candidate.kind} / ${candidate.surface}`,
-    detail: `候选组合：${contextLabel(context)} × ${candidate.label}`,
+    detail: `Candidate combination: ${contextLabel(context)} × ${candidate.label}`,
     context,
     candidate,
     children: [],
@@ -404,14 +421,14 @@ function buildCandidateNode(
     subtitle: decision.assertion,
     detail: decision.next
       ? contextLabel(decision.next)
-      : "无下一状态：路径在这里被剪枝或等待产品定义。",
+      : "No next state: the path is pruned here or is waiting for a product definition.",
     context: decision.next ?? context,
     candidate,
     decision,
     children: [],
   });
 
-  // choice 不展开下一状态：clear/keep 两个 disposition 都终到 completedCanSend 路径。
+  // Choice does not expand the next state: clear/keep. Both dispositions end up in the completedCanSend path.
   if (
     decision.next &&
     decision.kind !== "reject" &&
@@ -463,26 +480,26 @@ function makeNode(input: Omit<TraceNode, "id">): TraceNode {
 
 function effectTitle(decision: Decision): string {
   if (decision.kind === "reject") {
-    return "剪枝：显示明确拒绝";
+    return "Prune: show an explicit rejection";
   }
   if (decision.kind === "enqueue") {
-    return "副作用：进入消息队列";
+    return "Effect: enters the message queue";
   }
   if (decision.kind === "allow") {
-    return "副作用：动作生效";
+    return "Effect: the action takes effect";
   }
   if (decision.kind === "system") {
-    return "系统事件：推进阶段";
+    return "System event: advances the phase";
   }
   if (decision.kind === "choice") {
-    return "阻塞：等待用户裁决 queue disposition";
+    return "Blocked: waiting for the user to decide the queue disposition";
   }
-  return "未定义：需要产品 review";
+  return "Undefined: needs a product review";
 }
 
-// 导出为可执行裁决表（02-projection「规则模块下沉」）：
-// CLI 投影的 guard 派生必须与本函数逐条一致，由 bootstrap 的
-// formal-proof-consistency 黄金测试机械背书。
+// Export as an executable ruling table (02-projection "Rule module sinking"):
+// The guard derivation of the CLI projection must be consistent with this function one by one, as determined by the bootstrap
+// formal-proof-consistency Gold Test Mechanical Endorsement.
 export function evaluate(context: ProductContext, candidate: Candidate): Decision {
   if (candidate.kind === "system") {
     return evaluateSystem(context, candidate);
@@ -509,7 +526,7 @@ function evaluateRunning(context: ProductContext, candidate: Candidate): Decisio
       context,
       candidate,
       "queueTextWhileRunning",
-      "running 时继续发文字进入消息队列。",
+      "While running, further text input enters the message queue.",
     );
   }
   if (candidate.id === "setGoal") {
@@ -517,7 +534,7 @@ function evaluateRunning(context: ProductContext, candidate: Candidate): Decisio
       context,
       candidate,
       "queueGoalWhileRunning",
-      "running 时设置 goal 进入消息队列。",
+      "While running, setting a goal enters the message queue.",
     );
   }
   if (candidate.id === "slashCompact" || candidate.id === "compact") {
@@ -525,18 +542,23 @@ function evaluateRunning(context: ProductContext, candidate: Candidate): Decisio
       context,
       candidate,
       "runningCompactQueues",
-      "running 时 compact 作为维护意图进入 FIFO。",
+      "While running, compact enters the FIFO as a maintenance intent.",
     );
   }
   if (candidate.id === "forkLatest" || candidate.id === "forkOld") {
-    return reject(context, "runningCannotFork", "运行中不能 fork", "最新轮次和老轮次都不能 fork。");
+    return reject(
+      context,
+      "runningCannotFork",
+      "Cannot fork while running",
+      "Neither the latest turn nor an older turn can be forked.",
+    );
   }
   if (candidate.id === "editLatest" || candidate.id === "editOld") {
     return reject(
       context,
       "runningCannotEditQuery",
-      "运行中不能编辑 query",
-      "发送过程中最新 query 和历史 query 都不能编辑。",
+      "Cannot edit a query while running",
+      "While sending, neither the latest query nor historical queries can be edited.",
     );
   }
   return undefinedDecision(context, candidate, "runningUnhandled");
@@ -547,26 +569,26 @@ function evaluateCompacting(context: ProductContext, candidate: Candidate): Deci
     return reject(
       context,
       "compactingCannotCompact",
-      "正在 compact，不能再次 compact",
-      "必须去重或禁用入口。",
+      "Already compacting, cannot compact again",
+      "The entry point must be deduplicated or disabled.",
     );
   }
-  // 重裁决（compactingAcceptsFutureInput）：
-  // compact 是维护步骤，用户输入是未来意图 → 入队，不打断 compact。
+  // Re-ruling (compactingAcceptsFutureInput):
+  // compact is a maintenance step, user input is future intention → enqueuing, compact is not interrupted.
   if (candidate.id === "sendText" || candidate.id === "setGoal") {
     return enqueue(
       context,
       candidate,
       "compactingAcceptsFutureInput",
-      "compacting 时输入追加 queue，不打断 compact。",
+      "While compacting, input is appended to the queue without interrupting the compact.",
     );
   }
   if (candidate.id === "forkLatest" || candidate.id === "forkOld") {
     return reject(
       context,
       "compactingCannotFork",
-      "正在 compact，不能 fork",
-      "避免 fork 到半压缩上下文。",
+      "Already compacting, cannot fork",
+      "Avoid forking into a half-compacted context.",
     );
   }
   return undefinedDecision(context, candidate, "compactingUnhandled");
@@ -578,7 +600,7 @@ function evaluateGoalVerifying(context: ProductContext, candidate: Candidate): D
       context,
       candidate,
       "goalVerifierAcceptsFutureInput",
-      "goal verifier 中 compact 追加 queue，不打断验证。",
+      "During goal verification, compact is appended to the queue without interrupting the verification.",
     );
   }
   if (candidate.id === "sendText" || candidate.id === "setGoal") {
@@ -586,15 +608,15 @@ function evaluateGoalVerifying(context: ProductContext, candidate: Candidate): D
       context,
       candidate,
       "goalVerifierAcceptsFutureInput",
-      "goal verifier 中输入追加 queue，不打断验证。",
+      "During goal verification, input is appended to the queue without interrupting the verification.",
     );
   }
   if (candidate.id === "forkLatest" || candidate.id === "forkOld") {
     return reject(
       context,
       "goalVerifyingCannotFork",
-      "goal 验证中不能 fork",
-      "验证阶段 fork 会破坏结果归属。",
+      "Cannot fork during goal verification",
+      "Forking during the verification phase breaks result attribution.",
     );
   }
   return undefinedDecision(context, candidate, "goalVerifyingUnhandled");
@@ -602,7 +624,7 @@ function evaluateGoalVerifying(context: ProductContext, candidate: Candidate): D
 
 function evaluateCompleted(context: ProductContext, candidate: Candidate): Decision {
   if (candidate.id === "forkLatest" || candidate.id === "forkOld") {
-    return allow(context, "completedCanFork", "完成后可以 fork", {
+    return allow(context, "completedCanFork", "Can fork after completion", {
       ...context,
       forked: true,
       selectedTurn: candidate.target,
@@ -614,37 +636,37 @@ function evaluateCompleted(context: ProductContext, candidate: Candidate): Decis
         context,
         candidate,
         "heldCompactQueues",
-        "held queue 下 compact 追加队尾，不绕过未来意图。",
+        "With a held queue, compact is appended to the tail without bypassing the future intent.",
       );
     }
     if (context.compactMemory === "justCompacted" && !context.canCompactAgain) {
       return reject(
         context,
         "justCompactedNoNeed",
-        "刚压缩完，不需要压缩",
-        "compact 可以被点击，但模型返回 noop 提示。",
+        "Just compacted, no need to compact",
+        "compact can still be clicked, but the model returns a noop hint.",
       );
     }
-    return allow(context, "completedCanCompact", "完成后可以 compact", {
+    return allow(context, "completedCanCompact", "Can compact after completion", {
       ...context,
       runPhase: "compacting",
       compactMemory: "compactable",
     });
   }
-  // held 判定：completed 下仍滞留的 queue 只可能是 autoDrain=false 的 held queue
-  // （autoDrain=true 时 assistantComplete 即消费，completed+queue>0 不持久存在）。
-  // 重裁决（heldQueueInputRequiresChoice，替代原 heldQueueCapturesNewInput）：
-  // held 下输入不静默入队，由用户选择 clear/keep queue 后发送。
+  // held judgment: The queue that is still stuck under completed can only be the held queue with autoDrain=false
+  // (When autoDrain=true, assistantComplete is consumed, and completed+queue>0 does not persist).
+  // Re-judgment (heldQueueInputRequiresChoice, replacing the original heldQueueCapturesNewInput):
+  // Input under held is not silently queued, and is sent after the user selects clear/keep queue.
   if (candidate.id === "sendText") {
     if (context.queue !== "empty") {
       return choice(
         context,
         "heldQueueInputRequiresChoice",
-        "held queue 下发送需用户裁决",
-        "呈现「清空 queue 后发送 / 保留 queue 立即发送」，disposition 随 command 上行。",
+        "Sending with a held queue requires a user decision",
+        'Shows "send after clearing the queue / send now keeping the queue"; the disposition travels up with the command.',
       );
     }
-    return allow(context, "completedCanSend", "完成后继续发送", {
+    return allow(context, "completedCanSend", "Can keep sending after completion", {
       ...context,
       runPhase: "running",
       queue: "empty",
@@ -655,11 +677,11 @@ function evaluateCompleted(context: ProductContext, candidate: Candidate): Decis
       return choice(
         context,
         "heldQueueInputRequiresChoice",
-        "held queue 下设置 goal 需用户裁决",
-        "同 sendText：composer 输入统一走 choice。",
+        "Setting a goal with a held queue requires a user decision",
+        "Same as sendText: composer input always goes through a choice.",
       );
     }
-    return allow(context, "completedCanSetGoal", "完成后可以设置 goal", {
+    return allow(context, "completedCanSetGoal", "Can set a goal after completion", {
       ...context,
       goal: "active",
     });
@@ -669,14 +691,14 @@ function evaluateCompleted(context: ProductContext, candidate: Candidate): Decis
 
 function evaluateIdle(context: ProductContext, candidate: Candidate): Decision {
   if (candidate.id === "sendText") {
-    return allow(context, "idleCanSend", "idle 时发送消息", {
+    return allow(context, "idleCanSend", "Sends a message while idle", {
       ...context,
       runPhase: "running",
       queue: "empty",
     });
   }
   if (candidate.id === "setGoal") {
-    return allow(context, "idleCanSetGoal", "idle 时设置 goal", {
+    return allow(context, "idleCanSetGoal", "Sets a goal while idle", {
       ...context,
       goal: "active",
     });
@@ -685,19 +707,24 @@ function evaluateIdle(context: ProductContext, candidate: Candidate): Decision {
     return reject(
       context,
       "idleCannotCompact",
-      "没有可压缩上下文",
-      "没有完成消息时 compact 应禁用或提示。",
+      "No compactable context",
+      "With no finished message, compact should be disabled or prompt.",
     );
   }
   if (candidate.id === "forkLatest" || candidate.id === "forkOld") {
-    return reject(context, "idleCannotFork", "没有可 fork 轮次", "没有完成轮次时 fork 应禁用。");
+    return reject(
+      context,
+      "idleCannotFork",
+      "No forkable turn",
+      "With no finished turn, fork should be disabled.",
+    );
   }
   if (candidate.id === "editLatest" || candidate.id === "editOld") {
     return reject(
       context,
       "idleCannotEdit",
-      "没有可编辑 query",
-      "没有 query 时编辑入口不应该出现。",
+      "No editable query",
+      "With no query, the edit entry point should not appear.",
     );
   }
   return undefinedDecision(context, candidate, "idleUnhandled");
@@ -708,12 +735,12 @@ function evaluateSystem(context: ProductContext, candidate: Candidate): Decision
     return systemTransition(
       context,
       "assistantComplete",
-      "assistant 完成",
+      "assistant completes",
       drainQueueAfterRun(context),
     );
   }
   if (candidate.id === "compactComplete") {
-    return systemTransition(context, "compactComplete", "compact 完成", {
+    return systemTransition(context, "compactComplete", "compact completes", {
       ...context,
       runPhase: "completed",
       compactMemory: "justCompacted",
@@ -721,7 +748,7 @@ function evaluateSystem(context: ProductContext, candidate: Candidate): Decision
     });
   }
   if (candidate.id === "compactNoop") {
-    return systemTransition(context, "compactNoop", "compact 判断无需继续", {
+    return systemTransition(context, "compactNoop", "compact decides not to compact again", {
       ...context,
       runPhase: "completed",
       compactMemory: "justCompacted",
@@ -729,20 +756,20 @@ function evaluateSystem(context: ProductContext, candidate: Candidate): Decision
     });
   }
   if (candidate.id === "goalVerifyStart") {
-    return systemTransition(context, "goalVerifyStart", "进入 goal 验证", {
+    return systemTransition(context, "goalVerifyStart", "Enters goal verification", {
       ...context,
       runPhase: "goalVerifying",
       goal: "verifying",
     });
   }
   if (candidate.id === "goalVerifyPass") {
-    return systemTransition(context, "goalVerifyPass", "goal 验证通过", {
+    return systemTransition(context, "goalVerifyPass", "goal verification passes", {
       ...context,
       runPhase: "completed",
       goal: "verified",
     });
   }
-  return systemTransition(context, "goalVerifyFail", "goal 验证失败", {
+  return systemTransition(context, "goalVerifyFail", "goal verification fails", {
     ...context,
     runPhase: "completed",
     goal: "failed",
@@ -777,7 +804,8 @@ function allow(
     title,
     reason: title,
     next,
-    assertion: "动作应生效，并且 UI、消息归属、按钮状态与下一上下文一致。",
+    assertion:
+      "The action takes effect, and the UI, message attribution, button state and next context stay consistent.",
   };
 }
 
@@ -796,7 +824,12 @@ function enqueue(
   return {
     kind: "enqueue",
     ruleId,
-    title: queued === "goal" ? "goal 入队" : queued === "compact" ? "compact 入队" : "文字消息入队",
+    title:
+      queued === "goal"
+        ? "goal enqueued"
+        : queued === "compact"
+          ? "compact enqueued"
+          : "text message enqueued",
     reason,
     next: {
       ...context,
@@ -804,10 +837,10 @@ function enqueue(
     },
     assertion:
       queued === "goal"
-        ? "队列里必须保留 goal 意图。"
+        ? "The goal intent must be preserved in the queue."
         : queued === "compact"
-          ? "队列里必须保留 compact 维护意图，且不能生成 user row。"
-          : "队列里必须保留用户文字消息。",
+          ? "The compact maintenance intent must be preserved in the queue, and no user row may be created."
+          : "The user's text message must be preserved in the queue.",
   };
 }
 
@@ -817,9 +850,10 @@ function choice(context: ProductContext, ruleId: string, title: string, reason: 
     ruleId,
     title,
     reason,
-    // 无 next：状态直到用户提交 disposition 才推进（clear/keep 都终到 startNow）。
+    // None next: The status will not be advanced until the user submits the disposition (clear/keep will end at startNow).
     next: context,
-    assertion: "必须呈现明确选择，用户裁决前不得入队、不得发送。",
+    assertion:
+      "An explicit choice must be presented; nothing may be enqueued or sent before the user decides.",
   };
 }
 
@@ -829,7 +863,8 @@ function reject(context: ProductContext, ruleId: string, title: string, reason: 
     ruleId,
     title,
     reason,
-    assertion: "这条路径必须显示明确反馈，并且不能产生被禁止的副作用。",
+    assertion:
+      "This path must show explicit feedback and must not produce the forbidden side effect.",
     next: context,
   };
 }
@@ -844,9 +879,10 @@ function systemTransition(
     kind: "system",
     ruleId,
     title,
-    reason: "系统异步事件推进产品状态。",
+    reason: "A system async event advances the product state.",
     next,
-    assertion: "系统事件必须按当前 session/run 归属落盘，不能污染其它 trace。",
+    assertion:
+      "The system event must be persisted under the current session/run and must not pollute other traces.",
   };
 }
 
@@ -858,9 +894,10 @@ function undefinedDecision(
   return {
     kind: "undefined",
     ruleId,
-    title: "产品预期未定义",
-    reason: `模型还不知道 ${context.runPhase} + ${candidate.label} 应该 allow、reject 还是 enqueue。`,
-    assertion: "需要人工 review：补产品规则、剪枝为 invalid、或标记可忽略。",
+    title: "Product expectation is undefined",
+    reason: `The model does not know whether ${context.runPhase} + ${candidate.label} should allow, reject or enqueue.`,
+    assertion:
+      "Needs a manual review: add the product rule, prune it as invalid, or mark it ignorable.",
   };
 }
 
@@ -900,7 +937,7 @@ function buildE2eAssertion(
   decision?: Decision,
 ): string {
   if (!candidate || !decision) {
-    return "记录当前 trace，并判断是否需要继续展开。";
+    return "Record the current trace and decide whether it needs further expansion.";
   }
   if (decision.kind === "reject") {
     return `Given ${contextLabel(context)}, when ${candidate.label}, then show "${decision.title}" and no forbidden side effect occurs.`;

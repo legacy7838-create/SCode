@@ -5,7 +5,7 @@ import {
 } from "@zcode/shared";
 import type { ZCodeProtocolClient } from "#src/zcode-agent/zcodeProtocolClient.js";
 
-/** 旧协议严格校验响应；新展示字段走独立入口，只有 -32601 能证明旧 Agent 不支持。 */
+/** The old protocol strictly validates the response; new display fields go through a dedicated entry point, and only -32601 proves that an old Agent does not support it. */
 export async function requestPluginReferenceCatalog(
   client: Pick<ZCodeProtocolClient, "request">,
   params: ZCodePluginsReferenceCatalogParams,

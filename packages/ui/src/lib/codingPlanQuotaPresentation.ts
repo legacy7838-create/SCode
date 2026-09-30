@@ -3,19 +3,19 @@ import type { UsageEntitlementSnapshot, UsageQuotaLimit } from "@zcode/shared";
 type CodingPlanQuotaResetFormat = "date" | "dateTime" | "adaptive";
 
 /**
- * Token / Credit 类配额的等价 type 集合。
+ * The set of equivalent types for Token / Credit quotas.
  *
- * zai 业务后端 Team Plan 的 quota/limit 用 `CREDIT_LIMIT` 作为 type，
- * bigmodel 业务后端用 `TOKENS_LIMIT`。两者 unit/number 语义完全一致
- *（unit=3,number=5 → 5 小时窗口；unit=6 → 每周），仅 type 枚举命名不同。
- * 这里把两个 type 视为等价，让 zai/bigmodel team plan 在同一套 UI 消费方下都能命中。
- * 若 zai 后端后续对齐到 TOKENS_LIMIT，此集合仍兼容。
+ * The zai service backend uses `CREDIT_LIMIT` as the type for a Team Plan's quota/limit, while the
+ * bigmodel service backend uses `TOKENS_LIMIT`. The two have exactly the same unit/number semantics
+ * (unit=3,number=5 → a 5-hour window; unit=6 → weekly); only the type enum name differs. Treating
+ * the two types as equivalent here lets zai/bigmodel team plans both match under the same set of UI
+ * consumers. If the zai backend later aligns to TOKENS_LIMIT, this set remains compatible.
  */
 const TOKEN_LIMIT_TYPES = new Set(["TOKENS_LIMIT", "CREDIT_LIMIT"]);
 
 /**
- * Tool 类配额的 type。
- * 目前 bigmodel/zai 后端都用 TIME_LIMIT 表示每月工具调用配额，暂无需等价集合。
+ * The type for Tool quotas. Both the bigmodel and zai backends currently use TIME_LIMIT for the
+ * monthly tool-call quota, so no equivalent set is needed yet.
  */
 const TOOL_LIMIT_TYPES = new Set(["TIME_LIMIT"]);
 
@@ -26,7 +26,7 @@ export function isSameLimitCategory(
   if (limitType === queryType) {
     return true;
   }
-  // zai team plan 返回 CREDIT_LIMIT，消费方按 TOKENS_LIMIT 查询时也要命中。
+  // zai team plan returns CREDIT_LIMIT, and the consumer must also hit it when querying by TOKENS_LIMIT.
   if (TOKEN_LIMIT_TYPES.has(queryType)) {
     return TOKEN_LIMIT_TYPES.has(limitType);
   }
@@ -53,10 +53,11 @@ export function findCodingPlanQuotaLimit(
 }
 
 /**
- * 官方 Server MCP 额度（服务端下发的总额度）。
+ * The official Server MCP allowance (the total allowance pushed down by the server).
  *
- * 服务端把它放在 entitlement 快照的独立字段而不是 quota.limits[]，因此不能用
- * findCodingPlanQuotaLimit 查询；这里收口成唯一取数入口，避免各展示位各写一遍 `?.` 链路。
+ * The server puts it in a standalone field of the entitlement snapshot instead of in
+ * quota.limits[], so findCodingPlanQuotaLimit cannot be used to query it; it is funnelled into a
+ * single access point here, so that each display site does not write its own `?.` chain.
  */
 export function resolveMcpQuotaLimit(
   snapshot: UsageEntitlementSnapshot | null | undefined,
@@ -69,15 +70,17 @@ export function getQuotaRemainingPercentage(limit: UsageQuotaLimit | null): numb
     return null;
   }
 
-  // quota 接口的 percentage 表示已使用占比，而 Usage Remaining 与
-  // 使用统计的额度卡都表达“还剩多少”。这里统一反转，避免两处显示口径不一致。
+  // The percentage of the quota interface indicates the used proportion, while Usage Remaining is related to
+  // The limit cards used in statistics all express "how much is left". Invert them uniformly here to avoid inconsistent display calibers in the two places.
   return Math.max(0, Math.min(100, 100 - limit.percentage));
 }
 
 /**
- * 额度剩余 100%（未产生任何消耗）时重置没有收益，UI 隐藏「重置」按钮与机会徽标。
- * 纯展示层门控：不影响服务端发放、status 轮询与机会状态本身；
- * processing / completed 展示不走此判断，手动重置的完成反馈仍完整播放。
+ * Resetting buys nothing while the allowance is still 100% (nothing has been consumed), so the UI
+ * hides the "Reset" button and the opportunity badge. This is a presentation-layer gate only: it
+ * does not affect server-side granting, status polling, or the opportunity state itself; the
+ * processing / completed displays do not go through this check, so the completion feedback of a
+ * manual reset still plays in full.
  */
 export function isCodingPlanQuotaLimitFull(limit: UsageQuotaLimit | null | undefined): boolean {
   return getQuotaRemainingPercentage(limit ?? null) === 100;
@@ -98,11 +101,13 @@ export function formatQuotaRemainingPercentage(
 }
 
 /**
- * Start Plan 额度桶刷新时间的唯一格式化入口（设置页余额卡与聊天输入气泡共用）。
+ * The only formatting entry point for the Start Plan allowance bucket renewal time (shared by the
+ * settings balance card and the chat input bubble).
  *
- * 两端曾各自维护一份逐字相同的 formatStartPlanBalanceRenewTime，
- * 格式调整漏改任一处就会重新出现两端展示不一致。桶刷新时间格式与 Coding Plan
- * 对齐：当日仅 HH:mm，非当日仅日期。
+ * Both ends once kept their own verbatim copy of formatStartPlanBalanceRenewTime, so a format
+ * change that missed either one would bring back the inconsistency between the two. The bucket
+ * renewal time format is aligned with Coding Plan: time of day only (HH:mm) when it is the same
+ * day, date only otherwise.
  */
 export function formatStartPlanBucketResetTime(
   locale: string,
@@ -139,8 +144,8 @@ export function formatQuotaResetTime(params: {
     }).format(resetAt);
   }
 
-  // adaptive：当日只展示 HH:mm（时刻才可行动），非当日只展示日期
-  //（与 Coding Plan 五小时窗口 / 周·月重置的展示语义一致）。
+  // Adaptive: Only display HH:mm on the current day (you can only take action at the time), and only display the date on non-current days.
+  //(Same as the display semantics of the Coding Plan's five-hour window/week-month reset).
   if (params.format === "adaptive") {
     if (isToday) {
       return new Intl.DateTimeFormat(params.locale, {

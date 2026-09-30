@@ -1,10 +1,11 @@
 /**
- * cron scheduler 进程自身的资源遥测。
+ * Resource telemetry for the cron scheduler process itself.
  *
- * scheduler 之前完全没有采样，本模块新增它唯一的一个 unref 定时器：每 60 秒读一次
- * `process.cpuUsage()` 与 `process.memoryUsage()`，经 parentPort 把样本发给 main，
- * 成为 scheduler 角色事件的 heap 来源。读数或发送失败只丢当前样本，不影响派发主循环。
- * 零外部进程；定时器 unref，不延长进程寿命。
+ * The scheduler had no sampling at all before; this module adds its one and only unref'd timer:
+ * every 60 seconds it reads `process.cpuUsage()` and `process.memoryUsage()` and sends the sample to
+ * main over parentPort, becoming the heap source for scheduler-role events. A failed read or send
+ * only drops the current sample and never affects the dispatch main loop. Zero external processes;
+ * the timer is unref'd, so it does not extend the process lifetime.
  */
 
 import {
@@ -19,7 +20,7 @@ interface SchedulerResourceTelemetryTimerHandle {
 }
 
 interface StartSchedulerResourceTelemetryOptions extends NodeSelfResourceSamplerOptions {
-  /** parentPort 的发送口；parentPort 不可用时调用方传一个 no-op。 */
+  /** The sending port of parentPort; the caller passes a no-op when parentPort is unavailable. */
   postMessage: (message: SchedulerToMainMessage) => void;
   readMemoryUsage?: () => NodeJS.MemoryUsage;
   intervalMs?: number;
@@ -52,7 +53,7 @@ export function startSchedulerResourceTelemetry(
       }
       options.postMessage({ type: "scheduler-resource-sample", sample });
     } catch {
-      // 读数异常、parentPort 不可用或 postMessage 抛错时只丢当前样本。
+      // Only the current sample is lost when reading is abnormal, parentPort is unavailable or postMessage throws an error.
     }
   };
 
@@ -63,7 +64,7 @@ export function startSchedulerResourceTelemetry(
   try {
     handle.unref?.();
   } catch {
-    // unref 不可用时仍保留 handle 供 stop 回收。
+    // When unref is unavailable, the handle is still retained for stop recycling.
   }
 
   return {
@@ -76,7 +77,7 @@ export function startSchedulerResourceTelemetry(
       try {
         timer.clearInterval(current);
       } catch {
-        // 清理失败不能阻塞 scheduler 既有退出流程。
+        // Cleanup failure cannot block the scheduler's existing exit process.
       }
     },
   };

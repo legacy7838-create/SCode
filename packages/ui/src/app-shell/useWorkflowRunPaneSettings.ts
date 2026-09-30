@@ -1,9 +1,9 @@
 // ============================================================
-// 详情页的「配置」
+// "Configuration" on the details page
 // ============================================================
-// 从 WorkflowRunSidePane.tsx 拆出（max-lines 门）：弹层宿主、开关与锚点、以及 Apply 被接受之后
-// 「面板跟着工作流走」——新 run 一进投影，就把这个 tab 原地换成新 run 的 tab（同一个位置、同一个名字，
-// 不展开已收起的侧栏）。等的是投影里出现新 run 这一事实，不是一个超时。
+// Detached from WorkflowRunSidePane.tsx (max-lines gate): after the elastic layer host, switches and anchors, and Apply are accepted
+// "The panel follows the workflow" - as soon as the new run enters the projection, replace the tab with the new run's tab (same position, same name,
+// Do not expand a collapsed sidebar). What we are waiting for is the fact that a new run appears in the projection, not a timeout.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { SessionConfigState, WorkflowRunState } from "@zcode/shared/zcode-protocol-v4";
@@ -23,7 +23,10 @@ import type {
 import { createCommandEnvelope } from "@/v4/commandFactory.js";
 import type { useV4Conversation } from "@/v4/V4ConversationContext.js";
 
-/** run tab 的 workspace 作用域：打开别的 tab（actor、脚本、产物、后继）时原样带上。 */
+/**
+ * Workspace scope of the run tab: carried over as-is when opening another tab (actor, scripts,
+ * artifacts, successors).
+ */
 export function workflowRunTabScope(
   tab: Pick<WorkflowRunSidePaneTab, "workspacePath" | "workspaceIdentity" | "remoteSessionId">,
 ): Pick<
@@ -46,7 +49,7 @@ export function useWorkflowRunPaneSettings({
   sessionConfig,
   tab,
 }: {
-  /** 灰度门（与 Resume 同一道）。 */
+  /** Gradual rollout gate (the same gate as Resume). */
   enabled: boolean;
   onOpenWorkflowRun?: (request: OpenScopedWorkflowRunSideTabRequest) => void;
   run: WorkflowRunState | undefined;
@@ -57,8 +60,8 @@ export function useWorkflowRunPaneSettings({
 }) {
   const configurable = enabled && isWorkflowRunConfigurable(run);
   const popover = useWorkflowRunSettingsPopoverState();
-  // run 在弹层开着时变得不能配置（完成、被替代）：弹层随之卸载，开关也要跟着关——否则 run 再回到可配置
-  // 状态时弹层会自己冒出来。setOpen(false) 在已关时是无操作，不会形成更新环。
+  // run becomes unconfigurable (completed, replaced) when the pop-up layer is open: the pop-up layer is uninstalled, and the switch must be turned off - otherwise run will return to configurable
+  // In this state, the elastic layer will pop up by itself. setOpen(false) has no operation when it is closed and will not form an update loop.
   const { setOpen } = popover;
   useEffect(() => {
     if (!configurable) setOpen(false);
@@ -68,7 +71,7 @@ export function useWorkflowRunPaneSettings({
     () => ({
       ...workflowRunTabScope(tab),
       ...(sessionModel === undefined ? {} : { sessionModel }),
-      // 与 Stop / Resume 同类：不携 baseRevision，workId ≡ runId。
+      // Similar to Stop / Resume: without baseRevision, workId ≡ runId.
       apply: (change) =>
         sendCommand(
           createCommandEnvelope({
@@ -89,10 +92,10 @@ export function useWorkflowRunPaneSettings({
     ],
   );
 
-  // 跟随：被接受的那一刻新 run 未必已在投影里（run-started 随后才到），所以先记下，等它出现再换 tab。
+  // Follow: The new run may not already be in the projection at the moment it is accepted (run-started arrives later), so write it down first and change tabs when it appears.
   const [follow, setFollow] = useState<WorkflowRunSettingsAccepted | undefined>(undefined);
-  // 就地生效的修订（只改并发上限、run 仍在运行）没有后继，
-  // 结果里的 runId 就是这个 tab 自己——没有可跟随的东西，记下它只会请求把 tab 换成它自己。
+  // Revisions that take effect locally (only the concurrency limit is changed, and run is still running) have no successors.
+  // The runId in the result is the tab itself - there is nothing to follow. Note that it will only request to replace the tab with itself.
   const onAccepted = useCallback(
     (accepted: WorkflowRunSettingsAccepted) => {
       if (accepted.runId !== tab.runId) setFollow(accepted);

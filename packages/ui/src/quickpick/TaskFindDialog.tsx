@@ -99,8 +99,8 @@ export function TaskFindDialog({
       return;
     }
 
-    // Cmd/Ctrl+F 在查找框已打开时不会改变 open 状态，常规聚焦 effect 不会重跑。
-    // 这里监听显式 focus 请求，让重复触发快捷键时总能把焦点带回搜索输入框。
+    // Cmd/Ctrl+F will not change the open state when the search box is open, and the regular focus effect will not rerun.
+    // Listen for explicit focus requests here so that the focus can always be brought back to the search input box when the shortcut key is triggered repeatedly.
     window.requestAnimationFrame(() => inputRef.current?.focus());
   }, [focusRequestId, open]);
 
@@ -122,8 +122,8 @@ export function TaskFindDialog({
         return;
       }
 
-      // 查找框下沉到聊天区域后不再由 Radix Dialog 负责 Esc。
-      // window 冒泡监听只处理尚未被活动浮层消费的 Esc，避免抢占嵌套菜单/弹层的关闭语义。
+      // After the search box is sunk into the chat area, Radix Dialog is no longer responsible for Esc.
+      // The window bubbling listener only handles Esc that has not been consumed by the active floating layer to avoid preempting the closing semantics of the nested menu/pop-up layer.
       event.preventDefault();
       onOpenChange(false);
     };
@@ -153,8 +153,8 @@ export function TaskFindDialog({
       return;
     }
 
-    // 切到“文件变更”范围后，旧的对话搜索高亮不应该继续留在聊天区。
-    // 两个范围使用独立高亮 root，这里显式清空另一边，避免用户误以为两个范围同时生效。
+    // Old conversation search highlights should no longer remain in the chat area after switching to the "File Changes" scope.
+    // The two ranges use independent highlighting root, and the other side is explicitly cleared here to prevent users from mistakenly thinking that the two ranges are effective at the same time.
     onConversationFindChange("", -1);
     onFileChangeFindChange(query, fileChangeState.currentIndex);
   }, [
@@ -169,8 +169,8 @@ export function TaskFindDialog({
   const moveSelection = useCallback(
     (direction: "previous" | "next") => {
       if (activeFindState.total === 0) {
-        // 零命中时按钮已禁用，但键盘仍会进入同一处理函数。
-        // 这里统一拒绝空导航，避免无效 request id 递增和按钮/键盘语义分叉。
+        // The button is disabled on zero hit, but the keyboard still enters the same handler function.
+        // Empty navigation is uniformly rejected here to avoid invalid request id increments and button/keyboard semantic bifurcation.
         return;
       }
 
@@ -194,8 +194,8 @@ export function TaskFindDialog({
       setQuery(nextQuery);
       const nextIndex = nextQuery.trim() ? 0 : -1;
       if (scope === "conversation") {
-        // 输入新的查找词时应从第一个命中开始滚动。
-        // 如果沿用旧 activeIndex，新关键词也可能直接跳到第 N 个结果，和系统查找行为不一致。
+        // When entering a new search term you should start scrolling from the first hit.
+        // If the old activeIndex is used, the new keyword may jump directly to the Nth result, which is inconsistent with the system search behavior.
         onConversationFindChange(nextQuery, nextIndex);
         return;
       }
@@ -322,12 +322,12 @@ export function TaskFindDialog({
     </div>
   );
   const contentPositionClassName = cn(
-    // 原查找框宽高偏大，在小窗口和密集操作里会遮挡更多正文区域。
-    // 这里收紧到更小的宽度与内边距，减少侵入性并保持操作可读性。
+    // The width and height of the original search box are too large, which will block more text area in small windows and intensive operations.
+    // This is tightened up to a smaller width and padding, making it less intrusive and keeping the operation readable.
     "left-auto !w-[min(360px,calc(100vw-0.75rem))] !max-w-[calc(100vw-0.75rem)] translate-x-0 translate-y-0",
-    // Linux 的窗口控制和标题栏都是 renderer 自绘；查找浮层如果继续贴在 top-3，
-    // 会覆盖标题栏点击区，导致打开浮层后无法通过标题栏切换/拖动窗口。Linux desktop
-    // 预留 48px 标题栏和 120px 右侧窗口按钮安全区，其余平台用各自分支的偏移。
+    // The window control and title bar of Linux are both self-drawn by the renderer; if you continue to paste the floating layer on top-3,
+    // The click area of the title bar will be covered, resulting in the inability to switch/drag windows through the title bar after opening the floating layer. Linux desktop
+    // Reserve 48px for the title bar and 120px for the right window button safe area, and use the offsets of their respective branches for the remaining platforms.
     isWindowsDesktop
       ? "top-12 right-36"
       : isMacDesktop
@@ -371,13 +371,13 @@ export function TaskFindDialog({
         showCloseButton={false}
         showOverlay={false}
         onInteractOutside={(event) => {
-          // 查找框改成无蒙层后，用户会点击聊天区查看命中的上下文。
-          // Radix Dialog 默认把外部点击当成关闭信号，这会让查找状态丢失；这里保留浮层，仍可用 Esc 或关闭按钮退出。
+          // After the search box is changed to unmasked, the user will click on the chat area to view the context of the hit.
+          // Radix Dialog treats external clicks as close signals by default, which will cause the search state to be lost; the floating layer is retained here, and you can still exit with the Esc or close button.
           event.preventDefault();
         }}
         className={cn(
-          // Cmd/Ctrl+F 浮层不能固定在右上角：Desktop 端会和标题区控件重叠。
-          // 这里按平台预留安全区：统一下移到标题区下方，并在 Windows 额外右移，避开右上角原生窗口按钮。
+          // Cmd/Ctrl+F The floating layer cannot be fixed in the upper right corner: the Desktop side will overlap with the title area control.
+          // Here, a safe area is reserved according to the platform: move it down to the bottom of the title area, and move it to the right in Windows to avoid the native window button in the upper right corner.
           contentPositionClassName,
           "overflow-hidden border-popover-border bg-popover p-0 shadow-md",
         )}

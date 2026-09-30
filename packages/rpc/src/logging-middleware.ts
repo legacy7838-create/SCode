@@ -1,10 +1,10 @@
 /**
- * RPC 日志拦截中间件
+ * RPC logging interceptor middleware
  *
- * 装饰 ChannelServer / ChannelClient，在不侵入核心逻辑的前提下
- * 统一记录所有 RPC 调用和事件订阅。
+ * Decorates ChannelServer / ChannelClient to log all RPC calls and event subscriptions
+ * in one place, without touching the core logic.
  *
- * 用法：
+ * Usage:
  *   const server = new ChannelServer(protocol, ctx);
  *   const logged = new LoggingChannelServer(server, logger.info);
  *   services.exposeOnChannelServer(logged);
@@ -15,13 +15,13 @@ import type { CancellationToken } from "./foundation.js";
 import { Event } from "./foundation.js";
 
 // ============================================================================
-// 日志函数类型
+// Logging function types
 // ============================================================================
 
 export type RPCLogger = (message: string, ...args: unknown[]) => void;
 
 // ============================================================================
-// LoggingServerChannel —— 装饰单个 IServerChannel，记录 call/listen
+// LoggingServerChannel — decorates a single IServerChannel, logging call/listen
 // ============================================================================
 
 class LoggingServerChannel<TContext> implements IServerChannel<TContext> {
@@ -63,13 +63,13 @@ class LoggingServerChannel<TContext> implements IServerChannel<TContext> {
 }
 
 // ============================================================================
-// LoggingChannelServer —— 装饰 IChannelServer，拦截 registerChannel
+// LoggingChannelServer — decorates IChannelServer, intercepting registerChannel
 // ============================================================================
 
 /**
- * 包装 ChannelServer，为每个注册的频道自动加上日志。
+ * Wraps a ChannelServer, adding logging automatically to every registered channel.
  *
- * 在 host process 或 server 中使用：
+ * Use it in the host process or in a server:
  * ```ts
  * const server = new ChannelServer(protocol, ctx);
  * const logged = new LoggingChannelServer(server, console.error);
@@ -96,7 +96,7 @@ export class LoggingChannelServer<TContext = string> implements IChannelServer<T
 }
 
 // ============================================================================
-// LoggingChannel —— 装饰单个 IChannel（客户端侧），记录 call/listen
+// LoggingChannel — decorates a single IChannel (client side), logging call/listen
 // ============================================================================
 
 class LoggingChannel implements IChannel {
@@ -127,13 +127,13 @@ class LoggingChannel implements IChannel {
 }
 
 // ============================================================================
-// LoggingChannelClient —— 装饰 IChannelClient，拦截 getChannel
+// LoggingChannelClient — decorates IChannelClient, intercepting getChannel
 // ============================================================================
 
 /**
- * 包装 ChannelClient，为每个获取的频道自动加上日志。
+ * Wraps a ChannelClient, adding logging automatically to every channel it hands out.
  *
- * 在 renderer 或 client 中使用：
+ * Use it in the renderer or in a client:
  * ```ts
  * const client = new ChannelClient(protocol);
  * const logged = new LoggingChannelClient(client, console.info);

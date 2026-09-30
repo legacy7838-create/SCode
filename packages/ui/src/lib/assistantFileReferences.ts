@@ -51,7 +51,7 @@ export interface AssistantFileReference {
 
 export type AssistantFilePathResolveOptions = MarkdownFileLinkResolveOptions;
 
-// 新增文件类型只需登记扩展名和展示文案；正文抽取、卡片排序和批量校验复用同一路径。
+// To add a new file type, you only need to register the extension and display copy; the same path is used for text extraction, card sorting and batch verification.
 const ASSISTANT_PREVIEW_FILE_TYPES: readonly AssistantPreviewFileTypeDefinition[] = [
   { extensions: [".md"], kind: "markdown", subtitleId: "chat.previewCards.markdown" },
   {
@@ -128,8 +128,8 @@ export function resolveAssistantRawFilePath(
   if (!cleanedPath || cleanedPath.startsWith("http://") || cleanedPath.startsWith("https://")) {
     return null;
   }
-  // `~` 是 Home-relative 语义；Host Home 尚未注入或使用了 `~other` 时必须失败关闭，
-  // 不能继续走 `./${cleanedPath}` 的 workspace-relative 兜底分支。
+  // `~` is Home-relative semantics; the Host Home must fail to close when it has not been injected or `~other` is used.
+  // You cannot continue to go to the workspace-relative branch of `./${cleanedPath}`.
   if (/^~(?:[\\/]|[^\\/]+[\\/])/.test(cleanedPath)) {
     return resolveMarkdownFileLink(workspacePath, cleanedPath, options)?.path ?? null;
   }
@@ -162,8 +162,8 @@ export function extractAssistantFileReferences(
   const protectedRanges: Array<[number, number]> = [];
 
   for (const citation of extractZCodeFileCitationDirectives(content)) {
-    // Citation 必须占用完整保护区间，否则内部 path 会再次被普通文件正则抽取，
-    // 从而绕过 citation 只允许 Office/PDF 卡片的产品边界。
+    // Citation must occupy the complete protection area, otherwise the internal path will be extracted again by regular files.
+    // Thereby bypassing the citation product boundary that only allows Office/PDF cards.
     protectedRanges.push([citation.start, citation.end]);
     if (!citation.path) continue;
     const path = resolveAssistantRawFilePath(workspacePath, citation.path, options);
@@ -218,7 +218,7 @@ export function extractAssistantFileReferences(
     const fullEnd = fullStart + fullMatch.length;
     if (!raw || overlapsRanges(fullStart, fullEnd, protectedRanges)) continue;
     if (!isBalancedAssistantPathQuotePair(match[1] ?? "", match[3] ?? "")) {
-      // 错配引号不能让内部路径再被通用正则捞出，否则 malformed 输出仍会生成卡片。
+      // Mismatched quotes cannot allow internal paths to be fished out by universal regular expressions, otherwise malformed output will still generate cards.
       protectedRanges.push([fullStart, fullEnd]);
       continue;
     }
@@ -245,8 +245,8 @@ export function extractAssistantFileReferences(
     const end = start + raw.length;
     if (overlapsRanges(start, end, protectedRanges)) continue;
 
-    // 普通正文里的 `~/...` 是给用户看的 shell 路径，不是稳定的预览卡片引用。
-    // 明确的 zcode-file-citation 仍在上面的专用分支处理。
+    // `~/...` in the normal text is the shell path shown to the user, not a stable preview card reference.
+    // Explicit zcode-file-citation is still handled in the dedicated branch above.
     if (/^~[\\/]/.test(raw)) {
       protectedRanges.push([start, end]);
       continue;
@@ -261,7 +261,7 @@ export function extractAssistantFileReferences(
       hasQuoteBoundary &&
       !isBalancedAssistantPathQuotePair(precedingCharacter ?? "", followingCharacter ?? "")
     ) {
-      // 单侧或错配引号不能让内部路径绕过定界符保护而生成卡片。
+      // Single-sided or mismatched quotes do not allow internal paths to bypass delimiter protection and generate cards.
       protectedRanges.push([start, end]);
       continue;
     }

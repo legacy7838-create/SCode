@@ -1,7 +1,8 @@
 /**
- * 数据根遍历器：异步、有界并发、可取消、不跟随符号链接。
- * 产出 (relativePath, bytes, mtimeMs)，分类与聚合由 domain 在调用方完成。
- * 每处理 yieldEvery 个条目让出一次事件循环，避免在 Worker/host 内长时间独占。
+ * Data-root walker: asynchronous, bounded-concurrency, cancellable, never following symlinks.
+ * Yields (relativePath, bytes, mtimeMs); classification and aggregation are done by domain in
+ * the caller. It yields the event loop every yieldEvery entries to avoid monopolizing a
+ * Worker/host for a long time.
  */
 import { lstat, opendir } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
@@ -13,16 +14,16 @@ interface WalkStorageRootOptions {
   onEntry: (entry: StorageScanEntry) => void;
   onError?: (error: StoragePathError) => void;
   signal?: AbortSignal;
-  /** 同时打开的目录数，默认 4。 */
+  /** Number of directories opened at the same time, 4 by default. */
   concurrency?: number;
-  /** 每处理多少条目让出一次事件循环，默认 256。 */
+  /** How many entries to process before yielding the event loop, 256 by default. */
   yieldEvery?: number;
 }
 
 interface WalkStorageRootResult {
   directoriesScanned: number;
   filesScanned: number;
-  /** 根目录本身不存在时为 true（视为空根，不算错误）。 */
+  /** True when the root directory itself does not exist (treated as an empty root, not an error). */
   missingRoot: boolean;
 }
 
@@ -101,7 +102,7 @@ export async function walkStorageRoot(
             mtimeMs: stats.mtimeMs,
           });
         } catch (error) {
-          // 扫描期间文件可能被日志轮转或 Agent 删除；ENOENT 属于正常竞态，不计为错误。
+          // Files may be deleted by log rotation or Agent during scanning; ENOENT is a normal race condition and is not counted as an error.
           if (errorCode(error) !== "ENOENT") {
             onError?.({ path: toRelative(rootPath, entryPath), code: errorCode(error) });
           }
@@ -113,7 +114,7 @@ export async function walkStorageRoot(
     }
   };
 
-  // 有界并发：最多 concurrency 个目录同时打开；队列为空且无活动任务时结束。
+  // Bounded concurrency: at most concurrency directories open simultaneously; ends when the queue is empty and there are no active tasks.
   await new Promise<void>((resolve, reject) => {
     let failed = false;
     const pump = () => {

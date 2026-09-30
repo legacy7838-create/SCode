@@ -3,8 +3,8 @@ import { createPortal } from "react-dom";
 import { cn } from "@/components/lib/utils.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 
-// 问题原因：Markdown 曾复制一份固定宽度的竖排菜单，与对话流逐渐分叉。
-// 两处只传选区位置与动作，共用展示和尺寸测量，避免再次出现样式差异。
+// Cause of the problem: Markdown once copied a fixed-width vertical menu, which gradually diverged from the conversation flow.
+// Only the selection position and action are transmitted between the two places, and the display and size measurement are shared to avoid style differences.
 export function SelectionActionMenu({
   center,
   top,
@@ -24,7 +24,7 @@ export function SelectionActionMenu({
   onAddToCurrentTask: () => void;
   onAskInSideChat: () => void;
 }) {
-  const { intl, locale } = useZCodeIntl();
+  const { intl } = useZCodeIntl();
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const menu = ref.current;
@@ -39,7 +39,7 @@ export function SelectionActionMenu({
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(position);
     observer?.observe(menu);
     return () => observer?.disconnect();
-  }, [center, top, bottom, singleLimit, locale]);
+  }, [center, top, bottom, singleLimit, "en-US"]);
   return createPortal(
     <div
       ref={ref}

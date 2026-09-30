@@ -1,12 +1,12 @@
 import type { JsonSchema, JsonSchemaType, Violation } from "./types.js";
 
 /**
- * 纯校验器，覆盖范围恰好是 {@link synthesizeAskSchemas} 会发射的 JSON Schema 子集
- * （不是通用 JSON Schema）。产出违规列表，每条设计成可直接进修复用 tool_result：
- * 一行 JSON 路径 + 期望 + 实得。
+ * A pure validator whose coverage is exactly the JSON Schema subset that {@link synthesizeAskSchemas} emits
+ * (not general JSON Schema). It produces a list of violations, each shaped so it can go straight into a
+ * repair tool_result: one line of JSON path + expected + actual.
  *
- * 空 schema `{}`（unknown 的许可式 schema）匹配任意合法 JSON。`$ref` 在传入的根 schema
- * 的 `$defs` 内解析。
+ * The empty schema `{}` (the permissive schema of unknown) matches any valid JSON. `$ref` resolves inside the
+ * `$defs` of the passed root schema.
  */
 
 export function validate(schema: JsonSchema, value: unknown): Violation[] {
@@ -15,12 +15,12 @@ export function validate(schema: JsonSchema, value: unknown): Violation[] {
   return violations;
 }
 
-/** 把一条违规格式化为单行：`<path>: expected <expected>, got <got>`。 */
+/** Format one violation as a single line: `<path>: expected <expected>, got <got>`. */
 export function formatViolation(violation: Violation): string {
   return `${violation.path}: expected ${violation.expected}, got ${violation.got}`;
 }
 
-/** 把违规列表格式化为多行文本（每行一条）。 */
+/** Format the violation list as multi-line text (one violation per line). */
 export function formatViolations(violations: readonly Violation[]): string {
   return violations.map(formatViolation).join("\n");
 }
@@ -182,7 +182,7 @@ function resolveRef(root: JsonSchema, ref: string): JsonSchema | undefined {
   return root.$defs?.[match[1]!];
 }
 
-/** JSON 深相等：基础值、数组、纯对象。用于 const/enum 比较。 */
+/** JSON deep equality: primitive values, arrays, plain objects. Used for const/enum comparison. */
 function deepEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (a === null || b === null) return false;
@@ -201,7 +201,7 @@ function deepEqual(a: unknown, b: unknown): boolean {
   return false;
 }
 
-/** 值的简短描述，用于 got/expected：类型 + 精简取值。 */
+/** A short description of a value, for got/expected: the type plus a condensed value. */
 function describeValue(value: unknown): string {
   if (value === null) return "null";
   if (Array.isArray(value)) return `array(${value.length})`;

@@ -54,6 +54,6 @@ export function persistGroupedTaskCollapsedGroupIds(
       JSON.stringify(collapsedGroupIdsToState(collapsedGroupIds)),
     );
   } catch {
-    // 受限浏览器或 SSR 测试里 storage 可能不可写，折叠状态写入失败不能阻断侧栏交互。
+    // Storage may not be writable in restricted browsers or SSR tests, and failure to write in the collapsed state cannot block sidebar interaction.
   }
 }

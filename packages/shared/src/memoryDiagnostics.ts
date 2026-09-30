@@ -1,8 +1,9 @@
 /**
- * 进程内存本地诊断日志的共用纯逻辑。
+ * Shared pure logic for the process-local memory diagnostics log.
  *
- * main / renderer / host / agent CLI 四类进程各自采样，但写盘门控、行格式和计数器注册表
- * 只有这一份实现，避免四处各写一套阈值。本文件不依赖 Node / DOM API。
+ * The main / renderer / host / agent CLI process families sample independently, but the
+ * write gating, line format and counter registry have exactly one implementation here, so the
+ * four call sites do not each grow their own thresholds. This file depends on no Node / DOM API.
  */
 
 export type MemorySampleRole = "main" | "renderer" | "utility_host" | "agent_node";
@@ -19,26 +20,28 @@ export interface MemorySampleFields {
 
 export interface MemorySample extends MemorySampleFields {
   role: MemorySampleRole;
-  /** `<provider>.<key>` → 数值；只允许纯读取得到的计数。 */
+  /** `<provider>.<key>` → number; only counts obtained by pure reads are allowed. */
   counters: Record<string, number>;
 }
 
 export interface MemorySampleWriteGateOptions {
-  /** heapUsedKb 相对上一次写盘值的变化比例阈值，默认 5%。 */
+  /** Change-ratio threshold for heapUsedKb relative to the last written value, 5% by default. */
   heapDeltaRatio?: number;
   /**
-   * rssKb / externalKb 相对上一次写盘值的变化比例阈值，默认 10%。
-   * 真机上 host 进程 RSS 从 240MB 冲到 1.5GB、externalKb 冲到 1.3GB，而 heapUsed 几乎不动，
-   * 只看 heap 的门控把这一分钟判成 heartbeat 静默丢掉；native / external 内存必须单独参与判定。
+   * Change-ratio threshold for rssKb / externalKb relative to the last written value, 10% by default.
+   * On real machines the host process RSS jumps from 240MB to 1.5GB and externalKb to 1.3GB while
+   * heapUsed barely moves, so a heap-only gate classifies that minute as a heartbeat and silently drops it;
+   * native / external memory must take part in the decision on its own.
    */
   nativeDeltaRatio?: number;
-  /** 无变化时的心跳间隔，默认 5 分钟。 */
+  /** Heartbeat interval when nothing changed, 5 minutes by default. */
   heartbeatMs?: number;
 }
 
 export interface MemorySampleWriteGate {
   /**
-   * 判定本次样本是否写盘。返回非 null 时表示应写盘，并把该样本记为“上一次写盘值”。
+   * Decides whether this sample should be written to disk. A non-null return means "write", and the
+   * sample becomes the "last written value" for subsequent comparisons.
    */
   evaluate(sample: MemorySample, nowMs: number): MemorySampleWriteReason | null;
 }
@@ -116,7 +119,7 @@ export function bytesToKb(bytes: number): number {
   return Math.round(bytes / 1024);
 }
 
-/** 把 Node `process.memoryUsage()` 的结果换算成 KB 字段；字段缺失时省略。 */
+/** Converts a Node `process.memoryUsage()` result into the KB fields; absent fields are omitted. */
 export function memoryUsageToSampleFields(usage: {
   rss?: number;
   heapUsed?: number;
@@ -136,8 +139,9 @@ export function memoryUsageToSampleFields(usage: {
 }
 
 /**
- * 单行 `key=value` 格式：固定内存字段在前，计数器按字典序在后，全部取整。
- * 例：`[memory] role=main reason=first rssKb=1 heapUsedKb=2 app.windows=1`
+ * Single-line `key=value` format: the fixed memory fields first, then the counters in lexicographic
+ * order, all rounded to integers.
+ * Example: `[memory] role=main reason=first rssKb=1 heapUsedKb=2 app.windows=1`
  */
 export function formatMemorySampleLine(
   sample: MemorySample,
@@ -162,9 +166,9 @@ export function formatMemorySampleLine(
 export type MemoryDiagnosticsProvider = () => Record<string, number>;
 
 export interface MemoryDiagnosticsRegistry {
-  /** 同名重复注册时后者覆盖前者；返回的 dispose 只在仍是自己时才移除。 */
+  /** A later registration under the same name replaces the earlier one; the returned dispose only removes while it is still itself. */
   register(name: string, provider: MemoryDiagnosticsProvider): { dispose(): void };
-  /** 逐个调用 provider，键以 `<name>.` 为前缀；单个 provider 抛错只跳过它自己。 */
+  /** Invokes each provider in turn, prefixing keys with `<name>.`; a provider that throws is skipped on its own. */
   collect(): Record<string, number>;
 }
 
@@ -191,7 +195,7 @@ export function createMemoryDiagnosticsRegistry(): MemoryDiagnosticsRegistry {
             }
           }
         } catch {
-          // 诊断 provider 只做纯读取；任一 provider 异常不能影响其他计数器或业务。
+          // The diagnostic provider only does pure reading; any provider exception cannot affect other counters or services.
         }
       }
       return result;

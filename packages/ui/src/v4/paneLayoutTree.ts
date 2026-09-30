@@ -1,28 +1,36 @@
-// 分屏 Layout 层二叉分割树的模型与纯状态机。
-// 对齐：Focus 指向 Layout 的 pane，
-// pane 指向 (workspaceScope, sessionId)，SessionDataLayer 对上两层零感知。
+// Model and pure state machine of binary split tree in split-screen Layout layer.
+// Alignment: Focus points to the pane of Layout,
+// pane points to (workspaceScope, sessionId), and SessionDataLayer has zero awareness of the upper two layers.
 //
-// 设计边界：
-// - 布局 = 二叉分割树（VS Code editor groups 模型）：任意 pane 可向右/向下拆分，
-//   嵌套即得 2x2 等网格；叶子上限 MAX_WORKBENCH_PANES（性能基线 4 pane）。
-// - pane 绑定 = { workspaceScope, sessionId }：pane 自带 workspace 归属（含远程
-//   remoteSessionId），不再限制同 workspace；早期版本的「split 属于别的 workspace 时
-//   不渲染」规则删除——pane 跨 workspace tab 常驻。
-// - workspaceScope 语义 = session 归属的主（primary）workspace，是连接路由键；
-//   不是「session 能触达的全部路径」（未来跨 workspace session 的辅助路径是
-//   session 属性，不进布局层）。
-// - primary pane（workspace-main）是保留叶子：不进 panes，绑定沿用既有选择态
-//   （activeTaskId → shell props），避免与 zcodeSessionStore/tabStore 双写；
-//   tabStore（workspace tab 语义）完全不动。
-// 所有转移函数无副作用；无变化时返回原引用（zustand 免重渲染）。
+// Design boundaries:
+// - layout = binary split tree (VS Code editor groups model): any pane can be split right/down,
+//   Nesting results in 2x2 equal grids; leaves capped at MAX_WORKBENCH_PANES (performance baseline 4 panes).
+// - pane binding = { workspaceScope, sessionId }: pane comes with workspace ownership (including remote
+//   remoteSessionId), no longer limited to the same workspace; the earlier version of "split" belongs to another workspace
+//   "Do not render" rule is deleted - pane is resident across workspace tabs.
+// - workspaceScope semantics = the primary workspace to which the session belongs, which is the connection routing key;
+//   It is not "all paths that the session can reach" (the auxiliary path across workspace sessions in the future will be
+//   session attribute, does not enter the layout layer).
+// - The primary pane (workspace-main) is a reserved leaf: it does not enter panes, and the existing selection state is used for binding.
+//   (activeTaskId → shell props), avoid double writing with zcodeSessionStore/tabStore;
+//   tabStore (workspace tab semantics) doesn't move at all.
+// All transfer functions have no side effects; if there are no changes, the original reference is returned (zustand avoids re-rendering).
 
-/** primary pane 固定 id（沿用写死的 paneId，testid 契约不变）。 */
+/**
+ * Fixed id of the primary pane (keeps the hardcoded paneId, so the testid contract is unchanged).
+ */
 export const V4_PRIMARY_PANE_ID = "workspace-main";
 
-/** 叶子 pane 数量上限（性能验收基线「4 pane 同时流式不掉帧」；也是 CLI 子进程数软上限）。 */
+/**
+ * Upper bound on leaf panes (the performance acceptance baseline "4 panes streaming at once without
+ * dropped frames"; also a soft cap on the number of CLI child processes).
+ */
 export const MAX_WORKBENCH_PANES = 4;
 
-/** 分割占比边界：first 子树占比最小 25% / 最大 75%（拖拽与持久化共用同一 clamp）。 */
+/**
+ * Split ratio bounds: the first subtree's share is at least 25% and at most 75% (dragging and
+ * persistence share the same clamp).
+ */
 const SPLIT_RATIO_MIN = 0.25;
 const SPLIT_RATIO_MAX = 0.75;
 const DEFAULT_SPLIT_RATIO = 0.5;
@@ -35,10 +43,11 @@ export function clampSplitRatio(ratio: number): number {
 }
 
 /**
- * pane 的 workspace 归属（= session 的 primary workspace，连接路由键）。
- * - 本地：只有 workspacePath；
- * - 远程（SSH/WSL/Docker）：workspaceIdentity 必填（Workspace Identity 约束），
- *   remoteSessionId 指向 remoteWorkspaceSessionStore 的连接（缺省时按 identity 解析）。
+ * A pane's workspace ownership (= the session's primary workspace, the connection routing key).
+ * - Local: only workspacePath;
+ * - Remote (SSH/WSL): workspaceIdentity is required (Workspace Identity constraint), and
+ *   remoteSessionId points at the connection in remoteWorkspaceSessionStore (resolved from the
+ *   identity when omitted).
  */
 export interface PaneWorkspaceScope {
   readonly workspacePath: string;
@@ -46,7 +55,10 @@ export interface PaneWorkspaceScope {
   readonly remoteSessionId?: string;
 }
 
-/** 身份/隔离语义统一口径：workspaceKey = workspaceIdentity?.trim() || workspacePath。 */
+/**
+ * One canonical form for identity/isolation semantics: workspaceKey = workspaceIdentity?.trim() ||
+ * workspacePath.
+ */
 export function paneWorkspaceKey(scope: PaneWorkspaceScope): string {
   return scope.workspaceIdentity?.trim() || scope.workspacePath;
 }
@@ -63,32 +75,42 @@ export function paneBindingMatchesSession(
 }
 
 export interface PaneBinding {
-  /** = session 归属的主 workspace（连接路由键）；辅助路径不在此。 */
+  /**
+   * = the primary workspace a session belongs to (the connection routing key); auxiliary paths are
+   * not included.
+   */
   readonly workspaceScope: PaneWorkspaceScope;
-  /** 绑定的 CLI session；null = draft（空 pane 动线：首发 createSession 后原地绑定）。 */
+  /**
+   * The bound CLI session; null = draft (the empty-pane path: it binds in place after the first
+   * createSession).
+   */
   readonly sessionId: string | null;
-  /** 只读 pane 不渲染 composer/input；当前用于 subagent 行内侧开的 child session。 */
+  /**
+   * A read-only pane does not render the composer/input; currently used for the child session
+   * opened inline beside a subagent row.
+   */
   readonly readOnly?: boolean;
   /**
-   * 从持久化恢复、尚未经该 scope 的 sessions-index 验证存在性的绑定（标记本身不持久化）。
-   * 在场 → confirmRestoredPaneSession 清除；已删 → closePane 优雅塌缩。
+   * A binding restored from persistence whose existence has not yet been verified against that
+   * scope's sessions-index (the flag itself is not persisted). Present → confirmRestoredPaneSession
+   * clears it; deleted → closePane collapses gracefully.
    */
   readonly restoredUnvalidated?: boolean;
 }
 
 export type SplitDirection = "row" | "column";
 
-/** IDE 式拖拽拆分方向：left/up 插到 anchor 前，right/down 插到 anchor 后。 */
+/** IDE-style drag split direction: left/up insert before the anchor, right/down insert after it. */
 export type PaneSplitSide = "left" | "right" | "up" | "down";
 
 export type PaneLayoutNode =
   | { readonly type: "leaf"; readonly paneId: string }
   | {
       readonly type: "split";
-      /** 分割节点 id（拖拽 CSS 变量与 setSplitRatio 的定位键）。 */
+      /** Split node id (the lookup key for the drag CSS variable and setSplitRatio). */
       readonly id: string;
       readonly direction: SplitDirection;
-      /** first 子树占比，clamp [0.25, 0.75]。 */
+      /** The first subtree's share, clamped to [0.25, 0.75]. */
       readonly ratio: number;
       readonly first: PaneLayoutNode;
       readonly second: PaneLayoutNode;
@@ -96,9 +118,12 @@ export type PaneLayoutNode =
 
 export interface PaneLayoutSnapshot {
   readonly root: PaneLayoutNode;
-  /** 非 primary pane 的绑定；primary 绑定沿用 shell props（activeTaskId），不入此表。 */
+  /**
+   * Bindings for non-primary panes; the primary binding keeps using the shell props (activeTaskId)
+   * and is not stored in this map.
+   */
   readonly panes: Readonly<Record<string, PaneBinding>>;
-  /** 全应用唯一的「当前」pane（Focus 层单值）。 */
+  /** The single "current" pane for the whole app (a scalar in the Focus layer). */
   readonly focusedPaneId: string;
 }
 
@@ -114,10 +139,10 @@ export const INITIAL_PANE_LAYOUT: PaneLayoutSnapshot = {
 };
 
 // ============================================================================
-// 树工具（未变化路径保持结构共享 = 原引用）。
+// Tree tool (unchanged path remains structurally shared = original reference).
 // ============================================================================
 
-/** 前序收集叶子 paneId。 */
+/** Collects leaf paneIds in document order. */
 export function leafPaneIds(node: PaneLayoutNode): string[] {
   if (node.type === "leaf") {
     return [node.paneId];
@@ -129,7 +154,7 @@ export function countPanes(state: PaneLayoutSnapshot): number {
   return leafPaneIds(state.root).length;
 }
 
-/** 是否还能再拆出新 pane（叶子数 < MAX_WORKBENCH_PANES）。 */
+/** Whether another pane can still be split off (leaf count < MAX_WORKBENCH_PANES). */
 export function canAddPane(state: PaneLayoutSnapshot): boolean {
   return countPanes(state) < MAX_WORKBENCH_PANES;
 }
@@ -141,12 +166,18 @@ function leafExists(node: PaneLayoutNode, paneId: string): boolean {
   return leafExists(node.first, paneId) || leafExists(node.second, paneId);
 }
 
-/** 焦点 pane 不在树中（如刚被关闭/恢复数据异常）时退化为 primary。 */
+/**
+ * Falls back to primary when the focused pane is not in the tree (e.g. just closed, or anomalous
+ * restored data).
+ */
 export function effectiveFocusedPaneId(state: PaneLayoutSnapshot): string {
   return leafExists(state.root, state.focusedPaneId) ? state.focusedPaneId : V4_PRIMARY_PANE_ID;
 }
 
-/** 分配新 pane id：pane-<n>，n = 树内既有序号最大值 + 1（与 workspace-main/split 保留 id 无碰撞）。 */
+/**
+ * Allocates a new pane id: pane-<n>, where n = the highest existing index in the tree + 1 (no
+ * collision with the reserved workspace-main/split ids).
+ */
 function allocatePaneId(root: PaneLayoutNode): string {
   let max = 0;
   for (const paneId of leafPaneIds(root)) {
@@ -165,7 +196,10 @@ function splitNodeIds(node: PaneLayoutNode): string[] {
   return [node.id, ...splitNodeIds(node.first), ...splitNodeIds(node.second)];
 }
 
-/** 分配新分割节点 id：n<k>（短 id，进 CSS 变量名 --v4-split-<id>）。 */
+/**
+ * Allocates a new split node id: n<k> (a short id, it ends up in the CSS variable name
+ * --v4-split-<id>).
+ */
 function allocateSplitNodeId(root: PaneLayoutNode): string {
   let max = 0;
   for (const id of splitNodeIds(root)) {
@@ -177,7 +211,10 @@ function allocateSplitNodeId(root: PaneLayoutNode): string {
   return `n${max + 1}`;
 }
 
-/** 把 paneId 叶子替换为 replacement；未命中路径保持原引用。 */
+/**
+ * Replaces the paneId leaf with replacement; paths that do not match keep their original
+ * references.
+ */
 function replaceLeaf(
   node: PaneLayoutNode,
   paneId: string,
@@ -194,7 +231,10 @@ function replaceLeaf(
   return { ...node, first, second };
 }
 
-/** 移除叶子：父分割节点塌缩为兄弟子树；返回 null 表示整棵树被移除（仅当根就是该叶子）。 */
+/**
+ * Removes a leaf: the parent split node collapses into the sibling subtree; returning null means
+ * the whole tree was removed (only when the root is that leaf).
+ */
 function removeLeaf(node: PaneLayoutNode, paneId: string): PaneLayoutNode | null {
   if (node.type === "leaf") {
     return node.paneId === paneId ? null : node;
@@ -229,13 +269,13 @@ function replaceSplitRatio(node: PaneLayoutNode, splitId: string, ratio: number)
 }
 
 // ============================================================================
-// 纯状态机（单测对象）
+// Pure state machine (single test object)
 // ============================================================================
 
 /**
- * 在 anchor pane 处拆分：anchor 叶子替换为分割节点 { anchor, 新 pane }，
- * 新 pane 绑定 binding（draft 或已有 session）并接管焦点。
- * anchor 不在树中 / 叶子数达上限 → no-op（原引用）。
+ * Splits at the anchor pane: the anchor leaf is replaced by a split node { anchor, new pane }, and
+ * the new pane takes the binding (draft or an existing session) and assumes focus. anchor not in
+ * the tree / leaf count at the limit → no-op (original reference).
  */
 export function splitPaneAt(
   state: PaneLayoutSnapshot,
@@ -263,8 +303,9 @@ export function splitPaneAt(
 }
 
 /**
- * 在 anchor pane 四周拆分：left/up 把新 pane 放在 anchor 前，right/down 放在后。
- * 拖拽分屏需要保留用户的方位意图；旧 splitPaneAt 继续保持「anchor 在前、新 pane 在后」契约。
+ * Splits around the anchor pane: left/up put the new pane before the anchor, right/down put it
+ * after. Drag-to-split has to preserve the user's directional intent; the older splitPaneAt keeps
+ * its "anchor first, new pane after" contract.
  */
 export function splitPaneAtSide(
   state: PaneLayoutSnapshot,
@@ -295,9 +336,10 @@ export function splitPaneAtSide(
 }
 
 /**
- * 关闭 pane：叶子移除，父分割节点塌缩为兄弟子树；绑定移除。
- * primary 不可关；pane 不在树中 → no-op。焦点在被关 pane 上时归还 primary。
- * 关 pane ≠ 停 session：只是退订视图，session 在 CLI 里照跑。
+ * Closes a pane: the leaf is removed, the parent split node collapses into the sibling subtree, and
+ * the binding is removed. The primary cannot be closed; a pane not in the tree → no-op. When the
+ * focus is on the pane being closed it goes back to primary. Closing a pane ≠ stopping the session:
+ * it only unsubscribes the view, and the session keeps running in the CLI.
  */
 export function closePane(state: PaneLayoutSnapshot, paneId: string): PaneLayoutSnapshot {
   if (paneId === V4_PRIMARY_PANE_ID || !leafExists(state.root, paneId)) {
@@ -313,7 +355,10 @@ export function closePane(state: PaneLayoutSnapshot, paneId: string): PaneLayout
   };
 }
 
-/** draft pane 首发 createSession 后原地绑定 session。pane 无绑定/未变（且无待验证标记）时 no-op。 */
+/**
+ * Binds a session in place on a draft pane after its first createSession. No-op when the pane has
+ * no binding / is unchanged (and carries no pending-verification flag).
+ */
 export function bindPaneSession(
   state: PaneLayoutSnapshot,
   paneId: string,
@@ -323,7 +368,7 @@ export function bindPaneSession(
   if (!binding || (binding.sessionId === sessionId && !binding.restoredUnvalidated)) {
     return state;
   }
-  // 实时绑定即权威，不需要再验证：不带 restoredUnvalidated 重建。
+  // Real-time binding is authoritative and does not require further verification: rebuild without restoredUnvalidated.
   return {
     ...state,
     panes: {
@@ -334,9 +379,10 @@ export function bindPaneSession(
 }
 
 /**
- * 原位替换非 primary pane 的完整 session binding。
- * draft split 后普通 session 点击过去只更新 shell activeTaskId，导致 primary
- * draft 被新 session 覆盖；这里先替换 focused secondary 的 scope + session owner。
+ * Replaces the complete session binding of a non-primary pane in place. After a draft split,
+ * clicking an ordinary session only updated the shell activeTaskId, which let the new session
+ * overwrite the primary draft; here the focused secondary's scope + session owner are replaced
+ * first.
  */
 export function replacePaneBinding(
   state: PaneLayoutSnapshot,
@@ -369,7 +415,10 @@ export function findPaneIdForSession(
   return null;
 }
 
-/** 拖拽调宽提交：按分割节点 id 定位，clamp 到 [25%, 75%]；未变化返回原引用。 */
+/**
+ * Commit of a drag resize: located by split node id, clamped to [25%, 75%]; returns the original
+ * reference when unchanged.
+ */
 export function setSplitNodeRatio(
   state: PaneLayoutSnapshot,
   splitId: string,
@@ -382,7 +431,10 @@ export function setSplitNodeRatio(
   return { ...state, root };
 }
 
-/** 聚焦 pane：只接受当前树里存在的叶子，其余 no-op（原引用）。 */
+/**
+ * Focus a pane: only leaves that exist in the current tree are accepted, everything else is a no-op
+ * (original reference).
+ */
 export function focusPane(state: PaneLayoutSnapshot, paneId: string): PaneLayoutSnapshot {
   if (state.focusedPaneId === paneId || !leafExists(state.root, paneId)) {
     return state;
@@ -390,7 +442,10 @@ export function focusPane(state: PaneLayoutSnapshot, paneId: string): PaneLayout
   return { ...state, focusedPaneId: paneId };
 }
 
-/** 持久化恢复的 pane 绑定经 sessions-index 验证在场后清除待验证标记。无标记时 no-op。 */
+/**
+ * Clears the pending-verification flag once a pane binding restored from persistence is verified
+ * present by the sessions-index. No-op when there is no flag.
+ */
 export function confirmRestoredPaneSession(
   state: PaneLayoutSnapshot,
   paneId: string,
@@ -412,8 +467,9 @@ export function confirmRestoredPaneSession(
 }
 
 /**
- * 侧栏/下钻「在分屏打开」：该 session 已在某个 pane（按 workspaceKey + sessionId 判等，
- * 归属/隔离语义）→ 聚焦它；否则拆分当前焦点 pane 向右。达上限且无既有 pane → no-op。
+ * Sidebar / drill-down "open in a split": if the session is already in some pane (compared by
+ * workspaceKey + sessionId, per the ownership/isolation semantics) → focus it; otherwise split the
+ * currently focused pane to the right. At the limit with no existing pane → no-op.
  */
 export function openSessionInNewPane(
   state: PaneLayoutSnapshot,

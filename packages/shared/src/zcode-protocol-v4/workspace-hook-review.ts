@@ -61,9 +61,9 @@ export const workspaceHookTrustRevokeTargetSchema = z
   });
 export type WorkspaceHookTrustRevokeTarget = z.infer<typeof workspaceHookTrustRevokeTargetSchema>;
 
-// 软门禁：按需开审核 flow 的命令 target。
-// 克隆 revoke 的 non-flow target 变体,但不需要 hookDeclarationDigests
-// (审核 flow 从当前 snapshot 拉取全部 pending items,而非指定 declarations)。
+// Soft access control: Open the command target of the audit flow on demand.
+// Clone the non-flow target variant of revoke, but without hookDeclarationDigests
+// (The audit flow pulls all pending items from the current snapshot instead of specifying declarations).
 export const requestWorkspaceHookReviewTargetSchema = z
   .object({
     sessionId: nonEmptyStringSchema,

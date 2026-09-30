@@ -31,12 +31,12 @@ export function useWorkspaceShellLifecycle({
 
     previousWorkspaceAbsPathRef.current = workspaceAbsPath;
 
-    // Root 之前依赖按 workspacePath 改 key 来"切工作区就整棵重建 App"，
-    // 这样虽然顺手清空了局部状态，但也会把侧边栏 / TaskList 一起卸载，导致切任务时出现整列闪烁。
-    // 现在改成保留同一个 App 实例后，只显式清理真正和旧 workspace 强绑定的状态，
-    // 避免把上一项目的代码预览或测试覆盖消息串到新项目里。
-    // side pane 现在按 workspaceIdentity/workspacePath 做内存恢复。
-    // 这里不能再按 workspacePath 变化清掉 Git/source 或 tabs，否则跨 workspace 切回时会覆盖缓存。
+    // Root previously relied on changing the key by pressing the workspacePath to "rebuild the entire app by cutting the workspace".
+    // Although this clears the partial state, it will also unload the sidebar/TaskList together, causing the entire column to flicker when switching tasks.
+    // Now after changing to retain the same App instance, only the state that is truly strongly bound to the old workspace is explicitly cleared.
+    // Avoid stringing code preview or test coverage messages from the previous project into the new project.
+    // The side pane now performs memory recovery by workspaceIdentity/workspacePath.
+    // Here you can no longer clear Git/source or tabs based on workspacePath changes, otherwise the cache will be overwritten when switching back across workspaces.
     setBrowserNavigationRequest(null);
     setTestMessages(null);
   }, [setBrowserNavigationRequest, setTestMessages, workspaceAbsPath]);
@@ -55,11 +55,11 @@ export function useWorkspaceShellLifecycle({
         return;
       }
 
-      // 预热 session 会让没有 task 的 workspace 也常驻一个 ZCode Agent 进程。
-      // 如果切走 tab 时不清理这类"只预热、未真正使用"的会话，来回切多个 workspace 后，
-      // 背景里会留下多条空转进程。这里在离开当前 workspace 时做一次 best-effort 回收。
-      // 另外必须把 workspace 初始化状态同步回退成 idle，否则下一次进入页面仍可能看到
-      // 上一次残留的 ready/failed。单 ZCode Agent 下这里不再按 provider 循环清理。
+      // Warming up the session will cause a ZCode Agent process to reside in the workspace without tasks.
+      // If you do not clean up this kind of "only warm-up, not actually used" sessions when switching tabs, after switching back and forth between multiple workspaces,
+      // There will be multiple idling processes left in the background. Here, a best-effort recycling is done when leaving the current workspace.
+      // In addition, the workspace initialization state must be synchronously returned to idle, otherwise you may still see it the next time you enter the page.
+      // The last remaining ready/failed. Under single ZCode Agent, there is no longer a cleanup cycle based on provider.
       const workspaceInitState = getWorkspaceInitState(currentWorkspaceState);
       if (workspaceInitState.status === "idle") {
         return;
@@ -67,7 +67,7 @@ export function useWorkspaceShellLifecycle({
 
       const provider = currentWorkspaceState.selectedProvider;
       logger.info(
-        `[App] 回退 workspace 预热状态 workspace=${workspaceAbsPath} provider=${provider}`,
+        `[App] rolling back workspace warmup state workspace=${workspaceAbsPath} provider=${provider}`,
       );
       useZCodeSessionStore
         .getState()
@@ -84,7 +84,7 @@ export function useWorkspaceShellLifecycle({
         })
         .catch((error: unknown) => {
           logger.error(
-            `[App] 释放 workspace 预热态失败 workspace=${workspaceAbsPath} provider=${provider}:`,
+            `[App] failed to release workspace warmup state workspace=${workspaceAbsPath} provider=${provider}:`,
             error,
           );
         });

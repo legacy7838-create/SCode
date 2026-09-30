@@ -87,8 +87,8 @@ export function BrowserViewportToolbar({
     const draft = dimension === "width" ? widthDraft : heightDraft;
     const value = Number(draft.trim());
     if (!isValidViewportDimension(dimension, value)) {
-      // 越界时直接恢复旧值会让用户无法判断是 Fit 回写还是输入超限。
-      // 保留原始草稿并展示共享协议范围，让 UI 与 Agent viewport schema 的失败语义一致。
+      // Directly restoring the old value when the limit is exceeded will make it impossible for the user to determine whether it is Fit writeback or input exceeding the limit.
+      // Keep the original draft and present the shared protocol scope so that the UI is consistent with the failure semantics of the Agent viewport schema.
       setDraftInvalid(dimension, true);
       return;
     }
@@ -140,8 +140,8 @@ export function BrowserViewportToolbar({
       className="flex h-8 shrink-0 items-center justify-center gap-1 overflow-x-auto border-y border-border bg-background px-2"
       data-testid={TID_BROWSER_RESPONSIVE_TOOLBAR}
     >
-      {/* TooltipContent 通过 Portal 挂到 body；不可见 tab 的触发器处于 display:none，
-          仍保持 open 会让浮层拿到 0×0 锚点并泄漏到窗口左上角。只在当前视图可见时展示。 */}
+      {/* TooltipContent is attached to the body through Portal; the trigger of the invisible tab is display:none,
+          Leaving it open will cause the overlay to get the 0×0 anchor point and leak to the upper left corner of the window. Only displayed when the current view is visible. */}
       <Tooltip open={isVisible && invalidDrafts.width}>
         <TooltipTrigger asChild>
           <Input

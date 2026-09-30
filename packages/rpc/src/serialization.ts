@@ -11,6 +11,7 @@
  */
 
 import { VSBuffer } from "./buffer.js";
+import { rpcBytesPort } from "./bytes-port.js";
 
 // ============================================================================
 // Reader / Writer 接口
@@ -18,6 +19,11 @@ import { VSBuffer } from "./buffer.js";
 
 export interface IReader {
   read(bytes: number): VSBuffer;
+  /**
+   * Reads one VQL varint at the current position. Required (not optional) so the varint decode has
+   * exactly one path: the bound `IRpcBytesPort` decides how the bytes are turned into a number.
+   */
+  readVql(): number;
 }
 
 export interface IWriter {
@@ -37,6 +43,17 @@ export class BufferReader implements IReader {
     const result = this.buffer.slice(this.pos, this.pos + bytes);
     this.pos += result.byteLength;
     return result;
+  }
+
+  /**
+   * Reads a VQL varint without the old per-byte `read(1)` loop: one bound-port call per varint
+   * instead of one `VSBuffer` slice per byte. The native binding decodes in Rust; the renderer
+   * binding decodes in TypeScript. Neither is a fallback for the other.
+   */
+  readVql(): number {
+    const [value, consumed] = rpcBytesPort().vqlRead(this.buffer.buffer, this.pos);
+    this.pos += consumed;
+    return value;
   }
 }
 
@@ -65,14 +82,7 @@ export class BufferWriter implements IWriter {
  * @see https://en.wikipedia.org/wiki/Variable-length_quantity
  */
 function readIntVQL(reader: IReader): number {
-  let value = 0;
-  for (let n = 0; ; n += 7) {
-    const next = reader.read(1);
-    value |= (next.buffer[0] & 0b01111111) << n;
-    if (!(next.buffer[0] & 0b10000000)) {
-      return value;
-    }
-  }
+  return reader.readVql();
 }
 
 const vqlZero = createOneByteBuffer(0);
@@ -86,20 +96,7 @@ function writeInt32VQL(writer: IWriter, value: number): void {
     writer.write(vqlZero);
     return;
   }
-  let len = 0;
-  for (let v = value; v !== 0; v = v >>> 7) {
-    len++;
-  }
-
-  const scratch = VSBuffer.alloc(len);
-  for (let i = 0; value !== 0; i++) {
-    scratch.buffer[i] = value & 0b01111111;
-    value = value >>> 7;
-    if (value > 0) {
-      scratch.buffer[i] |= 0b10000000;
-    }
-  }
-  writer.write(scratch);
+  writer.write(VSBuffer.wrap(rpcBytesPort().vqlWrite(value)));
 }
 
 // ============================================================================
@@ -250,42 +247,9 @@ function isRpcEncodedUint8Array(value: unknown): value is {
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
-  const bufferCtor = (
-    globalThis as {
-      Buffer?: {
-        from(input: Uint8Array): { toString(encoding: "base64"): string };
-      };
-    }
-  ).Buffer;
-  if (bufferCtor) {
-    return bufferCtor.from(bytes).toString("base64");
-  }
-
-  let binary = "";
-  const chunkSize = 0x8000;
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    const chunk = bytes.subarray(offset, offset + chunkSize);
-    binary += String.fromCharCode(...chunk);
-  }
-  return globalThis.btoa(binary);
+  return rpcBytesPort().base64Encode(bytes);
 }
 
 function base64ToBytes(base64: string): Uint8Array {
-  const bufferCtor = (
-    globalThis as {
-      Buffer?: {
-        from(input: string, encoding: "base64"): Uint8Array;
-      };
-    }
-  ).Buffer;
-  if (bufferCtor) {
-    return new Uint8Array(bufferCtor.from(base64, "base64"));
-  }
-
-  const binary = globalThis.atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-  return bytes;
+  return rpcBytesPort().base64Decode(base64);
 }

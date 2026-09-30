@@ -77,7 +77,6 @@ const PYTHON_EXECUTABLES = new Set(["python", "python3", "py"]);
 const FAMILY_DEPTH_OVERRIDES: Readonly<Record<string, Readonly<Record<string, number>>>> = {
   aws: { "*": 2 },
   az: { "*": 2 },
-  docker: { compose: 2 },
   gcloud: { "*": 3 },
   kubectl: { config: 2 },
 };
@@ -126,9 +125,9 @@ function createBashPermissionRulePolicy(
 function buildInvocationRuleSubjects(invocation: BashCommandInvocation): string[] {
   const rawSubject = normalizeInvocation(invocation);
   const stablePrefix = resolveStableCommandPrefix(invocation);
-  // 保存规则会移除 --dir/-C 等全局 flag，但旧 evaluator 只拿原始 invocation
-  // 比较，导致 UI 明明保存了 `pnpm run lint:*`，下一轮仍无法命中。保留 raw subject
-  // 兼容历史 wildcard，同时加入相同 resolver 得出的稳定 action subject。
+  // Saving the rules will remove global flags such as --dir/-C, but the old evaluator only takes the original invocation
+  // Comparison resulted in the UI clearly saving `pnpm run lint:*`, but the next round still failed to hit. keep raw subject
+  // Compatible with historical wildcards, and adding stable action subjects derived from the same resolver.
   return stablePrefix && stablePrefix !== rawSubject ? [rawSubject, stablePrefix] : [rawSubject];
 }
 

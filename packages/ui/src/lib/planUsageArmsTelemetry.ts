@@ -85,18 +85,18 @@ function omitUndefinedProperties(
   return compact;
 }
 
-/** 真实状态没有 provider id 时的既有兜底桶；必须与「自定义 provider 归一值」区分开。 */
+/** The existing backend when the real state does not have a provider id; must be distinguished from the "custom provider normalization value". */
 const PLAN_USAGE_PROVIDER_ID_UNKNOWN = "unknown";
 
 /**
- * provider/model 的上报投影。
+ * Reported projection of provider/model.
  *
- * 自定义 provider 的 id 与模型名由用户命名，原样上报会泄露私有名称并制造高基数，因此与
- * `chat_error_banner` 共用同一条白名单：内置 provider 保留稳定 ID，其余归一为 `custom`。
- * 只改写上报值——事件是否发送仍由调用处的原始 `providerId` 闸门决定，本地日志也保留原值。
+ * The id and model name of the custom provider are named by the user. Reporting them as they are will leak the private name and create a high cardinality, so it is inconsistent with
+ * `chat_error_banner` shares the same whitelist: the built-in provider retains stable IDs, and the rest are normalized to `custom`.
+ * Only the reported value is overwritten - whether the event is sent is still determined by the original `providerId` gate at the calling point, and the local log also retains the original value.
  *
- * `unknown` 兜底不能被并进 `custom`：它表达「协议事件没带 provider」，是既有计数口径的一部分。
- * 该分支下模型名按自身白名单判定，既保留可用维度，又不透传自定义模型名。
+ * `unknown` cannot be merged into `custom`: it expresses "the protocol event does not have a provider" and is part of the existing counting caliber.
+ * The model name under this branch is determined according to its own whitelist, which not only retains the available dimensions, but also does not transparently transmit the custom model name.
  */
 function providerTelemetryProjection(
   providerId: string,
@@ -162,14 +162,14 @@ export function reportPlanUsageModelRequestStartedToArms(
 
   try {
     void Promise.resolve(reporter.reportArmsCustomEvent(payload)).catch((error) => {
-      logger.warn("[plan-usage] ARMS 上报失败", {
+      logger.warn("[plan-usage] ARMS report failed", {
         providerId,
         status,
         error: error instanceof Error ? error.message : String(error),
       });
     });
   } catch (error) {
-    logger.warn("[plan-usage] ARMS 上报异常", {
+    logger.warn("[plan-usage] ARMS report threw", {
       providerId,
       status,
       error: error instanceof Error ? error.message : String(error),
@@ -209,13 +209,13 @@ export function reportPlanUsageTtftToArms(
 
   try {
     void Promise.resolve(reporter.reportArmsCustomEvent(payload)).catch((error) => {
-      logger.warn("[plan-usage] ARMS TTFT 上报失败", {
+      logger.warn("[plan-usage] ARMS TTFT report failed", {
         providerId,
         error: error instanceof Error ? error.message : String(error),
       });
     });
   } catch (error) {
-    logger.warn("[plan-usage] ARMS TTFT 上报异常", {
+    logger.warn("[plan-usage] ARMS TTFT report threw", {
       providerId,
       error: error instanceof Error ? error.message : String(error),
     });

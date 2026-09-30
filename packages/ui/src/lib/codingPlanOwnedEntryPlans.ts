@@ -36,7 +36,7 @@ export function buildOwnedEntryPlanList({
       if (detail.expireTime && Date.parse(detail.expireTime) <= Date.now()) return [];
       const key = normalize(detail.productId || detail.productName);
       if (!key) return [];
-      // 原实现把被点击卡片的套餐状态应用到整组数据；每个连接必须独立分类。
+      // The original implementation applied the package status of the clicked card to the entire set of data; each connection had to be classified independently.
       if (isStart) return [`start_plan__${key}`];
       const label = normalize(`${detail.productId} ${detail.productName}`);
       const tier = /(?:^|_)(max|pro|lite)(?:_|$)/.exec(label)?.[1] ?? key;

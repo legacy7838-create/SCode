@@ -5,7 +5,7 @@ import {
 } from "@zcode/contracts";
 import { LOCAL_TTFT_MAX_DETAILS, type LocalTtftFacts } from "@zcode/shared";
 
-/** Compact 的实际生命周期可以与 main attempt 交错，不能由主请求差额推算。 */
+/** The real lifecycle of Compact can interleave with the main attempt, so it cannot be derived from the main request's delta. */
 export function observeLocalTtftCompaction(
   record: LocalTtftFacts,
   event: SessionEvent,

@@ -45,9 +45,9 @@ export function buildRemoteWorkspacePersistPatch(
     : 0;
 
   return {
-    // SSH 入口被隐藏时会跳过远程 tab 恢复，tabs 里只剩本地项。
-    // 如果这里只按当前 tabs 序列化，下一次写 setting.json 会把远程会话快照整体抹掉。
-    // 这里把“当前已序列化项 + 未出现在 tabs 的远程快照”合并，确保入口恢复后仍可重连。
+    // When the SSH entry is hidden, remote tab recovery will be skipped, and only local items will remain in the tabs.
+    // If only the current tabs are serialized here, the next time you write setting.json, the entire remote session snapshot will be erased.
+    // Here, "currently serialized items + remote snapshots that do not appear in tabs" are merged to ensure that the entry can still be reconnected after restoration.
     lastWorkspaceSession: [...serializedWorkspaceSessions, ...pendingRemoteSessions],
     lastActiveTabIndex: Math.max(activeIndex, 0),
   };
@@ -93,10 +93,10 @@ export function restorePersistedRemoteWorkspaceSessions({
         persistedEntry.workspacePath !== conversationWorkspacePath,
       );
       if (isStaleConversationWorkspace) {
-        // 测试数据根目录或旧 data root 可能把多个 conversation backing path
-        // 持久化下来；它们是同一个逻辑“无项目会话”，恢复时必须以 service 给出的
-        // canonical path 为准，否则侧栏和定时任务选择器都会出现多个 default。
-        logger.warn("[Root] 跳过非 canonical conversation workspace 恢复", {
+        // The test data root directory or the old data root may put multiple conversation backing paths
+        // Persisted; they are the same logical "projectless session" and must be given as service when restored
+        // The canonical path shall prevail, otherwise there will be multiple defaults in the sidebar and scheduled task selector.
+        logger.warn("[Root] skipping restore of non-canonical conversation workspace", {
           workspacePath: persistedEntry.workspacePath,
           conversationWorkspacePath,
         });
@@ -110,7 +110,7 @@ export function restorePersistedRemoteWorkspaceSessions({
       }
 
       if (seenLocalWorkspacePaths.has(persistedEntry.workspacePath)) {
-        logger.warn("[Root] 跳过重复的本地 workspace 恢复", {
+        logger.warn("[Root] skipping duplicate local workspace restore", {
           workspacePath: persistedEntry.workspacePath,
         });
         continue;
@@ -150,7 +150,7 @@ export function restorePersistedRemoteWorkspaceSessions({
     const workspaceIdentity = resolveRemoteWorkspaceSessionIdentity(persistedEntry);
     const workspaceKey = workspaceIdentity?.trim() || persistedEntry.workspacePath;
     if (seenRemoteWorkspaceKeys.has(workspaceKey)) {
-      logger.warn("[Root] 跳过身份冲突的远程 workspace 恢复", {
+      logger.warn("[Root] skipping restore of remote workspace with conflicting identity", {
         workspacePath: persistedEntry.workspacePath,
         workspaceIdentity,
       });
@@ -158,14 +158,14 @@ export function restorePersistedRemoteWorkspaceSessions({
     }
 
     if (!allowRemoteWorkspaceRestore) {
-      // 远程连接入口被策略隐藏时，启动恢复不能悄悄拉起远程 workspace tab。
-      // 否则用户看不到入口却仍保留“断连态远程项”，会造成展示与能力不一致。
+      // When the remote connection entrance is hidden by policy, startup recovery cannot quietly open the remote workspace tab.
+      // Otherwise, the user cannot see the entrance but still retains the "disconnected remote item", which will cause inconsistency between display and capabilities.
       continue;
     }
 
-    // 启动只恢复“断开态远程 tab”，不做自动重连。
-    // 这样 setting.json 中的 lastConnectionStatus 才能真实反映上次结果，
-    // 用户关闭的远端 tab 也不会在下次启动被后台拉回。
+    // The startup only restores the "disconnected remote tab" and does not automatically reconnect.
+    // In this way, lastConnectionStatus in setting.json can truly reflect the last result.
+    // Remote tabs closed by the user will not be pulled back in the background the next time they are started.
     restoredTabs.push({
       workspacePath: persistedEntry.workspacePath,
       remoteTarget: persistedEntry.target,
@@ -175,9 +175,9 @@ export function restorePersistedRemoteWorkspaceSessions({
   }
 
   if (conversationWorkspacePath && !seenLocalWorkspacePaths.has(conversationWorkspacePath)) {
-    // conversation backing workspace 是 app-owned cwd，旧设置里缺少它时，
-    // 侧栏就不会订阅该 scope；若 purpose 丢失又会被当成项目。恢复阶段以 service
-    // 解析出的 canonical path 为权威，非激活补建并强制标记 conversation。
+    // conversation backing workspace is app-owned cwd, when it was missing from the old setup,
+    // The sidebar will not subscribe to the scope; if purpose is missing, it will be treated as a project. The recovery phase starts with service
+    // The parsed canonical path is authoritative, inactive supplementation and mandatory conversation marking.
     restoredTabs.push({
       workspacePath: conversationWorkspacePath,
       workspacePurpose: "conversation",
@@ -193,7 +193,7 @@ export function restorePersistedRemoteWorkspaceSessions({
       const activeTab = restoredTabs[restoredActiveIndex];
       if (activeTab) {
         const activeWorkspaceKey = getRestorableWorkspaceKey(activeTab);
-        logger.info("[Root] 优先恢复 active workspace", {
+        logger.info("[Root] restoring active workspace first", {
           deferredCount: restoredTabs.length - 1,
         });
         tabStoreApi.getState().restoreTabs([activeTab], 0);
@@ -206,14 +206,14 @@ export function restorePersistedRemoteWorkspaceSessions({
                 (tab) =>
                   (tab.workspaceIdentity?.trim() || tab.workspacePath) === activeWorkspaceKey,
               );
-            // active-first 保存的是旧 settings 快照；idle callback 前用户若关闭 active tab，
-            // 直接 complete 会把它从旧快照复活。关闭属于本窗口新意图，补齐时必须排除该 identity。
+            // active-first saves the old settings snapshot; if the user closes the active tab before idle callback,
+            // Directly completing will resurrect it from the old snapshot. Close the new intent belonging to this window, and the identity must be excluded when completing.
             const tabsToComplete = startupActiveStillOpen
               ? restoredTabs
               : restoredTabs.filter(
                   (restoredTab) => getRestorableWorkspaceKey(restoredTab) !== activeWorkspaceKey,
                 );
-            logger.info("[Root] 首帧后补齐 inactive workspace", {
+            logger.info("[Root] filling in inactive workspaces after first frame", {
               count: tabsToComplete.length - (startupActiveStillOpen ? 1 : 0),
             });
             tabStoreApi.getState().completeTabRestore(tabsToComplete);
@@ -221,7 +221,7 @@ export function restorePersistedRemoteWorkspaceSessions({
         };
       }
     }
-    logger.info("[Root] 恢复组合 workspace 会话", {
+    logger.info("[Root] restoring combined workspace session", {
       count: restoredTabs.length,
       activeIndex: restoredActiveIndex,
     });

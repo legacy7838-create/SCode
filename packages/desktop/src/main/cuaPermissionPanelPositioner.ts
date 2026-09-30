@@ -1,9 +1,12 @@
 /**
- * 权限拖拽浮窗的几何计算。
+ * Geometry math for the permission drag floating panel.
  *
- * 刻意做成不依赖 Electron 的纯函数：吸附需要「系统设置窗口的 bounds」这一外部数据，而该数据随时
- * 可能拿不到（提供它的 CLI 未随包、被杀、或设置页根本没开）。把几何与数据获取分离后，fail-open
- * 行为才可被穷举测试 —— 吸附是观感增强，不是可用性前提，拿不到 bounds 必须退回一个确定可用的位置。
+ * Deliberately a pure function with no Electron dependency: snapping needs the "bounds of the
+ * system settings window", external data that may be unavailable at any time (the CLI providing it
+ * did not ship, was killed, or the settings page was never opened). Only after separating the
+ * geometry from the data lookup can the fail-open behavior be tested exhaustively — snapping is a
+ * visual nicety, not a usability requirement, so when the bounds cannot be obtained the panel must
+ * fall back to a position that is definitely usable.
  */
 
 export interface Rect {
@@ -19,25 +22,25 @@ export interface PanelSize {
 }
 
 interface ResolvePanelBoundsInput {
-  /** 系统设置主窗口的屏幕坐标；null 表示当前拿不到（fail-open 到屏幕底部）。 */
+  /** The system sets the screen coordinates of the main window; null means it is currently unavailable (fail-open to the bottom of the screen). */
   settings: Rect | null;
-  /** 目标显示器的可用工作区（已排除菜单栏/Dock）。 */
+  /** The available workspace of the target monitor (menu bar/Dock excluded). */
   display: Rect;
   panel: PanelSize;
 }
 
-/** 吸附时与设置页底边的微重叠，观感上让面板与设置页连成一体。 */
+/** When adsorbed, it slightly overlaps with the bottom edge of the settings page, making the panel and settings page look and feel integrated. */
 const ANCHOR_OVERLAP_PX = 6;
-/** fail-open 时距屏幕底部的留白。 */
+/** The margin at the bottom of the screen when fail-opening. */
 const SCREEN_BOTTOM_INSET_PX = 28;
 
 function clamp(value: number, min: number, max: number): number {
-  // max < min 时（面板比可视区还大）优先保证不超出上/左边界
+  // When max < min (the panel is larger than the visual area), priority is given to ensuring that it does not exceed the upper/left boundary
   return Math.max(min, Math.min(value, max));
 }
 
 function isUsableRect(rect: Rect | null): rect is Rect {
-  // CGWindowList 偶尔返回 0 尺寸的过渡态窗口；吸附到它会把面板扔到屏幕角落，按不可用处理。
+  // CGWindowList occasionally returns a 0-size transitional window; snapping to it will throw the panel to the corner of the screen and be treated as unavailable.
   return rect !== null && rect.width > 0 && rect.height > 0;
 }
 

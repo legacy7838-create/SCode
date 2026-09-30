@@ -116,7 +116,7 @@ async function readBoundedImageBlob(source: string) {
       if (done) break;
       receivedBytes += value.byteLength;
       if (receivedBytes > MAX_DOWNLOAD_BYTES) {
-        // Web 下载也必须在读取过程中截断，不能等 response.blob() 完整占用 renderer 内存。
+        // Web downloads must also be truncated during the reading process and cannot wait for response.blob() to completely occupy the renderer memory.
         controller.abort();
         throw new ImageDownloadError("file_too_large");
       }
@@ -221,8 +221,8 @@ export function ImagePreviewDialog({
 
   useEffect(() => {
     return () => {
-      // 媒体 gallery 切离 video 时旧播放器可能继续解码或发声；显式暂停，
-      // 让图片/视频混合导航只保留当前项的播放生命周期。
+      // The old player may continue to decode or produce sound when switching from the media gallery to video; explicitly pause,
+      // Let the image/video hybrid navigation only retain the playback life cycle of the current item.
       previewVideoRef.current?.pause();
     };
   }, [activeIndex, open]);
@@ -314,7 +314,7 @@ export function ImagePreviewDialog({
   };
 
   const handlePointerEnd = (event: ReactPointerEvent<HTMLDivElement>) => {
-    // 显式释放图片拖拽捕获；残留 capture 会让后续 hover/click 继续命中视口而非浮层按钮。
+    // Explicitly release the image drag capture; remaining capture will allow subsequent hover/click to continue to hit the viewport instead of the floating button.
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
@@ -350,7 +350,7 @@ export function ImagePreviewDialog({
           isHttpSource(activeItem.src) &&
           !(error instanceof ImageDownloadError && error.code === "file_too_large")
         ) {
-          // <img> 可显示无 CORS 资源，但 fetch 无法读取；交给浏览器原生导航避免假失败。
+          // <img> can display non-CORS resources, but fetch cannot read it; leave it to the browser's native navigation to avoid false failures.
           startBrowserNativeDownload(activeItem.src);
           toast(intl.formatMessage({ id: "markdownImage.downloadStarted" }));
           return;
@@ -379,8 +379,8 @@ export function ImagePreviewDialog({
       URL.revokeObjectURL(objectUrl);
       toast(intl.formatMessage({ id: "markdownImage.downloadStarted" }));
     } catch (error) {
-      logger.warn("[ImagePreviewDialog] 图片下载失败", {
-        // 签名 URL 的 userinfo/query/fragment 不参与排障，禁止写入持久化日志。
+      logger.warn("[ImagePreviewDialog] image download failed", {
+        // The userinfo/query/fragment of the signed URL does not participate in troubleshooting and is prohibited from writing to persistent logs.
         src: sanitizeImageSourceForLog(activeItem.src),
         error: error instanceof Error ? error.message : String(error),
       });
@@ -394,7 +394,7 @@ export function ImagePreviewDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         aria-describedby={undefined}
-        // Radix modal 会禁用 body 指针事件；预览层需显式恢复命中并退出 Electron 拖拽区。
+        // Radix modal will disable body pointer events; the preview layer needs to explicitly restore the hit and exit the Electron drag area.
         className="pointer-events-auto h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-none place-items-center gap-0 overflow-hidden border-0 bg-transparent p-10 shadow-none [app-region:no-drag] sm:h-[calc(100dvh-2rem)] sm:w-[calc(100vw-2rem)] platform-linux-desktop:h-[calc(100dvh-4rem)]"
         data-testid={dialogTestId}
         showCloseButton={false}
@@ -474,8 +474,8 @@ export function ImagePreviewDialog({
                         })}
                       </p>
                     ) : null}
-                    {/* 可发送的 video MIME 不保证当前 Chromium 能解码其容器或 codec；
-                解码失败只收口当前 gallery item，不能关闭预览或影响相邻媒体。 */}
+                    {/* Sendable video MIME does not guarantee that current Chromium can decode its container or codec;
+                If decoding fails, only the current gallery item will be closed, and the preview cannot be closed or adjacent media will be affected. */}
                     <video
                       controls
                       playsInline

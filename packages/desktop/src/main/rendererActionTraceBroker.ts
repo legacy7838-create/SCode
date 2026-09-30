@@ -53,8 +53,8 @@ export function createRendererActionTraceBroker(options: {
       if (!batch) continue;
       const spans = batch.spans.map((span) => toReadableSpan(batch, span));
       let result = await exportSpansWithDeadline(options.exporter, spans, exportTimeoutMs);
-      // Bug 原因：deadline 只能停止等待，无法取消已发出的 exporter 请求。超时后立即重试
-      // 可能让迟到的首次请求和重试同时成功，因此仅在 exporter 明确失败时重试。
+      // Bug reason: The deadline can only stop waiting, but cannot cancel the exporter request that has been issued. Retry immediately after timeout
+      // It is possible to allow late first requests and retries to succeed at the same time, so only retry if the exporter explicitly fails.
       if (result === "failed" && !closed) {
         result = await exportSpansWithDeadline(options.exporter, spans, exportTimeoutMs);
       }

@@ -1,30 +1,30 @@
 /**
- * OAuth 领域类型定义
+ * OAuth domain type definitions
  *
- * 说明：敏感信息（如 appSecret）以及 provider 默认端点配置
- * 只允许放在 services 的 provider 模块中，不能放 shared 层。
+ * Note: sensitive information (such as appSecret) and provider default endpoint configuration
+ * may only live in the provider modules under services, never in the shared layer.
  */
 
-/** 内置 BigModel provider id */
+/** Built-in BigModel provider id */
 export const BIGMODEL_PROVIDER_ID = "bigmodel" as const;
 
-/** 内置 ZAI provider id */
+/** Built-in ZAI provider id */
 export const ZAI_PROVIDER_ID = "zai" as const;
 
-/** 凭据解密失败错误前缀 */
-export const CREDENTIAL_DECRYPT_ERROR_PREFIX = "凭据解密失败：" as const;
+/** Error prefix for credential decryption failures */
+export const CREDENTIAL_DECRYPT_ERROR_PREFIX = "Failed to decrypt credential: " as const;
 
-/** 凭据解密失败稳定错误码 */
+/** Stable error code for credential decryption failures */
 export const CREDENTIAL_DECRYPT_ERROR_CODE = "ZCODE_CREDENTIAL_DECRYPT_FAILED" as const;
 
-/** 判断错误是否来自本地凭据解密失败 */
+/** Whether the error came from a local credential decryption failure */
 export function isCredentialDecryptError(error: unknown): boolean {
   const code = readCredentialErrorCode(error);
   if (code) {
     return code === CREDENTIAL_DECRYPT_ERROR_CODE;
   }
 
-  // 兼容历史错误和跨边界丢失 code 的旧 payload；新错误应优先携带稳定 code。
+  // Compatible with old payloads with historical errors and cross-border loss of code; new errors should give priority to carrying stable code.
   if (readCredentialErrorMessage(error).startsWith(CREDENTIAL_DECRYPT_ERROR_PREFIX)) {
     return true;
   }
@@ -52,13 +52,13 @@ function readCredentialErrorMessage(error: unknown): string {
   return "";
 }
 
-/** OAuth provider 标识 */
+/** OAuth provider identifier */
 export type OAuthProviderId =
   | typeof BIGMODEL_PROVIDER_ID
   | typeof ZAI_PROVIDER_ID
   | (string & { readonly __oauthProviderBrand?: never });
 
-/** Provider 展示元信息 */
+/** Provider display metadata */
 export interface OAuthProviderMeta {
   id: OAuthProviderId;
   displayName: string;
@@ -66,19 +66,19 @@ export interface OAuthProviderMeta {
   order: number;
 }
 
-/** 发起 OAuth 请求 */
+/** OAuth start request */
 export interface OAuthStartRequest {
   provider: OAuthProviderId;
 }
 
-/** 发起 OAuth 返回 */
+/** OAuth start response */
 export interface OAuthStartResponse {
   provider: OAuthProviderId;
   authorizeUrl: string;
   state: string;
 }
 
-/** 应用登录回调结果 */
+/** App login callback result */
 export interface OAuthSessionCallbackResult {
   kind: "session";
   provider: OAuthProviderId;
@@ -90,46 +90,46 @@ export interface OAuthSessionCallbackResult {
   };
 }
 
-/** 只携带归因参数的 OAuth deep link 回调结果 */
+/** OAuth deep link callback result carrying only attribution parameters */
 export interface OAuthAttributionCallbackResult {
   kind: "attribution";
   provider: OAuthProviderId;
   attribution: OAuthLoginAttribution;
 }
 
-/** 同一登录已由 polling 完成后迟到的 deep link；调用方只需忽略。 */
+/** A deep link that arrived late because polling already completed the same login; callers only need to ignore it. */
 export interface OAuthDuplicateCallbackResult {
   kind: "duplicate";
   provider: OAuthProviderId;
 }
 
-/** OAuth 回调归一化结果 */
+/** Normalized OAuth callback result */
 export type OAuthCallbackResult =
   | OAuthSessionCallbackResult
   | OAuthAttributionCallbackResult
   | OAuthDuplicateCallbackResult;
 
-/** Main 进程路由 deep link 时使用的 state 上报结构 */
+/** The state registration structure the Main process uses when routing a deep link */
 export interface OAuthStateRegistration {
   state: string;
   provider?: OAuthProviderId;
 }
 
-/** 归一化后的回调参数 */
+/** Normalized callback parameters */
 export interface OAuthCallbackParams {
   state: string;
   code: string;
   attribution?: OAuthLoginAttribution;
 }
 
-/** OAuth 登录归因参数：来自官网中转页或投放链接 */
+/** OAuth login attribution parameters: they come from the official site redirect page or a campaign link */
 export interface OAuthLoginAttribution {
   channel_id?: string;
   utm_source?: string;
   utm_campaign?: string;
 }
 
-/** 归一化 token 结构 */
+/** Normalized token structure */
 export interface OAuthTokenSet {
   accessToken: string;
   refreshToken?: string;
@@ -149,7 +149,7 @@ export type OAuthCachedSessionRestoreResult =
   | { status: "signed-out" }
   | { status: "reauthentication-required"; reason: "jwt-expired" };
 
-/** Host 在检测到 ZCode JWT 失效后通知 Renderer 展示确认并重启。 */
+/** Channel the Host uses to tell the Renderer, after detecting an invalid ZCode JWT, to show a confirmation and restart. */
 export const ZCODE_JWT_INVALID_BROADCAST_CHANNEL = "auth:zcode-jwt-invalid";
 
 export type JwtExpirationResult =
@@ -158,8 +158,9 @@ export type JwtExpirationResult =
   | { kind: "unknown" };
 
 /**
- * 只解析 JWT 的 exp 来判断本地生命周期，不承担签名校验。
- * 无法证明已过期的历史或非标准 token 保持兼容，最终有效性仍由服务端决定。
+ * Parses only the JWT's exp to judge the local lifetime; it performs no signature verification.
+ * Historical or non-standard tokens that cannot be proven expired stay compatible — final
+ * validity is still decided by the server.
  */
 export function resolveJwtExpiration(
   token: string,
@@ -190,7 +191,7 @@ export function resolveJwtExpiration(
   }
 }
 
-/** 归一化用户信息 */
+/** Normalized user info */
 export interface OAuthUserProfile {
   id: string;
   username: string;
@@ -199,5 +200,5 @@ export interface OAuthUserProfile {
   rawProfile?: unknown;
 }
 
-/** 登出范围 */
+/** Logout scope */
 export type OAuthLogoutScope = "active" | "all";

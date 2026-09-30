@@ -4,7 +4,7 @@ import { extendTailwindMerge } from "tailwind-merge";
 const mergeUiClasses = extendTailwindMerge({
   extend: {
     classGroups: {
-      // text-ui-* 是字号而不是 text color；显式注册，避免和 text-foreground 等颜色类互相覆盖。
+      // text-ui-* is the font size rather than text color; register it explicitly to avoid overwriting each other with color classes such as text-foreground.
       "font-size": [
         "text-ui-xl",
         "text-ui-lg",

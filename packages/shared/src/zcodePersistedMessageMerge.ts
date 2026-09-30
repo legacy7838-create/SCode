@@ -1,20 +1,20 @@
 import type { ZCodePersistedMessage, ZCodePersistedMessagePart } from "./zcode-task-types-core.js";
 
-// ZCode runtime 把同一个 user turn 里**每一轮 LLM 调用**落成独立的 assistant 消息（各带 time.created/completed）。
-// 老 task projection 模型每个 turn 只有一条 assistant，UI 也按这个模型设计（一条 assistant → 一个"已工作 X 秒"块）。
-// 这里把映射后相邻的 assistant 合并回一条，恢复"一个 turn 一条 assistant"的不变式；
-// 旧投影数据本身就是严格交替的，对它来说是 no-op。
+// ZCode runtime converts each round of LLM calls in the same user turn into independent assistant messages (each with time.created/completed).
+// The old task projection model only has one assistant for each turn, and the UI is also designed according to this model (one assistant → one "Worked for X seconds" block).
+// Here, the adjacent assistants after mapping are merged back into one, and the invariant of "one turn, one assistant" is restored;
+// The old projection data itself is strictly alternating and is a no-op for it.
 //
-// 顺便把 turnIndex 显式按 user 计数赋值，修掉 `toTaskChatMessages` 的兜底
-// `Math.floor(index / 2)` 在多 assistant 时算错的次要 bug。
+// By the way, explicitly assign the value of turnIndex according to the user count and remove the hood of `toTaskChatMessages`
+// `Math.floor(index / 2)` Minor bug of miscalculation when using multiple assistants.
 export function coalesceConsecutiveZCodeAssistants(
   messages: readonly ZCodePersistedMessage[],
 ): ZCodePersistedMessage[] {
   const merged: ZCodePersistedMessage[] = [];
   for (const message of messages) {
     const last = merged[merged.length - 1];
-    // compact/fork/goal verifier 这类 synthetic timeline 虽然 role 是 assistant，
-    // 但它们是消息边界，不是同一轮正文；参与合并会吞掉横线并把维护时间算进上一条回复。
+    // Although the role of synthetic timeline such as compact/fork/goal verifier is assistant,
+    // But they are message boundaries, not the same round of text; participating in the merge will swallow the horizontal line and count the maintenance time into the previous reply.
     if (
       message.role === "assistant" &&
       last?.role === "assistant" &&
@@ -65,7 +65,7 @@ function mergeAssistantPair(
       ? undefined
       : (first.thought ?? "") + (next.thought ?? "");
 
-  // 任一轮还没有 completed time 就视为整 turn 未结束；duration 留空让 UI 显示"工作中"。
+  // If any round has not completed time, it is considered that the entire turn has not ended; leave the duration blank to let the UI display "Working".
   const durationMs =
     first.durationMs === undefined || next.durationMs === undefined
       ? undefined

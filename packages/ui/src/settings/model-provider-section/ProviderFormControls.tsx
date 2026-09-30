@@ -53,7 +53,7 @@ export function ModelRowInput({
   const metadataSavingRef = useRef(false);
   const [commitErrorMessage, setCommitErrorMessage] = useState<string | null>(null);
   const [draftBasedOnRevision, setDraftBasedOnRevision] = useState(settingsRevision);
-  // 外部 View 每次投影会产生新对象；编辑事务固定打开时的模型与 revision，不能跟随对象刷新重置。
+  // Each time the external View is projected, a new object will be generated; the model and revision when the editing transaction is opened are fixed and cannot be refreshed and reset with the object.
   const [editingModel, setEditingModel] = useState(model);
   const editor = useProviderModelDraft({
     model: editingModel,
@@ -105,7 +105,7 @@ export function ModelRowInput({
 
   const handleMetadataDialogOpenChange = useCallback(
     (open: boolean) => {
-      // 保存期间 Esc/遮罩不能结束并重开草稿，否则旧保存回包会关闭新一轮编辑。
+      // Esc/mask cannot end and reopen the draft during saving, otherwise the old save will be repackaged and the new round of editing will be closed.
       if (metadataSavingRef.current) return;
       if (!open) {
         cancelMetadataDialog();
@@ -325,7 +325,7 @@ export function ModelRowInput({
             aria-label={intl.formatMessage({ id: "settings.modelProvider.delete" })}
             title={intl.formatMessage({ id: "settings.modelProvider.delete" })}
             onMouseDown={(event) => {
-              // 输入框聚焦时点击删除会先触发 blur 保存，父层刷新后原按钮的 click 会丢失。
+              // Clicking delete when the input box is focused will first trigger blur saving, and the click of the original button will be lost after the parent layer is refreshed.
               event.preventDefault();
             }}
             onClick={onDelete}

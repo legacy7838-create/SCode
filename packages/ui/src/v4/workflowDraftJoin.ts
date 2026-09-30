@@ -7,26 +7,35 @@ import {
 import { isAmendWorkflowToolCall, isCreateWorkflowToolCall } from "@/lib/workflowToolNames.js";
 
 /**
- * 工作流工具行 → 草稿位置（稿号与是否已被替代）的联接表，行窗口一遍建成
+ * The join table from workflow tool rows to draft position (draft number and whether it has been
+ * superseded), built in one pass over the row window.
  *
- * 编不过的脚本不是失败：什么都没跑，诊断交回了模型、模型改完再交。卡片要说「第几稿」与「后面还有没有
- * 更新的一稿」，这两个事实都不在单行上，只能从行序里读出来；读法只有这一处实现，卡片只读结果。
+ * A script that fails to compile is not a failure: nothing ran, the diagnostics went back to the
+ * model, and the model resubmits once it has fixed them. The card has to say "which draft is this"
+ * and "is there a newer draft after it", and neither fact lives on a single row — both can only be
+ * read out of the row order. That reading is implemented in this one place, and the card only reads
+ * its result.
  *
- * 规则：
- * - 谱系：工具名，修订再加前驱 `run_id`。创建在创建之间数，每个 run 的修订各自从 1 数起；
- * - 稿号：1 + 同谱系、同一轮里自上一次编过（`display.ok === true`）以来编不过（`ok === false`）的行数；
- *   没有 display 的行（流式中、待确认、被拒、取消）既不计数也不清零；新的一轮从 1 数起；
- * - 被替代：窗口里同谱系后面还有行（同一轮或之后的轮都算）。
+ * Rules:
+ * - Lineage: the tool name, plus the predecessor `run_id` for an amend. Creates are counted between
+ *   creates, and each run's amends are counted from 1 on their own;
+ * - Draft number: 1 + the number of rows in the same lineage and the same round that failed to
+ *   compile (`ok === false`) since the last one that compiled (`display.ok === true`); rows with no
+ *   display (streaming, awaiting confirmation, rejected, cancelled) are neither counted nor do they
+ *   reset the count; a new round counts from 1;
+ * - Superseded: a later row of the same lineage still exists in the window (in the same round or in
+ *   a later one).
  *
- * 行窗口是有界的：前面几稿滑出窗口时稿号会偏小。稿号只用于展示，没有别的读者。
+ * The row window is bounded: when earlier drafts slide out of the window, the draft number reads
+ * low. Draft numbers are for display only and have no other reader.
  */
 export function buildWorkflowDraftByToolCallId(
   rows: readonly ConversationRow[] | undefined,
 ): ReadonlyMap<string, WorkflowDraftPosition> {
   const byToolCallId = new Map<string, WorkflowDraftPosition>();
-  // 谱系 → 该谱系最近一行的 toolCallId（用来在后一行出现时把它标为被替代）。
+  // Lineage → toolCallId of the most recent line in this lineage (used to mark it as being replaced when the following line appears).
   const latestByLineage = new Map<string, string>();
-  // 「谱系 + 轮」→ 自上次编过以来的连续失败数。
+  // "Pedigree + Round" → The number of consecutive failures since the last compilation.
   const failuresByLineageTurn = new Map<string, number>();
 
   for (const row of rows ?? []) {
@@ -60,9 +69,10 @@ function workflowDraftLineage(row: ToolCallRow): string | undefined {
 }
 
 /**
- * 这一行编过没有：`true` / `false` 读 display，没有 display 时是 `undefined`。
- * display 的 canonical 位置是 `output.display`，顶层 `display` 是旧快照的兼容通道
- * （与 `toolCallRowToLegacyNode` 同一优先级，两处读法一旦分叉，卡片与稿号就会各说各话）。
+ * Whether this row compiled: `true` / `false` is read from display, and with no display it is
+ * `undefined`. The canonical location of display is `output.display`; a top-level `display` is the
+ * compatibility channel for old snapshots (same precedence as `toolCallRowToLegacyNode` — once the
+ * two readings diverge, the card and the draft number end up telling different stories).
  */
 function readCompiled(row: ToolCallRow): boolean | undefined {
   const display: unknown = row.output?.display ?? row.display;

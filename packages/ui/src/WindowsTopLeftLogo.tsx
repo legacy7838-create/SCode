@@ -11,10 +11,10 @@ export function WindowsTopLeftLogo({
   return (
     <div
       className={cn(
-        // Workspace 的左侧工具组从 1px 面板边框之后开始，Settings 旧标题层却从窗口 0 点开始，
-        // Workspace 的 logo 位于 28px 按钮内，图像相对按钮左沿还有 4px 居中留白；
-        // Settings 直接渲染 20px 图像，不能拿按钮容器的 left 13px 当作图像坐标。
-        // 计入 4px 外层留白、1px 边框和按钮内 4px 后，两处图像均为 left 17px / top 19px。
+        // The left tool group of the Workspace starts from 1px behind the panel border, but the old title layer of Settings starts from the 0 point of the window.
+        // The Workspace logo is located within the 28px button, and there is 4px of white space in the middle of the image relative to the left edge of the button;
+        // Settings directly renders the 20px image, and cannot use the left 13px of the button container as the image coordinates.
+        // After accounting for the 4px outer whitespace, 1px border, and 4px inside the button, both images are left 17px / top 19px.
         "absolute left-1 top-1 mt-px ml-px z-20 flex h-12 items-center px-3 [app-region:drag]",
         className,
       )}

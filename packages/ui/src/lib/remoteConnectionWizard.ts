@@ -20,8 +20,6 @@ interface RemoteConnectionFormSnapshot {
   privateKeyPassphrase: string;
   wslDistro: string;
   wslUser?: string;
-  dockerContainer: string;
-  manualDockerContainer?: string;
 }
 
 export function getRemoteWizardStepCopy(
@@ -108,24 +106,6 @@ export function buildRemoteTarget(
             : {}),
         },
       };
-    case "docker":
-      // Docker 运行中列表可能因为探测失败或刷新延迟不完整。
-      // 手动输入必须独立于下拉选择，提交时优先使用手动输入，空值再回落到下拉选择。
-      const dockerContainer =
-        snapshot.manualDockerContainer?.trim() || snapshot.dockerContainer.trim();
-
-      if (!dockerContainer) {
-        return {
-          errorMessage: intl.formatMessage({ id: "docker.validation.required" }),
-        };
-      }
-
-      return {
-        target: {
-          kind: "docker",
-          container: dockerContainer,
-        },
-      };
     case "wsl": {
       const wslUser = snapshot.wslUser?.trim();
       if (wslUser && !isValidWslUser(wslUser)) {
@@ -152,8 +132,8 @@ export function withDefaultRemoteResourcePackages(target: RemoteTarget): RemoteT
   return {
     ...target,
     resourcePackages: {
-      // 当前分支只保留一个 ZCode Agent，SSH 向导再让用户手动挑资源包会产生无意义分叉。
-      // 这里统一走默认 active 资源集，历史重连传入的旧选择不再影响部署范围。
+      // The current branch only retains one ZCode Agent. If the SSH wizard allows the user to manually select resource packages, it will produce meaningless forks.
+      // The default active resource set is unified here, and the old selections passed in by historical reconnection will no longer affect the deployment scope.
       selectedPackageIds: normalizeRemoteResourcePackageSelection(),
     },
   };

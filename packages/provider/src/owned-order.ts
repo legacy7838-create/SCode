@@ -1,8 +1,9 @@
 /**
- * 规范化 Built-in/Personal 共同拥有的可排序成员。
+ * Normalises the sortable members jointly owned by Built-in and Personal.
  *
- * 未排序 Built-in 必须留在用户顺序之前，未排序 Personal 必须留在之后；否则远端新增
- * Built-in 成员后，下一次 Personal 写入会把它错误地挪到整个列表末尾。
+ * Unsorted Built-in members must stay ahead of the user order and unsorted Personal members behind
+ * it; otherwise, once a remote adds a new Built-in member, the next Personal write would wrongly
+ * move it to the very end of the whole list.
  */
 export function resolveOwnedOrder<T extends string>(
   builtinIds: readonly T[],

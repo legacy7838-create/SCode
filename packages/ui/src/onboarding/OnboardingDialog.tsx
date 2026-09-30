@@ -1,4 +1,7 @@
-/* eslint-disable max-lines -- onboarding 弹窗集中编排欢迎页、会话迁移、外部导入和最终执行状态，拆开会增加跨步骤状态传递复杂度 */
+/* eslint-disable max-lines -- the onboarding dialog centrally orchestrates the welcome page,
+ * session migration, external import, and the final execution state; splitting it would add
+ * cross-step state-passing complexity
+ */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog.js";
 import { useClaudeSessionMigration } from "@/hooks/useClaudeSessionMigration.js";
@@ -39,7 +42,7 @@ const ONBOARDING_STEP_ORDER: OnboardingWizardStep[] = [
   "session",
   "skills-import",
   "mcp-import",
-  // 插件导入步骤未启用。
+  // Plugin import step is not enabled.
   // "plugins-import",
   "commands-import",
   "agents-file",
@@ -70,7 +73,7 @@ export function OnboardingDialog(props: {
   const initializedWorkspaceSelectionRef = useRef(false);
   const autoScannedSessionStepRef = useRef(false);
 
-  // 引导阶段没有 Scope 选择，target 恒为当前上下文 workspace，直接注入其 service。
+  // There is no Scope selection during the boot phase. The target is always the current context workspace and its service is directly injected.
   const { settingsSyncService } = useServices();
 
   const skillsImportState = useExternalAgentImportCategoryState({
@@ -88,14 +91,10 @@ export function OnboardingDialog(props: {
     workspaceIdentity: props.workspaceIdentity,
   });
   /*
-   * 插件导入步骤未启用。
-   * const pluginsImportState = useExternalAgentImportCategoryState({
-   *   category: "plugins",
-   *   enabled: view === "wizard" && wizardStep === "plugins-import",
-   *   settingsSyncService,
-   *   workspacePath: props.workspacePath,
-   *   workspaceIdentity: props.workspaceIdentity,
-   * });
+   * The plugin import step is not enabled. const pluginsImportState =
+   * useExternalAgentImportCategoryState({ category: "plugins", enabled: view === "wizard" &&
+   * wizardStep === "plugins-import", settingsSyncService, workspacePath: props.workspacePath,
+   * workspaceIdentity: props.workspaceIdentity, });
    */
   const commandsImportState = useExternalAgentImportCategoryState({
     category: "commands",
@@ -150,7 +149,7 @@ export function OnboardingDialog(props: {
     sessionMigration,
     agentsFileMigration,
     settingsSync,
-    // 代理设置步骤未启用，不导入其默认选择。
+    // The proxy settings step is not enabled and its default selections are not imported.
     { includeSettingsSelections: false },
   );
 
@@ -237,7 +236,10 @@ export function OnboardingDialog(props: {
   }, [sessionMigration.candidates]);
 
   const selectedWorkspaceCount = selectedWorkspacePaths.length;
-  /** 既无会话也无外部导入项时，禁止进入迁移步骤。 */
+  /**
+   * Entering the migration step is forbidden when there is neither a session nor any external
+   * import item.
+   */
   const beginMigrationDisabled =
     selectedWorkspaceCount === 0 &&
     totalExternalImportSelectedCount === 0 &&
@@ -416,15 +418,9 @@ export function OnboardingDialog(props: {
           />
         );
       /*
-       * 插件导入步骤未启用。
-       * case "plugins-import":
-       *   return (
-       *     <OnboardingExternalAgentImportStep
-       *       category="plugins"
-       *       state={pluginsImportState}
-       *       workspacePath={props.workspacePath}
-       *     />
-       *   );
+       * The plugin import step is not enabled. case "plugins-import": return (
+       * <OnboardingExternalAgentImportStep category="plugins" state={pluginsImportState}
+       * workspacePath={props.workspacePath} /> );
        */
       case "commands-import":
         return (
@@ -460,8 +456,8 @@ export function OnboardingDialog(props: {
       open={settingsSync.state.open}
       onOpenChange={(nextOpen) => {
         if (!nextOpen) {
-          // onboarding 迁移执行中即使隐藏了右上角关闭按钮，Radix 仍会响应遮罩点击和 Esc。
-          // 之前这里直接 close 会把长时间迁移任务瞬间关掉，用户也拿不到二次确认；统一收口到确认逻辑后才不会误关。
+          // Even if the close button in the upper right corner is hidden during onboarding migration execution, Radix still responds to mask clicks and Esc.
+          // In the past, direct close here would instantly shut down the long-term migration task, and the user would not be able to get a second confirmation; only after the confirmation logic is unified, it will not be shut down by mistake.
           void handleCloseRequest();
         }
       }}

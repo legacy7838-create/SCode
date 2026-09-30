@@ -1,7 +1,7 @@
-/* Agent 侧的官方 MCP 身份头端口。
-   Agent 进程不是身份权威：经 interaction/requestOfficialMcpAuthHeaders 反向请求 host，
-   由 host 解析当前 Coding Plan 凭证后回传本次请求的身份头。凭证不落 runtime config、
-   不持久化、不进日志。 */
+/* The official MCP identity-header port on the agent side.
+   The agent process is not the identity authority: it makes a reverse request to the host through interaction/requestOfficialMcpAuthHeaders,
+   and the host resolves the current Coding Plan credential and returns the identity headers for this request. The credential never lands in the runtime config,
+   is never persisted and never enters the logs. */
 import {
   zcodeOfficialMcpAuthHeadersResponseSchema,
   zcodeProtocolMethods,
@@ -12,30 +12,30 @@ import type { ZCodeProtocolAgentServerContext } from "./server-types.js";
 
 let requestSequence = 0;
 
-/** 端口只需要发反向请求的能力，不需要整个 server context。 */
+/** The port only needs the ability to issue reverse requests, not the whole server context. */
 export type OfficialMcpAuthRequestContext = Pick<
   ZCodeProtocolAgentServerContext,
   "requestClient"
 >;
 
 /**
- * 构造经协议反向请求取身份头的端口。
+ * Builds the port that fetches identity headers through a reverse protocol request.
  *
- * `resolveContext` 是惰性的：MCP 连接池的构造早于 ZCodeProtocolAgentServer，
- * server 就绪前返回 undefined，此时按不可用处理（不降级为匿名请求）。
+ * `resolveContext` is lazy: the MCP connection pool is built earlier than the ZCodeProtocolAgentServer, and before
+ * the server is ready it returns undefined, which is handled as unavailable (no downgrade to an anonymous request).
  *
- * 失败一律走返回值（ok:false + 可枚举 reason），不抛异常：
- * 传输层异常统一归为 official_auth_unavailable，由 MCP adapter 置该 server 为 failed。
+ * Failures always go through the return value (ok:false + an enumerable reason) and never throw:
+ * transport exceptions are uniformly mapped to official_auth_unavailable, and the MCP adapter marks that server as failed.
  *
- * workspace 的用途与已知缺口：
- * - host 侧**不**用它路由响应——响应经 `client.respond(request.id, ...)` 回到发起请求的
- *   那条 stdio 连接，路由由连接本身决定。该字段仅作请求上下文/审计用；
- * - 但仍必须遵守仓库约定 `workspaceKey = workspaceIdentity?.trim() || workspacePath`，
- *   否则同路径不同 identity 的远端 workspace 在审计上下文里无法区分；
- * - **剩余缺口**：CLI agent 进程当前没有 workspaceIdentity 来源
- *   （`RunZCodeProtocolAgentOptions` 只有 cwd/env/…，也无对应环境变量），因此该字段实际
- *   退化为 workspacePath。这里保证的是"拿到 identity 就正确透传"，而不是"identity 一定存在"。
- *   若将来审计需要真实远端身份，需在 spawn 或协议层把 identity 传给 agent，不在本阶段范围。
+ * What the workspace is for, and the known gap:
+ * - the host side does **not** use it to route the response -- the response returns through `client.respond(request.id, ...)` on the
+ *   stdio connection that made the request, and the routing is decided by that connection itself. The field is only request context / auditing;
+ * - it must still honor the repository convention `workspaceKey = workspaceIdentity?.trim() || workspacePath`,
+ *   otherwise remote workspaces at the same path with different identities cannot be told apart in the audit context;
+ * - **remaining gap**: the CLI agent process currently has no source of workspaceIdentity
+ *   (`RunZCodeProtocolAgentOptions` only has cwd/env/..., and there is no matching env var), so the field effectively
+ *   degrades to workspacePath. What is guaranteed here is "an identity that is available is passed through correctly", not "an identity always exists".
+ *   Should auditing later need the real remote identity, the identity has to be handed to the agent at spawn or in the protocol layer, which is out of scope for this stage.
  */
 export function createOfficialMcpAuthHeadersPort(input: {
   resolveContext: () => OfficialMcpAuthRequestContext | undefined;
@@ -69,8 +69,8 @@ export function createOfficialMcpAuthHeadersPort(input: {
           request.signal ? { signal: request.signal } : {},
         );
       } catch {
-        // host 不可达/协议错误：按不可用处理。错误详情不带出（可能含请求上下文），
-        // host 侧已记录不含秘密的分类日志。
+        // Host unreachable/protocol error: treated as unavailable. Error details are not brought out (may include request context),
+        // Classification logs without secrets have been recorded on the host side.
         return { ok: false, reason: "official_auth_unavailable" };
       }
     },

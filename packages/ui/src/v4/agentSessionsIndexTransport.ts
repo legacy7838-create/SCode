@@ -1,5 +1,5 @@
-// sessions-index 传输面（desktop/host 实现）：桥到 IZCodeAgentService 的 v4 sessions-index 转发面
-// （与 agentConversationTransport 同构；web 直连 relay 时换实现即可）。
+// sessions-index transport plane (desktop/host implementation): v4 sessions-index forwarding plane bridged to IZCodeAgentService
+// (Isomorphic to agentConversationTransport; just change the implementation when the web is directly connected to the relay).
 import type { IZCodeAgentService } from "@zcode/services";
 import {
   sessionsIndexTopicFrameSchema,
@@ -63,7 +63,7 @@ type SessionsIndexV4AgentService = Pick<
     >
   >;
 
-/** 一条 host 连接（= 一个 workspace）上的 sessions-index 传输面。 */
+/** The sessions-index transport surface on one host connection (= one workspace). */
 export function createAgentSessionsIndexTransport(
   agentService: SessionsIndexV4AgentService,
   target: AgentSessionsIndexTransportTarget,
@@ -131,7 +131,7 @@ export function createAgentSessionsIndexTransport(
         try {
           barrier.bind(pending, result.ack.subscriptionId);
         } catch (error) {
-          // ACK 前 physical batch 越界后不能用残缺初始态激活 store。
+          // After the physical batch crosses the boundary before ACK, the store cannot be activated with the incomplete initial state.
           try {
             await agentService.unsubscribeSessionsIndexV4({
               ...workspace,
@@ -171,7 +171,7 @@ export function createAgentSessionsIndexTransport(
       });
     },
     async unsubscribe(subscriptionId) {
-      // 本地 ownership 先释放；旧 service proxy 的 handshake/RPC 已失败时也不能继续投帧。
+      // Local ownership is released first; the old service proxy cannot continue to deliver frames when its handshake/RPC fails.
       barrier.forget(subscriptionId);
       if (activeSubscriptionId === subscriptionId) activeSubscriptionId = null;
       decoder.discard(topic, subscriptionId);

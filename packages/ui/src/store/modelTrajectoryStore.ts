@@ -1,18 +1,18 @@
 import { create } from "zustand";
 
 /**
- * 打开“模型调用轨迹”侧边栏的请求桥接 store。
+ * Open the request bridge store in the "Model Call Track" sidebar.
  *
- * 背景：触发入口在任务右键菜单 / Header 菜单里，挂载位置很深；而侧边栏 tab 状态由
- * 每个 workspace 的 useAppPanels 持有。为避免把一个新回调贯穿整棵任务列表树，
- * 这里用一个轻量单例 store 作为桥：菜单写入 pending 请求，目标 workspace 的
- * useAppPanels 订阅并消费（按 workspaceKey 匹配，避免多 workspace 实例串开）。
+ * Background: The trigger entry is in the task right-click menu/Header menu, and the mounting position is very deep; and the sidebar tab status is
+ * UseAppPanels held per workspace. To avoid running a new callback through the entire task list tree,
+ * A lightweight singleton store is used here as a bridge: the menu writes pending requests to the target workspace
+ * useAppPanels subscribes and consumes (matched by workspaceKey to avoid multiple workspace instances from being linked together).
  */
 interface ModelTrajectoryOpenRequest {
-  /** 唯一请求 id，保证同一 task 连续点击也能触发消费。 */
+  /** The unique request id ensures that continuous clicks on the same task can trigger consumption. */
   requestId: string;
   taskId: string;
-  /** workspaceIdentity?.trim() || workspacePath，用于定位目标 workspace 侧边栏。 */
+  /** workspaceIdentity?.trim() || workspacePath, used to locate the target workspace sidebar. */
   workspaceKey: string;
   title?: string | null;
 }
@@ -46,9 +46,9 @@ export const useModelTrajectoryStore = create<ModelTrajectoryStoreState>((set) =
   },
 }));
 
-// E2E 需要在双 workspace 壳中直接验证 request bridge → 目标 workspace side pane 的完整链路。
-// Header 菜单只绑定当前 header 的 activeTaskId，不能作为分屏壳（split pane）的稳定测试入口；
-// 与 __zcodeSessionStoreE2E 保持同一模式，暴露 store 本身而不是另造测试专用业务实现。
+// E2E needs to directly verify the complete link of the request bridge → target workspace side pane in the dual workspace shell.
+// The Header menu is only bound to the activeTaskId of the current header and cannot be used as a stable test entry for split pane;
+// Maintain the same pattern as __zcodeSessionStoreE2E, exposing the store itself instead of creating a separate test-specific business implementation.
 if (typeof window !== "undefined") {
   window.__zcodeModelTrajectoryStoreE2E = useModelTrajectoryStore;
 }

@@ -14,21 +14,21 @@ import {
 import { MarchLight } from "./WorkflowMarchLight.js";
 
 /**
- * 弧层：时间线唯一的一层 SVG，只画
- * 非相邻的边。从源站的灯升到自己的弧道、横到目标站、落回目标的灯上，箭头朝下。一站的弧端——
- * 落地与起飞一视同仁——各占一个槽、槽距 10px（`arcTerminalOffsets`：远端在左的在左、在右的在右，
- * 每一侧车道最低的在最外面），于是出去的竖段不会穿过进来的箭头。首次出现时从源画到目标
- * （`pathLength=1` 让 dashoffset 与几何无关）；之后只换墨色；正在走的边叠一层不动的光
- * （`MarchLight`：朝着灯那一头渐亮），动作留给灯自己。
+ * Arc layer: the only layer of SVG in the timeline, only drawn
+ * non-adjacent edges. The light from the source station rises to its own arc, traverses to the target station, and falls back to the target light with the arrow pointing downward. The arc end of one station——
+ * Landing and takeoff are treated equally - each occupies one slot, and the slot distance is 10px (`arcTerminalOffsets`: the far end is on the left, and the far end is on the right.
+ * The lowest lane on each side is the outermost), so the vertical segment going out will not cross the incoming arrow. Draw from source to target on first occurrence
+ * (`pathLength=1` makes dashoffset independent of geometry); after that, only the ink color is changed; a layer of immobile light is stacked on the side that is walking
+ * (`MarchLight`: gradually brightens toward the end of the light), leaving the action to the light itself.
  *
- * 有带时带是**一个节点**：源在带里就从带的汇合点起飞，目标在带里
- * 就落在带的分叉点上（落点提前到 4px，那里没有灯可停）。弧的高度来自它自己的**空**（`arc.air`）：带内同轨道
- * 的弧住在那条轨道的空里，跨轨道与带级的弧一律住在最上面那层空里。轨道段也搬进这一层（`children`）。
+ * When there is a belt, the belt is **a node**: when the source is in the belt, it takes off from the meeting point of the belt, and the target is in the belt.
+ * Just fall on the fork point of the strip (the landing point is 4px earlier, there is no light to stop there). The height of the arc comes from its own **empty** (`arc.air`): the same orbit within the band
+ * The arcs live in the space of that orbit, and the arcs across orbits and stages all live in the top layer of space. Track segments are also moved into this level (`children`).
  *
- * 带级的弧的竖段一路走到**端点自己的行**：源是站就从它的灯那一行起飞，源是带就从主线上的汇合点
- * 起飞；落点同理，是主线上的分叉点或目标的灯那一行。Loops 板的规则三说竖段「穿过分支行、走那些
- * 行空着的列」——停在最上面那条轨道行边上就什么也没穿过，主线上的灯与自己的弧之间反而空出一整行，
- * 读起来是断开的。设计画布的生成器停在 `rowY[R−1]` 是省事，不是设计。
+ * The vertical segment of the arc of the band goes all the way to the endpoint of its own line: the source is the station taking off from its row of lights, the source is the band starting from the meeting point on the main line
+ * Take-off; the landing point is the same, it is the bifurcation point on the main line or the row of target lights. Rule 3 of the Loops board says vertical segments "cross the branch lines and follow those
+ * "Empty rows" - nothing passes through the edge of the top track. Instead, there is a whole row between the lights on the main line and its own arc.
+ * It reads disconnected. The generator of the design canvas stops at `rowY[R−1]` to save trouble, not design.
  */
 const INK_STROKE: Record<TimelineInk, string> = {
   faint: "var(--color-workflow-trace)",
@@ -48,7 +48,7 @@ export function WorkflowTimelineArcs({
 }: {
   arcs: readonly TimelineArc[];
   bands: readonly TimelineBand[];
-  /** 全部的站（不是草稿切过的那一段）：弧的下标指向它，要读每一站的轨道。 */
+  /** All stations (not the section cut by the draft): The subscript of the arc points to it, and the orbit of each station is to be read. */
   stations: readonly TimelineStation[];
   layout: TimelineLayout;
   width: number;
@@ -86,12 +86,12 @@ export function WorkflowTimelineArcs({
       </defs>
       {children}
       {arcs.map((arc, j) => {
-        // 带内同一条轨道的弧整条住在那条轨道的空里，两端仍是灯；其余的弧把带当一个节点（`arcEnds`）。
+        // The arcs of the same track in the band live entirely in the space of that track, with lights at both ends; the remaining arcs treat the band as a node (`arcEnds`).
         const { fromBand, toBand } = arcEnds(arc, bands, stations);
         const source = bandAt(bands, arc.from);
         const target = bandAt(bands, arc.to);
         const ly = rowOf(arc.air) - ARC_BASE - ARC_LANE * arc.lane;
-        // 灯上的两端各就各的槽；分叉点与汇合点是一个点，不是一排灯，不占槽（偏移恒为 0）。
+        // Each end of the lamp has its own slot; the bifurcation point and the converging point are one point, not a row of lamps, and do not occupy a slot (the offset is always 0).
         const xa =
           fromBand && source !== undefined
             ? bandMergeX(source, inset)
@@ -101,7 +101,7 @@ export function WorkflowTimelineArcs({
             ? bandForkX(target, inset)
             : lampX(arc.to, inset) + terminals.landing[j]!;
         const sign = xb < xa ? -1 : 1;
-        // 起飞与落地都贴着**端点自己的行**：带是主线上的汇合点 / 分叉点，站是它的灯那一行。
+        // Take-off and landing are attached to the **endpoint own row**: the belt is the meeting point/divergence point of the main line, and the station is the row of its lights.
         const ya = fromBand ? rowY[0]! - 3 : rowOf(trackOf(arc.from)) - 7;
         const yb = toBand ? rowY[0]! - 4 : rowOf(trackOf(arc.to)) - 9;
         const tail = `V${yb}`;
@@ -125,7 +125,7 @@ export function WorkflowTimelineArcs({
               strokeWidth={1}
             />
             {arc.ink === "march" ? (
-              // 行进边的光短 6px 收住，停在箭头根部。
+              // The traveling light is 6px shorter and stops at the base of the arrow.
               <MarchLight
                 d={`${path.slice(0, -tail.length)}V${yb - 6}`}
                 from={{ x: xa, y: ya }}

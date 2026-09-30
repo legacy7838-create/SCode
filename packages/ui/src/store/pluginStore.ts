@@ -1,4 +1,6 @@
-/* eslint-disable max-lines -- 插件市场、安装、卸载、启停状态需要集中维护以避免并发操作状态分散 */
+/* eslint-disable max-lines -- the plugin marketplace, install, uninstall, and enable/disable state
+ * have to be maintained in one place so that state for concurrent operations does not scatter
+ */
 import { create } from "zustand";
 import type {
   AvailablePluginSummary,
@@ -139,9 +141,9 @@ export const usePluginStore = create<PluginStoreState>((set, get) => ({
         currentState.availablePlugins.length > 0 ||
         currentState.installedPlugins.length > 0 ||
         currentState.capability !== null);
-    // 远程同路径 workspace 会共享同一个 workspacePath。
-    // 如果这里只按路径复用插件缓存，上一台机器的市场和开关状态会短暂显示到当前远端。
-    // 这里把 workspaceIdentity 一起纳入命中条件，保证同路径不同主机严格隔离。
+    // Remote workspaces with the same path will share the same workspacePath.
+    // If the plug-in cache is only reused by path, the market and switch status of the previous machine will be briefly displayed to the current remote end.
+    // Here, workspaceIdentity is included in the hit condition to ensure strict isolation of different hosts on the same path.
     set({
       workspacePath,
       workspaceIdentity: normalizedWorkspaceIdentity,
@@ -190,8 +192,8 @@ export const usePluginStore = create<PluginStoreState>((set, get) => ({
       state.marketplaces.length > 0 ||
       state.availablePlugins.length > 0 ||
       state.installedPlugins.length > 0;
-    // 插件开关/卸载后会走 refresh，之前强制 loading=true 会让列表切成空态再恢复，造成“闪一下”。
-    // 这里保留已有列表做后台刷新，只在首次无缓存数据时显示 loading。
+    // After the plug-in is switched/uninstalled, refresh will occur. Forced loading=true before will cause the list to be cut to an empty state and then restored, causing a "flash".
+    // Here, the existing list is retained for background refresh, and loading is only displayed when there is no cached data for the first time.
     set({ loading: !hasCachedData, refreshing: true, error: null });
     try {
       const result = await pluginsService.getOverview({
@@ -295,8 +297,8 @@ export const usePluginStore = create<PluginStoreState>((set, get) => ({
         marketplace: marketplace || undefined,
       });
       await get().refresh(pluginsService, workspaceIdentityFromState);
-      // legacy usePlugins 入口虽已退役，仍是公开 hook；它必须与 PluginManagementStore
-      // 共用部分成功语义，不能在 Agent 返回 error diagnostic 后无条件报告成功。
+      // Although the legacy usePlugins entry has been retired, it is still a public hook; it must be related to the PluginManagementStore
+      // They share some success semantics and cannot unconditionally report success after the Agent returns error diagnostic.
       const blockingDiagnostic = result?.diagnostics?.find(
         (diagnostic) => diagnostic.severity === "error",
       );
@@ -321,9 +323,9 @@ export const usePluginStore = create<PluginStoreState>((set, get) => ({
   ) {
     const workspacePath = get().workspacePath;
     if (!workspacePath) {
-      // 设置页尚未绑定 workspace 时 store 里可能还留着上一份缓存列表；
-      // 直接 return false 会让点击安装看起来毫无反应，这里先写入显式错误提示。
-      set({ error: "请先打开一个工作区后再安装插件" });
+      // When the settings page has not been bound to the workspace, the previous cache list may still be in the store;
+      // Directly returning false will make clicking to install seem unresponsive. Here, write an explicit error message first.
+      set({ error: "Open a workspace before installing plugins" });
       return false;
     }
     const workspaceIdentityFromState =
@@ -367,7 +369,7 @@ export const usePluginStore = create<PluginStoreState>((set, get) => ({
   ) {
     const workspacePath = get().workspacePath;
     if (!workspacePath) {
-      set({ error: "请先打开一个工作区后再卸载插件" });
+      set({ error: "Open a workspace before uninstalling plugins" });
       return false;
     }
     const workspaceIdentityFromState =
@@ -409,7 +411,7 @@ export const usePluginStore = create<PluginStoreState>((set, get) => ({
   ) {
     const workspacePath = get().workspacePath;
     if (!workspacePath) {
-      set({ error: "请先打开一个工作区后再修改插件状态" });
+      set({ error: "Open a workspace before changing plugin status" });
       return false;
     }
     const workspaceIdentityFromState =

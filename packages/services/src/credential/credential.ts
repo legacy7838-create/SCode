@@ -2,11 +2,11 @@ import { ServiceChannels } from "@zcode/shared";
 import { createServiceDescriptor } from "../descriptors.js";
 
 /**
- * 凭据管理服务
+ * Credential management service
  *
- * 提供 key-value 形式的凭据读写。
- * 实现端（host process）负责加密存储细节，
- * 消费端（renderer）只通过 RPC 调用，不感知存储位置。
+ * Provides key-value style credential reads and writes.
+ * The implementation side (host process) owns the encrypted storage details;
+ * the consumer side (renderer) only calls through RPC and never knows where the storage lives.
  */
 export interface ICredentialService {
   load(key: string): Promise<string | null>;

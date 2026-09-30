@@ -44,7 +44,7 @@ export function ProviderModelReasoningLevelEditor({
     ) {
       return;
     }
-    // 打开后原样失焦不是用户覆盖；否则仅查看档位就会把整组写成个人配置。
+    // Being out of focus as it is after opening is not a user override; otherwise, just viewing the gear will write the entire group as a personal configuration.
     if (editingIndex < values.length && nextValue === values[editingIndex]) {
       cancelEdit();
       return;
@@ -60,7 +60,7 @@ export function ProviderModelReasoningLevelEditor({
     const next = [...values];
     const [value] = next.splice(from, 1);
     next.splice(to, 0, value!);
-    // drop 时立即提交本地顺序，避免等待外部刷新后先回位再跳转。
+    // Submit the local sequence immediately when dropping, avoiding waiting for external refresh and then returning to the position before jumping.
     onChange(next);
   };
   const handleChipKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
@@ -80,8 +80,8 @@ export function ProviderModelReasoningLevelEditor({
     setDraggingIndex(null);
   };
 
-  // 档位外层是普通 div；若沿用 content-box，h-8 会再叠加 2px 边框，
-  // 导致静态档位、编辑框和新增按钮的实际高度不一致。
+  // The outer layer of the stall is an ordinary div; if content-box is used, h-8 will superimpose a 2px border.
+  // As a result, the actual heights of static gears, edit boxes, and new buttons are inconsistent.
   return (
     <div
       className="flex flex-wrap items-center gap-1.5"

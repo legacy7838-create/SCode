@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 稳定性上报集中单模块，拆分反而增加跨文件状态同步 */
+/* eslint-disable max-lines -- Stability reporting deliberately lives in one module; splitting it would only add cross-file state synchronisation */
 import { createHash, randomUUID } from "node:crypto";
 import armsRum from "@arms/rum-electron";
 import { BrowserWindow, type WebContents } from "electron";
@@ -14,9 +14,9 @@ import type { CrashCapturePaths } from "./desktopCrashCapture.js";
 import { registerCrashEventMonitor as registerBaseCrashEventMonitor } from "./desktopCrashCapture.js";
 import { getResourceManagerWindowId } from "./resourceManagerWindow.js";
 
-/** ANR：主线程无响应阈值（与 Electron unresponsive 对齐） */
+/** ANR: Main thread unresponsive threshold (aligned with Electron unresponsive) */
 const STABILITY_ANR_THRESHOLD_MS = 5_000;
-/** 挂死：未恢复且未 crash 的更长无响应阈值 */
+/** Hanged: Longer unresponsiveness threshold without recovery and without crash */
 const STABILITY_FREEZE_THRESHOLD_MS = 30_000;
 const AGENT_CRASH_ERROR_DETAIL_MAX_LENGTH = 4_000;
 const STABILITY_TELEMETRY_SCHEMA_VERSION = 2;
@@ -124,8 +124,8 @@ interface ChildProcessGoneInput {
 
 let globalContext: StabilityGlobalContext | null = null;
 let lifecycleScene: StabilityLifecycleScene = "runtime";
-// 修复原因：WebContents.getType() 对所有 BrowserWindow 都返回 window，无法区分主业务窗和
-// Resource Manager / 更新 / About。只登记 createWindowInstance 创建的业务窗口，避免辅助窗污染 Crash 率。
+// Reason for repair: WebContents.getType() returns window for all BrowserWindow, and cannot distinguish between main business window and
+// Resource Manager / Updates / About. Only register the business window created by createWindowInstance to avoid auxiliary windows from polluting the crash rate.
 const mainWindowIds = new Set<number>();
 let perfAppStartReported = false;
 const unresponsiveByWebContentsId = new Map<number, UnresponsiveWatchState>();
@@ -209,7 +209,7 @@ function sanitizeAgentCrashDetail(value: string, workspacePath: string): string 
     )
       .replace(AGENT_CRASH_SENSITIVE_ASSIGNMENT_PATTERN, "$1<redacted>")
       .replace(AGENT_CRASH_AUTH_SCHEME_PATTERN, "$1 <redacted>")
-      // 修复原因：Host reporter 不是唯一输入边界，main 在发送 RUM 前必须再次遮盖裸 key。
+      // Reason for fix: Host reporter is not the only input boundary and main must mask the bare key again before sending RUM.
       .replace(AGENT_CRASH_API_KEY_PATTERN, "$1<redacted>"),
   );
 }
@@ -316,8 +316,8 @@ function parseAgentStderrDiagnostic(event: HostAgentProcessExitedResponse): {
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
-  // Bug 根因：旧逻辑把 stderr 第一条非空行当摘要，实际数据中的 [Object]、GC 标题和
-  // native 地址因此盖过真正的 OOM / SQLite / errno。先排结构噪音，再按诊断确定性选行。
+  // Bug root cause: The old logic treats the first non-empty line of stderr as a summary, [Object], GC header and
+  // The native address thus overrides the real OOM/SQLite/errno. Sort structural noise first, then select rows based on diagnostic certainty.
   const usefulLines = lines.filter((line) => !isAgentDiagnosticNoise(line));
   const oomLine = usefulLines.find((line) =>
     /\b(?:JavaScript heap out of memory|Reached heap limit)\b/i.test(line),
@@ -446,8 +446,8 @@ function reportStabilityCustom(
   });
 
   try {
-    // ARMS 原始日志/控制台按 custom 类型展示；业务分组用 group
-    // value 填具体数值：ANR/挂死为 duration_ms，退出为 exit_code，计数类统一为 1
+    // ARMS original logs/console are displayed by custom type; business grouping is grouped
+    // Value fills in the specific value: ANR/hang is duration_ms, exit is exit_code, and the counting class is uniformly 1
     armsRum.sendCustom({
       name,
       type: "custom",
@@ -456,7 +456,7 @@ function reportStabilityCustom(
       properties: payload,
     });
   } catch (error) {
-    // 稳定性上报失败不应影响主流程
+    // Failure to report stability should not affect the main process
     console.warn("[stability] sendCustom failed:", name, error);
   }
 }
@@ -476,8 +476,8 @@ export function reportAgentProcessExceptionToArms(
       ? undefined
       : sanitizeAgentCrashDetail(diagnostic.stack, event.workspacePath);
   try {
-    // 根因：Electron collector 只监听自身进程，CLI 异常必须携带原始栈显式发送，
-    // 不能先转成 console.error 包装字符串，也不能等待进程退出后再上报。
+    // Root cause: Electron collector only monitors its own process, and CLI exceptions must be sent explicitly with the original stack.
+    // It cannot be converted into a console.error wrapper string first, nor can it be reported after the process exits.
     armsRum.sendEvent({
       event_type: "exception",
       type: "error",
@@ -511,7 +511,7 @@ export function reportAgentProcessExceptionToArms(
       reportedAgentExceptions.delete(reportedAgentExceptions.values().next().value!);
     }
   } catch (error) {
-    // SDK 失败不能影响 Host 消息处理；未成功提交的事件不进入去重集合。
+    // SDK failure cannot affect Host message processing; events that are not submitted successfully do not enter the deduplication collection.
     logger.warn("[stability] Agent exception report failed", error);
   }
 }
@@ -522,7 +522,7 @@ export function reportAgentProcessStartToArms(
 ): void {
   reportStabilityCustom("perf_agent_start", {
     process_role: "agent",
-    // mcp-status 与 plugin lane 进程共用 cwd/command，只有 lane 能区分事件来源。
+    // The mcp-status and plugin lane processes share cwd/command, and only the lane can distinguish the source of the event.
     ...(event.lane ? { lane: event.lane } : {}),
     provider: event.provider,
     runtime_generation: event.runtimeGeneration,
@@ -541,7 +541,7 @@ export function reportAgentProcessReadyToArms(
 ): void {
   reportStabilityCustom("perf_agent_ready", {
     process_role: "agent",
-    // mcp-status 与 plugin lane 进程共用 cwd/command，只有 lane 能区分事件来源。
+    // The mcp-status and plugin lane processes share cwd/command, and only the lane can distinguish the source of the event.
     ...(event.lane ? { lane: event.lane } : {}),
     provider: event.provider,
     runtime_generation: event.runtimeGeneration,
@@ -568,9 +568,9 @@ export function reportAgentProcessExitToArms(
     !isProtocolFailure &&
     (event.exitCode === WINDOWS_CONTROLLED_TERMINATION_EXIT_CODE || event.signal === "SIGTERM")
   ) {
-    // Bug 根因：协议故障会先触发 protocol-close，再由 Host 回收仍存活的进程，
-    // 因此最终也可能表现为 SIGTERM / Windows control-c exit code。只有缺少结构化
-    // 协议根因时，裸退出签名才不足以证明 Agent 自身崩溃，应继续抑制误报。
+    // Bug root cause: Protocol failure will first trigger protocol-close, and then the Host will recycle the surviving processes.
+    // So it may also end up manifesting as SIGTERM / Windows control-c exit code. Only lack of structure
+    // When the protocol is the root cause, naked exit signatures are not enough to prove that the Agent itself crashed, and false positives should continue to be suppressed.
     logger.debug?.("[stability] controlled Agent termination suppressed", {
       pid: event.pid,
       runtimeInstanceId: event.runtimeInstanceId,
@@ -580,8 +580,8 @@ export function reportAgentProcessExitToArms(
     return;
   }
   if (lifecycleScene === "app_quit" || lifecycleScene === "update_install") {
-    // Bug 根因：Host 清理与 IPC 回传是异步的，perf_app_exit 之后仍可能晚到一个缺失
-    // termination intent 的 Agent exit。应用退出是 main 持有的更高层事实，不能计入 runtime crash。
+    // Bug root cause: Host cleanup and IPC return are asynchronous, and a missing item may still arrive late after perf_app_exit
+    // Agent exit for termination intent. Application exit is a higher-level fact held by main and cannot be counted as a runtime crash.
     logger.debug?.("[stability] late Agent exit suppressed during app shutdown", {
       pid: event.pid,
       runtimeInstanceId: event.runtimeInstanceId,
@@ -592,7 +592,7 @@ export function reportAgentProcessExitToArms(
   const diagnostic = parseAgentStderrDiagnostic(event);
   reportStabilityCustom("perf_agent_crash", {
     process_role: "agent",
-    // mcp-status 与 plugin lane 进程共用 cwd/command，只有 lane 能区分事件来源。
+    // The mcp-status and plugin lane processes share cwd/command, and only the lane can distinguish the source of the event.
     ...(event.lane ? { lane: event.lane } : {}),
     incident_kind: "unexpected_exit",
     provider: event.provider,
@@ -612,7 +612,7 @@ export function reportAgentProcessExitToArms(
     error_stack: diagnostic.errorStack,
     error_fingerprint: diagnostic.errorFingerprint,
   });
-  // 上报成功属于观测日志，error 会被 console collector 再生成一条伪 JS 异常。
+  // Successful reporting belongs to the observation log, and error will be generated by the console collector as a pseudo JS exception.
   logger.info("[stability] perf_agent_crash reported", {
     pid: event.pid,
     exitCode: event.exitCode,
@@ -631,7 +631,7 @@ export function reportAgentProcessSpawnErrorToArms(
   const diagnostic = parseAgentSpawnDiagnostic(event);
   reportStabilityCustom("perf_agent_spawn_error", {
     process_role: "agent",
-    // mcp-status 与 plugin lane 进程共用 cwd/command，只有 lane 能区分事件来源。
+    // The mcp-status and plugin lane processes share cwd/command, and only the lane can distinguish the source of the event.
     ...(event.lane ? { lane: event.lane } : {}),
     incident_kind: "spawn_error",
     provider: event.provider,
@@ -654,15 +654,15 @@ export function reportAgentProcessSpawnErrorToArms(
 }
 
 function mapExitReasonToCrashKind(reason: string): StabilityCrashKind {
-  // Electron 的 renderer/child gone 回调共用这组退出原因，OOM 不能因进程来源不同而被归为 native。
+  // Electron's renderer/child gone callbacks share this set of exit reasons, and OOM cannot be classified as native due to different process sources.
   return reason === "oom" || reason === "memory-eviction" ? "oom" : "native";
 }
 
 function mapExitReasonToCrashCause(reason: string): StabilityCrashCause {
   switch (reason) {
     case "oom":
-    // Electron 41 将 Chromium 的内存压力驱逐单独命名；它与 oom 一样表示进程因内存
-    // 压力退出，不能落入 native/unknown，否则 OOM 指标会被低估。
+    // Electron 41 has a separate name for Chromium's memory pressure eviction; it, like oom, indicates that a process is
+    // Pressure exit cannot fall into native/unknown, otherwise the OOM indicator will be underestimated.
     case "memory-eviction":
       return "oom";
     case "crashed":
@@ -727,9 +727,9 @@ function shouldReportChildProcessGoneAsCrash(input: ChildProcessGoneInput): bool
     return false;
   }
 
-  // Bugfix: RUM 里 Video Capture / Network Service / Audio Service 等 Chromium Utility
-  // 子进程会被系统自动重建，不会让 ZCode 主窗口或会话不可用；它们只能作为可恢复退出记录，
-  // 不能进入 perf_crash，否则会把 crash-free 指标按“非真实崩溃”拉低。
+  // Bugfix: Chromium Utility such as Video Capture / Network Service / Audio Service in RUM
+  // Child processes will be automatically re-created by the system and will not render the ZCode main window or session unavailable; they will only be recorded as recoverable exits,
+  // You cannot enter perf_crash, otherwise the crash-free indicator will be lowered according to "non-real crash".
   if (role === "utility") {
     return false;
   }
@@ -892,7 +892,7 @@ export function configureDesktopStabilityTelemetry(context: StabilityGlobalConte
   });
 }
 
-/** 与 @arms/rum-electron pv-collector 的 initial_load 窗口对齐，避免早于首屏 PV 单独 flush */
+/** Align with the initial_load window of @arms/rum-electron pv-collector to avoid flushing the PV earlier than the first screen */
 const PERF_APP_START_AFTER_VIEW_MS = 3_200;
 
 function reportPerfAppStart(logger: StabilityLogger): void {
@@ -907,9 +907,10 @@ function reportPerfAppStart(logger: StabilityLogger): void {
 }
 
 /**
- * 在主窗口首屏加载完成后再上报 perf_app_start。
- * 原因：过早 sendCustom 时 view 仍为 __default__，且可能与 renderer PV 分属不同上报批次；
- * ARMS 原始日志里常见只有 PV、看不到同 session 的 custom。
+ * Reports perf_app_start only after the main window's first screen has finished loading.
+ * Reason: sendCustom too early still sees view as __default__, and it may land in a different
+ * reporting batch than the renderer PV; in raw ARMS logs the PV is frequently there while the custom
+ * event of the same session is missing.
  */
 export function scheduleReportPerfAppStartAfterMainViewReady(
   webContents: WebContents,
@@ -961,9 +962,9 @@ export function notifyStabilityAppExit(
   logger: StabilityLogger,
   options?: { exitCode?: number; exitKind?: string },
 ): void {
-  // Bug 根因：旧实现上报 perf_app_exit 后立即恢复 runtime；Agent/Host 的异步退出事件
-  // 因而丢失 app_quit/update_install 边界并被误计为 crash。退出流程一旦开始就不可逆，
-  // lifecycle 必须保持到主进程终止。
+  // Bug root cause: The old implementation reports perf_app_exit and immediately resumes the runtime; Agent/Host’s asynchronous exit event
+  // Thus the app_quit/update_install boundary is lost and mistakenly counted as a crash. Once the exit process is started, it is irreversible.
+  // The lifecycle must persist until the main process terminates.
   lifecycleScene = scene;
   reportStabilityCustom("perf_app_exit", {
     exit_code: options?.exitCode ?? 0,
@@ -986,8 +987,8 @@ function reportPerfCrash(
     crash_source: "electron_callback",
     ...properties,
   };
-  // Bugfix: 旧实现按 crash_kind 做五分钟去重，会吞掉同类但不同进程的真实事故。
-  // Electron 的 gone 回调本身就是单次事故边界，这里每个回调只上报一次。
+  // Bugfix: The old implementation performs five-minute deduplication according to crash_kind, which will swallow real accidents of the same type but different processes.
+  // Electron's gone callback itself is a single accident boundary, and each callback here is only reported once.
   reportStabilityCustom("perf_crash", crashProperties, resolveWindowScene(win));
   logger.error("[stability] perf_crash reported", crashProperties);
 }
@@ -998,8 +999,8 @@ function reportPerfProcessExit(
   win?: BrowserWindow | null,
 ): void {
   reportStabilityCustom("perf_process_exit", properties, resolveWindowScene(win));
-  // Bug 原因：perf_process_exit 同时承载受控退出和可恢复的 helper 异常退出。
-  // 旧实现统一使用 error，导致正常生命周期被 ARMS console collector 误计为异常。
+  // Bug reason: perf_process_exit hosts both controlled exits and recoverable helper exception exits.
+  // The old implementation uses errors uniformly, causing the normal life cycle to be mistakenly counted as exceptions by the ARMS console collector.
   const logLevel = properties.exit_kind === "normal" ? "info" : "warn";
   logger[logLevel]("[stability] perf_process_exit reported", properties);
 }
@@ -1016,7 +1017,7 @@ export function registerDesktopStabilityMonitors(
         reason: details.reason,
         exitCode: details.exitCode,
         webContentsType: webContents.getType(),
-        // 必须使用崩溃 WebContents 自身所属窗口；回退到当前焦点窗会把辅助窗误判成主业务窗。
+        // You must use the window that crashes WebContents itself; falling back to the current focus window will misjudge the auxiliary window as the main business window.
         windowScene: resolveRegisteredWindowScene(win),
       };
       const classification = classifyRenderProcessCrash(input);
@@ -1049,9 +1050,9 @@ export function registerDesktopStabilityMonitors(
       }
     },
     onChildProcessGone: (details) => {
-      // 修复原因：Electron 将 utilityProcess.fork() 的自定义标识放在 serviceName，
-      // name 只表示 Chromium Utility 服务名（如 Network Service）。只读 name 会把
-      // Host 归为 utility，导致 Host 异常退出走 recoverable_child_crash 而不是 perf_crash。
+      // Reason for fix: Electron puts the custom identifier of utilityProcess.fork() in serviceName,
+      // name only represents the Chromium Utility service name (such as Network Service). read-only name will
+      // Host is classified as utility, which causes Host to exit abnormally and use recoverable_child_crash instead of perf_crash.
       const processName = details.serviceName?.trim() || details.name?.trim() || "";
       const role = mapChildProcessGoneToProcessRoleWithName(details.type, processName);
       if (details.reason === "killed" || details.reason === "clean-exit") {

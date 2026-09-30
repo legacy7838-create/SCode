@@ -1,14 +1,14 @@
-// 「提升为全局」的发起编排。
+// "Promote to global" initiative arrangement.
 //
-// 项目档→全局档不是搬文件：项目工作流大多引用本仓库的路径 / 命令 / 约定，逐字节搬过去就是一个
-// 在别的项目里必然跑坏的全局定义。这一步是模型的**概括**：GUI 在该项目建一个新会话，首条用户
-// 消息就是概括提示（`createSession.firstInput`，自动发送），模型读文件、抽参数、经 SaveWorkflow
-// （`scope: "global"`）另存一份；源文件不动，确认窗照走。
+// Project file → global file is not about moving files: most project workflows refer to the path/command/convention of this warehouse, and moving there byte by byte is just one
+// A global definition that will inevitably break in other projects. This step is a **summary** of the model: the GUI creates a new session in the project, and the first user
+// The message is a summary prompt (`createSession.firstInput`, automatically sent). The model reads the file, extracts the parameters, and passes the SaveWorkflow
+// (`scope: "global"`) Save another copy; the source file remains unchanged and the confirmation window remains.
 //
-// 为什么不走「修订 / 通过对话创建」的 `onCreateViaChat`：那条路只预填 composer 草稿、不发送，
-// 而这里用户点的是一个动作，不该再让他按一次发送。为什么不走直接启动器：它发的是
-// startSavedWorkflow 命令（跑工作流），这里要发的是一条普通用户输入。带 firstInput 的 create
-// 要么整体接受要么被拒，没有「会话建了、消息没发」的中间态，所以不需要回收逻辑。
+// Why not take the `onCreateViaChat` of "revision/create through conversation": that path only prefills the composer draft and does not send it.
+// What the user clicked here is an action, and he should not be asked to click send again. Why not use the direct launcher: what it sends is
+// startSavedWorkflow command (run workflow), what is sent here is a normal user input. create with firstInput
+// It is either accepted or rejected as a whole. There is no intermediate state of "the session is established but the message is not sent", so there is no need for recycling logic.
 import { useCallback, useRef, useState } from "react";
 import { createCommandEnvelope } from "@/v4/commandFactory.js";
 import type { WorkspaceConnectionAgentService } from "@/v4/workspaceConnectionRegistry.js";
@@ -20,7 +20,10 @@ import {
   type SavedWorkflowLaunchTarget,
 } from "@/settings/saved-workflows/useSavedWorkflowLauncher.js";
 
-/** 被提升的项目档：名字与路径进提示词（模型自己读文件），locale 选中英文案。 */
+/**
+ * The project-scope entry being promoted: its name and path go into the prompt (the model reads the
+ * file itself), plus the copy for the selected locale.
+ */
 interface SavedWorkflowPromoteRequest {
   name: string;
   path: string;
@@ -31,9 +34,9 @@ type SavedWorkflowPromoteResult =
   | { ok: true; sessionId: string }
   | {
       ok: false;
-      /** 原始 fault code / ACK 状态；日志与 toast 兜底文案用。 */
+      /** The raw fault code / ACK status; used by the log and by the toast fallback copy. */
       code: string;
-      /** 服务端人可读原因（有则优先展示）。 */
+      /** The server's human-readable reason (shown first when present). */
       message?: string;
     };
 
@@ -42,14 +45,15 @@ interface UseSavedWorkflowPromoteResult {
     target: SavedWorkflowLaunchTarget,
     request: SavedWorkflowPromoteRequest,
   ) => Promise<SavedWorkflowPromoteResult>;
-  /** 正在发起：卡片 / 详情菜单禁用，防重复点击。 */
+  /** A promotion is in flight: the card / detail menu are disabled to prevent duplicate clicks. */
   pending: boolean;
 }
 
 /**
- * 载体 `agentService` = 该项目解析出的 agent service（项目组已经有它）；`onNavigate` 在 accepted
- * 后切到新会话（与直接启动共用 `onNavigateToLaunchedRun`）。运行时缺省模型 / 模式，不复用 composer
- * 草稿配置——与直接启动同一取舍。
+ * The carrier `agentService` = the agent service resolved for that project (the project group
+ * already has one); `onNavigate` switches to the new session once accepted (sharing
+ * `onNavigateToLaunchedRun` with a direct launch). The model / mode default at run time, and the
+ * composer draft settings are not reused — the same trade-off as a direct launch.
  */
 export function useSavedWorkflowPromote(params: {
   agentService: WorkspaceConnectionAgentService;
@@ -57,7 +61,7 @@ export function useSavedWorkflowPromote(params: {
 }): UseSavedWorkflowPromoteResult {
   const { agentService, onNavigate } = params;
   const [pending, setPending] = useState(false);
-  // 同一帧内防重入的同步事实源（setPending 异步，单靠 state 挡不住双击）。
+  // Synchronous fact source to prevent re-entry within the same frame (setPending is asynchronous, state alone cannot block double-click).
   const pendingRef = useRef(false);
 
   const promote = useCallback(
@@ -83,7 +87,7 @@ export function useSavedWorkflowPromote(params: {
           }),
         );
         if (ack.status !== "accepted" || ack.result?.type !== "createSession") {
-          logger.warn("[saved-workflow-promote] createSession(firstInput) 被拒", {
+          logger.warn("[saved-workflow-promote] createSession(firstInput) rejected", {
             workspacePath: target.workspacePath,
             name: request.name,
             status: ack.status,

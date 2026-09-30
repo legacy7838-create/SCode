@@ -4,37 +4,48 @@ import { logger } from "@/logger.js";
 import { useV4Conversation } from "@/v4/V4ConversationContext.js";
 
 /**
- * 内容产物（`file` / `markdown`）的字节读取。
+ * Byte reading for content artifacts (`file` / `markdown`).
  *
- * 逐字照 `attachmentRead` 的分块习语：一块 ≤ 512 KiB，`nextOffset` 为 null 即读完。
- * 全量拼进内存的上界是 `ARTIFACT_CAPS.maxFileBytes`（= 20 MiB，与附件同级），
- * 这个量级下一次性 Blob 比让每个查看器各自去做 range 读简单得多——查看器全是既有的叶子组件，
- * 它们要的是 Blob / ArrayBuffer，不是一个游标。
+ * Follows the chunking idiom of `attachmentRead` verbatim: one chunk is ≤ 512 KiB, and a null
+ * `nextOffset` means the read is complete. The upper bound on assembling everything in memory is
+ * `ARTIFACT_CAPS.maxFileBytes` (= 20 MiB, the same tier as attachments); at that magnitude a single
+ * Blob is far simpler than having every viewer do its own range reads — the viewers are all
+ * existing leaf components, and what they want is a Blob / ArrayBuffer, not a cursor.
  *
  * ```
  * offset 0 ──read──▶ {dataBase64, mediaType, totalBytes, nextOffset}
- *        ◀──────────  解码成 Uint8Array 塞进 chunks[]
- *   nextOffset ──read──▶ …  直到 null
+ *        ◀──────────  decode into a Uint8Array and push it into chunks[]
+ *   nextOffset ──read──▶ …  until null
  *        ▼
- *   拼成一个 Uint8Array ─▶ Blob ─▶ objectUrl（卸载 / 换版本时 revoke）
+ *   concatenate into one Uint8Array ─▶ Blob ─▶ objectUrl (revoked on unmount / version change)
  * ```
  */
 
-/** 一块的字节数。与附件用同一个常量，不另铸——网关那边的上界就是它。 */
+/**
+ * The number of bytes in one chunk. It reuses the same constant as attachments instead of minting a
+ * separate one — that is the bound on the gateway side.
+ */
 const CHUNK_BYTES = PROTOCOL_V4_LIMITS.attachmentChunkMaxBytes;
 
 /**
- * 一份产物最多读多少块。20 MiB / 512 KiB = 40 块，留一倍余量当死循环刹车：
- * 一个不肯把 `nextOffset` 收敛到 null 的实现不该把渲染线程锁死。
+ * The maximum number of chunks read for one artifact. 20 MiB / 512 KiB = 40 chunks, with a
+ * factor-of-two headroom serving as an infinite-loop brake: an implementation that refuses to
+ * converge `nextOffset` to null must not be allowed to lock up the render thread.
  */
 const MAX_CHUNKS = 96;
 
 interface WorkflowRunArtifactBytesState {
   bytes: Uint8Array<ArrayBuffer> | null;
   blob: Blob | null;
-  /** Blob 的 object URL；`<img src>` / PdfViewer 用。卸载与换版本时自动 revoke。 */
+  /**
+   * The object URL of the Blob, used by `<img src>` / PdfViewer. Automatically revoked on unmount
+   * and on version change.
+   */
   objectUrl: string | null;
-  /** journal 记录上的 contentType（不是 store 重新嗅探出来的那个）——渲染器分派的精确匹配契约。 */
+  /**
+   * The contentType on the journal record (not the one the store re-sniffs) — the exact-match
+   * contract for renderer dispatch.
+   */
   mediaType: string | null;
   totalBytes: number | null;
   loading: boolean;
@@ -53,7 +64,10 @@ function emptyState(): WorkflowRunArtifactBytesState {
   };
 }
 
-/** base64 → 字节。renderer 里 `atob` 恒在（Electron 与浏览器都是 Chromium）。 */
+/**
+ * base64 → bytes. `atob` is always present in the renderer (Electron and the browser are both
+ * Chromium).
+ */
 function decodeBase64(value: string): Uint8Array<ArrayBuffer> {
   const binary = atob(value);
   const bytes = new Uint8Array(binary.length);
@@ -64,10 +78,11 @@ function decodeBase64(value: string): Uint8Array<ArrayBuffer> {
 }
 
 /**
- * 字节 → base64。office 查看器只吃 `FileBinaryPreview.dataBase64`，所以这条回程路是必要的。
+ * bytes → base64. The office viewer only accepts `FileBinaryPreview.dataBase64`, so this return
+ * path is necessary.
  *
- * 分段（8 KiB）而不是 `String.fromCharCode(...bytes)`：后者在 20 MiB 上会以
- * "Maximum call stack size exceeded" 炸掉——展开成 2000 万个实参。
+ * Chunked (8 KiB) rather than `String.fromCharCode(...bytes)`: the latter blows up on 20 MiB with
+ * "Maximum call stack size exceeded" — it spreads into 20 million arguments.
  */
 export function encodeBytesToBase64(bytes: Uint8Array<ArrayBuffer>): string {
   const step = 0x2000;
@@ -83,12 +98,15 @@ export function useWorkflowRunArtifactBytes(options: {
   runId: string;
   artifactId: string;
   version: number;
-  /** 关掉即不读，也不留下任何 object URL（预置看板与折叠态都靠它省掉整条链路）。 */
+  /**
+   * When off, nothing is read and no object URL is left behind (preset boards and the collapsed
+   * state both rely on it to skip the whole chain).
+   */
   enabled?: boolean;
 }): WorkflowRunArtifactBytesState {
   const { workflowRunArtifactRead } = useV4Conversation();
   const [state, setState] = useState<WorkflowRunArtifactBytesState>(emptyState);
-  // 已发出的 object URL：卸载与换版本时必须 revoke，否则每翻一版就漏一份 20 MiB。
+  // Issued object URLs: must be revoked on unmount and on version change, or every version flip leaks another 20 MiB.
   const objectUrlRef = useRef<string | null>(null);
 
   const { artifactId, runId, sessionId, version } = options;
@@ -145,8 +163,8 @@ export function useWorkflowRunArtifactBytes(options: {
           cursor += chunk.length;
         }
         const blob = new Blob([bytes], { type: mediaType });
-        // jsdom 里没有 createObjectURL：拿不到 URL 不是错误，只是 `<img>` 那条路走不了，
-        // Blob / bytes 两条路仍然通（PdfViewer 与 office 查看器读的就是它们）。
+        // jsdom has no createObjectURL: not getting a URL is not an error, it just means the `<img>` path is unavailable;
+        // the Blob / bytes paths still work (that is what the PdfViewer and office viewers read).
         const objectUrl =
           typeof URL !== "undefined" && typeof URL.createObjectURL === "function"
             ? URL.createObjectURL(blob)
@@ -164,7 +182,7 @@ export function useWorkflowRunArtifactBytes(options: {
       } catch (caught) {
         if (!alive) return;
         const message = caught instanceof Error ? caught.message : String(caught);
-        logger.warn("[workflow-artifacts] 读取产物字节失败", {
+        logger.warn("[workflow-artifacts] failed to read artifact bytes", {
           artifactId,
           error: message,
           runId,

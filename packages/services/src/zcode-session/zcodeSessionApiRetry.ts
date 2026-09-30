@@ -26,8 +26,8 @@ export function createZCodeSessionApiRetryRuntimeTracker(): {
       event.type === "session.event" &&
       (event.event.type === "session.updated" || event.event.type === "streamRecovery.updated")
     ) {
-      // desktop-continuous 的 snapshot runtime 需要跟住 core recovery 进度；
-      // 否则切回正在恢复的会话时只能看到空的重试状态。
+      // The desktop-continuous snapshot runtime needs to keep up with the progress of core recovery;
+      // Otherwise, you will only see an empty retry status when switching back to the recovering session.
       const apiRetry = apiRetryFromSessionPayload(asRecord(event.event.payload));
       const key = sessionKey({
         workspacePath: params.workspacePath,
@@ -40,8 +40,8 @@ export function createZCodeSessionApiRetryRuntimeTracker(): {
         apiRetryBySessionKey.get(key) != null &&
         isZCodeModelRetryRecoveryProgressPayload(asRecord(event.event.payload))
       ) {
-        // snapshot runtime 和 live UI 要使用同一个恢复成功边界；
-        // retry attempt 开始不清，等首个模型进展到达才清，避免重连时状态闪烁或切回 task 后残留。
+        // The snapshot runtime and live UI should use the same recovery success boundary;
+        // The retry attempt is unclear at first, and will not be cleared until the first model progress is reached, to avoid status flickering during reconnection or remaining after switching back to the task.
         apiRetryBySessionKey.set(key, null);
       }
       return event;
@@ -87,8 +87,8 @@ export function createZCodeSessionApiRetryRuntimeTracker(): {
       ...snapshot,
       runtime: {
         ...snapshot.runtime,
-        // desktop-continuous 主路径读取 protocol snapshot 时不经过 task adapter。
-        // 这里把订阅到的网络重试临时态补回 snapshot，切回运行中 task 时当前 turn 底部才能继续显示重试提示。
+        // The desktop-continuous main path does not go through the task adapter when reading the protocol snapshot.
+        // Here, the subscribed network retry is temporarily added to the snapshot. When switching back to the running task, the retry prompt will continue to be displayed at the bottom of the current turn.
         apiRetry: apiRetryBySessionKey.get(key) ?? null,
       },
     };

@@ -2,8 +2,8 @@ import { validateServerInstallOwnership } from "../runtime/installationOwnership
 import { resolveServerLayout } from "../runtime/paths.js";
 
 /**
- * 读取安装级 Server identity。真实 Supervisor 启动必须提供 server root；未提供时
- * 保持 HTTP 工厂的嵌入/单测兼容，由调用方决定是否使用 hostname fallback。
+ * Reads the installation-level Server identity. A real Supervisor launch must supply a server root; when it is absent
+ * the HTTP factory stays compatible with embedded use and unit tests, leaving it to the caller to decide whether to use the hostname fallback.
  */
 export async function resolveCoreServerId(
   serverRoot = process.env.ZCODE_SERVER_ROOT?.trim(),

@@ -1,12 +1,12 @@
-// 平台能力面收敛：设置页「插件管理」的薄服务接口。
+// Convergence of platform capabilities: Thin service interface of "Plug-in Management" in the settings page.
 //
-// 背景：pluginManagementStore / usePluginUninstall 过去直接注入 IZCodeAgentService，
-// UI 层因此散布 13 个 plugins/* 旧协议词的消费点。收敛为独立薄 service 后，UI 只依赖
-// 本接口；plugins/* 词表的 host 侧消费点收拢到 pluginManagementService 一处（插件的
-// 事实源在 zcode-cli 进程，服务实现仍经 agent 协议往返——plugins 词表的收口归属
-// 插件能力面自身的协议演进，不在会话 v4 词表范围内）。
-// 注意与既有 IPluginsService（已 retired 的 marketplace pluginStore 通道）区分：
-// 那套接口按 pluginName+marketplace 寻址且方法语义过时，不复用避免签名冲突。
+// Background: pluginManagementStore / usePluginUninstall used to directly inject IZCodeAgentService.
+// The UI layer is therefore scattered with 13 plugins/* consumption points for the old protocol words. After converging into an independent thin service, the UI only relies on
+// This interface; the host-side consumption points of plugins/* vocabulary are gathered into pluginManagementService (plug-in
+// The source of fact is in the zcode-cli process, and the service implementation is still round-trip via the agent protocol - the closure ownership of the plugins vocabulary
+// The protocol evolution of the plug-in capability itself is not within the scope of the session v4 vocabulary).
+// Note that it is different from the existing IPluginsService (retired marketplace pluginStore channel):
+// That set of interfaces is addressed by pluginName+marketplace and the method semantics are outdated and are not reused to avoid signature conflicts.
 import type { Event } from "@zcode/rpc";
 import type {
   ZCodePluginOperationProgressNotification,
@@ -47,9 +47,9 @@ import type {
 export interface IPluginManagementService {
   listPlugins(params: ZCodeAgentPluginViewParams): Promise<ZCodePluginsListResult>;
   /**
-   * Plugin 对话引用 catalog：
-   * 带 sessionId → session-owned 冻结 catalog；不带 → workspace 当前 catalog。
-   * 实现路由到 workspace 级 agent client，不走插件管理独立进程。
+   * The Plugin dialog references the catalog:
+   * With sessionId → session-owned frozen catalog; without → workspace current catalog.
+   * Implement routing to the workspace-level agent client without using plug-ins to manage independent processes.
    */
   getPluginReferenceCatalog(
     params: ZCodeAgentPluginReferenceCatalogParams,

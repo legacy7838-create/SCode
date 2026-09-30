@@ -3,8 +3,8 @@ import { createReadFileStateKey } from "./read-file-state.js";
 import type { ReadFileStateEntry, ReadFileStateMap } from "./types.js";
 
 export const READ_FILE_STATE_METADATA_SCHEMA_VERSION = 1;
-// `CreateWorkflow` / `AmendWorkflow`：内联草稿的字节就是模型那次调用的 `script` 入参，与 Write
-// 同理记作完整视图（handlers/workflow-draft-read-state.ts）。
+// `CreateWorkflow` / `AmendWorkflow`: The bytes of the inline draft are the `script` input parameters of the model call, which are the same as Write
+// The same is noted as the complete view (handlers/workflow-draft-read-state.ts).
 export type PersistedReadFileStateTool =
   | "Read"
   | "Write"
@@ -61,8 +61,8 @@ export function createReadFileStateMetadataFromEntry(input: {
   const entry = input.entry;
   if (!entry) return undefined;
   if (entry.mtimeMs === undefined || entry.sizeBytes === undefined || !entry.revisionId) {
-    // resume stale guard 必须恢复文件时间戳和 adapter revision；
-    // 缺 freshness metadata 的历史文件状态不能冒充已读，否则会放过 stale 写入。
+    // resume stale guard must restore file timestamps and adapter revision;
+    // The status of historical files lacking freshness metadata cannot be pretended to be read, otherwise stale writes will be missed.
     return undefined;
   }
 

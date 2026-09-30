@@ -8,7 +8,7 @@ import {
 export { BROWSER_VIEWPORT_ZOOM_OPTIONS, DEFAULT_BROWSER_VIEWPORT_ZOOM };
 export type { BrowserViewportZoom };
 
-/** Fit 的画布内边距与 ResponsiveBrowserViewport 的 `p-4` 保持一致。 */
+/** Fit's canvas padding is consistent with ResponsiveBrowserViewport's `p-4`. */
 const RESPONSIVE_BROWSER_CANVAS_PADDING_PX = 16;
 
 export function resolveBrowserViewportScale({
@@ -31,8 +31,8 @@ export function resolveBrowserViewportScale({
 
   const safeDesktopZoomFactor =
     Number.isFinite(desktopZoomFactor) && desktopZoomFactor > 0 ? desktopZoomFactor : 1;
-  // ResizeObserver 返回父 renderer 页面缩放后的 CSS 尺寸；换算为屏幕视觉尺寸后再解析 Fit，
-  // 才不会让应用全局缩放被误当成浏览器预览缩放。
+  // ResizeObserver returns the scaled CSS size of the parent renderer page; convert it to the screen visual size and then parse Fit.
+  // This will prevent application global zoom from being mistaken for browser preview zoom.
   const availableWidth =
     Math.max(0, canvasSize.width - RESPONSIVE_BROWSER_CANVAS_PADDING_PX * 2) *
     safeDesktopZoomFactor;
@@ -66,15 +66,15 @@ export function resolveResponsiveBrowserGuestLayout(desktopZoomFactor: number): 
     Number.isFinite(desktopZoomFactor) && desktopZoomFactor > 0 ? desktopZoomFactor : 1;
 
   if (safeDesktopZoomFactor > 1) {
-    // Desktop page zoom 放大时，外层 transform 只会扩大 webview DOM，
-    // guest native raster 仍只有 frame 的 1 / zoom，因而产生右/下留白。
-    // 放大补偿已下沉到 main 的 CDP metrics scale，renderer 必须保持真实 100% bounds。
+    // When Desktop page zoom is enlarged, the outer transform will only expand the webview DOM.
+    // The guest native raster still only has 1/zoom of the frame, thus producing right/bottom white space.
+    // Amplification compensation has been scaled down to main's CDP metrics scale, and the renderer must maintain true 100% bounds.
     return { layoutScale: 1, transformScale: 1 };
   }
 
   if (safeDesktopZoomFactor < 1) {
-    // 缩小档位若只缩放 surface 也会留白；先反向扩布局，再缩回 frame，
-    // 同时保留完整页面内容和正确的 guest 坐标映射。
+    // If only the surface is zoomed out, the surface will be left blank; first expand the layout in reverse, and then retract the frame.
+    // While preserving full page content and correct guest coordinate mapping.
     return {
       layoutScale: 1 / safeDesktopZoomFactor,
       transformScale: safeDesktopZoomFactor,

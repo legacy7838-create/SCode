@@ -18,7 +18,10 @@ interface ResourceGroups<TLocal, TPlugin> {
   plugin: TPlugin[];
 }
 
-/** 详情分组的展示顺序，与 describeResultToDisplayGroups / buildInstalledPluginDisplayGroups 一致。 */
+/**
+ * Display order of the detail groups, consistent with describeResultToDisplayGroups /
+ * buildInstalledPluginDisplayGroups.
+ */
 const COMPONENT_KIND_ORDER: ZCodePluginComponentKind[] = [
   "agent",
   "command",
@@ -28,8 +31,9 @@ const COMPONENT_KIND_ORDER: ZCodePluginComponentKind[] = [
 ];
 
 /**
- * 把 plugins/describe 的按需结果映射为共享展示分组（名称+描述），并按固定顺序排序、
- * 省略空分组。数量取 items.length（describe 已是权威枚举）。
+ * Maps the on-demand result of plugins/describe into the shared display groups (name +
+ * description), sorting them in a fixed order and omitting empty groups. The count comes from
+ * items.length (describe is already the authoritative enumeration).
  */
 export function describeResultToDisplayGroups(
   result: ZCodePluginsDescribeResult,
@@ -52,13 +56,16 @@ export function describeResultToDisplayGroups(
 }
 
 /**
- * 把 plugins/list 下发的权威 components（名称+描述）映射为共享展示分组，逻辑与
- * describeResultToDisplayGroups 一致：按固定顺序排序、省略空分组、数量取 items.length。
+ * Maps the authoritative components (name + description) delivered by plugins/list into the shared
+ * display groups, with logic identical to describeResultToDisplayGroups: sorted in a fixed order,
+ * empty groups omitted, count taken from items.length.
  *
- * 已安装详情弹窗过去用 buildPluginComponentGroups —— 数量取协议 skillCount、名称靠
- * UI 侧 join（skillsService 结果按 pluginName 过滤）。两数据源分离导致停用插件整组消失、
- * 启用插件只有数量没有名称。现在 CLI 已对插件根目录做权威枚举并随 list 下发 components，
- * 这里直接用它，彻底去掉脆弱的 join。
+ * The installed-details dialog used to use buildPluginComponentGroups — the count came from the
+ * protocol's skillCount and the names from a UI-side join (skillsService results filtered by
+ * pluginName). Splitting the two data sources meant disabled plugins lost their entire group and
+ * enabled plugins had a count but no names. The CLI now performs an authoritative enumeration of
+ * the plugin root directory and ships components with list, so this uses them directly and drops
+ * the fragile join entirely.
  */
 export function buildInstalledPluginDisplayGroups(
   plugin: ZCodePluginInfo,
@@ -229,9 +236,9 @@ export function buildPluginMcpServerItems(
     const declaredNames = (plugin.declaredMcpServerNames ?? plugin.mcpServerNames).map(
       (serverName) => toPluginMcpServerDisplayName(plugin, serverName),
     );
-    // MCP 管理页要展示插件内置 MCP，即使插件当前未启用也应能看出来源。
-    // mcpServerNames 仍表示 runtime 已注入的 MCP；declaredMcpServerNames 只用于只读展示。
-    // 插件 MCP 注入 runtime 时会加 plugin:<插件名>: 前缀，展示层需要用声明名判定 active，避免误报“未加载”。
+    // The MCP management page should display the plug-in's built-in MCP, and the source should be visible even if the plug-in is not currently enabled.
+    // mcpServerNames still represents the runtime-injected MCP; declaredMcpServerNames is for read-only presentation only.
+    // When the plug-in MCP is injected into the runtime, the prefix plugin:<plug-in name>: will be added. The display layer needs to use the declaration name to determine active to avoid false reports of "not loaded".
     const serverNames = Array.from(
       new Set([
         ...hostNames,

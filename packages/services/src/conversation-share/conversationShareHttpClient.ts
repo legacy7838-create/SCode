@@ -1,4 +1,4 @@
-/* oxlint-disable eslint(max-lines) -- 一个端点一个方法 + 统一的鉴权/脱敏/错误归一化 requestData，拆分会让 HTTP 契约失去单一入口。 */
+/* oxlint-disable eslint(max-lines) -- One endpoint per method plus a unified requestData that handles auth, redaction, and error normalization; splitting it would leave the HTTP contract without a single entry point. */
 import {
   conversationShareArtifactDescriptorSchema,
   conversationShareArtifactUploadDataSchema,
@@ -60,9 +60,9 @@ export class ConversationShareClientError extends Error {
   readonly kind: ConversationShareClientErrorKind;
   readonly status?: number;
   readonly code?: ConversationShareApiErrorCode;
-  /** 服务端响应的请求 ID，用于和后端日志对账。 */
+  /** The request ID from the server response, used to reconcile against backend logs. */
   readonly requestId?: string;
-  /** 复用现有 RPC details 字段，把安全诊断信息传到 Renderer。 */
+  /** Reuses the existing RPC details field to carry security diagnostics to the Renderer. */
   readonly details?: { requestId?: string };
   declare readonly retryAfterMs?: number;
 
@@ -177,7 +177,7 @@ function parseRetryAfterMs(value: string | null, now = Date.now()): number | und
     const delayMs = Number(normalized) * 1_000;
     return Number.isSafeInteger(delayMs) && delayMs > 0 ? delayMs : undefined;
   }
-  // Date.parse 会接受 ISO/本地化日期并归一化不存在的日期；先按 HTTP-date 语法严格校验。
+  // Date.parse will accept ISO/localized dates and normalize non-existent dates; first strictly verify according to HTTP-date syntax.
   const retryAt = parseHttpDate(normalized);
   if (retryAt === undefined) return undefined;
   const delayMs = retryAt - now;
@@ -185,13 +185,13 @@ function parseRetryAfterMs(value: string | null, now = Date.now()): number | und
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000;
-// confirm 期间服务端同步跑安全检查，单次请求会被挂住远超 30s（实测 50s+ 被 abort）。只放宽这一个
-// 端点：全局抬到 2min 会让断网时的能力发现也僵 2min。与 confirmUntilReady 的轮询超时无关——
-// 后者管的是服务端已返回 pending 之后的重试窗口，救不了请求本身。
+// During the confirm period, the server runs a security check simultaneously, and a single request will be hung for far more than 30s (actually measured 50s+ before being aborted). Only relax this one
+// Endpoint: Raising the global limit to 2 minutes will cause the ability discovery to be blocked for 2 minutes when the network is disconnected. Nothing to do with confirmUntilReady's polling timeout -
+// The latter manages the retry window after the server has returned pending and cannot save the request itself.
 const CONFIRM_TIMEOUT_MS = 120_000;
-// uploadArtifact 不能沿用 30s 默认超时——confirm 单请求会被挂 50s+，更大的
-// artifact 在慢速上行上必然超时，且上传无自动重试，超时即整个发布失败。按体积动态放宽：
-// 30s 建连/服务端处理余量 + 保底 128KB/s 上行带宽，下限仍是全局默认超时（小文件不被缩短）。
+// uploadArtifact cannot continue to use the default timeout of 30s - confirm a single request will be suspended for 50s+, larger
+// The artifact will inevitably timeout on slow uplinks, and there is no automatic retry for uploading. If the timeout occurs, the entire publishing will fail. Dynamically widen by volume:
+// 30s connection establishment/server processing margin + guaranteed 128KB/s upstream bandwidth, the lower limit is still the global default timeout (small files will not be shortened).
 const UPLOAD_TIMEOUT_BASE_MS = 30_000;
 const UPLOAD_MIN_THROUGHPUT_BYTES_PER_SEC = 128 * 1024;
 
@@ -212,7 +212,7 @@ interface ConversationShareHttpClientOptions {
   baseUrl: string;
   tokenProvider: () => Promise<string | null>;
   timeoutMs?: number;
-  /** confirm 单次请求超时；缺省 2min。 */
+  /** Per-request timeout for confirm; defaults to 2min. */
   confirmTimeoutMs?: number;
 }
 
@@ -249,8 +249,8 @@ export class ConversationShareHttpClient {
     const { capabilities, unsupportedArtifactTypes, unsupportedAccessModes } =
       narrowConversationShareCapabilities(wire);
     if (unsupportedArtifactTypes.length > 0 || unsupportedAccessModes.length > 0) {
-      // 后端新增结果物类型/访问模式时留一条可检索的记录：能力发现不再被打死，
-      // 但需要知道该补哪一种。
+      // When adding result object type/access mode in the backend, a searchable record is left: ability discovery will no longer kill you.
+      // But you need to know which one to supplement.
       log.info(undefined, "conversation share capabilities dropped unsupported values", {
         types: unsupportedArtifactTypes,
         accessModes: unsupportedAccessModes,
@@ -278,7 +278,7 @@ export class ConversationShareHttpClient {
     file: Blob,
   ): Promise<ConversationShareArtifactUpload> {
     const parsedDescriptor = conversationShareArtifactDescriptorSchema.parse(descriptor);
-    // 安全边界：只记录公开 ID、类型与字节数，不记录 descriptor、文件名、路径、正文或鉴权头。
+    // Security boundary: Only the public ID, type and number of bytes are recorded, and the descriptor, file name, path, body or authentication header is not recorded.
     log.debug(undefined, "conversation share artifact upload prepared", {
       preparationId,
       artifactId: parsedDescriptor.artifact_id,
@@ -332,13 +332,13 @@ export class ConversationShareHttpClient {
       `/shares/${encodeURIComponent(shareCode)}/continuation`,
       this.jsonRequest("POST", body),
       conversationShareContinuationDataSchema,
-      // public_importable 分享的 continuation 由 share code + client request id 授权，
-      // 不应因为 ZCode 本地没有登录态而在请求发出前被客户端拦截。
+      // The continuation shared by public_importable is authorized by share code + client request id,
+      // The request should not be intercepted by the client before it is sent because ZCode does not have a local login state.
       "optional",
     );
     this.assertSupportedSchemaVersion(wire.schema_version, "continuation");
-    // 完整性对服务端原样发来的值校验，不对解析产物——否则发布端加一个 optional 字段就会
-    // 让所有老客户端算出不同的哈希（详见 verifyConversationShareIntegrity 的注释）。
+    // Integrity checks the value sent as it is from the server, not the parsed product - otherwise the publisher will add an optional field.
+    // Let all old clients calculate different hashes (see the comments on verifyConversationShareIntegrity for details).
     if (
       !verifyConversationShareIntegrity({
         rawRows: wire.rows,
@@ -361,8 +361,10 @@ export class ConversationShareHttpClient {
   }
 
   /**
-   * 版本高于本端认知时不猜语义，也不混进 invalid_contract：用户该看到「请升级 ZCode」，
-   * 不是「分享格式无效」。低于或等于本端版本一律继续——新增 kind/enum 由逐行降级消化。
+   * When the version is newer than this client knows, it does not guess the semantics and does not
+   * fold it into invalid_contract: the user should see "please upgrade ZCode", not "the share format
+   * is invalid". Versions lower than or equal to this client always continue — newly added kinds/enums
+   * are absorbed by per-row degradation.
    */
   private assertSupportedSchemaVersion(version: number, endpoint: string): void {
     if (isConversationShareSchemaVersionSupported(version)) return;
@@ -382,7 +384,7 @@ export class ConversationShareHttpClient {
   ): ReturnType<typeof decodeConversationShareRows> {
     const decoded = decodeConversationShareRows(rows);
     if (decoded.unsupportedCount > 0) {
-      // 不静默：认不出的行会从展示里消失，必须留一条可检索的记录说明该补哪种 row。
+      // Not silent: Unrecognized rows will disappear from the display, and a searchable record must be left to explain which row should be filled.
       log.info(undefined, "conversation share dropped rows this client cannot render", {
         endpoint,
         kinds: decoded.unsupportedKinds,
@@ -417,8 +419,8 @@ export class ConversationShareHttpClient {
       });
     }
 
-    // ApiClient 会兜底注入 request id；在这里先生成并保留同一个值，确保非标准 ApiClient
-    //（例如远端 Host facade 或测试替身）也能把请求 ID 和服务端响应关联起来。
+    // ApiClient will inject the request id; here first generate and retain the same value to ensure that non-standard ApiClient
+    //(such as a remote Host facade or a test double) can also associate the request ID with the server response.
     const headers = withRequestIdHeader(init.headers);
     if (token) headers.set("Authorization", `Bearer ${token}`);
     const url = joinUrl(this.baseUrl, path);
@@ -455,8 +457,8 @@ export class ConversationShareHttpClient {
         try {
           parsedError = conversationShareErrorEnvelopeSchema.safeParse(parseJson(text));
         } catch (error) {
-          // 网关的 502/504 可能返回 HTML 错误页。5xx 的非 JSON 响应归为 network，
-          // 避免将基础设施故障误报为响应契约错误；其他状态的解析失败仍归为 invalid_contract。
+          // A 502/504 from the gateway may return an HTML error page. Non-JSON responses of 5xx are classified as network,
+          // Avoid misreporting infrastructure failures as response contract errors; parsing failures in other states are still classified as invalid_contract.
           if (response.status >= 500) {
             log.warn(undefined, "conversation share API upstream unavailable", {
               path,
@@ -488,8 +490,8 @@ export class ConversationShareHttpClient {
         }
       }
       if (parsedError?.success) {
-        // 未知业务码不再让整条信封解析失败（那样会丢掉服务端 msg，退化成没有上下文的
-        // "HTTP 4xx"）。认得的码走既有映射，认不得的落 unknown 但保留 msg 与 status。
+        // Unknown business codes no longer cause the entire envelope to fail to parse (this will lose the server msg and degrade it into a message without context)
+        // "HTTP 4xx"). Recognized codes are mapped, and unrecognized codes are mapped to unknown but msg and status are retained.
         const knownCode = conversationShareKnownErrorCodeSchema.safeParse(parsedError.data.code);
         const code = knownCode.success ? knownCode.data : undefined;
         const kind = code === undefined ? "unknown" : ERROR_KIND_BY_CODE[code];
@@ -518,8 +520,8 @@ export class ConversationShareHttpClient {
         status: response.status,
         requestId: responseRequestId,
       });
-      // 空 body 或 body 不是合法错误 envelope 时的兜底分类：5xx 是基础设施故障（network），
-      // 不能落进 unknown/invalid_contract；429 维持 rate_limited，其余才是 unknown。
+      // Empty body or body is not a legal error envelope. Coverage classification: 5xx is an infrastructure failure (network),
+      // Cannot fall into unknown/invalid_contract; 429 maintains rate_limited, and the rest is unknown.
       throw new ConversationShareClientError({
         kind:
           response.status >= 500 ? "network" : response.status === 429 ? "rate_limited" : "unknown",

@@ -141,8 +141,8 @@ const readToolStrategy: ToolDisplayStrategy = {
 
     return {
       inlinePreview,
-      // 读类工具的标题里通常已经包含目标文件，摘要行再额外补一个匹配出的文件名，
-      // 会把同一文件重复显示两次。这里只保留标题和正文预览，避免只读操作显得像“又点开了一个文件”。
+      // The title of the reading tool usually already contains the target file, and an additional matching file name is added to the summary line.
+      // The same file will be displayed twice. Only the title and text preview are retained here to prevent read-only operations from appearing like "clicking on another file".
       showSummaryFileLink: false,
       showInput: !hasInlinePreview,
       showOutput: Boolean(context.errorText),
@@ -162,8 +162,8 @@ const writeToolStrategy: ToolDisplayStrategy = {
     return {
       inlinePreview,
       showInput: !hasInlinePreview,
-      // Write 工具的成功 output 常只是结构化确认结果，继续渲染会多出一块无意义的 Result。
-      // 写入内容已经由 inlinePreview / 文件摘要承载；这里只在失败时保留错误，避免重复展示 result。
+      // The successful output of the Write tool is often just a structured confirmation result, and continuing to render will result in an extra piece of meaningless Result.
+      // The written content is already carried by inlinePreview/file summary; here only errors are retained in case of failure to avoid repeated display of results.
       showOutput: Boolean(context.errorText),
       showKind: !hasInlinePreview,
     };
@@ -206,10 +206,10 @@ const searchToolStrategy: ToolDisplayStrategy = {
     return context.identity.family === "search";
   },
   build(context) {
-    // search/fetch 类工具的输入通常只是 query、路径或过滤条件，
-    // 用户真正关心的是命中的结果。之前走通用展示会把 Parameters 和 Result 一起展开，
-    // 搜索结果被挤到下面很难扫读；这里统一只保留 result/error，避免无效输入信息抢主视觉。
-    // 同时搜索范围本身已经体现在标题或结果里，摘要行再额外补一个匹配出的目录/文件名会重复噪音。
+    // The input of search/fetch tools is usually just query, path or filter conditions.
+    // What users really care about is the result of the hit. In the previous general presentation, Parameters and Result were expanded together.
+    // The search results are squeezed to the bottom and difficult to scan; only result/error are kept here to avoid invalid input information from occupying the main view.
+    // At the same time, the search range itself is already reflected in the title or results. Adding an additional matched directory/file name to the summary line will duplicate the noise.
     return {
       inlinePreview: { type: "none" },
       showSummaryFileLink: false,
@@ -225,8 +225,8 @@ const goalToolStrategy: ToolDisplayStrategy = {
     return context.identity.family === "goal";
   },
   build(context) {
-    // Goal 工具的 input 是模型给 runtime 的状态变更参数，不是用户要读的结果。
-    // 之前走通用 fallback 会同时摊开 Parameters、Result 和整包 raw，goal 状态反而被噪音淹没。
+    // The input of the Goal tool is the state change parameter given by the model to the runtime, not the result that the user wants to read.
+    // Previously, the universal fallback would spread out Parameters, Result, and the entire package of raw at the same time, and the goal status would be drowned out by the noise.
     return {
       inlinePreview: { type: "none" },
       showSummaryFileLink: false,
@@ -242,8 +242,8 @@ const nodeReplToolStrategy: ToolDisplayStrategy = {
     return context.identity.family === "node-repl";
   },
   build() {
-    // 展示语义由专用 renderer 从 title/result/error 中归一化；通用 Parameters、Result
-    // 和 kind 会暴露工具实现细节，并与专用结果区重复，因此这里全部关闭。
+    // Display semantics are normalized from title/result/error by dedicated renderer; general Parameters, Result
+    // and kind would expose tool implementation details and duplicate the dedicated results area, so are all closed here.
     return {
       inlinePreview: { type: "none" },
       showSummaryFileLink: false,
@@ -273,9 +273,9 @@ export function buildToolDisplayModel(
   const contentPreview = getToolCallCodeContentPreview(toolCall, workspacePath);
   const errorText = getToolCallErrorText(toolCall);
   const identity = resolveToolCallIdentity(toolCall);
-  // 用户要看的 plan 来自 tool result，不是 tool input。
-  // EnterPlanMode 一类输入里也可能带 plan/todo 结构；如果这里兜底读 input，
-  // 同一份计划会被误当成结果渲染，和顶部真实 plan 事件的职责再次混在一起。
+  // The plan the user wants to see comes from tool result, not tool input.
+  // EnterPlanMode type of input may also have a plan/todo structure; if you read input in detail here,
+  // The same plan will be mistaken for result rendering, and the responsibilities of the real plan event on top will be mixed again.
   const planResult = extractToolPlanResultFromValue(toolCall.output, workspacePath);
   const context: ToolDisplayContext = {
     toolCall,
@@ -298,9 +298,9 @@ export function buildToolDisplayModel(
 
   const matchedStrategy = TOOL_DISPLAY_STRATEGIES.find((strategy) => strategy.matches(context));
 
-  // tool 展示之前靠 `kind === "edit"` 直接分叉，预览提取层已经能识别 read/replace/image，
-  // 但渲染层完全吃不到，最后只剩一堆零散特判。这里收敛成“通用模型 + kind 策略增强”，
-  // 后续新增 execute/search/fetch 的专用展示时，只需要追加策略，不再重写主渲染骨架。
+  // Before tool display, rely on `kind === "edit"` to fork directly, and the preview extraction layer can already recognize read/replace/image.
+  // But the rendering layer cannot eat it at all, and in the end there is only a bunch of scattered special effects. This converges into "general model + kind strategy enhancement",
+  // When adding a dedicated display for execute/search/fetch in the future, you only need to add a strategy and no longer rewrite the main rendering skeleton.
   const model = matchedStrategy
     ? {
         ...defaultModel,
@@ -308,9 +308,9 @@ export function buildToolDisplayModel(
       }
     : defaultModel;
 
-  // 退出计划模式的 result 会同时带 markdown plan 和 allowedPrompts 等结构化字段。
-  // 之前这里直接走通用 JSON Result，聊天区很难读，而且同一份 plan 还会在别处重复渲染。
-  // 现在优先把 `plan` 当成当前 tool 的专用结果块展示，只在出错时再回退到通用输出区。
+  // The result of exiting plan mode will also contain structured fields such as markdown plan and allowedPrompts.
+  // Previously, the general JSON Result was used here. The chat area was difficult to read, and the same plan would be repeatedly rendered elsewhere.
+  // Now, priority is given to displaying `plan` as a dedicated result block of the current tool, and only falling back to the general output area when an error occurs.
   if (planResult) {
     return {
       ...model,
@@ -322,8 +322,8 @@ export function buildToolDisplayModel(
   if (errorText) {
     return {
       ...model,
-      // edit/write 失败时继续展示 Parameters，会把 oldString/newString 整坨 JSON 顶上来，
-      // 真正的报错反而被挤到下面甚至完全看不到。失败态优先收敛成错误信息视图，避免用户继续读无效参数。
+      // When edit/write fails, Parameters will continue to be displayed, which will put the whole oldString/newString JSON on top.
+      // Instead, the real error report is squeezed below and can't even be seen at all. The failure state is first converged into the error information view to prevent users from continuing to read invalid parameters.
       inlinePreview: { type: "none" },
       showInput: false,
       showOutput: true,

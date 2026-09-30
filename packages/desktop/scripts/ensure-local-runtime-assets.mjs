@@ -26,15 +26,15 @@ const nativeSearchBuildPlan = nativeSearchReleasePlan.enabled
       outputDir: bundledToolsRoot,
     })
   : undefined;
-// Windows Chrome 导入入口未启用，默认 dev 启动不应把可选 helper 当成本地必需资源。
-// 显式 opt-in 时继续沿用原有按需构建，避免删除未来恢复所需代码。
+// The Windows Chrome import portal is not enabled and the default dev startup should not treat optional helpers as local required resources.
+// Continue to use the original on-demand build when explicitly opt-in to avoid deleting code required for future recovery.
 const shouldRequireWindowsBrowserImportHelper =
   target.os === "win32" && process.env.ZCODE_ENABLE_WINDOWS_BROWSER_IMPORT === "1";
-// CUA 权限浮窗靠 zcode-window-bounds 读系统设置窗口 bounds 才能吸附。该 Swift 产物被
-// .gitignore 排除（仓库卫生门禁禁产物入库），生产链 prepare:runtime-assets 会在 darwin 上编它，
-// dev 链也必须 ensure —— 新 checkout、换 worktree 或清过 resources 后二进制缺失，watcher spawn
-// ENOENT 后 fail-open：浮窗照常显示、只是不再跟随系统设置窗口，且全程无报错，问题只能靠翻日志发现。
-// 缺 Xcode CLT 时 build 脚本自身 warn 后 exit 0，这里仍保持 not ready，至多每次 dev 多跑一次秒级脚本。
+// The CUA permission floating window can be adsorbed by reading the system setting window bounds through zcode-window-bounds. The Swift product is
+// .gitignore excludes (warehouse hygiene access control products are stored in the warehouse), the production chain prepare:runtime-assets will compile it on darwin,
+// The dev chain must also ensure - the binary is missing after new checkout, changing worktree or clearing resources, watcher spawn
+// Fail-open after ENOENT: The floating window is displayed as usual, but it no longer follows the system settings window, and no error is reported throughout the process. The problem can only be discovered by looking through the logs.
+// When Xcode CLT is missing, the build script itself warns and then exits 0, and it remains not ready. At most, each dev runs an extra second-level script.
 const shouldRequireMacosWindowBounds = target.os === "darwin";
 
 function isNativeSearchReady() {
@@ -56,12 +56,12 @@ function isNativeSearchReady() {
     });
     return true;
   } catch (error) {
-    // native sidecar 不进 Git，切分支后可能留下版本、架构或 ABI 已过期的文件。
-    // 复用正式构建 verifier 判定 ready，避免仅凭路径存在继续运行旧产物。
+    // The native sidecar does not enter Git, and files with expired version, architecture or ABI may be left after branching.
+    // Reuse the formal build verifier to determine readiness to avoid continuing to run the old product just because the path exists.
     console.warn(
       `[ensure-local-runtime-assets] embedded search validation failed: ${error instanceof Error ? error.message : String(error)}`,
     );
-    // ABI 或功能合同校验失败时清除生成物，确保下一次 prepare 从仓库归档重新解压。
+    // Clear the generated artifacts when ABI or functional contract verification fails, ensuring that the next prepare is re-decompressed from the warehouse archive.
     for (const binaryPath of requiredPaths) {
       rmSync(binaryPath, { force: true });
     }
@@ -115,10 +115,10 @@ if (missingAssets.length === 0) {
   process.exit(0);
 }
 
-// 开发态需要在 Electron 启动前发现缺失的本地 sidecar/helper，而不是等到真正使用时才报错。
-// 这里在 Electron 启动前只自检当前开发路径需要的 embedded search sidecar 和平台 helper。
-// Agent bundle 由后续 build-desktop-agent-cli 构建，开发态 resolver 优先使用 workspace dist，
-// 不在此自检范围。
+// The development state needs to discover the missing local sidecar/helper before Electron starts, instead of reporting an error until it is actually used.
+// Here, before Electron is started, only the embedded search sidecar and platform helper required by the current development path are self-checked.
+// Agent bundle is built by subsequent build-desktop-agent-cli. The development state resolver uses workspace dist first.
+// It is not within the scope of this self-test.
 for (const asset of missingAssets) {
   console.log(
     `[ensure-local-runtime-assets] preparing ${asset.label} because local runtime asset is missing or incomplete`,

@@ -7,7 +7,6 @@ type ComputerUseAvailabilityKind =
   | "local-linux"
   | "remote-ssh"
   | "remote-wsl"
-  | "remote-docker"
   | "remote-server"
   | "web";
 
@@ -44,9 +43,7 @@ export function resolveComputerUseAvailability({
         ? "remote-ssh"
         : remoteTarget?.kind === "wsl"
           ? "remote-wsl"
-          : remoteTarget?.kind === "docker"
-            ? "remote-docker"
-            : "remote-server";
+          : "remote-server";
     return {
       kind: remoteKind,
       supported: false,
@@ -58,7 +55,7 @@ export function resolveComputerUseAvailability({
   return { kind: "local-linux", supported: false };
 }
 
-const COMPUTER_USE_SEARCH_TERMS = ["电脑控制", "computer use", "zcode-cua", "cua"];
+const COMPUTER_USE_SEARCH_TERMS = ["computer control", "computer use", "zcode-cua", "cua"];
 
 export function matchesComputerUseSearch(query: string): boolean {
   const normalized = query.trim().toLocaleLowerCase();

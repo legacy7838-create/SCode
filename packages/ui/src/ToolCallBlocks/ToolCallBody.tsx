@@ -32,9 +32,9 @@ export function ToolCallBody({
   inlinePreviewOverride?: ToolInlinePreview;
   toolCall: TaskChatToolCallTreeNode["toolCall"];
   workspacePath: string;
-  /** 应用主题（store 耦合剥离）：透传给 markdown / 代码块渲染，缺省按 "system" 兜底。 */
+  /** Application theme (store coupling stripping): transparently passed to markdown/code block rendering, default is "system". */
   theme?: Theme;
-  /** 代码预览设置（store 耦合剥离）：透传给 markdown 渲染，需保持引用稳定。 */
+  /** Code preview settings (store coupling stripping): Transparent to markdown rendering, the reference needs to be kept stable. */
   codePreviewSettings?: CodePreviewSettings;
   onOpenCodeViewer?: (source: CodeViewerSource) => void;
   onOpenFileLink?: (target: MessageFileLinkTarget) => void;
@@ -113,9 +113,9 @@ function InlineCodeContent({
           theme={theme}
           codePreviewSettings={codePreviewSettings}
           onOpenCodeViewer={onOpenCodeViewer}
-          // 工具输出里的 markdown 文件链接之前只拿到 onOpenCodeViewer，
-          // 点击会退化成 code viewer fallback；有 diff source 上下文时容易打开变更视图。
-          // 这里优先交给 shell 的文件链接分流，文件看内容，目录走文件树 reveal。
+          // The markdown file link in the tool output only got onOpenCodeViewer before.
+          // Clicking will fall back to the code viewer fallback; it is easy to open the change view when there is a diff source context.
+          // Here, priority is given to the shell's file link diversion, the file content is revealed, and the directory is revealed through the file tree.
           onOpenFileLink={onOpenFileLink}
           onOpenExternalUrl={onOpenBrowserUrl}
         >

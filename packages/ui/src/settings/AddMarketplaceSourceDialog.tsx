@@ -9,8 +9,9 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { isImeComposingKeyEvent } from "@/lib/imeComposition.js";
 
 /**
- * 顶栏 New 直接打开添加市场源对话框：收编原 AddMarketplacePopover 的
- * github/git/URL/本地路径（含拖放与目录选择）能力，零后端新增。
+ * The top bar's New opens the add-marketplace-source dialog directly, absorbing the
+ * github/git/URL/local-path capabilities (including drag and drop and directory picking) of the
+ * former AddMarketplacePopover, with zero backend additions.
  */
 export function AddMarketplaceSourceDialog({
   open,
@@ -27,15 +28,15 @@ export function AddMarketplaceSourceDialog({
 }) {
   const { intl } = useZCodeIntl();
   const platform = useOptionalPlatform();
-  // 仅桌面端能把拖拽 File / 目录选择框解析成 agent 可访问的本地绝对路径；Web 端隐藏这些入口。
+  // Only the desktop side can parse the drag-and-drop File/Directory selection box into a local absolute path accessible to the agent; the web side hides these entries.
   const canPickPath = platform?.canSelectFilePath ?? false;
   const [source, setSource] = useState("");
   const [dragActive, setDragActive] = useState(false);
   const trimmedSource = source.trim();
   const adding = operationId === `marketplace:add:${trimmedSource}`;
-  // 本地输入法 composition 态：部分平台 isComposing 会提前翻 false，靠 ref 兜底，避免候选确认误触发添加。
+  // Local input method composition state: Some platforms will turn isComposing to false in advance, relying on ref to avoid false triggering of addition by candidate confirmation.
   const compositionActiveRef = useRef(false);
-  // 防重复提交：Enter 与点击共用，避免 store 回写前的窗口里重复发起同一来源的添加。
+  // Anti-repeated submission: Enter and click are shared to prevent repeated additions from the same source in the window before store writeback.
   const pendingRef = useRef(false);
 
   const handleAdd = async () => {
@@ -43,7 +44,7 @@ export function AddMarketplaceSourceDialog({
     pendingRef.current = true;
     try {
       const added = await onAddMarketplace(trimmedSource);
-      // 失败时保留输入与弹层，让用户结合上方错误提示修正来源后重试。
+      // In case of failure, the input and pop-up layers are retained, allowing the user to correct the source based on the error message above and try again.
       if (added) {
         setSource("");
         onOpenChange(false);
@@ -59,7 +60,7 @@ export function AddMarketplaceSourceDialog({
       const dir = await platform.selectDirectory();
       if (dir) setSource(dir);
     } catch {
-      // 取消或对话框异常时静默：保留当前输入，不打断添加流程。
+      // Silent when canceled or the dialog box is abnormal: retain the current input and do not interrupt the adding process.
     }
   };
 

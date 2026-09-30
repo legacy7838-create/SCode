@@ -1,0 +1,37 @@
+[package]
+name = "zcode-git"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = { workspace = true }
+napi-derive = { workspace = true }
+# gix 0.88 with the exact feature set verified by the spec's offline probe
+# (docs/specs/rust-native-git.md "Engine decision"). No `command`/`credentials`/
+# network feature is enabled, so gix-path can never invoke the git binary:
+# zero child-process spawns on the refresh path (engine rule 5).
+gix = { version = "0.88", default-features = false, features = [
+  "status",
+  "parallel",
+  "revision",
+  "index",
+  "dirwalk",
+  "attributes",
+  "excludes",
+  "blob-diff",
+  "interrupt",
+  "sha1",
+] }
+gix-status = "0.35"
+gix-diff = "0.68"
+gix-object = "0.65"
+# Used directly: config Metadata/Source for the `--show-scope/--show-origin`
+# identity mapping, and the trust::Mapping needed by discover_opts so that the
+# system-config path override is applied during discovery (zero-spawn on Windows).
+gix-config = "0.61"
+gix-sec = "0.15"

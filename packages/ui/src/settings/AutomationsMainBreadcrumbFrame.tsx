@@ -6,8 +6,9 @@ import {
 } from "@/settings/SettingsHeaderBreadcrumb.js";
 
 /**
- * 工作区 Automations 不经过 SettingsPage，编辑页的面包屑上报需要 Provider 接收，
- * 所以桌面顶栏只剩空拖拽区；这里让工作区入口复用设置页的同一套面包屑合同。
+ * Workspace Automations do not go through SettingsPage, and the edit page's breadcrumb reporting
+ * needs a Provider to receive it, so the desktop top bar is left with only an empty drag region;
+ * this lets the workspace entry point reuse the settings page's breadcrumb contract as-is.
  */
 export function AutomationsMainBreadcrumbFrame({
   ariaLabel,

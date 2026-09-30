@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- Web 入口集中编排启动、路由与 workspace shell wiring，与 Root.tsx 同样先保持入口收口，避免跨层状态拆散。 */
+/* eslint-disable max-lines -- The Web entry point centrally orchestrates startup, routing, and workspace shell wiring; like Root.tsx it keeps the entry point consolidated for now, so cross-layer state does not get scattered. */
 import { createRoot } from "react-dom/client";
 import {
   AppErrorBoundary,
@@ -36,10 +36,10 @@ function resolveWebThemePreference(defaultTheme: Theme = WEB_DEFAULT_THEME): The
   return resolveWebInitialTheme({ storedTheme: saved, defaultTheme });
 }
 
-// 初始化主题：默认 Zai dark，后续由 useTheme hook 接管
-// system 模式下需要查询系统偏好；非 system 模式直接用存储值
+// Initialize theme: default Zai dark, later taken over by the useTheme hook
+// system mode needs to query system preference; non-system mode uses the stored value directly
 {
-  // 分享页没有本地主题配置时使用浅色，已有配置仍然沿用；其他 Web 页面继续默认深色。
+  // Use light theme when the share page has no local theme config; existing config is still respected; other Web pages continue to default to dark.
   const saved = resolveWebThemePreference(
     isConversationSharePath(window.location.pathname) ? "zai-light" : undefined,
   );
@@ -73,7 +73,7 @@ async function resolveFeedbackUrl(): Promise<string | undefined> {
 const root = createRoot(document.getElementById("root")!);
 const webAuthService = createWebAuthService();
 
-// 初始化 Web 端流式 clientId，确保所有 hook 在首次渲染前就使用稳定 ID
+// Initialize the Web-side streaming clientId to ensure all hooks use a stable ID before first render
 {
   setStreamClientId(generateMobileDeviceFingerprint());
 }
@@ -115,13 +115,13 @@ function renderWebAuthCallbackPage(): void {
 }
 
 async function renderConversationSharePage(): Promise<void> {
-  // 页面语言跟随路径前缀：/cn/share 中文，裸 /share 英文。
+  // Page language follows the path prefix: /cn/share is Chinese, bare /share is English.
   const routeLocale = resolveConversationShareRouteLocale(window.location.pathname);
-  // index.html 固定 lang="en"；不同步会让中文分享页对无障碍与浏览器翻译都报错语言。
+  // index.html has a fixed lang="en"; not syncing it would cause the Chinese share page to report the wrong language for accessibility and browser translation.
   document.documentElement.lang = routeLocale;
-  // 分享页必须设置 title：否则浏览器标签只显示 index.html 的通用标题。
-  // 会话标题要等 preview 加载完，先给一个语言正确的兜底。
-  document.title = routeLocale === "zh-CN" ? "ZCode 会话分享" : "ZCode Conversation Share";
+  // The share page must set a title: otherwise the browser tab only shows the generic title from index.html.
+  // The conversation title has to wait for the preview to load, so provide a language-correct fallback first.
+  document.title = "ZCode Conversation Share";
   const shareCode = resolveConversationShareCodeFromPath(window.location.pathname);
   if (!shareCode) {
     root.render(
@@ -137,8 +137,8 @@ async function renderConversationSharePage(): Promise<void> {
     import.meta.env.VITE_ZCODE_BASE_URL?.trim().replace(/\/+$/u, "") || window.location.origin;
   const mockMode =
     import.meta.env.DEV && import.meta.env.VITE_CONVERSATION_SHARE_PREVIEW_MOCK === "true";
-  // Share 加载失败不能只有通用 network 文案：需要区分 mock、endpoint 配置或跨域 fetch。
-  // 这里只记录运行时路由与 endpoint，不记录完整 pathname，避免把 share code 写入日志。
+  // Share load failure cannot only have a generic network message: need to distinguish mock, endpoint config, or cross-origin fetch.
+  // Here we only record the runtime route and endpoint, not the full pathname, to avoid writing the share code into logs.
   console.info("[conversation-share-web]", "preview_runtime_initialized", {
     browserOrigin: window.location.origin,
     routeKind: "canonical",
@@ -190,9 +190,9 @@ async function renderConversationSharePage(): Promise<void> {
 function createWebPlatform(): IPlatformService {
   return {
     canSelectFilePath: false,
-    // Web 端无法打开系统目录选择框
+    // Web cannot open the system directory picker
     selectDirectory: () => Promise.resolve(null),
-    // Web 端无法打开系统文件选择框
+    // Web cannot open the system file picker
     selectFile: () => Promise.resolve(null),
     selectFiles: () => Promise.resolve([]),
     getPathForFile: () => null,
@@ -201,11 +201,11 @@ function createWebPlatform(): IPlatformService {
     onRemoteConnectionLog: () => () => {},
     onRemoteSessionClosed: () => () => {},
     onBotRemoteWorkspaceReconnected: () => () => {},
-    // Web 端无多窗口管理
+    // Web has no multi-window management
     activateOrSetWorkspace: () => Promise.resolve({ activated: false }),
-    // TODO(web-remote-workspace): 普通 Web 模式先只保证 server 本地工作区可用。
-    // 远程 WebSocket 只暴露部分 service，与 Root/RemoteServiceAccess 需要的完整
-    // accessor 不匹配，直接打开 ?remote=<id> 会在项目向导或首屏卡住。
+    // TODO(web-remote-workspace): Normal Web mode currently only guarantees server local workspace availability.
+    // The remote WebSocket only exposes partial services, which doesn't match the complete
+    // accessor needed by Root/RemoteServiceAccess; directly opening ?remote=<id> would get stuck in the project wizard or first screen.
     connectRemote(options: RemoteTarget) {
       return Promise.resolve({
         success: false,
@@ -214,9 +214,7 @@ function createWebPlatform(): IPlatformService {
     },
     cancelPendingRemoteConnection: (_requestId?: string) => Promise.resolve(),
     disposeRemoteSession: () => Promise.resolve(),
-    isDockerAvailable: () => Promise.resolve(false),
     listWSLDistros: () => Promise.resolve([]),
-    listDockerContainers: () => Promise.resolve([]),
     listSSHConfigAliases: () => Promise.resolve([]),
     loadMcpFromUserDirectory: () => Promise.resolve({ servers: [] }),
     saveMcpToUserDirectory: () =>
@@ -242,15 +240,14 @@ function createWebPlatform(): IPlatformService {
       window.open(feedbackUrl, "_blank", "noopener,noreferrer");
     },
     openCommunity: async () => {
-      const locale = document.documentElement.lang === "en-US" ? "en-US" : "zh-CN";
-      const communityUrl = await resolveWebCommunityUrl(locale);
+      const communityUrl = await resolveWebCommunityUrl("en-US");
       if (!communityUrl) {
         return;
       }
       window.open(communityUrl, "_blank", "noopener,noreferrer");
     },
-    canOpenCommunity: async (locale) => {
-      const communityUrl = await resolveWebCommunityUrl(locale);
+    canOpenCommunity: async () => {
+      const communityUrl = await resolveWebCommunityUrl("en-US");
       return typeof communityUrl === "string" && communityUrl.length > 0;
     },
     openInFileManager: () =>
@@ -282,12 +279,12 @@ function createWebPlatform(): IPlatformService {
         });
         void playTaskNotificationSound();
       } catch {
-        // 浏览器通知不可用时静默忽略，避免打断主流程
+        // Silently ignore when browser notifications are unavailable, to avoid interrupting the main flow
       }
     },
-    // Web 端不需要跨窗口 tab 管理
+    // Web does not need cross-window tab management
     syncWindowTabs: () => {},
-    // Web 端没有宿主层 Dock / 任务栏徽标，保持空实现以兼容统一平台接口
+    // Web has no host-level Dock / taskbar badge; keep an empty implementation to maintain compatibility with the unified platform interface
     syncWindowUnreadCount: () => {},
     syncActiveTaskSession: () => {},
     onFocusTab: () => () => {},
@@ -314,9 +311,9 @@ function createWebPlatform(): IPlatformService {
       }),
     clearEmbeddedBrowserData: () =>
       Promise.resolve({ success: false, error: "Not supported in web mode" }),
-    // IPlatformService 新增更新提示能力后，Web fallback 没有同步补齐空实现，
-    // 根级 typecheck 会直接失败，连与桌面端无关的改动都没法完成校验。
-    // Web 端当前没有桌面更新器，先显式 no-op，保持接口完整且不改变现有行为。
+    // After IPlatformService added the update notification capability, the Web fallback was not updated with empty implementations,
+    // causing root-level typecheck to fail directly, preventing even desktop-unrelated changes from passing validation.
+    // Web currently has no desktop updater, so explicitly no-op to keep the interface complete without changing existing behavior.
     onUpdateReady: () => () => {},
     onUpdateCheckResult: () => () => {},
     onUpdateStateChanged: () => () => {},
@@ -333,7 +330,7 @@ function createWebPlatform(): IPlatformService {
     getInstalledEditors: () => Promise.resolve([]),
     openInEditor: () => Promise.resolve({ success: false, error: "Not supported in web mode" }),
     executeDesktopCommand: () => Promise.resolve(),
-    setApplicationLocale: (_locale) => Promise.resolve(),
+
     setTitleBarTheme: () => Promise.resolve(),
     getDeviceId: () => {
       const nav = globalThis.navigator as Navigator & { platform?: string };
@@ -395,9 +392,7 @@ function WebBootstrapErrorScreen({ message }: { message: string }) {
         <section className="w-full rounded-xl border border-card-border bg-card p-5">
           <div className="flex items-center gap-3">
             <span className="size-2 rounded-full bg-destructive" />
-            <h1 className="text-ui-xs font-medium">
-              {/^zh\b/i.test(navigator.language) ? "Web 启动失败" : "Web bootstrap failed"}
-            </h1>
+            <h1 className="text-ui-xs font-medium">Web bootstrap failed</h1>
           </div>
           <p className="mt-2 break-all text-ui-xs/relaxed text-foreground-subtle">{message}</p>
           <button
@@ -407,7 +402,7 @@ function WebBootstrapErrorScreen({ message }: { message: string }) {
               window.location.reload();
             }}
           >
-            {/^zh\b/i.test(navigator.language) ? "重试" : "Retry"}
+            Retry
           </button>
         </section>
       </div>
@@ -451,10 +446,7 @@ async function bootstrapWebApp() {
 
     root.render(
       <AppErrorBoundary>
-        <ZCodeIntlProvider
-          settingService={services.settingService}
-          broadcastService={services.broadcastService}
-        >
+        <ZCodeIntlProvider>
           <Root
             services={services}
             platform={platform}

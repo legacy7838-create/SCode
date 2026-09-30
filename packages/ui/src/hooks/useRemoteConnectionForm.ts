@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
-  DockerContainerInfo,
   RemoteAssetInstallMode,
   RemoteTarget,
   SSHConfigAliasOption,
@@ -8,25 +7,16 @@ import type {
 } from "@zcode/shared";
 import { DEFAULT_REMOTE_ASSET_INSTALL_MODE } from "@zcode/shared";
 import { usePlatform } from "@/hooks/usePlatform.js";
-import {
-  loadRemoteConnectionDockerOptions,
-  resolveDockerContainerSelectionAfterRefresh,
-} from "@/lib/remoteConnectionDockerOptions.js";
 
 type RemoteKind = RemoteTarget["kind"];
 export type SSHAuthMethod = "password" | "privateKey";
 
 function buildAvailableKinds(options: { isWindowsDesktop: boolean }): RemoteKind[] {
   const kinds: RemoteKind[] = ["ssh"];
-  // 远程连接入口里 WSL 和 SSH 同属主机类连接。
-  // Windows 下先放 WSL 再放 Docker，避免 WSL 被 Docker 隔开后在选择页显得离 SSH 很远。
+  // In the remote connection entry, WSL and SSH are both host-type connections.
   if (options.isWindowsDesktop) {
     kinds.push("wsl");
   }
-  // Docker入口之前完全依赖预探测结果决定是否展示。
-  // 当探测能力暂时不可用、或用户还没切到 Docker 时，入口会直接消失，
-  // 用户甚至不知道这里支持 Docker 连接。改为始终展示入口，切换后再懒加载探测结果。
-  kinds.push("docker");
   return kinds;
 }
 
@@ -55,25 +45,16 @@ export function useRemoteConnectionForm({
   const [privateKeyPassphrase, setPrivateKeyPassphrase] = useState("");
   const [wslDistro, setWslDistro] = useState("");
   const [wslUser, setWslUser] = useState("");
-  const [dockerContainer, setDockerContainer] = useState("");
-  const [manualDockerContainer, setManualDockerContainer] = useState("");
   const [sshConfigAliases, setSshConfigAliases] = useState<SSHConfigAliasOption[]>([]);
   const [sshConfigAliasesLoading, setSshConfigAliasesLoading] = useState(false);
   const [sshConfigAliasesLoaded, setSshConfigAliasesLoaded] = useState(false);
   const [sshConfigAliasesError, setSshConfigAliasesError] = useState("");
   const [selectedSshConfigAlias, setSelectedSshConfigAlias] = useState<string | null>(null);
-  const [dockerAvailable, setDockerAvailable] = useState<boolean | null>(null);
   const [wslDistros, setWslDistros] = useState<WSLDistro[]>([]);
-  const [dockerContainers, setDockerContainers] = useState<DockerContainerInfo[]>([]);
   const [wslOptionsLoading, setWslOptionsLoading] = useState(false);
   const [wslOptionsLoaded, setWslOptionsLoaded] = useState(false);
   const [wslOptionsError, setWslOptionsError] = useState("");
-  const [dockerOptionsLoading, setDockerOptionsLoading] = useState(false);
-  const [dockerOptionsLoaded, setDockerOptionsLoaded] = useState(false);
-  const [dockerOptionsError, setDockerOptionsError] = useState("");
   const applyingSshAliasRef = useRef(false);
-  const dockerOptionsActiveLoadIdRef = useRef(0);
-  const dockerOptionsInFlightLoadIdRef = useRef<number | null>(null);
   const availableKinds = useMemo(
     () => buildAvailableKinds({ isWindowsDesktop }),
     [isWindowsDesktop],
@@ -88,9 +69,6 @@ export function useRemoteConnectionForm({
   }, [availableKinds, kind]);
 
   useEffect(() => {
-    dockerOptionsActiveLoadIdRef.current += 1;
-    dockerOptionsInFlightLoadIdRef.current = null;
-
     if (!open) {
       return;
     }
@@ -104,11 +82,6 @@ export function useRemoteConnectionForm({
     setWslOptionsLoading(false);
     setWslOptionsError("");
     setWslDistros([]);
-    setDockerAvailable(null);
-    setDockerOptionsLoaded(false);
-    setDockerOptionsLoading(false);
-    setDockerOptionsError("");
-    setDockerContainers([]);
     if (preferredKind && availableKinds.includes(preferredKind)) {
       setKind(preferredKind);
     }
@@ -116,59 +89,6 @@ export function useRemoteConnectionForm({
       setWslDistro(preferredWslDistro);
     }
   }, [availableKinds, open, preferredKind, preferredWslDistro]);
-
-  const refreshDockerContainers = useCallback(
-    ({ clearContainersOnError = true }: { clearContainersOnError?: boolean } = {}) => {
-      if (
-        dockerOptionsInFlightLoadIdRef.current != null &&
-        dockerOptionsInFlightLoadIdRef.current === dockerOptionsActiveLoadIdRef.current
-      ) {
-        return;
-      }
-
-      const loadId = dockerOptionsActiveLoadIdRef.current + 1;
-      dockerOptionsActiveLoadIdRef.current = loadId;
-      dockerOptionsInFlightLoadIdRef.current = loadId;
-      setDockerOptionsLoading(true);
-      setDockerOptionsError("");
-
-      void (async () => {
-        const result = await loadRemoteConnectionDockerOptions(platform);
-        if (dockerOptionsActiveLoadIdRef.current !== loadId) {
-          return;
-        }
-
-        setDockerAvailable(result.dockerAvailable);
-        setDockerOptionsLoaded(true);
-        setDockerOptionsError(result.error);
-
-        if (!result.error) {
-          setDockerContainers(result.dockerContainers);
-          // 下拉刷新后旧容器可能已经停止。之前只更新列表不清空选中值，
-          // 触发器仍会显示已不存在的容器；成功刷新后必须让选中值受最新运行中列表约束。
-          setDockerContainer((currentContainer) =>
-            resolveDockerContainerSelectionAfterRefresh({
-              currentContainer,
-              dockerContainers: result.dockerContainers,
-            }),
-          );
-          return;
-        }
-
-        if (clearContainersOnError) {
-          setDockerContainers(result.dockerContainers);
-        }
-      })().finally(() => {
-        if (dockerOptionsInFlightLoadIdRef.current === loadId) {
-          dockerOptionsInFlightLoadIdRef.current = null;
-        }
-        if (dockerOptionsActiveLoadIdRef.current === loadId) {
-          setDockerOptionsLoading(false);
-        }
-      });
-    },
-    [platform],
-  );
 
   useEffect(() => {
     if (!open || kind !== "ssh" || sshConfigAliasesLoaded) {
@@ -258,14 +178,6 @@ export function useRemoteConnectionForm({
     };
   }, [isWindowsDesktop, kind, open, platform, wslOptionsLoaded]);
 
-  useEffect(() => {
-    if (!open || kind !== "docker" || dockerOptionsLoaded) {
-      return;
-    }
-
-    refreshDockerContainers({ clearContainersOnError: true });
-  }, [dockerOptionsLoaded, kind, open, refreshDockerContainers]);
-
   const setHost = (value: string) => {
     if (!applyingSshAliasRef.current && selectedSshConfigAlias && value !== host) {
       setSelectedSshConfigAlias(null);
@@ -306,8 +218,8 @@ export function useRemoteConnectionForm({
       const nextUsername = aliasOption.username?.trim() ?? "";
       const nextPrivateKeyPath = aliasOption.privateKeyPath?.trim() ?? "";
 
-      // 切换 alias 时之前只覆盖“有值字段”，缺失字段会残留上一个 alias/手动输入值。
-      // 这里改为全量覆盖：所有 SSH 字段都按当前 alias 重建，缺失值统一置空，避免状态串用。
+      // Previously switching alias only overwrote "fields with values", so missing fields kept the previous alias/manually entered value.
+      // Now it overwrites in full: every SSH field is rebuilt from the current alias, missing values are cleared to empty, avoiding state leaking across aliases.
       setHostState(nextHost);
       setPortState(nextPort);
       setUsernameState(nextUsername);
@@ -336,15 +248,11 @@ export function useRemoteConnectionForm({
     privateKeyPassphrase,
     wslDistro,
     wslUser,
-    dockerContainer,
-    manualDockerContainer,
     sshConfigAliases,
     sshConfigAliasesLoading,
     sshConfigAliasesError,
     selectedSshConfigAlias,
-    dockerAvailable,
     wslDistros,
-    dockerContainers,
     availableKinds,
     setKind,
     setHost,
@@ -357,16 +265,9 @@ export function useRemoteConnectionForm({
     setPrivateKeyPassphrase,
     setWslDistro,
     setWslUser,
-    setDockerContainer,
-    setManualDockerContainer,
-    // Docker 容器列表是运行态数据，之前只在进入 Docker 页时拉一次。
-    // 下拉每次打开都通过这个回调按需刷新，避免用户看到已过期的容器列表。
-    refreshDockerContainers: () => refreshDockerContainers({ clearContainersOnError: false }),
     applySshConfigAlias,
     clearSelectedSshConfigAlias,
-    currentRuntimeOptionsLoading:
-      kind === "wsl" ? wslOptionsLoading : kind === "docker" ? dockerOptionsLoading : false,
-    currentRuntimeOptionsError:
-      kind === "wsl" ? wslOptionsError : kind === "docker" ? dockerOptionsError : "",
+    currentRuntimeOptionsLoading: kind === "wsl" && wslOptionsLoading,
+    currentRuntimeOptionsError: kind === "wsl" ? wslOptionsError : "",
   };
 }

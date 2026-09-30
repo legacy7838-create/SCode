@@ -69,7 +69,7 @@ export function RollingToolbarLabel({
       )}
       title={label}
     >
-      {/* 减少动画也保留同一层文字行：模型触发器的截断样式不能落到供应商／模型片段上。 */}
+      {/* Reduce animation also preserves the same layer of text lines: truncated styles of model triggers cannot fall on vendor/model fragments. */}
       {reducedMotion ? (
         <span className="inline-flex min-w-0 whitespace-nowrap leading-[1.25]">{content}</span>
       ) : (

@@ -1,5 +1,5 @@
 /**
- * useTerminalService —— 终端服务 hooks
+ * useTerminalService —— terminal service hooks
  */
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { IDisposable } from "@zcode/rpc";
@@ -7,10 +7,10 @@ import { logger } from "@/logger.js";
 import { useServices } from "./useServices.js";
 
 /**
- * 终端生命周期管理 hook
+ * Terminal lifecycle management hook
  *
- * 封装 create/write/resize/dispose 和 onDynamicData/onDynamicExit 事件订阅。
- * 组件卸载时自动清理终端和事件订阅。
+ * Wraps create/write/resize/dispose and the onDynamicData/onDynamicExit event subscriptions.
+ * Terminals and event subscriptions are cleaned up automatically when the component unmounts.
  */
 export function useTerminal(opts: {
   cols: number;
@@ -23,7 +23,7 @@ export function useTerminal(opts: {
   const [terminalId, setTerminalId] = useState<string | null>(null);
   const disposablesRef = useRef<IDisposable[]>([]);
 
-  // 保存回调的 ref，避免 effect 重跑
+  // Keep a ref to the callbacks so the effect does not rerun
   const onDataRef = useRef(opts.onData);
   onDataRef.current = opts.onData;
   const onExitRef = useRef(opts.onExit);
@@ -43,21 +43,21 @@ export function useTerminal(opts: {
         id = newId;
         setTerminalId(newId);
 
-        // 订阅终端输出
+        // Subscribe to terminal output
         const dataSub = terminalService.onDynamicData(newId)((data) => {
           onDataRef.current?.(data);
         });
         disposablesRef.current.push(dataSub);
 
-        // 订阅终端退出
+        // Subscribe to terminal exit
         const exitSub = terminalService.onDynamicExit(newId)((code) => {
           onExitRef.current?.(code);
         });
         disposablesRef.current.push(exitSub);
       })
       .catch((error) => {
-        // hook 层之前同样没有处理 create() 失败，任何使用方都会收到未处理 Promise。
-        // 这里统一吞掉拒绝态并记录日志，避免调用方在没订阅错误的情况下被全局报错打断。
+        // The hook layer previously did not handle create() failure either, so any consumer would get an unhandled Promise.
+        // Swallow the rejection uniformly and log it here, so callers without an error subscription are not interrupted by a global error.
         if (cancelled) return;
         logger.error("[terminal] failed to create terminal", error);
       });

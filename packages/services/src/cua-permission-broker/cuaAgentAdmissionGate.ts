@@ -11,11 +11,11 @@ interface AdmissionWaiter {
 }
 
 /**
- * @deprecated 默认 CUA 装配已不再注入该准入屏障，仅为旧调用方保留兼容导出。
- * 当前 Helper recovery 只影响后续 Agent admission，不会阻塞或回收已有 Agent。
+ * @deprecated The default CUA assembly no longer injects this admission barrier; the compatible export is kept only for legacy callers.
+ * The current Helper recovery only affects subsequent Agent admissions; it does not block or reclaim existing Agents.
  *
- * 仅保留 API 兼容性：默认生命周期已不再使用该机制隔离 Helper recovery 与 command/env
- * resolve 的并发。这里不持有 workspace/session 状态。
+ * Kept for API compatibility only: the default lifecycle no longer uses this mechanism to isolate the concurrency between Helper recovery and
+ * command/env resolve. No workspace/session state is held here.
  */
 export class CuaAgentAdmissionGate {
   private nextEpoch = 0;

@@ -7,35 +7,45 @@ import { ArtifactSheetGlyph, type WorkflowCompletionArtifact } from "./WorkflowA
 import { PILL_STAGGER_MS } from "./WorkflowTimeline.js";
 
 /**
- * 完成卡的产物区。
- * 从 `WorkflowCompletionCard` 拆出来：卡本身要守 400 行的门。
+ * The artifacts region of the completion card. Split out of `WorkflowCompletionCard`: the card
+ * itself has to respect the 400-line cap.
  *
- * - **有交付物**（打了 primary 旗子的那件，或清单只有一件）：交付物行，然后其余产物作**索引**——
- *   一件一行，卡宽时两列；至多六行，从第七件起五行 + 一行「还有 N 个」（点开 run 侧板看全部）。
- * - **没有交付物**：没有哪一件配得上一张预览，就一张也不画——索引独占产物区，同一个上限。
+ * - **With a deliverable** (the one flagged primary, or the only entry in the list): a deliverable
+ *   row, then the remaining artifacts as an **index** — one item per row, two columns when the card
+ *   is wide; at most six rows, from the seventh item on five rows plus one "N more" row (open the
+ *   run side pane to see them all).
+ * - **Without a deliverable**: no item deserves a preview, so not one is drawn — the index takes
+ *   over the artifacts region, under the same cap.
  *
- * 只有交付物的框读字节（预览要么读得清，要么不画）；索引行与「还有 N 个」从不读。
+ * Only the deliverable's box reads bytes (a preview either reads clearly or is not drawn); index
+ * rows and the "N more" row never read.
  *
- * ⚠ 术语：artifact = 脚本经 `artifact.*` 发布给用户看的产出。
+ * ⚠ Terminology: artifact = an output a script publishes to the user through `artifact.*`.
  */
 
-/** 卡上索引的行数上限，也是不折叠时的上限。 */
+/** Cap on the number of index rows on the card, which is also the cap when nothing is folded. */
 export const COMPLETION_INDEX_MAX = 6;
-/** 需要「还有 N 个」时，与它同在的行数。 */
+/** The number of rows that sit alongside the "N more" row when one is needed. */
 const COMPLETION_INDEX_WITH_MORE = COMPLETION_INDEX_MAX - 1;
 
 export interface CompletionArtifactLayout {
-  /** 交付物；缺席即索引独占。 */
+  /** The deliverable; when absent, the index takes over alone. */
   primary?: WorkflowCompletionArtifact;
-  /** 画成行的那些件（交付物之外）。 */
+  /** The items drawn as rows (everything other than the deliverable). */
   lines: readonly WorkflowCompletionArtifact[];
-  /** 没画出来的件数（「还有 N 个」的 N）。 */
+  /** The number of items not drawn (the N of "N more"). */
   folded: number;
-  /** 画「还有 N 个」：有折叠的件，或清单被发射侧砍过（此时 N 不可知，写 `…`）。 */
+  /**
+   * Whether the "N more" row is drawn: because items were folded, or because the list was cut on
+   * the emitting side (N is unknowable then, so it is written as `…`).
+   */
   more: boolean;
 }
 
-/** 布局的**唯一**判定；卡（节奏）、取数门（哪些件读字节）与渲染都从这里读。 */
+/**
+ * The **single** decision about layout; the card (rhythm), the fetch gate (which items read bytes)
+ * and the rendering all read from here.
+ */
 export function completionArtifactLayout(
   artifacts: readonly WorkflowCompletionArtifact[],
   truncated: boolean,
@@ -43,7 +53,7 @@ export function completionArtifactLayout(
   if (artifacts.length === 0) return { lines: [], folded: 0, more: false };
   const primary = resolvePrimaryArtifact(artifacts);
   const rest = primary === undefined ? artifacts : artifacts.filter((a) => a !== primary);
-  // 砍过的清单（超 8）不知道真实件数：仍给一扇门，N 写 `…`——与产物条的省略号同一个诚实。
+  // Chopped list (over 8) Don't know the true number of pieces: Still given a door, N writes `…` - the same thing as the ellipsis in the product bar.
   const more = rest.length > COMPLETION_INDEX_MAX || truncated;
   const lines = rest.slice(0, more ? COMPLETION_INDEX_WITH_MORE : COMPLETION_INDEX_MAX);
   return {
@@ -54,12 +64,18 @@ export function completionArtifactLayout(
   };
 }
 
-/** 卡上画出来的格数（行算一格，每条索引行一格，「还有 N 个」一格）：四格数字的落地节拍接在它们之后。 */
+/**
+ * The number of cells drawn on the card (a row counts as one cell, each index row one cell, the "N
+ * more" row one cell): the four-cell figures land right after them.
+ */
 export function completionArtifactCellCount(layout: CompletionArtifactLayout): number {
   return (layout.primary === undefined ? 0 : 1) + layout.lines.length + (layout.more ? 1 : 0);
 }
 
-/** 会读字节的那些件：只有交付物的框读；索引行与门从不读。 */
+/**
+ * The items whose bytes are read: only the deliverable's box reads; index rows and the gate never
+ * read.
+ */
 export function completionPreviewIds(layout: CompletionArtifactLayout): ReadonlySet<string> {
   return new Set(layout.primary === undefined ? [] : [layout.primary.id]);
 }
@@ -95,7 +111,7 @@ export function WorkflowCompletionArtifacts({
         />
       ) : null}
       {lines.length > 0 || more ? (
-        // 索引跟在交付物行之后时隔一条细线；独占产物区时不要（上面没有东西可隔）。
+        // There is a thin line between the index and the deliverable line; not when the product area is exclusive (there is nothing to separate it).
         <WorkflowArtifactIndex
           artifacts={lines}
           columns="auto"

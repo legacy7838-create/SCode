@@ -2,7 +2,7 @@ import { loadEndpointEnv } from "./load-endpoint-env.mjs";
 const endpointEnv = await loadEndpointEnv();
 export const DEFAULT_INTRANET_MACHINE_HOST = "";
 export function resolveIntranetMachineHost(env = { ...endpointEnv, ...process.env }) {
-  // 自建镜像机器地址统一从 INTRANET_MACHINE_HOST 读取，避免多处硬编码漏改。
+  // The address of the self-built mirror machine is uniformly read from INTRANET_MACHINE_HOST to avoid multiple hard-coded missed changes.
   return env.INTRANET_MACHINE_HOST?.trim() || DEFAULT_INTRANET_MACHINE_HOST;
 }
 

@@ -16,9 +16,9 @@ function encodeUtf8Value(value) {
 }
 
 export function createEncodedPowerShellArgs(script, values = []) {
-  // Windows PowerShell 5.1 会把普通 `-Command` 后续 argv 拼回命令文本，
-  // 不会把它们注入 `$args`。动态值先单独编码，再放进 `-EncodedCommand`，同时避免
-  // Program Files 空格、引号或分号被 PowerShell 二次解析成脚本内容。
+  // Windows PowerShell 5.1 will spell the ordinary `-Command` subsequent argv back into the command text.
+  // They will not be injected into `$args`. Dynamic values are encoded separately first and then put into `-EncodedCommand`, while avoiding
+  // Program Files spaces, quotes, or semicolons are parsed into script content by PowerShell.
   const valueBindings = values
     .map(
       (value, index) =>
@@ -30,8 +30,8 @@ export function createEncodedPowerShellArgs(script, values = []) {
 }
 
 export function createWindowsPowerShellSecurityArgs(script, values = []) {
-  // 由 pwsh 启动的 Node 会继承 PowerShell 7 的 PSModulePath，随后再启动
-  // Windows PowerShell 5.1 时可能错误发现不兼容的 Security 模块。直接从当前
-  // powershell.exe 的 PSHOME 加载系统模块，避免把外部环境变量当作模块信任根。
+  // Node started by pwsh will inherit the PSModulePath of PowerShell 7 and then start it
+  // Windows PowerShell 5.1 may incorrectly discover incompatible Security modules. directly from the current
+  // Powershell.exe's PSHOME loads system modules to avoid using external environment variables as the module's root of trust.
   return createEncodedPowerShellArgs(`${WINDOWS_POWERSHELL_SECURITY_BOOTSTRAP}${script}`, values);
 }

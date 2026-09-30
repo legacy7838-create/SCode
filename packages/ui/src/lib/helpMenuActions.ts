@@ -23,8 +23,8 @@ export function createHelpMenuActionHandlers({
     openIssueReport: async () => {
       openSubmit({
         type: "bug",
-        module: "其它",
-        severity: "P2-中",
+        module: "Other",
+        severity: "P2-Medium",
         includeLogs: false,
         screenshots: [],
       });

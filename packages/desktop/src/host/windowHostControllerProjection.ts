@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 投影状态、V4 帧与离线替换属于同一个一致性边界。 */
+/* eslint-disable max-lines -- projection state, V4 frames and offline replacement all share one consistency boundary. */
 import { isDeepStrictEqual } from "node:util";
 import type { ZCodeTaskMeta } from "@zcode/shared";
 import type { ZCodeArchivedTaskDeletionResult } from "@zcode/services";
@@ -107,8 +107,8 @@ function taskKey(address: WindowHostTaskAddress): string {
 }
 
 function defaultLiveStatus(meta: ZCodeTaskMeta): WindowHostControllerTaskRow["liveStatus"] {
-  // live overlay 缺失表示当前没有可证明的 runtime；SQLite 里的 running/interaction
-  // 可能来自上次进程退出，不能重新解释成当前运行或等待事实。
+  // The absence of live overlay means that there is currently no provable runtime; running/interaction in SQLite
+  // May be from the last process exit and cannot be reinterpreted as a current running or wait fact.
   switch (meta.status) {
     case "completed":
       return "completed";
@@ -176,7 +176,7 @@ function validateMembershipScope(
     membership.meta.workspaceIdentity !== scope.workspaceIdentity
   ) {
     throw new Error(
-      `task-index membership 与 source scope 不匹配，taskId=${membership.meta.taskId}`,
+      `task-index membership does not match the source scope, taskId=${membership.meta.taskId}`,
     );
   }
 }
@@ -308,7 +308,7 @@ export function createWindowHostControllerProjection(options: { createId: () => 
     const source = sources.get(sourceKey(scope));
     if (!source) {
       throw new Error(
-        `没有与 scope 匹配的 Controller source，workspacePath=${scope.workspacePath}`,
+        `no Controller source matches the scope, workspacePath=${scope.workspacePath}`,
       );
     }
     return source;
@@ -320,7 +320,7 @@ export function createWindowHostControllerProjection(options: { createId: () => 
       mutate: ControllerSource["mutate"];
     }): void {
       if (params.scope.kind === "remote" && !params.scope.workspaceIdentity.trim()) {
-        throw new Error("远程 Controller source 必须携带 workspaceIdentity");
+        throw new Error("remote Controller source must carry a workspaceIdentity");
       }
       const key = sourceKey(params.scope);
       const existing = sources.get(key);
@@ -356,8 +356,8 @@ export function createWindowHostControllerProjection(options: { createId: () => 
           ? replacementCandidate
           : undefined;
       if (replacedSource) {
-        // 重连的 remoteSessionId 会变化；先在内存里摘掉旧 source，再用一个 task delta frame
-        // 同时发布 old removals + new upserts，消费者不会看到中间空投影。
+        // The reconnected remoteSessionId will change; first remove the old source in the memory, and then use a task delta frame
+        // Release old removals + new upserts at the same time, consumers will not see the empty shadow in between.
         sources.delete(sourceKey(replacedSource.scope));
       }
       const previousRows = source.rows;
@@ -495,13 +495,15 @@ export function createWindowHostControllerProjection(options: { createId: () => 
           mutation.kind !== "delete-archived-batch" &&
           !source.rows.has(taskKey(address)))
       ) {
-        throw new Error("没有与任务地址匹配的 source");
+        throw new Error("no source matches the task address");
       }
       if (source.sourceAvailability !== "online") {
         if (source.scope.kind === "remote") {
-          throw new Error("远程 source 当前离线，禁止列表写操作");
+          throw new Error(
+            "remote source is currently offline, list write operations are not allowed",
+          );
         }
-        throw new Error("本地 source 当前不可用");
+        throw new Error("local source is currently unavailable");
       }
       return source.mutate(address, mutation);
     },
@@ -539,7 +541,7 @@ export function createWindowHostControllerProjection(options: { createId: () => 
     resync(subscriptionId: string): ControllerSubscribeResult["ack"] {
       const subscriber = subscribers.get(subscriptionId);
       if (!subscriber) {
-        throw new Error(`未找到 Controller subscription，subscriptionId=${subscriptionId}`);
+        throw new Error(`Controller subscription not found, subscriptionId=${subscriptionId}`);
       }
       paramsOnFrameSafe(subscriber, snapshotFrame(subscriber));
       const state = topicStates[subscriber.topic];

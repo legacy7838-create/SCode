@@ -4,7 +4,10 @@ import type { UseUsageEntitlementOptions } from "@/hooks/useUsageEntitlement.js"
 import { resolveAccountProviderInspectionAccess } from "@/lib/accountProviderAccess.js";
 import { buildUsageEntitlementCacheKey } from "@/lib/usageEntitlementCache.js";
 
-/** 设置、输入框与提交推荐复用原权益缓存；账号身份由 Account Source 的连接指纹提供。 */
+/**
+ * Settings, the input box, and submission suggestions reuse the original entitlement cache; the
+ * account identity is provided by the Account Source connection fingerprint.
+ */
 export function buildStartPlanEntitlementOptions(
   view: ProviderSettingsView | null | undefined,
   providerId: string,

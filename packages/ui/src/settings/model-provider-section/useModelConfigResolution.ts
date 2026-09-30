@@ -71,7 +71,7 @@ export function useModelConfigResolution({
         restore?.apply(resolution);
         return resolution;
       } catch (error) {
-        // 旧恢复请求的错误也必须服从身份/编辑代次，不能覆盖用户后来的字段反馈。
+        // Errors in old restore requests must also obey the identity/edit generation and cannot overwrite subsequent field feedback from the user.
         if (!isCurrent()) return undefined;
         throw error;
       } finally {
@@ -100,7 +100,7 @@ export function useModelConfigResolution({
       if (!open) inheritedSignatureRef.current = null;
       return;
     }
-    // 恢复成功与开启智能模式同批提交，沿用同一结果，不紧接着再发一次自动解析。
+    // Successfully restored and submitted in the same batch as smart mode enabled, the same results will be used and automatic analysis will not be sent immediately.
     if (result?.identity === identity) return;
     idle.schedule();
   }, [
@@ -123,7 +123,7 @@ export function useModelConfigResolution({
     [],
   );
 
-  // A→B→A 不能复用第一次 A 的回包；同 ID 不代表同一编辑/账号环境代次。
+  // A→B→A cannot reuse the first reply of A; the same ID does not represent the same editing/account environment generation.
   const activeResult = result?.identity === identity ? result.resolution : null;
   return {
     cancel: () => {

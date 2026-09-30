@@ -38,8 +38,8 @@ export function withSettingsWriteQueueTimeout(
         return;
       }
       expireCurrentWrite();
-      // 设置写入队列持有真实持久化顺序，Provider 层不 await 也无法释放这里的 pending。
-      // 超时只允许发生在提交前阶段；进入 rename 提交后必须等临界区收口，避免旧写晚到覆盖新设置。
+      // Set the write queue to hold the real persistence order, and the Provider layer cannot release the pending here without awaiting it.
+      // Timeout is only allowed to occur in the pre-commit phase; after entering rename and submitting, you must wait for the critical section to close to avoid old writes being late and overwriting new settings.
       reject(new Error(`settingService update timed out after ${timeoutMs}ms`));
     }, timeoutMs);
     timeoutHandle.unref?.();

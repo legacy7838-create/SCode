@@ -8,7 +8,6 @@ import {
   parseConversationSharePathname,
   type ConversationShareApiErrorCode,
   type ConversationSharePreview,
-  type Locale,
 } from "@zcode/shared";
 
 const SHARE_CODE_PATTERN = /^[A-Za-z0-9._~-]{1,512}$/u;
@@ -59,11 +58,10 @@ export function parseConversationShareRoute(pathname: string): string | null {
   return isSafeConversationShareCode(code) ? code : null;
 }
 
-/** 页面语言由路径前缀决定：/cn/share 中文，裸 /share 英文；非分享路径回退到浏览器语言。 */
-export function resolveConversationShareRouteLocale(pathname: string): Locale {
-  const parsed = parseConversationSharePathname(pathname);
-  if (parsed) return parsed.locale;
-  return /^zh(?:-|$)/iu.test(navigator.language) ? "zh-CN" : "en-US";
+/** The page language is decided by the path prefix: /cn/share is Chinese, a bare /share is English; non-share paths fall back to the browser language. */
+/** The page language is fixed to English. */
+export function resolveConversationShareRouteLocale(_pathname: string): "en-US" {
+  return "en-US";
 }
 
 export function buildShareImportDeepLink(shareCode: string): string {
@@ -106,8 +104,8 @@ interface ConversationSharePreviewDiagnostics {
   warn(event: string, details: Record<string, unknown>): void;
 }
 
-// fetch/CORS/DNS 异常不能统一折叠为 network：需要看到请求是否发起以及实际 endpoint。
-// 日志只保留脱敏目标和传输元数据，禁止记录 share code、JWT、响应正文或 Signed URL。
+// Fetch/CORS/DNS exceptions cannot be collapsed into network: you need to see whether the request is initiated and the actual endpoint.
+// The log only retains the desensitized target and transfer metadata, and prohibits recording of share code, JWT, response body, or Signed URL.
 const DEFAULT_DIAGNOSTICS: ConversationSharePreviewDiagnostics = {
   info(event, details) {
     console.info("[conversation-share-web]", event, details);
@@ -128,7 +126,7 @@ export class ConversationSharePreviewClient {
 
   constructor(options: ConversationSharePreviewClientOptions) {
     this.baseUrl = options.baseUrl.trim().replace(/\/+$/u, "");
-    // 直接保存 window.fetch 后以实例方法调用会把 this 绑定到 Client，Chromium 因此抛 Illegal invocation。
+    // Directly saving window.fetch and then calling it as an instance method will bind this to Client, so Chromium throws Illegal invocation.
     this.fetchImpl = options.fetchImpl ?? ((input, init) => globalThis.fetch(input, init));
     this.diagnostics = options.diagnostics ?? DEFAULT_DIAGNOSTICS;
   }
@@ -209,7 +207,7 @@ export class ConversationSharePreviewClient {
     if (!response.ok) {
       const parsedError = conversationShareErrorEnvelopeSchema.safeParse(payload);
       if (parsedError.success) {
-        // 未知业务码保留服务端 msg，不再让整条信封解析失败退化成没有上下文的 HTTP 错误。
+        // The unknown business code retains the server-side msg, so that the entire envelope parsing failure will no longer degenerate into an HTTP error without context.
         const knownCode = conversationShareKnownErrorCodeSchema.safeParse(parsedError.data.code);
         throw new ConversationSharePreviewClientError({
           kind: knownCode.success ? mapErrorKind(knownCode.data) : mapHttpStatus(response.status),
@@ -235,8 +233,8 @@ export class ConversationSharePreviewClient {
       });
     }
     const data = parsed.data.data;
-    // 落地页镜像是独立部署、独立回滚的，所以它随时可能比发布分享的客户端旧。版本高于本
-    // build 认知时要说「请升级」，不能混进「分享格式无效」。
+    // The landing page image is deployed and rolled back independently, so it may be older than the client that was released and shared at any time. version higher than this
+    // When building recognition, say "Please upgrade", and cannot mix "Invalid sharing format".
     if (!isConversationShareSchemaVersionSupported(data.schema_version)) {
       this.diagnostics.warn("preview_schema_version_unsupported", {
         requestTarget,
@@ -248,7 +246,7 @@ export class ConversationSharePreviewClient {
         status: response.status,
       });
     }
-    // 逐行降级：认不出的行跳过并计数，不让整页打不开。
+    // Line-by-line degradation: Unrecognized lines are skipped and counted to prevent the entire page from being unopenable.
     const decoded = decodeConversationShareRows(data.rows);
     if (decoded.unsupportedCount > 0) {
       this.diagnostics.info("preview_dropped_unsupported_rows", {

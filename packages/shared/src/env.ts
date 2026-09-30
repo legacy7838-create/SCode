@@ -1,11 +1,11 @@
 import type { ZCodeRuntimeEnv } from "./runtimeEnv.js";
 
 export type ZCodeEnv = "test" | "production";
-/** 安装包身份：决定应用名、app id、Electron 数据目录与更新策略；与后端环境 `ZCodeEnv` 是两个轴。 */
+/** Installer package identity: it determines the app name, app id, Electron data directory, and update strategy; it is a separate axis from the backend environment `ZCodeEnv`. */
 export type ZCodeProductFlavor = "production" | "preview";
 export type ArmsRumEnv = "local" | "prod";
 
-// 非构建环境（如 e2e 测试的 mocha）下 define 不存在，用 typeof 检查 + fallback 避免 ReferenceError
+// define does not exist in non-build environments (such as mocha tested by e2e), use typeof check + fallback to avoid ReferenceError
 declare const __ZCODE_ENV__: string;
 declare const __ZCODE_PRODUCT_FLAVOR__: string;
 
@@ -18,9 +18,10 @@ export const ZCODE_ENV = normalizeZCodeEnv(
 );
 
 /**
- * 身份缺省跟随后端环境（test → preview，production → production）。
- * 桌面构建通过 `ZCODE_PREVIEW_IDENTITY=1` 显式注入 preview，得到连接生产后端的 Preview 包；
- * 未注入 define 的 bundle（web、CLI、测试）沿用旧的单轴语义。
+ * The identity default follows the backend environment (test → preview, production → production).
+ * Desktop builds explicitly inject preview via `ZCODE_PREVIEW_IDENTITY=1`, yielding a Preview build
+ * that connects to the production backend; bundles without that define (web, CLI, tests) keep the
+ * old single-axis semantics.
  */
 export function normalizeZCodeProductFlavor(
   value: string | undefined,
@@ -40,24 +41,24 @@ export const ZCODE_PRODUCT_FLAVOR = normalizeZCodeProductFlavor(
 export const ZCODE_APP_VERSION_ENV = "ZCODE_APP_VERSION" as const;
 export const ZCODE_BUILD_COMMIT_ID_ENV = "ZCODE_BUILD_COMMIT_ID" as const;
 
-// ── 运行时环境变量（不经过编译打包，启动时从 process.env 读取） ──
-// 启用调试模式，值为 inspect-brk 的端口号，如 ZCODE_DEBUG=9230
+// ── Runtime environment variables (not compiled and packaged, read from process.env at startup) ──
+// Enable debugging mode, the value is the port number of inspect-brk, such as ZCODE_DEBUG=9230
 export const RUNTIME_ZCODE_DEBUG =
   typeof process !== "undefined" ? process.env.ZCODE_DEBUG : undefined;
 
-// 恢复原因：写死 false 会让运行时已配置的数仓/ARMS 永远空转。
-// 功能保持可用；实际出网由各出口的运行时端点检查决定，未配置不上报。
+// Reason for recovery: Hard-coding false will cause the configured data warehouse/ARMS to idle forever.
+// The function remains available; the actual network access is determined by the runtime endpoint check of each exit, and will not be reported if it is not configured.
 export const ZCODE_TELEMETRY_ENABLED: boolean = true;
 
-/** 数仓事件上报端点：由运行时环境变量提供，未配置即停用，构建产物不内嵌。 */
+/** Data warehouse event reporting endpoint: supplied by a runtime environment variable, disabled when unset, and never baked into build artifacts. */
 export const ZCODE_TELEMETRY_REPORT_ENDPOINT =
   typeof process !== "undefined" ? (process.env.ZCODE_TELEMETRY_REPORT_ENDPOINT ?? "") : "";
 
-/** ARMS RUM 接入端点：由运行时环境变量提供，未配置即停用，构建产物不内嵌。 */
+/** ARMS RUM ingestion endpoint: supplied by a runtime environment variable, disabled when unset, and never baked into build artifacts. */
 export const ZCODE_ARMS_RUM_ENDPOINT =
   typeof process !== "undefined" ? (process.env.ZCODE_ARMS_RUM_ENDPOINT ?? "") : "";
 
-/** 将本地运行态与编译期 ZCODE_ENV 映射为 ARMS 控制台识别的上报环境标签 */
+/** Maps the local runtime state and the compile-time ZCODE_ENV to the reporting environment label recognized by the ARMS console */
 export function mapZCodeEnvToArmsRumEnv(runtimeEnv: ZCodeRuntimeEnv): ArmsRumEnv {
   return runtimeEnv !== "development" && ZCODE_ENV === "production" ? "prod" : "local";
 }

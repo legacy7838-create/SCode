@@ -11,22 +11,23 @@ import type { ZCodeAppOptions } from "@zcode/bootstrap";
 import { readRuntimeFunction } from "./runtime-event-subscriber.js";
 
 /**
- * headless（`-p`）下的 CreateWorkflow 审批旁路。
+ * The CreateWorkflow approval bypass under headless (`-p`).
  *
- * 为什么需要它：headless 从不构造 permissionBroker，core 因此退到
- * `createDenyPermissionBroker()`（`core/src/runtime/agent-runtime.ts`、
- * `core/src/tool/executor/impl.ts`），而 CreateWorkflow 的 `alwaysAsk` gate
- * 在任何模式下都要过 broker（`yolo` 也不能跳，`core/src/permission/service.ts`
- * 的 alwaysAsk 分支在模式分支之前）。合起来的结果是 dwf 在 `-p` 下**必然被立即拒绝**，
- * 错误文案是 "No permission client configured for CreateWorkflow"——不是挂起、不是超时。
+ * Why it is needed: headless never constructs a permissionBroker, so core falls back to
+ * `createDenyPermissionBroker()` (`core/src/runtime/agent-runtime.ts`,
+ * `core/src/tool/executor/impl.ts`), while CreateWorkflow's `alwaysAsk` gate has to pass through the broker in
+ * every mode (`yolo` cannot skip it either; the alwaysAsk branch of `core/src/permission/service.ts` sits before
+ * the mode branch). Combined, that means dwf under `-p` is **necessarily denied immediately**, with the error text
+ * "No permission client configured for CreateWorkflow" — not suspended, not timed out.
  *
- * 旁路只按工具名放行 CreateWorkflow 一个，其余工具**委托给同一个 deny broker**：
- * 复用而不是复写它的拒绝语义，让「其余工具维持今日语义」成为结构性事实而不是巧合
- * （文案漂移不可能发生，因为只有一份）。
+ * The bypass lets through CreateWorkflow alone, by tool name, and **delegates every other tool to that same deny
+ * broker**: reusing rather than re-writing its denial semantics makes "the other tools keep today's semantics" a
+ * structural fact instead of a coincidence (text drift cannot happen, because there is only one copy).
  *
- * 这不是权限旁路，只是 gate 旁路：
- * core 零改动，PermissionRequest hook 仍先于 broker 应答（`permission-flow.ts`
- * 的 `??` 短路），权限事件照常发射，run 内 actor 照旧继承会话的权限 profile。
+ * This is not a permission bypass, only a gate bypass:
+ * core stays untouched, the PermissionRequest hook still answers ahead of the broker (the `??` short-circuit in
+ * `permission-flow.ts`), permission events are emitted as usual, and actors inside a run still inherit the
+ * session's permission profile.
  */
 export const createHeadlessPermissionBroker = (): NonNullable<
   ZCodeAppOptions["permissionBroker"]
@@ -34,7 +35,7 @@ export const createHeadlessPermissionBroker = (): NonNullable<
   const denyBroker = createDenyPermissionBroker();
   return {
     requestPermission: async (request, options) => {
-      // AmendWorkflow 与 CreateWorkflow 同一道门、同一条例外。
+      // AmendWorkflow and CreateWorkflow have the same door and the same exception.
       if (
         request.toolName !== CREATE_WORKFLOW_TOOL_NAME &&
         request.toolName !== AMEND_WORKFLOW_TOOL_NAME
@@ -51,19 +52,19 @@ export const createHeadlessPermissionBroker = (): NonNullable<
 };
 
 /**
- * stream-json 里 dwf 进度行的 `type`。
+ * The `type` of a dwf progress line in stream-json.
  *
- * 刻意**不**进 `zcodeSessionEventTypeSchema`（`shared/src/zcode-protocol/index.ts`）：
- * 那是个闭集 `z.enum` 且喂给 `zcodeSessionEventSchema` 的 discriminated union，加值等于让
- * v3 app-server 在类型面上宣告一个它永不发出的事件。stream-json 是 CLI 私有输出格式，
- * 不受协议 strict schema 约束。
+ * Deliberately **not** part of `zcodeSessionEventTypeSchema` (`shared/src/zcode-protocol/index.ts`): that is a closed
+ * `z.enum` feeding the discriminated union of `zcodeSessionEventSchema`, so adding a value amounts to making the
+ * v3 app-server declare on the type level an event it never emits. stream-json is a CLI-private output format and is
+ * not bound by the protocol's strict schema.
  */
 const WORKFLOW_RUN_PROGRESS_STREAM_TYPE = "workflow.run.progress";
 
 /**
- * 一行定型的 dwf 进度 NDJSON。信封字段与 `mapSessionEvent` 逐字对齐（同一批 key、同样的
- * `String()`/`getTime()` 规范化），这样行读者不需要为这一种行换一套信封解释规则；
- * `payload` 是 contracts 的有界载荷**原样**，不重塑字段名。
+ * A shape-fixed dwf progress NDJSON line. The envelope fields line up verbatim with `mapSessionEvent` (the same set of keys, the same
+ * `String()`/`getTime()` normalization), so a line reader does not need a second set of envelope interpretation rules
+ * for this one kind of line; `payload` is the contracts' bounded payload **as-is**, with no field names reshaped.
  */
 interface WorkflowRunProgressStreamLine {
   type: typeof WORKFLOW_RUN_PROGRESS_STREAM_TYPE;
@@ -75,7 +76,7 @@ interface WorkflowRunProgressStreamLine {
   payload: DynamicWorkflowRunProgressPayload;
 }
 
-/** 这条会话事件是 dwf 进度吗？stream-json 与 stderr 进度共用这道判别。 */
+/** Is this session event dwf progress? stream-json and the stderr progress share this one discriminator. */
 const isDynamicWorkflowRunProgressEvent = (event: SessionEvent): boolean =>
   event.type === SessionEventType.DynamicWorkflowRunProgress;
 
@@ -83,14 +84,15 @@ const progressPayloadOf = (event: SessionEvent): DynamicWorkflowRunProgressPaylo
   event.payload as DynamicWorkflowRunProgressPayload;
 
 /**
- * dwf 进度事件 → 定型 NDJSON 行。
+ * A dwf progress event -> a shape-fixed NDJSON line.
  *
- * 取代今天的裸漏：`mapSessionEventType` 的 default 把这个类型落成 catch-all
- * `session.updated`（`session-mapper.ts`），于是 stream-json 的消费者收到一行
- * 与「会话有什么东西变了」同名、却携带 run 内部载荷的行——无从分辨、也无法只订阅它。
+ * Replaces today's raw leak: the default of `mapSessionEventType` lands this type on the catch-all
+ * `session.updated` (`session-mapper.ts`), so a stream-json consumer receives a line sharing its name with
+ * "something about the session changed" yet carrying run-internal payload — impossible to tell apart, and impossible
+ * to subscribe to on its own.
  *
- * 注意 dwf 事件是**出回合**的（`turnId` 恒空），所以信封里不带
- * `turnId`：写一个恒为 undefined 的键只会让读者以为它有时有值。
+ * Note that a dwf event is **out-of-turn** (`turnId` is always absent), so the envelope carries no
+ * `turnId`: writing a key that is always undefined would only make readers think it sometimes has a value.
  */
 const mapWorkflowRunProgressStreamLine = (event: SessionEvent): WorkflowRunProgressStreamLine => ({
   type: WORKFLOW_RUN_PROGRESS_STREAM_TYPE,
@@ -114,12 +116,13 @@ const instanceLabel = (payload: Record<string, unknown>): string | undefined => 
 };
 
 /**
- * 引擎事件种类中的**状态迁移**面（`text` 模式 stderr 只讲这些 + `log`）。
+ * The **state-transition** face of the engine event kinds (the `text` mode's stderr tells only these plus `log`).
  *
- * 词汇表来自 `toProtocolEvent` 的契约注释（`bootstrap/src/app/dynamic-workflow-run-launch.ts`）：
+ * The vocabulary comes from the contract comment on `toProtocolEvent` (`bootstrap/src/app/dynamic-workflow-run-launch.ts`):
  * run-started / actor-created / node-queued / node-dispatched / node-repairing /
- * node-nudged / node-settled / usage-updated / log / run-settled。
- * `usage-updated` 与 `actor-created` 刻意不打印：前者是纯计数、后者不是迁移。
+ * node-nudged / node-settled / usage-updated / log / run-settled.
+ * `usage-updated` and `actor-created` are deliberately not printed: the former is a pure count, the latter is not
+ * a transition.
  */
 const describeProgress = (payload: DynamicWorkflowRunProgressPayload): string | undefined => {
   const inner = asRecord(payload.payload);
@@ -127,8 +130,8 @@ const describeProgress = (payload: DynamicWorkflowRunProgressPayload): string | 
     case "run-started":
       return "started";
     case "run-settled": {
-      // 终态词汇 completed / errored / stopped；
-      // stopped 带原因：`stopped/provider: …`。
+      // Final state vocabulary completed / errored / stopped;
+      // stopped with reason: `stopped/provider: …`.
       const rawStatus = typeof inner.status === "string" ? inner.status : "settled";
       const status =
         typeof inner.stopReason === "string" ? `${rawStatus}/${inner.stopReason}` : rawStatus;
@@ -155,29 +158,30 @@ const describeProgress = (payload: DynamicWorkflowRunProgressPayload): string | 
 };
 
 /**
- * 迁移是否属于**必打**面。run 的开始与结算是这条进度流的两个端点，任何节流都不得吃掉它们
- * ——否则 `text` 模式可能在整个等待期间一个字都不打，然后突然打印最终答案。
- * `log` 是脚本作者显式发出的（`log()` facade），同样不节流：它的频率由脚本决定，
- * 而作者写下它就是为了被看到。
+ * Whether a transition belongs to the **always-print** face. The start and the settlement of a run are the two
+ * endpoints of this progress stream, and no throttling may swallow them — otherwise the `text` mode could print not a
+ * single word for the entire wait and then suddenly print the final answer. `log` is emitted explicitly by the
+ * script author (the `log()` facade) and is equally un-throttled: its frequency is the script's to decide, and the
+ * author wrote it in order to be seen.
  */
 const isUnthrottledProgress = (eventType: string): boolean =>
   eventType === "run-started" || eventType === "run-settled" || eventType === "log";
 
 interface WorkflowProgressReporterInput {
-  /** 进度只写 stderr——stdout 属于结果（`text` 模式在 stderr 打简短进度）。 */
+  /** Progress goes to stderr only — stdout belongs to the result (the `text` mode prints brief progress on stderr). */
   write: (line: string) => void;
-  /** 注入时钟，让节流可被无睡眠单测穷举。 */
+  /** Injected clock, so that throttling can be exhausted by sleep-free unit tests. */
   now?: () => number;
-  /** 节点相位迁移的最小间隔；`log` 与 run 端点不受它约束。 */
+  /** The minimum interval between node phase transitions; `log` and the run endpoints are not bound by it. */
   throttleMs?: number;
 }
 
-/** 节点相位迁移的默认节流间隔。一个 100 节点的 run 约 5×100 条事件。 */
+/** The default throttling interval between node phase transitions. A 100-node run produces roughly 5x100 events. */
 const DEFAULT_WORKFLOW_PROGRESS_THROTTLE_MS = 400;
 
 /**
- * `--output-format text` 下的 stderr 进度打印器。
- * 只认 dwf 进度事件，其余会话事件直接忽略（返回后无副作用）。
+ * The stderr progress printer under `--output-format text`.
+ * It recognizes dwf progress events only and ignores every other session event outright (no side effects on return).
  */
 const createWorkflowProgressReporter = (
   input: WorkflowProgressReporterInput,
@@ -207,39 +211,39 @@ interface HeadlessSessionObserverInput {
   options: Pick<GlobalOptions, "json" | "outputFormat">;
   stderr: HeadlessWriteStream;
   stdout: HeadlessWriteStream;
-  /** 仅 `--output-format stream-json` 需要；缺席即不写 NDJSON。 */
+  /** Needed by `--output-format stream-json` only; when absent, no NDJSON is written. */
   mapSessionEvent?: (event: SessionEvent) => unknown;
 }
 
 interface HeadlessSessionObserver {
-  /** 唯一的会话事件消费者。装在**一个** sink 上——两个 sink 各写一次就是重复行。 */
+  /** The one and only session event consumer. It is installed on **one** sink — two sinks each writing once means duplicate lines. */
   observe: (event: SessionEvent) => void;
   /**
-   * 观察到过 dwf 活动吗？这是「等待结算」的**窄触发**判据：没有 dwf 活动的运行
-   * 一次都不进等待，行为与改动前逐字节相同。
+   * Has any dwf activity been observed? This is the **narrow trigger** predicate for "wait for settlement": a run with
+   * no dwf activity never enters the wait even once, and behaves byte for byte as it did before the change.
    */
   hasWorkflowActivity: () => boolean;
   /**
-   * 开始记录回合文本。必须在 `submitPrompt` 返回后**同步**调用：那一刻起到第一个 await
-   * 之间没有任何事件能插队，所以通知驱动回合的第一条事件不会漏。
-   * `excludeTurnId` 是首个回合的 id——它的文本已由 `submitPrompt` 的返回值给出，
-   * 万一它的 `turn_complete` 迟到，靠这个 id 挡住重复计数。
+   * Starts recording turn text. It must be called **synchronously** after `submitPrompt` returns: nothing can slip in
+   * between that moment and the first await, so the first event of a notification-driven turn cannot be missed.
+   * `excludeTurnId` is the id of the first turn — its text is already given by `submitPrompt`'s return value, so
+   * should its `turn_complete` arrive late, this id blocks the double count.
    */
   beginWaitPhase: (excludeTurnId?: string) => void;
-  /** 等待期内每个已完成回合的文本，按到达序。 */
+  /** The text of every completed turn during the wait, in arrival order. */
   waitPhaseTurnResponses: () => readonly string[];
 }
 
 /**
- * headless 的会话事件观察者：把「按输出格式该做什么」与「等待需要知道什么」收在一处。
+ * The headless session event observer: it gathers "what the output format says to do" and "what the wait needs to know" in one place.
  *
- * 三种格式的分工：
- *   stream-json → 每条事件一行 NDJSON 到 stdout，dwf 进度走定型行；stderr 不重复。
- *   text        → 只有 dwf 进度，且只到 stderr（stdout 属于结果）。
- *   json        → 不写任何事件（契约是"恰好一个对象"）。
+ * How the three formats divide the work:
+ *   stream-json -> one NDJSON line per event on stdout, with dwf progress going through the shape-fixed line; stderr does not repeat it.
+ *   text        -> dwf progress only, and only on stderr (stdout belongs to the result).
+ *   json        -> writes no event at all (the contract is "exactly one object").
  *
- * 三种格式**都**要观察事件——即使 json 一个字都不打，等待仍要靠这里的 dwf 触发判据
- * 与回合文本记录。所以这个函数永远返回一个观察者，不再返回 undefined。
+ * All three formats **must** observe events — even json prints not a single character, the wait still relies on the dwf trigger
+ * predicate and on the turn text recorded here. So this function always returns an observer and no longer returns undefined.
  */
 export const createHeadlessSessionObserver = (
   input: HeadlessSessionObserverInput,
@@ -251,9 +255,9 @@ export const createHeadlessSessionObserver = (
         // that pretty-prints with an indent, which would spread a single event
         // over several lines and break every line-oriented reader downstream.
         //
-        // dwf 进度走定型行：mapSessionEvent 的 default 会把它落成 catch-all
-        // `session.updated`（session-mapper.ts），读者既无从分辨、也没法
-        // 只订阅它。
+        // The dwf progress goes through the stereotype line: the default of mapSessionEvent will make it catch-all
+        // `session.updated` (session-mapper.ts), readers can neither distinguish nor
+        // Just subscribe to it.
         const line = isDynamicWorkflowRunProgressEvent(event)
           ? mapWorkflowRunProgressStreamLine(event)
           : mapSessionEvent(event);
@@ -282,7 +286,7 @@ export const createHeadlessSessionObserver = (
       reportProgress?.(event);
       if (isWorkflowActivityEvent(event)) workflowActivity = true;
       if (!waiting || event.type !== SessionEventType.TurnComplete) return;
-      // 首个回合的文本来自 submitPrompt 的返回值；它的 turn_complete 若迟到就会重复计数。
+      // The text of the first turn comes from the return value of submitPrompt; its turn_complete will be counted twice if it is late.
       if (event.turnId !== undefined && String(event.turnId) === excludedTurnId) return;
       const response = (event.payload as { response?: unknown }).response;
       if (typeof response === "string" && response.trim().length > 0) turnResponses.push(response);
@@ -291,11 +295,12 @@ export const createHeadlessSessionObserver = (
 };
 
 /**
- * 这条事件证明本进程有 dwf 活动吗？
+ * Does this event prove that this process has dwf activity?
  *
- * 两个判据而不是一个：进度事件是最直接的证据，但它的 append 是异步的，理论上可能晚于
- * 回合结束才到达 sink。`BackgroundTaskStarted` 则在 tool executor 登记后台任务时同步发出，
- * **必然**落在启动它的那个回合之内——所以它是更早、更硬的证据。两个都收，触发只需其一。
+ * Two predicates instead of one: the progress event is the most direct evidence, but its append is asynchronous and could
+ * in theory reach the sink only after the turn has already ended. `BackgroundTaskStarted`, by contrast, is emitted
+ * synchronously when the tool executor registers a background task, so it **necessarily** lands inside the turn that
+ * started it — earlier and harder evidence. Both are accepted; triggering needs only one of them.
  */
 const isWorkflowActivityEvent = (event: SessionEvent): boolean => {
   if (isDynamicWorkflowRunProgressEvent(event)) return true;
@@ -305,31 +310,34 @@ const isWorkflowActivityEvent = (event: SessionEvent): boolean => {
   );
 };
 
-/** runtime 的两个 busy 权威事实。窄接口而不是整个 AgentRuntime——等待只读这两个布尔。 */
+/** The two authoritative busy facts of the runtime. A narrow interface instead of the whole AgentRuntime — the wait only reads these two booleans. */
 interface HeadlessWorkflowRuntimeFacts {
   hasActiveOrQueuedTurnWork: () => boolean;
   hasRunningBackgroundTasks: () => boolean;
 }
 
-/** 轮询间隔。等待期是分钟量级的，这个粒度的开销可忽略，而它决定退出的响应度。 */
+/** The polling interval. The waiting period is on the order of minutes, so the overhead at this granularity is negligible, while it is what determines how responsive the exit is. */
 const HEADLESS_WORKFLOW_POLL_INTERVAL_MS = 100;
 
 /**
- * 等在飞的 workflow run 结算 **+ 完成通知驱动的回合跑完**。
+ * Waits for an in-flight workflow run to settle **plus for the completion-notification-driven turn to finish running**.
  *
- * 为什么轮询这两个布尔就够（无竞窗，这是本机制的关键论证）：后台任务转终态
- * （`background-tasks.ts` 的 `updateRuntimeBackgroundTask`）与通知命令入队
- * （`runtime-command-queue.ts`，经 `maybeEnqueueBackgroundTaskNotification` →
- * `enqueueBackgroundTaskNotification` → `enqueueRuntimeCommand`）之间**没有任何 await**，
- * 而 `drainRuntimeCommandQueue` 也在第一个 await 前就把 `runtimeCommandDrainActive` 置真。
- * 于是「任务已不 running」与「回合工作已 pending」在同一个同步块内翻转，轮询者无法落在中间。
+ * Why polling these two booleans is enough (there is no race window, and that is the key argument of this mechanism): between a background
+ * task reaching a terminal state (`updateRuntimeBackgroundTask` in `background-tasks.ts`) and the notification
+ * command being enqueued (`runtime-command-queue.ts`, via `maybeEnqueueBackgroundTaskNotification` ->
+ * `enqueueBackgroundTaskNotification` -> `enqueueRuntimeCommand`) there is **no await at all**,
+ * and `drainRuntimeCommandQueue` also sets `runtimeCommandDrainActive` to true before its first await.
+ * So "the task is no longer running" and "turn work is already pending" flip inside the same synchronous block, and a
+ * poller can never land in between.
  *
- * 谓词刻意**宽于 dwf**：并存的后台 Bash/subagent 任务也会被等。它们的通知回合与工作流的
- * 交织在同一条队列上，分开等没有意义。窄的那一半是**触发**（`hasWorkflowActivity`），
- * 所以没有 dwf 活动的运行完全不受影响。
+ * The predicate is deliberately **broader than dwf**: concurrent background Bash/subagent tasks are waited for too. Their
+ * notification turns are interleaved with the workflow's on the same queue, so waiting for them separately is
+ * meaningless. The narrow half is the **trigger** (`hasWorkflowActivity`), so a run with no dwf activity is
+ * entirely unaffected.
  *
- * 不设超时、不设 env 逃生口：控制手段是 Cancel 与 Ctrl-C，后者经既有孤儿收敛
- * 把 run 记成 `stopped(interrupted)`（失败码 `Interrupted`，可 resume）。signal 一旦 abort 就立刻返回，绝不吞信号。
+ * No timeout and no env escape hatch: the controls are Cancel and Ctrl-C, the latter recording the run as
+ * `stopped(interrupted)` through the existing orphan convergence (failure code `Interrupted`, resumable). Once the signal
+ * aborts it returns immediately and never swallows the signal.
  */
 export const waitForHeadlessWorkflowSettle = async (input: {
   intervalMs?: number;
@@ -349,13 +357,13 @@ export const waitForHeadlessWorkflowSettle = async (input: {
 };
 
 /**
- * 这个 app 的 runtime 能提供 busy 事实吗？
+ * Can this app's runtime supply the busy facts?
  *
- * 动态读取的理由见 `runtime-event-subscriber.ts` 的 `readRuntimeFunction`（同一个
- * `RunDependencies.createZCodeApp` 注入点边界）。
+ * For the reason the values are read dynamically, see `readRuntimeFunction` in `runtime-event-subscriber.ts` (the same
+ * `RunDependencies.createZCodeApp` injection-point boundary).
  *
- * **不静默降级**：拿不到 busy 事实就不进等待——"这个宿主没有这个能力"的诚实答复，
- * 而不是假装等过了。
+ * **No silent degradation**: without the busy facts it does not enter the wait — the honest answer "this host does
+ * not have that capability", rather than pretending it waited.
  */
 export const readHeadlessRuntimeFacts = (
   runtime: unknown,
@@ -370,10 +378,10 @@ export const readHeadlessRuntimeFacts = (
 };
 
 /**
- * 这次运行要不要在 stderr 打 workflow 进度？
+ * Should this run print workflow progress on stderr?
  *
- * 只有 `text` 有这个位置：`json` 的契约是恰好一个对象，`stream-json` 已经把每条进度
- * 定型成 stdout 上的一行。缺省（无 --output-format、无 --json）就是 text，所以它也打。
+ * Only `text` has that slot: the contract of `json` is exactly one object, and `stream-json` has already shape-fixed
+ * every progress event into a line on stdout. The default (no --output-format, no --json) is text, so it prints too.
  */
 const wantsWorkflowProgress = (options: Pick<GlobalOptions, "json" | "outputFormat">): boolean =>
   options.outputFormat === undefined ? !options.json : options.outputFormat === "text";

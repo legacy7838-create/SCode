@@ -1,3 +1,9 @@
+import { loadDiff } from "@zcode/rust/diff";
+
+// levenshtein / lineSimilarity / averageMiddleSimilarity 已Migrate至 Rust 原生引擎
+// （spec: docs/specs/rust-native-diff.md）；loadDiff() 加载失败时直接抛错（无 JS fallback）。
+const nativeDiff = loadDiff();
+
 type EditMatchStrategy =
   | "exact"
   | "quote_normalized"
@@ -167,8 +173,8 @@ function collectUnicodeEscapeNormalizedCandidates(content: string, search: strin
   const unescaped = unescapeUnicodeCharacters(search);
   if (unescaped === search) return [];
 
-  // Unicode 转义回退允许 old_string 里的 \uXXXX 匹配文件中的真实字符。
-  // 这里直接返回文件中的真实片段，后续 replacement 会按真实片段写入。
+  // Unicode escape fallback allows \uXXXX in old_string to match real characters in the file.
+  // Here, the real fragment in the file is directly returned, and subsequent replacement will be written according to the real fragment.
   return collectSubstringCandidates(content, unescaped);
 }
 
@@ -213,7 +219,7 @@ function collectBlockAnchorCandidates(content: string, search: string): Candidat
     const block = contentLines.slice(index, index + searchLines.length);
     if (block[0]!.trim() !== first) continue;
     if (block[block.length - 1]!.trim() !== last) continue;
-    if (averageMiddleSimilarity(block, searchLines) < BLOCK_ANCHOR_MIN_SIMILARITY) continue;
+    if (nativeDiff.averageMiddleSimilarity(block, searchLines) < BLOCK_ANCHOR_MIN_SIMILARITY) continue;
     candidates.push(blockCandidate(contentLines, index, searchLines.length));
   }
   return candidates;
@@ -318,41 +324,6 @@ function removeCommonIndent(lines: string[]): string {
   if (nonEmpty.length === 0) return lines.join("\n");
   const minIndent = Math.min(...nonEmpty.map((line) => line.match(/^[\t ]*/)?.[0].length ?? 0));
   return lines.map((line) => (line.trim().length === 0 ? line : line.slice(minIndent))).join("\n");
-}
-
-function averageMiddleSimilarity(actual: string[], expected: string[]): number {
-  if (actual.length <= 2) return 1;
-  let total = 0;
-  let count = 0;
-  for (let index = 1; index < actual.length - 1; index += 1) {
-    total += lineSimilarity(actual[index]!.trim(), expected[index]!.trim());
-    count += 1;
-  }
-  return count === 0 ? 1 : total / count;
-}
-
-function lineSimilarity(left: string, right: string): number {
-  if (left === right) return 1;
-  const maxLength = Math.max(left.length, right.length);
-  if (maxLength === 0) return 1;
-  return 1 - levenshtein(left, right) / maxLength;
-}
-
-function levenshtein(left: string, right: string): number {
-  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
-  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
-    const current = [leftIndex];
-    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
-      const cost = left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1;
-      current[rightIndex] = Math.min(
-        previous[rightIndex]! + 1,
-        current[rightIndex - 1]! + 1,
-        previous[rightIndex - 1]! + cost,
-      );
-    }
-    previous.splice(0, previous.length, ...current);
-  }
-  return previous[right.length] ?? 0;
 }
 
 function normalizeQuotes(value: string): string {

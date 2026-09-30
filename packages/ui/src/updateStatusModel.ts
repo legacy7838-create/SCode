@@ -33,8 +33,8 @@ export function deriveUpdateStatusViewModel({
     readyVersion ??
     progressVersion ??
     availableVersion ??
-    // download-progress.version 是协议可选字段。下载态必须按 kind 保持 UI，
-    // 否则某一帧缺少版本号会让入口卸载并关闭已打开弹窗。
+    // download-progress.version is a protocol optional field. The download state must maintain the UI by kind.
+    // Otherwise, the lack of a version number in a certain frame will cause the portal to uninstall and close the open pop-up window.
     (isDownloadingUpdate ? "…" : null);
 
   return {
@@ -65,9 +65,9 @@ export function isUpdateActionCompleted(
   updateState: UpdateStatePayload | null,
 ) {
   return (
-    // 点击下载后 main 侧可能先广播 checking/idle 等过渡态。
-    // 这些状态不代表下载已经进入可观察阶段，不能释放按钮锁并触发弹窗卸载；
-    // 只有真正进入下载进度或下载完成，才算下载命令完成。
+    // After clicking download, the main side may first broadcast transition states such as checking/idle.
+    // These states do not mean that the download has entered the observable stage, and the button lock cannot be released and the pop-up window cannot be uninstalled;
+    // The download command is completed only when the download progress is actually entered or the download is completed.
     (action === "download" &&
       (updateState?.kind === "download-progress" || updateState?.kind === "update-downloaded")) ||
     (action === "cancel" && updateState?.kind !== "download-progress") ||
@@ -94,8 +94,8 @@ function getUpdateDownloadProgressLabel(updateState: UpdateStatePayload | null) 
     return `${formatMegabytes(transferredBytes)} / ${formatMegabytes(totalBytes)}`;
   }
 
-  // 下载进度文案已经改为展示已下载/总大小。只有百分比时继续显示
-  // “0% / 42%” 会和新的大小口径冲突，且启动下载的临时态会残留一个 0%。
+  // The download progress text has been changed to display downloaded/total size. Continue to display only percentages
+  // "0% / 42%" will conflict with the new size and caliber, and a 0% will remain in the temporary state when starting the download.
   return null;
 }
 
@@ -110,9 +110,9 @@ function resolveReadyVersion({
     return updateState.version;
   }
 
-  // legacy UpdateReady 只是一份“曾经 ready”的缓存。
-  // 一旦新的 UpdateState 已明确同步到 renderer，idle/checking/error 都应以新状态为准，
-  // 不能继续用旧 version 撑出“重启以更新”按钮。
+  // legacy UpdateReady is just a cache of "once ready".
+  // Once the new UpdateState has been explicitly synced to the renderer, idle/checking/error should all be based on the new state,
+  // You cannot continue to use the old version to support the "Restart to update" button.
   return updateState === null ? legacyReadyVersion : null;
 }
 

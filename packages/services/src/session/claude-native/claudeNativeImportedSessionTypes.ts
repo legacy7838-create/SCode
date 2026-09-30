@@ -1,6 +1,6 @@
 import type { ZCodePersistedMessage, ZCodeTaskPersistStatus } from "@zcode/shared";
 
-/** 导入来源身份：外部原生 CLI（Claude Code），与 agent runtime 的 ZCodeProvider 无关。 */
+/** Import source identity: an external native CLI (Claude Code), unrelated to the agent runtime's ZCodeProvider. */
 export type ClaudeNativeImportSourceProvider = "claude";
 
 export interface ClaudeNativeImportedSessionSource {

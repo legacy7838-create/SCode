@@ -49,8 +49,8 @@ export function AnimatedTerminalPanel({
         return;
       }
 
-      // 终端面板拖拽时会产生连续 ResizeObserver 回调。
-      // 显式标记拖拽窗口，让 TerminalSession 在拖拽中低频 resize，松手后再 flush 最终尺寸。
+      // Continuous ResizeObserver callbacks will be generated when the terminal panel is dragged.
+      // Explicitly mark the drag window, let TerminalSession resize at low frequency during dragging, and then flush the final size after letting go.
       setIsTerminalPanelResizing(true);
     },
     [isVisible],
@@ -58,9 +58,9 @@ export function AnimatedTerminalPanel({
 
   useEffect(() => {
     if (isVisible) {
-      // Terminal 首次展开前不应该提前创建会话，否则即使用户从未打开终端，
-      // 也会白白创建 xterm 和后端 terminal 进程。这里改成首次展开后再渲染，
-      // 后续收起只隐藏不卸载，这样既保留会话，又避免重复初始化。
+      // A session should not be created in advance before Terminal is expanded for the first time, otherwise even if the user has never opened the terminal,
+      // The xterm and backend terminal processes will also be created in vain. Here it is changed to render after the first expansion.
+      // Subsequent collapse only hides but does not uninstall, so as to retain the session and avoid repeated initialization.
       setHasRenderedTerminal(true);
     }
   }, [isVisible]);
@@ -108,11 +108,11 @@ export function AnimatedTerminalPanel({
         minSize="140px"
         maxSize="50%"
         collapsedSize="0px"
-        // 终端面板之前拖到最小高度就会直接进入 collapsed，和手动关闭共用了同一触发条件。
-        // 这里只在显式关闭终端时允许折叠，保留原有开关动画，同时去掉“拖到最小自动收起”。
+        // Previously, when the terminal panel was dragged to the minimum height, it would directly enter collapsed, which shared the same trigger condition as manual closing.
+        // Here, folding is only allowed when the terminal is explicitly closed, the original switch animation is retained, and "drag to minimum and automatically collapsed" is removed.
         collapsible={isDragCollapsible}
-        // 收起后虽然不渲染 ResizableHandle，库仍会把 collapsed panel 边缘当成可拖拽热区。
-        // 禁用隐藏终端面板的 resize target，避免用户从边缘把 terminal 拖出来。
+        // Although the ResizableHandle is not rendered after collapsing, the library will still treat the edge of the collapsed panel as a draggable hotspot.
+        // Disable the resize target that hides the terminal panel to prevent users from dragging the terminal out from the edge.
         disabled={isResizeDisabled}
         className={cn(
           "transition-opacity duration-200 ease-out",
@@ -125,8 +125,8 @@ export function AnimatedTerminalPanel({
         >
           {hasRenderedTerminal ? (
             <div aria-hidden={!isVisible} className="h-full">
-              {/* terminal 首次展开前不渲染，避免无意义初始化；
-                  首次展开后保持挂载，收起时只隐藏不卸载，这样下一次展开就能直接复用现有会话。 */}
+              {/* The terminal is not rendered before it is expanded for the first time to avoid meaningless initialization;
+                  Keep it mounted after the first expansion, and only hide it but not uninstall it when you collapse it, so that you can directly reuse the existing session the next time you expand it. */}
               <ScopedErrorBoundary
                 scope="workspace-terminal"
                 resetKeys={[workspaceKey]}

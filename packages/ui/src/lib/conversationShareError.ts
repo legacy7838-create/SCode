@@ -137,7 +137,7 @@ function sanitizeIssue(issue: unknown): ConversationShareFailureIssue | null {
     scope: value.scope as ConversationShareFailureIssue["scope"],
     ...(typeof value.rowId === "number" ? { rowId: value.rowId } : {}),
     ...(typeof value.turnOrdinal === "number" ? { turnOrdinal: value.turnOrdinal } : {}),
-    // productTurnId 是「取消选择该轮」的唯一可靠定位依据（turnOrdinal 只用于文案）。
+    // productTurnId is the only reliable positioning basis for "unselect this round" (turnOrdinal is only used for copywriting).
     ...(typeof value.productTurnId === "string" &&
     value.productTurnId.length > 0 &&
     value.productTurnId.length <= 128
@@ -266,8 +266,9 @@ export function resolveConversationShareIssueMessageId(
 }
 
 /**
- * 非阻断提示用独立文案：issue 版是「请确认文件仍存在后重试」的阻断语气，
- * warning 版要表达「已跳过、发布照常完成」。
+ * Non-blocking hints use their own copy: the issue variant carries the blocking tone of "please
+ * confirm the file still exists and retry", while the warning variant has to convey "skipped, and
+ * the publish completed as usual".
  */
 const WARNING_MESSAGE_IDS: Readonly<
   Partial<Record<ConversationShareFailureIssue["code"], string>>
@@ -282,14 +283,14 @@ const WARNING_MESSAGE_IDS: Readonly<
 const ARTIFACT_TYPE_LABELS: Readonly<Record<string, { zh: string; en: string }>> = {
   pdf: { zh: "PDF", en: "PDF" },
   pptx: { zh: "PPT", en: "PowerPoint" },
-  docx: { zh: "Word 文档", en: "Word document" },
-  xlsx: { zh: "Excel 表格", en: "Excel spreadsheet" },
-  image: { zh: "图片", en: "image" },
+  docx: { zh: "Word document", en: "Word document" },
+  xlsx: { zh: "Excel spreadsheet", en: "Excel spreadsheet" },
+  image: { zh: "image", en: "image" },
   html: { zh: "HTML", en: "HTML" },
   md: { zh: "Markdown", en: "Markdown" },
-  text: { zh: "纯文本", en: "plain text" },
-  video: { zh: "视频", en: "video" },
-  audio: { zh: "音频", en: "audio" },
+  text: { zh: "plain text", en: "plain text" },
+  video: { zh: "video", en: "video" },
+  audio: { zh: "audio", en: "audio" },
 };
 
 function artifactLabel(value: string, locale: string): string {
@@ -301,7 +302,7 @@ export function formatConversationShareArtifactType(
   issue: ConversationShareFailureIssue,
   locale: string,
 ): string {
-  const value = issue.artifactType || issue.extension || issue.mimeType || "文件";
+  const value = issue.artifactType || issue.extension || issue.mimeType || "File";
   return artifactLabel(value, locale);
 }
 
@@ -318,7 +319,7 @@ export function formatConversationShareAllowedArtifacts(
   if (issue.allowedFormats && issue.allowedFormats.length > 0) {
     return issue.allowedFormats.join(locale === "en-US" ? ", " : "、");
   }
-  return locale === "en-US" ? "temporarily unavailable" : "暂时无法获取";
+  return "temporarily unavailable";
 }
 
 export function resolveConversationShareWarningMessageId(
@@ -327,7 +328,10 @@ export function resolveConversationShareWarningMessageId(
   return WARNING_MESSAGE_IDS[issue.code] ?? resolveConversationShareIssueMessageId(issue);
 }
 
-/** Host 侧已脱敏，这里仍复用同一套校验兜底，避免 progress 载荷被改动后泄漏路径。 */
+/**
+ * The host side is already redacted, but the same validation is still reused here as a backstop, so
+ * a tampered progress payload cannot leak paths.
+ */
 export function sanitizeConversationShareWarnings(
   value: unknown,
 ): readonly ConversationShareFailureIssue[] {

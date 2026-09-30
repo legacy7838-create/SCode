@@ -71,7 +71,7 @@ export function useResponsiveBrowserViewportControl({
   );
 
   const applyResponsiveMode = useCallback((nextMode: boolean) => {
-    // viewport 事件也会用于模式内尺寸同步；仅在 false → true 时重置，避免覆盖用户刚选的固定缩放。
+    // The viewport event is also used for in-modal size synchronization; it is only reset when false → true to avoid overwriting the fixed zoom the user just selected.
     if (nextMode && !isResponsiveModeRef.current) {
       responsiveViewportZoomRef.current = DEFAULT_BROWSER_VIEWPORT_ZOOM;
       setResponsiveViewportZoom(DEFAULT_BROWSER_VIEWPORT_ZOOM);
@@ -86,12 +86,12 @@ export function useResponsiveBrowserViewportControl({
       if (!request) return;
       void request
         .then(() => {
-          // metrics 在 main 内串行完成后再把 guest zoom 固定回 1。若提前在
-          // React effect 中设置，Desktop page zoom 的异步传播会再将 guest 改回全局缩放。
+          // After the metrics serialization in main is completed, guest zoom is fixed back to 1. If in advance
+          // Set in React effect, the asynchronous propagation of Desktop page zoom will change the guest back to global zoom.
           if (viewport) onViewportSynchronized();
         })
         .catch((error) => {
-          logger.debug("[browser-use] 同步 tab viewport 失败", {
+          logger.debug("[browser-use] failed to sync tab viewport", {
             error: error instanceof Error ? error.message : String(error),
           });
         });
@@ -105,9 +105,9 @@ export function useResponsiveBrowserViewportControl({
     wasResponsiveModeForZoomRef.current = isResponsiveMode;
     lastDesktopZoomFactorRef.current = desktopZoomFactor;
     if (!isResponsiveMode || !wasResponsiveMode || !zoomChanged) return;
-    // Electron 放大 Desktop page zoom 后，guest native raster 仍按缩放前的
-    // backing 尺寸输出。zoom 每次变化都重发同一 viewport，让 main 从可信
-    // BrowserWindow 读取当前 zoom factor 并重放 metrics；不把 zoom 写入 Agent viewport 状态。
+    // After Electron enlarges the Desktop page, the guest native raster still presses the original value before zooming.
+    // backing size output. Zoom resends the same viewport every time it changes, allowing main to be trusted from
+    // BrowserWindow reads the current zoom factor and replays metrics; does not write zoom to the Agent viewport state.
     updateControlledViewport(responsiveViewportSize);
   }, [desktopZoomFactor, isResponsiveMode, responsiveViewportSize, updateControlledViewport]);
 
@@ -117,7 +117,7 @@ export function useResponsiveBrowserViewportControl({
       if (sessionId && payload.sessionId !== sessionId) return;
       const willChangeResponsiveMode = (payload.viewport !== null) !== isResponsiveModeRef.current;
       onAgentViewportChange(willChangeResponsiveMode);
-      logger.debug("[browser-use] 模型 viewport 变更不触发 resize 弱提示", {
+      logger.debug("[browser-use] model viewport change does not trigger resize nudge", {
         modeChanged: willChangeResponsiveMode,
         tabId: browserKey,
         viewport: payload.viewport,
@@ -126,8 +126,8 @@ export function useResponsiveBrowserViewportControl({
         responsiveViewportSizeRef.current = { ...payload.viewport };
         setResponsiveViewportSize({ ...payload.viewport });
         applyResponsiveMode(true);
-        // Agent 创建/设置 viewport 的 main 路径不经过 renderer IPC；只在当前窗口
-        // 处于放大档位时回送一次，让 main 补入可信 zoom factor。默认/缩小不需要回声。
+        // Agent creates/sets the main path of viewport without going through renderer IPC; only in the current window
+        // When it is in the zoom position, it is sent back once to let main fill in the trusted zoom factor. Default/minify does not require echo.
         if (desktopZoomFactor > 1) updateControlledViewport(payload.viewport);
         return;
       }

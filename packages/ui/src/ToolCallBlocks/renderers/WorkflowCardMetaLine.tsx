@@ -1,9 +1,10 @@
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 
 /**
- * 工具卡卡体顶部的一行元信息：淡色标签 + 等宽值（来源文件名、run id……），可带一句淡色注记。
- * `marker` 落成 `data-workflow-card-<marker>="true"`，测试与样式按它找行；`flag` 落成
- * `data-workflow-card-<marker>-<flag>="true"`，说这一行额外成立的事实。
+ * One line of metadata at the top of a tool card's body: a muted label + a monospace value (source
+ * file name, run id, …), optionally followed by a muted note. `marker` becomes
+ * `data-workflow-card-<marker>="true"`, which tests and styles use to find the row; `flag` becomes
+ * `data-workflow-card-<marker>-<flag>="true"`, stating an additional fact that holds for this row.
  */
 export function WorkflowCardMetaLine({
   marker,
@@ -38,12 +39,13 @@ export function WorkflowCardMetaLine({
 }
 
 /**
- * 修订行卡体里的 lineage：
- * 「调整 run X」——这张卡要改的是哪个 run。`runId` 从 AmendWorkflow 入参读（`run_id`），
- * 与确认窗同一条读取规则；CreateWorkflow 行没有它，卡体也就没有这一行。
+ * lineage in the body of an amend row: "Amends run X" — which run this card is amending. `runId` is
+ * read from the AmendWorkflow input arguments (`run_id`), by the same read rule as the confirmation
+ * dialog; a CreateWorkflow row has no such field, so the body has no such line either.
  *
- * `scriptInherited`：这次修订省略了脚本、沿用前驱的那一份（「Keeping the predecessor's script」），
- * 行尾多说一句「脚本不变」——卡上没有脚本可折叠，缺脚本正是这次调用的用意。
+ * `scriptInherited`: this amendment omitted the script and reuses the predecessor's one ("Keeping
+ * the predecessor's script"), adding "script unchanged" at the end of the line — there is no script
+ * on the card to collapse, and the missing script is exactly the point of this call.
  */
 export function WorkflowAmendsLine({
   runId,

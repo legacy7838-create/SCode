@@ -64,19 +64,19 @@ export async function buildGitBranchSwitchAssistState(options: {
   ]);
 
   if (unstagedChangesResult.status === "rejected") {
-    logger.warn("[GitBranchSwitcher] 读取 unstaged 更改失败", {
+    logger.warn("[GitBranchSwitcher] failed to read unstaged changes", {
       workspacePath: options.workspacePath,
       error: getErrorMessage(unstagedChangesResult.reason),
     });
   }
   if (stagedChangesResult.status === "rejected") {
-    logger.warn("[GitBranchSwitcher] 读取 staged 更改失败", {
+    logger.warn("[GitBranchSwitcher] failed to read staged changes", {
       workspacePath: options.workspacePath,
       error: getErrorMessage(stagedChangesResult.reason),
     });
   }
   if (identityResult.status === "rejected") {
-    logger.warn("[GitBranchSwitcher] 读取提交身份失败", {
+    logger.warn("[GitBranchSwitcher] failed to read commit identity", {
       workspacePath: options.workspacePath,
       error: getErrorMessage(identityResult.reason),
     });

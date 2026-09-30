@@ -23,8 +23,8 @@ function mergeHostApiCaCertificates(
   customCa: string,
   defaultCa: readonly string[] = rootCertificates,
 ): string[] {
-  // Node 的 tls.ca 会替换而不是追加默认根证书。只传企业代理 CA 会让未被
-  // 中间人重签的公网证书失去信任链，因此必须同时保留 Node 默认根证书。
+  // Node's tls.ca replaces rather than appends the default root certificate. Passing only the enterprise agent CA will cause the
+  // The public network certificate re-signed by the middleman loses the chain of trust, so the Node default root certificate must be retained at the same time.
   return [...defaultCa, customCa];
 }
 
@@ -96,8 +96,8 @@ export function createHostApiNetworkTransport(
   resolveOptions: () => Promise<HostApiNetworkOptions>,
   dependencies: HostApiNetworkTransportDependencies = {},
 ): HostApiNetworkTransport {
-  // Host 是独立 Node 进程，Electron Session.setProxy 不会影响它的 globalThis.fetch；
-  // 在 NodeApiClient 出口按请求注入 dispatcher，避免把 telemetry 等其它裸 fetch 全局改道。
+  // Host is an independent Node process, and Electron Session.setProxy will not affect its globalThis.fetch;
+  // Inject the dispatcher according to the request at the NodeApiClient exit to avoid global rerouting of telemetry and other naked fetch.
   let optionsPromise: Promise<HostApiNetworkOptions> | undefined;
   const dispatcherPromises = new Map<string, Promise<Dispatcher>>();
   let disposed = false;
@@ -119,8 +119,8 @@ export function createHostApiNetworkTransport(
     }
     const requestGeneration = generation;
     if (!optionsPromise) {
-      // 设置读取失败只影响当前请求；清掉 rejected promise，避免一次瞬时 IPC/启动竞态
-      // 把 Host API 永久锁死，同时仍保持失败请求不回退到直连。
+      // Set read failure to only affect the current request; clear the rejected promise to avoid a transient IPC/startup race condition
+      // Lock the Host API permanently while still preventing failed requests from falling back to direct connection.
       optionsPromise = resolveOptions().catch((error: unknown) => {
         optionsPromise = undefined;
         throw error;
@@ -172,8 +172,8 @@ export function createHostApiNetworkTransport(
       };
       void dispatcherPromise.then(markDispatcherCreationDone, markDispatcherCreationDone);
       dispatcherPromise.catch(() => {
-        // 设置/CA 等临时 IO 失败只影响当前请求；清理 rejected dispatcher，避免一次启动竞态
-        // 把同一路由永久锁死，同时仍保持失败请求 fail-closed、不回退到直连。
+        // Temporary IO failures such as settings/CA only affect the current request; clean up the rejected dispatcher to avoid a race condition at one start
+        // Lock the same route permanently, while still keeping failed requests fail-closed and not falling back to direct connection.
         if (dispatcherPromises.get(dispatcherKey) === dispatcherPromise) {
           dispatcherPromises.delete(dispatcherKey);
         }
@@ -197,9 +197,9 @@ export function createHostApiNetworkTransport(
     disposed = true;
     generation += 1;
     disposeMode = mode;
-    // dispatcher 不能只被闭包缓存、没有 Host owner：窗口/远端 Host 重建后连接池和
-    // keep-alive socket 仍可能存活。释放时对当前单飞 Promise 做快照，确保初始化中的 dispatcher
-    // 也会在完成后被收口；同步退出 destroy，等待式退出 close。
+    // The dispatcher cannot only be cached by closures and has no Host owner: the connection pool and the connection pool after the window/remote Host are rebuilt
+    // keep-alive sockets may still survive. When releasing, take a snapshot of the current solo Promise to ensure that the dispatcher is initialized
+    // It will also be closed after completion; exit synchronously with destroy and wait for exit with close.
     const pendingDispatchers = [...dispatcherPromises.values()];
     dispatcherPromises.clear();
     if (pendingDispatcherCreations > 0) {

@@ -36,16 +36,16 @@ export function asLocalSettingStore(store: SessionStorePort): LocalSettingStoreP
     : undefined;
 }
 
-export function readProjectPermissionMode(
+export async function readProjectPermissionMode(
   store: LocalSettingStorePort | undefined,
   projectID: ProjectId,
-): CollaborationMode | undefined {
+): Promise<CollaborationMode | undefined> {
   if (!store) return undefined;
-  const mode = store.getProjectPermissionMode(projectID);
-  return isPromiseLike(mode) ? undefined : (mode ?? undefined);
+  const mode = await store.getProjectPermissionMode(projectID);
+  return mode ?? undefined;
 }
 
-/** 读取 Session 自己最近一次显式选择；恢复时它高于 Environment 默认值。 */
+/** Reads the Session's own most recent explicit selection; on restore it outranks the Environment default. */
 export async function readSessionModelSelection(
   store: Pick<SessionStorePort, "sessionEntries">,
   sessionID: SessionId,
@@ -58,8 +58,8 @@ export async function readSessionModelSelection(
   const data = entries.at(-1)?.data;
   const complete = parseModelSelectionValue(data);
   if (complete) return complete;
-  // reasoning 的错误类型不能抹掉可恢复的当前模型身份；这里只读取新字段，
-  // 不借旧 thoughtLevel/消息/default 补值。执行前仍由 Registry 严格校验。
+  // Reasoning error types do not erase the current model identity which is recoverable; only new fields are read here,
+  // Do not borrow the old thoughtLevel/message/default complement value. It is still strictly verified by the Registry before execution.
   if (data && typeof data === "object" && !Array.isArray(data)) {
     const current = data as Record<string, unknown>;
     return parseModelSelectionValue({ providerId: current.providerId, modelId: current.modelId });
@@ -103,16 +103,8 @@ export async function openStartupSessionStore(
 
 export function getSessionDbPath(configResult: ConfigResult, workingDirectory?: string): string {
   const configured = configResult.config.storage.sessionDbPath;
-  // 存储 Worker 不能 chdir；显式传入业务实际 cwd，保持相对路径与普通 Agent 一致。
+  // The storage worker cannot be chdir; explicitly pass in the actual cwd of the business and keep the relative path consistent with the ordinary Agent.
   if (workingDirectory && !isAbsolute(configured) && !configured.startsWith("~/"))
     return resolve(workingDirectory, configured);
   return resolvePath(configured);
-}
-
-function isPromiseLike<T>(value: T | Promise<T>): value is Promise<T> {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    typeof (value as { then?: unknown }).then === "function"
-  );
 }

@@ -1,14 +1,14 @@
-// v4 ToolCallRow → 旧 ToolCallBlocks 输入形态（TaskChatToolCallTreeNode）适配。
-// 纯函数：ToolCallBlock 及其 renderers（execute/read/edit/...）吃的是旧 ZCode Agent 的
-// TaskChatToolCall 形态；v4 row 自包含，字段一一映射即可，不需要看别的行。
+// v4 ToolCallRow → Old ToolCallBlocks input form (TaskChatToolCallTreeNode) adaptation.
+// Pure functions: ToolCallBlock and its renderers (execute/read/edit/...) eat the old ZCode Agent
+// TaskChatToolCall form; v4 row is self-contained, fields can be mapped one by one, and there is no need to look at other rows.
 import { buildZCodeStreamingToolInputPreview } from "@zcode/shared";
 import type { ToolCallRow } from "@zcode/shared/zcode-protocol-v4";
 import type { TaskChatToolCallTreeNode } from "@/lib/toolCallTree.js";
 import { normalizeWrappedErrorText } from "@/lib/toolError.js";
 
-// v4 status → 旧 ChatToolCall.status（mapToolStatus 的输入词表：
-// pending/in_progress/completed/failed/stopped）。
-// pendingApproval 视为 pending：审批中输入已定，展示为待执行。
+// v4 status → old ChatToolCall.status (input vocabulary for mapToolStatus:
+// pending/in_progress/completed/failed/stopped).
+// pendingApproval is regarded as pending: the input in the approval has been determined and is displayed as pending execution.
 const STATUS_MAP: Record<ToolCallRow["status"], string> = {
   inputStreaming: "pending",
   pendingApproval: "pending",
@@ -33,7 +33,7 @@ function isEmptyPlainRecord(value: unknown): boolean {
   );
 }
 
-/** input 缺席时，用 v4 inputText 还原完整或流式半截工具参数预览。 */
+/** When input is absent, use v4 inputText to restore the full or streaming half tool parameter preview. */
 function resolveToolInputPreview(row: ToolCallRow): ResolvedToolInputPreview {
   if (row.input !== undefined) {
     return {
@@ -83,29 +83,29 @@ export function toolCallRowToLegacyNode(row: ToolCallRow): TaskChatToolCallTreeN
   const legacyStatus = STATUS_MAP[row.status];
   const errorText = resolveV4ToolErrorText(row);
   const inputPreview = resolveToolInputPreview(row);
-  // CUA 等结构化展示事实位于 output.display；顶层 display 仅是旧 Node REPL 图片通道。
-  // 优先读取 canonical output，同时保留旧快照和 Browser 轮尾截图的兼容路径。
+  // Structured display facts like CUA are in output.display; the top-level display is just the old Node REPL image pass.
+  // Prioritize reading canonical output while retaining compatible paths for old snapshots and Browser tail screenshots.
   const display = row.output?.display ?? row.display;
-  // CUA v1 历史 display 会重复保存 input；工具调用行已经持有唯一输入，桥接时丢弃旧副本。
+  // CUA v1 history display saves input repeatedly; tool call line already holds unique input, discards old copy when bridging.
   const legacyDisplay =
     display?.kind === "cua" ? (({ input: _legacyInput, ...rest }) => rest)(display) : display;
   return {
     toolCall: {
       toolId: row.toolCallId,
       toolName: row.toolName,
-      // kind 兼容旧聚合分类：v4 下没有旧 ZCode Agent 快照形态，直接用固定工具名。
+      // kind is compatible with the old aggregation classification: there is no old ZCode Agent snapshot form under v4, and the fixed tool name is used directly.
       kind: row.toolName,
       input: inputPreview.input,
       status: legacyStatus,
       output: row.output?.text,
-      // V4 ToolCallRow 没有 legacy taskNotification raw；background Agent
-      // 的终态摘要只落在 output。Agent renderer 读取 content 展示活动结果，因此在
-      // Agent/Task 行显式桥接，避免失败详情虽已投影却仍只显示一张空卡。
+      // V4 ToolCallRow does not have legacy taskNotification raw; background Agent
+      // The final state summary only falls on output. Agent renderer reads content to display activity results, so in
+      // Agent/Task lines are explicitly bridged to avoid failure details being projected but still showing an empty card.
       ...((row.toolName === "Agent" || row.toolName === "Task") && row.output?.text
         ? { content: row.output.text }
         : {}),
-      // v4 row 是自包含投影，部分 provider 只把工具失败正文塞进 output，
-      // 不补回 legacy error 会让 ToolOutput 看不到失败原因，只剩一张空的 failed 摘要。
+      // v4 row is a self-contained projection. Some providers only insert the tool failure text into the output.
+      // Failure to compensate for legacy errors will prevent ToolOutput from seeing the cause of failure, leaving only an empty failed summary.
       error: errorText,
       raw: {
         error: row.error,
@@ -123,8 +123,8 @@ export function toolCallRowToLegacyNode(row: ToolCallRow): TaskChatToolCallTreeN
       },
       startedAt: typeof row.startedAt === "number" ? row.startedAt : undefined,
     },
-    // subagent 不内嵌 child rows；v4 工具行没有子树，嵌套工具在旧形态里也
-    // 由独立 row（subagent/toolCall）表达。
+    // subagent does not embed child rows; v4 tool rows do not have subtrees, and nested tools do not work in the old form.
+    // Expressed by independent row (subagent/toolCall).
     childToolCalls: [],
   };
 }

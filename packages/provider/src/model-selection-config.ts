@@ -29,8 +29,8 @@ export function resolveInitialModelSelection(input: {
   readonly configuredDefault?: ModelSelection;
   readonly registry: ProviderRegistryView;
 }): InitialModelSelectionResolution {
-  // 这里只构造 Host 的初始推荐，不解析已有会话意图。失效默认是可丢弃偏好，
-  // 应继续按 Registry 顺序推荐；不能把历史选择留空的规则误用于新草稿初始化。
+  // Here only the initial recommendation of the Host is constructed, and the existing session intent is not parsed. The expiration default is discardable preferences,
+  // Recommendations should continue to be made in Registry order; rules that leave history selections blank cannot be misused for new draft initialization.
   if (input.configuredDefault) {
     if (isSelectable(input.registry, input.configuredDefault)) {
       return {
@@ -40,7 +40,7 @@ export function resolveInitialModelSelection(input: {
     }
   }
 
-  // 仅用于全新草稿的 Host 初始推荐；历史未绑定状态不能进入这个初始化分支。
+  // Only used for the initial recommendation of the new draft Host; the historical unbound state cannot enter this initialization branch.
   for (const provider of input.registry.providers) {
     if (provider.config.visibility === "hidden") continue;
     for (const model of provider.models) {
@@ -54,7 +54,7 @@ export function resolveInitialModelSelection(input: {
   return { source: "none" };
 }
 
-/** 仅在用户主动选模型或全新初始化时构造最高档；不能用于恢复/重解析已有选择。 */
+/** Builds the top tier only when the user actively picks a model or on a brand-new initialisation; it must not be used to restore or re-parse an existing selection. */
 export function completeNewModelSelection(
   registry: ModelSelectionCompletionView,
   selection: ModelSelection,
@@ -72,9 +72,11 @@ export function completeNewModelSelection(
 }
 
 /**
- * 规范化一份待提交的 Selection。
- * 已有选择缺失或失效时只保留模型身份，等待用户选择档位；主动选模型另走 completion。
- * 任何执行入口都必须在此之后再次确认 Selection 完整，不能静默补档位。
+ * Normalises a Selection that is about to be committed.
+ * When an existing selection is missing or invalid, only the model identity is kept and the tier
+ * waits for the user to pick one; actively choosing a model goes through completion instead.
+ * Every execution entry point must re-check that the Selection is complete after this and must never
+ * silently fill in a tier.
  */
 export function normalizeModelSelection(
   registry: ModelSelectionCompletionView,

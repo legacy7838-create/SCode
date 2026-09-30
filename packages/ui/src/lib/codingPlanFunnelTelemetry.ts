@@ -65,7 +65,7 @@ export function createCodingPlanFunnelContext(params: {
     eventText: params.eventText,
     entryPlanStatus: params.entryPlanState?.entryPlanStatus ?? "unknown",
     entryPlanLevel: params.entryPlanState?.entryPlanLevel ?? "",
-    // 入口卡片不是已购套餐全集；只由 Provider 在查询完整后填入权威快照。
+    // The entrance card is not the complete set of purchased packages; only the Provider fills in the authoritative snapshot after completing the query.
     entryPlanList: "",
     purchaseAudience: params.purchaseAudience ?? "",
     providerFamily,
@@ -142,7 +142,7 @@ export function resolveCodingPlanEntryPlanStateFromProviderSettings(
     (provider) =>
       provider.providerId === BUILTIN_MODEL_PROVIDER_IDS.zaiIndividualCodingPlan ||
       provider.providerId === BUILTIN_MODEL_PROVIDER_IDS.bigmodelIndividualCodingPlan ||
-      // Team 同样持有 Coding Plan；不能用包含 Start 的宽泛 helper 判断套餐。
+      // Team also holds a Coding Plan; the plan cannot be judged by the broad helper including Start.
       provider.providerId === BUILTIN_MODEL_PROVIDER_IDS.zaiTeamCodingPlan ||
       provider.providerId === BUILTIN_MODEL_PROVIDER_IDS.bigmodelTeamCodingPlan,
   );

@@ -11,18 +11,19 @@ import type {
 } from "./index.js";
 
 /**
- * Runtime 与 Adapter 之间的调用级执行信息。
+ * Per-invocation execution information passed between the Runtime and the Adapter.
  *
- * 它不属于业务 ModelRequest，也不允许普通调用方据此改变 Provider 或模型身份。
- * Runtime 只在统一模型调用边界设置，Adapter 在同一异步调用链内读取。
+ * It is not part of the business ModelRequest, and ordinary callers are not allowed to change the
+ * Provider or the model identity on its strength. The Runtime sets it only at the unified model
+ * invocation boundary, and the Adapter reads it within the same async call chain.
  */
 export interface ModelInvocationContext {
   metadata?: Record<string, unknown>;
   modelCall?: ModelApiCallObservation;
   modelRequestSessionType?: ModelRequestSessionType;
-  /** 重试预算档位；runtime 按 taskType 决定，adapter 据此放宽瞬态失败的放弃条件。 */
+  /** Retry budget tier; the runtime decides it by taskType, and the adapter relaxes the give-up condition for transient failures accordingly. */
   modelRetryBudget?: ModelRetryBudget;
-  /** 准入端口；runtime 从 deps 带入，adapter 每次尝试先 acquire。 */
+  /** Admission port; the runtime brings it in through deps, and the adapter acquires before every attempt. */
   modelRequestAdmission?: ModelRequestAdmission;
   statusSink?: ModelStatusSink;
   traceContext?: TraceContext;
@@ -43,7 +44,7 @@ export interface ModelInvocationContext {
   }>;
 }
 
-/** Adapter 为单个物理请求 attempt 使用的动态鉴权材料。 */
+/** The dynamic authentication material the Adapter uses for a single physical request attempt. */
 export interface ModelRequestAuth {
   apiKey?: string;
   headers?: Record<string, string>;
@@ -57,13 +58,13 @@ export interface ModelRequestAuthSourceInput {
   traceContext?: TraceContext;
 }
 
-/** Model 创建时绑定、在每个物理请求 attempt 前解析的执行作用域鉴权来源。 */
+/** The execution-scoped authentication source bound at Model creation time and resolved before each physical request attempt. */
 export interface ModelRequestAuthSource {
   resolve(input: ModelRequestAuthSourceInput): Promise<ModelRequestAuth | undefined>;
 }
 
 export interface ModelRequestDependencies {
-  /** 属性存在表示当前 Model 必须取得请求级鉴权；Source 缺失同样 fail-closed。 */
+  /** The presence of the property means the current Model must obtain request-level authentication; a missing Source is likewise fail-closed. */
   requestAuth?: {
     source?: ModelRequestAuthSource;
   };

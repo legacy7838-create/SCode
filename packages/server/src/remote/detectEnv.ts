@@ -43,9 +43,9 @@ export function resolveRemotePlatform(reportedPlatform: string, kernelOstype: st
   const normalizedReportedPlatform = normalizeRemotePlatform(reportedPlatform);
   const normalizedKernelOstype = normalizeRemotePlatform(kernelOstype);
 
-  // 某些 SSH/Docker 测试容器会把 `uname -s` 伪装成 Darwin，
-  // 但底层仍是 Linux 内核，直接按 Darwin 选包会上传 Mach-O 并在容器里触发 Exec format error。
-  // 这里优先信任 /proc 暴露的真实内核类型，避免把 Linux 容器误判成 macOS。
+  // Some SSH test containers will disguise `uname -s` as Darwin,
+  // But the bottom layer is still the Linux kernel. Simply pressing Darwin to select the package will upload Mach-O and trigger an Exec format error in the container.
+  // Here, priority is given to trusting the real kernel type exposed by /proc to avoid misjudgment of Linux containers as macOS.
   if (normalizedReportedPlatform === "darwin" && normalizedKernelOstype === "linux") {
     return "linux";
   }

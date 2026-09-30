@@ -11,9 +11,9 @@ export interface AccountProviderCredentialStoreOptions {
 }
 
 /**
- * 保存 Account Provider 的请求期凭据。
+ * Stores the request-time credentials of an Account Provider.
  *
- * 只读取账号 Credential Store；旧 Provider Store 不再作为凭据来源。
+ * Reads only from the account Credential Store; the legacy Provider Store is no longer a credential source.
  */
 export function createAccountProviderCredentialStore(
   options: AccountProviderCredentialStoreOptions,
@@ -42,7 +42,7 @@ export function createAccountProviderCredentialStore(
 
 function requireCredentialKey(value: string): string {
   const normalized = value.trim();
-  if (!normalized) throw new Error("Account Provider Credential Key 不能为空");
+  if (!normalized) throw new Error("Account Provider Credential Key must not be empty");
   return normalized;
 }
 

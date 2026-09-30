@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- desktop runtime/env 解析需要集中维护 main/host/remote assets 的启动边界，拆分会扩大远程连接回归面。 */
+/* eslint-disable max-lines -- desktop runtime/env resolution must keep the main/host/remote assets startup boundary in one place; splitting it would widen the remote-connection regression surface. */
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve, win32 } from "node:path";
@@ -42,8 +42,8 @@ const isLocalDevelopmentRuntime = !isElectronAppPackaged();
 export const desktopRuntimeEnv: ZCodeRuntimeEnv = isLocalDevelopmentRuntime
   ? "development"
   : "production";
-// 身份看编译期 flavor 而不是 ZCODE_ENV：ZCODE_PREVIEW_IDENTITY=1 的生产后端构建同样是 Preview，
-// 需要独立的应用名、Electron 数据目录和 Helper 安装子目录才能与正式版并排运行。
+// The identity depends on the compile-time flavor instead of ZCODE_ENV: the production backend build with ZCODE_PREVIEW_IDENTITY=1 is also Preview.
+// A separate application name, Electron data directory, and Helper installation subdirectory are required to run side by side with the official version.
 const isPreviewPackagedRuntime = !isLocalDevelopmentRuntime && ZCODE_PRODUCT_FLAVOR === "preview";
 
 function readRuntimeEnvOverride(name: string): string | undefined {
@@ -55,16 +55,16 @@ function isTruthyRuntimeEnvOverride(name: string): boolean {
   return value === "1" || value === "true" || value === "yes" || value === "on";
 }
 
-// e2e 运行的是生产构建，默认会和本机正式版 ZCode 共用 app name / userData，
-// 触发 Electron 单实例锁后只激活已有窗口，Chromedriver 无法接管测试进程。
-// 这里允许测试显式隔离运行时身份，正常桌面/远控路径保持原来的默认值。
+// e2e runs a production build, and by default will share the app name / userData with the official version of ZCode.
+// After triggering the Electron single instance lock, only the existing window is activated, and Chromedriver cannot take over the test process.
+// This allows testing to explicitly isolate the runtime identity, with the normal desktop/remote paths kept at their original defaults.
 export const runtimeApplicationName =
   readRuntimeEnvOverride("ZCODE_DESKTOP_APPLICATION_NAME") ??
   (isLocalDevelopmentRuntime ? "ZCode Dev" : isPreviewPackagedRuntime ? "ZCode Preview" : "ZCode");
-// Electron 的 app.getPath("home") 不一定跟随测试进程里的 HOME 覆盖。
-// e2e 默认工作区依赖 home 路径，因此提供显式覆盖，避免测试写到开发者真实 ~/ZCodeProject。
+// Electron's app.getPath("home") does not necessarily follow the HOME coverage in the test process.
+// The default workspace of e2e relies on the home path, so it provides explicit coverage to avoid writing tests to the developer's real ~/ZCodeProject.
 export const runtimeHomePath = readRuntimeEnvOverride("ZCODE_DESKTOP_HOME_DIR");
-// Chromedriver 管理 Electron 时会注入临时 userData；e2e 默认路径模式下导入期不能提前读取 appData。
+// Chromedriver will inject temporary userData when managing Electron; appData cannot be read in advance during the import period in e2e default path mode.
 export const shouldUseElectronDefaultUserDataPath = isTruthyRuntimeEnvOverride(
   "ZCODE_DESKTOP_USE_ELECTRON_DEFAULT_USER_DATA",
 );
@@ -76,9 +76,9 @@ export const runtimeUserDataPath =
 export const runtimeSessionDataPath =
   readRuntimeEnvOverride("ZCODE_DESKTOP_SESSION_DATA_DIR") ??
   (runtimeUserDataPath ? join(runtimeUserDataPath, "session") : undefined);
-// Chromedriver 会注入临时 --user-data-dir，并在该目录等待 DevToolsActivePort。
-// e2e 如果再用 app.setPath 覆盖 userData/sessionData，端口文件会被写到另一个目录，
-// 导致 Electron 已启动但 WebDriver session 一直创建失败。测试态打开该开关后保留 Chromedriver 的目录。
+// Chromedriver will inject the temporary --user-data-dir and wait for DevToolsActivePort in that directory.
+// e2e If you use app.setPath to overwrite userData/sessionData, the port file will be written to another directory.
+// As a result, Electron has been started but WebDriver session creation continues to fail. Keep the Chromedriver directory after turning on this switch in test mode.
 export const hostModulePath = join(import.meta.dirname, "../host/index.js");
 export const schedulerModulePath = join(import.meta.dirname, "../scheduler/index.js");
 export function getCredentialsDir() {
@@ -91,19 +91,9 @@ export type RemoteAssetDirs = Pick<
 >;
 type LocalRuntimeEnv = Record<string, string | undefined>;
 
-export async function isDockerDaemonAvailable(): Promise<boolean> {
-  const { isDockerAvailable } = await import("@zcode/server/remote");
-  return isDockerAvailable();
-}
-
 export async function listAvailableWSLDistros() {
   const { listWSLDistros } = await import("@zcode/server/remote");
   return listWSLDistros();
-}
-
-export async function listAvailableDockerContainers() {
-  const { listDockerContainers } = await import("@zcode/server/remote");
-  return listDockerContainers();
 }
 
 export async function listSSHConfigAliases() {
@@ -153,8 +143,8 @@ function resolveWorkspaceRootForEnvFiles(): string | null {
 
 export function loadHostProcessEnvFromLocalFiles(): Record<string, string> {
   if (isElectronAppPackaged()) {
-    // 安装包不内嵌 OTLP 端点或鉴权，避免 CI 凭据随产物公开；连接配置由运行时环境提供。
-    // 只保留打包身份元数据，缺少端点时不会启用上报。
+    // The installation package does not embed OTLP endpoints or authentication to prevent CI credentials from being exposed with the product; connection configuration is provided by the runtime environment.
+    // Only packaged identity metadata is retained, escalation is not enabled when endpoints are missing.
     return { ZCODE_TELEMETRY_RUNTIME_DISTRIBUTION: "packaged" };
   }
 
@@ -164,7 +154,7 @@ export function loadHostProcessEnvFromLocalFiles(): Record<string, string> {
     ...(workspaceRoot
       ? [resolve(workspaceRoot, ".env"), resolve(workspaceRoot, ".env.local")]
       : []),
-    // 开发态 host process 不经过 Vite，自行加载相同的 .env 文件以保持 OAuth 配置一致。
+    // The development host process does not go through Vite and loads the same .env file by itself to keep the OAuth configuration consistent.
     ...(workspaceRoot && isLocalDevelopmentRuntime
       ? [
           resolve(workspaceRoot, ".env.development"),
@@ -191,8 +181,8 @@ export function loadHostProcessEnvFromLocalFiles(): Record<string, string> {
       continue;
     }
 
-    // 之前按 cwd 向上级目录泛搜 .env，容易误读到工作区外的同名文件。
-    // 这里将加载范围收敛为 workspace 根与 desktop 包目录，避免配置来源漂移。
+    // Previously, when pressing cwd to search for .env in the upper-level directory, it was easy to mistakenly read a file with the same name outside the workspace.
+    // Here, the loading scope is converged to the workspace root and desktop package directories to avoid configuration source drift.
     const parsed = parseDotenv(readFileSync(candidate, "utf-8"));
     Object.assign(merged, parsed);
   }
@@ -207,8 +197,8 @@ function resolveDevelopmentMockCdnDir(): string {
 function resolveAvailableDevelopmentMockCdnDir(): string | undefined {
   const mockCdnDir = resolveDevelopmentMockCdnDir();
   const releaseDir = join(mockCdnDir, "releases", ZCODE_VERSION);
-  // 开发态 mock-cdn 是可选离线缓存。当前版本目录不存在时继续传 mockCdnDir，
-  // 会让 WSL/SSH 重连先命中一个必然缺失的本地路径，遮蔽已有的 CDN/cache fallback。
+  // Development mock-cdn is an optional offline cache. If the current version directory does not exist, continue to pass mockCdnDir.
+  // This will cause WSL/SSH reconnection to hit a local path that must be missing first, covering up the existing CDN/cache fallback.
   return existsSync(releaseDir) ? mockCdnDir : undefined;
 }
 
@@ -246,7 +236,7 @@ export function resolveZCodeEndpointEnvBaseOrigin(
   localEnv: LocalRuntimeEnv = {},
 ): string | undefined {
   const buildEnv = readProductEndpointEnv();
-  // main 进程临时验证更新服务时不会重新写 .env，命令行传入的 endpoint 必须优先于本地文件。
+  // The main process will not rewrite .env when temporarily verifying the update service. The endpoint passed in from the command line must take precedence over local files.
   return (
     process.env["ZCODE_BASE_URL"]?.trim() ||
     process.env["ZCODE_ENDPOINT_ORIGIN"]?.trim() ||
@@ -292,8 +282,8 @@ function resolveHostProcessNodeEnv(): ZCodeRuntimeEnv {
 function resolveRemoteAssetCacheDir(localEnv: LocalRuntimeEnv = {}): string {
   const overrideCacheDir = resolveEnvValue("ZCODE_REMOTE_ASSET_CACHE_DIR", localEnv);
   if (overrideCacheDir) {
-    // 开发态需要复用正式版 remote cache 验证下载判断，但不能整体切换 Electron userData。
-    // 因此只允许覆盖 remote assets cache 目录，避免污染登录态、窗口状态等其它开发数据。
+    // The development state needs to reuse the official version of the remote cache to verify the download judgment, but cannot switch the Electron userData as a whole.
+    // Therefore, only the remote assets cache directory is allowed to be overwritten to avoid contaminating login status, window status and other development data.
     return resolve(overrideCacheDir);
   }
 
@@ -307,12 +297,12 @@ export function resolveRemoteAssetDirs(
   const remoteCdnBaseUrls = resolveRemoteCdnBaseUrls(options, localEnv);
   const remoteCdnBaseUrl = remoteCdnBaseUrls[0];
 
-  // remote 资源之前和 desktop 本地 provider 资源共用安装包内路径，
-  // 结果打包后会把整套 Linux 远程运行时一起塞进 .app，和“remote 资源走 CDN / mock-cdn”的职责边界冲突。
-  // 这里改成显式分流：开发态只读仓库里的 mock-cdn；生产态统一走 CDN + 本地缓存目录，
-  // 不再暴露任何安装包内 remote-assets 路径，避免 remote 资源再次被塞回安装包。
-  // 功能开关：开发态默认继续走 mock-cdn，只有显式打开开关才切到公网 CDN。
-  // 这样能兼容离线开发场景，同时允许在开发环境提前验证真实 CDN 下载链路。
+  // The remote resource previously shared the path in the installation package with the desktop local provider resource.
+  // As a result, after packaging, the entire Linux remote runtime will be stuffed into the .app, which conflicts with the responsibility boundary of "remote resources go to CDN / mock-cdn".
+  // This is changed to explicit diversion: mock-cdn in the read-only warehouse in the development state; CDN + local cache directory in the production state.
+  // No longer expose the remote-assets path in any installation package to prevent remote resources from being stuffed back into the installation package again.
+  // Function switch: The development state continues to use mock-cdn by default. Only when the switch is explicitly turned on can it switch to the public network CDN.
+  // This is compatible with offline development scenarios and allows the real CDN download link to be verified in the development environment in advance.
   if (isElectronAppPackaged() || shouldUseRemoteCdnInDevelopment(localEnv)) {
     return {
       remoteCdnBaseUrl,
@@ -338,9 +328,9 @@ function resolveBundledZCodeAgentBinaryPath(): string | undefined {
     isElectronAppPackaged()
       ? join(process.resourcesPath, runtime.bundledResourceDir, ...entrySegments)
       : null,
-    // desktop 开发态的启动 cwd 可能是 packages/desktop，也可能是仓库根，
-    // 之前这里只按 import.meta.dirname 的相对路径推导 bundled-agents，
-    // 这里补齐和 services 侧一致的多候选根目录，避免开发/构建/重启入口不同导致资源解析漂移。
+    // The startup cwd of desktop development mode may be packages/desktop, or it may be the warehouse root.
+    // Previously, bundled-agents were only deduced based on the relative path of import.meta.dirname.
+    // Here, multiple candidate root directories that are consistent with the services side are completed to avoid resource parsing drift caused by different development/build/restart entrances.
     join(
       process.cwd(),
       "bundled-agents",
@@ -403,9 +393,9 @@ function resolveHostProcessBinaryEnv(
   hostProcessLocalEnv: Record<string, string>,
   bundledPath: string | undefined,
 ): string | undefined {
-  // ZCode Agent 与 app 协议适配强绑定版本，生产包必须优先使用随包携带的固定 runtime。
-  // 用户机器或本地 .env 里残留的 GLM_BINARY_PATH 即使存在，也可能版本不兼容。
-  // 只有 bundled runtime 缺失时才把显式路径作为兜底，避免用户本机 CLI 覆盖内嵌版本。
+  // ZCode Agent and the app protocol adapt to the strongly binding version, and the production package must first use the fixed runtime carried with the package.
+  // Even if the residual GLM_BINARY_PATH in the user machine or local .env exists, the version may be incompatible.
+  // Only when the bundled runtime is missing, the explicit path will be used as a fallback to prevent the user's native CLI from overwriting the embedded version.
   if (bundledPath) {
     return bundledPath;
   }
@@ -439,14 +429,14 @@ function resolveWindowsAppInstallDirForDataBaseDirGuard(
 }
 
 /**
- * Dynamic Workflow 灰度的本地覆盖按构建档位分三层
+ * The local coverage of Dynamic Workflow grayscale is divided into three layers according to the build level.
  *
- *   - 未打包 dev：透传 shell 里的合法取值，方便手工切档；非法值直接丢弃而不是转发给 Host，
- *     Host 因此不必再判一次来源；
- *   - 打包 preview：固定写入 `alwaysOn`，忽略 shell，preview 用户始终拥有该功能；
- *   - 打包 production：不写入，且继承值必须被删除，否则本机环境变量就能自行打开灰度。
- * Main 是唯一决策者：对这个键只有「写」和「删」两种动作，绝不原样透传，
- * Host 端的 resolveDynamicWorkflowClientConfig 才能无条件相信读到的值。
+ *   - Unpackaged dev: transparently transmits legal values in the shell to facilitate manual file switching; illegal values are directly discarded instead of forwarded to the Host.
+ *     Host therefore does not have to judge the source again;
+ *   - Package preview: Fixed writing `alwaysOn`, ignoring shell, preview users always have this function;
+ *   - Packaging for production: no writing, and the inherited value must be deleted, otherwise the local environment variable can turn on grayscale by itself.
+ * Main is the only decision-maker: there are only two actions for this key: "write" and "delete", and it will never be transparently transmitted as it is.
+ * Only the resolveDynamicWorkflowClientConfig on the Host side can unconditionally believe the value read.
  */
 function resolveDynamicWorkflowModeHostEnv(options: {
   inheritedValue: string | undefined;
@@ -503,8 +493,8 @@ export function buildHostProcessEnv(hostProcessLocalEnv: Record<string, string>)
           : undefined;
   const windowsAppInstallDir = resolveWindowsAppInstallDirForDataBaseDirGuard();
   const agentTelemetryEnv = readZCodeAgentTelemetryEnv(rawInheritedEnv);
-  // Desktop 身份由 host 从凭据仓库和本机状态读取后可信注入；外部环境只能配置 OTLP 连接，
-  // 不能伪造 uid/device/runtime surface 或绕过本地 identity state 的隔离边界。
+  // The Desktop identity is trusted and injected by the host after reading from the credential warehouse and local state; the external environment can only configure OTLP connections.
+  // You cannot forge uid/device/runtime surfaces or bypass the isolation boundaries of local identity state.
   for (const key of [
     "ZCODE_TELEMETRY_USER_ID",
     "ZCODE_TELEMETRY_USER_ID_HASH",
@@ -530,28 +520,28 @@ export function buildHostProcessEnv(hostProcessLocalEnv: Record<string, string>)
     isPackaged: packagedDesktop,
     isPreview: isPreviewPackagedRuntime,
   });
-  // 三层里有两层不写这个键，空对象无法覆盖 inheritedEnv，所以先无条件删掉继承值再按决策 spread 回去。
-  // 少了这一行，production 包和 dev 的非法取值都会原样穿透到 Host。
+  // Two of the three layers do not write this key, and the empty object cannot overwrite the inheritedEnv, so the inherited value is unconditionally deleted and then spread back according to the decision.
+  // Without this line, the illegal values ​​​​of the production package and dev will be penetrated to the Host unchanged.
   delete inheritedEnv[ZCODE_DYNAMIC_WORKFLOW_MODE_ENV];
 
   return {
     ...inheritedEnv,
-    // OTLP 凭据只定向传到 host；host 初始化 services 时会立即捕获并从 process.env 清除，
-    // 后续只在启动 Agent 时短暂注入，不会进入 Bash/MCP/tool env。
+    // OTLP credentials are only directed to the host; they are captured and cleared from process.env immediately when the host initializes services.
+    // Subsequent injection will only occur briefly when starting the Agent and will not enter Bash/MCP/tool env.
     ...agentTelemetryEnv,
-    // ZCode 运行时不再使用 NODE_ENV；它会被用户 shell、包管理器和测试框架复用。
-    // 这里显式下发 ZCODE_RUNTIME_ENV，并在继承环境里清掉 NODE_ENV，避免 host/agent/Bash 被污染。
+    // NODE_ENV is no longer used by the ZCode runtime; it is reused by user shells, package managers, and test frameworks.
+    // Here, ZCODE_RUNTIME_ENV is explicitly issued and NODE_ENV is cleared in the inheritance environment to avoid host/agent/Bash from being contaminated.
     [ZCODE_RUNTIME_ENV_KEY]: resolveHostProcessNodeEnv(),
-    // 显式注入编译期产品身份，保证主进程与 host 的身份语义一致；地址独立解析。
-    // inheritedEnv 从 .env 通用变量补齐 ZCode/ZAI 链接，未覆盖时统一使用线上默认值。
+    // Explicitly inject the compile-time product identity to ensure that the identity semantics of the main process and host are consistent; the address is resolved independently.
+    // inheritedEnv completes the ZCode/ZAI link from the .env general variable, and uses the online default value if it is not overridden.
     ZCODE_ENV,
-    // Preview 与生产版共享任务、配置和凭据，但不同版本的 Helper 不能互相覆盖或触发降级保护。
-    // 只隔离 computer-use 下的运行组件，不改写 ZCODE_HOME / ZCODE_DATA_BASE_DIR 业务数据根。
+    // Preview shares tasks, configurations, and credentials with the production version, but different versions of Helper cannot overwrite each other or trigger downgrade protection.
+    // Only isolate the running components under computer-use and do not rewrite the ZCODE_HOME / ZCODE_DATA_BASE_DIR business data root.
     ...(isPreviewPackagedRuntime ? { ZCODE_CUA_HELPER_INSTALL_VARIANT: "preview" } : {}),
-    // Dynamic Workflow 灰度的本地覆盖：Main 决策后写入，production 包为空对象（继承值已在上面删除）。
+    // Local override of Dynamic Workflow grayscale: Main written after decision, production package is empty object (inherited values ​​have been removed above).
     ...dynamicWorkflowModeHostEnv,
-    // 模型请求默认 header 由 agent 进程构造，过去只继承 shell env 导致桌面启动时拿不到 app 版本。
-    // 这里从 main 进程显式下发，agent 子进程继承 host env 后即可稳定写入请求 header。
+    // The default header of the model request is constructed by the agent process. In the past, only the shell env was inherited, resulting in the app version not being available when the desktop was started.
+    // Here, it is explicitly issued from the main process. After the agent sub-process inherits the host env, it can stably write the request header.
     [ZCODE_APP_VERSION_ENV]: ZCODE_VERSION,
     ...(dataBaseDir !== homedir() ? { ZCODE_DATA_BASE_DIR: dataBaseDir } : {}),
     ...(windowsAppInstallDir ? { [ZCODE_WINDOWS_APP_INSTALL_DIR_ENV]: windowsAppInstallDir } : {}),

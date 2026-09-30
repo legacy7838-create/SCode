@@ -37,7 +37,7 @@ export function isBigModelUnregisteredAuthError(error: string | null | undefined
 
   const normalized = error.toLowerCase();
   return (
-    error.includes("BigModel 账号未注册") ||
+    error.includes("BigModel account is not registered") ||
     normalized.includes("bigmodel account is not registered") ||
     normalized.includes("not registered")
   );

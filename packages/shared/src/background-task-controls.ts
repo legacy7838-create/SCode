@@ -220,8 +220,9 @@ function resolveTaskKind(record: Record<string, unknown>): BackgroundTaskControl
 }
 
 /**
- * 旧 background task 事件的唯一 kind 兼容入口。
- * 新协议应直接携带 taskKind；只有历史记录缺字段时才从工具名/类型别名恢复。
+ * The single compatibility entry point for the `kind` of legacy background task events.
+ * New protocols should carry `taskKind` directly; only records that predate the field fall
+ * back to recovering it from the tool name / type aliases.
  */
 export function resolveZCodeBackgroundTaskControlKind(
   value: unknown,
@@ -297,8 +298,8 @@ function normalizeStatus(value: string | undefined): ZCodeBackgroundTaskControlS
 
 function readJobId(record: Record<string, unknown>, command: string): string {
   const explicitId = readStringField(record, [
-    // ZCode Protocol 后台任务取消入口按 taskId 查找 runtime task 记录；
-    // 若这里落到 toolCallId，UI 会发送 call_*，后端只能返回 background_task_not_found。
+    // ZCode Protocol background task cancellation entry searches for runtime task records by taskId;
+    // If toolCallId falls here, the UI will send call_*, and the backend can only return background_task_not_found.
     "taskId",
     "task_id",
     "backgroundTaskId",

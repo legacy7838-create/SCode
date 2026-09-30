@@ -75,7 +75,7 @@ export function createWeixinChannelRuntime(deps: WeixinChannelRuntimeDeps) {
         );
       } catch (error) {
         if (signal.aborted) return;
-        // Bugfix：每个窗口都有独立 host。微信锁 I/O 失败必须退避重试，不能让后台 Promise 退出。
+        // Bugfix: Each window has an independent host. If the WeChat lock I/O fails, it must be backed off and retried, and the background Promise cannot be allowed to exit.
         deps.statusSink.setRuntimeStatus({
           botId: bot.id,
           provider: "weixin",
@@ -100,7 +100,7 @@ export function createWeixinChannelRuntime(deps: WeixinChannelRuntimeDeps) {
           botId: bot.id,
           provider: "weixin",
           status: "polling",
-          // 修复：运行状态会直接展示到 UI。补充 messageId，让前端按当前语言渲染，message 仅作为旧版本兜底。
+          // Fix: Running status will be displayed directly to the UI. Add messageId to let the front end render according to the current language, and the message is only used as a cover for the old version.
           message: "Weixin long polling is running.",
           messageId: "bots.runtime.weixinLongPollingRunning",
         });
@@ -120,13 +120,13 @@ export function createWeixinChannelRuntime(deps: WeixinChannelRuntimeDeps) {
               (count, message) => count + (message.attachments?.length ?? 0),
               0,
             );
-            // Bugfix 调试：微信附件可能没有文本，记录原始/解析数量来定位是否在 provider 层被过滤。
+            // Bugfix debugging: WeChat attachments may have no text, record the original/parsed number to determine whether it is filtered at the provider layer.
             deps.logger.debug(
               undefined,
               `weixin polling received bot=${bot.id} raw=${result.rawMessageCount ?? 0} parsed=${result.messages.length} attachments=${attachmentCount}`,
             );
             if (result.messages.length === 0) {
-              // Bugfix 调试：只记录字段形状，不记录正文，定位微信图片/附件为何被过滤。
+              // Bugfix debugging: only record the field shape, not the text, locate why WeChat images/attachments are filtered.
               deps.logger.debug(
                 undefined,
                 `weixin polling diagnostics bot=${bot.id} ${(result.rawMessageDiagnostics ?? []).join(" | ")}`,
@@ -147,8 +147,8 @@ export function createWeixinChannelRuntime(deps: WeixinChannelRuntimeDeps) {
                   chatId: inbound.actor.chatId,
                   displayName: inbound.actor.displayName,
                   context_token: inbound.actor.providerContextToken,
-                  // Bugfix: 微信轮询已经解析出的附件在重新包装给 callback 管线时不能丢。
-                  // 否则纯图片消息会因为 text 为空、attachments 被吞而静默无响应。
+                  // Bugfix: Attachments that have been parsed by WeChat polling cannot be lost when repackaged to the callback pipeline.
+                  // Otherwise, the pure image message will be silent and unresponsive because the text is empty and the attachments are swallowed.
                   attachments: inbound.attachments,
                 },
               ],
@@ -157,15 +157,15 @@ export function createWeixinChannelRuntime(deps: WeixinChannelRuntimeDeps) {
             assertBotCallbackSucceeded("Weixin", callbackResult);
           }
           if (result.buf) {
-            // Bugfix: 微信 get_updates_buf 代表服务端游标，必须等本批消息全部进入业务处理后再持久化。
-            // 之前先写游标再处理回复，进程在中途失败会跳过未完成消息，导致 AskUserQuestion 回复顺序错乱或丢失。
+            // Bugfix: WeChat get_updates_buf represents the server cursor and must wait until all messages in this batch enter business processing before persisting.
+            // Previously, the cursor was written first and then the reply was processed. If the process failed midway, unfinished messages would be skipped, causing AskUserQuestion replies to be out of order or lost.
             await deps.writeWeixinGetUpdatesBuf(bot.id, result.buf);
           }
           deps.statusSink.setRuntimeStatus({
             botId: bot.id,
             provider: "weixin",
             status: "polling",
-            // 修复：运行状态会直接展示到 UI。补充 messageId，让前端按当前语言渲染，message 仅作为旧版本兜底。
+            // Fix: Running status will be displayed directly to the UI. Add messageId to let the front end render according to the current language, and the message is only used as a cover for the old version.
             message: "Weixin long polling is running.",
             messageId: "bots.runtime.weixinLongPollingRunning",
           });
@@ -182,7 +182,7 @@ export function createWeixinChannelRuntime(deps: WeixinChannelRuntimeDeps) {
         });
         await waitFor(5_000, signal);
       } finally {
-        // Bugfix：微信 buf 是第三方队列确认点；只有持锁 owner 能消费和写入，退出时必须释放给其他 host 接管。
+        // Bugfix: WeChat buf is a third-party queue confirmation point; only the lock owner can consume and write, and must be released to other hosts to take over when exiting.
         await lock.release().catch((error: unknown) => {
           deps.logger.debug(
             undefined,
@@ -281,8 +281,8 @@ export function createWeixinChannelRuntime(deps: WeixinChannelRuntimeDeps) {
         }
         const runtime = runtimes.get(bot.id);
         if (runtime && runtime.fingerprint !== fingerprint) {
-          // Bugfix: 微信凭据更新后旧 getupdates 循环仍闭包持有旧 BotConfig。
-          // 串行等待旧请求退出后再接管，避免旧账号继续消费或新旧游标并发推进。
+          // Bugfix: After WeChat credentials are updated, the old getupdates loop still closes to hold the old BotConfig.
+          // Wait serially for the old request to exit before taking over, to prevent the old account from continuing to consume or the new and old cursors to be advanced concurrently.
           await stopPolling(bot.id);
           if (!isLatest()) {
             return;
@@ -307,8 +307,8 @@ export function createWeixinChannelRuntime(deps: WeixinChannelRuntimeDeps) {
 
   function scheduleRefresh(config?: BotsConfigFile): void {
     if (deps.runBackgroundTasks === false) {
-      // 修复原因：配置变更后的微信 long polling 属于本地桌面 host 后台任务；
-      // attached remote 仅应暴露远端文件/agent 控制面。
+      // Reason for repair: WeChat long polling after configuration change belongs to the local desktop host background task;
+      // attached remote should only expose the remote file/agent control plane.
       return;
     }
     void refresh(config).catch((error: unknown) => {
@@ -325,7 +325,7 @@ export function createWeixinChannelRuntime(deps: WeixinChannelRuntimeDeps) {
     for (const runtime of activeRuntimes) {
       runtime.controller.abort();
     }
-    // Bugfix：微信 buf 只能由锁 owner 提交；销毁必须等待请求退出和 finally 释放锁后才完成。
+    // Bugfix: WeChat buf can only be submitted by the lock owner; destruction must wait for the request to exit and finally release the lock before being completed.
     await Promise.allSettled(activeRuntimes.map((runtime) => runtime.done));
     for (const [botId, runtime] of runtimes) {
       if (activeRuntimes.includes(runtime)) {

@@ -67,10 +67,12 @@ function getSelectedTextNodeSlice(range: Range, node: Text) {
 }
 
 /**
- * 从浏览器 Selection 中只提取当前高亮 PPTX 元素 bounds 内的文本。
+ * Extracts only the text inside the bounds of the currently highlighted PPTX element from the
+ * browser Selection.
  *
- * 原因：一次原生划选可以跨越多个 renderer DOM 元素；引用不能直接使用
- * Selection.toString()，否则会把相邻 shape/table-cell 的内容带入当前元素引用。
+ * Why: a single native selection can span multiple renderer DOM elements; the reference cannot use
+ * Selection.toString() directly, or content from adjacent shapes/table cells would be pulled into
+ * the current element's reference.
  */
 export function getPresentationElementSelectedText({
   selection,

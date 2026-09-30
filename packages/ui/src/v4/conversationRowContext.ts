@@ -1,6 +1,6 @@
-// v4 行渲染上下文（ai-elements / ToolCallBlocks 回接所需的宿主注入面）。
-// 注入模式对齐 PermissionDialog（store 耦合剥离）：展示组件不自取 store，
-// theme / codePreviewSettings 在宿主（SessionPane）处取，向下走稳定 props。
+// v4 line rendering context (host injection surface required for ai-elements / ToolCallBlocks fallback).
+// Injection mode alignment PermissionDialog (store coupling stripping): the display component does not take its own store,
+// theme/codePreviewSettings is taken from the host (SessionPane) and goes down to stabilize the props.
 import type { CodePreviewSettings } from "@/lib/codePreviewSettings.js";
 import type { CodeViewerSource } from "@/lib/codeViewer.js";
 import type { AssistantPreviewCardsAutoOpenRequest } from "@/lib/assistantPreviewCards.js";
@@ -36,137 +36,137 @@ export type ConversationFileChangesState = Exclude<
 export interface ConversationRowRenderContext {
   logEpoch?: string;
   workspacePath: string;
-  /** 当前 workspace Host 的用户 Home，用于解析 Assistant 输出中的 ~/ 路径。 */
+  /** The user Home of the current workspace Host, used to resolve ~/ paths in Assistant output. */
   workspaceHomePath?: string;
   workspaceIdentity?: string;
   workspaceRemoteSessionId?: string;
-  /** SessionPane 从目标 Host 读取的同一份模型选择 View。 */
+  /** The SessionPane selects the View from the same model read from the target Host. */
   modelSelectionView?: ModelSelectionView | null;
   theme: Theme;
-  /** 需保持引用稳定（MessageResponse/ToolCallBlock 的 memo 依赖）。 */
+  /** The reference needs to be kept stable (memo dependency of MessageResponse/ToolCallBlock). */
   codePreviewSettings: CodePreviewSettings;
-  /** 当前 pane 绑定的父 session；subagent 右侧 tab 用它做父任务分组。 */
+  /** The parent session bound to the current pane; the tab on the right side of the subagent uses it to group parent tasks. */
   sessionId?: string | null;
-  /** 当前下钻树的顶层 session；详情 tab 跨嵌套层级按该 id 分组。 */
+  /** The top-level session of the current drill-down tree; details tabs are grouped by this id across nesting levels. */
   rootSessionId?: string | null;
-  /** @deprecated 旧内联下钻标记；新的子会话统一打开侧栏详情。 */
+  /** @deprecated Old inline drill-down mark; new sub-session uniformly opens sidebar details. */
   inSubagentDrilldown?: boolean;
-  /** 手机 /remote 紧凑模式：隐藏外部 App 打开下拉，只保留应用内预览。 */
-  /** 当前 session 正在 compact 或 goal verify；专用状态 UI 独占进度反馈。 */
+  /** Mobile /remote compact mode: Hide external apps and open the drop-down, leaving only in-app previews. */
+  /** The current session is compacting or goal verifying; dedicated status UI exclusive progress feedback. */
   chatLoadingBlockedByActiveWork?: boolean;
-  /** 当前 session 正在等待权限确认或 AskUserQuestion 回答，隐藏底部 ChatLoading。 */
+  /** The current session is waiting for permission confirmation or AskUserQuestion answer, hide bottom ChatLoading. */
   chatLoadingBlockedByInteraction?: boolean;
-  /** 常规设置：是否在对话消息流中渲染 reasoning / thought 行。 */
+  /** General setting: whether to render reasoning / thought lines in the conversation message flow. */
   messageStreamShowReasoning?: boolean;
-  /** 当前 assistant 轮次的第一条 reasoning row；关闭完整思考时仍需展示。 */
+  /** The first reasoning row of the current assistant's turn; still required when full thinking is turned off. */
   messageStreamFirstReasoningRowId?: number;
-  /** 常规设置：是否在对话消息流中渲染 Todo 工具卡片。 */
+  /** General settings: Whether to render Todo tool cards in the conversation message flow. */
   messageStreamShowTodos?: boolean;
-  /** 常规设置：是否聚合连续的 Explore-compatible 工具。 */
+  /** General settings: Whether to aggregate consecutive Explore-compatible tools. */
   toolGroupingExploreEnabled?: boolean;
-  /** 常规设置：是否聚合连续的非只读 Shell 工具。 */
+  /** General settings: Whether to aggregate consecutive non-read-only shell tools. */
   toolGroupingTerminalEnabled?: boolean;
-  /** 常规设置：是否聚合连续的文件写入工具。 */
+  /** General settings: Whether to aggregate sequential file writing facilities. */
   toolGroupingChangesEnabled?: boolean;
   /**
-   * Tier 1 fork 跳转：把当前 pane 切到目标会话（forkNotice → 父会话，复用 onSessionCreated
-   * 原地切换）。rowId 预留 Tier 2 精确滚动——当前 forkNotice.parentRowId 恒为 0 占位、暂忽略。
-   * 需保持引用稳定（rowContext 的 memo 依赖）。
+   * Tier 1 fork jump: switch the current pane to the target session (forkNotice → parent session, reuse onSessionCreated
+   * switch in place). rowId is reserved for Tier 2 precision scrolling - the current forkNotice.parentRowId is always 0 and is temporarily ignored.
+   * Need to keep the reference stable (memo dependency of rowContext).
    */
   onNavigateToRow?: (sessionId: string, rowId: number) => void;
-  /** Assistant Preview Cards：Website 卡片预览入口，由 app shell 注入 side pane 行为。 */
+  /** Assistant Preview Cards: Website card preview entrance, side pane behavior injected by app shell. */
   onOpenBrowserUrl?: (url: string) => void;
   onOpenAutomationsMain?: OpenAutomationsMain;
-  /** Assistant Preview Cards：Markdown/文件卡片预览入口，由 app shell 注入 code viewer 行为。 */
+  /** Assistant Preview Cards: Markdown/file card preview entry, which is injected into the code viewer behavior by the app shell. */
   onOpenCodeViewer?: (source: CodeViewerSource) => void;
-  /** Desktop 完成态 PPTX：由 shell 原子创建多个右侧 Preview Tab。 */
+  /** Desktop completion state PPTX: multiple right-side Preview Tabs are created by shell atoms. */
   onAutoOpenAssistantPptx?: (request: AssistantPreviewCardsAutoOpenRequest) => void;
-  /** 当前 renderer 观察到 running → completedSuccess 后，锁定到具体 turn。 */
+  /** After the current renderer observes running → completedSuccess, it locks to the specific turn. */
   assistantPreviewPptxAutoOpenTarget?: { turnId: string; key: string } | null;
-  /** Assistant markdown 本地文件链接入口：由 shell 统一 stat 后分流到预览或文件树。 */
+  /** Assistant markdown local file link entry: the shell unifies the stat and then branches it to the preview or file tree. */
   onOpenFileLink?: (target: MessageFileLinkTarget) => void;
   onOpenSubagentSession?: (request: OpenSubagentSideTabRequest) => void;
   onOpenPlanDetail?: (request: OpenPlanDetailSideTabRequest) => void;
   onOpenWorkflowRun?: (request: OpenWorkflowRunSideTabRequest) => void;
   /**
-   * 产物的全尺寸查看 tab 入口。
+   * Full size view tab entry for product.
    *
-   * ⚠ 术语：这里的 artifact 是脚本经 `artifact.*` 发布给用户看的产出，不是引擎内部那个
-   * 「脚本顶层返回值」的同名词。
+   * ⚠ Terminology: The artifact here is the output of the script published to the user through `artifact.*`, not the one inside the engine
+   * Synonyms for "script top-level return value".
    *
-   * 与 `onOpenWorkflowRun` 同构：行只发意图（哪个 run 的哪个产物），会话与 workspace 身份
-   * 由宿主补齐。**不带版本号**——chip 的语义是「让我看这个产物」，落点恒为最新版。
+   * Isomorphic to `onOpenWorkflowRun`: rows only send intents (which product of which run), session and workspace identity
+   * Completed by the host. **Without version number** - The semantics of chip is "Let me see this product", and the target is always the latest version.
    */
   onOpenWorkflowArtifact?: (request: OpenWorkflowArtifactSideTabRequest) => void;
   /**
-   * 取消一项后台工作（`cancelBackgroundWork{workId}`），由宿主绑定 dispatchCommand + sessionId。
+   * Cancel a background work (`cancelBackgroundWork{workId}`), bound by the host dispatchCommand + sessionId.
    *
-   * 轮尾 run 卡用它做「Stop run」：run 的
-   * `runId ≡ workId`，与详情侧板 / 任务列表同一条取消路径。通知行已是终态、不需要
-   * 取消入口，所以该能力在 context 上缺席；run 卡是第一个在 running 态就渲染停止按钮的
-   * 转写行，故新增此可选字段。宿主（SessionPane）在只读会话下不注入即整卡无取消。
+   * The tail run card uses it to do "Stop run": run
+   * `runId ≡ workId`, the same cancellation path as the details side panel/task list. The notification bank is in final state and is not needed.
+   * Cancel the entry, so the ability is absent in the context; the run card is the first to render the stop button in the running state
+   * Translate the row, so add this optional field. If the host (SessionPane) is not injected in a read-only session, the whole card will not be canceled.
    */
   onCancelBackgroundWork?: (workId: string) => void;
   /**
-   * 工具卡页脚的 Resume：与详情页同一条
-   * v4 `resumeWorkflowRun {workId ≡ runId}`。只读会话下宿主不注入。
+   * Resume of the tool card footer: the same as the details page
+   * v4 `resumeWorkflowRun {workId ≡ runId}`. The host does not inject in a read-only session.
    */
   onResumeWorkflowRun?: (workId: string, name?: string) => void;
   /**
-   * run 卡的「配置」：v4
-   * `amendWorkflowRunSettings {workId ≡ runId, ...改过的设置}`，回 ACK 给弹层显示拒绝理由。与 Resume
-   * 同两道门（只读、灰度）：缺席即卡上没有 Configure。
+   * Run card "configuration": v4
+   * `amendWorkflowRunSettings {workId ≡ runId, ...changed settings}`, return ACK to the pop-up layer to display the rejection reason. With Resume
+   * Same two doors (read-only, grayscale): Absent means there is no Configure on the card.
    */
   onAmendWorkflowRunSettings?: (
     workId: string,
     change: WorkflowRunSettingsChange,
   ) => Promise<CommandAck>;
-  /** 会话当前模型（「配置」弹层首项「会话模型」的名字）；读不到即缺席，首项只写「会话模型」。 */
+  /** The current model of the session (the name of the first item "Session Model" in the "Configuration" pop-up layer); if it cannot be read, it is absent. The first item only writes "Session Model". */
   workflowSessionModel?: { providerId: string; modelId: string };
   /**
-   * 工具卡上的子代理药丸 → 该子代理的 transcript tab：与详情页子代理行同一条打开路径，宿主补齐 workspace 身份。
+   * The subagent pill on the tool card → the transcript tab of the subagent: the same opening path as the subagent row on the details page, and the host completes the workspace identity.
    */
   onOpenWorkflowActor?: (request: OpenWorkflowActorSessionSideTabRequest) => void;
   /**
-   * 工具卡上的脚本药丸 → 该 run 的脚本 transcript tab：
-   * 与详情页脊线上的脚本行同一条打开路径，宿主补齐 workspace 身份。
+   * Script pill on tools tab → script for this run transcript tab:
+   * Open the same path as the script line on the spine of the details page, and the host completes the workspace identity.
    */
   onOpenWorkflowWorkspace?: (request: OpenWorkflowWorkspaceSideTabRequest) => void;
   /**
-   * CreateWorkflow 工具调用 → workflow run 摘要的解析表，由宿主从 `workflowRuns` 投影建立。
+   * CreateWorkflow tool call → workflow run summary parsing table, built by the host from `workflowRuns` projection.
    *
-   * run 身份必须走投影而不是工具输出：`workflowRunSchema.toolCallId` 就是为这个关联而存在的
-   * （「工具卡 → 详情页的关联键」），而 v4 工具行的 output 只剩一句散文，
-   * `status` / `backgroundTaskId` 这些结构化字段被 formatModelContent 丢掉了。
+   * The run identity must be projected rather than tool output: `workflowRunSchema.toolCallId` exists for this association
+   * ("Tool card → associated key of details page"), and the output of the v4 tool line only has one sentence of prose,
+   * `status` / `backgroundTaskId` These structured fields are discarded by formatModelContent.
    *
-   * 值带状态与步数而不只是 runId：命中即卡片进入 run 态（紧凑可点卡），那张卡要渲染
-   * 实时状态词与进度，联接一次就把它们算完（`workflowRunCardJoin.ts`）。
+   * The value contains status and step number instead of just runId: when hit, the card enters the run state (a compact clickable card), and that card needs to be rendered.
+   * Real-time status words and progress, join them once and calculate them (`workflowRunCardJoin.ts`).
    */
   workflowRunByToolCallId?: ReadonlyMap<string, WorkflowRunCardSummary>;
   /**
-   * runId 键的同源联接表（`workflowRunCardJoin.buildWorkflowRunByRunId`）。给
-   * ResumeWorkflowRun 的工具行用：投影里 run.toolCallId 跨 resume 沿用**原始
-   * CreateWorkflow 行**（join 不断链的刻意语义），resume 行按 toolCallId 永远查不到，
-   * 但它的 display 载荷带着 runId——按 runId 联接同一份投影。
+   * Same-origin join table for runId key (`workflowRunCardJoin.buildWorkflowRunByRunId`). give
+   * The tool usage of ResumeWorkflowRun: in the projection, run.toolCallId is used across resume**original
+   * The CreateWorkflow line** (join is a deliberate semantic of continuous chaining), the resume line can never be found by toolCallId.
+   * But its display load carries runId - connect to the same projection according to runId.
    */
   workflowRunByRunId?: ReadonlyMap<string, WorkflowRunCardSummary>;
   /**
-   * runId → 该 run 当前停驻的 qid 集合，由宿主从**活投影**（不掺 journal 兜底）建立
-   * （`workflowRunCardJoin.buildWorkflowRunPendingQuestionsByRunId`）。Workflow 通知 manifest
-   * 的升级条目据此做 Waiting→Answered 翻转：键在场 ⟺ run 在活投影里，值含 qid = Waiting、
-   * 不含 = Answered、整键缺席 = run 不在场（中性 Question）。
+   * runId → The set of qid where the run is currently parked, established by the host from **live projection** (not mixed with the journal)
+   * (`workflowRunCardJoin.buildWorkflowRunPendingQuestionsByRunId`). Workflow notification manifest
+   * The upgrade entry is accordingly done Waiting→Answered flip: key is present ⟺ run in the live projection, the value contains qid = Waiting,
+   * Does not contain = Answered, integer absent = run is not present (neutral Question).
    */
   workflowRunPendingQuestionsByRunId?: ReadonlyMap<string, ReadonlySet<string>>;
   /**
-   * 发起 toolCallId → 该 run 的静态图（`workflowRunCardJoin.buildWorkflowGraphByToolCallId`），由宿主
-   * 从行窗口建立。图是 run 的属性：轮尾 run 卡不论挂在 CreateWorkflow 行、ResumeWorkflowRun 行还是
-   * 直接启动轮上，都按 run 的发起 toolCallId 到这张表取图。
+   * Initiate toolCallId → the static graph of the run (`workflowRunCardJoin.buildWorkflowGraphByToolCallId`), by the host
+   * Create from the line window. The picture shows the properties of run: The run card at the end of the wheel is hung in the CreateWorkflow line, ResumeWorkflowRun line or
+   * To start the wheel directly, press the toolCallId of run to get the image from this table.
    */
   workflowGraphByToolCallId?: ReadonlyMap<string, WorkflowCausalityGraphData>;
   /**
-   * CreateWorkflow / AmendWorkflow 行 → 草稿位置（稿号、是否已被替代），由宿主从行窗口一遍建立
-   * （`workflowDraftJoin.buildWorkflowDraftByToolCallId`）。编译反馈行据此写「第 n 稿」并决定空环灯的
-   * 颜色；缺席时卡片不编号。
+   * CreateWorkflow / AmendWorkflow row → draft position (draft number, whether it has been replaced), created by the host from the row window
+   * (`workflowDraftJoin.buildWorkflowDraftByToolCallId`). Compile the feedback line to write the "nth draft" accordingly and decide on the empty ring light.
+   * Color; cards not numbered in absence.
    */
   workflowDraftByToolCallId?: ReadonlyMap<string, WorkflowDraftPosition>;
   fetchFileChanges?: (
@@ -177,7 +177,7 @@ export interface ConversationRowRenderContext {
     target: ConversationRowTarget,
   ) => Promise<V4ConversationFileRewindPreviewResult>;
   applyFileRewind?: (target: ConversationRowTarget) => Promise<CommandAck>;
-  /** 已发送 image/video 预览；由 pane 绑定的 workspace transport 注入。 */
+  /** Image/video preview sent; injected by workspace transport bound by pane. */
   readAttachment?: (
     params: ConversationAttachmentReadParams,
   ) => ReturnType<ConversationTransport["attachmentRead"]>;
@@ -188,11 +188,11 @@ export interface ConversationRowRenderContext {
 
 export interface ConversationFileChangesRequestOptions {
   /**
-   * 运行中 turn 的结果仍会随 projection revision 增长，只能复用进行中的请求；
-   * 终态 turn 才允许在虚拟行复挂载后继续复用成功结果。
+   * The results of the running turn will still grow with the projection revision, and only ongoing requests can be reused;
+   * The final state turn allows continued reuse of successful results after the virtual row is mounted again.
    */
   cachePolicy: "in-flight" | "terminal";
-  /** rewind 会在同一 logEpoch 内切换 active/reverted，终态缓存必须按该语义状态隔离。 */
+  /** rewind will switch active/reverted within the same logEpoch, and the final cache must be isolated according to this semantic state. */
   fileChangesState?: ConversationFileChangesState;
 }
 

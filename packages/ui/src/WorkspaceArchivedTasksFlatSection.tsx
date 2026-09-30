@@ -139,7 +139,7 @@ export function WorkspaceArchivedTasksFlatSection({
           const isRemoteTask = Boolean(task.workspaceIdentity?.trim());
           const unarchiveLabel = intl.formatMessage({ id: "taskList.unarchive" });
           const deleteLabel = intl.formatMessage({ id: "taskList.delete" });
-          // archived 平铺列表同样是跨 workspace 视图，选中态要按 workspaceKey 隔离。
+          // The archived tiled list is also a cross-workspace view, and the selected state must be isolated by workspaceKey.
           const isActive = workspaceKey === activeWorkspaceKey && task.taskId === activeTaskId;
           const isMobileActive = false;
           const taskKey = `${workspaceKey}:${task.taskId}`;
@@ -172,9 +172,9 @@ export function WorkspaceArchivedTasksFlatSection({
                         id: "taskList.mobileActive",
                       })}
                     >
-                      {/* 归档视图也可能保留手机端当前 task 的旧状态，展示同一标记避免列表间状态不一致。
-                        上一版把标记放进标题行 flex 流里，会让只有手机标记的 task 标题右移；
-                        这里用绝对定位放在标题左侧，让标题文本继续按原始位置对齐。 */}
+                      {/* The archive view may also retain the old status of the current task on the mobile phone, displaying the same mark to avoid status inconsistency between lists.
+                        In the previous version, putting the mark into the title line flex flow will move the task title with only the mobile mark to the right;
+                        Here, absolute positioning is used to place it on the left side of the title, so that the title text continues to be aligned according to its original position. */}
                       <Smartphone className="size-3.5" />
                     </span>
                   </ControlHintTooltip>
@@ -194,8 +194,8 @@ export function WorkspaceArchivedTasksFlatSection({
                   className="flex min-w-0 flex-1 items-center gap-1.5"
                   title={task.workspacePath}
                 >
-                  {/* archived 列表以前本地和远端任务都显示 Folder，
-                    用户无法判断取消归档会作用在哪一侧。这里用 Cloud 区分远端来源。 */}
+                  {/* The archived list previously displayed Folder for both local and remote tasks.
+                    The user cannot tell which side unarchiving will affect. Cloud is used here to distinguish remote sources. */}
                   {isRemoteTask ? (
                     <Cloud className="size-3 shrink-0" />
                   ) : (
@@ -246,14 +246,14 @@ export function WorkspaceArchivedTasksFlatSection({
                         })
                         .catch((error) => {
                           logger.error(
-                            "[WorkspaceArchivedTasksFlatSection] 取消归档 task 失败:",
+                            "[WorkspaceArchivedTasksFlatSection] failed to unarchive task:",
                             error,
                           );
                         });
                     }}
                   >
-                    {/* 取消归档按钮以前本地/远端都用 ArchiveX，
-                      在混合归档列表中看不出操作目标。远端用 CloudDownload 明确会作用到远端 task。 */}
+                    {/* The cancel archive button used to use ArchiveX locally/remotely.
+                      The operation target is not visible in the mixed archive list. Using CloudDownload remotely will clearly affect the remote task. */}
                     {isRemoteTask ? (
                       <CloudDownload className="size-3.5" />
                     ) : (
@@ -262,8 +262,8 @@ export function WorkspaceArchivedTasksFlatSection({
                   </Button>
                 </ControlHintTooltip>
                 <ControlHintTooltip title={deleteLabel} side="top">
-                  {/* 删除请求期间 button 会 disabled，disabled 元素不产生 hover 事件；
-                    用真实 span 承接 tooltip trigger，保持处理中仍能解释该 action。 */}
+                  {/* During the deletion request, the button will be disabled, and the disabled element will not generate a hover event;
+                    Use a real span to inherit the tooltip trigger, and the action can still be interpreted during processing. */}
                   <span className="inline-flex shrink-0">
                     <Button
                       type="button"
@@ -302,8 +302,8 @@ export function WorkspaceArchivedTasksFlatSection({
                                 ? { workspaceIdentity: task.workspaceIdentity }
                                 : {}),
                             });
-                            // 删除只发生在归档列表，不能把它当成“取消归档”写回普通列表。
-                            // 这里直接从 task caches 移除目标项，避免失效整表 query cache 导致列表闪空。
+                            // Deletion only occurs in the archive list and cannot be treated as "unarchiving" and written back to the ordinary list.
+                            // Here, the target item is directly removed from the task caches to avoid invalidating the query cache of the entire table and causing the list to flash empty.
                             removeTaskFromTaskCaches({
                               workspacePath: task.workspacePath,
                               workspaceIdentity: task.workspaceIdentity,
@@ -311,7 +311,7 @@ export function WorkspaceArchivedTasksFlatSection({
                             });
                           } catch (error) {
                             logger.error(
-                              "[WorkspaceArchivedTasksFlatSection] 删除归档 task 失败:",
+                              "[WorkspaceArchivedTasksFlatSection] failed to delete archived task:",
                               error,
                             );
                           } finally {

@@ -8,7 +8,7 @@ import {
 
 const FIRST_STATUS_TIMEOUT_MS = 30_000;
 
-/** 一个 protocol client 对应一个进程代次，状态只来自该连接的合法控制帧。 */
+/** One protocol client maps to one process generation; the state only comes from that connection's legitimate control frames. */
 export class ZCodeStorageStartupGate {
   private current?: ZCodeStorageStartupState;
   private terminalError?: Error;
@@ -89,12 +89,12 @@ export class ZCodeStorageStartupGate {
       this.resolve = resolve;
       this.reject = reject;
     });
-    // 尚无业务调用时也可能先收到失败；仍保留 rejected promise 给之后的调用者。
+    // It may also receive a failure when there is no business call yet; the rejected promise is still retained for subsequent callers.
     void this.pending.catch(() => undefined);
   }
 
   private fail(code: DatabaseStartupErrorCode): void {
-    // 首帧之前失败也必须形成快照；未知数据库身份不能伪装成某个已解析路径。
+    // Failures before the first frame must also form a snapshot; unknown database identities cannot be disguised as a resolved path.
     if (this.current?.phase !== "failed") {
       this.current = this.current
         ? { ...this.current, phase: "failed", errorCode: code, sequence: this.current.sequence + 1 }

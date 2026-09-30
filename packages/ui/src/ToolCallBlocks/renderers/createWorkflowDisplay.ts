@@ -5,11 +5,12 @@ import {
 import { isPlainRecord } from "@/ToolCallBlocks/renderers/createWorkflowInput.js";
 
 /**
- * CreateWorkflow 工具输出侧的读取规则（display 载荷与纯文本兜底）。从 `create-workflow.tsx`
- * 拆出（oxlint max-lines 400 门，与 `createWorkflowInput.ts` 同一先例）：纯函数、无 JSX。
+ * Read rules for the output side of the CreateWorkflow tool (display payload and plain-text
+ * fallback). Split out of `create-workflow.tsx` (oxlint max-lines 400 limit, same precedent as
+ * `createWorkflowInput.ts`): pure functions, no JSX.
  */
-// 结构化诊断只走 display 通道；用 packages/shared 的 schema 安全解析 raw.display，
-// 缺失或形态不符时退回纯文本兜底，绝不 JSON dump，绝不崩溃。
+// Structured diagnosis only uses the display channel; use packages/shared schema to safely parse raw.display.
+// When it is missing or does not match the shape, it will be returned to plain text, never JSON dump, and never crash.
 export function readWorkflowDisplay(raw: unknown): ToolCallCreateWorkflowDisplay | null {
   if (!isPlainRecord(raw)) {
     return null;
@@ -47,8 +48,9 @@ interface WorkflowDiagnosticPosition {
 }
 
 /**
- * 编译反馈行的悬停提示：先是那一句话
- * （什么没发生、谁接着动），再逐条 `L{line}:C{col} message`——与模型收到的行同形，复制出来可以直接对照。
+ * Hover text for a compiler feedback row: first the one-liner (what did not happen, who moves
+ * next), then one `L{line}:C{col} message` per entry — the same shape as the lines the model
+ * received, so a copy can be compared against them directly.
  */
 export function formatWorkflowFeedbackTooltip(
   lede: string,
@@ -62,7 +64,10 @@ export function formatWorkflowFeedbackTooltip(
   ].join("\n");
 }
 
-/** 被诊断点名的脚本行（首次出现序、去重、只要正行号）：展开后的脚本把这些行号染成警示色。 */
+/**
+ * Script lines named by diagnostics (first-occurrence order, deduplicated, positive line numbers
+ * only): the expanded script tints those line numbers with the warning color.
+ */
 export function workflowDiagnosticLines(
   diagnostics: readonly WorkflowDiagnosticPosition[],
 ): number[] {

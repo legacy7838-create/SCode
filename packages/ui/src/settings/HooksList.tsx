@@ -258,7 +258,7 @@ function ConfiguredHookRow({
   onEdit: (hook: Hook) => void;
   onTrust?: (hook: Hook) => Promise<void>;
   onToggle: (hook: Hook, enabled: boolean) => Promise<void>;
-  /** 上游/祖先 zcode.json 的只读工作区 Hook：不可编辑、不可 toggle，但仍可逐条 Trust。 */
+  /** Read-only workspace hook for upstream/ancestor zcode.json: not editable, not toggleable, but still trustable item by item. */
   readOnly?: boolean;
   requiresTrust: boolean;
   trustActionAvailable: boolean;
@@ -291,10 +291,10 @@ function ConfiguredHookRow({
               {intl.formatMessage({ id: "settings.hooks.review.trust" })}
             </Button>
           ) : null}
-          {/* workspace-hook-trust：未通过信任审核的工作区 Hook 禁止直接启用，
-              Switch 强制关闭并禁用，引导用户先完成 Trust 审核流程。
-              只读行（上游 zcode.json）的 Switch 始终禁用：信任后展示真实配置状态，
-              但启用/禁用必须去源文件改，Settings 不提供写入口。 */}
+          {/* workspace-hook-trust: Workspace Hooks that have not passed the trust review are prohibited from being enabled directly.
+              Switch is forced to close and disabled, and the user is guided through the Trust review process first.
+              Switch for read-only lines (upstream zcode.json) is always disabled: show true configuration status after trust,
+              However, enabling/disabling must be done in the source file, and Settings does not provide a write entry. */}
           <Switch
             checked={requiresTrust ? false : hook.enabled}
             onCheckedChange={(value) => void onToggle(hook, value)}

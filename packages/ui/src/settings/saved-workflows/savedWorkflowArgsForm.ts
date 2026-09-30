@@ -1,6 +1,6 @@
-// 已保存工作流的实参表单与元数据实参表。
-// 纯函数：把 frontmatter 的 args 声明铺成可编辑字段，再把字段收回成实参袋 / 声明；
-// 校验规则与 CLI 的 validateWorkflowArgs 同源（required、按类型解析、default 回填由服务端做）。
+// The argument form and metadata argument table of saved workflows.
+// Pure functions: lay out the frontmatter's args declaration into editable fields, then fold the fields back into an argument bag / declaration;
+// the validation rules share a source with the CLI's validateWorkflowArgs (required, per-type parsing, and default backfill are done by the server).
 import type { ZCodeSavedWorkflowArgType, ZCodeSavedWorkflowArgsDeclaration } from "@zcode/shared";
 
 export interface SavedWorkflowArgField {
@@ -9,13 +9,13 @@ export interface SavedWorkflowArgField {
   description?: string;
   required: boolean;
   hasDefault: boolean;
-  /** 编辑器里的文本；boolean 用 "true" / "false"。 */
+  /** The text in the editor; booleans use "true" / "false". */
   value: string;
 }
 
 export type SavedWorkflowArgFieldError = "required" | "invalid_number" | "invalid_json";
 
-/** 把一个默认值 / 已有值按类型转成编辑器文本。 */
+/** Converts a default value / existing value into editor text according to its type. */
 function formatSavedWorkflowArgValue(type: ZCodeSavedWorkflowArgType, value: unknown): string {
   if (value === undefined) return type === "boolean" ? "false" : "";
   switch (type) {
@@ -50,8 +50,9 @@ type SavedWorkflowArgParse =
   | { ok: false; error: SavedWorkflowArgFieldError };
 
 /**
- * 单个字段 → 实参值。空文本对 string / number / json 意味着「不传」：有默认值的由服务端回填，
- * 无默认值又非必填的就是缺席；必填而空是唯一的 required 错误。boolean 永远有值。
+ * A single field → an argument value. Empty text means "do not pass" for string / number / json:
+ * one with a default is filled in by the server, and one with no default that is not required is
+ * simply absent; required-but-empty is the only required error. A boolean always has a value.
  */
 function parseSavedWorkflowArgField(field: SavedWorkflowArgField): SavedWorkflowArgParse {
   const raw = field.value;
@@ -67,7 +68,7 @@ function parseSavedWorkflowArgField(field: SavedWorkflowArgField): SavedWorkflow
       return { ok: true, omitted: false, value: raw };
     case "number": {
       const parsed = Number(raw.trim());
-      // NaN / Infinity 过不了 JSON，也过不了 CLI 的 number 校验；在这里就拦下来。
+      // NaN / Infinity pass neither JSON nor the CLI's number validation; block them right here.
       if (!Number.isFinite(parsed)) return { ok: false, error: "invalid_number" };
       return { ok: true, omitted: false, value: parsed };
     }
@@ -85,7 +86,10 @@ type SavedWorkflowArgsCollect =
   | { ok: true; args: Record<string, unknown> }
   | { ok: false; errors: Record<string, SavedWorkflowArgFieldError> };
 
-/** 整张表单 → 实参袋；一次收齐全部错误（照 validateWorkflowArgs 的「不逐个报」）。 */
+/**
+ * The whole form → the argument bag; all errors are gathered in one pass (following
+ * validateWorkflowArgs' "do not report them one at a time").
+ */
 export function collectSavedWorkflowArgs(
   fields: readonly SavedWorkflowArgField[],
 ): SavedWorkflowArgsCollect {
@@ -102,15 +106,18 @@ export function collectSavedWorkflowArgs(
   return Object.keys(errors).length > 0 ? { ok: false, errors } : { ok: true, args };
 }
 
-// ── 元数据编辑：实参声明表 ──
+// ── Metadata editing: actual parameter declaration table ──
 
 export interface SavedWorkflowArgRow {
-  /** 行的稳定身份（新增行也要有，名字可空）。 */
+  /** A row's stable identity (new rows need one too; the name may be empty). */
   key: string;
   name: string;
   type: ZCodeSavedWorkflowArgType;
   required: boolean;
-  /** 默认值的编辑文本；空即无默认值（boolean 用 "" / "true" / "false"）。 */
+  /**
+   * The editor text for a default value; empty means no default (booleans use "" / "true" /
+   * "false").
+   */
   defaultText: string;
   description: string;
 }
@@ -168,8 +175,9 @@ type SavedWorkflowArgRowsCollect =
   | { ok: false; errors: Record<string, SavedWorkflowArgRowError> };
 
 /**
- * 实参表 → 声明。名字只要求非空且唯一（声明本就是 record，`args.x` 的读法不限定标识符）；
- * 空表回 undefined（frontmatter 里就没有 args 键，而不是 `args: {}`）。
+ * Argument table → declaration. Names are only required to be non-empty and unique (a declaration
+ * is a record to begin with, and reading `args.x` does not restrict the identifier); an empty table
+ * yields undefined (no args key in the frontmatter at all, rather than `args: {}`).
  */
 export function rowsToArgsDeclaration(
   rows: readonly SavedWorkflowArgRow[],

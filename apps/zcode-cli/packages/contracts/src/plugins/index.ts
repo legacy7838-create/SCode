@@ -8,14 +8,14 @@ export const ZCODE_OFFICIAL_PLUGIN_MARKETPLACE = "zcode-plugins-official";
 export const ZCODE_INLINE_PLUGIN_MARKETPLACE = "inline";
 export const ZCODE_PLUGIN_HOST_COMMAND = "__zcode-plugin-host";
 /**
- * 隐藏子命令：dynamic workflow 的沙箱子进程入口（`__zcode-dwf-child <entry path>`；argv 末位是
- * harness 写好的入口文件路径，payload 不过命令行）。
+ * Hidden subcommand: the sandboxed child process entry point for dynamic workflows (`__zcode-dwf-child <entry path>`; the last argv element is
+ * the entry file path the harness has written, and the payload does not travel over the command line).
  *
- * 与 {@link ZCODE_PLUGIN_HOST_COMMAND} 同族、同机制：SEA 单文件二进制不解释 Node CLI 旗标，
- * 于是 harness 默认的 `node --max-old-space-size=… <entry>` spawn 在 SEA 下会把旗标交给严格
- * parseArgs 而必然失败。SEA 下改为自 re-exec 本二进制并由 `run.ts` 在 parseArgs **之前**分派。
- * 常量放在 contracts 而非 dynamic-workflow-runtime：后者刻意不依赖 contracts（app-free 证明），
- * 由 bootstrap 在 SEA 判定后把它作为 argsPrefix 递给 harness。
+ * Of the same family and mechanism as {@link ZCODE_PLUGIN_HOST_COMMAND}: a SEA single-file binary does not interpret Node CLI flags, so
+ * the harness's default `node --max-old-space-size=… <entry>` spawn necessarily fails under SEA by handing those flags to a strict
+ * parseArgs. Under SEA it instead re-execs this binary, and `run.ts` dispatches **before** parseArgs.
+ * The constant lives in contracts rather than in dynamic-workflow-runtime: the latter deliberately does not depend on contracts (the app-free proof),
+ * and bootstrap hands it to the harness as the argsPrefix after the SEA check.
  */
 export const ZCODE_DWF_CHILD_COMMAND = "__zcode-dwf-child";
 
@@ -93,12 +93,12 @@ export interface PluginHookDetail {
   type: "command" | "process";
 }
 
-/** 详情 UI 的组件分组类型，顺序与展示一致：agent / command / skill / hook / mcp。 */
+/** The component grouping type of the detail UI, in the same order as displayed: agent / command / skill / hook / mcp. */
 export type PluginComponentKind = "agent" | "command" | "skill" | "hook" | "mcp";
 
 export interface PluginComponentItem {
   name: string;
-  /** 来自组件 frontmatter / manifest 的描述；缺失时省略，绝不伪造。 */
+  /** A description from the component's frontmatter / manifest; omitted when missing, never fabricated. */
   description?: string;
 }
 
@@ -108,16 +108,16 @@ export interface PluginComponentGroup {
 }
 
 /**
- * 商店信息（Store Listing）：市场目录条目携带的展示性元数据，描述"如何在商店里呈现"，
- * 不影响插件功能。字段全部可选，缺失时 UI 按降级矩阵处理（字母头像 / 隐藏区块 / 省略信息行）。
+ * Store information (Store Listing): the presentational metadata a marketplace catalog entry carries, describing "how it is presented in the store",
+ * without affecting plugin functionality. All fields are optional; when missing, the UI follows the degradation matrix (letter avatar / hidden section / omitted info row).
  */
 export interface PluginStoreListing {
-  /** 卡片/详情显示名，缺失回退插件 name slug。 */
+  /** The display name on the card/detail, falling back to the plugin's name slug when missing. */
   displayName?: string;
   displayNameI18n?: Record<string, string>;
-  /** 目录条目描述的多语言版本（description 本体已有独立字段）。 */
+  /** The localized versions of the catalog entry's description (the description itself already has its own field). */
   descriptionI18n?: Record<string, string>;
-  /** icon 图片：https URL 或内置插件的本地资源路径。 */
+  /** The icon image: an https URL or a local asset path for a built-in plugin. */
   icon?: string;
   category?: string;
   author?: string;
@@ -125,15 +125,15 @@ export interface PluginStoreListing {
   homepage?: string;
   privacyPolicy?: string;
   termsOfService?: string;
-  /** 详情页 hero 横幅图。 */
+  /** The hero banner image on the details page. */
   heroImage?: string;
-  /** 详情页示例提示词胶囊；点击后新建会话预填。 */
+  /** The example prompt pills on the details page; clicking one creates a new session prefilled with it. */
   examplePrompts?: string[];
   examplePromptsI18n?: Record<string, string[]>;
   /**
-   * 需要付费套餐才好用：目录条目声明 `requiresPaidPlan: true`，商店卡片与详情页
-   * 标题右侧展示提示图标。表达「使用条件」，不代表插件本身是收费商品，
-   * 因此不参与安装门禁与计费；命名不绑定具体套餐商品名，套餐改名不会让字段过期。
+   * A paid plan is needed to make good use of it: the catalog entry declares `requiresPaidPlan: true`, and the store card and the details page
+   * show a hint icon to the right of the title. It expresses a "condition of use" and does not mean the plugin itself is a paid product,
+   * so it takes no part in the install gate or in billing; the naming is not bound to a concrete plan product name, so renaming a plan will not make the field stale.
    */
   requiresPaidPlan?: boolean;
 }
@@ -170,13 +170,13 @@ export interface PluginConfig {
 }
 
 export interface PluginMetadata {
-  /** manifest（plugin.json）里的作者名，规范化为字符串；商店信息缺失时作为详情页回退。 */
+  /** The author name in the manifest (plugin.json), normalized to a string; used as the details-page fallback when store information is missing. */
   author?: string;
   authorUrl?: string;
   commandRootCount: number;
   /**
-   * 权威的组件清单（名称 + 可选描述），由 loader 在解析阶段对插件根目录枚举得出，
-   * 与启用态无关。详情 UI 直接展示，无需再在 UI 侧 join Skills/Commands/Agents。
+   * The authoritative component inventory (name + optional description), produced by the loader enumerating the plugin root directory at
+   * the resolution stage, independent of the enabled state. The detail UI displays it directly, with no need to join Skills/Commands/Agents on the UI side.
    */
   components: PluginComponentGroup[];
   configuredOptions?: PluginOptionValues;
@@ -184,7 +184,7 @@ export interface PluginMetadata {
   declaredMcpServerNames: string[];
   description?: string;
   enabled: boolean;
-  /** manifest（plugin.json）homepage；商店信息缺失时作为详情页回退。 */
+  /** The homepage in the manifest (plugin.json); used as the details-page fallback when store information is missing. */
   homepage?: string;
   id: string;
   manifestPath: string;
@@ -209,34 +209,34 @@ export interface PluginDiagnostic {
 }
 
 // ============================================================
-// Plugin 对话引用（@ Plugin capability hint）的身份 catalog 契约。
-// 语义：catalog 在 Session（App）创建时冻结，
-// 只承载身份与能力"声明"；实际注入能力每轮与 live inventory 取交集。
+// The identity catalog contract referenced by the Plugin conversation (@Plugin capability hint).
+// Semantics: catalog is frozen when Session (App) is created,
+// It only carries the "declaration" of identity and capabilities; the actual injected capabilities intersect with the live inventory in each round.
 // ============================================================
 
 export interface PluginReferenceCatalogEntry {
-  /** 稳定 Plugin ID：`${manifest.name}@${marketplace}`，canonical plugin:// 链接的唯一身份。 */
+  /** Stable Plugin ID: `${manifest.name}@${marketplace}`, the sole identity of a canonical plugin:// link. */
   pluginId: string;
-  /** manifest name（Skill/MCP/Subagent runtime 名字空间的基），仅用于展示与 provenance 匹配，不具权威性。 */
+  /** The manifest name (the base of the Skill/MCP/Subagent runtime namespace), used only for display and provenance matching; it carries no authority. */
   name: string;
   marketplace: string;
-  /** catalog 冻结时刻的启用态；disabled 条目保留用于 `disabled_in_session` 诊断，不可被引用。 */
+  /** The enabled state at the moment the catalog was frozen; disabled entries are kept for `disabled_in_session` diagnostics and must not be referenced. */
   enabled: boolean;
   /**
-   * 与本条目共享 manifest.name 的其他 enabled Plugin stable IDs。
-   * 非空即 V1 fail closed 冲突：Picker 禁选、runtime 按 ambiguous 跳过，
-   * 禁止 last-write-wins 或 display name 猜测。
+   * Other enabled Plugin stable IDs that share this entry's manifest.name.
+   * Non-empty means a V1 fail-closed conflict: the Picker disallows selection, the runtime skips it as ambiguous,
+   * and last-write-wins or display-name guessing are forbidden.
    */
   conflictingPluginIds: string[];
-  /** 身份声明的 Skill qualified names（`${name}:${skill}`）；来自组件枚举，与 live 发现解耦。 */
+  /** The Skill qualified names declared by this identity (`${name}:${skill}`); they come from the component enumeration and are decoupled from live discovery. */
   skillQualifiedNames: string[];
-  /** 身份声明的 namespaced MCP server names（`plugin:${name}:${server}`）。 */
+  /** The namespaced MCP server names declared by this identity (`plugin:${name}:${server}`). */
   mcpServerNames: string[];
-  /** 身份声明的 canonical Subagent names（`${name}:${agent}`）；来自组件枚举。 */
+  /** The canonical Subagent names declared by this identity (`${name}:${agent}`); they come from the component enumeration. */
   subagentNames: string[];
   /**
-   * Plugin 根目录，仅供 runtime 对 live Skill/Subagent 做 provenance 回溯（rootPath 前缀判定）。
-   * 禁止进入 provider reminder 或协议投影——路径不属于 identifiers-only 契约。
+   * The plugin root directory, used only by the runtime to trace provenance for live Skill/Subagent lookups (a rootPath prefix check).
+   * It must never enter the provider reminder or the protocol projection -- a path does not belong to the identifiers-only contract.
    */
   rootPath: string;
 }
@@ -250,7 +250,7 @@ export interface PluginLoadOutcome {
   diagnostics: PluginDiagnostic[];
   hooks: Partial<Record<HookEventName, HookMatcherConfig[]>>;
   mcpServers: Record<string, McpServerConfig>;
-  /** 商店 listing 按完整 Plugin ID 关联，供 CLI/TUI 展示；不参与运行时身份判断。 */
+  /** The store listing is keyed by the full Plugin ID for CLI/TUI display; it takes no part in runtime identity decisions. */
   pluginListingsById?: Record<string, PluginStoreListing>;
   plugins: PluginMetadata[];
   skillRoots: SkillRoot[];
@@ -259,9 +259,9 @@ export interface PluginLoadOutcome {
 export interface PluginDiscoverRequest {
   config: PluginConfig;
   env?: Record<string, string | undefined>;
-  // bootstrap 可以把"安全到默认就开"的 official plugin id 列表传进来,
-  // 让用户不必先 `zcode plugins enable` 就能用 (例如纯内容型的 skill-creator)。
-  // 默认空集合, 现有 plugin (含 ios-simulator/android-emulator 这种重负载) 行为不变。
+  // Bootstrap can pass in the official plugin id list that is "safe enough to be enabled by default".
+  // Allow users to use it without `zcode plugins enable` first (such as content-only skill-creator).
+  // The default collection is empty, and the behavior of existing plugins (including heavy loads such as ios-simulator/android-emulator) remains unchanged.
   officialPluginsEnabledByDefault?: ReadonlySet<string>;
   officialPluginRoots?: string[];
   storageRoot: string;

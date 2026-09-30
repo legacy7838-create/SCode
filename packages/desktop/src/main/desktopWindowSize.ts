@@ -43,8 +43,8 @@ export function attachDesktopWindowSizePersistence(
   const persistCurrentState = (): void => {
     if (win.isDestroyed()) return;
 
-    // 最大化窗口的当前 bounds 等于显示器工作区，直接持久化会覆盖用户最后一次
-    // 手动调整的普通窗口尺寸。始终读取 normal bounds，并把 maximized 作为独立状态保存。
+    // The current bounds of the maximized window are equal to the monitor workspace, and direct persistence will overwrite the user's last
+    // Manually adjusted normal window size. Always read normal bounds and save maximized as a separate state.
     const bounds = win.getNormalBounds();
     const state: DesktopWindowSize = {
       width: Math.max(MIN_DESKTOP_WINDOW_WIDTH, Math.floor(bounds.width)),
@@ -65,8 +65,8 @@ export function attachDesktopWindowSizePersistence(
   };
 
   win.on("resize", () => {
-    // resize 在 Linux 和部分 Windows 窗口管理器中会随拖拽高频触发；只保存稳定后的尺寸，
-    // 避免把与渲染帧同量级的写入堆进 setting.json 原子写队列。
+    // resize will be triggered frequently with dragging in Linux and some Windows window managers; only the stable size will be saved.
+    // Avoid piling writes of the same magnitude as rendered frames into the setting.json atomic write queue.
     clearResizeTimer();
     resizeTimer = setTimeout(() => {
       resizeTimer = null;
@@ -75,8 +75,8 @@ export function attachDesktopWindowSizePersistence(
   });
   win.on("maximize", () => void persistImmediately());
   win.on("unmaximize", () => void persistImmediately());
-  // 退出屏障结束后 Electron 会再次触发 close；这里若启动异步设置写入，
-  // 随后的 app.exit 可能在 releaseLock 完成前终止 Main，遗留 setting.json.lock。
-  // close 只取消尚未触发的 resize 防抖，不再启动新的设置写入。
+  // After the exit barrier ends, Electron will trigger close again; if asynchronous setting writing is started here,
+  // A subsequent app.exit may terminate Main before releaseLock completes, leaving setting.json.lock behind.
+  // close only cancels the resize anti-shake that has not yet been triggered, and does not start new setting writing.
   win.on("close", clearResizeTimer);
 }

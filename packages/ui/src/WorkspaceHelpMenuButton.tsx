@@ -36,8 +36,8 @@ export function WorkspaceHelpMenuButton({
 }: {
   className?: string;
   /**
-   * 是否桌面端。由挂载处注入而不是在组件内嗅探：Web 的 IPlatformService 桩同样实现了
-   * executeDesktopCommand（no-op），拿它判定会让 Web 端出现一个点了没反应的「资源管理器」。
+   * Whether it is desktop version. Injected by the mount instead of sniffing within the component: Web's IPlatformService stub also implements
+   * executeDesktopCommand (no-op), it is judged that a "resource manager" that will not respond when clicked will appear on the web side.
    */
   isDesktop?: boolean;
 }) {
@@ -71,8 +71,8 @@ export function WorkspaceHelpMenuButton({
             type="button"
             variant="ghost"
             size="icon-md"
-            // Settings 页会把帮助按钮绝对定位在 Electron 顶部拖拽区上方。
-            // 只依赖外层容器 no-drag 时，真实 trigger 仍可能被标题栏 drag 区吞掉点击。
+            // The Settings page will position the help button absolutely above the drag area at the top of Electron.
+            // When only relying on no-drag of the outer container, the real trigger may still be swallowed by the click in the drag area of ​​the title bar.
             className={cn(
               "text-foreground hover:bg-hover hover:text-foreground [app-region:no-drag]",
               className,
@@ -104,8 +104,8 @@ export function WorkspaceHelpMenuButton({
           <LightbulbIcon className="size-4" />
           {intl.formatMessage({ id: "workspaceHeader.help.productRequest" })}
         </DropdownMenuItem>
-        {/* Windows/Linux 没有原生菜单栏，自绘标题栏箭头菜单也已下线，
-            资源管理器只能从这里进；Web 端没有该窗口，不渲染。 */}
+        {/* Windows/Linux does not have a native menu bar, and the self-drawn title bar arrow menu has also been offline.
+            The resource manager can only be entered from here; the web side does not have this window and will not render. */}
         {isDesktop ? (
           <>
             <DropdownMenuSeparator />

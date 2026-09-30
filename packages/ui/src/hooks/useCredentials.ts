@@ -1,10 +1,10 @@
 /**
- * useCredentials —— 凭据服务 hooks
+ * useCredentials — credential service hooks
  */
 import { useCallback } from "react";
 import { useServices } from "./useServices.js";
 
-/** 凭据管理的基础 hook */
+/** The base hook for credential management */
 export function useCredentials() {
   const { credentialService } = useServices();
 
@@ -18,7 +18,7 @@ export function useCredentials() {
   return { load, save, delete: del };
 }
 
-/** active provider access_token 专用便捷 hook */
+/** A convenience hook dedicated to the active provider's access_token */
 export function useAuthToken() {
   const { credentialService, oauthService } = useServices();
 
@@ -33,8 +33,8 @@ export function useAuthToken() {
       return namespacedToken;
     }
 
-    // 升级多 provider 前的老账号只写了 auth_token。
-    // 这里补一个只针对 bigmodel 的兜底读取，避免升级后 token 读取瞬时失效。
+    // Accounts from before the multi-provider upgrade only wrote auth_token.
+    // Add a bigmodel-only fallback read here so token lookups don't momentarily fail right after the upgrade.
     if (activeProvider === "bigmodel") {
       return credentialService.load("auth_token");
     }
@@ -45,7 +45,7 @@ export function useAuthToken() {
     async (token: string) => {
       const activeProvider = await oauthService.getActiveProvider();
       if (!activeProvider) {
-        throw new Error("当前没有 active provider，无法写入 auth token");
+        throw new Error("No active provider, cannot write auth token");
       }
       await credentialService.save(`oauth:${activeProvider}:access_token`, token);
     },

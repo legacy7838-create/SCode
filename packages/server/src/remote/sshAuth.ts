@@ -25,9 +25,9 @@ function isInvalidPrivateKeyPassphraseMessage(message: string): boolean {
 export function buildSSHConnectConfig(input: SSHConnectConfigInput): ConnectConfig {
   const hasPassword = typeof input.password === "string" && input.password.length > 0;
 
-  // 密码登录场景里如果无条件带上 SSH_AUTH_SOCK，ssh2 会先走 agent 公钥尝试。
-  // 某些主机 MaxAuthTries 很小，公钥阶段就会把认证次数耗尽，导致正确密码也无法进入认证。
-  // 这里改成“显式传入 agent 才启用”；否则密码模式默认禁用隐式 agent。
+  // In the password login scenario, if you bring SSH_AUTH_SOCK unconditionally, ssh2 will try the agent public key first.
+  // The MaxAuthTries of some hosts are very small, and the number of authentication times will be exhausted in the public key stage, resulting in the inability to enter the authentication even with the correct password.
+  // Change here to "Enable only when agent is explicitly passed in"; otherwise, implicit agent is disabled by default in password mode.
   const resolvedAgent = input.agent ?? (hasPassword ? undefined : process.env["SSH_AUTH_SOCK"]);
 
   return {
@@ -38,15 +38,15 @@ export function buildSSHConnectConfig(input: SSHConnectConfigInput): ConnectConf
     passphrase: input.passphrase,
     password: hasPassword ? input.password : undefined,
     agent: resolvedAgent,
-    // ssh2 默认 readyTimeout 是 20s，公网弱网或服务端抖动时容易误判超时。
-    // 这里显式放宽连接握手超时，既给真实慢连接机会，也让错误归一化能和实际配置保持一致。
+    // The default readyTimeout of ssh2 is 20s. When the public network is weak or the server is jittering, it is easy to misjudge the timeout.
+    // The connection handshake timeout is explicitly relaxed here, which not only gives opportunities for real slow connections, but also allows error normalization to be consistent with the actual configuration.
     readyTimeout: SSH_READY_TIMEOUT_MS,
-    // SSH 项目空闲后如果被 NAT、防火墙或服务端静默断开，stdio channel 不一定会立刻 close。
-    // 启用 SSH-level keepalive，让 ssh2 在连续无响应后主动触发 error/close，避免 UI 任务长期卡在 loading。
+    // If the SSH project is silently disconnected by NAT, firewall or server after it is idle, the stdio channel may not be closed immediately.
+    // Enable SSH-level keepalive to allow ssh2 to actively trigger error/close after continuous unresponsiveness to prevent UI tasks from being stuck in loading for a long time.
     keepaliveInterval: SSH_KEEPALIVE_INTERVAL_MS,
     keepaliveCountMax: SSH_KEEPALIVE_COUNT_MAX,
-    // 一些 SSH 服务端只开启 keyboard-interactive（challenge-response）而关闭 plain password。
-    // 开启 tryKeyboard + 交互回调后，同一份密码可以覆盖这类主机，避免“命令行可登录、应用里认证失败”。
+    // Some SSH servers only enable keyboard-interactive (challenge-response) and disable plain password.
+    // After turning on tryKeyboard + interactive callback, the same password can cover this type of host to avoid "login from the command line but authentication failure in the application".
     tryKeyboard: hasPassword,
   };
 }
@@ -75,7 +75,9 @@ export function normalizeSSHConnectError(error: unknown): Error {
     "level" in error &&
     (error as { level?: string }).level === "client-authentication"
   ) {
-    return new Error("SSH 认证失败：请检查用户名、密码或私钥配置");
+    return new Error(
+      "SSH authentication failed: check the username, password, or private key configuration",
+    );
   }
 
   if (
@@ -85,19 +87,23 @@ export function normalizeSSHConnectError(error: unknown): Error {
     (error as { level?: string }).level === "client-timeout"
   ) {
     return new Error(
-      `SSH 连接握手超时：未能在 ${SSH_READY_TIMEOUT_MS / 1000} 秒内建立 SSH 会话，请检查网络、服务器 SSH 服务或终端 SSH 配置差异`,
+      `SSH connection handshake timed out: no SSH session was established within ${SSH_READY_TIMEOUT_MS / 1000} seconds, check the network, the server's SSH service, or differences in your terminal SSH configuration`,
     );
   }
 
   if (error instanceof Error) {
-    // ssh2 对不同私钥格式（OpenSSH 旧/新格式、PPK）会返回不同文案。
-    // 之前仅匹配单一字符串，导致部分“缺少口令/口令错误”场景泄露底层错误文本，用户难以判断应输入哪种凭据。
-    // 这里改为模式化归一化，把同类错误稳定映射成产品语义提示，便于用户直接修正输入。
+    // ssh2 will return different text for different private key formats (OpenSSH old/new format, PPK).
+    // Previously, only a single string was matched, causing some "missing password/wrong password" scenarios to leak the underlying error text, making it difficult for users to determine which credentials should be entered.
+    // This is changed to pattern normalization, which stably maps similar errors into product semantic prompts, making it easier for users to directly correct their input.
     if (isMissingPrivateKeyPassphraseMessage(error.message)) {
-      return new Error("SSH 私钥需要口令：检测到加密私钥，但当前未提供私钥口令");
+      return new Error(
+        "The SSH private key requires a passphrase: an encrypted private key was detected, but no passphrase was provided",
+      );
     }
     if (isInvalidPrivateKeyPassphraseMessage(error.message)) {
-      return new Error("SSH 私钥口令错误：无法解密私钥，请检查私钥口令是否正确");
+      return new Error(
+        "Wrong SSH private key passphrase: the private key could not be decrypted, check that the passphrase is correct",
+      );
     }
     return error;
   }
@@ -106,5 +112,5 @@ export function normalizeSSHConnectError(error: unknown): Error {
     return new Error(error);
   }
 
-  return new Error("SSH 连接失败");
+  return new Error("SSH connection failed");
 }

@@ -23,8 +23,8 @@ export interface LocalTarGzEntry {
   archivePath: string;
 }
 
-// Windows 客户端不一定能 spawn System32\tar.exe，远端资源本地缓存不能依赖系统 tar。
-// 这里仅支持 ZCode remote assets 使用的普通文件/目录子集，避免扩大归档格式的行为面。
+// Windows clients may not be able to spawn System32\tar.exe, and the local cache of remote resources cannot rely on system tar.
+// Only a subset of common files/directories used by ZCode remote assets are supported here to avoid expanding the behavioral surface of the archive format.
 export async function extractTarGzArchive(archivePath: string, targetDir: string): Promise<void> {
   const targetRoot = resolve(targetDir);
   await mkdir(targetRoot, { recursive: true });
@@ -128,8 +128,8 @@ async function appendTarEntry(
     archiveParts.push(
       createTarHeader({
         entryPath: directoryEntryPath,
-        // Windows lstat 的目录 mode 只有读写语义，常见为 0666；原样写进 tar 后，
-        // 远端 tar 叠加 umask 会落成不可遍历的 0644。远端资源目录统一使用 POSIX 0755。
+        // The directory mode of Windows lstat only has read and write semantics, commonly 0666; after writing it into tar as it is,
+        // Remote tar stacked with umask will result in non-traversable 0644. Remote resource directories uniformly use POSIX 0755.
         mode: 0o755,
         mtimeSeconds: Math.floor(sourceStat.mtimeMs / 1000),
         size: 0,
@@ -369,8 +369,8 @@ function normalizeExtractSymlinkTarget({
 
 function normalizeSymlinkLinkName(rawLinkTarget: string): string {
   const normalized = posix.normalize(rawLinkTarget);
-  // tar symlink 如果允许绝对路径、Windows drive 或反斜杠，解包后可能把本地缓存指向目标目录外。
-  // 这里只保留 POSIX 相对 link target，并在创建/解包两侧继续校验它解析后的落点。
+  // If tar symlink allows absolute paths, Windows drives, or backslashes, it may point the local cache outside the target directory after unpacking.
+  // Only the POSIX relative link target is retained here, and its parsed landing point is continued to be verified on both sides of creation/unpacking.
   if (
     !rawLinkTarget ||
     !normalized ||
@@ -425,6 +425,6 @@ async function applyMode(filePath: string, mode: number): Promise<void> {
   try {
     await chmod(filePath, mode & 0o777);
   } catch {
-    // 权限位在 Windows 或受限文件系统上可能不可写，远端部署会按 executable 参数重新 chmod。
+    // The permission bits may not be writable on Windows or restricted file systems, and remote deployment will re-chmod according to the executable parameter.
   }
 }

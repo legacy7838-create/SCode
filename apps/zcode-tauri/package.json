@@ -1,0 +1,35 @@
+{
+  "name": "@zcode/tauri",
+  "version": "3.14.3",
+  "private": true,
+  "description": "ZCode Desktop App — Tauri frontend",
+  "type": "module",
+  "scripts": {
+    "dev:web": "vite --port 5199 --strictPort",
+    "build:web": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-dialog": "^2",
+    "@tauri-apps/plugin-opener": "^2",
+    "@tauri-apps/plugin-os": "^2",
+    "@zcode/client": "workspace:*",
+    "@zcode/shared": "workspace:*",
+    "@zcode/ui": "workspace:*",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.2.2",
+    "@tauri-apps/cli": "^2",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "tailwindcss": "^4.2.2",
+    "typescript": "^6.0.2",
+    "vite": "^8.0.2",
+    "ws": "^8.20.0"
+  }
+}

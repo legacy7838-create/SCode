@@ -36,7 +36,7 @@ function ensureConversationFindHighlightStyle() {
   const style = document.getElementById(FIND_STYLE_ID) ?? document.createElement("style");
   style.id = FIND_STYLE_ID;
   if (style.textContent !== FIND_HIGHLIGHT_STYLE) {
-    // 开发态 HMR 会复用旧 style 节点；内容变化时必须同步更新。
+    // Development HMR will reuse old style nodes; they must be updated synchronously when the content changes.
     style.textContent = FIND_HIGHLIGHT_STYLE;
   }
   if (!style.isConnected) {

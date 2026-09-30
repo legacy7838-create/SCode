@@ -190,9 +190,9 @@ export function extractDeepLinkUrlFromArgs(args: readonly string[]): string | nu
     for (const candidate of expandDecodedDeepLinkCandidates(arg)) {
       const match = extractFromCandidate(candidate);
       if (match) {
-        // Debian/xdg 的协议回调可能被浏览器或桌面门户多次编码，
-        // 也可能把 query 片段拆成相邻 argv。这里先生成有限候选再多轮解码，
-        // 避免浏览器确认“打开 ZCode”后主进程拿不到完整回调 URL。
+        // Debian/xdg protocol callbacks may be encoded multiple times by the browser or desktop portal,
+        // It is also possible to split the query fragment into adjacent argv. Here, limited candidates are generated first and then multiple rounds of decoding are performed.
+        // This prevents the main process from not getting the complete callback URL after the browser confirms "Open ZCode".
         if (isCompleteDeepLinkUrl(match)) {
           return match;
         }
@@ -213,8 +213,8 @@ function trimArgValue(value: string): string {
   }
 
   if (/^[A-Za-z]:(?:\\.*)?["']$/.test(trimmed)) {
-    // Windows Explorer 的 Drive\shell 菜单会把 C:\ 代入 "%1"。
-    // 部分 argv 解析链会把末尾反斜杠和闭合引号折叠成尾引号，这里只修正盘符绝对路径。
+    // Windows Explorer's Drive\shell menu will substitute "%1" for C:\.
+    // Part of the argv parsing chain will fold the trailing backslash and closing quotation mark into a trailing quotation mark. Here, only the absolute path of the drive letter is corrected.
     return `${trimmed.slice(0, -1)}\\`;
   }
 

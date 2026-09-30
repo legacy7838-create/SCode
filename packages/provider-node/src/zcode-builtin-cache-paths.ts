@@ -20,7 +20,7 @@ export interface ZCodeBuiltinCachePaths {
   readonly controlFilePath: string;
 }
 
-/** 按平台与 App 版本隔离 Active/LKG；路径本身就是兼容范围。 */
+/** Active/LKG are isolated per platform and app version; the path itself is the compatibility scope. */
 export function resolveZCodeBuiltinCachePaths(
   options: ZCodeBuiltinCachePathOptions,
 ): ZCodeBuiltinCachePaths {
@@ -41,7 +41,7 @@ export function resolveZCodeBuiltinCachePaths(
   };
 }
 
-/** 将 ZCode 控制面 Origin 规范化后映射为安全、稳定且碰撞风险可忽略的缓存路径段。 */
+/** Normalizes the ZCode control-plane origin, then maps it to a safe, stable cache path segment with negligible collision risk. */
 export function createZCodeBuiltinEndpointKey(zcodeEndpointOrigin: string): string {
   const normalized = normalizeZCodeBuiltinEndpointOrigin(zcodeEndpointOrigin);
   const digest = createHash("sha256").update(normalized).digest("hex").slice(0, 32);
@@ -50,10 +50,10 @@ export function createZCodeBuiltinEndpointKey(zcodeEndpointOrigin: string): stri
 
 export function normalizeZCodeBuiltinEndpointOrigin(value: string): string {
   const normalized = value.trim();
-  if (!normalized) throw new Error("ZCode Built-in Endpoint Origin 不能为空");
+  if (!normalized) throw new Error("ZCode Built-in Endpoint Origin must not be empty");
   const url = new URL(normalized);
   if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error("ZCode Built-in Endpoint Origin 只支持 HTTP(S)");
+    throw new Error("ZCode Built-in Endpoint Origin only supports HTTP(S)");
   }
   return url.origin;
 }
@@ -61,7 +61,7 @@ export function normalizeZCodeBuiltinEndpointOrigin(value: string): string {
 function normalizeSegment(value: string, name: string): string {
   const normalized = value.trim();
   if (!normalized || normalized === "." || normalized === ".." || /[\\/]/u.test(normalized)) {
-    throw new Error(`ZCode Built-in ${name} 不是合法路径段`);
+    throw new Error(`ZCode Built-in ${name} is not a valid path segment`);
   }
   return normalized;
 }

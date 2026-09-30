@@ -1,11 +1,11 @@
-/* eslint-disable max-lines -- 桌面平台 IPC 集中装配，拆散会让权限边界更难审计；行数随平台能力增长。 */
+/* eslint-disable max-lines -- Desktop platform IPC is assembled in one place; scattering it makes the permission boundary harder to audit, and the line count grows with the platform's capabilities. */
 import { BrowserWindow, dialog, ipcMain, nativeTheme } from "electron";
 import { readZCodeStdioTapDevState } from "@zcode/services/node";
 import {
+  DEFAULT_LOCALE,
   DesktopCommandIds,
   appSettingsPatchSchema,
   formatZodError,
-  localeSchema,
   nonEmptyStringSchema,
   PlatformChannels,
   rendererLogPayloadSchema,
@@ -62,8 +62,6 @@ export function registerPlatformIpcHandlers(options: {
     info: (...args: unknown[]) => void;
     warn: (...args: unknown[]) => void;
   };
-  applyApplicationLocale: (locale: Locale) => Promise<void>;
-  resolveSystemLocale: () => Locale;
   focusWorkspaceInExistingWindow: (
     path: string,
     extra?: { skipWindowId?: number },
@@ -88,17 +86,17 @@ export function registerPlatformIpcHandlers(options: {
   }>;
   setAutoDownloadAndInstallUpdates: (enabled: boolean) => Promise<void>;
   syncAppSettings: (patch: unknown) => void;
-  /** 快捷键设置页录制态开关：true 时 main 重建菜单摘除可配置 accelerator */
+  /** Shortcut settings page recording-state switch: when true, main rebuilds the menu with configurable accelerators removed */
   setShortcutRecordingActive?: (active: boolean, ownerWebContentsId?: number | null) => void;
-  /** 桌面端设备标识符（基于 userData 路径的 SHA-256） */
+  /** The desktop device identifier (SHA-256 over the userData path) */
   deviceMid: string;
-  /** CDP-on-guest pivot：renderer `<webview>` 上报 guest webContentsId → main attach。 */
+  /** CDP-on-guest pivot: the renderer `<webview>` reports a guest webContentsId → main attaches. */
   attachBrowserGuest?: AttachBrowserGuest;
-  /** renderer 自由尺寸变化 → 当前窗口所属的受控 tab。 */
+  /** Free-form renderer size change → the controlled tab that owns the current window. */
   updateBrowserGuestViewport?: UpdateBrowserGuestViewport;
-  /** 可信 owner renderer 上报的后台截图表面 ready。 */
+  /** The trusted owner renderer reports that the offscreen screenshot surface is ready. */
   reportBrowserScreenshotSurfaceReady?: ReportBrowserScreenshotSurfaceReady;
-  /** Browser tab 关闭、挂起、恢复与跨重启 shell IPC。 */
+  /** Browser tab close, suspend, resume, and cross-restart shell IPC. */
   browserViewResidencyHandlers?: BrowserViewResidencyIpcHandlers;
 }) {
   ipcMain.handle(PlatformChannels.SelectDirectory, async () => {
@@ -227,18 +225,6 @@ export function registerPlatformIpcHandlers(options: {
     applyWindowsTitleBarTheme(senderWindow, theme === "system" ? getWindowOverlayTheme() : theme);
   });
 
-  ipcMain.handle(PlatformChannels.SetApplicationLocale, (_event, locale: unknown) => {
-    const result = localeSchema.safeParse(locale);
-    if (!result.success) {
-      options.logger.warn("[application-locale] invalid locale:", formatZodError(result.error));
-      return;
-    }
-
-    return options.applyApplicationLocale(result.data);
-  });
-
-  ipcMain.handle(PlatformChannels.GetSystemLocale, () => options.resolveSystemLocale());
-
   ipcMain.on(PlatformChannels.SyncWindowTabs, (event, paths: string[]) => {
     const result = stringArraySchema.safeParse(paths);
     if (!result.success) {
@@ -272,8 +258,8 @@ export function registerPlatformIpcHandlers(options: {
         return;
       }
 
-      // preload 早于 React 页面运行，用它同步到的 zoom 档位先调整 macOS 红绿灯，
-      // 避免等 RootStartupLoading 切到 App 页面后才重置位置。
+      // The preload runs earlier than the React page. Use the zoom gear it synchronizes to to adjust the macOS traffic light first.
+      // Avoid waiting for RootStartupLoading to switch to the App page before resetting the location.
       syncWindowControlsOverlayForZoomLevel(senderWindow, payload.zoomLevel);
     },
   );
@@ -291,9 +277,9 @@ export function registerPlatformIpcHandlers(options: {
     options.syncAppSettings(result.data);
   });
 
-  // 快捷键录制态：renderer 设置页进入/退出录制时通知。macOS 系统菜单会先于 renderer
-  // 吃掉按键，录制 menu 通道命令必须先摘掉可配置 accelerator，否则按键直接触发原命令。
-  // 附带发起方 webContents id：录制中窗口销毁时 main 侧据此复位（见 index.ts）。
+  // Shortcut key recording state: Notify when entering/exiting recording on the renderer settings page. macOS system menu will precede renderer
+  // To eat the buttons and record the menu channel command, you must first remove the configurable accelerator, otherwise the button will directly trigger the original command.
+  // Comes with the initiator webContents id: when the window is destroyed during recording, the main side is reset accordingly (see index.ts).
   ipcMain.on(PlatformChannels.SetShortcutRecordingActive, (event, payload: unknown) => {
     if (typeof payload !== "boolean") {
       options.logger.warn("[shortcuts] invalid recording-active payload:", payload);
@@ -322,15 +308,9 @@ export function registerPlatformIpcHandlers(options: {
     currentApplicationLocale: options.currentApplicationLocale,
   });
 
-  ipcMain.handle(PlatformChannels.CanOpenCommunity, async (_event, locale: unknown) => {
-    const result = localeSchema.safeParse(locale);
-    if (!result.success) {
-      options.logger.warn("[community] invalid locale:", formatZodError(result.error));
-      return false;
-    }
-
+  ipcMain.handle(PlatformChannels.CanOpenCommunity, async () => {
     const communityUrl = await resolveCommunityUrl({
-      locale: result.data,
+      locale: DEFAULT_LOCALE,
       fetchRemoteConfig: options.fetchHelpConfig,
       logger: options.logger,
     });
@@ -404,7 +384,7 @@ export function registerPlatformIpcHandlers(options: {
       return;
     }
 
-    // 返回值直通 renderer 的 executeDesktopCommand promise（GetCuaOsSupport 依赖此行为）。
+    // The return value is passed through the renderer's executeDesktopCommand promise (GetCuaOsSupport relies on this behavior).
     return await options.executeDesktopCommand(command as DesktopCommandId, senderWindow);
   });
 }

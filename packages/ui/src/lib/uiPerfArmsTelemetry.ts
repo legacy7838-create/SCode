@@ -16,7 +16,7 @@ const UI_PERF_EVENT_LAUNCH_RENDERER_LOAD = "perf_ui_launch_renderer_load_ms";
 const UI_PERF_EVENT_LAUNCH_REACT_COMMIT = "perf_ui_launch_react_commit_ms";
 const UI_PERF_EVENT_LAUNCH_STARTUP_GATE = "perf_ui_launch_startup_gate_ms";
 
-// 总时长超过该值视为时钟异常/挂起，整批丢弃，避免污染分布。
+// If the total duration exceeds this value, it will be regarded as clock abnormality/hang, and the entire batch will be discarded to avoid contaminating the distribution.
 const LAUNCH_TO_INPUT_SANITY_MAX_MS = 300000;
 
 const UI_PERF_EVENT_FIRST_TOKEN = "perf_ui_first_token";
@@ -25,9 +25,9 @@ const UI_PERF_EVENT_TURN_BREAKDOWN = "perf_ui_turn_breakdown";
 const UI_PERF_EVENT_TOOL_CALL_DETAIL = "perf_ui_tool_call_detail";
 const UI_PERF_EVENT_STREAM_STALL = "perf_ui_stream_stall";
 
-// 超过该间隔(ms)未收到新 chunk 视为停顿并上报;value 仍为真实间隔。可据线上分布收紧。
-// 工具调用(tool_call/tool_call_update)期间不计入:工具事件会 clearStreamStallTracking,
-// 工具后第一个正文 chunk 视为首个,不与工具前的 chunk 比较,避免把工具执行误判为停顿。
+// If no new chunk is received beyond this interval (ms), it will be regarded as a pause and reported; the value is still the real interval. Can be tightened according to online distribution.
+// The period of tool call (tool_call/tool_call_update) is not counted: the tool event will clearStreamStallTracking,
+// The first text chunk after the tool is regarded as the first and is not compared with the chunk before the tool to avoid misjudgment of tool execution as a pause.
 const STREAM_STALL_REPORT_THRESHOLD_MS = 3000;
 
 type ArmsReporter = Pick<IPlatformService, "reportArmsCustomEvent">;
@@ -39,9 +39,9 @@ export function setUiPerfArmsReporter(reporter: ArmsReporter | null): void {
 }
 
 /**
- * `model` 在本组事件里来自 `detail.model_name`，自定义 provider 下是用户命名的编码值。
- * 在唯一出口统一归一，避免每个 report 函数各自处理后漏掉新增事件；归一只影响上报值，
- * 不改变调用方拿到的模型选择和本地日志。
+ * `model` in this set of events comes from `detail.model_name`, and under the custom provider is the user-named encoded value.
+ * Unified normalization at the only exit to avoid missing new events after each report function processes them separately; normalization only affects the reported value.
+ * The model selection and local log obtained by the caller are not changed.
  */
 function sanitizeModelProperty(
   properties: ArmsCustomEventPayload["properties"],
@@ -53,7 +53,7 @@ function sanitizeModelProperty(
   return { ...properties, model: model || undefined };
 }
 
-// 原因:ARMS 属观测链路,UI 主流程(启动/发送/渲染)不得因埋点失败而中断。
+// Reason: ARMS is an observation link, and the main UI process (starting/sending/rendering) must not be interrupted due to failure to bury points.
 function emit(payload: ArmsCustomEventPayload): void {
   if (!armsReporter) {
     return;
@@ -64,22 +64,22 @@ function emit(payload: ArmsCustomEventPayload): void {
   };
   try {
     void Promise.resolve(armsReporter.reportArmsCustomEvent(sanitized)).catch((error) => {
-      logger.warn("[ui-perf] ARMS 上报失败", { name: payload.name, error });
+      logger.warn("[ui-perf] ARMS report failed", { name: payload.name, error });
     });
   } catch (error) {
-    logger.warn("[ui-perf] ARMS 上报异常", { name: payload.name, error });
+    logger.warn("[ui-perf] ARMS report threw", { name: payload.name, error });
   }
 }
 
 interface LaunchToInputTimings {
   marks: LaunchMarks;
-  /** renderer/src/main.tsx 模块顶部 Date.now()（T4） */
+  /** renderer/src/main.tsx module top Date.now() (T4) */
   rendererStart: number;
-  /** zcode-react-startup-ready 触发时 Date.now()（T5） */
+  /** zcode-react-startup-ready is triggered when Date.now() (T5) */
   reactCommit: number;
-  /** 启动门禁清除、输入框可用时 Date.now()（T6） */
+  /** Date.now() (T6) when access control clearing is started and the input box is available */
   inputReady: number;
-  /** 同一次启动的关联键 */
+  /** Associated keys for the same startup */
   sessionId: string;
 }
 
@@ -98,7 +98,7 @@ function optionalRoundedNumber(value: number | undefined): number | undefined {
 export function reportUiLaunchToInput(timings: LaunchToInputTimings): void {
   const { marks, rendererStart, reactCommit, inputReady, sessionId } = timings;
   const total = inputReady - marks.createdAt;
-  // 6 段原始时长(未钳)。在发送前全部算出,以便整批校验。
+  // 6 original durations (uncensored). Work it all out before sending so that the entire batch can be verified.
   const stageMs = {
     electronInit: marks.mainStart - marks.createdAt,
     appReady: marks.appReady - marks.mainStart,
@@ -107,23 +107,26 @@ export function reportUiLaunchToInput(timings: LaunchToInputTimings): void {
     reactCommit: reactCommit - rendererStart,
     startupGate: inputReady - reactCommit,
   };
-  // 哨兵:异常总时长(时钟跳变/进程挂起)整批丢弃。
+  // Sentinel: The total duration of the exception (clock jump/process hang) is discarded in batches.
   if (total < 0 || total > LAUNCH_TO_INPUT_SANITY_MAX_MS) {
-    logger.warn("[ui-perf] launch_to_input 总时长异常,丢弃", { total });
+    logger.warn("[ui-perf] launch_to_input total duration out of range, dropping", { total });
     return;
   }
-  // 任一段为负(主进程 T0–T3 与渲染进程 T4–T6 间跨进程时钟偏移)则整批丢弃,
-  // 否则 sum(6 段) != total,破坏看板依赖的恒等式。与总时长哨兵保持全有或全无。
+  // If any section is negative (the cross-process clock offset between the main process T0–T3 and the rendering process T4–T6), the entire batch will be discarded.
+  // Otherwise sum(6 segments) != total, breaking the identity that Kanban relies on. Keep it all or nothing with Total Duration Sentinel.
   const negativeStage = Object.entries(stageMs).find(([, ms]) => ms < 0);
   if (negativeStage) {
-    logger.warn("[ui-perf] launch_to_input 某段为负(跨进程时钟偏移/回拨),整批丢弃", {
-      stage: negativeStage[0],
-      ms: negativeStage[1],
-    });
+    logger.warn(
+      "[ui-perf] launch_to_input has a negative stage (cross-process clock skew/rollback), dropping the whole batch",
+      {
+        stage: negativeStage[0],
+        ms: negativeStage[1],
+      },
+    );
     return;
   }
   const properties = { session_id: sessionId };
-  // 至此各段保证 >= 0,clampMs 的 max(0,...) 为冗余保险,仅用于一致的 Math.round 取整。
+  // At this point, each paragraph is guaranteed to be >= 0, and the max(0,...) of clampMs is redundant insurance and is only used for consistent Math.round rounding.
   const stages: { name: string; ms: number }[] = [
     { name: UI_PERF_EVENT_LAUNCH_TO_INPUT, ms: total },
     { name: UI_PERF_EVENT_LAUNCH_ELECTRON_INIT, ms: stageMs.electronInit },
@@ -302,14 +305,14 @@ export function reportUiToolCallDetail(params: {
   });
 }
 
-// 流式停顿:per-task 记录上一个正文 chunk 到达时刻,间隔超阈值则上报真实间隔。
+// Streaming pause: per-task records the arrival time of the previous text chunk. If the interval exceeds the threshold, the real interval is reported.
 const lastChunkAtByTask = new Map<string, number>();
 
 export function recordStreamChunkArrival(
   taskId: string,
   options?: {
     waitingTool?: boolean;
-    /** tracker 可用 workspace-scoped 内部 key；上报仍保持真实 talk_id。 */
+    /** The tracker can use the workspace-scoped internal key; the reported talk_id still remains true. */
     talkId?: string;
     messageId?: string;
     model?: string;
@@ -337,7 +340,7 @@ export function recordStreamChunkArrival(
       model: options?.model,
       chunk_type: options?.chunkType,
       talk_id: options?.talkId ?? taskId,
-      // 停顿结束时那个 chunk 的 messageId;正文/思考 chunk 常不带,取不到留空(与其它字段口径一致)。
+      // The messageId of the chunk at the end of the pause; the text/thought chunk is usually not included, and if not available, leave it blank (the same as other fields).
       message_id: options?.messageId,
     },
   });
@@ -347,17 +350,17 @@ export function clearStreamStallTracking(taskId: string): void {
   lastChunkAtByTask.delete(taskId);
 }
 
-// 输入框卡顿:在 Lexical update listener 内测「单次输入处理耗时」(getEditorMarkdown+onChange 同步段)。
-// 与 stream_stall(输出侧)区分:此为输入侧。只上报超阈卡点,事件量最小。
+// Input box freeze: Testing "single input processing time" (getEditorMarkdown+onChange synchronization segment) within Lexical update listener.
+// Differentiate from stream_stall (output side): this is the input side. Only the over-threshold stuck points are reported, and the number of events is minimal.
 const UI_PERF_EVENT_INPUT_LAG = "perf_ui_input_lag";
 
-// 保守起点:只抓最严重卡顿。可据线上分布往下收紧。
+// Conservative starting point: only catch the most serious lags. It can be tightened downward according to the online distribution.
 const INPUT_LAG_REPORT_THRESHOLD_MS = 500;
-// 超此值大概率是断点调试/标签页挂起/设备休眠唤醒,丢弃避免污染分布。
+// Exceeding this value is most likely caused by breakpoint debugging/tab hang/device sleep wake-up, which should be discarded to avoid contaminating the distribution.
 const INPUT_LAG_SANITY_MAX_MS = 5000;
 
-// 判定抽成纯函数便于单测:程序化改写(粘贴/setText/mention/历史回填)与 IME 组合态
-// 都不算打字卡顿,即使耗时超阈也跳过。
+// Determine the pure function to facilitate single testing: programmatic rewriting (paste/setText/mention/history backfill) and IME combination state
+// It’s not considered typing lag, even if it takes too long, it will be skipped.
 function shouldReportInputLag(args: {
   lagMs: number;
   isProgrammatic: boolean;
@@ -393,7 +396,7 @@ export function recordInputLag(params: {
     properties: {
       lag_ms: lagMs,
       text_length: params.textLength,
-      // 草稿态无 taskId,留空与其它 ui_perf 事件口径一致。
+      // There is no taskId in the draft state, leaving it blank is consistent with the caliber of other ui_perf events.
       task_id: params.taskId,
     },
   });

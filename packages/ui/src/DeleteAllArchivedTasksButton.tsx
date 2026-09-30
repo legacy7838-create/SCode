@@ -54,7 +54,7 @@ export function DeleteAllArchivedTasksButton({
         selection.unavailableWorkspaces.length > 0
           ? intl.formatMessage(
               { id: "taskList.deleteAllArchivedUnavailable" },
-              { projects: selection.unavailableWorkspaces.join("、") },
+              { projects: selection.unavailableWorkspaces.join(", ") },
             )
           : "";
       if (selection.count === 0) {
@@ -90,7 +90,7 @@ export function DeleteAllArchivedTasksButton({
       );
       await onRefresh?.();
     } catch (error) {
-      logger.error("[ArchivedTaskDeletion] 批量删除或刷新失败", error);
+      logger.error("[ArchivedTaskDeletion] bulk delete or refresh failed", error);
       setResultMessage((current) =>
         [current, intl.formatMessage({ id: "taskList.deleteAllArchivedError" })]
           .filter(Boolean)
@@ -151,7 +151,7 @@ export function DeleteAllArchivedTasksButton({
 
   return (
     <>
-      {/* 只移动控件的渲染位置，查询/确认/删除仍随归档列表存活，菜单关闭不会卸载这些状态。 */}
+      {/* Only the rendering position of the control is moved, query/confirm/delete still survives with the archive list, and closing the menu will not unload these states. */}
       {actionsContainer === undefined
         ? menu
         : actionsContainer

@@ -7,11 +7,11 @@ import {
 interface TaskSidePaneMemoryState {
   sidePaneState: WorkspaceSidePaneState | null;
   isSidePaneCollapsed: boolean;
-  /** 对话级展开/收起偏好；tabs 本身仍按 workspace 复用。 */
+  /** Conversation-level expand/collapse preferences; tabs themselves are still reused by workspace. */
   sidePaneCollapsedByOwner: Record<string, boolean>;
   activeGitSourceId: GitChangeSourceId;
   browserUrls: Record<string, string>;
-  /** @deprecated 旧版单浏览器 tab 的 URL，保留用于读取历史内存状态。 */
+  /** @deprecated The URL of the old single-browser tab, reserved for reading historical memory state. */
   browserUrl: string | null;
 }
 
@@ -59,11 +59,11 @@ export function buildTaskSidePaneMemoryKey({
   workspaceIdentity?: string;
   taskId: string | null;
 }): string | null {
-  // side pane 的语义是“当前 workspace 右侧辅助工作区”，
-  // 不是 task 自己的私有上下文。之前把 taskId 拼进 key 之后，
-  // 同一 workspace 下切换 task 会命中一份全新的 side pane 内存，
-  // 导致用户正在看的 browser / git / code viewer 像是被“切任务顺手清空”。
-  // 这里改回只按 workspace 身份隔离，让同 workspace 的 task 共用同一份 side pane 状态。
+  // The semantics of side pane is "the auxiliary workspace on the right side of the current workspace".
+  // Not the task's own private context. After spelling taskId into key before,
+  // Switching tasks in the same workspace will hit a new side pane memory.
+  // As a result, the browser/git/code viewer that the user is looking at seems to be "cleared smoothly when switching tasks".
+  // Here we change it back to isolation only by workspace identity, so that tasks in the same workspace share the same side pane state.
   void taskId;
   const workspaceKey = workspaceIdentity?.trim() || workspacePath;
   return workspaceKey.trim() ? workspaceKey : null;
@@ -99,9 +99,9 @@ export function saveTaskSidePaneMemoryState(
     return;
   }
 
-  // side pane memory 是 renderer 模块级缓存，长期切换大量 workspace 时旧 key
-  // 如果永不淘汰会持续持有 tabs、browser URL、diff patch 等状态。这里用简单 LRU 上限
-  // 保留最近访问的 workspace 状态，避免长时间运行时 Map 无界增长。
+  // Side pane memory is the renderer module-level cache, which is an old key when switching a large number of workspaces for a long time.
+  // If it is never eliminated, it will continue to hold the status of tabs, browser URL, diff patch, etc. Simple LRU upper limit is used here
+  // Keep the recently accessed workspace status to avoid unbounded growth of Map during long-running operations.
   const nextState = {
     ...DEFAULT_TASK_SIDE_PANE_MEMORY_STATE,
     ...taskSidePaneMemory.get(key),

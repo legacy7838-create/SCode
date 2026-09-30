@@ -193,8 +193,8 @@ export function McpServerForm({
       : '{\n  "Authorization": "Bearer your-token"\n}';
   const updateEnvValue = (value: string) =>
     update(form.type === "stdio" ? { env: value } : { headers: value });
-  // Radix Select 不接受空串 value；用 "auto" 作为哨兵值：表单里空串 = 未设置 = auto
-  // （配置文件不落多余字段），用户显式选 auto 时同样写回空串。
+  // Radix Select does not accept empty string value; use "auto" as the sentinel value: empty string in the form = not set = auto
+  // (The configuration file does not contain redundant fields). When the user explicitly selects auto, an empty string is also written back.
   const updateProtocolVersion = (value: string) =>
     update({ protocolVersion: value === "auto" ? "" : value });
   const scopeSelect = (
@@ -279,7 +279,7 @@ export function McpServerForm({
                 </SelectItem>
                 <SelectItem value="http">HTTP</SelectItem>
                 {/*
-                  Streamable HTTP 传输类型未启用。
+                  Streamable HTTP transport type is not enabled.
                   <SelectItem value="streamableHttp">Streamable HTTP</SelectItem>
                 */}
                 <SelectItem value="sse">
@@ -305,8 +305,8 @@ export function McpServerForm({
           </div>
 
           {/*
-            sse 形态不渲染该字段：deprecated SSE transport 固定走 legacy 协商，
-            该配置对其无效。
+            The sse form does not render this field: deprecated SSE transport is fixed to legacy negotiation.
+            This configuration is not valid for it.
           */}
           {form.type !== "sse" && (
             <div className="w-full space-y-1.5 md:w-48">
@@ -324,7 +324,7 @@ export function McpServerForm({
                   <SelectItem value="legacy">
                     {intl.formatMessage({ id: "settings.mcp.form.protocolVersion.legacy" })}
                   </SelectItem>
-                  {/* 显示名用「v2」，但 value 必须保持协议正式版本号 " "（config/wire 值，不可随文案变）*/}
+                  {/* Display name uses "v2", but the value must stay the protocol's official version number " " (a config/wire value, it must not change with the copy)*/}
                   <SelectItem value="2026-07-28">
                     {intl.formatMessage({ id: "settings.mcp.form.protocolVersion.modern" })}
                   </SelectItem>

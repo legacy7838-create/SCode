@@ -46,7 +46,7 @@ export function useTaskListItemContextActions({
     workspaceRemoteSessionId: remoteSessionId,
   });
   const taskSessionFile = useTaskSessionFilePath(workspacePath, taskId, workspaceIdentity, {
-    // task session/log 路径只用于右键菜单项；菜单未打开时不要在列表重排中批量触发 RPC。
+    // Task session/log paths are only used for context menu items; do not batch-trigger RPCs during list reordering when the menu is not open.
     enabled: loadTaskPaths,
   });
   const taskNativeSessionLogFile = useTaskNativeSessionLogFile(
@@ -63,9 +63,9 @@ export function useTaskListItemContextActions({
 
     try {
       await navigator.clipboard.writeText(value);
-      logger.info(`[TaskListItem] ${label} 已复制: ${value}`);
+      logger.info(`[TaskListItem] ${label} copied: ${value}`);
     } catch (error) {
-      logger.warn("[TaskListItem] 复制文本失败", {
+      logger.warn("[TaskListItem] failed to copy text", {
         label,
         value,
         error: error instanceof Error ? error.message : String(error),
@@ -79,9 +79,9 @@ export function useTaskListItemContextActions({
     );
     if (hasRemoteWorkspaceScope) {
       if (workspaceOpenTarget.remoteTarget?.kind !== "wsl") {
-        // 远程项目路径不是宿主机路径。无法精确解析为 WSL 时必须失败关闭，
-        // 避免 SSH/Docker 的 Linux 路径误落到原生 Windows、macOS 或 Linux 文件管理器。
-        logger.warn("[TaskListItem] 远程 workspace 不支持本机文件管理器", {
+        // The remote project path is not a host machine path. When it cannot be precisely resolved to WSL, it must fail closed
+        // to prevent SSH Linux paths from incorrectly landing in the native Windows, macOS, or Linux file manager.
+        logger.warn("[TaskListItem] remote workspace does not support the local file manager", {
           taskId,
           path: workspacePath,
           remoteKind: workspaceOpenTarget.remoteTarget?.kind ?? "unresolved",
@@ -95,7 +95,7 @@ export function useTaskListItemContextActions({
         workspaceIdentity,
       });
       if (!result.success) {
-        logger.warn("[TaskListItem] 打开 WSL workspace 路径失败", {
+        logger.warn("[TaskListItem] failed to open WSL workspace path", {
           taskId,
           path: workspacePath,
           error: result.error ?? "unknown-error",
@@ -116,11 +116,11 @@ export function useTaskListItemContextActions({
 
     const result = await platform.openInFileManager(workspacePath);
     if (!result.success) {
-      // Header / task 菜单里的“Open in Finder”语义应该是打开项目目录。
-      // 之前这里误绑到了 task session 文件路径，菜单可用性也跟着 task 快照文件走，
-      // 一旦 session 文件还没解析出来，用户会看到 Finder 入口莫名不可用。
-      // 这里统一改成始终打开 workspacePath，让行为和“Copy path=项目路径”保持一致。
-      logger.warn("[TaskListItem] 打开 workspace 路径失败", {
+      // The "Open in Finder" semantics in the Header / task menu should be to open the project directory.
+      // Previously this was incorrectly bound to the task session file path, so menu availability depended on the task snapshot file.
+      // Once the session file hadn't been resolved yet, users would see the Finder entry inexplicably unavailable.
+      // Here it is unified to always open workspacePath, keeping behavior consistent with "Copy path = project path".
+      logger.warn("[TaskListItem] failed to open workspace path", {
         taskId,
         path: workspacePath,
         error: result.error ?? "unknown-error",

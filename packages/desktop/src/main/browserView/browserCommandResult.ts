@@ -4,7 +4,7 @@ export type BrowserCommandDone = (
   partial: Omit<BrowserCommandResult, "elapsedMs">,
 ) => BrowserCommandResult;
 
-/** 构造 ref 未找到的结构化错误（提示先 snapshot）。 */
+/** Builds the structured error for an unresolved ref (tells the caller to snapshot first). */
 export function refNotFound(ref: string): Omit<BrowserCommandResult, "elapsedMs"> {
   return {
     ok: false,
@@ -15,7 +15,7 @@ export function refNotFound(ref: string): Omit<BrowserCommandResult, "elapsedMs"
   };
 }
 
-/** 构造 execution_error 结构化结果的便捷函数。 */
+/** Convenience helper that builds a structured `execution_error` result. */
 export function executionError(message: string): Omit<BrowserCommandResult, "elapsedMs"> {
   return { ok: false, error: { code: "execution_error", message } };
 }

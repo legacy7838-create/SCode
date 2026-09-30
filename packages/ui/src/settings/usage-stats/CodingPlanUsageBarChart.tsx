@@ -266,8 +266,8 @@ export function CodingPlanUsageBarChart({
     [granularity, locale, visibleSeries, xTime],
   );
   const maxValue = useMemo(
-    // tooltip 的总量是当天所有模型合计，但柱子是按模型并排展示。
-    // Y 轴如果用合计值做 domain，会把每根并排柱压矮，导致图表上方空白过多。
+    // The total amount of the tooltip is the total of all models on that day, but the columns are displayed side by side by model.
+    // If the Y-axis uses the total value as the domain, each side-by-side column will be lowered, resulting in too much white space at the top of the chart.
     () => calculateCodingPlanBarChartMaxValue(visibleSeries, xTime.length),
     [visibleSeries, xTime.length],
   );
@@ -306,7 +306,7 @@ export function CodingPlanUsageBarChart({
         </>
       );
     },
-    [creditUnit, locale, tokenUnit, valueKind],
+    [creditUnit, tokenUnit, valueKind],
   );
   const formatTooltipLabel = useCallback(
     (_: unknown, payload: readonly { payload?: unknown }[]) => {
@@ -314,8 +314,8 @@ export function CodingPlanUsageBarChart({
       const total = typeof row?.total === "number" ? row.total : 0;
       const formattedTotal =
         valueKind === "token"
-          ? formatCompactTokenUsage(locale, total)
-          : formatCompactNumber(locale, total);
+          ? formatCompactTokenUsage("en-US", total)
+          : formatCompactNumber("en-US", total);
       return (
         <>
           <div className="text-foreground-subtle">{row?.label ?? ""}</div>
@@ -339,7 +339,7 @@ export function CodingPlanUsageBarChart({
         </>
       );
     },
-    [creditUnit, intl, locale, tokenUnit, valueKind],
+    [creditUnit, intl, tokenUnit, valueKind],
   );
   const tooltipContent = useMemo(
     () => (
@@ -383,8 +383,8 @@ export function CodingPlanUsageBarChart({
               key={item.key}
               dataKey={item.key}
               fill={`var(--color-${item.key})`}
-              // Recharts 默认把 dataKey 当 tooltip name，导致堆叠段展示
-              // series0_cachedInput 这类内部字段。这里显式传产品文案给 tooltip formatter。
+              // Recharts uses dataKey as tooltip name by default, causing stacked segments to be displayed.
+              // series0_cachedInput This type of internal field. Here, the product copy is explicitly passed to the tooltip formatter.
               name={item.label}
               maxBarSize={CODING_PLAN_BAR_CHART_MAX_BAR_SIZE}
               radius={item.radius}

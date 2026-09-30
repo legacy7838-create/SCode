@@ -36,7 +36,7 @@ export const FeatureRequestDialog = memo(function FeatureRequestDialogComponent(
   const open = useFeedbackStore((state) => state.featureRequestOpen);
   const close = useFeedbackStore((state) => state.close);
   const openTickets = useFeedbackStore((state) => state.openTickets);
-  const { intl, locale } = useZCodeIntl();
+  const { intl } = useZCodeIntl();
   const formatMessage = useCallback(
     (id: string, values?: Record<string, string>) => intl.formatMessage({ id }, values),
     [intl],
@@ -132,10 +132,9 @@ export const FeatureRequestDialog = memo(function FeatureRequestDialogComponent(
         screenshots: [],
         includeLogs: false,
         ticketType: "feature",
-        ticketSeverity: "P3-低",
-        ticketModule: "其它",
+        ticketSeverity: "P3-Low",
+        ticketModule: "Other",
         modelContext: {},
-        locale,
         copy,
         formatMessage: intl.formatMessage,
         onCompleted: (ticketId) => {
@@ -165,7 +164,7 @@ export const FeatureRequestDialog = memo(function FeatureRequestDialogComponent(
       setError(getErrorMessage(submitError));
       setSubmitting(false);
     }
-  }, [contact, copy, description, feedbackService, formatMessage, locale, openTickets, solution]);
+  }, [contact, copy, description, feedbackService, formatMessage, openTickets, solution]);
 
   return (
     <Dialog
@@ -320,8 +319,8 @@ function FeatureRequestTextarea({
         rows={4}
         maxLength={max}
         placeholder={placeholder}
-        // Textarea 默认的 field-sizing-content 会按无换行长文本扩张宽度。
-        // 产品需求弹窗和问题反馈弹窗同宽，必须固定输入框尺寸并允许长词在框内换行。
+        // Textarea's default field-sizing-content will expand the width of long text without wrapping.
+        // The product requirement pop-up window and the problem feedback pop-up window must have the same width. The size of the input box must be fixed and long words must be allowed to wrap in the box.
         className="field-sizing-fixed h-[136px] max-h-[136px] min-w-0 max-w-full resize-none overflow-y-auto rounded-xl border-input-border bg-input text-ui-base leading-6 whitespace-pre-wrap break-words text-foreground placeholder:text-foreground-subtlest hover:border-input-border-hover focus-visible:border-input-border-focused focus-visible:bg-input-focused"
       />
     </section>

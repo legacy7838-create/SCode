@@ -1,6 +1,6 @@
-// createAgentConversationTransport 的 workflow-run 查询面。拆分原因：主文件受
-// eslint max-lines(400) 约束，主文件与分支增量叠加超限，
-// 按查询面边界把 dwf journal 的两个只读查询拆到本文件（闭包依赖显式传入，行为不变）。
+// The workflow-run query surface of createAgentConversationTransport. Reason for splitting: The main file is affected by
+// eslint max-lines(400) constraint, the main file and branch increment superposition exceeds the limit,
+// Split the two read-only queries of dwf journal into this file according to the query surface boundary (the closure dependency is passed in explicitly, and the behavior remains unchanged).
 import type { IZCodeAgentService } from "@zcode/services";
 import type {
   V4ConversationWorkflowRunArtifactDataParams,
@@ -57,8 +57,8 @@ export function createWorkflowRunTransportMethods(input: {
         ...(params.limit !== undefined ? { limit: params.limit } : {}),
       });
     },
-    // dwf 用户面产物的三条读面。
-    // ⚠ 术语：artifact = 脚本发布给用户看的产出，不是 run 的顶层返回值。
+    // Three readings of the dwf user interface product.
+    // ⚠ Terminology: artifact = the output that a script publishes to the user, not the top-level return value of run.
     async workflowRunArtifacts(
       params: V4ConversationWorkflowRunArtifactsParams,
     ): Promise<V4ConversationWorkflowRunArtifactsResult> {
@@ -96,7 +96,7 @@ export function createWorkflowRunTransportMethods(input: {
         limit: params.limit,
       });
     },
-    // dwf 脚本 transcript 的两条读面。
+    // Two readings of the dwf script transcript.
     async workflowRunWorkspace(
       params: V4ConversationWorkflowRunWorkspaceParams,
     ): Promise<V4ConversationWorkflowRunWorkspaceResult> {

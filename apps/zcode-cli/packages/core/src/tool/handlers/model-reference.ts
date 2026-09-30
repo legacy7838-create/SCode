@@ -1,14 +1,14 @@
 // ============================================================
-// 模型引用的解析（`subagent_model` 的字符串 → 一次选型）
+// Parsing of model references (string of `subagent_model` → one-time selection)
 // ============================================================
 //
-// 纯函数、零 I/O：宿主事实由 `ModelCatalogPort` 递进来（contracts 的
-// `interfaces/model-catalog.port.ts`），解析本身留在 core。分开的理由是**可测**——
-// 三档匹配、大小写、档位校验与「解不出来时说什么」是这套里唯一会被反复改动的地方，
-// 而它们一旦和端口实现搅在一起就只能靠集成测试去钉。
+// Pure functions, zero I/O: Host facts are passed in via `ModelCatalogPort` (contracts’
+// `interfaces/model-catalog.port.ts`), the parsing itself remains in core. The reason for separation is **measurable**——
+// Three-level matching, uppercase and lowercase, gear check and "What to say when you can't figure it out" are the only areas in this set that will be repeatedly changed.
+// Once they are mixed with the port implementation, they can only be fixed by integration testing.
 //
-// 调用点只有一个：`CreateWorkflow` / `AmendWorkflow` 的 `resolveInput`。解析必须发生在
-// 确认窗**之前**——窗上显示的是将要生效的那个模型，而解不出来的调用根本不该开窗。
+// There is only one call point: `resolveInput` of `CreateWorkflow` / `AmendWorkflow`. Parsing must occur in
+// Confirm window **before** - the window displays the model that will take effect, and the window should not be opened at all for calls that cannot be solved.
 
 import type { ModelCatalogEntry, ModelSelection } from "@zcode/contracts";
 import {
@@ -18,8 +18,9 @@ import {
 } from "@zcode/shared/model-selection";
 
 /**
- * 解析结果。失败一律带 `candidates`：模型猜错一个名字之后最有用的下一步信息就是「那这里
- * 有哪些」，否则它只会换个拼法再猜一次。
+ * The resolution result. Failures always carry `candidates`: after a model guesses a name wrong,
+ * the most useful next piece of information is "what is here", otherwise it will just guess the
+ * same name differently once more.
  */
 type ModelReferenceResolution =
   | { ok: true; selection: ModelSelection; entry: ModelCatalogEntry; canonical: string }
@@ -31,28 +32,35 @@ type ModelReferenceResolution =
     };
 
 /**
- * `not_found` 清单的行数上界。一份配了几十个 provider 的目录能列出几百行，而这段文案是
- * 直接进模型上下文的——超出的部分换一句「其余去调 ListModels」，那是**能拿到全量**的路，
- * 截断则不是。
+ * The row cap on the `not_found` list. A catalog configured with dozens of providers can list
+ * hundreds of rows, and this copy goes straight into the model's context - so the overflow is
+ * replaced with the sentence "call ListModels for the rest", which is the route that **can** get
+ * everything, whereas truncation is not.
  */
 const MODEL_REFERENCE_CANDIDATE_LINES = 40;
 
 /**
- * 把用户说的模型名解析成一次选型。三档，按特异性从高到低（顺序是规格的一部分）：
+ * Resolves the model name the user said into one selection. Three tiers, from most to least
+ * specific (the order is part of the spec):
  *
- *   1. `providerId/modelId` 全称精确命中；
- *   2. 裸 `modelId` 恰好只挂在一个 provider 下；
- *   3. 裸 `modelId` 挂在多个 provider 下 → 其中有**当前会话那一个**就取它，否则 `ambiguous`。
+ *   1. an exact hit on the full `providerId/modelId`;
+ *   2. a bare `modelId` that hangs off exactly one provider;
+ *   3. a bare `modelId` hanging off several providers -> take the one that is the **current
+ *     session's** if there is one, otherwise `ambiguous`.
  *
- * 全部比较大小写不敏感：注册表不给与 `modelId` 不同的展示名，所以没有「按 label 再找一轮」
- * 这一档——用户说的名字与 id 之间只差大小写和 provider 前缀。
+ * All comparisons are case-insensitive: the registry offers no display name different from
+ * `modelId`, so there is no "look again by label" tier - between the name the user said and the
+ * id, only case and the provider prefix differ.
  *
- * 被禁用的条目**绝不静默命中**：只匹配到禁用条目时回 `disabled` 并带上各自的理由。悄悄跳过
- * 它去选另一个模型，会让用户拿到一个他没要的模型；悄悄选中它则要等到子代理第一次开口才炸。
+ * A disabled entry is **never** a silent hit: when only disabled entries match, answer `disabled`
+ * with each one's reason. Skipping it quietly to pick a different model hands the user a model they
+ * did not ask for; picking it quietly only blows up when the subagent first speaks.
  *
- * `$level` 在场必须是该模型的合法档位（否则 `reasoning_level_unknown`）；缺席时取注册表默认档
- * （模型没有档位就不带 options）。`canonical` 是 picker 形，用注册表自己的拼写——此后一路到
- * journal 的 `run-launched` 事件、两条读面与确认窗的都是它。
+ * When `$level` is present it must be a legal tier of that model (otherwise
+ * `reasoning_level_unknown`); when absent, take the registry's default tier (a model with no tiers
+ * carries no options). `canonical` is in picker form, spelled the way the registry spells it -
+ * and that is the form used from there on, by the journal's `run-launched` event, by both read
+ * surfaces and by the confirmation window.
  */
 export function resolveModelReference(
   text: string,
@@ -65,19 +73,19 @@ export function resolveModelReference(
   const enabled = matches.filter((entry) => entry.disabledReason === undefined);
   if (enabled.length === 0) return disabledResolution(text, matches);
 
-  // 第 3 档。全称也走这里：同一个 provider/model 在目录里出现两次是宿主的问题，静默取第一个
-  // 会让「我选的到底是哪一个」没有答案。
+  // Gear 3. The full name also goes here: if the same provider/model appears twice in the directory, it is a problem with the host. The first one is picked silently.
+  // It will leave no answer to "Which one should I choose?"
   const entry = enabled.length === 1 ? enabled[0]! : enabled.find((candidate) => candidate.current);
   if (entry === undefined) return ambiguousResolution(text, enabled);
 
   const options = resolveReasoningOptions(entry, level);
   if (options === undefined) {
-    // `resolveReasoningOptions` 只在给了档位又对不上时回 undefined，所以这里的 level 必在场。
+    // `resolveReasoningOptions` only returns undefined when the gear is given but cannot match, so the level here must be present.
     return reasoningLevelUnknownResolution(text, entry, level ?? "");
   }
 
   const selection: ModelSelection = {
-    // 注册表的拼写，不是用户的：`canonical` 要能逐字回填进下一次调用。
+    // The registry's spelling, not the user's: `canonical` needs to be backfilled verbatim into the next call.
     providerId: entry.providerId,
     modelId: entry.modelId,
     ...options,
@@ -86,9 +94,11 @@ export function resolveModelReference(
 }
 
 /**
- * 归一化后的 `subagent_model` → 结构化选型。**只用在 handler 里**：走到那里的字符串已经过
- * `resolveInput` 的解析，所以解不开只可能是有人绕过了归一化——那是接线故障，按接线故障喊出来，
- * 而不是静默把用户要的模型丢掉（子代理会安静地跑在会话模型上，没人看得出来）。
+ * The normalized `subagent_model` -> a structured selection. **Used only inside the handler**: the
+ * string that arrives there has already been through `resolveInput`, so failing to resolve it can
+ * only mean someone bypassed normalization - that is a wiring fault and has to be shouted as one,
+ * rather than silently dropping the model the user asked for (the subagent would quietly run on
+ * the session model and nobody would notice).
  */
 export function parseWorkflowSubagentModel(canonical: string | undefined): ModelSelection | undefined {
   if (canonical === undefined) return undefined;
@@ -103,37 +113,40 @@ export function parseWorkflowSubagentModel(canonical: string | undefined): Model
 }
 
 /**
- * 生效的子代理模型在结果文案里的一句话（`CreateWorkflow` 与 `AmendWorkflow` 共用，形状照
- * `describeWorkflowConcurrencyLimit`）。**只在设了模型时出现**：跑在会话模型上的 run 没有
- * 可说的，多一句只会让模型以为自己选过什么。
+ * The one sentence about the effective subagent model in the result copy (shared by
+ * `CreateWorkflow` and `AmendWorkflow`, shaped after `describeWorkflowConcurrencyLimit`). **It
+ * appears only when a model was set**: a run on the session model has nothing to say, and an extra
+ * sentence would only make the model think it chose something.
  *
- * 括号里那半句是给模型自己听的：它最容易把「子代理换了模型」读成「我也换了」，然后在下一轮
- * 对用户复述一个假的当前模型。
+ * The half in parentheses is addressed to the model itself: it is most likely to read "the
+ * subagent switched models" as "I switched too", and then repeat a false current model to the user
+ * on the next turn.
  */
 export function describeWorkflowSubagentModel(canonical: string | undefined): string {
   if (canonical === undefined) return "";
   return ` Subagents run on ${canonical} (the main agent stays on the session model).`;
 }
 
-/** 目录条目的规范 id（不含档位）：`ListModels` 的 `id` 与失败清单里的那一行同一个形。 */
+/** The canonical id of a catalog entry (tiers excluded): the `id` in `ListModels` and the row in the failure list are the same shape. */
 export function formatModelCatalogId(entry: ModelCatalogEntry): string {
   return `${entry.providerId}/${entry.modelId}`;
 }
 
 /**
- * 切出 `$level`。搜索起点跟着 provider 分隔符走（`parseModelPickerValue` 同款）：provider id
- * 里不会有 `$`，但把整串当模型名扫会让 `a$b/c` 这种畸形串被切在错的位置。
+ * Cuts out `$level`. The search start follows the provider separator (same as
+ * `parseModelPickerValue`): a provider id never contains a `$`, but scanning the whole string as a
+ * model name would cut a malformed string like `a$b/c` in the wrong place.
  */
 function splitReasoningLevel(text: string): { reference: string; level?: string } {
   const providerSeparatorIndex = text.indexOf("/");
   const searchFrom = providerSeparatorIndex + 1;
   const index = text.indexOf(ZCODE_MODEL_REASONING_SEPARATOR, searchFrom);
-  // 空的一侧（`$high`、`glm$`）不算档位：那是拼错，让它落到 not_found 去列清单。
+  // The empty side (`$high`, `glm$`) doesn't count as a gear: that's a misspelling, making it fall to not_found to list.
   if (index <= searchFrom || index >= text.length - 1) return { reference: text };
   return { reference: text.slice(0, index), level: text.slice(index + 1) };
 }
 
-/** 第 1、2 档的候选集：带 `/` 按全称比，不带按裸 `modelId` 比。 */
+/** The candidate set for tiers 1 and 2: with a `/` it is compared as a full name, without one as a bare `modelId`. */
 function matchEntries(reference: string, entries: ModelCatalogEntry[]): ModelCatalogEntry[] {
   const providerSeparatorIndex = reference.indexOf("/");
   if (providerSeparatorIndex > 0) {
@@ -147,15 +160,17 @@ function matchEntries(reference: string, entries: ModelCatalogEntry[]): ModelCat
 }
 
 /**
- * 档位选择。返回 `undefined` 表示给的档位不合法（调用点据此回 `reasoning_level_unknown`）；
- * 返回 `{}` 表示这个模型不带档位——注意这与「档位为空字符串」不是一回事，所以不能用空值合并。
+ * Tier selection. Returning `undefined` means the given tier is illegal (the call site answers
+ * `reasoning_level_unknown` on that basis); returning `{}` means this model carries no tiers - note
+ * that this is not the same thing as "the tier is the empty string", so it cannot be handled with
+ * a nullish merge.
  */
 function resolveReasoningOptions(
   entry: ModelCatalogEntry,
   level: string | undefined,
 ): { options?: { reasoningLevel: string } } | undefined {
   if (level !== undefined) {
-    // 注册表自己的拼写胜出：用户打的 `HIGH` 要变成目录里的 `high`，否则 canonical 回填一次就变形。
+    // The registry's own spelling wins: the `HIGH` typed by the user must be changed to `high` in the directory, otherwise the canonical backfill will be deformed once.
     const matched = entry.reasoningLevels.find((candidate) => sameToken(candidate, level));
     return matched === undefined ? undefined : { options: { reasoningLevel: matched } };
   }
@@ -164,9 +179,10 @@ function resolveReasoningOptions(
 }
 
 /**
- * 找不到：列出**可选用**的 id。禁用的不进清单——让模型从一份它挑了也用不了的名单里挑，
- * 只会换来第二次失败。当前会话那一条打上 `[current]`：它是「什么都不设」的等价物，标出来
- * 模型才知道选它等于没选。
+ * Not found: list the **selectable** ids. Disabled ones do not enter the list - making the model
+ * pick from a list it could not use anyway only buys a second failure. The current session's entry
+ * is tagged `[current]`: it is the equivalent of "set nothing", and marking it is what lets the
+ * model know that choosing it is the same as choosing nothing.
  */
 function notFoundResolution(text: string, entries: ModelCatalogEntry[]): ModelReferenceResolution {
   const candidates = entries.filter((entry) => entry.disabledReason === undefined);
@@ -188,7 +204,7 @@ function notFoundResolution(text: string, entries: ModelCatalogEntry[]): ModelRe
   };
 }
 
-/** 同名挂在多个 provider 下，且没有一条是当前会话的：只能让调用方写全称。 */
+/** The same name hangs off several providers and none of them is the current session's: the caller has to write the full name. */
 function ambiguousResolution(
   text: string,
   candidates: ModelCatalogEntry[],
@@ -202,7 +218,7 @@ function ambiguousResolution(
   };
 }
 
-/** 只匹配到禁用条目：连理由一起说出来，否则用户看到的是「这个模型不存在」而它明明在列表里。 */
+/** Only disabled entries match: say the reason along with it, otherwise the user sees "this model does not exist" while it is plainly in the list. */
 function disabledResolution(
   text: string,
   candidates: ModelCatalogEntry[],
@@ -218,7 +234,7 @@ function disabledResolution(
   };
 }
 
-/** 档位不合法：模型认对了，只是档位打错——所以清单给的是**这个模型的**档位，不是整张目录。 */
+/** Illegal tier: the model was identified correctly, only the tier was mistyped - so the list offers the tiers of **this model**, not of the whole catalog. */
 function reasoningLevelUnknownResolution(
   text: string,
   entry: ModelCatalogEntry,
@@ -241,7 +257,7 @@ function reasoningLevelUnknownResolution(
   };
 }
 
-/** id 的比较口径：两端去空白后大小写不敏感。注册表里 id 是标识符，不是自由文本。 */
+/** How ids are compared: trimmed on both ends, then case-insensitive. An id in the registry is an identifier, not free text. */
 function sameToken(left: string, right: string): boolean {
   return left.trim().toLowerCase() === right.trim().toLowerCase();
 }

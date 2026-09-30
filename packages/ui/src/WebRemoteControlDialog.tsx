@@ -15,10 +15,7 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { logger } from "@/logger.js";
 import { getBotProviderRegionTagLabelId } from "@/botsUi.js";
 
-type RemoteControlBotProvider = Extract<
-  BotProvider,
-  "weixin" | "feishu" | "lark" | "telegram"
->;
+type RemoteControlBotProvider = Extract<BotProvider, "weixin" | "feishu" | "lark" | "telegram">;
 
 const REMOTE_CONTROL_BOT_ENTRIES: Array<{
   provider: RemoteControlBotProvider;
@@ -42,13 +39,12 @@ export const WebRemoteControlDialog = memo(function WebRemoteControlDialogCompon
 }) {
   const { intl } = useZCodeIntl();
   const [botsDialogOpen, setBotsDialogOpen] = useState(false);
-  const [botEntryProvider, setBotEntryProvider] =
-    useState<RemoteControlBotProvider | null>(null);
+  const [botEntryProvider, setBotEntryProvider] = useState<RemoteControlBotProvider | null>(null);
 
   const handleOpenBotEntry = (provider: RemoteControlBotProvider) => {
     setBotEntryProvider(provider);
     setBotsDialogOpen(true);
-    logger.info("[WebRemoteControlDialog] 打开 Bot Channel 配置入口", {
+    logger.info("[WebRemoteControlDialog] opening bot channel settings entry", {
       workspacePath,
       workspaceIdentity: workspaceIdentity ?? "none",
       provider,
@@ -58,7 +54,7 @@ export const WebRemoteControlDialog = memo(function WebRemoteControlDialogCompon
   const handleOpenBotsDialog = () => {
     setBotEntryProvider(null);
     setBotsDialogOpen(true);
-    logger.info("[WebRemoteControlDialog] 打开 Bots 总配置入口", {
+    logger.info("[WebRemoteControlDialog] opening bots settings entry", {
       workspacePath,
       workspaceIdentity: workspaceIdentity ?? "none",
     });
@@ -75,10 +71,10 @@ export const WebRemoteControlDialog = memo(function WebRemoteControlDialogCompon
             type="button"
             variant="ghost"
             size="icon-sm"
-            // Bugfix: 这个弹窗会贴近桌面窗口顶部显示，默认 close 在 Electron drag 区里容易点不中。
-            // 这里改成显式点击关闭，并把按钮本身标成 no-drag，保证右上角关闭动作能稳定命中。
-            // Bugfix: 远控弹层内可点击控件之前没有显式 pointer cursor，桌面端 hover 时不像可操作元素。
-            // 这里仅给启用态补手指指针，禁用态仍沿用 Button 的 disabled 交互语义。
+            // Bugfix: This pop-up window will be displayed close to the top of the desktop window. By default, close is easy to miss in the Electron drag area.
+            // Here it is changed to an explicit click to close, and the button itself is marked as no-drag to ensure that the closing action in the upper right corner can hit stably.
+            // Bugfix: The clickable control in the remote pop-up layer does not have an explicit pointer cursor before, and it does not look like an operable element when hovering on the desktop.
+            // Here, only the finger pointer is added to the enabled state, and the disabled state still uses the disabled interaction semantics of Button.
             className="absolute top-2 right-2 enabled:cursor-pointer [app-region:no-drag]"
             onClick={() => onOpenChange(false)}
           >
@@ -92,9 +88,7 @@ export const WebRemoteControlDialog = memo(function WebRemoteControlDialogCompon
                   <MonitorSmartphone className="size-5" />
                 </div>
                 <div className="space-y-1">
-                  <DialogTitle>
-                    {intl.formatMessage({ id: "webRemoteControl.title" })}
-                  </DialogTitle>
+                  <DialogTitle>{intl.formatMessage({ id: "webRemoteControl.title" })}</DialogTitle>
                   <DialogDescription>
                     {intl.formatMessage({ id: "webRemoteControl.description" })}
                   </DialogDescription>
@@ -121,9 +115,7 @@ export const WebRemoteControlDialog = memo(function WebRemoteControlDialogCompon
                 </div>
                 <div className="grid min-h-0 flex-1 gap-3">
                   {REMOTE_CONTROL_BOT_ENTRIES.map((entry) => {
-                    const regionTagLabelId = getBotProviderRegionTagLabelId(
-                      entry.provider,
-                    );
+                    const regionTagLabelId = getBotProviderRegionTagLabelId(entry.provider);
 
                     return (
                       <button
@@ -132,12 +124,9 @@ export const WebRemoteControlDialog = memo(function WebRemoteControlDialogCompon
                         className="flex min-h-0 cursor-pointer items-start gap-3 rounded-lg border border-transparent bg-surface px-3 py-3 text-left transition-colors hover:border-input-border-focused hover:bg-surface-hover focus-visible:border-input-border-focused"
                         onClick={() => handleOpenBotEntry(entry.provider)}
                       >
-                        {/* Bugfix: 远控 Bot Channel 入口原来用通用 lucide 图标，用户无法一眼区分微信、飞书和 Telegram。
-                            这里直接复用 BotsDialog 的渠道 logo，不再额外包裹容器，保证品牌图标本身作为视觉识别。 */}
-                        <ProviderIcon
-                          provider={entry.provider}
-                          className="size-12 shrink-0"
-                        />
+                        {/* Bugfix: The remote control Bot Channel entrance originally used a universal lucide icon, and users could not distinguish between WeChat, Feishu and Telegram at a glance.
+                            The channel logo of BotsDialog is directly reused here without additional wrapping containers to ensure that the brand icon itself serves as the visual identity. */}
+                        <ProviderIcon provider={entry.provider} className="size-12 shrink-0" />
                         <span className="min-w-0 flex-1 space-y-1">
                           <span className="flex min-w-0 items-center gap-1.5 text-ui-base font-medium text-foreground">
                             <span className="min-w-0 truncate">

@@ -116,7 +116,7 @@ async function readWindowsPolicyUserDataDirs(
       const value = output.match(/UserDataDir\s+REG_(?:EXPAND_)?SZ\s+(.+)$/im)?.[1]?.trim();
       if (value) values.push(expandWindowsPolicyPath(value, options));
     } catch {
-      // 没有企业策略是正常状态。
+      // No corporate strategy is the norm.
     }
   }
   return uniquePaths(values);
@@ -139,7 +139,7 @@ async function readProfileDirectoryCandidates(userDataDir: string): Promise<{
       await readFile(join(userDataDir, "Local State"), "utf8"),
     ) as ChromeLocalState;
   } catch {
-    // Local State 损坏或暂时不可读时，仍允许通过目录 fallback 发现 Profile。
+    // When the Local State is corrupted or temporarily unreadable, profile discovery through directory fallback is still allowed.
   }
 
   const names = new Set<string>(Object.keys(localState.profile?.info_cache ?? {}));
@@ -257,8 +257,8 @@ export async function discoverChromeProfile(
   for (const installation of installations) {
     if (!(await pathExists(installation.userDataDir))) continue;
     const { lastUsed, profiles } = await readProfileDirectoryCandidates(installation.userDataDir);
-    // 过去只要标准 Default 目录存在就立即返回，即使里面没有 Cookie/LocalStorage，
-    // 从而遮蔽同安装的真实 Profile 以及后续 Snap/Flatpak 候选。发现阶段先过滤空 Profile。
+    // In the past, as long as the standard Default directory existed, it would be returned immediately, even if there was no Cookie/LocalStorage in it.
+    // Thereby obscuring the real Profile and subsequent Snap/Flatpak candidates of the same installation. In the discovery phase, Profile is first filtered.
     const importableProfiles = await filterImportableProfiles(installation.userDataDir, profiles);
     if (importableProfiles.length === 0) continue;
     const selected = selectProfileDirectory(importableProfiles, lastUsed);

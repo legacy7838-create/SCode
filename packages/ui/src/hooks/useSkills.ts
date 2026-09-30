@@ -36,10 +36,10 @@ interface UseSkillsOptions {
 }
 
 /**
- * Composer 的 Skill catalog。
- * 无 prewarm 的 draft 以 workspace 当前扫描为 authority；prewarm/已有 Session 以对应
- * AgentRuntime 冻结快照为 authority。workspace/session/remote attachment/runtime 代次变化时，
- * 旧异步结果一律不得回填。
+ * The Composer's Skill catalog. A draft without prewarm takes the workspace's current scan as
+ * authority; a prewarmed/existing Session takes the corresponding AgentRuntime's frozen snapshot as
+ * authority. Whenever the workspace/session/remote attachment/runtime generation changes, stale
+ * async results must never be written back.
  */
 export function useSkills(options: UseSkillsOptions): ConversationSkillCatalogState {
   const resolution = useWorkspaceServicesResolution(
@@ -62,15 +62,15 @@ export function useSkills(options: UseSkillsOptions): ConversationSkillCatalogSt
     if (!options.enabled || !options.sessionId || !rpcReady) return;
     const subscription = services.zcodeAgentService.onAgentRuntimeRestarted((event) => {
       if (event.workspaceKey !== workspaceKey) return;
-      // runtime 重建后 workspace/session key 不变，旧 catalog 会继续命中。
-      // 显式推进代次，使冷恢复后的新 runtime 必须重新提供一次 Session authority。
+      // After a runtime rebuild the workspace/session keys stay the same, so the old catalog would still hit.
+      // Bump the generation explicitly so the new runtime after a cold recovery must supply Session authority once more.
       setRuntimeRevision((current) => current + 1);
     });
     return () => subscription.dispose();
   }, [options.enabled, options.sessionId, rpcReady, services, workspaceKey]);
 
-  // 用 scope 身份隔离渲染：key 切换后的 effect 尚未执行时也只返回空态，避免旧 Session
-  // 或旧 remote attachment 的 Skill 在一帧内泄漏到新 Composer。
+  // Isolate rendering by scope identity: even while the effect for a switched key has not run yet, only the empty state is returned, keeping an old Session
+  // or a Skill from an old remote attachment from leaking into the new Composer for a frame.
   const requestScope = useMemo(
     () => ({}),
     [options.enabled, remoteSessionId, requestKey, rpcReady, services],
@@ -107,7 +107,7 @@ export function useSkills(options: UseSkillsOptions): ConversationSkillCatalogSt
       .catch((error: unknown) => {
         if (cancelled || seq !== requestSeqRef.current) return;
         const message = error instanceof Error ? error.message : String(error);
-        logger.warn("[useSkills] 拉取对话 Skill catalog 失败", {
+        logger.warn("[useSkills] failed to fetch the chat skill catalog", {
           error: message,
           requestKey,
         });

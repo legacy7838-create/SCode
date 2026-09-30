@@ -6,9 +6,10 @@ interface PendingGuideQueueProjection {
 }
 
 /**
- * CLI 用同一份 queue fact 可靠承载 guide 与 future queue；旧 UI 直接渲染
- * queue.items，导致等待 model-step 注入的 guide 被误画成下一轮消息。这里只按权威
- * admitted delivery 分流展示，不复制、不改写 accepted input 状态。
+ * The CLI reliably uses one and the same queue fact to carry both the guide and the future queue;
+ * the legacy UI renders queue.items directly, which causes a guide awaiting model-step injection to
+ * be misdrawn as the next turn's message. Here the display is split by authoritative admitted
+ * delivery only, without copying or rewriting the accepted input state.
  */
 export function projectPendingGuideQueue(queue: QueueState): PendingGuideQueueProjection {
   const pendingGuides: QueueItem[] = [];

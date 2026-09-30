@@ -94,7 +94,7 @@ class PptxRendererPreviewDocument implements PresentationPreviewDocument {
       throw new RangeError(`Presentation page index is out of range: ${pageIndex}`);
     }
     materializeSlideNodes(this.presentation, slide);
-    // 只为当前页建立 group 文本索引，避免显式选择一页时提前 materialize 整份演示文稿。
+    // Create a group text index for the current page only to avoid materializing the entire presentation in advance when explicitly selecting a page.
     const groupTextIndex = buildTextIndex(
       { ...this.presentation, slides: [slide] },
       {

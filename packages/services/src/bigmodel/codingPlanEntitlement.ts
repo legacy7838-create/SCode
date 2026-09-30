@@ -59,7 +59,7 @@ function readSuccessfulData(payload: unknown): unknown {
   const parsed = envelopeSchema.safeParse(payload);
   if (!parsed.success) return undefined;
   const envelope = parsed.data;
-  // 沿用 availability 的可选 code 契约；省略成功码不能被解释为业务失败。
+  // Follows the availability optional code contract; omitting the success code cannot be interpreted as a business failure.
   if (
     envelope.success === false ||
     (envelope.code !== undefined && ![0, 200].includes(envelope.code))
@@ -83,7 +83,7 @@ export async function fetchPersonalCodingPlanEntitlement(params: {
   const list = z.array(z.unknown()).safeParse(readSuccessfulData(payload));
   if (!list.success) return { kind: "unknown" };
   let malformedCodingEntry = false;
-  // 订阅列表包含异构商品：只严格验证采用的 Coding 条目，无关条目不能遮蔽有效权益。
+  // Subscription lists contain heterogeneous products: only strictly validate adopted Coding entries; unrelated entries must not mask valid entitlements.
   for (const item of list.data) {
     const parsed = personalSchema.safeParse(item);
     if (parsed.success && isActivePersonalCodingPlan(parsed.data)) {
@@ -91,7 +91,7 @@ export async function fetchPersonalCodingPlanEntitlement(params: {
     }
     if (!parsed.success && isCodingPlanProduct(item)) malformedCodingEntry = true;
   }
-  // 没有有效条目时，疑似 Coding 的损坏数据不能被解释为明确未开通。
+  // When there are no valid entries, damaged data suspected to be Coding cannot be interpreted as explicitly not subscribed.
   return { kind: malformedCodingEntry ? "unknown" : "unavailable" };
 }
 
@@ -120,11 +120,11 @@ export async function fetchTeamCodingPlanEntitlement(params: {
   if (!parsed.success) return { kind: "unknown" };
   const subscription = parsed.data;
   if (!subscription.hasSubscription) return { kind: "unavailable" };
-  // 实际接口过期套餐仍返回 hasSubscription=true；存在订阅记录不等于当前有效。
+  // The actual interface still returns hasSubscription=true for expired plans; having a subscription record does not equal currently valid.
   if (subscription.status === "EXPIRED") return { kind: "unavailable", reason: "expired" };
   if (subscription.status === "EFFECTIVE" && subscription.memberGrantStatus === "UNASSIGNED")
     return { kind: "unavailable", reason: "unassigned" };
-  // 未验证的新枚举保持未知，不能擅自解释成无权益。
+  // Unverified new enums remain unknown and must not be arbitrarily interpreted as no entitlement.
   if (subscription.status !== "EFFECTIVE" || subscription.memberGrantStatus !== "VALID") {
     return { kind: "unknown" };
   }

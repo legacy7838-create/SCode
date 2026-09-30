@@ -1,28 +1,28 @@
 interface ShareHeaderMeasurements {
-  /** 分享 Header shell 的宽度。 */
+  /** Share the width of the Header shell. */
   shellWidth: number;
-  /** 内容 rail 左右边缘到 shell 边缘的距离。 */
+  /** Content rail The distance from the left and right edges to the edge of the shell. */
   railContentLeft: number;
   railContentRight: number;
   brandWidth: number;
   titleContentWidth: number;
-  /** 主题按钮与完整继续 CTA 的总宽度。 */
+  /** Total width of theme button with full continue CTA. */
   continueWidth: number;
-  /** 主题按钮与紧凑继续 CTA 的总宽度。 */
+  /** Theme buttons compactly continue the total width of the CTA. */
   compactContinueWidth?: number;
-  /** 右侧区域是否包含继续 CTA；只读分享仍会保留主题按钮。 */
+  /** Whether the right area contains a continue CTA; read-only sharing will still retain the topic button. */
   hasContinueAction?: boolean;
   gap?: number;
-  /** 宽屏锚点距视口边缘的内边距。 */
+  /** The padding of the widescreen anchor point from the edge of the viewport. */
   edgePadding?: number;
-  /** 两侧元素进入连续位移动画前必须保留的安全间距。 */
+  /** The safe distance that must be maintained before elements on both sides enter continuous displacement animation. */
   minClearance?: number;
-  /** 完整 CTA 至少要为可见标题保留的宽度。 */
+  /** A full CTA should be at least as wide as the visible title. */
   minTitleWidth?: number;
 }
 
 export interface ShareHeaderView {
-  /** 0 是内容栏内联位置，1 是视口两侧锚定位置。 */
+  /** 0 is the inline position inside the content column, 1 is the anchored position at the viewport edges. */
   progress: number;
   brandLeft: number;
   titleLeft: number;
@@ -47,12 +47,15 @@ function lerp(from: number, to: number, progress: number): number {
 }
 
 /**
- * 计算分享 Header 的连续几何位置。
+ * Computes the continuous geometry of the share Header.
  *
- * 之前这里返回 inline/rail-aligned 两个离散布局，品牌和 CTA 会在临界宽度
- * 一次性从 flex 流切到绝对定位。现在用内容栏与视口边缘之间的可用 gutter
- * 推导 progress，让三个元素沿同一条轨道连续移动；当 gutter 仍足够容纳
- * 对应元素时保持宽屏外侧锚点，只有 gutter 不足后才开始向内容栏回收。
+ * This used to return two discrete layouts, inline and rail-aligned, so the brand and the CTA
+ * would switch from the flex flow to absolute positioning all at once at the critical width. It
+ * now derives progress from the gutter available between the content column and the viewport
+ * edges, which lets the three elements move continuously along a single track: the wide-screen
+ * outer anchors are held for as long as the gutter can still accommodate the corresponding
+ * element, and only once the gutter runs short do they start collapsing back toward the content
+ * column.
  */
 export function resolveShareHeaderView({
   shellWidth,
@@ -115,8 +118,8 @@ export function resolveShareHeaderView({
   };
 
   const fullGeometry = resolveTrailingGeometry(normalizedContinueWidth);
-  // 极窄屏仍为完整 CTA 永久预留宽度，会把标题压到 0。先保持连续轨道，
-  // 只有完整 CTA 无法留下最小标题宽度时才切换为同一位置上的紧凑图标按钮。
+  // Extremely narrow screens still permanently reserve width for the complete CTA, which will push the title to 0. Keep the continuous track first,
+  // Switch to a compact icon button in the same position only if the full CTA cannot leave the minimum title width.
   const continueCompact =
     hasContinueAction &&
     normalizedCompactContinueWidth < normalizedContinueWidth &&

@@ -58,8 +58,8 @@ export class ZCodeStdioTransport implements ZCodeProtocolTransport {
   ) {
     this.stderrCollector = new AgentStderrCollector(child.stderr, options?.onStderrLine);
 
-    // ZCode Protocol stdio 帧边界只认 LF。Node readline 会把 U+2028/U+2029
-    // 当作换行，模型文本包含这类字符时会把合法 JSON 字符串切成半帧。
+    // ZCode Protocol stdio frame boundary only recognizes LF. Node readline will convert U+2028/U+2029
+    // Treated as line breaks, model text containing such characters will break the legal JSON string into half frames.
     child.stdout.on("data", this.handleStdoutData);
     child.stdout.once("end", this.handleStdoutEnd);
     child.stdout.once("close", this.handleStdoutEnd);
@@ -102,8 +102,8 @@ export class ZCodeStdioTransport implements ZCodeProtocolTransport {
     this.disposeLocalResources();
     void this.stderrCollector.waitForDrain(DISPOSE_STDERR_DRAIN_MS);
     if (!this.hasChildExited()) {
-      // Windows 和 POSIX 下 agent wrapper 可能继续拉起 runtime/MCP 子进程，
-      // 只 kill 父进程会留下后代进程或短时间锁住 workspace cwd。
+      // The agent wrapper under Windows and POSIX may continue to pull up the runtime/MCP child process.
+      // Killing only the parent process will leave descendant processes or lock the workspace cwd for a short time.
       const ownedProcessGroupId = this.options?.ownedProcessGroupId;
       terminateProcessTree(this.child, ownedProcessGroupId ? { ownedProcessGroupId } : {});
     }
@@ -130,14 +130,14 @@ export class ZCodeStdioTransport implements ZCodeProtocolTransport {
       this.disposed = true;
       this.disposeLocalResources();
     }
-    // stdin EOF 可能让 CLI 根进程先退出，而 detached MCP 仍继续运行。
-    // 必须在发 EOF 前保存树成员，否则根退出、后代被系统接管后无法再按 PPID 找回。
+    // stdin EOF may cause the CLI root process to exit first, while the detached MCP continues to run.
+    // Tree members must be saved before issuing EOF, otherwise they cannot be retrieved by PPID after the root exits and the descendants are taken over by the system.
     this.cleanupAttemptCount += 1;
     const cleanupStartedAtMs = Date.now();
     const forceBudgetMs = this.cleanupAttemptCount > 1 ? 0 : PROCESS_TREE_FORCE_AFTER_MS;
-    // 只扣减 forceAfterMs 无法约束慢 CIM；force 触底为 0 后 waiter 还会重新
-    // 获得 taskkill + exit 宽限。Windows 必须从 cleanup 起点固定同一个绝对 deadline，
-    // 并贯穿快照、EOF 和 waiter，才能稳定落在 Host 3.5s service phase 内。
+    // Only deducting forceAfterMs cannot constrain slow CIM; waiter will restart after force bottoms out at 0.
+    // Get taskkill + exit grace. Windows must fix the same absolute deadline from the cleanup starting point,
+    // And through snapshot, EOF and waiter, it can stably fall within the Host 3.5s service phase.
     const windowsCleanupDeadlineAtMs =
       process.platform === "win32"
         ? cleanupStartedAtMs +
@@ -150,12 +150,12 @@ export class ZCodeStdioTransport implements ZCodeProtocolTransport {
     );
     const processTreeSnapshot = this.cleanupProcessTreeSnapshot;
     if (!this.hasChildExited()) {
-      // app-server --stdio 的正常退出边界是 stdin EOF。直接 taskkill
-      // 进程树，既跳过 agent 自身 shutdown，也会让 host 固定等强杀兜底窗口。
-      // 这里先请求协议入口自然收尾；短时间无响应再进入进程树兜底，仍保证不残留子进程。
+      // The normal exit boundary for app-server --stdio is stdin EOF. direct taskkill
+      // The process tree not only skips the shutdown of the agent itself, but also allows the host to wait for the forced kill window.
+      // Here, the protocol entry is first requested to end naturally; if there is no response for a short period of time, then the process tree is entered, and it is still guaranteed that no child processes remain.
       this.requestStdioClose();
-      // coverage CLI bundle 未压缩且带完整 source map，启动/收尾明显慢于发布包。
-      // coverage 下继续保留额外写盘宽限；普通窗口覆盖 CLI 的 1500ms 退出 deadline。
+      // The coverage CLI bundle is uncompressed and comes with a complete source map, and the startup/finishing is significantly slower than the release package.
+      // The additional write disk grace will continue to be retained under coverage; the 1500ms exit deadline of the CLI will be covered by the ordinary window.
       const configuredEofWaitMs =
         process.env.ZCODE_E2E_COVERAGE === "1"
           ? E2E_COVERAGE_STDIO_EOF_EXIT_WAIT_MS
@@ -166,8 +166,8 @@ export class ZCodeStdioTransport implements ZCodeProtocolTransport {
           : Math.max(windowsCleanupDeadlineAtMs - Date.now(), 0);
       await this.waitForChildExit(Math.min(configuredEofWaitMs, remainingCleanupMs));
     }
-    // app 关闭时 host 必须等进程树的 SIGTERM/SIGKILL 兜底跑完；
-    // 即使根 child 已在 EOF 窗口内退出，也要用预先保存的快照回收后代。
+    // When the app is closed, the host must wait for the SIGTERM/SIGKILL of the process tree to finish running;
+    // Even if the root child has exited within the EOF window, descendants are reclaimed using the pre-saved snapshot.
     const terminationResult = await terminateProcessTreeAndWait(this.child, {
       ...(this.options?.ownedProcessGroupId
         ? { ownedProcessGroupId: this.options.ownedProcessGroupId }
@@ -180,17 +180,17 @@ export class ZCodeStdioTransport implements ZCodeProtocolTransport {
         : {}),
       ...(processTreeSnapshot ? { snapshot: processTreeSnapshot } : {}),
       log: processTreeLogger,
-      // Windows 等待式清理的绝对 deadline 是 force 余量 + taskkill 上限 + exit 宽限。
-      // 将命令上限控制在 1s，使完整 cleanup 仍落在 Host service phase 的 3.5s 内。
+      // The absolute deadline of Windows wait-based cleanup is force margin + taskkill upper limit + exit grace.
+      // Control the upper limit of the command to 1s so that the complete cleanup still falls within 3.5s of the Host service phase.
       windowsTaskkillTimeoutMs: PROCESS_TREE_WINDOWS_TASKKILL_TIMEOUT_MS,
       ...(windowsCleanupDeadlineAtMs === undefined ? {} : { windowsCleanupDeadlineAtMs }),
-      // 前一次 cleanup 若报告残留，app quit 的最终重试不能再等待完整
-      // graceful 窗口；直接进入 force，确保仍落在 main 给 Host 的退出预算内。
+      // If the previous cleanup report remains, the final retry of app quit cannot wait for completion.
+      // graceful window; enter force directly to ensure that it still falls within the exit budget given by main to Host.
       forceAfterMs: Math.max(forceBudgetMs - (Date.now() - cleanupStartedAtMs), 0),
     });
-    // Windows taskkill 已确认 OS 进程退出后，Node 的 ChildProcess exit 事件
-    // 仍可能晚一轮投递。waiter 已同时检查 PID 存活与身份门禁，这里若再用滞后的
-    // exitCode/signalCode 追加 root PID，会把成功回收误报为残留并触发无效重试。
+    // After Windows taskkill has confirmed that the OS process has exited, Node's ChildProcess exit event
+    // It may still be delivered one round later. waiter has checked PID survival and identity access control at the same time. If the lagging one is used again here,
+    // Adding the root PID to exitCode/signalCode will falsely report successful recycling as residual and trigger invalid retries.
     const remainingPids = terminationResult.remainingPids;
     await this.stderrCollector.waitForDrain(
       windowsCleanupDeadlineAtMs === undefined
@@ -198,8 +198,8 @@ export class ZCodeStdioTransport implements ZCodeProtocolTransport {
         : Math.max(0, Math.min(EXIT_STDERR_DRAIN_MS, windowsCleanupDeadlineAtMs - Date.now())),
     );
     if (remainingPids.length > 0) {
-      // 只写 warning 后把 cleanup 当成功会让 manager 随即释放 ownership，
-      // app quit 无法再次处理残留。这里把残留提升为失败并保留快照供最终重试。
+      // Just write warning and treat cleanup as successful, which will cause the manager to release ownership immediately.
+      // app quit cannot process the residue again. Here the residual is promoted to failure and the snapshot is retained for eventual retry.
       throw new Error(
         `runtime process tree cleanup incomplete; remaining pid=${[...new Set(remainingPids)].join(",")}`,
       );
@@ -248,9 +248,9 @@ export class ZCodeStdioTransport implements ZCodeProtocolTransport {
     }
     try {
       const parsed = zcodeProtocolMessageSchema.parse(JSON.parse(line));
-      // 协议帧分发曾同步查询系统进程表，telemetry/streaming 高峰会阻塞
-      // Host event loop 并让 subagent 面板无输出。运行期 data plane 只做解析和转发；
-      // 完整进程树查询严格留在 dispose cleanup 边界。
+      // Protocol frame distribution has synchronously queried the system process table, and telemetry/streaming peaks will be blocked.
+      // Host event loop and leave the subagent panel with no output. During runtime, the data plane only does parsing and forwarding;
+      // Full process tree queries remain strictly within dispose cleanup boundaries.
       this.messageEmitter.fire(parsed);
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
@@ -259,10 +259,10 @@ export class ZCodeStdioTransport implements ZCodeProtocolTransport {
   }
 
   private handleStreamError(stream: "stdin" | "stdout", error: Error): void {
-    // 远端 WSL/SSH agent 秒退后，host 仍可能正在写入尚未完成的协议请求。
-    // Node 的 stdin write 回调会 reject，但底层 Socket 还会额外触发 error 事件；若没有长期监听，
-    // zcode-server 会因未处理的 EPIPE 直接崩溃，UI 只能看到远端连接断开而不是协议请求失败。
-    // 这里把 stream error 视为 transport 已关闭，阻止后续继续向失效 agent 写入。
+    // After the remote WSL/SSH agent backs off for seconds, the host may still be writing unfinished protocol requests.
+    // Node's stdin write callback will reject, but the underlying Socket will also trigger an additional error event; if there is no long-term monitoring,
+    // zcode-server will crash directly due to unhandled EPIPE, and the UI can only see that the remote connection is disconnected rather than that the protocol request fails.
+    // Here, the stream error is regarded as the transport being closed, preventing subsequent writes to the failed agent.
     this.fireClose({ reason: `${stream}_error: ${error.message}` });
   }
 
@@ -299,8 +299,8 @@ export class ZCodeStdioTransport implements ZCodeProtocolTransport {
       this.child.stdin.once("error", () => undefined);
       this.child.stdin.end();
     } catch {
-      // agent 可能正好在 disposeAndWait 期间退出，stdin 已半关闭时 EOF 请求失败；
-      // 失败不应打断后续进程树兜底，否则关闭路径又可能留下 runtime 残留。
+      // The agent may exit exactly during disposeAndWait, and the EOF request fails when stdin is half closed;
+      // Failure should not interrupt subsequent processes, otherwise closing the path may leave runtime residue.
     }
   }
 
@@ -343,17 +343,17 @@ export class ZCodeStdioTransport implements ZCodeProtocolTransport {
           log: processTreeLogger,
           ...(windowsCleanupDeadlineAtMs === undefined ? {} : { windowsCleanupDeadlineAtMs }),
           ownedProcessStartedAtMs: this.options?.ownedProcessStartedAtMs,
-          // root 可能在 WMIC/CIM 查询期间退出。查询开始时还没有退出时间，
-          // 必须在同轮查询完成后读取 exit 事件记录，才能安全恢复旧后代且排除 PID 复用。
+          // root may exit during WMIC/CIM query. There is no exit time when the query starts,
+          // The exit event record must be read after the same round of queries is completed to safely restore old descendants and exclude PID reuse.
           resolveOwnedProcessExitedAtMs: () => this.childExitedAtMs,
         });
     if (liveTree) {
       return liveTree;
     }
     if (process.platform === "win32" && !childHadExited && this.child.pid) {
-      // 查询失败时不再串行追加第二次查询；查询期间 root 正常退出的后代已经由
-      // captureProcessTreeSnapshotAsync 使用同轮进程表和 root 生命周期恢复。这里必须
-      // 显式保留“身份不可验证”，否则空 identities 会被误判为进程树已经退出。
+      // When the query fails, the second query will no longer be appended serially; the descendants of root's normal exit during the query have been replaced by
+      // captureProcessTreeSnapshotAsync uses the same process table and root lifecycle recovery. Must here
+      // Explicitly leave "identity not verifiable", otherwise empty identities will be misinterpreted as the process tree has exited.
       return {
         rootPid: this.child.pid,
         descendantPids: [],
@@ -374,9 +374,9 @@ export class ZCodeStdioTransport implements ZCodeProtocolTransport {
     if (exitedTree) {
       return exitedTree;
     }
-    // Windows 异步 CIM 查询失败后不能在 terminateAndWait 内立刻再查一次，
-    // 否则两个查询超时会串行叠加并吃满 Main 的退出预算。不可验证快照会继续观察
-    // 原 ChildProcess，并在超时后明确报告残留，但绝不向未经验证的复用 PID 发信号。
+    // After a Windows asynchronous CIM query fails, it cannot be checked again immediately within terminateAndWait.
+    // Otherwise, the two query timeouts will stack up in series and fill Main's exit budget. Non-verifiable snapshots will continue to be observed
+    // Original ChildProcess, and explicitly reports residuals after timeout, but never signals unvalidated reuse PIDs.
     return process.platform === "win32" && this.child.pid
       ? {
           rootPid: this.child.pid,

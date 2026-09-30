@@ -9,7 +9,7 @@ interface FetchZCodeBuiltinRemoteReleaseOptions {
   readonly signal?: AbortSignal;
 }
 
-/** Services 仅注入既有网络装配；URL、预算与 Release 校验由 provider-node 唯一实现。 */
+/** Services only inject the existing network wiring; the URL, budget and Release validation are implemented exclusively by provider-node. */
 export async function fetchZCodeBuiltinRemoteRelease(
   options: FetchZCodeBuiltinRemoteReleaseOptions,
 ): Promise<ZCodeBuiltinRelease | null> {

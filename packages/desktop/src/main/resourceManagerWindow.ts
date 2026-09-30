@@ -24,18 +24,18 @@ import {
 } from "./resourceManagerHostSampling.js";
 
 /**
- * 资源管理器。
+ * Resource manager.
  *
- * main 只做三件事：Electron 自身进程指标（app.getAppMetrics）、系统总量（os）、
- * 合并 Host 回报的外部进程行。外部进程采样一律在 Host 内完成——
- * 历史 bug：main 里同步/异步起 ps、PowerShell 都会卡住整个 App。
+ * main only does three things: Electron's own process metrics (app.getAppMetrics), total system volume (os),
+ * Merge external process rows reported by Host. External process sampling is always completed within the Host——
+ * Historical bug: PS and PowerShell will freeze the entire App when starting synchronously/asynchronously in main.
  */
 
 const preloadPath = join(import.meta.dirname, "../preload/resourceManager.cjs");
 const RESOURCE_MANAGER_WINDOW_TITLE = "Resource Manager";
 const BROWSER_USE_PLUGIN_NAME = "browser-use";
 
-/** 系统整机 CPU：两次 os.cpus() 之间 busy / total 的差分 */
+/** System CPU: difference in busy / total between two os.cpus() calls */
 interface SystemCpuMeter {
   read(): number;
 }
@@ -64,7 +64,7 @@ function createSystemCpuMeter(
   };
 }
 
-// 单例：同一时刻只允许一个资源管理器窗口
+// Singleton: Only one explorer window is allowed at the same time
 let instance: BrowserWindow | null = null;
 let samplingController: AbortController | undefined;
 
@@ -74,7 +74,7 @@ function stopResourceUsageSampling(): void {
   for (const label of hostProcesses.keys()) forgetHostResourceUsage(label);
 }
 
-/** 只有资源管理器本身能启停观测；Main 持有唯一生命周期。 */
+/** Only the resource manager itself can start and stop observation; Main owns the single lifecycle. */
 export function setResourceUsageSamplingActive(senderId: number, active: boolean): void {
   if (!instance || instance.isDestroyed() || instance.webContents.id !== senderId) return;
   if (active) samplingController ??= new AbortController();
@@ -104,9 +104,9 @@ export function getResourceManagerWindowId(): number | null {
 }
 
 /**
- * 记录活跃的 host process（utility process）。
- * 每个 BrowserWindow 只注册一个 window-scoped Host；远程连接不再产生独立 Host PID。
- * key = 窗口 label（如 "local-2"），value = UtilityProcess
+ * Records active host processes (utility processes).
+ * Each BrowserWindow only registers one window-scoped Host; remote connections no longer generate independent Host PIDs.
+ * key = window label (such as "local-2"), value = UtilityProcess
  */
 const hostProcesses = new Map<string, ElectronUtilityProcess>();
 
@@ -126,9 +126,9 @@ export function listRegisteredHostAgentProcessIds(): number[] {
 }
 
 /**
- * 主应用窗口（createWindow 创建的承载 workspace 的窗口）的 webContents id。
- * 唯一数据源：资源遥测据此把主窗口 renderer 归 `renderer_main`，
- * 资源管理器 / about / update-status 等辅助窗口归 `chromium_other`。
+ * The webContents id of the main application window (the window created by createWindow that hosts the workspace).
+ * The only data source: resource telemetry returns the main window renderer to `renderer_main`,
+ * Auxiliary windows such as Explorer / about / update-status belong to `chromium_other`.
  */
 const mainApplicationWindowWebContentsIds = new Set<number>();
 
@@ -142,12 +142,12 @@ export function unregisterMainApplicationWindow(webContentsId: number): void {
   mainApplicationWindowWebContentsIds.delete(webContentsId);
 }
 
-/** renderer heap 样本按发送方 webContents 判断是否属于 `renderer_main`。 */
+/** A renderer heap sample belongs to `renderer_main` when judged by the sending webContents. */
 export function isMainApplicationWindowWebContents(webContentsId: number): boolean {
   return mainApplicationWindowWebContentsIds.has(webContentsId);
 }
 
-/** cron scheduler 的 utilityProcess，由 spawn 点登记。 */
+/** The utilityProcess of the cron scheduler is registered by the spawn point. */
 const schedulerProcesses = new Set<ElectronUtilityProcess>();
 
 export function registerSchedulerProcess(child: ElectronUtilityProcess): void {
@@ -169,10 +169,10 @@ function collectUtilityProcessPids(children: Iterable<ElectronUtilityProcess>): 
 }
 
 /**
- * 当前各进程角色的 pid 快照，供资源遥测按 process_role 拆分使用
+ * A snapshot of the pids per current process role, used by resource telemetry to split by process_role
  *
- * getAppMetrics 不直接给 renderer / host / scheduler 的角色，需结合
- * BrowserWindow / webContents / utilityProcess 注册表才能可靠归类。
+ * getAppMetrics does not hand out renderer / host / scheduler roles directly; the BrowserWindow / webContents / utilityProcess
+ * registries have to be combined with it to classify them reliably.
  */
 export function collectChromiumProcessRolePids(): ChromiumProcessRolePids {
   const mainWindowRendererPids = new Set<number>();
@@ -190,7 +190,7 @@ export function collectChromiumProcessRolePids(): ChromiumProcessRolePids {
       mainWindowRendererPids.add(rendererPid);
       continue;
     }
-    // 内置浏览器 tab 是真实 `<webview>` guest；辅助窗口与 DevTools 落到 chromium_other。
+    // The built-in browser tab is the real `<webview>` guest; secondary windows and DevTools fall to chromium_other.
     if (contents.getType() === "webview") {
       guestRendererPids.add(rendererPid);
     }
@@ -237,7 +237,7 @@ export function unregisterHostAgentProcess(label: string, pid: number): void {
   }
 }
 
-/** browser-use 的浏览器 guest 是 main 里的 WebContentsView，其 renderer 归内置插件 browser-use */
+/** The browser guest of browser-use is WebContentsView in main, and its renderer belongs to the built-in plug-in browser-use */
 let browserUseGuestWebContentsIdsProvider: () => Iterable<number> = () => [];
 
 export function setBrowserUseGuestWebContentsIdsProvider(provider: () => Iterable<number>): void {
@@ -245,12 +245,12 @@ export function setBrowserUseGuestWebContentsIdsProvider(provider: () => Iterabl
 }
 
 // ---------------------------------------------------------------------------
-// 窗口
+// window
 // ---------------------------------------------------------------------------
 
 /**
- * 打开资源管理器窗口（单例）。
- * 如果已有实例则聚焦，不重复创建。
+ * Opens the resource manager window (a singleton).
+ * An existing instance is focused instead of being created a second time.
  */
 export function openResourceManager(): void {
   if (instance && !instance.isDestroyed()) {
@@ -264,7 +264,7 @@ export function openResourceManager(): void {
     minWidth: 640,
     minHeight: 420,
     title: RESOURCE_MANAGER_WINDOW_TITLE,
-    // 不继承主窗口的自定义标题栏，使用系统默认标题栏
+    // Do not inherit the custom title bar of the main window and use the system default title bar.
     backgroundColor: "#1e1e1e",
     webPreferences: {
       preload: preloadPath,
@@ -273,7 +273,7 @@ export function openResourceManager(): void {
     },
   });
 
-  // 与主窗口保持一致：生产包始终加载签名包内的渲染资源。
+  // Consistent with the main window: Production packages always load rendering resources from signed packages.
   if (!app.isPackaged && process.env["ELECTRON_RENDERER_URL"]) {
     const base = process.env["ELECTRON_RENDERER_URL"];
     instance.loadURL(`${base}/resource-manager.html`);
@@ -292,7 +292,7 @@ export function openResourceManager(): void {
 }
 
 // ---------------------------------------------------------------------------
-// 快照
+// Snapshot
 // ---------------------------------------------------------------------------
 
 function baseProcess(
@@ -314,7 +314,7 @@ function baseProcess(
   };
 }
 
-/** Electron 自身进程（main / gpu / renderer / host / utility）→ 进程行 */
+/** Electron itself process (main/gpu/renderer/host/utility) → process line */
 function collectElectronProcesses(): ResourceUsageProcess[] {
   const metrics = app.getAppMetrics();
   const metricsByPid = new Map(metrics.map((m) => [m.pid, m]));
@@ -328,7 +328,7 @@ function collectElectronProcesses(): ResourceUsageProcess[] {
       cpuPercent: normalizeElectronCpuToMachinePercent(metric?.cpu.percentCPUUsage, {
         logicalCpuCount,
       }),
-      // getAppMetrics 的 workingSetSize 单位是 KB
+      // The workingSetSize unit of getAppMetrics is KB
       memoryBytes: (metric?.memory.workingSetSize ?? 0) * 1024,
     };
   };
@@ -356,7 +356,7 @@ function collectElectronProcesses(): ResourceUsageProcess[] {
     }
   }
 
-  // 同一个 OS 进程可能承载多个 BrowserWindow，按 PID 去重。
+  // The same OS process may host multiple BrowserWindow, and deduplication is performed by PID.
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue;
     const rendererPid = win.webContents.getOSProcessId();
@@ -373,7 +373,7 @@ function collectElectronProcesses(): ResourceUsageProcess[] {
     );
   }
 
-  // browser-use 的浏览器 guest：renderer 进程但归内置插件。
+  // The browser guest:renderer process of browser-use is a built-in plug-in.
   const browserUseGuestIds = new Set(browserUseGuestWebContentsIdsProvider());
   for (const contents of electronWebContents.getAllWebContents()) {
     if (contents.isDestroyed()) continue;
@@ -397,7 +397,7 @@ function collectElectronProcesses(): ResourceUsageProcess[] {
     push(baseProcess(rendererPid, name, "renderer", cpuPercent, memoryBytes));
   }
 
-  // host 是 main 通过 utilityProcess.fork() 创建的直接子进程。
+  // host is a direct child process of main created via utilityProcess.fork().
   for (const [label, child] of hostProcesses) {
     if (child.pid == null) continue;
     const { cpuPercent, memoryBytes } = metricsOf(child.pid);
@@ -434,7 +434,7 @@ async function collectHostProcesses(signal?: AbortSignal): Promise<HostResourceU
   return results.flat();
 }
 
-/** Agent 注册表兜底：Host 还没回报的 Agent 也要出现在列表里（指标未采到） */
+/** Agent registry cover: Agents that have not been reported by the Host must also appear in the list (indicators are not collected) */
 function collectUnsampledAgentProcesses(sampledPids: Set<number>): ResourceUsageProcess[] {
   const rows: ResourceUsageProcess[] = [];
   for (const processes of hostAgentProcesses.values()) {
@@ -459,7 +459,7 @@ function collectUnsampledAgentProcesses(sampledPids: Set<number>): ResourceUsage
 
 const systemCpuMeter = createSystemCpuMeter();
 
-/** 一次完整快照：Electron 进程 + Host 采样的外部进程 + 系统总量 */
+/** A complete snapshot: Electron process + Host sampled external process + total system volume */
 async function buildResourceUsageSnapshot(
   options: { includeHosts?: boolean; signal?: AbortSignal } = {},
 ): Promise<ResourceUsageSnapshot> {
@@ -469,8 +469,8 @@ async function buildResourceUsageSnapshot(
   const electronPids = new Set(electronProcesses.map((row) => row.pid));
   const processes: ResourceUsageProcess[] = [...electronProcesses];
   for (const row of hostRows) {
-    // Host 子树里会再次看到 Host 自身之外的 Electron 进程吗？不会（它们都是 main 的子进程），
-    // 但 pid 复用等极端情况下仍按 Electron 指标优先。
+    // Will Electron processes other than Host itself be seen in the Host subtree again? No (they are all subprocesses of main),
+    // However, in extreme cases such as pid reuse, the Electron indicator still takes precedence.
     if (electronPids.has(row.pid)) continue;
     processes.push({ ...row, sampled: true });
   }

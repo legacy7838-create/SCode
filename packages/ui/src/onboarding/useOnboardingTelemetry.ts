@@ -28,7 +28,10 @@ type Exposure = {
   preferenceValues: string;
 };
 
-/** 业务选择仍由引导组件持有；这里只记录本次真实展示范围和上报去重。 */
+/**
+ * The business choice is still owned by the onboarding component; this only records the range
+ * actually shown this time and de-duplicates the reporting.
+ */
 export function useOnboardingTelemetry({
   platform,
   visible,
@@ -76,7 +79,7 @@ export function useOnboardingTelemetry({
       );
     }
     const current = exposure.current;
-    // 返回改模式后旧偏好不再代表用户看到的选项；切回原模式也必须重新展示第三页。
+    // After returning to the changed mode, the old preferences no longer represent the options the user sees; switching back to the original mode must also display the third page again.
     if (current.mode !== mode || (step !== 2 && current.preferenceValues !== preferenceValues)) {
       current.preferencesVisited = false;
     }
@@ -84,7 +87,7 @@ export function useOnboardingTelemetry({
     current.mode = mode;
     if (step === 1) current.modeVisited = true;
     if (step === 2) current.preferencesVisited = true;
-    // 不在 cleanup 重置：StrictMode 的 effect 重放不是一次新的产品曝光。
+    // Not reset in cleanup: StrictMode effect replay is not a new product exposure.
   }, [visible, step, mode, platform, memory, suggestions, migration]);
 
   return useCallback(
@@ -102,7 +105,7 @@ export function useOnboardingTelemetry({
         exit_action: action,
         exit_step: String(step + 1),
       };
-      // 点击时冻结文案与答案；仅保存成功后调用，不读被 skip 改写的 settings/record。
+      // Freezes the text and answers when clicked; it is only called after successful saving, and the settings/record overwritten by skip are not read.
       return () => {
         if (!current || current.ended || exposure.current !== current) return;
         current.ended = true;

@@ -121,8 +121,8 @@ export function buildLocalTtftRecord(
     ...(aligned && facts?.executionAt !== undefined && end >= facts.executionAt + offset
       ? { executionMs: end - facts.executionAt - offset }
       : {}),
-    // Bug 原因：此前只要未对齐就标 clock_invalid，把“校准缺失/过期”与真实时钟异常混为一类，
-    // 可靠的排队样本被默认看板当作坏时钟过滤。未对齐只意味着跨进程阶段缺失，按 missing 记。
+    // Bug reason: Previously, clock_invalid was marked as long as it was not aligned, confusing "calibration missing/expired" with real clock anomaly.
+    // Reliable queued samples are filtered by the default kanban as bad clocks. Misalignment simply means missing across process stages, notated as missing.
     quality: invalid ? "clock_invalid" : intervals.length === 6 ? "complete" : "missing",
     ...(calibration ? { clockErrorMs: calibration.errorMs } : {}),
     intervals,

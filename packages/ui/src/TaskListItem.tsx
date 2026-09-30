@@ -1,4 +1,7 @@
-/* eslint-disable max-lines -- task item 同时承载默认列表和 timeline 两行布局的共享交互，先保持动作链路集中避免归档/置顶回归。 */
+/* eslint-disable max-lines -- the task item carries the shared interaction for both the default
+ * list layout and the timeline row layout, so keep the action chain in one place for now to avoid
+ * archive/pin regressions.
+ */
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Archive,
@@ -195,9 +198,9 @@ export const MemoTaskItem = memo(function TaskListItem({
       onCancelArchiveConfirm();
     }
 
-    // 全局时间线和置顶列表的确认 key 含 workspacePath，Windows
-    // 反斜杠拼进 CSS selector 后会被当作转义，确认按钮因此被误判为条目外点击。
-    // 确认项直接使用自身 ref 判断事件边界，避免业务 key 与 CSS 语法耦合。
+    // Confirmation key for global timeline and pinned list contains workspacePath, Windows
+    // Backslashes spelled into CSS selectors will be treated as escaped, so the confirmation button will be misjudged as a click outside the item.
+    // The confirmation item directly uses its own ref to determine the event boundary to avoid coupling between business keys and CSS syntax.
     window.addEventListener("keydown", handleKeyDown, true);
     window.addEventListener("pointerdown", handlePointerDown, true);
     return () => {
@@ -225,8 +228,8 @@ export const MemoTaskItem = memo(function TaskListItem({
   const canDragToWorkbench =
     !workspaceActionsDisabled && splitPaneEntryEnabled && !isSessionInWorkbenchGroup;
 
-  // V4 runtime/interaction 已由 sessions-index 投影，旧 Zustand map 不再接收
-  // 后台会话 delta。row 直接消费随列表条目到达的 activity sidecar，避免 spinner/attention 假静止。
+  // V4 runtime/interaction has been projected by sessions-index, the old Zustand map is no longer received
+  // Background session delta. row directly consumes the activity sidecar that arrives with the list entry to avoid spinner/attention false inactivity.
   const taskActivity = getTaskListRowActivity(task);
   const taskAttention = getTaskListAttention(task);
   const hasPendingInteraction = Boolean(task.pendingInteraction) || taskAttention !== null;
@@ -275,8 +278,8 @@ export const MemoTaskItem = memo(function TaskListItem({
         serializeWorkbenchSessionDragPayload(payload),
       );
       event.dataTransfer.setData("text/plain", taskTitle);
-      // 浏览器默认 drag preview 背景透明、边界不清晰；保留原行内容，
-      // 只补齐 Grouped drag overlay 使用的背景、边框和阴影。
+      // By default, the browser's drag preview has a transparent background and unclear borders; the original line content is retained.
+      // Complete only the background, borders and shadow used by the Grouped drag overlay.
       const cleanupDragPreview = createTaskWorkbenchDragPreview({
         clientX: event.clientX,
         clientY: event.clientY,
@@ -354,8 +357,8 @@ export const MemoTaskItem = memo(function TaskListItem({
   }, []);
   const handleMouseLeave = useCallback(() => {
     setHoverActionsVisible(false);
-    // 归档二次确认依赖用户第二次点击确认；鼠标离开 row 时清理 hover 展示即可。
-    // 如果同步取消确认，用户移动鼠标稍微离开任务行后确认按钮会消失，导致二次确认无法稳定完成。
+    // The secondary confirmation of archiving relies on the user's second click to confirm; just clear the hover display when the mouse leaves the row.
+    // If the confirmation is canceled synchronously, the confirmation button will disappear after the user moves the mouse slightly away from the task line, causing the secondary confirmation to be unable to be completed stably.
   }, []);
 
   const leadingIndicator = useMemo(
@@ -363,17 +366,17 @@ export const MemoTaskItem = memo(function TaskListItem({
     [task, taskActivity],
   );
   const isTaskCron = isCronTask(task);
-  // 月亮身份改为持久 meta 标记判断；off-peak store 反查在任务被删除后会丢失
-  // 会话溯源，且让每一行多背一个全局 store 订阅。
+  // Moon identity is changed to persistent meta tag judgment; off-peak store reverse check will be lost after the task is deleted
+  // Session traceability, and let each row carry an additional global store subscription.
   const isTaskOffPeak = isOffPeakTask(task);
   const showTimelineIdleIndicator =
     variant === "timeline" && leadingIndicator === "none" && !isPinned;
-  // 手机远控标记和置顶状态共用左侧 leading 槽。
-  // 已置顶任务如果继续常显 Pin，会和绝对定位的手机图标重叠；手机激活态默认让手机图标优先，hover 时再显示 Pin 操作。
+  // The mobile phone remote control mark and the top status share the leading slot on the left.
+  // If the pin continues to be displayed on a pinned task, it will overlap with the absolutely positioned mobile phone icon; when the mobile phone is activated, the mobile phone icon will be given priority by default, and the Pin operation will be displayed when hovering.
   const showPinnedState = isPinned && leadingIndicator === "none" && !isMobileActive;
   const shouldMountWorkspaceTaskActions = hoverActionsVisible || focusActionsVisible || isHoverNone;
-  // hover:none 只代表触屏端需要常驻 action，不代表应永久隐藏时间、状态和变更摘要。
-  // 元信息仅在真实 hover / focus 交互时让位，保持旧触屏布局的“元信息 + action”语义。
+  // hover:none only means that the touch screen side needs permanent actions, but it does not mean that the time, status and change summary should be permanently hidden.
+  // Metainformation only gives way during real hover / focus interactions, maintaining the "metainformation + action" semantics of the old touch screen layout.
   const shouldSuppressWorkspaceTaskMetadata = hoverActionsVisible || focusActionsVisible;
   const taskTimeLabel = formatTaskRelativeTime(task.updatedAt, intl);
   const taskChangeSummary = getTaskChangeSummary(task);
@@ -384,8 +387,8 @@ export const MemoTaskItem = memo(function TaskListItem({
   const taskTitleWithChanges = formatTaskTitleWithChanges(taskTitle, taskChangeSummary, intl);
   const workspaceLabel = getPathLeaf(task.workspacePath);
   const taskItemKey = `${buildTaskWorkspaceKey(task.workspacePath, task.workspaceIdentity)}:${task.taskId}`;
-  // 工作流运行行：标题下的第二条通道，
-  // 与前置 16px 槽（error > unread > spinner）互不占位。只在会话带 run 摘要时挂组件。
+  // Workflow Run Line: The second lane under the title,
+  // It does not occupy space with the front 16px slot (error > unread > spinner). Only mount the component when the session has a run digest.
   const hasWorkflowRunLines = taskActivity?.workflowActivity !== undefined;
   const workflowRunLinesNode = hasWorkflowRunLines ? (
     <TaskWorkflowRunLines
@@ -416,8 +419,11 @@ export const MemoTaskItem = memo(function TaskListItem({
     (shouldMountWorkspaceTaskActions || isArchiveConfirming);
   const archiveActionVisibilityClassName = isArchiveConfirming ? "flex" : "flex";
   const archiveActionNode = shouldRenderArchiveAction ? (
-    /* 交互调整：任务进入“等待归档确认”后，右侧 hover 区不再显示归档按钮。
-       否则一个 item 同时出现“待确认状态”和“可归档操作”，视觉重心会互相打架。 */
+    /* Interaction change: once a task enters "awaiting archive confirmation", the right-hand hover
+       area no longer shows the archive button. Otherwise a single item would show both the
+       "awaiting confirmation" state and the "archivable" action, and the two would fight over the
+       visual centre of gravity.
+       */
     <div className={cn("items-center gap-0.5", archiveActionVisibilityClassName)}>
       {isArchiveConfirming ? (
         <ControlHintTooltip title={archiveLabel} side="top" align="center">
@@ -431,7 +437,7 @@ export const MemoTaskItem = memo(function TaskListItem({
             }}
             onClick={handleArchive}
             data-testid={testId(TID_TASK_ARCHIVE, task.taskId)}
-            // 归档确认态是显式等待用户决策的状态，必须持续显示 destructive 按钮。
+            // The archive confirmation state is a state that explicitly awaits user decision-making, and the destructive button must be continuously displayed.
             className={cn("shrink-0 border-destructive/20 px-2", archiveActionVisibilityClassName)}
             aria-label={archiveLabel}
           >
@@ -439,8 +445,8 @@ export const MemoTaskItem = memo(function TaskListItem({
           </Button>
         </ControlHintTooltip>
       ) : (
-        // Project / Pinned 的普通归档按钮曾覆盖 hover:bg-background/90，
-        // 与同一行文件树 action 不一致；普通态统一复用共享 bg-hover action。
+        // Project / Pinned's normal archive button once overridden hover:bg-background/90,
+        // It is inconsistent with the file tree action in the same line; the common state uniformly reuses the shared bg-hover action.
         <TaskRowActionButton
           label={archiveLabel}
           onClick={handleArchive}
@@ -448,8 +454,8 @@ export const MemoTaskItem = memo(function TaskListItem({
           testId={testId(TID_TASK_ARCHIVE, task.taskId)}
         >
           {isRemoteTask ? (
-            // 本地和远端 task 混排时，统一 archive 图标无法提示操作会落在哪个 sqlite。
-            // 远端任务使用 cloud 语义图标，避免用户误把远端归档当成本地归档。
+            // When local and remote tasks are mixed, the unified archive icon cannot indicate which SQLite the operation will fall on.
+            // Remote tasks use cloud semantic icons to prevent users from mistaking remote archives for local archives.
             <CloudUpload className="h-3.5 w-3.5" />
           ) : (
             <Archive className="h-3.5 w-3.5" />
@@ -458,8 +464,8 @@ export const MemoTaskItem = memo(function TaskListItem({
       )}
     </div>
   ) : null;
-  // 远端 task 的 session 未就绪时 resolver 会拒绝打开；渲染层同步隐藏入口，
-  // 避免展示一个点击后无反馈的按钮。本地 task 不依赖已打开 tab，仍可直接按路径打开。
+  // When the session of the remote task is not ready, the resolver will refuse to open; the rendering layer hides the entrance synchronously.
+  // Avoid showing a button that provides no feedback when clicked. Local tasks do not rely on open tabs and can still be opened directly according to the path.
   const canOpenFileTree =
     Boolean(onOpenFileTree) && (!task.workspaceIdentity?.trim() || Boolean(remoteSessionId));
   const fileTreeActionNode =
@@ -468,8 +474,10 @@ export const MemoTaskItem = memo(function TaskListItem({
     !hasPendingInteraction &&
     (shouldMountWorkspaceTaskActions || isMobileActive) ? (
       <span className="inline-flex shrink-0">
-        {/* Pinned 文件树按钮曾手写 hover 背景和 tooltip，导致与 Grouped task
-            的同一操作视觉不一致。直接复用共享 action，统一 bg-hover、尺寸和 pointer 行为。 */}
+        {/* The Pinned file tree button used to hand-roll its hover background and tooltip, which left it
+            visually inconsistent with the same action in Grouped task. Reuse the shared action
+            instead, so bg-hover, sizing and pointer behaviour all match.
+            */}
         <TaskRowActionButton
           label={intl.formatMessage({ id: "git.action.showTree" })}
           onClick={handleOpenFileTree}
@@ -505,8 +513,8 @@ export const MemoTaskItem = memo(function TaskListItem({
       <Pin className="size-4" />
     </Button>
   );
-  // hover:none 只让右侧 task actions 常驻；如果也用它接管 leading 槽，
-  // 触屏端的错误、未读和 loading 状态会被 Pin 永久替换。
+  // hover:none only makes the task actions on the right permanent; if it is also used to take over the leading slot,
+  // The error, unread, and loading statuses on the touch screen will be permanently replaced by Pins.
   const shouldRenderPinAction =
     showPinAction && (showPinnedState || shouldSuppressWorkspaceTaskMetadata);
   return (
@@ -541,7 +549,7 @@ export const MemoTaskItem = memo(function TaskListItem({
       }}
       className={cn(
         "group/task-item flex cursor-pointer gap-2 rounded-lg pl-2.5 pr-1 py-1 transition-[background-color,border-color,box-shadow]",
-        // 默认行 32px 时前置槽整行居中；长出工作流运行行后行体是两行的纵向列，槽改为对齐首行。
+        // When the default line is 32px, the entire row of the front slot is centered; after the workflow running line is grown, the row body is a vertical column of two rows, and the slot is changed to align with the first row.
         variant === "timeline"
           ? "items-start py-1.5"
           : hasWorkflowRunLines
@@ -550,14 +558,16 @@ export const MemoTaskItem = memo(function TaskListItem({
         isActive ? "bg-selected" : "hover:bg-surface-hover",
       )}
     >
-      {/* 之前任务列表依赖 divide-y 画分隔线，深色侧栏里每个 item 上下都会出现明显黑线，
-              视觉上像被两条边框夹住。这里改成“列表留白 + item 自己带圆角态”，
-              让 hover/active 的层级由卡片背景承担，不再依赖分隔线。 */}
+      {/* The task list used to draw dividers with divide-y, which put a visible black line above and
+              below every item in the dark sidebar — each row looked pinched between two borders. It
+              is now "list padding + items carrying their own rounded state", so hover/active
+              layering is carried by the card background instead of dividers.
+              */}
 
       <div
         className={cn(
           "relative flex size-4 shrink-0 items-center justify-center",
-          // 行体是纵向列（标题行 + 运行行）时前置槽对齐首行而不是整行：默认 24px 首行居中 = 上留 4px。
+          // When the row body is a vertical column (title row + running row), the front slot is aligned with the first row instead of the entire row: the default is 24px, the first row is centered = 4px is left above.
           variant === "timeline" ? "mt-0.5" : hasWorkflowRunLines ? "mt-1" : undefined,
         )}
       >
@@ -623,8 +633,11 @@ export const MemoTaskItem = memo(function TaskListItem({
               className="text-ui-base text-foreground"
               title={taskTitleWithChanges}
             >
-              {/* workspace/timeline task 标题之前使用 truncate，会在长标题末尾显示省略号；
-                      grouped task 已改为右侧渐隐。这里统一 task 列表标题溢出策略，避免同一侧栏里出现两种截断语义。 */}
+              {/* workspace/timeline task titles used to use truncate, which showed an ellipsis at the end of a
+                      long title; grouped task has already moved to a right-side fade. Unify the
+                      overflow strategy for task list titles so that one sidebar never ends up with
+                      two truncation semantics.
+                      */}
               {taskTitle}
             </TaskTitleOverflowText>
             {task.pendingInteraction ? (
@@ -661,8 +674,8 @@ export const MemoTaskItem = memo(function TaskListItem({
                     </span>
                   ) : null}
                   {isTaskCron ? (
-                    // 定时任务 icon 不能占用左侧状态槽；未读、运行中、置顶 hover 都会接管那里。
-                    // 放在时间前面，和 grouped task row 的元信息位置一致，状态变化时也不会丢。
+                    // The scheduled task icon cannot occupy the status slot on the left; unread, running, and top hover will all take over there.
+                    // Placed in front of the time, it is consistent with the meta-information of the grouped task row and will not be lost when the status changes.
                     <Clock
                       data-cron-task-icon="true"
                       aria-label={intl.formatMessage({
@@ -703,10 +716,15 @@ export const MemoTaskItem = memo(function TaskListItem({
                       id: "taskList.mobileActive",
                     })}
                   >
-                    {/* mobileViewState 已经能告诉桌面端手机正在看的 task，
-                        但列表未消费这个状态，用户会误以为只有桌面端在操作。上一版把图标作为标题前的 flex 子项，
-                        会把当前行标题往右挤，造成上下 task 标题不对齐；这里改成绝对定位到原有 leading 槽，
-                        标题文本仍从既有位置开始；同时 hover 时隐藏手机标记，把置顶按钮还给用户。 */}
+                    {/* mobileViewState can already tell the desktop which task the phone is looking at,
+                        but the list never consumed that state, so users would assume only the
+                        desktop is acting on it. The previous version placed the icon as a flex
+                        child before the title, which pushed the current row's title to the right
+                        and misaligned task titles between rows; it is now absolutely positioned
+                        into the existing leading slot, so the title text still starts where it used
+                        to; the phone marker is also hidden on hover, handing the pin button back to
+                        the user.
+                        */}
                     <Smartphone className="size-3.5" />
                   </span>
                 </ControlHintTooltip>
@@ -715,8 +733,9 @@ export const MemoTaskItem = memo(function TaskListItem({
                 className="text-ui-base text-foreground"
                 title={taskTitleWithChanges}
               >
-                {/* 默认 workspace task item 和 timeline item 共享标题溢出规则；
-                        使用 mask 渐隐而不是省略号，和 grouped task row 保持一致。 */}
+                {/* The default workspace task item and the timeline item share one title overflow rule;
+                        a mask fade rather than an ellipsis, consistent with the grouped task row.
+                        */}
                 {taskTitle}
               </TaskTitleOverflowText>
               {changeSummaryNode ? (
@@ -744,7 +763,7 @@ export const MemoTaskItem = memo(function TaskListItem({
             </div>
 
             {!hasPendingInteraction ? (
-              // 交互胶囊已经占用右侧状态位；继续显示相对时间会和“等待确认”并排挤压标题。
+              // The interactive capsule already occupies the right status bit; continuing to display the relative time will squeeze the title side by side with "Waiting for confirmation".
               <span
                 data-task-row-metadata="true"
                 className={cn(
@@ -753,7 +772,7 @@ export const MemoTaskItem = memo(function TaskListItem({
                 )}
               >
                 {isTaskCron ? (
-                  // 定时任务 icon 归属时间元信息，而不是左侧状态位；否则 unread/loading 会把 icon 顶掉。
+                  // The scheduled task icon belongs to the time meta-information, not the left status bit; otherwise unread/loading will push the icon away.
                   <Clock
                     data-cron-task-icon="true"
                     aria-label={intl.formatMessage({
@@ -815,8 +834,8 @@ export function TaskListItemContextMenuContent({
   const workspaceActionsDisabledReason = workspaceActionsDisabled
     ? (disabledReason ?? intl.formatMessage({ id: "workspaceSidebar.unavailableLocalDirectory" }))
     : undefined;
-  // 收尾：「在分屏打开」仅桌面 shell（context 由 WorkspaceShellLayout 提供；
-  // 手机远控/无 Provider 环境默认 false → 菜单项整体不渲染）。
+  // Finishing: "Open in split screen" only desktop shell (context provided by WorkspaceShellLayout;
+  // Mobile phone remote control/no Provider environment defaults to false → the menu items are not rendered as a whole).
   const splitPaneEntry = useV4SplitPaneEntry();
   const splitPaneEntryEnabled = splitPaneEntry.enabled;
   const splitPaneTarget = useMemo(
@@ -828,7 +847,7 @@ export function TaskListItemContextMenuContent({
     }),
     [remoteSessionId, task.taskId, task.workspaceIdentity, workspacePath],
   );
-  // 当前 focused session、已有 group 与 pane 上限统一由 shell owner 裁决；row 不再直接写 layout store。
+  // The current focused session, existing group and pane upper limits are determined by the shell owner; row is no longer directly written to the layout store.
   const canOpenInSplitPane = splitPaneEntry.canOpenSession(splitPaneTarget);
   const openFeedbackSubmit = useFeedbackStore((state) => state.openSubmit);
   const {
@@ -844,8 +863,8 @@ export function TaskListItemContextMenuContent({
     taskId: task.taskId,
     provider: task.provider,
     intl,
-    // row 级菜单已收敛为列表级单例，只有菜单真正打开时才挂载此组件。
-    // 因此路径探测和 provider 配置探测可以直接随打开态运行，避免每个 idle row 订阅和计算。
+    // The row-level menu has been converged into a list-level singleton, and this component is only mounted when the menu is actually opened.
+    // Therefore path detection and provider configuration detection can be run directly with the open state, avoiding subscription and calculation for each idle row.
     loadTaskPaths: true,
   });
   const taskTitle =
@@ -855,8 +874,8 @@ export function TaskListItemContextMenuContent({
     });
 
   const handleOpenTaskFeedback = useCallback(async () => {
-    // 任务右键菜单之前只能复制日志/路径，反馈时缺少任务上下文。
-    // 这里复用反馈中心 draft，只预填脱敏后的任务线索，附件由用户主动选择。
+    // The task right-click menu could only copy logs/paths before, and the task context was missing when giving feedback.
+    // The feedback center draft is reused here, and only the desensitized task clues are pre-filled, and the attachments are actively selected by the user.
     openFeedbackSubmit({
       title: intl
         .formatMessage(
@@ -865,8 +884,8 @@ export function TaskListItemContextMenuContent({
         )
         .slice(0, 80),
       type: "bug",
-      module: "Agent任务执行失败",
-      severity: "P2-中",
+      module: "Agent Task Execution Failure",
+      severity: "P2-Medium",
       includeLogs: false,
       description: buildTaskFeedbackDescription({
         taskTitle,
@@ -915,8 +934,8 @@ export function TaskListItemContextMenuContent({
       onOpenInSplitPane={
         splitPaneEntryEnabled
           ? () => {
-              // 旧入口直接写 paneLayout，绕过 active group 与 shell navigation，
-              // draft split 后下一次普通点击会把 session 灌进 primary。统一交给 shell controller。
+              // The old entrance directly writes paneLayout, bypassing active group and shell navigation.
+              // After the draft split, the next normal click will pour the session into the primary. All are handed over to the shell controller.
               splitPaneEntry.openSession(splitPaneTarget);
             }
           : undefined
@@ -947,7 +966,7 @@ export function TaskListItemContextMenuContent({
         void handleCopyText(intl.formatMessage({ id: "appHeader.copySessionId" }), task.taskId);
       }}
       onViewModelTrajectory={() => {
-        // 通过单例 store 把“打开轨迹”请求交给所属 workspace 的侧边栏控制器（useAppPanels）。
+        // Pass the "open track" request to the sidebar controller (useAppPanels) of the corresponding workspace through the singleton store.
         useModelTrajectoryStore.getState().requestOpen({
           taskId: task.taskId,
           workspaceKey: task.workspaceIdentity?.trim() || workspacePath,

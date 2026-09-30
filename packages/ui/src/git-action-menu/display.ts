@@ -13,8 +13,8 @@ export function resolveGitActionMenuPrimaryAction(options: {
   commitEnabled: boolean;
   pushEnabled: boolean;
 }): GitActionMenuPrimaryActionId | null {
-  // 关键业务逻辑：主按钮只承载提交或推送；创建分支保留在下拉菜单里。
-  // 这样干净仓库仍可通过菜单创建分支，但不会把“提交或推送”误触发为创建分支。
+  // Key business logic: The main button only carries submission or push; creating branches remains in the drop-down menu.
+  // In this way, a clean warehouse can still create branches through the menu, but "submit or push" will not be mistakenly triggered to create a branch.
   if (options.actionAvailable && options.commitEnabled) {
     return "commit";
   }

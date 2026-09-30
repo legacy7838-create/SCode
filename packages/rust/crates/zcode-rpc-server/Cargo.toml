@@ -1,0 +1,54 @@
+[package]
+name = "zcode-rpc-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+# Pure Rust: no Node ABI. This crate is linked directly into the Tauri host so
+# the UI's service channel is served in-process instead of by `@zcode/server`.
+crate-type = ["rlib"]
+
+[dependencies]
+zcode-codec = { path = "../zcode-codec", default-features = false }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# Kept local rather than inherited: the existing rust workspace does not declare
+# thiserror or tracing, and adding them to workspace deps would touch every member.
+thiserror = "2"
+tracing = { version = "0.1", default-features = false, features = ["std"] }
+# Event delivery uses a bounded-agnostic MPMC channel: a handler hands the
+# server a receiver, the server pumps it into EventFire frames on its own thread,
+# and dropping the subscription closes the sender side, which ends the pump.
+# `std::sync::mpsc` is not usable here because a receiver cannot be shared or
+# moved to another thread, and both are required here.
+crossbeam-channel = "0.5"
+# Optional network edge (see the `websocket` feature).
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time", "io-util"], optional = true }
+tokio-tungstenite = { version = "0.24", optional = true }
+futures-util = { version = "0.3", default-features = false, features = ["sink"], optional = true }
+
+[dev-dependencies]
+# The tests drive the codec directly to build the handshake payload, use
+# crossbeam to drive a handler's event channel, and stand up a real WebSocket
+# client against the accept loop.
+zcode-codec = { path = "../zcode-codec", default-features = false }
+crossbeam-channel = "0.5"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time", "io-util"] }
+tokio-tungstenite = "0.24"
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+
+[features]
+# The network edge is on by default because it is the point of this crate: the
+# protocol core (`frame`/`message`/`channel`) has no async in it, and the Tauri
+# host serves the UI over exactly this transport. Turn it off only to embed the
+# protocol core in a host that already owns a socket.
+default = ["websocket"]
+# The network edge is optional so the protocol core can be embedded in a host
+# that already owns a socket (or none at all) and links no async runtime.
+websocket = [
+  "dep:tokio",
+  "dep:tokio-tungstenite",
+  "dep:futures-util",
+]

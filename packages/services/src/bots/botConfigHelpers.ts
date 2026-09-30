@@ -63,17 +63,17 @@ export function findBoundUser(bot: BotConfig, actor: BotActor): BotConfig | null
 export function normalizeBotConfig(bot: BotConfig): BotConfig {
   const normalized = {
     ...bot,
-    // Bot 配置化后 allowedWorkspaces 是唯一 workspace 权限边界；空数组统一落成 "*"。
+    // After Bot configuration, allowedWorkspaces is the sole workspace permission boundary; empty arrays are uniformly converted to "*".
     allowedWorkspaces: normalizeAllowedWorkspaces(bot.allowedWorkspaces),
     allowedCommands: normalizeBotCommandPolicy(bot.allowedCommands),
     currentOptions: normalizeBotCurrentOptions(bot.currentOptions),
-    // Bugfix: Feishu/Lark 的回复颗粒度依赖 Card JSON 2.0 单卡更新，旧配置不能继续保留普通消息模式。
+    // Bugfix: Feishu/Lark reply granularity depends on Card JSON 2.0 single-card updates; old configs cannot keep the plain message mode.
     replyMode: normalizeBotReplyGranularity(bot.provider, bot.replyMode),
   };
   if (normalized.provider !== "weixin") {
     return normalized;
   }
-  // 微信使用内置 iLink 地址，保存时清理 webhookUrl，避免把其他 provider 的出站字段残留到微信配置。
+  // WeChat uses a built-in iLink address; clean webhookUrl when saving to avoid leaving other providers' outbound fields in the WeChat config.
   delete normalized.webhookUrl;
   return normalized;
 }

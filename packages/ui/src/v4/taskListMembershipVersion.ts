@@ -1,13 +1,16 @@
-// tasks-index 行/membership 权威版本号。
-// sessions-index 只承载列表活性与 detail；task create/delete 以及 pin/archive/unread 等组织态
-// 持久化在 tasks-index.sqlite，派生列表无法从 sessions 变化感知正向行或归属变化。
-// mutation 提交后 bump 这里的版本号，让所有 task-row 左表 + session detail join 重新读取再过滤。
+// tasks-index row/membership authoritative version number.
+// sessions-index only carries list activity and detail; task create/delete and pin/archive/unread and other organizational states
+// Persisted in tasks-index.sqlite, the derived list is not aware of forward row or ownership changes from sessions changes.
+// After the mutation is submitted, the version number here is bumped, and all task-row left tables + session detail join are re-read and filtered.
 import { useSyncExternalStore } from "react";
 
 let version = 0;
 const listeners = new Set<() => void>();
 
-/** task row 或 membership mutation 后调用：通知所有 sessions-index 派生列表重新拉取左表。 */
+/**
+ * Call after a task row or membership mutation: notifies every sessions-index derived list to
+ * refetch the left-hand table.
+ */
 export function bumpTaskListMembershipVersion(): void {
   version += 1;
   for (const listener of [...listeners]) {
@@ -26,12 +29,12 @@ function getTaskListMembershipVersion(): number {
   return version;
 }
 
-// 同一条 workspace_task_list_changed 会经由多条订阅链路（useGlobalTaskList 的
-// 共享订阅 fan-out + useWorkspaceTaskLists 的独立订阅，跨 RPC 反序列化后对象引用不同）
-// 各 bump 一次，一次归属 mutation 会触发多轮全局 membership 重拉。这里按事件内容 key
-// 在短窗口内去重：key 包含 meta 的时间字段（updatedAt/unreadAt），保证只有"同一事件的
-// 重复投递"被合并；快速连续的真实 mutation（pin→unpin 等）reason/时间戳不同，不会被误吞。
-// 不带 meta 的事件（bulk archive / group 操作）无法构造可靠 key，直接放行不去重。
+// The same workspace_task_list_changed will go through multiple subscription links (useGlobalTaskList's
+// Shared subscription fan-out + independent subscription of useWorkspaceTaskLists, object references are different after cross-RPC deserialization)
+// Each bump, one attribution mutation will trigger multiple rounds of global membership re-pull. Here press the event content key
+// Deduplication within a short window: the key contains the time field of meta (updatedAt/unreadAt), ensuring that there are only "same events"
+// Duplicate submissions are merged; real mutations (pin→unpin, etc.) in rapid succession have different reasons/timestamps and will not be swallowed by mistake.
+// Events without meta (bulk archive/group operations) cannot construct reliable keys and are directly released without deduplication.
 const BUMP_DEDUPE_WINDOW_MS = 500;
 const BUMP_DEDUPE_MAX_KEYS = 256;
 const recentBumpAtByKey = new Map<string, number>();
@@ -78,7 +81,10 @@ export function bumpTaskListMembershipVersionForWorkspaceEvent(
   bumpTaskListMembershipVersion();
 }
 
-/** React 绑定：版本号变化触发重渲染（subscribe/get 是模块级函数，引用稳定）。 */
+/**
+ * React binding: a change in the version number triggers a re-render (subscribe/get are
+ * module-level functions with stable references).
+ */
 export function useTaskListMembershipVersion(): number {
   return useSyncExternalStore(subscribeTaskListMembershipVersion, getTaskListMembershipVersion);
 }

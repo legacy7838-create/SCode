@@ -2,36 +2,45 @@ import type { CSSProperties } from "react";
 import { lampX, stationX, STATION_WIDTH } from "./timeline-geometry.js";
 
 /**
- * 边檐的纯几何：一根轨道两端压缩。
+ * The pure geometry of the ledge: compression at both ends of a rail.
  *
- * 时间线自由滚动；灯滚到视口边缘之外的站**折叠**到那一侧的边檐上——同一枚 10px 灯、16px 一枚、
- * 之间是同一种墨的小轨道段，落在视口边缘干净的底上。轨道行在檐旁渐隐 40px；药丸只在视口边界渐隐。
- * 折叠是不动点：边檐越宽（灯越多），压在它下面的站就越多，所以反复算到集合不再变化。
+ * The timeline scrolls freely; stations whose lamps scroll past the viewport edge **collapse** onto
+ * the ledge on that side — the same 10px lamp, one every 16px, joined by small rail segments in the
+ * same ink, resting on a clean backing at the viewport edge. Rail rows fade out over 40px beside
+ * the ledge; pills fade only at the viewport boundary. Collapsing is a fixed point: the wider the
+ * ledge (the more lamps), the more stations it presses beneath itself, so it is iterated until the
+ * set stops changing.
  *
- * 全部以视口坐标计（x = 站的灯心 − scrollLeft）。无 React、无 DOM。
+ * Everything is measured in viewport coordinates (x = the station's lamp center − scrollLeft). No
+ * React, no DOM.
  */
 export const LEDGE_LAMP = 10;
 export const LEDGE_PITCH = 16;
 export const LEDGE_PAD = 8;
 export const LEDGE_FADE = 40;
 export const LEDGE_MAX_LAMPS = 3;
-/** `+n` 计数占的宽。 */
+/** The width the `+n` count occupies. */
 const LEDGE_MORE = 26;
-/** 边檐到内容侧的短轨道段短于它就不画（画出来是一个点）。 */
+/**
+ * The short rail segment from the ledge to the content side is not drawn when it is shorter than
+ * that (drawing it would give a dot).
+ */
 const STUB_MIN = 6;
-/** 滚动条拇指的最短长度。 */
+/** The minimum length of the scrollbar thumb. */
 const THUMB_MIN = 24;
 
 export interface TimelineFold {
-  /** 折叠到左檐的站（升序）。 */
+  /** The stations collapsed onto the left ledge (ascending). */
   left: number[];
-  /** 折叠到右檐的站（升序）。 */
+  /** The stations collapsed onto the right ledge (ascending). */
   right: number[];
 }
 
 export const NO_FOLD: TimelineFold = { left: [], right: [] };
 
-/** 一侧边檐占的宽（含两侧内边距；0 枚灯 = 没有边檐）。 */
+/**
+ * The width one side's ledge occupies (including the padding on both sides; 0 lamps = no ledge).
+ */
 export function ledgeWidth(count: number): number {
   if (count <= 0) return 0;
   const lamps = Math.min(count, LEDGE_MAX_LAMPS) * LEDGE_PITCH - (LEDGE_PITCH - LEDGE_LAMP);
@@ -39,10 +48,13 @@ export function ledgeWidth(count: number): number {
 }
 
 /**
- * 折叠集：灯在「边檐 + 渐隐」之下的站；迭代到不动点。视口没量到（宽 0）时什么都不折。
- * `keep` 是镜头正飞向的站：视口在 `scrollTo` 之前量过，平滑滚动在飞的
- * 那几百毫秒里它按陈旧的 scrollLeft 算在视野外——可它正要进来，檐上闪一枚灯是误报，所以两侧都不收它。
- * `inset` 是有带时整根轨道的右移：灯跟着走，折叠的判据也跟着走。
+ * The collapse set: the stations whose lamp lies under "ledge + fade"; iterated to a fixed point.
+ * When the viewport is not measured (width 0) nothing is collapsed. `keep` is the station the
+ * camera is flying to: the viewport was measured before `scrollTo`, so during the few hundred
+ * milliseconds of the smooth scroll it counts as off-screen under the stale scrollLeft — yet it is
+ * about to come in, and flashing a lamp on the ledge would be a false positive, so neither side
+ * takes it. `inset` is the rightward shift of the whole rail when a band is present: the lamps move
+ * with it, and so does the criterion for collapsing.
  */
 export function foldStations(
   count: number,
@@ -69,7 +81,9 @@ export function foldStations(
   return left.length === 0 && right.length === 0 ? NO_FOLD : { left, right };
 }
 
-/** 边檐上露出的灯（最多三枚，靠内容的一端优先）与计数。 */
+/**
+ * The lamps exposed on the ledge (at most three, preferring the content-side end) and the count.
+ */
 export function ledgeLamps(
   indexes: readonly number[],
   side: "left" | "right",
@@ -85,8 +99,10 @@ export function ledgeLamps(
 }
 
 /**
- * 边檐到第一个开着的站之间的短轨道段的宽：左檐从檐的内缘到那站的灯前 6px；右檐从最后一个开着的
- * 站的**槽尾**（不是灯——否则会横穿它的站头文字）到檐的内缘。短于 6 不画。
+ * The width of the short rail segment between the ledge and the first open station: for the left
+ * ledge, from the ledge's inner edge to 6px before that station's lamp; for the right ledge, from
+ * the **slot tail** of the last open station (not the lamp — otherwise it would cut straight across
+ * that station's header text) to the ledge's inner edge. Not drawn when shorter than 6.
  */
 export function ledgeStubWidth(
   fold: TimelineFold,
@@ -109,19 +125,27 @@ export function ledgeStubWidth(
   return width < STUB_MIN ? 0 : Math.round(width);
 }
 
-/** 视口两侧各自是否还有内容在外面（左：滚过了；右：没滚到底）。 */
+/**
+ * Whether each side of the viewport still has content outside it (left: scrolled past; right: not
+ * scrolled to the end).
+ */
 export interface EdgeOverflow {
   left: boolean;
   right: boolean;
 }
 
 /**
- * 滚动层的遮罩，分**两条横带**（用户修订：药丸只在真正的边界处渐隐，与自己那站的灯同进退）：
- *   - 轨道带（弧的空气 + 轨道行，高 `railBand`）：有檐的一侧檐下全透、再 40px 渐到不透——檐要落在
- *     干净的底上；没檐但溢出的一侧从视口边缘起 40px 渐隐（站头文字不硬切）。
- *   - 药丸带（其余高度）：只在视口边缘 40px 渐隐，而且只在那一侧真有内容在外面时。药丸不随灯折叠
- *     （两侧对称），檐下照亮，一直亮到边界。
- * 两层 mask 各占一条带（no-repeat，按位置 / 尺寸切开），默认 add 合成 = 并集。两侧都不溢出时没有遮罩。
+ * The scroll layer's mask, split into **two horizontal bands** (user revision: pills fade only at
+ * the real boundary, moving in and out together with their own station's lamp):
+ * - The rail band (the arc's air + the rail row, height `railBand`): on a side that has a ledge it
+ *   is fully transparent under the ledge and then fades to opaque over 40px — the ledge has to rest
+ *   on a clean backing; on a side without a ledge but with overflow it fades over 40px starting at
+ *   the viewport edge (station header text is not cut hard).
+ * - The pill band (the remaining height): it fades over 40px only at the viewport edge, and only
+ *   when that side really has content outside. Pills do not collapse along with the lamps
+ *   (symmetric on both sides); they stay lit under the ledge, all the way to the boundary. The two
+ *   mask layers each occupy one band (no-repeat, cut apart by position / size), and the default add
+ *   compositing = union. When neither side overflows there is no mask.
  */
 export function timelineMaskStyle(
   fold: TimelineFold,
@@ -156,7 +180,10 @@ export function timelineMaskStyle(
   };
 }
 
-/** 滚动条拇指：长 = 视口² / 内容（不短于 24），位置按滚动比例；不溢出时没有。 */
+/**
+ * Scrollbar thumb: length = viewport² / content (never shorter than 24), position by the scroll
+ * ratio; absent when there is no overflow.
+ */
 export function scrollbarThumb(
   scrollLeft: number,
   clientWidth: number,
@@ -170,19 +197,23 @@ export function scrollbarThumb(
 }
 
 /**
- * 镜头的一班飞行：`scrollTo(target)` 已发出、还没落地。飞行中 `index` 不折。
- * `from` 是上一次采到的 scrollLeft——平滑滚动只会单调靠近目标，所以「比上一次更远」就是用户接手了。
+ * One leg of the camera's flight: `scrollTo(target)` has been issued but has not landed yet.
+ * `index` is not collapsed while flying. `from` is the scrollLeft sampled last time — smooth scroll
+ * only approaches the target monotonically, so "farther than last time" means the user has taken
+ * over.
  */
 export interface CameraFlight {
   index: number;
-  /** 已按 `scrollWidth − clientWidth` 夹紧的落点。 */
+  /** The landing point already clamped to `scrollWidth − clientWidth`. */
   target: number;
   from: number;
 }
 
 /**
- * 一次 scroll 采样之后飞行还在不在：落地（±1px）或偏离（用户接手）即结束，否则记下这次位置继续飞。
- * 只由滚动位置决定，不用计时器——被用户中断的平滑滚动永远到不了目标，计时器兜底会让目标站错过折叠。
+ * Whether the flight is still on after one scroll sample: it ends on landing (±1px) or on deviation
+ * (the user taking over); otherwise this position is recorded and the flight continues. It is
+ * decided purely by the scroll position, with no timer — a smooth scroll interrupted by the user
+ * never reaches the target, and a timer fallback would make the target station miss collapsing.
  */
 export function flightAfterScroll(
   flight: CameraFlight | undefined,
@@ -195,14 +226,18 @@ export function flightAfterScroll(
   return scrollLeft === flight.from ? flight : { ...flight, from: scrollLeft };
 }
 
-/** 镜头：把一站滚到视口正中的 scrollLeft（左端不越 0）。边檐上的灯点了就走这条。 */
+/**
+ * The camera: the scrollLeft that scrolls a station to the exact center of the viewport (never past
+ * 0 on the left). Clicking a lamp on the ledge takes this path.
+ */
 export function stationCameraLeft(index: number, clientWidth: number, inset = 0): number {
   return Math.max(0, stationX(index, inset) - (clientWidth - STATION_WIDTH) / 2);
 }
 
 /**
- * 轨道段的查表键：**一对站**，不是起点。带里一站可以同时长出好几条段——
- * 主线的一条、分叉的一条、双线段的一条——按起点查会拿到先排到的那一条。
+ * The lookup key of a rail segment: a **pair of stations**, not a start point. One station in a
+ * band can grow several segments at once — one on the main line, one on a fork, one on a double
+ * segment — and a lookup by start point would return whichever was ordered first.
  */
 export function railKey(from: number, to: number): string {
   return `${from}>${to}`;

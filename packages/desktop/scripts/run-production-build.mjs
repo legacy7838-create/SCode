@@ -6,8 +6,8 @@ import { fileURLToPath } from "node:url";
 import { resolveSpawnRuntimeOptions } from "../../../scripts/spawn-command.mjs";
 
 export function resolveDesktopBuildCwd() {
-  // tsup / vite 配置里的入口路径都是相对 desktop 包根目录声明的。
-  // 之前默认 cwd 落在 scripts 子目录，Windows CI 上会把 src/main/index.ts 解析成 scripts/src/... 直接报找不到入口。
+  // The entry paths in the tsup/vite configuration are declared relative to the root directory of the desktop package.
+  // Previously, the default cwd was located in the scripts subdirectory. Windows CI would parse src/main/index.ts into scripts/src/... and directly report that the entry cannot be found.
   return resolve(dirname(fileURLToPath(import.meta.url)), "..");
 }
 
@@ -28,8 +28,8 @@ export async function cleanDesktopProductionOutput({ cwd }) {
     console.log("[build] ZCODE_E2E_KEEP_BUILD_CACHE=1, skipping clean");
     return;
   }
-  // 生产构建之前如果已有开发态/旧生产态 out，tsup 不会主动删除过期 chunk。
-  // 这些旧文件会继续被 electron-builder 的 out/**/* 打进 app.asar，重新暴露未压缩 JS 和 sourcemap 尾注。
+  // If the development state/old production state is out before the production build, tsup will not actively delete expired chunks.
+  // These old files will continue to be imported into app.asar by electron-builder's out/**/*, re-exposing uncompressed JS and sourcemap endnotes.
   await Promise.all(
     resolveDesktopProductionCleanPaths(cwd).map((targetPath) =>
       rm(targetPath, { force: true, recursive: true }),
@@ -90,8 +90,8 @@ export async function runDesktopProductionBuild({ cwd = resolveDesktopBuildCwd()
   await cleanDesktopProductionOutput({ cwd });
   for (const step of createDesktopProductionBuildPlan({ cwd })) {
     if (step.parallel) {
-      // 之前串行跑 tsup 和 vite，但两者分别写 main/preload/host 与 renderer 目录。
-      // 这里并行执行平台无关构建，缩短 CI 关键路径，同时保持各自 cwd/env 一致以兼容 macOS/Windows/Linux runner。
+      // Previously, tsup and vite were run serially, but they were written in the main/preload/host and renderer directories respectively.
+      // Here, platform-independent builds are executed in parallel, shortening the CI critical path, while keeping their respective cwd/env consistent for compatibility with macOS/Windows/Linux runner.
       await Promise.all(step.parallel.map(runCommandAsync));
       continue;
     }

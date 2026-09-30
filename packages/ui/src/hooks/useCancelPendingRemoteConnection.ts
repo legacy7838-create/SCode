@@ -10,7 +10,7 @@ export function useCancelPendingRemoteConnection() {
       try {
         await (platform.cancelPendingRemoteConnection?.(requestId) ?? Promise.resolve());
       } catch (sessionError) {
-        logger.warn("[SSHDialog] 取消进行中的远程连接失败:", sessionError);
+        logger.warn("[SSHDialog] failed to cancel in-flight remote connection:", sessionError);
       }
     },
     [platform],

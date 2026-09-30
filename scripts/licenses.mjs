@@ -1,16 +1,16 @@
 #!/usr/bin/env node
-/* eslint-disable max-lines -- 三方 license 盘点/声明/门禁一体脚本，数据表与校验逻辑集中维护。 */
-// 三方 license 盘点/声明/门禁 一体脚本
+/* eslint-disable max-lines -- Integrated script for third-party license inventory/declaration/access control, with centralized maintenance of data tables and verification logic. */
+// Three-party license inventory/declaration/access control integrated script
 //
-// 用法：
-//   node scripts/licenses.mjs notices   生成 THIRD-PARTY-NOTICES.md（精确版本、原始版权和许可文本）
-//   node scripts/licenses.mjs check     手动门禁：出现 allowlist 之外或许可未知的包即退出码 1
+// Usage:
+//   node scripts/licenses.mjs notices generate THIRD-PARTY-NOTICES.md (exact version, original copyright and license text)
+//   node scripts/licenses.mjs check Manual access control: A package outside the allowlist or with unknown permissions appears, that is, exit code 1
 //
-// 数据口径：
-// - 实装清单 = 全 workspace node_modules 的递归集合，含嵌套版本与符号链接。
-// - 声明生成：third-party-npm.mjs 按生产依赖的精确版本收集真实许可文件。
-// - prod 判定按锁文件生产图中的精确版本。
-// - 商用/半开放检查作用于全量实装包（prod+dev）
+// Data caliber:
+// - Implementation manifest = recursive collection of all workspace node_modules, including nested versions and symbolic links.
+// - Claim generation: third-party-npm.mjs collects real license files by exact versions of production dependencies.
+// - prod determines the exact version of the lock file in the production graph.
+// - Commercial/semi-open inspection applies to full implementation packages (prod+dev)
 import { generateThirdPartyNotices } from "./generate-third-party-notices.mjs";
 import { readVerifiedNotices } from "./third-party-notices.mjs";
 import { readFile } from "node:fs/promises";
@@ -29,16 +29,16 @@ if (command === "notices") {
   process.exit(0);
 }
 
-// 标识门禁与声明生成共用 workspace 图和递归扫描，不按包名猜测生产范围。
+// Identification access control and declaration generation share the workspace graph and recursive scanning, and do not guess the production scope based on the package name.
 const { required, projects } = await readWorkspaceProductionGraph(ROOT);
 const ownNames = new Set(projects.map((project) => project.name));
 const installed = new Map();
 const MANUAL_LICENSE = {
-  "exif-parser": "MIT", // 包内 LICENSE.md
-  khroma: "MIT", // 包内 license 文件
-  semaphore: "MIT", // 包内 README License 段
-  "css-value": "MIT", // 包内 Readme License 段
-  "@fig/autocomplete-helpers": "MIT", // 包内 LICENSE
+  "exif-parser": "MIT", // In the package LICENSE.md
+  khroma: "MIT", // license file in package
+  semaphore: "MIT", // README License section in the package
+  "css-value": "MIT", // Readme License section in the package
+  "@fig/autocomplete-helpers": "MIT", // In the package LICENSE
 };
 function normLicense(value) {
   if (typeof value === "string") return value.trim();
@@ -56,7 +56,7 @@ for (const [key, { pkg }] of scanned) {
     isProd: required.has(key),
   });
 }
-// ---------- 分类 ----------
+// ---------- Classification ----------
 const GREEN =
   /^(MIT|MIT-0|ISC|BSD-2-Clause|BSD-3-Clause|BSD-4-Clause|0BSD|Unlicense|Apache-2\.0|Zlib|WTFPL|Artistic-2\.0|BlueOak-1\.0\.0|CC0-1\.0|CC-BY-4\.0|CC-BY-3\.0|BSD|Python-2\.0)$/i;
 function classify(raw) {
@@ -85,8 +85,13 @@ function classify(raw) {
 }
 for (const r of installed.values()) r.bucket = classify(r.license);
 
-// ---------- 构建工具许可标识复核（不是二进制发行义务豁免） ----------
-const WEAK_ALLOW = [[/^lightningcss/, "当前仅构建依赖；进入生产图时需重新核对 MPL 源码提供义务"]];
+// ---------- Build Tools License Tag Review (not Exemption from Binary Distribution Obligations) ----------
+const WEAK_ALLOW = [
+  [
+    /^lightningcss/,
+    "Currently only dependencies are built; when entering the production map, the MPL source code provision obligation needs to be rechecked",
+  ],
+];
 function weakAllowReason(r) {
   if (r.isProd) return null;
   for (const [re, why] of WEAK_ALLOW) if (re.test(r.name)) return why;
@@ -101,10 +106,12 @@ if (command === "check") {
     bad.push(r);
   }
   if (bad.length) {
-    console.error(`✗ license 检查失败：${bad.length} 个包超出 allowlist：`);
+    console.error(`✗ License check failed: ${bad.length} packages exceeded allowlist:`);
     for (const r of bad.sort((a, b) => a.name.localeCompare(b.name)))
       console.error(`  [${r.bucket}] ${r.name}@${r.version} → ${r.license}`);
-    console.error("\n处置：替换依赖，或在 scripts/licenses.mjs 的 WEAK_ALLOW 登记人工复核结论。");
+    console.error(
+      "\nDisposition: Replace the dependency, or register the manual review conclusion in WEAK_ALLOW of scripts/licenses.mjs.",
+    );
     process.exit(1);
   }
   await readVerifiedNotices(ROOT, { requireComplete: process.argv.includes("--strict") });
@@ -113,13 +120,13 @@ if (command === "check") {
       .reviewRequired ?? [];
   if (reviewRequired.length)
     console.warn(
-      `待补齐/核验材料 ${reviewRequired.length} 项；发布前运行 node scripts/licenses.mjs check --strict，不得将基础检查通过视为合规完成。`,
+      `There are ${reviewRequired.length} items of materials to be completed/verified; run node scripts/licenses.mjs check --strict before publishing, and passing the basic check shall not be regarded as compliance completion.`,
     );
   const n = installed.size;
   console.log(
-    `✓ 许可标识与声明新鲜度检查通过：${n} 个实装包（构建依赖复核 ${[...installed.values()].filter((r) => r.bucket.startsWith("yellow")).length} 项）；材料限制见 third-party/README.md`,
+    `✓ License identification and declaration freshness check passed: ${n} actual installation packages (build dependency review ${[...installed.values()].filter((r) => r.bucket.startsWith("yellow")).length} items); for material restrictions, see third-party/README.md`,
   );
 } else {
-  console.error("用法: node scripts/licenses.mjs [notices|check]");
+  console.error("Usage: node scripts/licenses.mjs [notices|check]");
   process.exit(2);
 }

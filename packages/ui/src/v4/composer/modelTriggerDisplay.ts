@@ -18,7 +18,7 @@ export function formatModelChangeLabel(
   intl: Pick<IntlInstance, "formatMessage">,
 ): string {
   let planLabelId: string;
-  // 切换记录必须保留当时的套餐身份，不能从当前连接或可用模型目录反推历史套餐。
+  // The switch record must retain the current package identity, and historical packages cannot be reversed from the current connection or available model directory.
   switch (providerId) {
     case BUILTIN_MODEL_PROVIDER_IDS.zaiIndividualCodingPlan:
     case BUILTIN_MODEL_PROVIDER_IDS.bigmodelIndividualCodingPlan:
@@ -43,8 +43,8 @@ export function formatProviderModelLabel(
   providerName: string | undefined,
   modelName: string,
 ): string {
-  // Z.ai / BigModel 的内置连接名属于产品固定入口，拼进模型文案会重复展示
-  // “Coding Plan”等连接信息；切换提示额外通过 formatModelChangeLabel 标明套餐类型。
+  // The built-in connection name of Z.ai / BigModel belongs to the fixed entrance of the product, and will be displayed repeatedly if inserted into the model copy.
+  // "Coding Plan" and other connection information; the switching prompt additionally indicates the plan type through formatModelChangeLabel.
   if (providerId && resolveModelProviderFamilyIdByProviderId(providerId)) {
     return modelName;
   }
@@ -74,7 +74,7 @@ export function resolveV4ModelTriggerLabel({
     return fallbackLabel;
   }
 
-  // 仅当前菜单中存在的连接按 ID 兜底；历史记录的通用格式化保留原有语义。
+  // Only connections that exist in the current menu are grouped by ID; universal formatting of history retains original semantics.
   return formatProviderModelLabel(
     providerId,
     providerName?.trim() || providerId,
@@ -95,8 +95,8 @@ export function resolveV4ModelTriggerDisplay({
   providerId: string | undefined;
   providerName?: string;
 }): V4ModelTriggerDisplay {
-  // 把 provider/model 预先拼成单一字符串后，响应式布局只能整段隐藏或依赖
-  // 平台 JS 分支裁剪；这里保留结构化前缀，让 composer 容器断点统一决定可见密度。
+  // After the provider/model is pre-assembled into a single string, the responsive layout can only hide or depend on the entire section.
+  // Platform JS branch pruning; retain the structural prefix here and let the composer container breakpoints uniformly determine the visible density.
   const fullLabel = resolveV4ModelTriggerLabel({
     modelGroups,
     normalizedValue,

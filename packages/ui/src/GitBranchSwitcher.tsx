@@ -218,8 +218,8 @@ export function GitBranchSwitcher({
             onOpenAutoFocus={(event) => {
               event.preventDefault();
               if (isCoarseTouchDevice()) {
-                // 手机触控设备打开分支列表时，自动聚焦搜索框会拉起系统键盘遮挡列表。
-                // 移动端保留触发器焦点，用户需要搜索时再手动点输入框；桌面端继续自动进入搜索。
+                // When the branch list is opened on a mobile phone touch device, the auto-focus search box will bring up the system keyboard occlusion list.
+                // The mobile terminal retains the trigger focus and the user manually clicks on the input box when they need to search; the desktop terminal continues to automatically enter the search.
                 return;
               }
 

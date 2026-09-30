@@ -5,13 +5,13 @@ import type { IOffPeakTaskService } from "@zcode/services";
 import type { IntlInstance } from "@/i18n/index.js";
 import { logger } from "@/logger.js";
 
-// 闲时任务系统通知（通知；权威路径应用内、通知点击跳 session；样式待设计补）。
-// 全局挂载（App 根，每窗口一份）：main 进程 dispatchTaskNotification 按 (status:taskId) 3s 去重，
-// 多窗口重复触发只显示一条，故无需选主。轮询独立于 host sync（renderer 无 sqlite 访问）。
+// Off-Peak task system notifications (authoritative path in-app; clicking a notification jumps to the session; styling still pending design).
+// Mounted globally (App root, one per window): main's dispatchTaskNotification dedupes by (status:taskId) for 3s, so repeated
+// multi-window triggers show only one notification and no leader election is needed. Polling is independent of host sync (renderer has no sqlite access).
 
 const OFF_PEAK_NOTIFICATION_POLL_MS = 30_000;
 
-/** Off-Peak 聚合只通知终态；permission/elicitation 由普通 session 通知链路负责，避免重复通知。 */
+/** Off-Peak aggregates only notify terminal states; permission/elicitation are handled by the normal session notification chain to avoid duplicate notifications. */
 function notifiableStatus(status: ZCodeOffPeakTaskStatus): "completed" | "failed" | null {
   if (status === "completed") return "completed";
   if (status === "failed") return "failed";
@@ -25,7 +25,7 @@ export function useOffPeakTaskNotifications(params: {
   formatMessage: IntlInstance["formatMessage"];
 }): void {
   const { offPeakTaskService, platform, enabled, formatMessage } = params;
-  // offPeakTaskId → 上次见到的状态；只在"新→需通知状态"的边沿触发，避免每轮重发。
+  // offPeakTaskId → last-seen status; fires only on "new → notifiable status" edges to avoid resending every round.
   const seenStatusRef = useRef(new Map<string, ZCodeOffPeakTaskStatus>());
 
   useEffect(() => {
@@ -45,7 +45,7 @@ export function useOffPeakTaskNotifications(params: {
           if (previous === task.status) continue;
           const kind = notifiableStatus(task.status);
           if (!kind) continue;
-          // 首次见到即终态（如刚打开 app 时的存量）不补发历史通知，只在真实转换时通知。
+          // A terminal state seen for the first time (e.g. backlog right after opening the app) does not backfill historical notifications; only real transitions notify.
           if (previous === undefined) continue;
           const titleKey =
             kind === "completed" ? "offPeak.notify.completed.title" : "offPeak.notify.failed.title";
@@ -53,7 +53,7 @@ export function useOffPeakTaskNotifications(params: {
             kind === "completed" ? "offPeak.notify.completed.body" : "offPeak.notify.failed.body";
           try {
             platform.showTaskNotification({
-              // 点击跳转用 run session 的 taskId（无 session 的终态跳不了，taskId 兜底用 offPeakTaskId）。
+              // Click-to-jump uses the run session's taskId (a terminal state with no session can't jump; taskId falls back to offPeakTaskId).
               taskId: task.sessionId ?? task.conversationId ?? task.offPeakTaskId,
               status: kind === "completed" ? "completed" : "failed",
               title: formatMessage({ id: titleKey }),
@@ -63,7 +63,7 @@ export function useOffPeakTaskNotifications(params: {
             logger.warn("[off-peak] notification dispatch failed", error);
           }
         }
-        // 清理已消失（删除）的任务，防 Map 无限增长。
+        // Prune tasks that have disappeared (deleted) to keep the Map from growing without bound.
         for (const id of seen.keys()) {
           if (!alive.has(id)) seen.delete(id);
         }

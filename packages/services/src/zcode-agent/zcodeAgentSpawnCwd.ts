@@ -1,6 +1,6 @@
 import { stat } from "node:fs/promises";
 
-/** 只选择执行目录，不捕获数据库错误；无可用备用目录时保留原路径供正常启动报错。 */
+/** Only picks the execution directory and does not catch database errors; when no usable fallback directory exists, the original path is kept so normal startup reporting handles it. */
 export async function resolveZCodeAgentSpawnCwd(
   options: { requestedCwd: string; workspacePath: string; spawnFallbackCwd?: string },
   probe: (path: string) => Promise<{ isDirectory(): boolean }> = stat,
@@ -10,7 +10,7 @@ export async function resolveZCodeAgentSpawnCwd(
     try {
       return (await probe(path)).isDirectory();
     } catch {
-      // 旧 Agent 对失效历史目录统一使用备用 cwd；ENOTDIR/EACCES 也必须保持这一语义。
+      // Old agents uniformly use standby cwds for expired history directories; ENOTDIR/EACCES must also maintain this semantics.
       return false;
     }
   };

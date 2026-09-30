@@ -1,5 +1,5 @@
-# 修复原因：显式开启开发态自动更新时 electron-updater 会读取 dev-app-update.yml 初始化下载缓存。
-# 服务端 manifest provider 仍负责返回真实安装包 URL；这里的 generic url 只作为本地配置占位。
+# Fix reason: when dev auto-update is explicitly enabled, electron-updater reads dev-app-update.yml to initialize the download cache.
+# The server-side manifest provider is still responsible for returning the real installer URL; the generic url here serves only as a local config placeholder.
 provider: generic
 url: http://localhost:8081
 useMultipleRangeRequest: false

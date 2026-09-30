@@ -3,8 +3,8 @@
 set -euo pipefail
 
 APP_PATH="${1:-${ZCODE_MACOS_RELEASE_APP_PATH:-/Applications/ZCode.app}}"
-# 安装包身份与后端环境分轴：ZCODE_PREVIEW_IDENTITY=1 让生产后端的构建仍是 ZCode Preview。
-# 只认 "1"，与 CI workflow / release 门的精确比较同一套语义（其它拼写一律视为未开启）。
+# Separate the installation package identity and backend environment: ZCODE_PREVIEW_IDENTITY=1 so that the production backend build is still ZCode Preview.
+# Only "1" is recognized, which has the same semantics as the precise comparison of CI workflow / release gates (other spellings are regarded as not enabled).
 is_preview_identity_requested() {
   [[ "${ZCODE_PREVIEW_IDENTITY:-}" = "1" ]]
 }
@@ -94,10 +94,10 @@ validate_release_bundle() {
   run_quiet_validation "${label} codesign verify" codesign --verify --deep --strict "$bundle_path"
   run_quiet_validation "${label} Gatekeeper exec assessment" spctl -a -vv -t exec "$bundle_path"
   if [ "$require_notarization_staple" = "1" ]; then
-    # xcrun 只用于 macOS staple 验收，等目标 bundle 存在且基础签名校验通过后再检查，
-    # 避免缺少 xcrun 的报错掩盖 bundle 缺失或签名错误。
+    # xcrun is only used for macOS staple acceptance. It will be checked after the target bundle exists and the basic signature verification passes.
+    # Avoid missing xcrun errors that cover up missing bundles or incorrect signatures.
     require_command xcrun
-    # 仅检查 spctl 可能依赖联网取票或缓存，仍需验证目标 bundle 的本地 staple。
+    # Checking only spctl may rely on network ticketing or caching, but still needs to verify the local staple of the target bundle.
     run_quiet_validation "${label} notarization staple" xcrun stapler validate "$bundle_path"
   fi
 }
@@ -105,9 +105,9 @@ validate_release_bundle() {
 require_command codesign
 require_command spctl
 
-# 过去 release/notarization 成功只说明 DMG 通过了 gate，不能证明安装后的主 app
-# 能被 Gatekeeper 以 exec 类型放行。这里先 fail-closed 检查 bundle 结构和主可执行
-# 文件，再跑 codesign/spctl，避免安装不完整或签名损坏时误报发布成功。
+# In the past, successful release/notarization only meant that the DMG passed the gate, but could not prove the main app after installation.
+# Can be released by Gatekeeper with exec type. Here first fail-closed checks the bundle structure and main executable
+# file, and then run codesign/spctl to avoid false positives of successful release when the installation is incomplete or the signature is damaged.
 assert_bundle_dir "$APP_BUNDLE_NAME" "$APP_PATH"
 assert_executable "$APP_BUNDLE_NAME" "$APP_PATH/Contents/MacOS/$APP_EXECUTABLE_NAME"
 validate_release_bundle "$APP_BUNDLE_NAME" "$APP_PATH"

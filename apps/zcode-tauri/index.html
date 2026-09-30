@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#161616" />
+    <meta name="color-scheme" content="dark" />
+    <title>ZCode</title>
+    <script>
+      (() => {
+        // Resolve the first-paint background from the stored theme preference
+        // before the JS bundle runs, so dark users never see a white flash.
+        const STORAGE_KEY = "zcode-theme";
+        const DEFAULT_THEME = "zai-dark";
+        const normalizeResolvedTheme = (theme) => {
+          if (theme === "dark" || theme === "zai-dark") return "dark";
+          if (theme === "light" || theme === "zai-light") return "light";
+          return theme;
+        };
+        try {
+          const saved = localStorage.getItem(STORAGE_KEY) || DEFAULT_THEME;
+          const resolved =
+            saved === "system"
+              ? window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
+                ? "dark"
+                : "light"
+              : normalizeResolvedTheme(saved);
+          const finalTheme = resolved === "dark" ? "dark" : "light";
+          document.documentElement.setAttribute("data-zcode-bootstrap-theme", finalTheme);
+          document.documentElement.style.colorScheme = finalTheme;
+          if (finalTheme === "dark") document.documentElement.classList.add("dark");
+        } catch {
+          document.documentElement.setAttribute("data-zcode-bootstrap-theme", "dark");
+          document.documentElement.classList.add("dark");
+        }
+      })();
+    </script>
+    <style>
+      html,
+      body,
+      #root {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        background: var(--zcode-bootstrap-bg, var(--color-background, #0f172a));
+        color: var(--zcode-bootstrap-fg, var(--color-foreground, #e2e8f0));
+        font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      html[data-zcode-bootstrap-theme="light"] body {
+        background: var(--zcode-bootstrap-bg, var(--color-background, #f8fafc));
+        color: var(--zcode-bootstrap-fg, var(--color-foreground, #334155));
+      }
+      .zcode-boot-loading {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        height: 100%;
+        background: var(--zcode-bootstrap-bg, var(--color-background, #0f172a));
+        color: var(--zcode-bootstrap-fg, var(--color-foreground, #e2e8f0));
+      }
+      html[data-zcode-bootstrap-theme="light"] .zcode-boot-loading {
+        background: var(--zcode-bootstrap-bg, var(--color-background, #f8fafc));
+        color: var(--zcode-bootstrap-fg, var(--color-foreground, #334155));
+      }
+      .zcode-boot-loading__logo-shell {
+        position: relative;
+        display: flex;
+        width: 96px;
+        height: 96px;
+        align-items: center;
+        justify-content: center;
+        border-radius: 24px;
+        background: linear-gradient(180deg, #000000 0%, #151718 100%);
+        box-shadow:
+          0 20px 25px -5px rgb(0 0 0 / 0.2),
+          0 8px 10px -6px rgb(0 0 0 / 0.2);
+      }
+      .zcode-boot-loading__logo-shell::before {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        content: "";
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: inherit;
+      }
+      .zcode-boot-loading__logo {
+        width: 56px;
+        height: auto;
+        color: #ffffff;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <div
+        class="zcode-boot-loading"
+        role="status"
+        aria-live="polite"
+        aria-busy="true"
+        aria-label="Loading..."
+      >
+        <div class="zcode-boot-loading__logo-shell">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="118px"
+            height="100px"
+            fill="none"
+            viewBox="0 0 256 218"
+            class="zcode-boot-loading__logo"
+            aria-hidden="true"
+          >
+            <path
+              fill="currentColor"
+              d="M134.4 0.130152L116.48 25.6022C113.665 29.5699 109.054 32.0019 104.064 32.0019H6.3999V0C6.3999 0.130149 134.4 0.130152 134.4 0.130152Z"
+            >
+              <animate attributeName="opacity" dur="1.5s" repeatCount="indefinite" values="1;0.3;1" />
+            </path>
+            <path fill="currentColor" d="M256 0.130127L102.401 217.732H0L153.599 0.130127H256Z">
+              <animate
+                attributeName="opacity"
+                begin="0.75s"
+                dur="1.5s"
+                repeatCount="indefinite"
+                values="1;0.3;1"
+              />
+            </path>
+            <path
+              fill="currentColor"
+              d="M121.601 217.732L139.65 192.134C142.465 188.166 147.076 185.734 152.067 185.734H249.604V217.736H121.601V217.732Z"
+            >
+              <animate attributeName="opacity" dur="1.5s" repeatCount="indefinite" values="1;0.3;1" />
+            </path>
+          </svg>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

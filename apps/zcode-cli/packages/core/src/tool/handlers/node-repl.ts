@@ -13,11 +13,11 @@ import type { ToolEntry, ToolExecutionContext, ToolHandler } from "../types.js";
 import { formatJsModelContent } from "./node-repl-model-content.js";
 
 /**
- * 每个 zcode session 一个持久 NodeReplSession，跨多次 js 调用保持内存状态（globalThis）。
- * key = context.sessionId。
+ * One persistent NodeReplSession per zcode session, keeping memory state (globalThis) across multiple js calls.
+ * key = context.sessionId.
  *
- * browser-use：只有官方 browser-use 插件启用时，runtime-tooling 才会把 browserControlPort
- * 透传到 executor；此时 REPL 里 agent.browsers 开箱可用。
+ * browser-use: only when the official browser-use plugin is enabled does runtime-tooling pass browserControlPort
+ * through to the executor; agent.browsers is then available out of the box inside the REPL.
  */
 const sessions = new Map<SessionId, NodeReplSession>();
 const activeToolContexts = new Map<SessionId, ToolExecutionContext>();
@@ -99,7 +99,7 @@ function buildInjectedGlobals(
             turnId: active.turnId,
             signal: active.abortSignal,
           });
-          // reset 可能发生在 transport await 期间；迟到结果也不能回到已废弃的 context。
+          // A reset may occur during a transport await; late results cannot be returned to a discarded context.
           assertCurrentRuntime();
           return descriptors;
         },
@@ -114,8 +114,8 @@ function buildInjectedGlobals(
             command,
             signal: active.abortSignal,
           });
-          // backend 可能无法及时响应 abort。reset 后的迟到结果不能污染新 cell 的 response meta，
-          // 也不能让旧 JS continuation 获得新 generation 仍在使用的 tab 结果。
+          // The backend may not respond to the abort in time. Late results after reset cannot pollute the response meta of the new cell.
+          // Nor can old JS continuations get tab results that are still in use by the new generation.
           assertCurrentRuntime();
           if (result.ok && command.method === "screenshot" && result.image) {
             onBrowserScreenshot(result.image);
@@ -163,7 +163,7 @@ function getSession(context: ToolExecutionContext): NodeReplSession {
     let created: NodeReplSession;
     created = new NodeReplSession({
       injectedGlobals: () => {
-        // session 释放后可能用同一个 id 重建，generation 必须进程内单调递增，避免旧异步任务发生 ABA 串线。
+        // After the session is released, it may be rebuilt with the same ID. The generation must increase monotonically within the process to avoid ABA threading in old asynchronous tasks.
         const runtimeGeneration = ++browserRuntimeGenerationSequence;
         browserRuntimeGenerations.set(context.sessionId, runtimeGeneration);
         return buildInjectedGlobals(
@@ -180,7 +180,7 @@ function getSession(context: ToolExecutionContext): NodeReplSession {
   return session;
 }
 
-/** 测试与 session 关闭时释放。 */
+/** Released in tests and when the session is closed. */
 export function disposeNodeReplSession(sessionId: SessionId): void {
   activeToolContexts.delete(sessionId);
   browserRuntimeGenerations.delete(sessionId);
@@ -222,8 +222,8 @@ async function persistBrowserScreenshotPaths(
       if (artifact.path)
         paths.push(isAbsolute(artifact.path) ? artifact.path : resolve(artifact.path));
     } catch (error) {
-      // 路径是截图的辅助输出，artifact 故障不能把已成功的
-      // Browser 命令改写为失败；但请求取消仍必须沿用工具的取消语义。
+      // The path is the auxiliary output of the screenshot. Artifact failure cannot replace the successful one.
+      // The Browser command is rewritten to fail; however, requesting cancellation must still respect the tool's cancellation semantics.
       if (context.abortSignal.aborted) throw error;
     }
   }
@@ -246,7 +246,7 @@ const jsHandler: ToolHandler = async (input, context): Promise<JsOutput> => {
     runResult = await session.run(code, {
       signal: context.abortSignal,
 
-      // 默认 30s/调用方覆盖一致，异步代码仍由工具 AbortSignal 中断。
+      // The default 30s/caller coverage is consistent, and asynchronous code is still interrupted by the tool AbortSignal.
       syncTimeoutMs: Math.min(timeoutMs ?? 30_000, 120_000),
       requestMeta: {
         sessionId: context.sessionId,
@@ -280,8 +280,8 @@ const HIGH_RISK_PERMISSION = {
   denyPriority: "beforeAsk" as const,
 };
 
-// browser.documentation() 的完整有效文档超过原 30 KB 上限，导致模型只收到
-// artifact 头部预览并丢失后续 API。64 KiB 保持 JS 输出有界，同时覆盖当前完整文档。
+// The complete and valid document of browser.documentation() exceeds the original 30 KB limit, causing the model to only receive
+// artifact header preview and subsequent API missing. 64 KiB Keeps JS output bounded while covering the entire current document.
 const JS_MAX_MODEL_OUTPUT_BYTES = 64 * 1024;
 const TRACE = {
   required: true as const,
@@ -327,15 +327,15 @@ function buildJsToolDescription(options: NodeReplToolOptions = {}): string {
     "`playwright.evaluate()` and locator `evaluate()` execute JavaScript in the page context and may change page state. " +
     "Use them for page-side logic that cannot be expressed through the high-level locator API; use normal action methods " +
     "when they communicate the intended interaction more clearly. " +
-    // popup 可能落在 controlled 或 user registry；拆成两个 cell 会让模型在半份证据上决策。
+    // The popup may fall into the controlled or user registry; splitting into two cells will allow the model to make decisions based on half of the evidence.
     "When an action may open a popup/new tab and the source tab does not show the expected effect, " +
     "read `browser.tabs.list()` and `browser.user.openTabs()` unconditionally in the same observation cell. " +
     "Prefer `Promise.all`. Return `{ controlledTabs, userTabs }` as that cell's final result so the model makes " +
     "one decision from both lists. Do not return the controlled list first or decide whether to query user tabs " +
     "from its contents. " +
     "`tab.snapshot()` plus ref actions remain only as a z-code compatibility fallback. For ordinary navigation, reading, search, and forms, " +
-    // 模型可能跳过 lookup 文档并把 screenshot() 当最终表达式，导致 PNG bytes 以 Uint8Array 文本回灌；
-    // 因此“是否截图”仍按需判断，但一旦截图，emitImage 输出契约必须直接出现在工具说明里。
+    // The model may skip the lookup document and treat screenshot() as the final expression, causing PNG bytes to be filled back as Uint8Array text;
+    // Therefore, "whether to take a screenshot" is still determined on demand, but once a screenshot is taken, the emitImage output contract must appear directly in the tool description.
     "use DOM snapshots only: opening a page is not a reason to capture a screenshot, and do not request both a snapshot " +
     "and screenshot in the same observation by default. Use a screenshot only when the user explicitly requests one, " +
     "visual layout/rendering/image content must be judged, or the required target is absent from the DOM snapshot (for " +

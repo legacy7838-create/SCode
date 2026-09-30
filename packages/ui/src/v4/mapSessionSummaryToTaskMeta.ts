@@ -1,7 +1,7 @@
-// sessions-index 的 SessionSummary → 侧栏实时 detail ZCodeTaskMeta 映射。
-// 这些对象不独立决定列表行存在性；后续以 tasks-index.sqlite 持久行为左表 join。
-// 注意：summary.sessionEnded 是「成功轮收口」语义（completedSuccess 即 true），不是删除；
-// session.removed 只会移除实时 detail，持久行删除仍由 tasks-index row/tombstone 决定。
+// SessionSummary → Sidebar real-time detail ZCodeTaskMeta mapping for sessions-index.
+// These objects do not independently determine the existence of list rows; subsequent joins to the left table are performed using tasks-index.sqlite persistent rows.
+// Note: summary.sessionEnded is a "successful round closing" semantic (completedSuccess is true), not deletion;
+// session.removed will only remove real-time detail, persistent row deletion is still determined by tasks-index row/tombstone.
 import type { TraceId, ZCodeProvider, ZCodeTaskMeta } from "@zcode/shared";
 import type { SessionSummary } from "@zcode/shared/zcode-protocol-v4";
 import {
@@ -9,7 +9,7 @@ import {
   type TaskListMetaWithActivity,
 } from "@/v4/taskListRowActivity.js";
 
-/** phase → 侧栏持久化状态（running/completed/error）；draft 无结果状态。 */
+/** phase → the sidebar's persisted status (running/completed/error); draft has no result status. */
 function phaseToStatus(phase: SessionSummary["phase"]): ZCodeTaskMeta["status"] {
   switch (phase) {
     case "running":
@@ -28,13 +28,17 @@ function phaseToStatus(phase: SessionSummary["phase"]): ZCodeTaskMeta["status"] 
 interface MapSessionSummaryOptions {
   workspacePath: string;
   workspaceIdentity?: string;
-  /** 本地已有 meta（保留手动标题/provider 等旧值，避免被列表刷新冲掉）。 */
+  /**
+   * The meta already present locally (keeps older values such as a manual title/provider so a list
+   * refresh does not wipe them).
+   */
   previous?: ZCodeTaskMeta;
 }
 
 /**
- * SessionSummary → 实时 detail ZCodeTaskMeta。sessions-index 不携带的字段
- * （traceId/mode/provider）取合理默认或沿用 previous；真实持久字段以 join 时的 task 行为准。
+ * SessionSummary → the live detail ZCodeTaskMeta. Fields that sessions-index does not carry
+ * (traceId/mode/provider) take sensible defaults or reuse previous; the truly persisted fields are
+ * defined by the task row at join time.
  */
 export function mapSessionSummaryToTaskMeta(
   summary: SessionSummary,
@@ -43,9 +47,9 @@ export function mapSessionSummaryToTaskMeta(
   const previous = options.previous;
   const status = phaseToStatus(summary.phase);
   const summaryTitleIsCustom = summary.titleSource === "custom";
-  // 旧 task-index 里已经存在 titleOverridden=true 的手动标题时，
-  // sessions-index 冷启动 summary 可能仍是 first_input/generated 标题。只有 v4 session
-  // store 明确标记 custom 时才把 summary.title 当成新的手动标题权威。
+  // When a manual title with titleOverridden=true already exists in the old task-index,
+  // sessions-index cold start summary may still be the first_input/generated header. Only v4 session
+  // The store only treats summary.title as the new manual title authority when it is explicitly marked custom.
   const title =
     previous?.titleOverridden === true && !summaryTitleIsCustom
       ? previous.title

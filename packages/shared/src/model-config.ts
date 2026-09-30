@@ -12,7 +12,7 @@ function optionMapSchema(variableName: "reasoningLevel" | "maxOutputTokens") {
       } catch (error) {
         context.addIssue({
           code: "custom",
-          message: error instanceof Error ? error.message : "Option map 无法编译",
+          message: error instanceof Error ? error.message : "Option map could not be compiled",
         });
       }
     });
@@ -20,15 +20,21 @@ function optionMapSchema(variableName: "reasoningLevel" | "maxOutputTokens") {
 
 export const completeEnumOptionSpecDataSchema = z
   .object({
-    /** 按语义强度从低到高排列；首项是辅助调用可选的最低公开档位。 */
+    /** Arranged in order of semantic intensity from low to high; the first item is the lowest public level available for auxiliary calls. */
     values: z
       .array(
         z
           .string()
-          .refine((value) => value.trim().length > 0, "reasoningLevel.values 必须是非空字符串"),
+          .refine(
+            (value) => value.trim().length > 0,
+            "reasoningLevel.values must be non-empty strings",
+          ),
       )
-      .min(1, "reasoningLevel.values 不能为空")
-      .refine((values) => new Set(values).size === values.length, "reasoningLevel.values 不能重复")
+      .min(1, "reasoningLevel.values must not be empty")
+      .refine(
+        (values) => new Set(values).size === values.length,
+        "reasoningLevel.values must not contain duplicates",
+      )
       .readonly(),
     map: optionMapSchema("reasoningLevel"),
   })
@@ -114,7 +120,7 @@ export const modelConfigDataSchema = z
   })
   .strict();
 
-// 跨层只共享数据合同；Provider 行为类与 IO 不进入公共 Schema。
+// Only data contracts are shared across layers; Provider behavior classes and IO do not enter the public Schema.
 export type ModelInputFormatData = z.infer<typeof completeModelInputFormatDataSchema>;
 export type ModelOutputFormatData = z.infer<typeof completeModelOutputFormatDataSchema>;
 export type ModelPropertiesData = z.infer<typeof completeModelPropertiesDataSchema>;

@@ -19,8 +19,8 @@ export function StartPlanCard({
   const { intl, locale } = useZCodeIntl();
   const entitlementSummary = resolveStartPlanEntitlementSummary(preview, intl, locale);
   if (!entitlementSummary) {
-    // 体验套餐卡片必须由远端 startPlanPreview.entitlements 驱动；
-    // 没有可展示额度时不能再回退到本地硬编码 Trial plan 文案。
+    // Experience package cards must be driven by remote startPlanPreview.entitlements;
+    // When there is no display quota, you can no longer fall back to the local hard-coded Trial plan copy.
     return null;
   }
 
@@ -83,8 +83,8 @@ export function resolveStartPlanEntitlementSummary(
     return null;
   }
 
-  // Trial Plan 主指标展示总额度；明细按 grantUnits 分组展示各模型额度。
-  // 同额度模型合并成“各 X”，避免重复文字，同时保留逐模型配额差异。
+  // The main indicator of the Trial Plan displays the total quota; the details are grouped by grantUnits to display the quota of each model.
+  // Models with the same quota are merged into "each X" to avoid duplication of text while retaining model-by-model quota differences.
   const detailsDescription = formatEntitlementDetailsDescription(
     entitlements,
     primary,
@@ -117,8 +117,8 @@ function formatCompactUnits(value: number, locale: string): string {
 
 function formatHeroGrantUnits(value: number, locale: string): string {
   if (locale.toLowerCase().startsWith("en")) {
-    // 体验套餐主视觉英文需要表达完整量级（如 5 Million），
-    // 但明细和其它 token 用量仍保留 compact 的 K/M/B 或中文万/亿口径。
+    // The main visual English of the experience package needs to express the complete magnitude (such as 5 Million),
+    // However, the details and other token usage still retain the compact K/M/B or Chinese 10,000/100 million caliber.
     return new Intl.NumberFormat(locale || "en-US", {
       notation: Math.abs(value) >= 1_000 ? "compact" : "standard",
       compactDisplay: "long",

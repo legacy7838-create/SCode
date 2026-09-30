@@ -34,7 +34,7 @@ export function usePlugins(workspacePath: string | null, workspaceIdentity?: str
 
   useEffect(() => {
     if (!workspacePath) {
-      // 无活动工作区时保留上一份插件缓存，会让 Discover 仍可点安装但 store.workspacePath 为空而静默失败。
+      // Keeping the previous plugin cache while no workspace is active would leave Discover's install button clickable but silently fail because store.workspacePath is empty.
       resetWorkspaceContext();
       return;
     }
@@ -91,7 +91,7 @@ export function usePlugins(workspacePath: string | null, workspaceIdentity?: str
   const installPlugin = useCallback(
     async (pluginName: string, marketplace: string, scope: "workspace" | "user" = "user") => {
       if (!workspacePath) {
-        usePluginStore.setState({ error: "请先打开一个工作区后再安装插件" });
+        usePluginStore.setState({ error: "Open a workspace before installing plugins" });
         return false;
       }
       if (

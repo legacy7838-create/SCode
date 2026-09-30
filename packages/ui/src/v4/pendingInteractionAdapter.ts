@@ -33,8 +33,8 @@ function permissionKindToResponse(
     const ruleContent = LEGACY_PERMISSION_RULE_INPUT_KEYS.map((key) => detail[key]).find(
       (value): value is string => typeof value === "string" && value.trim().length > 0,
     );
-    // 旧 v4 snapshot 的 option 没有 response；若只回退 allow，项目级授权会
-    // 丢失持久规则。兼容路径只生成原始 exact，不在 UI 重算 CLI 的 AST prefix。
+    // The option of the old v4 snapshot has no response; if you only fall back to allow, the project-level authorization will
+    // Missing persistence rules. The compatible path only generates the original exact and does not recalculate the CLI's AST prefix in the UI.
     return {
       decision: "allow",
       permissionUpdates: [
@@ -54,7 +54,7 @@ function permissionKindToResponse(
   return { decision: "allow" };
 }
 
-/** v4 permission payload → 旧 PermissionDialog 可消费的 ZCodePermissionRequest。 */
+/** v4 permission payload → a ZCodePermissionRequest the legacy PermissionDialog can consume. */
 export function pendingPermissionToLegacyRequest(
   sessionId: string,
   interaction: PendingInteraction & { payload: PermissionRequestPayload },
@@ -80,11 +80,11 @@ export function pendingPermissionToLegacyRequest(
     title: payload.toolName,
     options,
     ...(payload.freeText ? { freeText: true } : {}),
-    // V4 permission 的 subagent 来源已经存在于 pendingInteraction，
-    // 旧适配器漏传后 PermissionDialog 无法展示来源，用户会误以为是主 Agent 在申请权限。
+    // The subagent source of V4 permission already exists in pendingInteraction,
+    // After the old adapter misses the transmission, the PermissionDialog cannot display the source, and the user will mistakenly think that the main Agent is applying for permissions.
     ...(payload.origin ? { origin: payload.origin } : {}),
-    // 工具自报的确认预览走独立的 display 通道，不塞进 raw/detail：detail 的形状被所有
-    // 工具的预览解析共用，改一处会波及全部权限弹窗。
+    // The tool's self-reported confirmation preview uses an independent display channel and is not inserted into raw/detail: the shape of detail is owned
+    // The preview parsing of tools is shared, and any change will affect all permission pop-ups.
     ...(payload.display ? { display: payload.display } : {}),
     raw: payload.detail ?? {
       toolCallId: payload.toolCallId,

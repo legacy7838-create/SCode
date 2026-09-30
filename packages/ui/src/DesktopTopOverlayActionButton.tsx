@@ -34,15 +34,15 @@ export function DesktopTopOverlayActionButton({
         type="button"
         variant="ghost"
         size="icon-md"
-        // 基础 Button 默认 transition-all，缩放窗口时会把标题栏按钮的尺寸/位置变化也动画化，
-        // Windows 连续缩放下会像按钮先复位再跟随；这里的浮层按钮只需要 hover 色彩过渡。
+        // Basic Button defaults to transition-all. When scaling the window, the size/position changes of the title bar button will also be animated.
+        // When Windows continuously zooms, the button will reset first and then follow; the floating button here only needs hover color transition.
         className={cn("[app-region:no-drag] transition-colors", buttonClassName)}
         data-testid={testId}
         aria-label={ariaLabel}
         disabled={disabled}
-        // 顶部浮层的新建任务入口会复用带可选 provider 参数的业务函数。
-        // 如果直接交给 React onClick，MouseEvent 会被当成 provider 传下去，并在日志 IPC 克隆时抛错。
-        // 这里统一丢弃 DOM 事件，只调用组件约定的无参动作。
+        // The new task entry in the top floating layer will reuse the business function with optional provider parameters.
+        // If passed directly to React onClick, MouseEvent will be passed as provider and an error will be thrown when logging IPC clone.
+        // Here, DOM events are discarded uniformly, and only the parameter-free actions agreed upon by the component are called.
         onClick={() => onClick()}
         onMouseEnter={onMouseEnter}
       >

@@ -30,7 +30,10 @@ import { savedWorkflowRunBadgeKind } from "@/settings/saved-workflows/savedWorkf
 
 const MAX_ARG_CHIPS = 3;
 
-/** 卡片「上次运行」徽标：四态 + 尚未运行。沿用定时任务卡的徽标形状（rounded-lg，20px 图标槽）。 */
+/**
+ * The card's "Last run" badge: four states plus never-run. It reuses the scheduled task card's
+ * badge shape (rounded-lg, 20px icon slot).
+ */
 function SavedWorkflowLastRunBadge({
   run,
   now,
@@ -61,7 +64,7 @@ function SavedWorkflowLastRunBadge({
       className = "text-destructive";
       break;
     case "running":
-      // running 用活动色 warning（与实例详情页状态头同源）。
+      // Running uses the active color warning (same origin as the status header of the instance details page).
       icon = <Loader2 className="size-4 animate-spin" strokeWidth={1.33} aria-hidden="true" />;
       className = "rounded-lg bg-warning/10 text-warning";
       break;
@@ -94,14 +97,18 @@ interface SavedWorkflowCardProps {
   onRun: (entry: ZCodeSavedWorkflowEntry) => void;
   onRevise: (entry: ZCodeSavedWorkflowEntry) => void;
   onCopyPath: (entry: ZCodeSavedWorkflowEntry) => void;
-  /** 作用域动作：项目档「提升为全局」（AI 概括）/ 全局档「移到项目…」；仅在传入时出现。 */
+  /**
+   * Scope actions: "Promote to global" for a project entry (AI-generated summary) / "Move to
+   * project…" for a global entry; only shown when passed in.
+   */
   onMove?: (entry: ZCodeSavedWorkflowEntry) => void;
   onDelete: (entry: ZCodeSavedWorkflowEntry) => void;
 }
 
 /**
- * 与定时任务卡同一张网格（132px 行、rounded-xl、p-3）：标题行 = 名字 + 右上「运行」与 ⋯；
- * 两行说明；底栏左 = 上次运行徽标、右 = 实参名芯片（最多 3 个 + `+N`）。整卡可点进详情。
+ * The same grid as the scheduled task card (132px rows, rounded-xl, p-3): the title row = name plus
+ * "Run" and ⋯ at the top right; two lines of description; the footer left = the last-run badge,
+ * right = argument name chips (at most 3 plus `+N`). The whole card is clickable into the details.
  */
 export const SavedWorkflowCard = memo(function SavedWorkflowCard({
   entry,
@@ -171,7 +178,7 @@ export const SavedWorkflowCard = memo(function SavedWorkflowCard({
         </div>
       </div>
 
-      {/* 卡面动作与整卡点击分层：按钮 stopPropagation，键盘上也不会把 Enter 冒泡成「打开详情」。 */}
+      {/* The in-card actions are layered above the whole-card click: buttons stopPropagation, so Enter on the keyboard does not bubble into "open details" either. */}
       <div
         className="absolute right-3 top-3 flex items-center gap-1"
         onClick={(event) => event.stopPropagation()}

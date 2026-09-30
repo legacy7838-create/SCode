@@ -1,6 +1,6 @@
 export const IAB_INPUT_TARGET_TOKEN_PROPERTY = "__zcodeIabInputTargetToken";
 
-/** 页面虚拟粘贴；此函数源码在目标 page execution context 内执行。 */
+/** In-page virtual paste; this function's source executes inside the target page execution context. */
 export const VIRTUAL_PASTE_PAGE_FUNCTION = `async (options) => {
   const asElement = (candidate) => {
     if (candidate == null || typeof candidate !== "object" || !("ownerDocument" in candidate))

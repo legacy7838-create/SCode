@@ -1,35 +1,35 @@
 // ============================================================
-// run 级座位闸门：把本 run 自己的并发上界压到**下一次模型请求**上
+// Run-level seat gate: press this run's own concurrency upper bound to the **next model request**
 // ============================================================
-// 调度器是第一个执行点，但它只在
-// 派发时看上界，而一个 ask 是子代理的一整轮、动辄数分钟——对一个已有八个在飞 ask 的 run 说
-// 「最多两个」，光靠调度器要等六个 ask 自己跑完才看得见。本闸门是第二个执行点：超出上界的子代理
-// 跑完手上这次请求之后**在下一个 turn step 前停住**，会话、转录与它在 run 里的位置一个不丢。
+// The scheduler is the first execution point, but it is only
+// Look at the upper bound when dispatching, and an ask is a whole round of sub-agents, which can take several minutes at any time - for a run that already has eight questions flying.
+// "Two at most", the scheduler alone has to wait for six ask to run before it can be seen. This gate is the second execution point: the subagent beyond the upper bound
+// After running the request at hand, stop before the next turn step, and the session, transcription, and its position in the run will not be lost.
 //
-// 三条纪律：
-//   1. **纯的**：不读时钟、不做 I/O、不订阅任何东西。两件事实（谁有在飞 ask、谁有工具在跑）都由
-//      driver 既有的观察面喂进来（workflow-driver.ts 的 startAsk / emit，
-//      workflow-driver-tool-activity.ts 的在飞计数），闸门自己不再记第二份账。
-//   2. **与调度器零共享状态**，两者也从不互相调用。让它们一致的是算术：`activeAsks = working +
-//      parked`——停驻的子代理那个 ask 仍然活着，仍然算在调度器的上界里。于是只要有人停驻，
-//      `activeAsks ≥ limit`，调度器就派发不出新 ask，绝不可能插到一个停驻者前面。
-//   3. **上界 ≥ 1 ⇒ 永不死锁**：停驻的前提是「工作中的人数已经超过上界」，所以总有人在工作；
-//      FIFO 不空时最后一个座位不可能是空的。
+// Three disciplines:
+//   1. **Pure**: No clock reading, no I/O, no subscription to anything. Both facts (who has the flying ask and who has the tool running) are determined by
+//      The existing observation surface of the driver is fed in (startAsk/emit of workflow-driver.ts,
+//      workflow-driver-tool-activity.ts (counting on the fly), the gate itself will no longer keep a second account.
+//   2. **Zero shared state** with the scheduler, and the two never call each other. What makes them consistent is arithmetic: `activeAsks = working +
+//      parked`——The parked subagent ask is still alive and is still counted in the upper bound of the scheduler. So as long as someone stops,
+//      If `activeAsks ≥ limit`, the scheduler will not be able to dispatch new ask, and it will never be inserted in front of a parker.
+//   3. **Upper bound ≥ 1 ⇒ Never deadlock**: The premise of stopping is that "the number of people working has exceeded the upper bound", so there is always someone working;
+//      The last seat cannot be empty when the FIFO is not empty.
 //
-// 工具侧的请求**永不**停驻：那个子代理本就在
-// 工作、本就占着座位，让它的 WebSearch 排在自己后面就是排给自己看。准入调用上只有 `{model}`，
-// 分不出是什么请求，所以闸门读 driver 已经为这个子代理记着的那条事实——它此刻有没有工具在跑。
+// Tool-side requests **never** stop: that subagent is already there
+// For work, you are occupying your seat. If you let WebSearch rank it behind you, you will be queuing for yourself. There is only `{model}` on the admission call,
+// It can't tell what the request is, so the gate reads the fact that the driver has remembered for this subagent - whether it has any tools running at the moment.
 
 import type { ModelRequestAdmission } from "@zcode/contracts";
 import { refToString, type InstanceRef } from "@zcode/dynamic-workflow";
 
-/** 闸门向 driver 要的唯一一条子代理事实（实现在 workflow-driver-tool-activity.ts）。 */
+/** The only piece of subagent fact the gate asks the driver for (implemented in workflow-driver-tool-activity.ts). */
 export interface SeatGateSubagent {
-  /** 此刻有几个工具调用在跑；> 0 即这次请求是工具侧的，直接放行。 */
+  /** How many tool calls are running right now; > 0 means this request is on the tool side and is let through directly. */
   toolsInFlight(): number;
 }
 
-/** 闸门此刻的两个计数（观察面：`activeAsks = working + parked` 的断言读它）。 */
+/** The gate's two counts right now (the observation surface: the `activeAsks = working + parked` assertion reads it). */
 export interface SeatGateStats {
   limit: number;
   working: number;
@@ -38,18 +38,18 @@ export interface SeatGateStats {
 
 export interface WorkflowRunSeatGate {
   /**
-   * 换上界。抬高之后立刻按 FIFO 放行到新上界为止；压低不召回任何人——超出的那些跑完手上这次
-   * 请求、在下一个 turn step 上自己停驻。
+   * Replaces the ceiling. After raising it, admission immediately proceeds in FIFO order up to the new ceiling; lowering it recalls nobody -- the ones over the limit finish
+   * the request they are holding and park themselves at the next turn step.
    */
   setLimit(limit: number): void;
-  /** 一个 ask 派发到了这个子代理（driver.startAsk 的同一刻）。 */
+  /** An ask was dispatched to this subagent (the very moment of driver.startAsk). */
   askStarted(key: string, instance: InstanceRef): void;
-  /** 引擎为这个实例记下了 `node-settled`（ask 的**唯一**终点，见 workflow-driver.ts 的 emit）。 */
+  /** The engine recorded `node-settled` for this instance (the **only** terminal point of an ask, see the emit in workflow-driver.ts). */
   askSettled(instance: InstanceRef): void;
   /**
-   * 把一个子代理的准入端口包成「先过座位、再过治理器」的那一个。`inner` 缺席即这个 runtime
-   * 本就不受闸门约束（没有治理器端口的装配），闸门也不凭空造一个——两条闸门要么一起在，
-   * 要么一起不在。
+   * Wraps one subagent's admission port into the "seat first, then governor" one. `inner` being absent means this runtime
+   * is simply not subject to the gate (an assembly with no governor port), and the gate does not conjure one out of thin air -- either both gates are present,
+   * or neither is.
    */
   wrap(
     key: string,
@@ -59,7 +59,7 @@ export interface WorkflowRunSeatGate {
   stats(): SeatGateStats;
 }
 
-/** FIFO 里的一位：它的键、解开它的两个口，以及撤掉 abort 监听的那一手。 */
+/** One slot in the FIFO: its key, the two openings that release it, and the hand that removes the abort listener. */
 interface ParkedSeat {
   key: string;
   grant: () => void;
@@ -68,16 +68,16 @@ interface ParkedSeat {
 
 export function createWorkflowRunSeatGate(input: { limit: number }): WorkflowRunSeatGate {
   let limit = Math.max(1, Math.floor(input.limit));
-  /** 有在飞 ask 且**没有**停驻的子代理。停驻的那一刻从这里移出去，放行时再加回来。 */
+  /** Subagents with an ask in flight and **no** parked ask. At the moment of parking they are moved out of here, and added back when admitted. */
   const working = new Set<string>();
-  /** 等座位的子代理，先来先走。 */
+  /** Subagents waiting for a seat, first come first served. */
   const parked: ParkedSeat[] = [];
-  /** `refToString(instance)` → 子代理键：ask 的终点只带实例，回不到子代理身上就无从腾座位。 */
+  /** `refToString(instance)` -> the subagent key: the end of an ask only carries the instance, so without mapping it back to the subagent there is no way to free a seat. */
   const instances = new Map<string, string>();
 
   const parkedIndexOf = (key: string): number => parked.findIndex((seat) => seat.key === key);
 
-  /** 还有空位就按 FIFO 放行。放行是「进 working」而不是「发一张票」——座位就是 working 的名额。 */
+  /** While there is room, admit in FIFO order. Admitting means "moving into working", not "handing out a ticket" -- a seat is a working slot. */
   const unpark = (): void => {
     while (working.size < limit && parked.length > 0) {
       const seat = parked.shift()!;
@@ -86,12 +86,12 @@ export function createWorkflowRunSeatGate(input: { limit: number }): WorkflowRun
     }
   };
 
-  /** 这次请求要不要过座位：只有「有在飞 ask 且手上没有工具在跑」的子代理才是一个 turn step。 */
+  /** Whether this request has to go through a seat: only a subagent with an ask in flight and no tool currently running counts as a turn step. */
   const needsSeat = (key: string, subagent: SeatGateSubagent): boolean =>
     working.has(key) && subagent.toolsInFlight() === 0;
 
   const acquireSeat = async (key: string, signal: AbortSignal | undefined): Promise<void> => {
-    // 上界之内：原地通过，不动任何状态。没有 retune 压低过的 run 永远走这一支——快路径一字未变。
+    // Within the upper boundary: Passing in place without moving in any state. Runs that have not been suppressed by retune will always take this route - the fast path has not changed at all.
     if (working.size <= limit) return;
     if (signal?.aborted === true) throw signal.reason;
     working.delete(key);
@@ -100,16 +100,16 @@ export function createWorkflowRunSeatGate(input: { limit: number }): WorkflowRun
         const index = parkedIndexOf(key);
         if (index >= 0) {
           parked.splice(index, 1);
-          // **出队即回到 working**：这个闸门里「不在 parked」只有一种含义，就是在工作。abort 的
-          // 是**这次请求**，不一定是这个 ask——driver 侧的瞬态重驱、流恢复、任何 per-request 信号
-          // 都会在 ask 还活着的时候走到这里。把它留在两个集合之外，它此后每一次 turn 请求都因为
-          // `needsSeat` 为假而无闸通过，而且再也不会被数进 working：上界会悄悄地往上漂。
+          // **Return to working after leaving the queue**: "Not parked" in this gate has only one meaning, which is working. abort
+          // It’s **this request**, not necessarily this ask—transient redrive, stream recovery, or any per-request signal on the driver side
+          // They would all get here while ask is still alive. Leave it outside the two collections, and every turn request thereafter will be due to
+          // `needsSeat` is false and no gate passes, and will never be counted as working: the upper bound will quietly float upward.
           //
-          // 加回去可能让 working 一时超过上界，那是合法的瞬态（与调低上界那一刻同形）：下一个
-          // 提出 turn 请求的人照常停驻，计数随即收敛。abort 之后真的结算时，askSettled 会
-          // `working.delete` 成功并调 unpark，而 unpark 的 `working.size < limit` 守卫挡住了
-          // 「腾出一个它从未占过的座位」——停驻发生时 working ≥ limit，加回来就是 ≥ limit+1，
-          // 删掉之后仍 ≥ limit，于是一个都不放。
+          // Adding it back may cause working to temporarily exceed the upper bound, which is a legal transient (the same as the moment when the upper bound is lowered): Next
+          // The person who requested the turn stops as usual and the count converges. When it is actually settled after abort, askSettled will
+          // `working.delete` succeeds and calls unpark, but the `working.size < limit` guard of unpark blocks it.
+          // "Vacate a seat it has never occupied" - when parking occurs, working ≥ limit, and adding it back is ≥ limit+1,
+          // After deleting it, it is still ≥ limit, so none of them are released.
           working.add(key);
         }
         reject(signal?.reason);
@@ -138,8 +138,8 @@ export function createWorkflowRunSeatGate(input: { limit: number }): WorkflowRun
 
     askStarted: (key, instance) => {
       instances.set(refToString(instance), key);
-      // 停驻中的子代理不可能收到新 ask（它的 turn 正卡在 acquire 里，引擎那边 actor.current 还占着），
-      // 但两个集合同时收下同一个键会把它数成两个人——宁可在这里挡一次。
+      // A parked subagent cannot receive a new ask (its turn is stuck in acquire, and actor.current is still occupied by the engine).
+      // But two sets accepting the same key at the same time will count it as two people - it's better to block here once.
       if (parkedIndexOf(key) >= 0) return;
       working.add(key);
     },
@@ -151,10 +151,10 @@ export function createWorkflowRunSeatGate(input: { limit: number }): WorkflowRun
       instances.delete(ref);
       const parkedIndex = parkedIndexOf(key);
       if (parkedIndex >= 0) {
-        // 停驻中 ask 结束：**不腾座位**（它本就没有），否则这一位会被数两次。
-        // 只可能是引擎主动取消（停驻中的 turn 卡在 acquire 里，报不出任何 turn 终局），而那条路
-        // 先调 driver.cancelAsk（abort 会拒掉上面的等待）再记 node-settled，所以正常次序下这里
-        // 已经找不到它了。反序到达时把等待一并拒掉，免得一个没人要的 ask 之后还被放行。
+        // Stopped ask ends: **No seat** (it doesn't have one), otherwise the seat will be counted twice.
+        // It can only be that the engine cancels it voluntarily (the parked turn is stuck in acquire, and no turn ending can be reported), and that path
+        // First call driver.cancelAsk (abort will reject the above wait) and then remember node-settled, so go here in the normal order.
+        // It can no longer be found. When arriving in reverse order, reject the waiting list altogether to prevent an unasked ask from being released later.
         const [seat] = parked.splice(parkedIndex, 1);
         seat?.refuse(new Error("workflow ask settled while waiting for a concurrency seat"));
         return;
@@ -166,14 +166,14 @@ export function createWorkflowRunSeatGate(input: { limit: number }): WorkflowRun
     wrap: (key, subagent, inner) => {
       if (inner === undefined) return undefined;
       return {
-        // 快路径：这次请求要过座位、而座位已经满了 ⇒ 未命中。runner 因此发 `model_request_queued`，
-        // driver 报 `askWaiting(slot)`——与共享 cap 造成的等待逐字相同的那一条，不需要新词汇。
+        // Fast path: This request requires a seat, but the seat is full ⇒ Missed. The runner therefore issues `model_request_queued`,
+        // The driver reports `askWaiting(slot)` - the one that is literally the same as the wait caused by the shared cap, no new vocabulary is needed.
         tryAcquire: (request) => {
           if (needsSeat(key, subagent) && working.size > limit) return undefined;
           return inner.tryAcquire?.(request);
         },
-        // 顺序是载荷性的：**先**等座位，**再**过治理器。反过来就会让一个本该停驻的子代理先占住
-        // 治理器的一张票，再在闸门这边睡——那张票对谁都没有用。
+        // The order is load-based: first wait for the seat, and then pass the manager. In turn, a subagent that should be parked will be occupied first.
+        // A ticket from the manager, and then sleeping on this side of the gate - that ticket is of no use to anyone.
         acquire: async (request) => {
           if (needsSeat(key, subagent)) await acquireSeat(key, request.signal);
           return await inner.acquire(request);

@@ -145,14 +145,14 @@ class CodingPlanQuotaResetPollingCoordinator {
     const pollingWasRunning = this.running !== null;
     if (this.subscribers.size === 1) {
       this.start();
-      // HoverCard 可能在上一个入口的异步刷新尚未结束时卸载后重挂载。此时 run()
-      // 会复用旧 Promise，但旧回调列表没有新入口；单独投影一次才能避免它空白等待下一轮轮询。
+      // HoverCard may be unmounted and remounted before the asynchronous refresh of the previous entry has ended. At this time run()
+      // The old Promise will be reused, but there will be no new entry in the old callback list; projecting it once alone will prevent it from being empty waiting for the next round of polling.
       if (pollingWasRunning && document.visibilityState !== "hidden") {
         void this.refreshSubscriber(refresh);
       }
     } else if (document.visibilityState !== "hidden") {
-      // 后挂载入口需要立即把共享快照投影到自己的 sourceKey。底层请求会命中同 scope
-      // 的 in-flight/cache/opportunity 冷却，因此不会因为 HoverCard 打开而放大网络请求。
+      // The post-mount entry needs to immediately project the shared snapshot to its own sourceKey. The underlying request will hit the same scope
+      // The in-flight/cache/opportunity is cooled down so network requests are not amplified because the HoverCard is open.
       void this.refreshSubscriber(refresh);
     }
 
@@ -205,8 +205,8 @@ class CodingPlanQuotaResetPollingCoordinator {
       document.removeEventListener("visibilitychange", this.handleVisibilityChange);
       this.listening = false;
     }
-    // HoverCard 关闭会短暂没有订阅者。只停止计时器、不删除 Coordinator，
-    // 才能在重新打开后继续复用 opportunity 的 next_try_at，避免再次立即请求。
+    // HoverCard will be temporarily without subscribers when it is closed. Only stops the timer, does not delete the coordinator,
+    // Only then can we continue to reuse the opportunity's next_try_at after reopening to avoid immediate requests again.
     logger.debug("[coding-plan-reset] coordinator stopped", {
       coordinatorKey: this.key,
     });
@@ -239,8 +239,8 @@ class CodingPlanQuotaResetPollingCoordinator {
       coordinatorKey: this.key,
       subscriberCount: refreshCallbacks.length,
     });
-    // 一个 Coordinator tick 同时通知所有 source 做状态投影；底层 status/opportunity 仍通过
-    // shared in-flight 与调度器只发一组网络请求，避免不同 sourceKey 的入口拿不到共享结果。
+    // A Coordinator tick notifies all sources to do status projection at the same time; the underlying status/opportunity still passes
+    // shared in-flight and the scheduler only send a set of network requests to prevent entries with different sourceKeys from not getting shared results.
     const request = Promise.allSettled(
       refreshCallbacks.map((refresh) => Promise.resolve().then(refresh)),
     )
@@ -324,8 +324,8 @@ export function requestCodingPlanResetOpportunityWhenDue(
       schedule.nextCheckAt =
         Date.now() +
         (transient ? OPPORTUNITY_TRANSIENT_ERROR_RETRY_MS : OPPORTUNITY_STABLE_ERROR_COOLDOWN_MS);
-      // 鉴权、业务拒绝和协议错误不能当成瞬时依赖错误，否则每个轮询周期都会空转一次并刷 warn。
-      // 只有 2007、网络中断和超时复用原幂等 key 在五分钟后重试；429 与稳定错误冷却后开启新判断。
+      // Authentication, service rejection and protocol errors cannot be regarded as transient dependency errors, otherwise each polling cycle will idle once and warn will be flushed.
+      // Only 2007, network interruption and timeout reuse the original idempotent key and retry after five minutes; 429 and stable error start a new judgment after cooling down.
       schedule.retryIdempotencyKey = transient ? idempotencyKey : null;
       throw error;
     })

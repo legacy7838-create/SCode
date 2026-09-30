@@ -53,14 +53,15 @@ export interface ToolArtifactReadResult {
 }
 
 /**
- * 二进制读回：**原始字节**，不经任何文本 / base64 编码。
+ * Binary read-back: **raw bytes**, with no text / base64 encoding anywhere.
  *
- * {@link ToolArtifactStorePort.readToolResultArtifact}
- * 把「按文件名再推一次 contentType → 文本走 utf8、其余走 base64」当作写入编码的逆运算，而
- * 推断表只认 txt/md/png/jpg/gif/webp/pdf/bin，`.xlsx` / `.docx` / `.pptx` 落到默认的
- * `application/json` 被当作 utf8 解码——办公文件读回即损坏且不可恢复。字节的消费者
- * （v4 分块查询、查看器）需要的是字节本身，编码是给模型面文本用的；两件事分开两个方法。
- * `contentType` 仍按文件名推断，仅供缺少更好来源的调用方兜底（dwf 用 journal 记录的那份）。
+ * {@link ToolArtifactStorePort.readToolResultArtifact} treats "infer the contentType once more from the filename → utf8 for
+ * text, base64 for everything else" as the inverse of the write encoding, while the inference table only recognizes
+ * txt/md/png/jpg/gif/webp/pdf/bin, so `.xlsx` / `.docx` / `.pptx` fall through to the default
+ * `application/json` and get decoded as utf8 — an office file read back that way is corrupted and unrecoverable. The consumers
+ * of bytes (the v4 chunked query, the viewer) need the bytes themselves; encoding exists for the model-facing text. Two things,
+ * two methods. `contentType` is still inferred from the filename, purely as a fallback for callers that have no better
+ * source (dwf uses the one recorded in the journal).
  */
 export interface ToolBinaryArtifactReadResult {
   uri: string;
@@ -117,9 +118,10 @@ export interface ToolArtifactStorePort {
     options?: { signal?: AbortSignal },
   ): Promise<ToolArtifactReadResult>;
   /**
-   * 原始字节读回（见 {@link ToolBinaryArtifactReadResult}）。可选：与
-   * {@link writeToolResultBinaryArtifact} 同规，不带二进制能力的 store 实现不必陪跑；
-   * 消费方 `typeof` 探测，缺席即「本 store 不能提供字节」——不得退回文本读再解码。
+   * Raw byte read-back (see {@link ToolBinaryArtifactReadResult}). Optional: following the same rule as
+   * {@link writeToolResultBinaryArtifact}, a store implementation without binary capability does not have to come along;
+   * consumers probe with `typeof`, and its absence means "this store cannot provide bytes" — falling back to a text read
+   * and decoding is not allowed.
    */
   readToolResultBinaryArtifact?(
     request: ToolArtifactReadRequest,

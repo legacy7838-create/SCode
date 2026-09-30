@@ -1,4 +1,6 @@
-/* eslint-disable max-lines -- workspace 行同时承载折叠、远端状态和快捷操作，先保持同文件收口。 */
+/* eslint-disable max-lines -- the workspace row also carries collapsing, remote status, and quick
+ * actions, so it stays consolidated in one file for now.
+ */
 import {
   memo,
   useCallback,
@@ -92,8 +94,8 @@ import { toast } from "@/components/ui/toast.js";
 
 export type SortableBindings = Pick<ReturnType<typeof useSortable>, "attributes" | "listeners">;
 
-// workspace 行在流式工具事件期间会因父级刷新而重渲染；
-// TaskList 如果每次收到新的空数组，会把等价数据误判成变化并连带刷新任务行。
+// Workspace rows are re-rendered during streaming tool events due to parent refresh;
+// If TaskList receives a new empty array every time, it will misjudge the equivalent data as a change and refresh the task row together.
 const EMPTY_PINNED_TASKS: ZCodeTaskMeta[] = [];
 
 function isHomeWorkspacePath(path: string): boolean {
@@ -168,7 +170,10 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
   taskListLoading: boolean;
   taskListHasMore: boolean;
   taskListHasUnread?: boolean;
-  /** 组内在跑的工作流 run 数；项目收起时在未读点旁画脉冲灯（>1 带数量）。 */
+  /**
+   * Number of workflow runs in flight in the group; when the project is collapsed, a pulse lamp is
+   * drawn next to the unread dot (with a count when >1).
+   */
   taskListLiveWorkflowCount?: number;
   onShowMoreTasks: () => void;
   reconnectingRemoteWorkspaceKeys: string[];
@@ -213,9 +218,9 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
   const workspaceZCodeStateRef = useRef(workspaceZCodeState);
   workspaceZCodeStateRef.current = workspaceZCodeState;
   const findCurrentTaskItem = useCallback((taskId: string) => {
-    // 流式刷新会重建 taskItems 数组，任务操作回调如果直接依赖数组，
-    // 即使任务语义没变也会换引用，继续击穿 TaskListItem 的 memo。
-    // 用 ref 在调用时读取最新列表，既保持回调稳定，也避免乐观更新拿到过期 meta。
+    // Streaming refresh will rebuild the taskItems array. If the task operation callback directly relies on the array,
+    // Even if the task semantics have not changed, the reference will be changed, continuing to break down the memo of TaskListItem.
+    // Use ref to read the latest list when calling, which not only keeps the callback stable, but also prevents optimistic updates from getting expired meta.
     return taskItemsRef.current.find((task) => task.taskId === taskId) ?? null;
   }, []);
   const isHomeWorkspace = isHomeWorkspacePath(tab.workspacePath);
@@ -237,9 +242,9 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
   const reconnectRuntimeLogs =
     reconnectingRemoteWorkspaceLogsByWorkspaceKey[remoteWorkspaceKey] ?? [];
   const showRemoteConnectionErrorNotice = Boolean(
-    // 远程项目只要处于“断连”就显示叹号，会把“尚未连接/已断开但无错误”和“真实连接失败”混在一起，
-    // 用户看到列表里的 warning 图标时无法判断是否真有故障。
-    // 这里收敛成只有存在连接错误正文时才显示叹号，普通未连接状态仅保留重连入口。
+    // As long as the remote project is "disconnected", an exclamation mark will be displayed, which will mix "not yet connected/disconnected but no errors" and "real connection failed".
+    // When users see the warning icon in the list, they cannot determine whether there is a real fault.
+    // Here it converges to the point where the exclamation mark is displayed only when there is a connection error text, and only the reconnection entry is retained in the normal unconnected state.
     isDisconnectedRemoteWorkspace && !isReconnectPending && remoteWorkspaceError?.trim(),
   );
   const showReconnectAction = Boolean(isDisconnectedRemoteWorkspace);
@@ -250,10 +255,10 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
     clientMode: "desktop-continuous" as const,
     hasLocalSourceService: Boolean(baseServices.skillSyncService),
   });
-  // 远端工作区在“重连中”时，之前只有轻微背景呼吸效果，
-  // 在侧边栏高密度列表里不够醒目，用户很难快速判断哪个容器仍在连接。
-  // 这里复用 BorderBeam，只在重连进行中激活，让连接态反馈更清晰，
-  // 同时避免在普通空闲态或断连态误显示为“仍在运行”。
+  // When the remote workspace is "reconnecting", there was only a slight background breathing effect before.
+  // It is not eye-catching enough in the high-density list in the sidebar, making it difficult for users to quickly determine which container is still connected.
+  // BorderBeam is reused here and is only activated during reconnection to make the connection status feedback clearer.
+  // At the same time, avoid being mistakenly displayed as "still running" in normal idle state or disconnected state.
   const shouldShowRemoteConnectingBorderBeam = isReconnectPending;
   const [isRemoteErrorCopied, setIsRemoteErrorCopied] = useState(false);
   const [remoteSkillSyncOpen, setRemoteSkillSyncOpen] = useState(false);
@@ -269,8 +274,8 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
       window.matchMedia("(hover: none)").matches,
   );
   const shouldMountWorkspaceRowActions =
-    // workspace action 以前常驻 DOM，仅靠 opacity 隐藏；相邻 tooltip 会在
-    // 浮层定位完成前误认隐藏 trigger，短暂显示到错误位置。改为交互时挂载，菜单打开时保活。
+    // The workspace action used to reside in the DOM and was hidden only by opacity; the adjacent tooltip would be in the
+    // Before the floating layer positioning is completed, the hidden trigger is mistakenly recognized and temporarily displayed in the wrong position. Changed to mount during interaction and keep alive when menu is opened.
     workspaceRowHovered || workspaceRowFocusWithin || workspaceActionMenuOpen || isHoverNone;
   const remoteErrorCopyResetRef = useRef<number | null>(null);
 
@@ -288,15 +293,15 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
         return;
       }
 
-      // workspace 草稿导航本身会把 workspace 标记为展开。
-      // 之前在 Collapsible 的 onOpenChange 里无论展开/收起都先激活 workspace，
-      // 收起后的下一次点击会先被激活路径展开，再被 toggleWorkspaceExpanded 反向切回收起，
-      // 表现出来就是"收起后再也打不开"。
-      // 这里把职责拆开：展开时只走草稿导航；收起时只做 toggle，避免两条状态更新互相抵消。
+      // Workspace draft navigation itself marks the workspace as expanded.
+      // Previously, in Collapsible's onOpenChange, the workspace was activated first regardless of whether it was expanded or collapsed.
+      // The next click after collapsing will first be expanded by the activated path, and then reversely switched back and recovered by toggleWorkspaceExpanded.
+      // The expression is "cannot be opened again after being put away".
+      // Here we split the responsibilities: only do draft navigation when expanding; only do toggle when collapsing, to prevent the two status updates from canceling each other out.
       if (nextOpen) {
         if (!isExpanded) {
-          // workspace 行表达“打开这个 workspace”，不是恢复它上次选中的 session。
-          // 统一走上层草稿导航事务，让 workspace identity、group/pane 清理和 draft 聚焦一起收口。
+          // The workspace line means "open this workspace", not restore its last selected session.
+          // Unify the upper-level draft navigation affairs and let workspace identity, group/pane cleanup and draft focus be closed together.
           onStartDraftInWorkspace(tab.workspacePath, tab.workspaceIdentity);
         }
       } else if (isExpanded) {
@@ -315,8 +320,8 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
 
   const handleSelectTask = useCallback(
     (taskId: string) => {
-      // 性能优化：上层 handleSelectTask 已经会按 workspacePath 激活 tab。
-      // 这里重复 activate 会额外触发一轮 tab store 更新，把整列 workspace 行都带着重渲染一次。
+      // Performance optimization: The upper handleSelectTask already activates tabs according to workspacePath.
+      // Repeating activate here will trigger an additional round of tab store updates, re-rendering the entire column of workspace rows.
       onSelectTask(tab.workspacePath, taskId, tab.workspaceIdentity);
     },
     [onSelectTask, tab.workspaceIdentity, tab.workspacePath],
@@ -328,9 +333,9 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
   }, []);
 
   const handleActionMenuClick = useCallback((event: MouseEvent<HTMLElement>) => {
-    // DropdownMenuContent 虽然通过 Portal 渲染到行外，React 合成 click 仍会沿组件树
-    // 冒泡到外层 CollapsibleTrigger。收起的 workspace 点“移除”时，会先 closeTab，再被展开回调
-    // 当成“打开 workspace”重新 addTab，表现为删不掉。菜单层统一截断 click，保留菜单选择与键盘语义。
+    // DropdownMenuContent Although rendered out-of-line via Portal, React synthesized clicks still follow the component tree
+    // Bubbles to the outer CollapsibleTrigger. When the collapsed workspace clicks "Remove", it will closeTab first, and then be called back when expanded.
+    // Re-addTab as "open workspace", but it appears that it cannot be deleted. The menu layer uniformly truncates clicks, retaining menu selection and keyboard semantics.
     event.stopPropagation();
   }, []);
 
@@ -348,7 +353,7 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
 
   const handleRemoveWorkspace = useCallback(async () => {
     const workspaceKey = tab.workspaceIdentity?.trim() || tab.workspacePath;
-    logger.debug("[WorkspaceSidebarItem] 移除 workspace", {
+    logger.debug("[WorkspaceSidebarItem] removing workspace", {
       isExpanded,
       workspaceKey,
     });
@@ -369,7 +374,9 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
         confirmVariant: "destructive",
       });
       if (!confirmed) {
-        logger.debug("[WorkspaceSidebarItem] 用户取消移除运行中 workspace", { workspaceKey });
+        logger.debug("[WorkspaceSidebarItem] user cancelled removing running workspace", {
+          workspaceKey,
+        });
         return;
       }
     }
@@ -382,8 +389,8 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
       },
       zcodeTaskService,
     });
-    // 移除 workspace 只是移除入口和连接历史，不代表用户要隐藏历史任务：
-    // 这里只失效缓存，保留 sqlite 任务索引原状态，避免重连同一 SSH workspace 后任务像“丢了”。
+    // Removing the workspace only removes the entry and connection history, it does not mean that the user needs to hide historical tasks:
+    // Here we only invalidate the cache and retain the original state of the sqlite task index to avoid the task being "lost" after reconnecting to the same SSH workspace.
     invalidateTaskQueryCacheByScopes([
       {
         workspacePath: tab.workspacePath,
@@ -407,8 +414,8 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
           );
         })
         .catch((error: unknown) => {
-          // Windows 保留设备名扫描只是移除后的兼容风险提示，失败不能影响 workspace 生命周期释放。
-          logger.debug("[WorkspaceSidebarItem] Windows 保留名风险扫描失败", {
+          // Windows reserved device name scanning is only a compatibility risk reminder after removal, and failure cannot affect the release of the workspace life cycle.
+          logger.debug("[WorkspaceSidebarItem] windows reserved name risk scan failed", {
             workspaceKey,
             error,
           });
@@ -471,8 +478,8 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
     ],
   );
 
-  // 这些 TaskList 操作以前在 JSX 中每次 render 都创建新闭包。
-  // 流式事件刷新 workspace 行时，即使任务数据没变，也会穿透 TaskList/TaskListItem 的 memo。
+  // These TaskList operations previously created new closures every render in JSX.
+  // When the streaming event refreshes the workspace row, even if the task data does not change, it will penetrate the memo of TaskList/TaskListItem.
   const handleRenameTask = useCallback(
     async (taskId: string, title: string) => {
       if (readOnlyReason) {
@@ -543,8 +550,8 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
       }
       const previousTask = findCurrentTaskItem(taskId);
       if (previousTask) {
-        // workspace 内 pin 以前等远端/本地 RPC 返回后才更新全局 pinned 缓存，
-        // pin 区会先消失再补回来。这里先乐观同步列表成员关系，失败时回滚。
+        // Pins in the workspace used to wait for the remote/local RPC to return before updating the global pinned cache.
+        // The pin area will disappear and then be restored. Here we first synchronize the list membership optimistically and roll back when it fails.
         if (tab.workspaceIdentity && pinned) {
           useRemotePinnedTaskStore.getState().upsertTask(previousTask);
           useRemoteTimelineTaskStore
@@ -716,9 +723,9 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
     });
   }, [remoteWorkspaceError]);
   const renderWorkspaceIcon = () => {
-    // workspace 行之前在 hover/展开时会把目录图标切成箭头，
-    // 视觉上会多出一层“树形展开控件”的暗示；当前交互只需要保留项目图标本身，
-    // 这样能减少噪音，也避免用户把它理解成独立的箭头开关。
+    // The workspace line previously cut the directory icon into an arrow when hovering/expanding it.
+    // There will be an extra layer of visual hints of "tree expansion control"; the current interaction only needs to retain the item icon itself,
+    // This reduces noise and prevents users from interpreting it as a separate arrow switch.
     if (isExpanded && !isDisconnectedRemoteWorkspace) {
       return isRemoteWorkspace ? (
         <Cloud className="h-4 w-4 text-foreground-subtle" />
@@ -754,8 +761,8 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
         />
       ) : null}
       {!isExpanded && taskListLiveWorkflowCount > 0 ? (
-        // 工作流运行行的组头汇总：
-        // 只汇总在跑的 run；已结束未确认的行不上卷。
+        // Summary of group headers for workflow run lines:
+        // Only running runs are summarized; completed and unconfirmed lines are not rolled up.
         <span
           data-workspace-workflow-indicator="true"
           data-count={String(taskListLiveWorkflowCount)}
@@ -806,7 +813,7 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
                 : isDisconnectedRemoteWorkspace
                   ? "bg-warning/8"
                   : null,
-              // "sticky top-0 z-10", // TODO: 拖拽时让 workspace 项悬浮 不要抹掉
+              // "sticky top-0 z-10", // TODO: Make workspace items float when dragging and don't erase them
               isDragging && "bg-selected shadow-xl",
             )}
           >
@@ -818,12 +825,14 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
                 className={cn(
                   buttonVariants({ variant: "ghost", size: "default" }),
                   /*
-                   * CollapsibleTrigger 会自动注入 aria-expanded。
-                   * 这里复用了 ghost button 变体后，会命中全局 aria-expanded:bg-surface-hover
-                   * 导致 workspace 项一展开就像"被选中"一样出现背景色。
-                   * 局部把 aria-expanded 样式覆盖掉，只保留 hover，避免误导激活态。
-                   * 断连的 remote workspace 不能展开任务列表，因此这里也要禁掉 hover 展开态提示，
-                   * 避免用户看到“可展开”的反馈却点不开，只保留 warning 背景提示当前需要先重连。
+                   * CollapsibleTrigger automatically injects aria-expanded. After reusing the ghost
+                   * button variant here, it matches the global aria-expanded:bg-surface-hover, so
+                   * the workspace item grows a background as soon as it expands, as if it were
+                   * “selected”. The aria-expanded styling is overridden locally and only hover is
+                   * kept, so the active state is not misleading. A disconnected remote workspace
+                   * cannot expand the task list, so the hover expand-state hint is disabled here
+                   * too — otherwise users see an “expandable” affordance they cannot act on; only
+                   * the warning background is kept, indicating that a reconnect is required first.
                    */
                   "flex h-8 min-w-0 flex-1 justify-start gap-2 rounded-lg pl-2.5 pr-1 text-left text-foreground aria-expanded:bg-transparent aria-expanded:text-foreground",
                   "hover:bg-surface-hover hover:text-foreground",
@@ -951,10 +960,12 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
                     ) : null}
                     {shouldMountWorkspaceRowActions && showFileTreeAction ? (
                       <span className="shrink-0">
-                        {/* Project 文件树入口以前单独覆盖 hover:bg-surface-hover，
-                            与 Pinned / Grouped 的 bg-hover 不一致；三种入口统一复用同一 action。 */}
+                        {/* The Project file tree entry used to override hover:bg-surface-hover on its own,
+                            which was inconsistent with the bg-hover of Pinned / Grouped; all three
+                            entries now reuse the same action.
+                            */}
                         <TaskRowActionButton
-                          // 该按钮默认继承 ghost 的主前景色，导致同组的三个图标明暗不一致。
+                          // This button inherits the main foreground color of ghost by default, causing the three icons in the same group to be inconsistent in light and shade.
                           className="text-foreground-subtle hover:text-foreground"
                           label={intl.formatMessage({
                             id: "workspaceSidebar.showFileTree",
@@ -989,10 +1000,13 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
                               className="w-72 max-w-72 items-center gap-2 p-2.5"
                             >
                               {/*
-                               * 远端连接失败 tooltip 之前拆成“标题 + 内层卡片”两段结构，
-                               * 在 sidebar 这种高密度区域里会显得层级过多，像一个迷你弹窗，不够轻。
-                               * 这里收敛回普通 tooltip 语义：一层浮层里直接放错误正文和复制按钮，
-                               * 保留可读性与复制能力，同时避免视觉上过度设计。
+                               * The remote connection failure tooltip used to be split into a
+                               * “title + inner card” two-part structure, which reads as too many
+                               * levels in a dense area like the sidebar — like a mini dialog, not
+                               * light enough. It is consolidated back into plain tooltip semantics
+                               * here: one floating layer holding the error text and the copy button
+                               * directly, keeping it readable and copyable while avoiding visual
+                               * over-engineering.
                                */}
                               <pre className="max-h-32 min-w-0 flex-1 overflow-auto text-ui-sm/relaxed whitespace-pre-wrap break-words font-mono text-tooltip-foreground">
                                 {remoteWorkspaceError}
@@ -1047,9 +1061,12 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
                     {showReconnectAction ? (
                       isReconnectPending ? (
                         <ReconnectingRemoteWorkspaceLogTooltip logs={reconnectRuntimeLogs}>
-                          {/* SSH workspace 重连中时，右侧原本只有 spinning 图标，
-                              用户无法在聊天页任务列表里确认连接卡在哪一步。这里复用 SSH dialog 的连接日志 tooltip，
-                              保持行内布局稳定，同时把诊断信息放到 hover 浮层里。 */}
+                          {/* While an SSH workspace is reconnecting, the right side used to only show a spinning icon,
+                              so users could not tell which step the connection was stuck at in the
+                              chat page's task list. The SSH dialog's connection log tooltip is
+                              reused here, which keeps the inline layout stable while moving the
+                              diagnostic information into a hover popover.
+                              */}
                           <div
                             role="status"
                             className={cn(

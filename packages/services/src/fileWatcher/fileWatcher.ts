@@ -4,19 +4,20 @@ import { ServiceChannels } from "@zcode/shared";
 import { createServiceDescriptor } from "../descriptors.js";
 
 /**
- * 文件系统监视服务
+ * File system watching service
  *
- * 按路径粒度管理 watcher 实例。UI 展开目录时调用非递归 watch()，
- * Git 这类工作区级状态可调用递归 watch()。事件通过 onDynamicChange 以 RPC event 流式传输。
+ * Manages watcher instances per path. The UI calls the non-recursive watch() when expanding a
+ * directory, while workspace-level state such as Git can call the recursive watch(). Events are
+ * streamed over RPC via onDynamicChange.
  */
 export interface IFileWatcherService {
-  /** 开始监视路径。返回 watcherId，用于 unwatch 和事件订阅 */
+  /** Starts watching a path. Returns a watcherId used for unwatch and event subscription */
   watch(params: { path: string; recursive?: boolean }): Promise<{ id: string }>;
-  /** 停止监视。释放 watcher 和相关资源 */
+  /** Stops watching. Releases the watcher and related resources */
   unwatch(params: { id: string }): Promise<void>;
-  /** 停止全部监视。host 退出清理时用于统一释放底层 fs.watch 句柄 */
+  /** Stops all watches. Used during host exit cleanup to release the underlying fs.watch handles in one go */
   disposeAll(): void;
-  /** 按 watcherId 订阅变更事件（onDynamic* 模式，RPC 自动路由） */
+  /** Subscribes to change events by watcherId (the onDynamic* pattern, routed automatically by RPC) */
   onDynamicChange(id: string): Event<FileWatchEvent>;
 }
 

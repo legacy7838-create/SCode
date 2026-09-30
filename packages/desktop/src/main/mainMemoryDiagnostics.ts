@@ -1,9 +1,10 @@
 import { createMemoryDiagnosticsRegistry, type MemoryDiagnosticsRegistry } from "@zcode/shared";
 
 /**
- * main 进程内存诊断计数器注册表。
- * `index.ts` 在实例化 TaskRealtimeBus / BroadcastHub / BrowserGuestManager 后注册 provider；
- * `desktopResourceTelemetry.ts` 每 60 秒 collect 一次写主日志。
+ * Memory diagnostics counter registry for the main process.
+ * `index.ts` registers the provider after instantiating TaskRealtimeBus / BroadcastHub /
+ * BrowserGuestManager; `desktopResourceTelemetry.ts` collects once every 60 seconds and writes to
+ * the main log.
  */
 export const mainMemoryDiagnosticsRegistry: MemoryDiagnosticsRegistry =
   createMemoryDiagnosticsRegistry();

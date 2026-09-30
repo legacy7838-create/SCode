@@ -1,18 +1,23 @@
 /**
- * html 产物点击的落点判定。
+ * Where a click on an html artifact lands.
  *
- * 一枚 html 产物药丸的意思是「让我看这个页面」，而不是「让我看这个页面的元数据卡，再从卡上
- * 点一次去看页面」。所以凡是**能**直接开内嵌浏览器的场合就直接开，产物 tab 退居兜底。
- * 判据与 `shouldOpenAssistantHtmlInBrowser`（lib/assistantPreviewCards.ts）同源：
+ * An html artifact pill means "let me look at this page", not "let me look at this page's metadata
+ * card and then click once more on the card to see the page". So wherever the embedded browser
+ * **can** be opened directly, open it directly and let the artifact tab fall back to being the
+ * fallback. The criteria come from the same source as `shouldOpenAssistantHtmlInBrowser`
+ * (lib/assistantPreviewCards.ts):
  *
- * - `text/html` 严格相等，与 `WorkflowArtifactBody` 里画 html 卡的那道门同一个判据。
- *   宽到 `text/html; charset=utf-8` 会让「直开」和「卡片上有没有那颗按钮」两处判据分叉。
- * - 没有内嵌浏览器（Web / 手机远控）时 `handleOpenBrowserUrl` 只会 `window.open`，
- *   而 `file://` 在那儿打不开——只能退回产物 tab。
- * - 远程 workspace（SSH / WSL / Docker）与手机远控的 `sourcePath` 在本机不存在，同 `canRevealArtifactInWorkspace`。
+ * - Strict equality with `text/html`, the very same criterion `WorkflowArtifactBody` uses to decide
+ *   whether to draw the html card. Loosening it to `text/html; charset=utf-8` would let "open
+ *   directly" and "does the card have that button" diverge.
+ * - With no embedded browser (Web / phone remote control) `handleOpenBrowserUrl` only does
+ *   `window.open`, and `file://` cannot be opened there — it has to fall back to the artifact tab.
+ * - The `sourcePath` of a remote workspace (SSH / WSL) and of phone remote control does not exist
+ *   on this machine, same as `canRevealArtifactInWorkspace`.
  *
- * `contentType` 缺席（老 CLI、冷恢复、或表面本来就不带摘要）一律退回产物 tab：判不出来就
- * 走原路，绝不猜。
+ * A missing `contentType` (old CLI, cold restore, or a surface that simply carries no summary)
+ * always falls back to the artifact tab: when it cannot be determined, take the original route and
+ * never guess.
  */
 export function shouldOpenWorkflowArtifactInBrowser(params: {
   contentType?: string;

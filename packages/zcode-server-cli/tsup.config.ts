@@ -2,7 +2,7 @@ import { defineConfig } from "tsup";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-// tsup 配置自身会被打包，构建工具需保留原始文件位置，不能被内联后重定位。
+// The tsup config itself is bundled; the build tool must preserve the original file location and must not be inlined and relocated.
 const { loadBuiltinProviderConfig } = await import(
   pathToFileURL(resolve(import.meta.dirname, "../../scripts/builtin-provider-config.mjs")).href
 );

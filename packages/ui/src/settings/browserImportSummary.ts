@@ -51,7 +51,7 @@ export function formatImportSummary(
   ) {
     return formatMessage({ id: "settings.browser.import.partialAppBound" }, values);
   }
-  // Rebase 后的产品语义要求成功态只展示实际导入数量；普通 skipped/failed 详情留在安全日志。
-  // App-Bound 授权/校验失败是用户刚刚显式确认的动作，单独保留部分成功提示，避免误以为 Cookie 已导入。
+  // The product semantics after rebase require that the success status only displays the actual number of imports; ordinary skipped/failed details are left in the security log.
+  // App-Bound authorization/verification failure is an action that the user has just explicitly confirmed. Keep some success prompts separately to avoid mistakenly thinking that the cookie has been imported.
   return formatMessage({ id: "settings.browser.import.success" }, values);
 }

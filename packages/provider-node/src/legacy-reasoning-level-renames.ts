@@ -1,4 +1,4 @@
-// 一次性改名清单：选择器必须精确匹配 Built-in 原规则，不按模型名猜测。
+// One-time rename list: The selector must exactly match the original Built-in rules, and no guessing based on the model name is allowed.
 export const legacyReasoningLevelRenames = [
   {
     modelMatch: ".*glm-5(?:[.\\-:/\\[].*)?",

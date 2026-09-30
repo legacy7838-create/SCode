@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-/** 用户对后续模型执行的完整选择；不表达已经创建的 Active Model。 */
+/** The user's complete selection for subsequent model executions; it does not express an already-created Active Model. */
 export const modelSelectionSchema = z
   .object({
     providerId: z.string().trim().min(1),
@@ -16,7 +16,7 @@ export const modelSelectionSchema = z
 
 export type ModelSelection = z.infer<typeof modelSelectionSchema>;
 
-/** 公共解析结果。页面可以展示不完整选择，执行入口必须同时检查 selectionIssue。 */
+/** Public resolution result. A page may render an incomplete selection, but execution entry points must also check selectionIssue. */
 export interface EffectiveModelSelectionResult {
   readonly effectiveSelection: ModelSelection | null;
   readonly selectionIssue?:
@@ -30,21 +30,21 @@ export interface EffectiveModelSelectionResult {
 
 export const ZCODE_MODEL_REASONING_SEPARATOR = "$";
 
-/** UI Picker/legacy CLI 的展示值；不是可逆的 ModelSelection 序列化格式。 */
+/** Display value for the UI Picker / legacy CLI; not a reversible ModelSelection serialization format. */
 export function formatModelPickerValue(selection: ModelSelection | undefined): string {
-  // 只在显示边界把未绑定表示为空；实际执行仍校验完整 ModelSelection。
+  // Unbound is represented as empty only at the display boundary; actual execution still verifies the complete ModelSelection.
   if (!selection) return "";
   const base = `${selection.providerId}/${selection.modelId}`;
   const reasoningLevel = selection.options?.reasoningLevel;
   return reasoningLevel ? `${base}${ZCODE_MODEL_REASONING_SEPARATOR}${reasoningLevel}` : base;
 }
 
-/** 只解析 Picker/legacy 字符串边界；领域状态与协议必须直接保存 ModelSelection。 */
+/** Only parses the Picker / legacy string boundary; domain state and protocols must store ModelSelection directly. */
 export function parseModelPickerValue(value: string): ModelSelection {
   const normalized = value.trim();
   const providerSeparatorIndex = normalized.indexOf("/");
   if (providerSeparatorIndex <= 0) {
-    throw new Error(`模型选择缺少 Provider: ${normalized}`);
+    throw new Error(`Model selection is missing a Provider: ${normalized}`);
   }
   const providerId = normalized.slice(0, providerSeparatorIndex);
   const rawModelId = normalized.slice(providerSeparatorIndex + 1);

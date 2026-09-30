@@ -11,8 +11,8 @@ export function createRemoteWorkspaceDisconnectedError(): Error & {
 }
 
 export function isRemoteWorkspaceDisconnectedError(error: unknown): boolean {
-  // RPC/Proxy 边界可能保留 Error，也可能只保留 code/message 字段。
-  // 只接受精确错误码，避免用 includes 把真实业务错误误判成初始化等待态。
+  // The RPC/Proxy boundary may hold Error or just the code/message field.
+  // Only accept accurate error codes to avoid using includes to misjudge real business errors into initialization waiting states.
   if (error === REMOTE_WORKSPACE_DISCONNECTED_ERROR_CODE) {
     return true;
   }

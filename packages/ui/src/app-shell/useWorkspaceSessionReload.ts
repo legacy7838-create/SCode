@@ -47,9 +47,11 @@ export function useWorkspaceSessionReload({
 
       const now = Date.now();
       if (shouldDebounceWorkspaceSessionReload(lastReloadSessionTriggeredAtRef.current, now)) {
-        // Header 与错误条都可触发 reload，会出现短时间双击/连点并发重建。
-        // 这里在入口做时间窗防抖，避免并发调用 restartWorkspaceProcess 抢占同一 provider-workspace。
-        logger.info(`[App] 忽略重复 workspace session 重建请求 workspace=${workspaceAbsPath}`);
+        // Both the header and error bar can trigger reload, and a short-term double-click/connect-dot concurrent reconstruction will occur.
+        // Here, time window anti-shaking is performed at the entrance to avoid concurrent calls to restartWorkspaceProcess to preempt the same provider-workspace.
+        logger.info(
+          `[App] ignoring duplicate workspace session rebuild request workspace=${workspaceAbsPath}`,
+        );
         return;
       }
       lastReloadSessionTriggeredAtRef.current = now;
@@ -66,9 +68,9 @@ export function useWorkspaceSessionReload({
         options?.resumeTaskId?.trim() || latestWorkspaceState.activeTaskId || undefined;
       const shouldPrepareWorkspace = !resumeTaskId;
 
-      // Reload session 之前只调用了服务层重建流程，没有同步 workspaceInit 状态到 UI store。
-      // 草稿态下后续准备流程会继续读到旧状态，用户会误判本次重建没有生效。
-      // 这里显式写入 initializing/ready/failed，保证重建状态和会话流程保持一致。
+      // Before the Reload session, only the service layer reconstruction process was called, and the workspaceInit status was not synchronized to the UI store.
+      // In the draft state, the subsequent preparation process will continue to read the old state, and users will misjudge that this reconstruction has not taken effect.
+      // Initializing/ready/failed is explicitly written here to ensure that the reconstruction status is consistent with the session process.
       zcodeSessionStore.setWorkspaceInitState(
         workspaceAbsPath,
         "initializing",
@@ -77,8 +79,8 @@ export function useWorkspaceSessionReload({
       );
       if (shouldPrepareWorkspace) {
         zcodeSessionStore.setConfigOptionsStatus(workspaceAbsPath, "loading", workspaceIdentity);
-        // 草稿态点击 reload 后若不清空旧错误，输入区会继续显示上一轮失败提示，
-        // 用户会误判本次重建仍失败。这里在新一轮重建开始时先清空草稿错误。
+        // If you do not clear the old errors after clicking reload in the draft state, the input area will continue to display the previous round of failure prompts.
+        // Users may misjudge that this reconstruction still fails. Here, the draft errors are cleared at the beginning of a new round of reconstruction.
         zcodeSessionStore.setDraftError(workspaceAbsPath, null, workspaceIdentity);
         zcodeSessionStore.setTaskState(workspaceAbsPath, "idle", null, workspaceIdentity);
       }
@@ -133,7 +135,7 @@ export function useWorkspaceSessionReload({
         zcodeSessionStore.setWorkspaceInitState(workspaceAbsPath, "ready", null, workspaceIdentity);
 
         logger.info(
-          `[App] workspace session 重建完成 workspace=${workspaceAbsPath} provider=${provider} resumeTaskId=${resumeTaskId ?? "<none>"}`,
+          `[App] workspace session rebuild done workspace=${workspaceAbsPath} provider=${provider} resumeTaskId=${resumeTaskId ?? "<none>"}`,
         );
         toast(intl.formatMessage({ id: "appHeader.reloadSessionSuccess" }));
       } catch (error) {
@@ -143,7 +145,7 @@ export function useWorkspaceSessionReload({
         });
         const message = reloadDraftError.message;
         logger.warn(
-          `[App] workspace session 重建失败 workspace=${workspaceAbsPath} provider=${provider}`,
+          `[App] workspace session rebuild failed workspace=${workspaceAbsPath} provider=${provider}`,
           {
             resumeTaskId: resumeTaskId ?? null,
             message,
@@ -157,8 +159,8 @@ export function useWorkspaceSessionReload({
         );
         if (shouldPrepareWorkspace) {
           zcodeSessionStore.setConfigOptionsStatus(workspaceAbsPath, "error", workspaceIdentity);
-          // 草稿态下 reload 前会先清空旧错误；如果失败后不回填 draftError，
-          // 聊天区只剩 toast，用户看不到可重试的详细报错。这里统一回填标准化错误到输入区。
+          // In draft state, old errors will be cleared before reloading; if draftError is not backfilled after failure,
+          // Only toasts are left in the chat area, and users cannot see detailed error reports that can be retried. Here, standardized errors are uniformly backfilled into the input area.
           zcodeSessionStore.setDraftError(workspaceAbsPath, reloadDraftError, workspaceIdentity);
         }
         toast(intl.formatMessage({ id: "appHeader.reloadSessionFailed" }));

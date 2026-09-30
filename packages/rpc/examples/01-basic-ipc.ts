@@ -1,12 +1,12 @@
 /**
- * 示例 1: 基础 IPC —— 通过内存 Queue 演示完整的 RPC 调用
+ * Example 1: Basic IPC - demonstrating a complete RPC call via an in-memory Queue
  *
- * 演示了最核心的流程：
- * 1. 创建内存传输对 (QueueProtocol)
- * 2. 在服务端注册一个 channel
- * 3. 客户端获取 channel 并调用方法 / 监听事件
+ * Demonstrates the core process:
+ * 1. Create a memory transfer pair (QueueProtocol)
+ * 2. Register a channel on the server
+ * 3. The client obtains the channel and calls methods/listens for events
  *
- * 数据流：
+ * Data flow:
  *   client.call('add', [1, 2])
  *       ↓ serialize → send
  *   [protocol A] ──buffer──→ [protocol B]
@@ -28,7 +28,7 @@ import {
 } from "../src/index.js";
 
 // ============================================================================
-// Step 1: 定义一个 service（普通 TypeScript 对象）
+// Step 1: Define a service (normal TypeScript object)
 // ============================================================================
 
 class CalculatorService {
@@ -58,7 +58,7 @@ class CalculatorService {
 }
 
 // ============================================================================
-// Step 2: 手写 IServerChannel（后面的例子会用 ProxyChannel 自动化）
+// Step 2: Handwrite IServerChannel (later examples will be automated using ProxyChannel)
 // ============================================================================
 
 class CalculatorChannel implements IServerChannel {
@@ -88,32 +88,32 @@ class CalculatorChannel implements IServerChannel {
 }
 
 // ============================================================================
-// Step 3: 建立连接并进行 RPC
+// Step 3: Establish connection and perform RPC
 // ============================================================================
 
 async function main() {
-  // 创建内存传输对
+  // Create a memory transfer pair
   const [protocolA, protocolB] = createQueuePair();
 
-  // 服务端：在 protocolB 上注册 channel
+  // Server: Register channel on protocolB
   const service = new CalculatorService();
   const server = new ChannelServer(protocolB, "server-ctx");
   server.registerChannel("calculator", new CalculatorChannel(service));
 
-  // 客户端：通过 protocolA 获取 channel
+  // Client: Get channel through protocolA
   const client = new ChannelClient(protocolA);
 
-  // 等待初始化完成
+  // Wait for initialization to complete
   await Event.toPromise(client.onDidInitialize);
 
   const calculator = client.getChannel("calculator");
 
-  // 订阅事件
+  // Subscribe to events
   const disposable = calculator.listen<{ op: string; result: number }>("onDidCompute")((e) => {
     console.log(`  [event] ${e.op} = ${e.result}`);
   });
 
-  // 调用方法
+  // call method
   console.log("--- Basic IPC Demo ---");
 
   const sum = await calculator.call<number>("add", [10, 20]);
@@ -125,14 +125,14 @@ async function main() {
   const quotient = await calculator.call<number>("divide", [100, 3]);
   console.log(`divide(100, 3) = ${quotient}`);
 
-  // 测试错误传播
+  // Test error propagation
   try {
     await calculator.call("divide", [1, 0]);
   } catch (err: any) {
     console.log(`divide(1, 0) → Error: ${err.message}`);
   }
 
-  // 清理
+  // clean up
   disposable.dispose();
   client.dispose();
   server.dispose();

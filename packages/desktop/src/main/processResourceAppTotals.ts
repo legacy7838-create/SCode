@@ -1,14 +1,16 @@
 /**
- * 「一批进程在某一刻的资源合计」这个值。
+ * The value "the combined resources of a batch of processes at a single instant".
  *
- * 设备级 `perf_system_window` 的应用总量由两部分相加：main 能精确枚举的 Chromium 体系合计，
- * 与 CLI / MCP 这类外部来源最近一次已知样本的合计。两边是同一个值语义，所以只有这一份类型与相加逻辑。
+ * The app totals in the device-level `perf_system_window` are the sum of two parts: the Chromium
+ * family total that main can enumerate exactly, plus the total of the most recent known sample
+ * from external sources like CLI / MCP. Both sides carry the same value semantics, so there is
+ * only this one type and one addition routine.
  */
 
 import { roundMetric } from "./resourceMetricsStats.js";
 
 export interface AppResourceTotals {
-  /** 这批进程的 CPU 之和（整机归一化百分比）。 */
+  /** Summed CPU of this batch of processes (whole-machine normalized percentage). */
   cpuPercent: number;
   rssKbTotal: number;
   processCount: number;
@@ -18,7 +20,7 @@ export function createEmptyAppResourceTotals(): AppResourceTotals {
   return { cpuPercent: 0, rssKbTotal: 0, processCount: 0 };
 }
 
-/** 相加两批合计；CPU 只在相加结束后取整，逐次 round 会让误差随进程数累积。 */
+/** Adds two batches of totals; CPU is rounded only after the addition, because rounding per step lets the error accumulate with the process count. */
 export function addAppResourceTotals(
   base: AppResourceTotals,
   extra: AppResourceTotals,

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-// 启动早期或协议故障时 stdout 尚不可用，进程诊断使用独立的 stderr 单行契约。
+// During early boot or protocol failures when stdout is not yet available, process diagnostics use a separate stderr one-line contract.
 export const ZCODE_PROCESS_DIAGNOSTIC_PREFIX = "[zcode-process-exception] ";
 export const ZCODE_PROCESS_DIAGNOSTIC_NAME_MAX_CHARS = 128;
 export const ZCODE_PROCESS_DIAGNOSTIC_MESSAGE_MAX_CHARS = 4_000;
@@ -36,7 +36,7 @@ export function parseZCodeProcessDiagnostic(line: string): ZCodeProcessDiagnosti
     );
     return result.success ? result.data : undefined;
   } catch {
-    // 诊断旁路不得因损坏帧中断业务协议或退出处理。
+    // Diagnostic bypass must not interrupt service protocols or exit processing due to corrupted frames.
     return undefined;
   }
 }

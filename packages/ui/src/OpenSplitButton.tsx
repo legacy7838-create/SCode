@@ -21,7 +21,7 @@ import { getWorkspaceFileRelativePath } from "@/workspace-file-tree/model.js";
 import { resolveWorkspaceEditorSelection } from "@/lib/workspaceEditorSelection.js";
 import { logger } from "@/logger.js";
 
-// 导出类型供共用时间线以 import type 引用（构建期擦除，不把 open-with 子树带进公开页 bundle）。
+// The exported type is referenced by the import type in the shared timeline (erased during build, the open-with subtree is not brought into the public page bundle).
 export type OpenSplitButtonTarget =
   | {
       type: "website";
@@ -109,7 +109,7 @@ export function OpenSplitButton({
       setEditors(await platform.getInstalledEditors());
       setEditorsLoaded(true);
     } catch (error) {
-      logger.warn("[OpenSplitButton] 获取第三方打开方式失败", {
+      logger.warn("[OpenSplitButton] failed to get external open targets", {
         path: target.path,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -162,7 +162,7 @@ export function OpenSplitButton({
           return;
         }
 
-        logger.warn("[OpenSplitButton] 第三方 App 打开文件失败", {
+        logger.warn("[OpenSplitButton] third-party app failed to open file", {
           editorId: editor.id,
           path: target.path,
           error: result.error ?? "unknown-error",
@@ -178,7 +178,7 @@ export function OpenSplitButton({
 
     const localPath = target.localPath;
     const reportFailure = (error: unknown) => {
-      logger.warn("[OpenSplitButton] 浏览器打开本地文件失败", {
+      logger.warn("[OpenSplitButton] browser failed to open local file", {
         path: localPath,
         error: error instanceof Error ? error.message : String(error),
       });

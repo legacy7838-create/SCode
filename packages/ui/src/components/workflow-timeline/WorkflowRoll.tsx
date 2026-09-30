@@ -7,15 +7,22 @@ import type { RollGroup } from "./roster-model.js";
 import type { TimelinePill } from "./timeline-model.js";
 
 /**
- * 门后的名单：侧板名册站里没被钉住
- * 的人，每人一次，按状态分组、组序即注意力序（failed → running → pending → done），组内参与者序。
- * 组头是计数行的那一项——图标、人数、状态词、语义色，右边一条细线拉到边——所以门开着时计数行不必
- * 再出现一次。行由调用方渲染（各面自己的接线），这里只排两列、发入场延迟。
+ * The roll behind the gate: in the side-panel roster station, everyone who was not pinned, once
+ * each, grouped by status with the group order being the attention order (failed → running →
+ * pending → done), and in participant order inside a group. A group header is the item on the count
+ * row — icon, headcount, status word, semantic color, with a thin line on the right running to the
+ * edge — so while the gate is open the count row need not appear a second time. Rows are rendered
+ * by the caller (each surface wires up its own); this only lays out two columns and emits entry
+ * delays.
  *
- * 表外的那些（`unlisted`）没有行可落：门与计数行算了它们，名单只能在末尾用一行淡字交代这个差额，
- * 而不是假装那些行在（追记「表外的那些」）。
+ * The off-roster ones (`unlisted`) have no row to land on: the gate and the count row already
+ * account for them, so the roll can only close with one dim line stating that difference, rather
+ * than pretending those rows are there (an addendum to "the off-roster ones").
  */
-/** 行依次落地：每行 8 ms、封顶 400 ms（沿用格子的节奏；30 ms 的药丸节奏对一卷名单太慢）。 */
+/**
+ * Rows land one after another: 8 ms per row, capped at 400 ms (keeping the cell's rhythm; the
+ * pill's 30 ms cadence is too slow for a whole roll of names).
+ */
 export const ROW_STAGGER_MS = 8;
 export const ROW_STAGGER_CAP_MS = 400;
 
@@ -43,9 +50,12 @@ export function WorkflowRoll({
   unlisted = 0,
 }: {
   groups: readonly RollGroup[];
-  /** 渲染一行；`enterDelayMs` 是这一行在整卷名单里的落地延迟。 */
+  /** Renders one row; `enterDelayMs` is that row's entry delay within the whole roll. */
   renderRow: (pill: TimelinePill, enterDelayMs: number) => ReactNode;
-  /** 这一站列不出行的子代理数（跑完的、还没跑的都算）；零即那一行淡字缺席。 */
+  /**
+   * How many subagents at this station no row can list (both finished and not yet started); zero
+   * means that dim line is absent.
+   */
   unlisted?: number;
 }) {
   const { intl } = useZCodeIntl();
@@ -57,7 +67,7 @@ export function WorkflowRoll({
           { id: `chat.toolCall.workflow.timeline.roster.${group.status}` },
           { count: group.pills.length },
         );
-        // 两种语言的词条都以人数开头（`{count} done` / `{count} 个已完成`）：人数加粗、其余照常。
+        // Entries in both languages ​​begin with the number of people (`{count} done` / `{count} completed`): the number of people is in bold, and the rest is as usual.
         const split = /^(\d+)(.*)$/.exec(label);
         return (
           <Fragment key={group.status}>

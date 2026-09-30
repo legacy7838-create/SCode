@@ -41,15 +41,15 @@ when a wrong claim costs little or a command has already decided it.
 | One thing delegated to one agent | `Agent` |
 | A few independent lookups, nobody reading anybody's answer | `Agent`, in parallel |
 | Anything else the user did not name a workflow for — however many steps or subagents it needs | `Agent`, or do it yourself |
-| The user said "use a workflow" / "使用 workflow" / "用工作流" — any phrasing naming workflow as the means | `CreateWorkflow`, mandatory, even if `Agent` would have done or one reply could answer |
+| The user said "use a workflow" / "USE workflow" / "USE WORKFLOW" — any phrasing naming workflow as the means | `CreateWorkflow`, mandatory, even if `Agent` would have done or one reply could answer |
 
 **Only an explicit request starts a workflow.** The request is the whole routing rule: a
-workflow begins with `/workflow` or with the user naming workflow/工作流 as the means, never
+workflow begins with `/workflow` or with the user naming workflow/workflow as the means, never
 with your own judgement that a task looks orchestration-shaped. Results feeding later steps,
 a loop with a stopping condition, control flow branching on a typed result — none of these
 are a reason to start one. Delegate with `Agent` or do the work yourself.
 
-**An explicit request is binding.** When the user names workflow/工作流 as the way to do the
+**An explicit request is binding.** When the user names workflow/workflow as the way to do the
 task, the routing question is closed: not `Agent`, not doing it inline, not "this is too small
 for a workflow". The user picked the tool; what remains for you is only how big the script
 should be, and the smallest task still gets a small workflow rather than something else.
@@ -417,7 +417,7 @@ loop that gates on `cargo test` alone would crown the first round that compiles 
 **Write the names for the user, not for the graph.** A phase name is a short natural
 phrase saying what this stage accomplishes for the user, written in the language the
 user is speaking in this session — "Research each changed file in parallel",
-"汇总并产出最终报告". Orchestration vocabulary the user never chose ("fan-out",
+"To summarize and produce a final report". Orchestration vocabulary the user never chose ("fan-out",
 "gate", "aggregate") names the machinery, not the work. Names must be compile-time
 string literals, so you cannot number rounds by interpolation — and you should not
 want to: two markers with the same name are one node, which is how a loop body stays
@@ -457,20 +457,20 @@ pipeline — is yours, not theirs, and so is the numbering.
 
 | Read by the user | Write | Not |
 | --- | --- | --- |
-| Phase name | Review each changed file / 逐个检查改动的文件 | Fan-out review stage / 文件评审阶段 |
-| Phase name | Check that the tests still pass / 确认测试仍然通过 | Gate: test verification / 执行测试验证任务 |
-| Subagent name | Code reviewer / 代码评审员 | reviewer_2 / 节点3 |
-| Subagent name | Benchmark runner / 跑基准测试的人 | runner / 子代理A |
-| Phase name | Independent review of the final plan / 请没看过方案的人再审一遍 | Cold read of the plan / 冷读方案 |
-| Subagent name | Independent reviewer / 独立评审员 | cold-reviewer / 冷眼评审 |
-| `log` line | Reviewing 12 changed files / 正在检查 12 个改动的文件 | Fan-out sized: n=12 / 扇出阶段初始化完成 |
-| Report conclusion | Two of the twelve files have real bugs, both in the parser. / 12 个文件里有 2 个有真问题，都在解析器里。 | The workflow executed successfully and produced findings. / 工作流已成功执行并生成结果。 |
-| Artifact title | Review report / 评审报告 | report-artifact-v1 / 产物输出 |
-| Escalation question | Should the threshold be 94 rather than 96? / 阈值应该是 94 而不是 96 吗？ | Requesting clarification regarding gate configuration parameters / 请求对门控配置参数进行澄清 |
+| Phase name | Review each changed file / Check the changed files one by one | Fan-out review stage / File review stage |
+| Phase name | Check that the tests still pass / Confirm that the tests still pass | Gate: test verification / Perform test verification tasks |
+| Subagent name | Code reviewer / code reviewer | reviewer_2 / node3 |
+| Subagent name | Benchmark runner / The person who runs the benchmark test | runner / Subagent A |
+| Phase name | Independent review of the final plan / Ask people who have not read the plan to review it again | Cold read of the plan / Cold reading plan |
+| Subagent name | Independent reviewer / independent reviewer | cold-reviewer / cold-eyed review |
+| `log` line | Reviewing 12 changed files / Checking 12 changed files | Fan-out sized: n=12 / Fan-out phase initialization completed |
+| Report conclusion | Two of the twelve files have real bugs, both in the parser. / Two of the twelve files have real bugs, both in the parser. | The workflow executed successfully and produced findings. / The workflow executed successfully and produced findings. |
+| Artifact title | Review report / Review report | report-artifact-v1 / Product output |
+| Escalation question | Should the threshold be 94 rather than 96? / Should the threshold be 94 rather than 96? | Requesting clarification regarding gate configuration parameters / Requesting clarification regarding gate configuration parameters |
 
 The method names in this skill — fresh eyes, independent read — are English idioms for you,
-not words for the user. Carry the idea across, not the words: in Chinese that is 独立复核 or
-换人复审, never a word-for-word rendering such as 冷读 or 冷眼, which are not Chinese.
+not words for the user. Carry the idea across, not the words: in Chinese that is independent review or
+Substitution review, never a word-for-word rendering such as Cold Reading or Cold Eyes, which are not Chinese.
 
 The language travels through your asks. Findings, summaries and anything else the user will
 read are written by subagents answering the ask you wrote, so write those asks in the user's
@@ -716,7 +716,7 @@ and §10 already carry its rules.
 | `Date.now()` / `Math.random()` / `fetch` / `fs` | Rejected at compile time; a replayable run cannot contain them |
 | Awaited each call in a loop that had no ordering requirement | Serial wall-clock for concurrent work |
 | Interpolated a tunable constant (a threshold, a cap) into an ask message | Amending that one number rewrites every prompt that mentions it: an `AmendWorkflow` re-run misses cache at the first such ask and re-pays everything downstream |
-| Named a phase or a subagent after the machinery, in either language ("fan-out", "文件评审阶段", "节点3"), or shipped the script with no markers at all | The user approves a graph whose stages say nothing about their work — or thirty cards with no story (§9) |
+| Named a phase or a subagent after the machinery, in either language ("fan-out", "Document Review Phase", "Node 3"), or shipped the script with no markers at all | The user approves a graph whose stages say nothing about their work — or thirty cards with no story (§9) |
 | Wrote a persona that says only "make the check pass" | Against a check it cannot pass, faking one is the obedient reading. Tell the subagent to escalate an impossible gate instead (§14) |
 | Asked the reviewer "is this good?" | A reviewer asked for approval approves; ask what would break it and what is missing (§3) |
 | Reported findings nobody confirmed | The user gets a list that cannot tell "seen" from "suspected"; confirm each finding independently and label the ones that failed (§10) |
@@ -949,7 +949,7 @@ Either way the user confirms the run, and the confirmation shows the actual scri
 
 **Fields.**
 
-- `name`: a short label for the run in the user's language ("PR review", "代码评审").
+- `name`: a short label for the run in the user's language ("PR review", "code review").
   Always pass it for an inline script; it labels the run everywhere and names its draft
   file. It defaults to the saved workflow's name.
 - `max_concurrency`: an upper bound on how many subagents work at once. Set it only when
@@ -1176,9 +1176,9 @@ declare const artifact: {
  *
  * Name phases for the user, in the language the user is speaking in this session: a short
  * natural phrase saying what the stage accomplishes ("Research each changed file in parallel",
- * "汇总并产出最终报告"). Graph-building vocabulary the user never chose — "fan-out", "gate",
+ * "summarize and produce final report"). Graph-building vocabulary the user never chose — "fan-out", "gate",
  * "aggregate" — is not a name; the user approves stages by what they do. Say it the way you
- * would tell a colleague what is happening: "确认测试仍然通过", not "执行测试验证任务".
+ * would tell a colleague what is happening: "Confirm that the test still passes", not "Perform test verification tasks".
  *
  * The scope is the rest of the enclosing block: the marker claims every step issued
  * from it to the end of the block it stands in — nested blocks and inlined helper
@@ -1465,7 +1465,7 @@ project on this machine.
 - When a workflow you just built looks reusable — it would plausibly run again with
   different inputs — suggest saving it in prose, one sentence naming what you would save and
   why, then stop and wait. Call `SaveWorkflow` only after the user agrees, or when the user
-  asks directly ("save this workflow", "保存这个工作流"). A one-off script tailored to a
+  asks directly ("save this workflow", "save this workflow"). A one-off script tailored to a
   single question is not worth suggesting; it wastes the user's attention and clutters the
   project.
 

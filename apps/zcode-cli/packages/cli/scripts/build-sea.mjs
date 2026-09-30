@@ -71,8 +71,8 @@ export const resolvePostjectBin = ({
   const executable = platform === "win32" ? "postject.cmd" : "postject";
   let directory = startDirectory;
 
-  // pnpm hoisted 布局会把 postject 放到仓库根 node_modules，而不是 CLI 子包下。
-  // 从 CLI 包目录逐级向上找，避免 SEA 构建依赖某一种安装布局。
+  // The pnpm hoisted layout will put postject under the repository root node_modules instead of the CLI sub-package.
+  // Search upwards from the CLI package directory to prevent the SEA build from relying on a certain installation layout.
   while (true) {
     const candidate = resolve(directory, "node_modules", ".bin", executable);
     if (existsSync(candidate)) return candidate;
@@ -277,7 +277,7 @@ const buildTarget = async ({ nodeBinaries, nodeVersion, postjectBin, target }) =
   console.log(`[sea] building ${target} -> ${binaryPath}`);
   await copyFile(targetNodeBinary, binaryPath);
   await chmod(binaryPath, 0o755);
-  // 同一原文既内嵌到 --licenses，也随 dist 提供，单文件上传仍可取到完整材料。
+  // The same original text is both embedded in --licenses and provided with dist. The complete material can still be obtained by uploading a single file.
   await stageNodeNotices(dist, nodeVersion, repositoryRoot);
 
   const sentinelFuse = await findSeaFuse(binaryPath);

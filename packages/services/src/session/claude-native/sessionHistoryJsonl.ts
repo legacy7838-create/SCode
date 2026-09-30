@@ -8,7 +8,7 @@ function parseJsonLine(filePath: string, line: string, lineNumber: number): Json
     return JSON.parse(line) as JsonLineRecord;
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
-    throw new Error(`[claude-native] 解析 JSONL 失败 ${filePath}:${lineNumber} ${reason}`);
+    throw new Error(`[claude-native] failed to parse JSONL ${filePath}:${lineNumber} ${reason}`);
   }
 }
 

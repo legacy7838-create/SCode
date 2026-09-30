@@ -43,7 +43,7 @@ for (const fixture of fixtures) {
     throw new Error(`fixture ${fixture} did not analyze clean:\n${detail}`);
   }
   const causality = causalityGraphToMermaid(result.causality);
-  // 阶段图只在词汇表在场时有内容——零标记脚本这一节整段缺席，与 UI 的视图切换同条件。
+  // The stage diagram only has content when the vocabulary is present - the entire section of the zero-marked script is absent, the same condition as the view switching of the UI.
   const phases = result.causality.phases;
   const site = siteGraphToMermaid(result.graph);
   const actor = actorGraphToMermaid(toActorGraph(result.graph));

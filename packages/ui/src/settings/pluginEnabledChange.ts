@@ -5,10 +5,13 @@ interface SuccessfulPluginEnabledChangeOptions {
 }
 
 /**
- * 只有当前这次插件启停已经由服务端确认成功，才允许继续授权引导或运行态刷新。
+ * Only once the current plugin enable/disable has been confirmed successful by the server may the
+ * authorization flow or the runtime refresh proceed.
  *
- * 旧流程在启用 CUA 的 RPC 完成前就打开授权弹窗；RPC 失败或页面切换后响应迟到时，
- * 用户仍会看到一个可以继续授权的过期弹窗，造成“插件未启用但已授权”的分裂状态。
+ * The old flow opened the authorization dialog before the enable-CUA RPC completed; when the RPC
+ * failed or its response arrived late after a page switch, the user still saw a stale dialog
+ * offering to continue authorizing, producing a split state where “the plugin is not enabled but is
+ * already authorized”.
  */
 export async function runAfterSuccessfulPluginEnabledChange({
   submit,

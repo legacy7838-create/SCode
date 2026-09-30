@@ -6,20 +6,20 @@ function normalizeToolName(value: string | null | undefined): string {
 
 export function isZCodeCuaToolName(value: string | null | undefined): boolean {
   const normalized = normalizeToolName(value);
-  // server key 段为 computer-use。feat: mcp__computer-use__*；
-  // main v3.5.3 的 plugin MCP 命名约定给 plugin server 加 namespace：
-  // mcp__plugin_zcode-cua_computer-use__*（归一化后 server 段前是单连字符 cua-computer-use，
-  // 不是双连字符）。两种形态都包含 "computer-use" 串——用 includes 兼容，否则 main 的 namespace
-  // 前缀会让 cua 工具识别失败、ToolCallBlock 退化成 fallback 渲染。"computer-use" 足够特异
-  // （仅 cua server 用此 key，不会误判 android-emulator/browser-use 等）。
+  // The server key section is computer-use. feat: mcp__computer-use__*;
+  // The plugin MCP naming convention of main v3.5.3 adds namespace to the plugin server:
+  // mcp__plugin_zcode-cua_computer-use__* (after normalization, the server segment is preceded by a single hyphen cua-computer-use,
+  // not a double hyphen). Both forms contain the "computer-use" string - compatible with includes, otherwise main's namespace
+  // The prefix will cause cua tool recognition to fail and ToolCallBlock to degrade into fallback rendering. "computer-use" is specific enough
+  // (Only cua server uses this key, and there will be no misjudgment of android-emulator/browser-use, etc.).
   return normalized === "computer-use" || normalized.includes("computer-use");
 }
 
 function didReturnFromCuaPermissionSettings(
   result: CuaAccessibilitySettingsResult | null | undefined,
 ): boolean {
-  // main 只有在整组 staged pane 都完成并观察到 ZCode 应用级返回后才置 true。renderer focus
-  // 可能来自 TCC 原生 prompt、另一窗口或普通切换，不能再作为授权完成信号。
+  // main is only set to true after the entire set of staged panes has completed and ZCode application level returns have been observed. renderer focus
+  // May come from TCC native prompt, another window or normal switch, and can no longer be used as authorization completion signal.
   return (
     result?.success === true &&
     result.returnedFromSettings === true &&
@@ -31,13 +31,13 @@ function didReturnFromCuaPermissionSettings(
 export function shouldRestartHelperAfterCuaPermissionReturn(
   result: CuaAccessibilitySettingsResult | null | undefined,
 ): boolean {
-  // restartHelperAfterReturn 是 additive main ABI。旧版 main 不返回该字段，仍按过去的单窗口 owner
-  // 处理；新版 main 只对同一 renderer/host 的重复 join 返回 false，不同窗口的独立 Helper 各自恢复。
+  // restartHelperAfterReturn is additive main ABI. The old version of main does not return this field, and still uses the previous single-window owner
+  // Processing; the new version of main only returns false for repeated joins of the same renderer/host, and independent Helpers in different windows are restored separately.
   return didReturnFromCuaPermissionSettings(result) && result?.restartHelperAfterReturn !== false;
 }
 
 export interface CuaPermissionReturnRecoveryState {
-  /** 跨 open/workspace reset 单调唯一；局部 epoch 不能单独充当异步 operation 身份。 */
+  /** Monotonically unique across open/workspace resets; local epochs cannot serve as asynchronous operation identities alone. */
   generation: number;
   contextKey: string;
   epoch: number;
@@ -88,7 +88,7 @@ export function markCuaPermissionOnboardingOpened(
 export function claimCuaPermissionReturnRecovery(
   state: CuaPermissionReturnRecoveryState,
 ): CuaPermissionReturnRecoveryClaim | null {
-  // 普通 focus、原生 prompt 的中间 focus、同一授权动作的重复 focus 均无副作用。
+  // Ordinary focus, intermediate focus of native prompt, and repeated focus of the same authorized action have no side effects.
   if (!state.pending || state.automaticAttempted) return null;
   state.automaticAttempted = true;
   return recoveryClaim(state);
@@ -117,9 +117,9 @@ export function completeCuaPermissionReturnRecovery(
   claim: CuaPermissionReturnRecoveryClaim,
   restartSucceeded: boolean,
 ): void {
-  // ref 在 workspace/open 切换时会指向新 state，局部 epoch 又从 0 重启。旧 restart 若拿
-  // `ref.current + epoch` 完成，会误清新 workspace 的同号事件。claim 永久绑定发起时 state/context；
-  // completion 只可能修改该旧对象，失败仍保留 pending 供同一上下文手动重试。
+  // ref will point to the new state when workspace/open switches, and the local epoch restarts from 0. Old restart Ruona
+  // `ref.current + epoch` is completed, and the event of the same number in the workspace will be mistakenly refreshed. claim state/context when permanent binding is initiated;
+  // completion can only modify the old object, failure will still remain pending for manual retry in the same context.
   const state = claim.state;
   if (
     restartSucceeded &&

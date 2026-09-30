@@ -1,8 +1,11 @@
 /**
- * useStorageUsage —— 资源管理器「存储」tab 的数据源，输入是 preload 暴露的 StorageManagementBridge。
- * 生命周期与 tab 绑定：enabled 时开始扫描并订阅进度，卸载 / 切走时取消；
- * 窗口失焦超过 60s 取消扫描，回到前台后重新开始（性能约束）。
- * 只消费当前 jobId 的快照，旧 job 的尾包直接丢弃；进入时先展示上次完成的快照（stale-while-revalidate）。
+ * useStorageUsage — the data source for the resource manager's “Storage” tab, whose input is the
+ * StorageManagementBridge exposed by preload. The lifetime is bound to the tab: it starts scanning
+ * and subscribes to progress while enabled, and cancels on unmount / switch-away; a scan is
+ * cancelled when the window has been out of focus for more than 60s and starts over once it returns
+ * to the foreground (a performance constraint). Only snapshots for the current jobId are consumed
+ * and trailing packets from old jobs are dropped outright; on entry it first shows the last
+ * completed snapshot (stale-while-revalidate).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {

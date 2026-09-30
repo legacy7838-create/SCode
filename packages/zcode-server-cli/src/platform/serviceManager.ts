@@ -52,8 +52,8 @@ export function createServiceDescriptor(options: {
     return {
       kind: "launchd",
       name,
-      // 正常 stop 会让 Supervisor 以 0 退出；只按异常退出重启，避免 launchd 的无条件
-      // KeepAlive 把用户主动停止的 daemon 立即拉起。Supervisor 自身仍负责 Core 崩溃退避。
+      // Normal stop will cause Supervisor to exit with 0; only exit and restart according to exception to avoid unconditional launchd
+      // KeepAlive immediately pulls up the daemon that the user actively stops. The Supervisor itself is still responsible for Core crash avoidance.
       content: `<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict><key>Label</key><string>${name}</string><key>ProgramArguments</key><array>${[options.command, ...args].map((value) => `<string>${escapeXml(value)}</string>`).join("")}</array><key>RunAtLoad</key><true/><key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict></dict></plist>`,
     };
   }
@@ -116,7 +116,7 @@ export async function registerService(
 ): Promise<void> {
   try {
     if (descriptor.kind === "launchd") {
-      // Label 稳定但 plist 内容可能变化；先卸载旧 job，避免 load 失败后 start 唤醒旧参数。
+      // Label is stable but the plist content may change; uninstall the old job first to avoid starting to wake up the old parameters after the load fails.
       try {
         await executor.run("launchctl", ["unload", "-w", descriptorPath]);
       } catch (error: unknown) {
@@ -171,8 +171,8 @@ export async function unregisterService(
       await executor.run("schtasks", ["/Delete", "/TN", descriptor.name, "/F"]);
     }
   } catch (error) {
-    // 注册命令可能在写 descriptor 后失败，卸载时 OS 中并不存在对应服务。
-    // 仅容忍“未注册/不存在”，权限或命令执行等真实失败仍需阻止删除运行数据。
+    // The registration command may fail after writing the descriptor, and the corresponding service does not exist in the OS when uninstalling.
+    // Only "not registered/does not exist" is tolerated, real failures such as permissions or command execution still need to prevent deletion of run data.
     if (!isServiceMissingError(error, descriptor.kind === "task-scheduler")) throw error;
   }
 }

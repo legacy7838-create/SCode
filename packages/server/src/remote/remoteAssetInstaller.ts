@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 远端资源安装策略同时承载本地上传和远端下载，后续稳定后再拆分。 */
+/* eslint-disable max-lines -- The remote asset install policy carries both local upload and remote download; it will be split once it has settled. */
 import { createHash, randomUUID } from "node:crypto";
 import { readFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -86,8 +86,8 @@ function buildStaleRemoteStagingCleanupCommand(parentDir: string, patterns: stri
   return [
     `for candidate in ${candidateExpressions.join(" ")}; do`,
     'test -e "$candidate" || continue',
-    // SSH 取消会先释放旧 backend，不能再用旧凭据立即 cleanup。
-    // 新连接只回收超过 24 小时的 ZCode owner staging，避免误删当前 owner 或正常时长内的活跃部署。
+    // SSH cancellation will first release the old backend, and you can no longer use the old credentials to cleanup immediately.
+    // New connections will only recycle ZCode owner staging that exceeds 24 hours to avoid accidentally deleting the current owner or active deployments within the normal period.
     'find "$candidate" -prune -mtime +0 -exec rm -rf {} + 2>/dev/null || true',
     "done",
   ].join("\n");
@@ -154,8 +154,8 @@ function buildRemoteArtifactDownloadAttempt(params: {
     `[remote-assets] sha256 mismatch for ${params.progressLabel}: expected=${params.expectedSha256}, actual=`,
   );
 
-  // 多 CDN 发布存在短暂不一致时，首个 URL 可能能下载但 sha 指向旧对象。
-  // 把校验放进每个候选 URL 的尝试块里，才能在 mismatch 后继续尝试备用 CDN。
+  // When there is a brief inconsistency in multi-CDN publishing, the first URL may download but the sha points to the old object.
+  // Put the verification into the try block of each candidate URL to continue trying the alternative CDN after a mismatch.
   return [
     `rm -f ${quotedOutputPath}`,
     params.downloadCommand,
@@ -181,9 +181,9 @@ function buildRemoteDownloadWithProgressCommand(params: {
   const progressLoop = `progress_started_at=$(date +%s); progress_pid=; (last_progress_size=-1; while :; do ${updateProgressVars}; if [ "$progress_size" != "$last_progress_size" ]; then ${progressPrinter}; last_progress_size="$progress_size"; fi; sleep 1; done) & progress_pid=$!`;
   const stopProgressLoop = `if [ -n "$progress_pid" ]; then kill "$progress_pid" >/dev/null 2>&1 || true; wait "$progress_pid" 2>/dev/null || true; fi; if [ -f ${quotedOutputPath} ]; then ${updateProgressVars}; ${progressPrinter}; fi`;
 
-  // 远端服务器下载以前只等 wget/curl 结束，连接窗口没有速度和进度反馈。
-  // 这里不依赖 wget/curl 各自不稳定的进度条，而是在远端按目标文件大小节流输出统一格式，
-  // 连接窗口可以复用现有 download progress 合并逻辑展示最新速度。
+  // The remote server download used to only wait for wget/curl to end, and there was no speed and progress feedback in the connection window.
+  // This does not rely on the unstable progress bars of wget/curl. Instead, it throttles and outputs a unified format based on the target file size at the remote end.
+  // The connection window can reuse the existing download progress merge logic to display the latest speed.
   return `set +e; ${progressLoop}; ${params.attemptCommand}; download_status=$?; set -e; ${stopProgressLoop}; test "$download_status" -eq 0`;
 }
 
@@ -279,8 +279,8 @@ export class LocalUploadAssetInstaller implements RemoteAssetInstaller {
       if (missingRequiredPaths.length === 0) {
         return localPath;
       }
-      // 旧 cache 可能已经有 packages 父目录，但缺少本次部署要求的 plugin.json。
-      // 这里不能只看父目录存在，否则会继续上传残缺官方插件资源。
+      // The old cache may already have the packages parent directory, but lacks the plugin.json required for this deployment.
+      // You cannot just check the existence of the parent directory here, otherwise incomplete official plug-in resources will continue to be uploaded.
       this.loggers.logWarn(
         `[remote-assets] local release asset incomplete: source=${localPath} missing=${missingRequiredPaths.join(",")}; trying CDN cache fallback`,
       );
@@ -359,10 +359,10 @@ export class LocalUploadAssetInstaller implements RemoteAssetInstaller {
       undefined,
       Boolean(params.forceRefresh),
     );
-    // 共享本地 cache 可以在取消后完成，但不得让迟到 continuation 再写远端 staging。
+    // Shared local cache can be completed after cancellation, but late continuations must not be allowed to write remote staging.
     throwIfRemoteAssetInstallAborted(this.options.signal);
-    // 多个 Desktop 实例或跨窗口连接可能同时部署到同一 distro/user。
-    // 固定 `.new` 会互相覆盖 staging 文件，唯一 owner 路径保证失败清理和最终 rename 不串写。
+    // Multiple Desktop instances or cross-window connections may be deployed to the same distro/user simultaneously.
+    // Fixed `.new` will overwrite each other's staging files, and the unique owner path ensures that failure cleanup and final rename are not strung together.
     const tempRemotePath = `${params.remotePath}.new-${Date.now()}-${randomUUID()}`;
     this.loggers.log(
       `[remote-assets] uploading ${params.sourceRelativePath} to ${params.remotePath}`,
@@ -403,9 +403,9 @@ export class LocalUploadAssetInstaller implements RemoteAssetInstaller {
       );
       await waitForClose(stream);
     } catch (error) {
-      // 文件替换失败时必须清理当前 owner 的 `.new-*` 文件，否则
-      // Docker 非 root 场景会把 chmod 失败的宿主 owner 文件长期留在远端。
-      // 取消路径可能已经释放 backend，不能用旧凭据再次 cleanup；由后续 janitor 回收。
+      // When file replacement fails, the `.new-*` files of the current owner must be cleaned up, otherwise
+      // In non-root scenarios, the owner file of the host whose chmod failed will be left on the remote end for a long time.
+      // The cancel path may have released the backend and cannot be cleaned up again with the old credentials; it will be recycled by subsequent janitors.
       if (!this.options.signal?.aborted) {
         await cleanupRemoteStaging();
       }
@@ -436,8 +436,8 @@ export class LocalUploadAssetInstaller implements RemoteAssetInstaller {
     ]);
 
     const ownerSuffix = `${Date.now()}-${randomUUID()}`;
-    // 目录上传曾复用 `<remoteDir>.tar.gz`，并发部署会互相覆盖压缩包，
-    // 甚至把半写文件解压到最终目录。archive/extract 都带 owner，失败时也只清理自己的 staging。
+    // Directory upload has reused `<remoteDir>.tar.gz`, and concurrent deployment will overwrite each other’s compressed packages.
+    // Even unzip half-written files to the final directory. Archive/extract both have owners, and only clean up their own staging when they fail.
     const remoteTarPath = `${params.remoteDir}.tar.gz-${ownerSuffix}`;
     const remoteExtractDir = `${params.remoteDir}.extract-${ownerSuffix}`;
     const extractedSourceDir = `${remoteExtractDir}/${basename(localPath)}`;
@@ -455,7 +455,7 @@ export class LocalUploadAssetInstaller implements RemoteAssetInstaller {
     };
 
     try {
-      // 本地归档不共享远端生命周期；归档完成后再次检查，禁止取消后创建远端 staging。
+      // Local archiving does not share the remote life cycle; check again after archiving is completed, and create remote staging after cancellation is prohibited.
       throwIfRemoteAssetInstallAborted(this.options.signal);
       this.loggers.log(
         `[remote-assets] uploading ${params.sourceRelativePath} to ${params.remoteDir}`,
@@ -496,8 +496,8 @@ export class LocalUploadAssetInstaller implements RemoteAssetInstaller {
       );
       await waitForClose(stream);
     } catch (error) {
-      // 连接取消监听会先释放 SSH backend；若随后仍用同一 backend 清理 staging，
-      // SSH 实现可能以旧凭据重新连接。取消路径只保留唯一 owner staging，不再触碰正式目录。
+      // Connection cancellation monitoring will first release the SSH backend; if the same backend is still used to clean up staging later,
+      // The SSH implementation may reconnect with old credentials. Canceling the path only retains the unique owner staging and no longer touches the official directory.
       if (!this.options.signal?.aborted) {
         await cleanupRemoteStaging();
       }
@@ -506,7 +506,7 @@ export class LocalUploadAssetInstaller implements RemoteAssetInstaller {
       try {
         unlinkSync(localTarPath);
       } catch {
-        // 忽略临时文件清理失败，部署结果不应受本地清理影响。
+        // Temporary file cleanup failures are ignored and deployment results should not be affected by local cleanup.
       }
     }
   }
@@ -530,9 +530,9 @@ export class LocalUploadAssetInstaller implements RemoteAssetInstaller {
     }
 
     try {
-      // 开发态默认优先 mock-cdn；但用户可先用远端下载再切回本地上传，
-      // 此时 mock-cdn 可能没有对应平台/provider 资源。本地上传语义是“本地拿到资源后上传”，
-      // 因此缺本地伪 CDN 文件时应回落到真实 CDN 的本地缓存，而不是直接报缺包。
+      // By default, development mode gives priority to mock-cdn; but users can use remote download first and then switch back to local upload.
+      // At this time, mock-cdn may not have corresponding platform/provider resources. The local upload semantics is "upload the resources after obtaining them locally".
+      // Therefore, when the local pseudo CDN file is missing, it should fall back to the local cache of the real CDN instead of directly reporting the missing package.
       return await ensureRemoteReleaseDirFromCdn(
         {
           remoteCdnBaseUrl: this.options.remoteCdnBaseUrl,
@@ -552,8 +552,8 @@ export class LocalUploadAssetInstaller implements RemoteAssetInstaller {
       this.loggers.logWarn(
         `[remote-assets] local upload CDN fallback failed for ${componentIds.join(",")}: ${String(error)}`,
       );
-      // App 版本变化时必须重新获取当前 manifest 对应的 GLM 制品。
-      // 强制刷新失败后若继续回退旧 cache，会让上传和部署表面成功但远端仍运行旧资源。
+      // When the App version changes, you must re-obtain the GLM artifact corresponding to the current manifest.
+      // If you continue to roll back the old cache after the forced refresh fails, the upload and deployment will appear to be successful but the old resources will still be running on the remote end.
       if (forceRefresh) {
         throw error;
       }
@@ -673,8 +673,8 @@ export class RemoteDownloadAssetInstaller implements RemoteAssetInstaller {
     throwIfRemoteAssetInstallAborted(this.options.signal);
     const sourcePath = buildRemoteComponentSourcePath(componentRef, params.sourceRelativePath);
     const stagingDir = `${params.remoteDir}.new-${Date.now()}-${randomUUID()}`;
-    // 最终目录的 remove + move 由 deployServer 的 install-root transaction lock 串行化；
-    // 这里的 UUID staging 负责隔离 owner，并让异常清理保持局部。
+    // The remove + move of the final directory is serialized by deployServer's install-root transaction lock;
+    // UUID staging here takes care of isolating the owner and keeping exception cleanup local.
     const requiredPathChecks = (params.requiredRelativePaths ?? []).map(
       (relativePath) =>
         `test -e ${quotePosixPathArg(`${params.remoteDir}/${relativePath.replace(/^\/+/u, "")}`)}`,
@@ -682,8 +682,8 @@ export class RemoteDownloadAssetInstaller implements RemoteAssetInstaller {
     const stream = await this.backend.exec(
       [
         "set -eu",
-        // 复制或最终替换失败时，原实现会永久遗留 `.new-*` 目录。
-        // trap 仅删除本次 owner staging，不触碰其他并发部署者。
+        // When copying or eventual replacement fails, the original implementation leaves behind `.new-*` directories permanently.
+        // trap only deletes this owner staging and does not touch other concurrent deployers.
         `cleanup_staging() { rm -rf ${quotePosixPathArg(stagingDir)}; }`,
         "trap cleanup_staging EXIT HUP INT TERM",
         `rm -rf ${quotePosixPathArg(stagingDir)}`,
@@ -718,9 +718,9 @@ export class RemoteDownloadAssetInstaller implements RemoteAssetInstaller {
     requiredRelativePaths: readonly string[] = [],
     forceRefresh = false,
   ): Promise<RemoteComponentRef> {
-    // GLM bundle 与官方插件来自同一个 component，但会依次调用两次安装。
-    // 强制刷新若每次都绕过进程内 task，会连续删除并下载两次同一制品；同一次 installer
-    // 生命周期内只强刷一次，并让后续 mount 复用这份已校验组件。
+    // The GLM bundle comes from the same component as the official plug-in, but the installation will be called twice in sequence.
+    // If the forced refresh bypasses the in-process task every time, the same product will be deleted and downloaded twice in succession; the same installer
+    // Only force flash once in the life cycle, and allow subsequent mounts to reuse this verified component.
     const existing = forceRefresh
       ? this.forceRefreshComponentTasks.get(componentId)
       : this.componentCache.get(componentId);
@@ -763,9 +763,9 @@ export class RemoteDownloadAssetInstaller implements RemoteAssetInstaller {
       return componentRef;
     }
 
-    // 远端 component cache 的 key 只按语义版本命中；如果历史组件缓存缺少关键文件，
-    // 部署层会反复把残缺 cache 复制回运行目录。
-    // 这里在 cache hit 后按调用方声明的关键文件做完整性检查，缺失时清掉旧 ready/cache 并强制重下组件。
+    // The key of the remote component cache is only hit according to the semantic version; if the historical component cache lacks the key file,
+    // The deployment layer will repeatedly copy the incomplete cache back to the running directory.
+    // Here, after the cache hit, the key files declared by the caller are checked for integrity. If missing, the old ready/cache is cleared and the component is forced to be downloaded again.
     this.loggers.logWarn(
       `[remote-assets] remote component cache incomplete: component=${componentRef.component.id} missing=${missingPaths.join(",")}; redownloading`,
     );
@@ -804,8 +804,8 @@ export class RemoteDownloadAssetInstaller implements RemoteAssetInstaller {
       throw new Error(`[remote-assets] manifest is missing requested component: ${componentId}`);
     }
 
-    // server-bundle 和 GLM 都允许语义版本不变但制品内容更新，cache
-    // 必须直接按 manifest SHA 隔离；其它资源包继续沿用原有语义版本 key。
+    // Both server-bundle and GLM allow the semantic version to remain unchanged but the artifact content to be updated, cache
+    // It must be isolated directly by manifest SHA; other resource packages continue to use the original semantic version key.
     const componentCacheSegment = usesRemoteAssetContentAddressedCacheIdentity(component.id)
       ? component.sha256
       : hashRemoteCacheSegment(resolveRemoteAssetComponentCacheVersion(component.version));
@@ -813,8 +813,8 @@ export class RemoteDownloadAssetInstaller implements RemoteAssetInstaller {
     const readyPath = `${componentDir}/.ready`;
     if (await this.backend.exists(readyPath)) {
       if (forceRefresh) {
-        // 强制部署要求真的重新下载制品：即使 cache 目录已按 manifest SHA 隔离，
-        // 命中 ready 时也必须先清掉，否则会提前返回，把既有缓存当作本次部署结果。
+        // Force deployment requires an actual re-download of the artifact: even if the cache directory is quarantined by manifest SHA,
+        // When ready is hit, it must be cleared first, otherwise it will return early and treat the existing cache as the result of this deployment.
         this.loggers.logWarn(
           `[remote-assets] download required: component=${component.id} reason=force refresh path=${readyPath}`,
         );
@@ -841,8 +841,8 @@ export class RemoteDownloadAssetInstaller implements RemoteAssetInstaller {
       artifactUrls,
       this.options.remoteAssetNetwork,
     );
-    // HEAD 只服务进度统计，允许其独立收尾；完成后必须重新检查连接生命周期，
-    // 禁止取消后的迟到 continuation 使用旧 backend 创建远端下载与 staging。
+    // HEAD only serves progress statistics and is allowed to end independently; the connection life cycle must be rechecked after completion.
+    // Disable late continuations after cancellation using the old backend to create remote downloads and staging.
     throwIfRemoteAssetInstallAborted(this.options.signal);
     const stagingDir = `${REMOTE_BASE}/asset-cache/staging/${quoteSafeSegment(component.id)}-${Date.now()}-${randomUUID()}`;
     const archivePath = `${stagingDir}/component.tar.gz`;
@@ -869,8 +869,8 @@ export class RemoteDownloadAssetInstaller implements RemoteAssetInstaller {
       "set -eu",
       `rm -rf ${quotePosixPathArg(stagingDir)}`,
       `mkdir -p ${quotePosixPathArg(stagingDir)} ${quotePosixPathArg(posix.dirname(componentDir))}`,
-      // 远端下载中断可能留下 .lock 目录。持锁进程定期刷新 mtime，等待方只清理超过 10 分钟没有心跳的锁，
-      // 避免用户断开后再次选择远端下载时一直等待，同时不误伤仍在慢速下载的正常进程。
+      // Interruption of remote downloads may leave the .lock directory behind. The lock-holding process refreshes mtime regularly, and the waiting party only clears locks that have not had a heartbeat for more than 10 minutes.
+      // This prevents the user from waiting when selecting the remote download again after disconnecting, and at the same time does not accidentally damage the normal process of slow downloading.
       `while ! mkdir ${quotedLockDir} 2>/dev/null; do if [ -e ${quotePosixPathArg(readyPath)} ]; then rm -rf ${quotePosixPathArg(stagingDir)}; exit 0; fi; lock_mtime=$({ stat -c %Y ${quotedLockDir} || stat -f %m ${quotedLockDir}; } 2>/dev/null || printf 0); lock_now=$(date +%s); if [ "$lock_mtime" -gt 0 ] && [ $((lock_now - lock_mtime)) -ge 600 ]; then echo ${quotePosixShellArg(`[remote-assets] stale lock for ${component.id}@${component.version}, retrying`)} >&2; rm -rf ${quotedLockDir}; continue; fi; sleep 1; done`,
       `lock_heartbeat_pid=; (while :; do touch ${quotedLockDir} 2>/dev/null || exit 0; sleep 30; done) & lock_heartbeat_pid=$!`,
       `trap ${quotePosixShellArg(cleanupCommand)} EXIT`,
@@ -971,8 +971,8 @@ async function fetchRemoteDownloadManifestInternal(
       if (!signal.aborted) {
         throw error;
       }
-      // manifest 响应头成功不代表响应体会结束；body 超时后必须
-      // 取消当前请求并尝试下一个 CDN，避免 remote-download 初始化永久挂起。
+      // The success of the manifest response header does not mean the end of the response experience; the body must be
+      // Cancel the current request and try the next CDN to avoid remote-download initialization hanging permanently.
       loggers.logWarn(`[remote-assets] manifest candidate failed ${url}: ${String(error)}`);
       candidateErrors.push(`${url} -> ${String(error)}`);
       continue;
@@ -990,8 +990,8 @@ async function fetchRemoteDownloadManifestInternal(
   }
 
   if (candidateErrors.length > 0) {
-    // remote-download 过去丢弃每个 CDN 候选的 timeout/HTTP 诊断，
-    // 最终只报 manifest not found，无法区分资源未发布与响应体半开。
+    // remote-download used to drop timeout/HTTP diagnostics for each CDN candidate,
+    // In the end, only manifest not found is reported, and it is impossible to distinguish between unpublished resources and half-open response bodies.
     throw new Error(
       `[remote-assets] failed to fetch manifest for ${options.platformArch}: ${candidateErrors.join("; ")}`,
     );
@@ -1043,7 +1043,7 @@ async function resolveRemoteArtifactContentLength(
         return contentLength;
       }
     } catch {
-      // HEAD 只用于连接日志进度总量；失败时下载本身仍按 curl/wget 候选继续执行。
+      // HEAD is only used for the connection log progress total; the download itself continues to execute according to the curl/wget candidate when it fails.
     }
   }
   return null;

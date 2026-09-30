@@ -34,7 +34,7 @@ class OfficePreviewErrorBoundary extends Component<
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    logger.error("[PreviewPane] Office 预览组件渲染失败", {
+    logger.error("[PreviewPane] office preview render failed", {
       error: error.message,
       componentStack: info.componentStack ?? "",
     });

@@ -42,7 +42,7 @@ export interface ProviderProvisioningSourceOptions {
   readonly cipherProvider?: CredentialCipherProvider;
 }
 
-/** 从 Local Environment 读取可 Provision 的事实；不会读取或导出完整 Registry Snapshot。 */
+/** Reads the provisionable facts from the Local Environment; it never reads or exports a full Registry Snapshot. */
 export function createProviderProvisioningSource(
   options: ProviderProvisioningSourceOptions,
 ): ProviderProvisioningSource {
@@ -53,7 +53,7 @@ export function createProviderProvisioningSource(
         options.settingService.get(),
         readProvisioningCredentials(options.credentialFilePath, options.cipherProvider),
       ]);
-      // 默认与规则来自同一份持锁读取，不能把两次读取的值拼成不存在的配置版本。
+      // The default and the rules come from the same lock-holding read, and the values ​​read twice cannot be combined into a non-existent configuration version.
       const personalConfig = encodeProviderConfigFile(personal).config;
       const accountSettings = {
         providerFamilyDomain: settings.providerFamilyDomain ?? null,
@@ -70,7 +70,7 @@ export function createProviderProvisioningSource(
   };
 }
 
-/** 分发读取不能把坏文件的内存降级当成权威；Source 与 Target 使用同一完整读取约束。 */
+/** Distribution reads must not treat an in-memory fallback for a corrupt file as authoritative; Source and Target share the same strict-read constraint. */
 export async function readProvisionablePersonalConfig(
   repository: PersonalProviderConfigRepository,
   filePath: string,
@@ -82,7 +82,7 @@ export async function readProvisionablePersonalConfig(
   } catch (error) {
     if (isFileNotFound(error)) {
       const rules = personal.models.toPersonalJSON();
-      // 首次尚无 Personal 文件是合法空配置；已有内容后文件消失不能继续导出旧快照。
+      // If there is no Personal file for the first time, it is a legal empty configuration; after the existing content, the file disappears and old snapshots cannot be exported.
       if (
         personal.providers.keys().length === 0 &&
         rules.providerModelRules.length === 0 &&
@@ -92,7 +92,9 @@ export async function readProvisionablePersonalConfig(
       )
         return personal;
     }
-    throw new Error(`本地 Personal Provider Config 无法同步: ${filePath}`, { cause: error });
+    throw new Error(`local Personal Provider Config cannot be synced: ${filePath}`, {
+      cause: error,
+    });
   }
   try {
     const decoded = decodeProviderConfigFile(JSON.parse(raw) as unknown);
@@ -100,11 +102,13 @@ export async function readProvisionablePersonalConfig(
       .update(JSON.stringify(encodeProviderConfigFile(decoded)))
       .digest("hex");
     if (actualRevision !== personal.revision) {
-      throw new Error("Personal Provider Config 在读取期间发生变化");
+      throw new Error("Personal Provider Config changed while being read");
     }
     return personal;
   } catch (error) {
-    throw new Error(`本地 Personal Provider Config 无法同步: ${filePath}`, { cause: error });
+    throw new Error(`local Personal Provider Config cannot be synced: ${filePath}`, {
+      cause: error,
+    });
   }
 }
 
@@ -121,14 +125,14 @@ async function readProvisioningCredentials(
   }
   const parsed = JSON.parse(raw) as unknown;
   if (!isRecord(parsed)) {
-    throw new Error("Credential Store 必须是 JSON 对象");
+    throw new Error("Credential Store must be a JSON object");
   }
   const cipher = cipherProvider ?? createCredentialCipherProvider();
   const allowedKeys = new Set<string>(PROVIDER_PROVISIONING_OAUTH_CREDENTIAL_KEYS);
   const entries: ProviderProvisioningCredentialEntry[] = [];
-  // Credential Store 还可能包含不属于 Provisioning allowlist 的历史记录；
-  // 这些记录不是本次同步事实，不能因为其值损坏而阻断合法账号凭据的同步。
-  // allowlist 内的条目仍保持字符串和解密校验，避免把未知内容当成 Secret 传输。
+  // The Credential Store may also contain historical records that are not part of the Provisioning allowlist;
+  // These records are not the facts of this synchronization, and the synchronization of legitimate account credentials cannot be blocked because their values are damaged.
+  // Entries in the allowlist still maintain string and decryption verification to avoid unknown content being transmitted as Secret.
   for (const [key, encrypted] of Object.entries(parsed)) {
     const scope = allowedKeys.has(key)
       ? ("oauth-session" as const)
@@ -163,7 +167,7 @@ export function resolveCredentialFilePath(appConfigDir: string): string {
   return join(appConfigDir, CREDENTIAL_FILE_NAME);
 }
 
-/** 只枚举 Provisioning allowlist 的物理 key，供目标端实现 replace-allowlist 删除语义。 */
+/** Enumerates only the physical keys of the Provisioning allowlist, so the target end can implement replace-allowlist deletion semantics. */
 export async function listProviderProvisioningCredentialKeys(
   credentialFilePath: string,
 ): Promise<readonly string[]> {
@@ -175,7 +179,7 @@ export async function listProviderProvisioningCredentialKeys(
     throw error;
   }
   const parsed = JSON.parse(raw) as unknown;
-  if (!isRecord(parsed)) throw new Error("Credential Store 必须是 JSON 对象");
+  if (!isRecord(parsed)) throw new Error("Credential Store must be a JSON object");
   const oauthKeys = new Set<string>(PROVIDER_PROVISIONING_OAUTH_CREDENTIAL_KEYS);
   return Object.keys(parsed).filter(
     (key) => oauthKeys.has(key) || isProviderProvisioningAccountCredentialKey(key),

@@ -122,7 +122,7 @@ function buildModelSelectionEntry(
   };
 }
 
-/** stable/compact-edit fork 一次性预分配的完整 child-local 身份。 */
+/** The complete child-local identity preallocated in one go for a stable/compact-edit fork. */
 interface ForkIdentityMap {
   parentSessionId: SessionId;
   childSessionId: SessionId;
@@ -437,7 +437,7 @@ function buildAtomicForkNotice(
           text: formatConversationForkNoticeBody(forkOrigin),
           synthetic: true,
           time: { start: created, end: created },
-          // hydrate 只读 part metadata；独立 source 保留 fork 边界且不改变 checkpoint 的 MCS 行为。
+          // hydrate read-only part metadata; independent source preserves fork boundaries and does not change the MCS behavior of checkpoints.
           metadata: buildSyntheticUserNoticePartMetadata("fork", "model-only", {
             forkOrigin,
             runtimeMessage: systemReminderRuntimeMetadata("conversation_fork"),
@@ -457,7 +457,7 @@ function buildAtomicForkNotice(
         ...(modelSelection?.options?.reasoningLevel
           ? { reasoningLevel: modelSelection.options.reasoningLevel }
           : {}),
-        // 分支提示本身也属于新分支历史，必须与分支的持久化状态保持一致。
+        // The branch tip itself also belongs to the new branch history and must be consistent with the persistent state of the branch.
         ...(options.executionState ?? readRuntimeExecutionState(runtime)),
         agent: runtime.config.agentName ?? "zcode-agent",
         path: { cwd: runtime.workingDirectory, root: runtime.workspaceRoot },
@@ -546,7 +546,7 @@ function buildSelectionSideChatBoundary(
         text: SELECTION_SIDE_CHAT_BOUNDARY,
         synthetic: true,
         time: { start: created, end: created },
-        // hydrate 读取 part metadata；只写 info.source 会退化为普通 user 文本。
+        // hydrate reads part metadata; writing just info.source will degrade to plain user text.
         metadata: buildSyntheticUserNoticePartMetadata(
           "selection_side_chat",
           "model-only",
@@ -599,14 +599,14 @@ async function commitAtomicConversationFork(
   const historicalInfo = [...options.messages]
     .reverse()
     .find((message) => message.info.role === "assistant")?.info;
-  // 保留原 stable fork 的历史权限选择，不能让新增 entry 把它覆盖成父任务当前权限。
+  // Keep the historical permission selection of the original stable fork, and do not allow new entries to overwrite it with the current permissions of the parent task.
   const executionState =
     kind === "selection_side_chat" || historicalInfo?.role !== "assistant"
       ? currentExecutionState
       : resolveExecutionState(historicalInfo);
-  // 辅助对话明确不复制 Goal target/verifier entries，不能仍将
-  // 父消息的 goalBoundary 交给 strict fork clone，否则任意 Goal 状态都会要求不存在的
-  // child-local identity。只移除用于 Goal 恢复的 boundary，保留父对话正文作为模型上下文。
+  // The auxiliary dialog explicitly does not copy Goal target/verifier entries and cannot still
+  // The goalBoundary of the parent message is handed over to strict fork clone, otherwise any Goal state will require that it does not exist.
+  // child-local identity. Only removes the boundary used for goal recovery, leaving the parent conversation body as model context.
   const sourceMessages =
     kind === "selection_side_chat"
       ? options.messages.map(withoutSelectionSideChatGoalBoundary)
@@ -675,7 +675,7 @@ async function commitAtomicConversationFork(
       ),
     };
     if (kind !== "selection_side_chat") return cloned;
-    // 副屏继承历史仅供模型参考；UI 从空白副屏开始，避免把它误认成普通 fork。
+    // The inheritance history of the secondary screen is for model reference only; the UI starts with a blank secondary screen to avoid mistaking it for a normal fork.
     return {
       ...cloned,
       info: {
@@ -745,9 +745,9 @@ async function commitAtomicConversationFork(
         [...identities.partIds].map(([source, target]) => [target, source]),
       ),
     },
-    // 选型 entry 与 child/message/verifier 同事务提交；否则 child 首次注册能读到
-    // 运行态，冷恢复却会回到 workspace 默认 thought。entry 的磁盘包装由 adapter 负责。
-    // Plan 必须与权限一并进入原子的 child bundle，不能只复制创建时的旧 permission。
+    // The selection entry and child/message/verifier are submitted in the same transaction; otherwise, the child can be read when it is registered for the first time.
+    // In running state, cold recovery will return to the workspace default thought. The disk packaging of the entry is handled by the adapter.
+    // The Plan must go into the atomic child bundle along with the permissions, it cannot just copy the old permissions from creation.
     entries: [
       ...clonedEntries.map((item) => item.entry),
       modelSelectionEntry,
@@ -798,8 +798,9 @@ async function commitAtomicConversationFork(
 }
 
 /**
- * 副屏创建使用父 active transcript 的稳定落盘边界。正在生成时只保留已提交的本轮
- * real-user input，排除其后的 assistant/tool 增量；goal、queue 与阻塞运行态不复制。
+ * Secondary screen creation uses the stable on-disk boundary of the parent active transcript. While it is being
+ * generated, only the committed real-user input of this turn is kept and the assistant/tool deltas after it
+ * are excluded; goal, queue and blocking runtime state are not copied.
  */
 export async function createSelectionSideConversation(
   this: AgentRuntimeInternal,
@@ -867,8 +868,8 @@ export async function createForkedSession(
 
   const forkedSessionId = options.forkedSessionId ?? createSessionId();
   const input = buildForkedSessionInput(runtime, options.parentSession, forkedSessionId);
-  // legacy workspace fork 兼容分支。V4 stable/compact-edit 入口直接构建完整 bundle，
-  // 不得经过这里的 child-only metadata 原语，否则会重新引入逐条补写窗口。
+  // legacy workspace fork compatible branch. The V4 stable/compact-edit entry directly builds the complete bundle.
+  // The child-only metadata primitive here must not be passed, otherwise the item-by-item complement window will be reintroduced.
   if (options.stableForkMetadata) {
     if (!runtime.sessionStore.createForkedSessionWithMetadata) {
       throw stableForkError("Stable fork requires atomic child metadata persistence", {
@@ -891,7 +892,7 @@ export async function createForkedSession(
   return forkedSessionId;
 }
 
-/** legacy workspace/checkpoint fork；V4 stable 与 compact-edit 禁止调用。 */
+/** legacy workspace/checkpoint fork; calling it is forbidden for V4 stable and compact-edit. */
 export async function forkConversationFromMessage(
   this: AgentRuntimeInternal,
   options: {
@@ -923,9 +924,9 @@ export async function forkConversationFromMessage(
   const parentMessages = await this.sessionStore.messages({
     sessionID: this.sessionId,
   });
-  // fork 会在编辑重发和压缩后发生，复制源必须是 UI transcript 语义。
-  // activeSessionMessages 是模型恢复语义，会按 compact boundary 截掉旧 worklog；
-  // fork child 需要保留 fork 点前可见历史，但仍要排除 rewind/edit 后的旧分支。
+  // Fork will occur after editing is retransmitted and compressed, and the copy source must be UI transcript semantics.
+  // activeSessionMessages is the model recovery semantics, and the old worklog will be cut off according to the compact boundary;
+  // Fork child needs to keep the visible history before the fork point, but still exclude old branches after rewind/edit.
   const forkSourceMessages = forkSourceMessagesForSession(parentMessages, parentSession);
   const targetIndex = forkSourceMessages.findIndex(
     (message) => message.info.id === options.targetMessageId,
@@ -965,8 +966,8 @@ export async function forkConversationFromMessage(
     messageIdMap,
     traceContext: options.traceContext,
   });
-  // 纯对话 fork 没有 workspace checkpoint，但 UI 仍需要一条结构化 fork notice 渲染分割线。
-  // 之前只复制历史消息，导致 forked session 首屏看不到来源边界。
+  // Pure conversational forks do not have workspace checkpoints, but the UI still requires a structured fork notice rendering split line.
+  // Previously, only historical messages were copied, resulting in the source boundary not being visible on the first screen of the forked session.
   const copiedTargetMessageId = messageIdMap.get(options.targetMessageId);
   const forkTimelineCreated = Date.now();
   await this.persistAssistantTimelinePartForSession({
@@ -1046,7 +1047,7 @@ export async function forkConversationFromMessage(
   };
 }
 
-/** V4 running stable fork 公共入口：纯 transcript copy，不读取/恢复 workspace checkpoint。 */
+/** The public entry for a V4 running stable fork: a pure transcript copy that neither reads nor restores the workspace checkpoint. */
 export async function forkStableConversationAtMessage(
   this: AgentRuntimeInternal,
   options: StableConversationForkOptions,
@@ -1076,7 +1077,7 @@ export async function forkStableConversationAtMessage(
   });
 }
 
-/** compact-covered edit：复制目标真实用户输入之前的 active conversation prefix。 */
+/** compact-covered edit: copies the active conversation prefix that precedes the target real user input. */
 export async function forkConversationBeforeMessage(
   this: AgentRuntimeInternal,
   options: ConversationBeforeInputForkOptions,
@@ -1125,9 +1126,10 @@ function conversationHistoryBeforeInput(
 }
 
 /**
- * stable resolver 已给出目标 product turn 的唯一 segment。core 保留 segment 起点前
- * 的 active transcript 前缀，并要求 ordered ids 在 active branch 中严格连续；不再按
- * parentID 或“同一 assistant turn”向 boundary 后扩张。
+ * The stable resolver has already given the unique segment of the target product turn. core keeps the prefix of
+ * the active transcript that precedes the segment's start, and requires the ordered ids to be strictly
+ * contiguous in the active branch; it no longer expands past the boundary by parentID or by "the same
+ * assistant turn".
  */
 function stableForkHistoryMessages(
   activeMessages: readonly MessageWithParts[],
@@ -1312,8 +1314,8 @@ function cloneGoalVerificationEntryForFork(
     typeof payload.anchorAssistantMessageId === "string"
       ? (payload.anchorAssistantMessageId as MessageId)
       : null;
-  // anchor 在场但不在 messageIdMap = 被验证的 assistant 在 fork 点之后（未复制）：
-  // 这是 fork 历史边界过滤，正确跳过——child 只继承 fork 点前的 verifier timeline。
+  // anchor is present but not after messageIdMap = verified assistant after fork point (not copied):
+  // This is fork history boundary filtering, correctly skipped - the child only inherits the verifier timeline before the fork point.
   if (anchorAssistantMessageId && !options.messageIdMap.has(anchorAssistantMessageId)) {
     return null;
   }
@@ -1321,10 +1323,10 @@ function cloneGoalVerificationEntryForFork(
     ? options.messageIdMap.get(anchorAssistantMessageId)
     : undefined;
 
-  // legacy entry 无 anchor 时不再整条静默跳过——verifier
-  // 事实仍复制（无法按 anchor 判边界，宁可保留供溯源），本地 anchor 缺省、读取端
-  // 按「无 anchor 落已知末尾」处理。anchorTurnId 指向父 runtime turn（child 不存在
-  // 该轮），恒降级 originAnchorTurnId。
+  // When legacy entry has no anchor, the entire entry will no longer be silently skipped——verifier
+  // The fact is still copied (the boundary cannot be judged by anchor, and would rather be kept for traceability), the local anchor defaults to the reading end
+  // Process as "No anchor, drop to known end". anchorTurnId points to the parent runtime turn (child does not exist
+  // this round), always downgrade originAnchorTurnId.
   const clonedPayloadRecord: Record<string, unknown> = { ...payload };
   if (childAnchorAssistantMessageId) {
     clonedPayloadRecord.anchorAssistantMessageId = childAnchorAssistantMessageId;
@@ -1340,8 +1342,8 @@ function cloneGoalVerificationEntryForFork(
       ...entry,
       id: `fork_goal_verify_${eventId}`,
       sessionID: options.forkedSessionId,
-      // verifier entry 是 goal iteration 的持久边界；fork 后必须复制到
-      // child session，并把 anchor assistant 改写为 child message id，避免 UI 恢复时丢分割线。
+      // The verifier entry is the persistent boundary of the goal iteration; it must be copied to after forking
+      // child session, and rewrite the anchor assistant as child message id to avoid losing the dividing line when the UI is restored.
       data: {
         ...data,
         eventId,
@@ -1395,8 +1397,8 @@ function activeForkTranscriptMessages(
     rewindTargetMessageId?: MessageId;
   } = {},
 ): MessageWithParts[] {
-  // fork 保留完整可见 transcript（不做 compact provider scope 裁剪），但 rewind
-  // branch 与 runtime resume / cold projection 必须使用同一纯选择器。
+  // fork retains the complete visible transcript (without compact provider scope cropping), but rewind
+  // branch and runtime resume / cold projection must use the same pure selector.
   return selectActiveConversationBranch(messages, options);
 }
 
@@ -1480,8 +1482,8 @@ export function buildForkHistoryMessages(
     return forkHistoryMessages;
   }
 
-  // compact 后 active branch 只剩 summary user + assistant，summary 会被 UI 过滤。
-  // fork 到该 assistant 时仍要把它 parentID 指向的真实用户输入放回 compact boundary 前，
-  // 这样历史可见气泡不丢，同时 resume 仍从最后一个 compact boundary 开始，不改变模型上下文。
+  // After compaction, only summary user + assistant are left in the active branch, and the summary will be filtered by the UI.
+  // When forking to the assistant, the real user input pointed to by its parentID must still be put back in front of the compact boundary.
+  // In this way, the historical visible bubbles are not lost, and resume still starts from the last compact boundary without changing the model context.
   return [compactedParentUserMessage, ...forkHistoryMessages];
 }

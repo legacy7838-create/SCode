@@ -1,17 +1,17 @@
 /**
- * zcode-plan / Coding Plan 业务错误码与前端处理约定。
+ * zcode-plan / Coding Plan business error codes and the front-end handling convention.
  *
- * | 场景           | code | HTTP | 前端处理 |
- * |----------------|------|------|----------|
- * | JWT 缺失/失效  | 1006 | 200  | 跳登录或重新授权 |
- * | 配额不足       | 1005 | 200  | 禁用入口，刷新配额 |
- * | 模型不可用     | 3006 | 400  | 切换到 Built-in Provider 中的其他模型 |
- * | 参数错误       | 3001 | 400  | 检查请求体 |
- * | 安全校验拒绝   | 3007 | 403  | 客户端无法完成安全校验，提示联系支持 |
- * | 模型并发上限   | 3010 | 429  | Start Plan 下走升级横幅 |
- * | 请求过频       | 3002/429 | 429 | 限流提示，稍后重试 |
- * | 闲时票据不可用 | 3102 | 400  | 单段运行时间到顶，提示新建闲时任务续跑 |
- * | 上游 HTTP 异常 | 2007 | 500  | 可重试；刷新配额，勿本地扣额度 |
+ * | Scenario | code | HTTP | Front-end handling |
+ * |-----------------------------|----------|------|--------------------|
+ * | JWT missing / expired | 1006 | 200 | Jump to login or re-authorize | | Quota exhausted | 1005 |
+ * 200 | Disable the entry point, refresh the quota | | Model unavailable | 3006 | 400 | Switch to
+ * another model in the Built-in Provider | | Invalid parameters | 3001 | 400 | Inspect the request
+ * body | | Security check rejected | 3007 | 403 | The client cannot satisfy the security check;
+ * prompt the user to contact support | | Model concurrency limit | 3010 | 429 | Show the upgrade
+ * banner under Start Plan | | Rate limited | 3002/429 | 429 | Show a rate-limit notice and retry
+ * later | | Off-peak ticket unavailable | 3102 | 400 | The single run segment hit its time cap;
+ * prompt the user to start an off-peak task to continue | | Upstream HTTP error | 2007 | 500 |
+ * Retryable; refresh the quota, do not deduct the allowance locally |
  */
 import { isOffPeakTicketExpiredError } from "@zcode/shared";
 
@@ -62,14 +62,14 @@ const PROVIDER_BUSINESS_ERROR_UI_ACTIONS: Record<
   "1005": "refresh-quota",
   "3006": "switch-model",
   "3001": null,
-  // 3007 安全校验拒绝：客户端无法完成安全校验，没有可执行的恢复动作。
+  // 3007 Security check rejected: The client cannot complete the security check and there is no executable recovery action.
   "3007": null,
-  // 3008/3009/3010 并发上限：Start Plan 下走升级横幅，非 Start Plan 走 upgrade 动作
+  // 3008/3009/3010 Concurrency limit: Start Plan goes to upgrade banner, non-Start Plan goes to upgrade action
   "3008": "upgrade",
   "3009": "upgrade",
   "3010": "upgrade",
   "3002": "retry-later",
-  // 3102 闲时票据不可用：只能新建闲时任务续跑，横幅里的重试/切模型都救不回来。
+  // 3102 The idle time ticket is not available: you can only create a new idle time task and continue running, and the retry/cut model in the banner cannot save it.
   "3102": null,
   "2007": "retry-later",
   "429": "retry-later",
@@ -120,9 +120,9 @@ export function resolveStartPlanQuotaExhaustedBusinessCode(
     return undefined;
   }
 
-  // 旧版运行中/历史任务只保留外层错误码，真实 providerCode=1005 被压成
-  // PROVIDER_BUSINESS_ERROR / SEND_FAILED / unknown_error + "exceed limit/exceed quota limit"。
-  // ChatView 会在 Start Plan provider 边界内调用这里，避免误伤其他 provider 的同名错误。
+  // The old version of running/historical tasks only retains the outer error code, and the real providerCode=1005 is suppressed.
+  // PROVIDER_BUSINESS_ERROR / SEND_FAILED / unknown_error + "exceed limit/exceed quota limit".
+  // ChatView will call this within the boundaries of the Start Plan provider to avoid errors with the same name in other providers.
   if (
     (normalizedMessage.includes("exceed limit") ||
       normalizedMessage.includes("exceed quota limit") ||
@@ -142,9 +142,9 @@ const CONCURRENT_LIMIT_WRAPPER_CODES = new Set([
   "MODEL_RATE_LIMITED",
 ]);
 
-const CONCURRENT_LIMIT_MESSAGE_PATTERNS = ["concurrent", "concurrency", "并发"];
+const CONCURRENT_LIMIT_MESSAGE_PATTERNS = ["concurrent", "concurrency", "Concurrency"];
 
-const MODEL_SCOPED_CONCURRENT_LIMIT_MESSAGE_PATTERNS = ["model", "模型"];
+const MODEL_SCOPED_CONCURRENT_LIMIT_MESSAGE_PATTERNS = ["model", "model"];
 
 export const START_PLAN_BUSY_AUTO_RETRY_EXHAUSTED_MESSAGE =
   "Start Plan is busy and automatic model stream recovery reached the maximum retry count.";
@@ -172,8 +172,8 @@ export type GlmQuotaBannerBusinessCode = (typeof GLM_QUOTA_BANNER_BUSINESS_CODES
 const GLM_QUOTA_BANNER_BUSINESS_CODE_SET = new Set<string>(GLM_QUOTA_BANNER_BUSINESS_CODES);
 
 /**
- * 判断是否为并发上限业务错误（3008/3009/3010）。
- * Start Plan 下命中时走并发限制升级横幅，而非普通错误横幅。
+ * Whether this is a concurrency-limit business error (3008/3009/3010). When it hits under Start
+ * Plan, the concurrency-limit upgrade banner is used instead of the ordinary error banner.
  */
 export function resolveStartPlanConcurrentLimitBusinessCode(
   code: string | undefined,
@@ -195,9 +195,9 @@ export function resolveStartPlanConcurrentLimitBusinessCode(
     return undefined;
   }
 
-  // 兜底：旧链路可能把 3008/3009/3010 压成包装码 + 并发相关文案。
-  // 部分历史 task 只持久化 unknown_error + "model concurrency limit exceeded"；
-  // 这类错误是模型级并发，不能退化成阻断型 3008，否则恢复后仍会锁住 composer。
+  // Bottom line: The old link may compress 3008/3009/3010 into packaging code + concurrency related copywriting.
+  // Some historical tasks only persist unknown_error + "model concurrency limit exceeded";
+  // This type of error is model-level concurrency and cannot degenerate into blocking 3008, otherwise composer will still be locked after recovery.
   if (
     CONCURRENT_LIMIT_MESSAGE_PATTERNS.some((pattern) => normalizedMessage.includes(pattern)) &&
     (!normalizedCode || CONCURRENT_LIMIT_WRAPPER_CODES.has(normalizedCode))
@@ -217,8 +217,8 @@ export function resolveGlmQuotaBannerBusinessCode(
 ): GlmQuotaBannerBusinessCode | undefined {
   const normalizedCode = code?.trim();
   if (normalizedCode && GLM_QUOTA_BANNER_BUSINESS_CODE_SET.has(normalizedCode)) {
-    // GLM API 1308/1309/1310/1311/1313-1321 都是额度、
-    // 套餐或账号使用边界，不应被普通错误横幅盖住升级入口。
+    // GLM API 1308/1309/1310/1311/1313-1321 are all quotas,
+    // Package or account usage boundaries should not cover the upgrade entrance with ordinary error banners.
     return normalizedCode as GlmQuotaBannerBusinessCode;
   }
   return undefined;
@@ -232,15 +232,16 @@ export function resolveStartPlanConcurrentLimitBannerReason(
     : "initial-busy";
 }
 
-/** 与 core `model-errors.ts` 中 anomaly guard 文案保持一致。 */
+/** Kept in sync with the anomaly guard wording in core `model-errors.ts`. */
 export const SUSPICIOUS_EMPTY_MODEL_RESULT_MESSAGE =
   "Model returned no text, no tool calls, and no usage before completing the turn.";
 
 /**
- * 闲时票据不可用（上游 3102：票据失效或过期）。
- * 适配层会把该业务码包成 `off-peak-ticket-expired: <上游原文>` 落到 turn 错误里，
- * 外层 code 被压成 PROVIDER_BUSINESS_ERROR 等包装码时靠稳定标记兜底，
- * 否则横幅会把 "off peak ticket is invaliad or expired" 原文直接怼给用户。
+ * Off-peak ticket unavailable (upstream 3102: the ticket is invalid or expired). The adapter wraps
+ * that business code as `off-peak-ticket-expired: <upstream text>` into the turn error, and relies
+ * on that stable marker when the outer code has been squashed into a wrapper code such as
+ * PROVIDER_BUSINESS_ERROR; otherwise the banner would dump the raw "off peak ticket is invaliad or
+ * expired" text straight at the user.
  */
 export function resolveOffPeakTicketExpiredBusinessCode(
   code: string | undefined,

@@ -1,4 +1,7 @@
-/* eslint-disable max-lines -- Coding Plan usage 面板集中处理数据来源、额度卡片和用量图表，拆分会让账号级来源绑定状态更分散。 */
+/* eslint-disable max-lines -- The Coding Plan usage panel centralizes the data source, the quota
+ * cards and the usage charts; splitting it would scatter the account-level source binding state
+ * further.
+ */
 import { Fragment, lazy, useCallback, useEffect, useMemo, useState } from "react";
 import { Check, InfoIcon, RefreshCw } from "lucide-react";
 import type {
@@ -60,7 +63,10 @@ import {
 
 export { buildCodingPlanUsageSources, type CodingPlanUsageSource };
 
-/** Usage stats 独有的完整重置时刻格式；其它紧凑入口继续按各自规则展示。 */
+/**
+ * The full reset-moment format unique to Usage stats; the other compact entry points keep rendering
+ * by their own rules.
+ */
 function formatUsageStatsQuotaResetTime(
   locale: string,
   value: number | null | undefined,
@@ -68,9 +74,9 @@ function formatUsageStatsQuotaResetTime(
   return formatQuotaResetTime({ locale, value, format: "dateTime" });
 }
 
-// Recharts 会在模块初始化阶段触发 decimal.js-light 的 LN10 校验，
-// 在 Electron Linux 容器里会阻断整个 renderer 启动。图表按需加载后，
-// 普通启动和 e2e 首页不会被 Usage 页图表依赖影响，打开 Usage 时也由局部边界隔离。
+// Recharts will trigger the LN10 verification of decimal.js-light during the module initialization phase.
+// In the Electron Linux container, the entire renderer will be blocked from starting. After the chart is loaded on demand,
+// Normal startup and e2e homepage are not affected by the Usage page chart dependency, and are also isolated by local boundaries when Usage is opened.
 const CodingPlanUsageLineChart = lazy(() =>
   import("@/settings/usage-stats/CodingPlanUsageLineChart.js").then((module) => ({
     default: module.CodingPlanUsageLineChart,
@@ -121,9 +127,9 @@ export function CodingPlanUsagePanel({
       ? JSON.stringify([effectiveSource.providerId, effectiveSource.accountAccess])
       : "";
   const zaiEntitlement = useUsageEntitlement({
-    // 原只按 zai providerId 启用，没区分个人/团队，team source 会被
-    // 当成个人 zaiEntitlement 查询（缺 org/project）。加上 !effectiveSourceIsTeamPlan
-    // 后，zai team source 改走 teamEntitlement 分支。
+    // Originally only enabled by zai providerId, without distinguishing between individuals/teams, team source will be
+    // Query as a personal zaiEntitlement (missing org/project). Add !effectiveSourceIsTeamPlan
+    // Later, zai team source changed to the teamEntitlement branch.
     enabled:
       !loadingSources &&
       effectiveProviderId === BUILTIN_MODEL_PROVIDER_IDS.zaiIndividualCodingPlan &&
@@ -160,9 +166,9 @@ export function CodingPlanUsagePanel({
     refreshOnMount: false,
   });
   const teamEntitlement = useUsageEntitlement({
-    // 原硬绑 bigmodelCodingPlan providerId，zai team source 永远进不来。
-    // 改为按 effectiveSourceIsTeamPlan 路由，providerId 按 effectiveSource 动态取，
-    // zai team → zaiCodingPlan，bigmodel team → bigmodelCodingPlan。
+    // The original hard-tied bigmodelCodingPlan providerId, zai team source will never be able to enter.
+    // Instead, route according to effectiveSourceIsTeamPlan, and providerId is dynamically obtained according to effectiveSource.
+    // zai team → zaiCodingPlan,bigmodel team → bigmodelCodingPlan.
     enabled: !loadingSources && effectiveSourceIsTeamPlan,
     includeSubscription: true,
     preferredProviderId:
@@ -174,8 +180,8 @@ export function CodingPlanUsagePanel({
     cacheKey: effectiveSource?.id,
     refreshOnMount: false,
   });
-  // 原 zai providerId 一律走 zaiEntitlement（个人），把 team plan 漏掉。
-  // 改为先判 team plan，命中走 teamEntitlement；否则按 providerId 走个人分支。
+  // The original zai providerId is always zaiEntitlement (individual), and team plan is omitted.
+  // Instead, determine the team plan first, and go to teamEntitlement if it hits; otherwise, go to the personal branch based on providerId.
   const effectiveEntitlement = effectiveSourceIsTeamPlan
     ? teamEntitlement
     : effectiveProviderId === BUILTIN_MODEL_PROVIDER_IDS.zaiIndividualCodingPlan
@@ -209,8 +215,8 @@ export function CodingPlanUsagePanel({
       return;
     }
 
-    // Usage 页的 Quota Remaining 优先展示 entitlement quota。
-    // 打开 Coding Plan Usage 页面时，如果只依赖共享 TTL，可能继续显示 sidebar/input 留下的旧快照。
+    // Quota Remaining on the Usage page displays entitlement quota first.
+    // When opening the Coding Plan Usage page, old snapshots left by sidebar/input may continue to be displayed if you rely only on the shared TTL.
     void effectiveEntitlementRefresh({ silent: true, reason: "access" });
   }, [effectiveEntitlementRefresh, effectiveProviderId]);
 
@@ -243,7 +249,7 @@ export function CodingPlanUsagePanel({
       {error ? <UsageStatsErrorNotice error={error} /> : null}
 
       {loading && !snapshot ? (
-        // Coding Plan 来自供应商 monitor API，加载说明要和 App Usage 的本地统计区分。
+        // The Coding Plan comes from the vendor monitor API, and the loading instructions should be distinguished from the local statistics of App Usage.
         <UsageEmptyState
           title={intl.formatMessage({ id: "settings.usage.loadingTitle" })}
           description={intl.formatMessage({
@@ -305,7 +311,10 @@ function CodingPlanQuotaCards({
   onUsageStatsRefresh,
 }: {
   quota: UsageQuotaSnapshot | null;
-  /** 官方 Server MCP 额度不在 quota.limits[] 里，由 entitlement 快照的独立字段传入。 */
+  /**
+   * Official Server MCP quota is not in quota.limits[]; it comes in through a separate field of the
+   * entitlement snapshot.
+   */
   mcpQuotaLimit: UsageQuotaLimit | null;
   generatedAt: number;
   sourceKey: string | undefined;
@@ -317,7 +326,7 @@ function CodingPlanQuotaCards({
   onEntitlementRefresh: () => void | Promise<void>;
   onUsageStatsRefresh: () => void | Promise<void>;
 }) {
-  const { intl, locale } = useZCodeIntl();
+  const { intl } = useZCodeIntl();
   const [quotaResetDialogOpen, setQuotaResetDialogOpen] = useState(false);
   const resetUi = useCodingPlanQuotaResetUi({
     sourceKey,
@@ -334,10 +343,10 @@ function CodingPlanQuotaCards({
     findCodingPlanQuotaLimit(limits, "TOKENS_LIMIT", 6),
     resetUi.week.entry,
   );
-  // 额度剩余 100% 时重置没有收益:隐藏重置按钮与机会徽标(纯展示,不影响发放与轮询)。
+  // There is no profit from resetting when the balance is 100%: Hide the reset button and opportunity logo (pure display, does not affect distribution and polling).
   const fiveHourQuotaFull = isCodingPlanQuotaLimitFull(fiveHourLimit);
   const weeklyQuotaFull = isCodingPlanQuotaLimitFull(weeklyLimit);
-  // 五小时与周机会合并为一个徽标,次数累加,倒计时取最早到期的一档。
+  // The five-hour and weekly opportunities are combined into one logo, the times are accumulated, and the countdown takes the earliest expiration level.
   const opportunityBadge = mergeCodingPlanQuotaResetOpportunityBadges([
     {
       count: resetUi.entry?.opportunityCount ?? 0,
@@ -409,16 +418,16 @@ function CodingPlanQuotaCards({
       id: card.key,
       label: card.label,
       percentage: getQuotaRemainingPercentage(card.limit),
-      resetTime: formatUsageStatsQuotaResetTime(locale, card.limit.nextResetTime),
-      value: formatQuotaRemainingPercentage(locale, card.limit),
+      resetTime: formatUsageStatsQuotaResetTime("en-US", card.limit.nextResetTime),
+      value: formatQuotaRemainingPercentage("en-US", card.limit),
     })),
     weekEnabled: Boolean(weeklyLimit),
     weekQuotaFull: weeklyQuotaFull,
   });
 
-  // Quota remaining 的响应式只允许整组纵向或整组横向。
-  // 额度项（最多 4 个：5 小时 / 每周 / MCP / Server MCP）不能在中间断点排成 n+1，
-  // 否则信息组会被视觉拆散。
+  // Quota remaining's responsiveness only allows a whole set of portraits or a whole set of landscapes.
+  // Credit items (maximum 4: 5 hours/week/MCP/Server MCP) cannot be queued to n+1 at intermediate breakpoints,
+  // Otherwise the information group will be visually broken up.
   const quotaCardsLayoutClass = "flex flex-col gap-3 lg:flex-row";
 
   return (
@@ -441,7 +450,7 @@ function CodingPlanQuotaCards({
           ) : null}
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2 text-ui-base text-foreground-subtle">
-          <span>{formatCodingPlanRefreshTime(locale, intl, generatedAt)}</span>
+          <span>{formatCodingPlanRefreshTime("en-US", intl, generatedAt)}</span>
           <Button
             type="button"
             variant="ghost"
@@ -459,10 +468,10 @@ function CodingPlanQuotaCards({
       <div className={quotaCardsLayoutClass}>
         {cards.map((card) => {
           const percentage = getQuotaRemainingPercentage(card.limit) ?? 0;
-          const resetTime = formatUsageStatsQuotaResetTime(locale, card.limit.nextResetTime);
+          const resetTime = formatUsageStatsQuotaResetTime("en-US", card.limit.nextResetTime);
           return (
             <div key={card.key} className="min-w-0 flex-1 rounded-xl bg-surface/70 p-4">
-              {/* min-h 与重置动作(h-5)对齐:没有动作的额度卡也保持同高,避免同排数值/进度条错位。 */}
+              {/* min-h aligns with the reset action (h-5): quota cards without an action keep the same height too, so values/progress bars in the same row do not misalign. */}
               <div className="flex min-h-5 min-w-0 items-center gap-1">
                 <span className="min-w-0 truncate text-ui-base text-foreground">{card.label}</span>
                 {card.key === "serverMcp" ? (
@@ -484,7 +493,7 @@ function CodingPlanQuotaCards({
                     </button>
                   </ControlHintTooltip>
                 ) : null}
-                {/* 额度标题旁入口只打开统一弹窗；真正核销由弹窗内对应类型按钮触发。 */}
+                {/* The entry point next to a quota title only opens the shared dialog; the actual redemption is triggered by the corresponding type button inside the dialog. */}
                 {card.key === "fiveHour" &&
                 resetUi.entry &&
                 ((resetUi.opportunityVisible && !fiveHourQuotaFull) ||
@@ -510,7 +519,7 @@ function CodingPlanQuotaCards({
               </div>
               <div className="mt-1 flex min-w-0 items-baseline gap-1.5">
                 <span className="text-ui-xl font-semibold text-foreground">
-                  {formatQuotaRemainingPercentage(locale, card.limit)}
+                  {formatQuotaRemainingPercentage("en-US", card.limit)}
                 </span>
                 {resetTime ? (
                   <span className="min-w-0 truncate text-ui-base text-foreground-subtle">
@@ -562,34 +571,34 @@ function CodingPlanUsageTrendsSection({
 }
 
 function CodingPlanActivitySection({ snapshot }: { snapshot: CodingPlanUsageSnapshot }) {
-  const { intl, locale } = useZCodeIntl();
+  const { intl } = useZCodeIntl();
   const summary = snapshot.activity.summary;
   const items = [
     {
       label: intl.formatMessage({ id: "settings.usage.lifetimeTotalTokens" }),
-      value: formatSummaryCompactTokenUsage(locale, summary.totalTokens),
+      value: formatSummaryCompactTokenUsage("en-US", summary.totalTokens),
     },
     {
-      // 日期直接拼进标签会在窄卡片中被截断；固定标题保持可读，日期改由信息图标按需展示。
+      // If the date is directly spelled into the label, it will be truncated in the narrow card; the fixed title remains readable, and the date is displayed by the information icon as needed.
       label: intl.formatMessage({ id: "settings.usage.lifetimePeakTokens" }),
       peakDailyTokensDate: summary.peakDailyTokensDate,
-      value: formatSummaryCompactTokenUsage(locale, summary.peakDailyTokens),
+      value: formatSummaryCompactTokenUsage("en-US", summary.peakDailyTokens),
     },
     {
-      // 修复回归：CodingPlanActivitySummary 只有 totalUsageDurationMs（累计使用时长），
-      // longestSessionMs 是 App Usage 侧的字段，不能使用“最长聊天时长”标签。
+      // Fix regression: CodingPlanActivitySummary only has totalUsageDurationMs (total usage time),
+      // longestSessionMs is a field on the App Usage side, and the "Longest Chat Duration" label cannot be used.
       label: intl.formatMessage({ id: "settings.usage.totalUsageDuration" }),
       value: formatAppUsageDuration(summary.totalUsageDurationMs, intl),
     },
     {
       label: intl.formatMessage({ id: "settings.usage.currentStreak" }),
-      value: `${formatCompactNumber(locale, summary.currentStreakDays)} ${intl.formatMessage({
+      value: `${formatCompactNumber("en-US", summary.currentStreakDays)} ${intl.formatMessage({
         id: "settings.usage.duration.day",
       })}`,
     },
     {
       label: intl.formatMessage({ id: "settings.usage.longestStreak" }),
-      value: `${formatCompactNumber(locale, summary.longestStreakDays)} ${intl.formatMessage({
+      value: `${formatCompactNumber("en-US", summary.longestStreakDays)} ${intl.formatMessage({
         id: "settings.usage.duration.day",
       })}`,
     },
@@ -611,11 +620,11 @@ function CodingPlanActivitySection({ snapshot }: { snapshot: CodingPlanUsageSnap
               <div className="mt-1 flex min-w-0 items-center justify-center gap-1 text-ui-base text-foreground-subtle">
                 <span className="min-w-0 truncate">{item.label}</span>
                 {item.peakDailyTokensDate ? (
-                  <ControlHintTooltip title={formatFullDay(locale, item.peakDailyTokensDate)}>
+                  <ControlHintTooltip title={formatFullDay("en-US", item.peakDailyTokensDate)}>
                     <span
                       className="inline-flex size-4 items-center justify-center"
                       tabIndex={0}
-                      aria-label={formatFullDay(locale, item.peakDailyTokensDate)}
+                      aria-label={formatFullDay("en-US", item.peakDailyTokensDate)}
                     >
                       <InfoIcon className="size-3.5" aria-hidden="true" />
                     </span>
@@ -628,7 +637,7 @@ function CodingPlanActivitySection({ snapshot }: { snapshot: CodingPlanUsageSnap
       </div>
       {snapshot.activity.heatmap.weeks.length ? (
         <UsageHeatmap
-          locale={locale}
+          locale="en-US"
           intl={intl}
           weeks={snapshot.activity.heatmap.weeks}
           countMetric="tools"
@@ -639,7 +648,7 @@ function CodingPlanActivitySection({ snapshot }: { snapshot: CodingPlanUsageSnap
 }
 
 function CodingPlanUsageDetailSection({ snapshot }: { snapshot: CodingPlanUsageSnapshot }) {
-  const { intl, locale } = useZCodeIntl();
+  const { intl } = useZCodeIntl();
   const [metric, setMetric] = useState<CodingPlanUsageDetailMetric>("credits");
   const [subject, setSubject] = useState<CodingPlanUsageDetailSubject>("model");
   const [selectedSeriesNames, setSelectedSeriesNames] = useState<string[]>([]);
@@ -776,7 +785,7 @@ function CodingPlanUsageDetailSection({ snapshot }: { snapshot: CodingPlanUsageS
             </span>
             <span className="flex items-baseline gap-1 text-foreground">
               <span className="font-mono font-medium">
-                {formatCodingPlanDetailValue(locale, totalValue, valueMetric, subject)}
+                {formatCodingPlanDetailValue("en-US", totalValue, valueMetric, subject)}
               </span>
               {detailUnit ? <span className="text-foreground-subtle">{detailUnit}</span> : null}
             </span>
@@ -807,7 +816,7 @@ function CodingPlanUsageDetailSection({ snapshot }: { snapshot: CodingPlanUsageS
                 <span className="truncate text-foreground-subtle">{item.name}:</span>
                 <span className="flex items-baseline gap-1 text-foreground">
                   <span className="font-mono font-medium">
-                    {formatCodingPlanDetailValue(locale, itemTotal, valueMetric, subject)}
+                    {formatCodingPlanDetailValue("en-US", itemTotal, valueMetric, subject)}
                   </span>
                   {detailUnit ? <span className="text-foreground-subtle">{detailUnit}</span> : null}
                 </span>
@@ -895,8 +904,8 @@ function shouldShowCodingPlanUsageDetailSummary({
     return true;
   }
 
-  // 旧版 Coding Plan usage-detail 只有 token 用量时也可能返回 cache 命中率，
-  // 但 BigModel 官网不展示积分摘要卡；只有真实 credits 数据才展示这组三卡。
+  // The old version of Coding Plan usage-detail may also return the cache hit rate when it only has token usage.
+  // However, the BigModel official website does not display the points summary card; only the real credits data displays this set of three cards.
   return hasCodingPlanCreditUsageData({ summary, modelDataList, toolDataList });
 }
 
@@ -913,22 +922,22 @@ function CodingPlanUsageDetailSummary({
 }: {
   summary: CodingPlanUsageSnapshot["detail"]["model"];
 }) {
-  const { intl, locale } = useZCodeIntl();
+  const { intl } = useZCodeIntl();
   const items = [
     {
       label: intl.formatMessage({ id: "settings.usage.cacheHitRate" }),
       trend: summary.cacheHitRateTrend,
-      value: formatCodingPlanRate(locale, summary.cacheHitRate),
+      value: formatCodingPlanRate("en-US", summary.cacheHitRate),
     },
     {
       label: intl.formatMessage({ id: "settings.usage.creditsTotal" }),
       trend: summary.totalCreditsTrend,
-      value: formatCompactNumber(locale, summary.totalCredits),
+      value: formatCompactNumber("en-US", summary.totalCredits),
     },
     {
       label: intl.formatMessage({ id: "settings.usage.averageDailyCredits" }),
       trend: summary.averageDailyCreditsTrend,
-      value: formatCompactNumber(locale, summary.averageDailyCredits),
+      value: formatCompactNumber("en-US", summary.averageDailyCredits),
     },
   ];
 
@@ -945,7 +954,7 @@ function CodingPlanUsageDetailSummary({
                   item.trend < 0 ? "text-destructive" : "text-success"
                 }`}
               >
-                {formatCodingPlanTrend(locale, item.trend)}
+                {formatCodingPlanTrend("en-US", item.trend)}
               </span>
             )}
           </div>

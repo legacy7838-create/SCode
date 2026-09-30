@@ -24,8 +24,8 @@ export function buildDeveloperFacingDescription({
   raw,
   modelContext,
   ticketType = "bug",
-  ticketModule = "其它",
-  ticketSeverity = "P2-中",
+  ticketModule = "Other",
+  ticketSeverity = "P2-Medium",
   formatMessage,
 }: {
   raw: string;
@@ -37,17 +37,17 @@ export function buildDeveloperFacingDescription({
 }): string {
   const notReported = formatMessage({ id: "feedback.submit.notReported" });
   return [
-    "原始反馈",
+    "Original feedback",
     "",
-    `反馈类型: ${ticketType}`,
-    `产品模块: ${ticketModule}`,
-    `严重程度: ${ticketSeverity}`,
-    "Agent 框架: zcode-agent",
-    `当前 Agent: ${FEEDBACK_ZCODE_AGENT_LABEL}`,
-    `当前模型型号: ${redactFeedbackText(modelContext.display || modelContext.model || notReported)}`,
-    "处理方式: 用户提交轻量表单，客户端自动补齐上下文，后端可异步生成 AI 分析",
+    `Feedback type: ${ticketType}`,
+    `Product area: ${ticketModule}`,
+    `Severity: ${ticketSeverity}`,
+    "Agent framework: zcode-agent",
+    `Current Agent: ${FEEDBACK_ZCODE_AGENT_LABEL}`,
+    `Current model: ${redactFeedbackText(modelContext.display || modelContext.model || notReported)}`,
+    "Handling: the user submits a lightweight form, the client fills in the context automatically, and the backend can generate an AI analysis asynchronously",
     "",
-    "用户原始描述",
+    "User's original description",
     raw.trim(),
   ].join("\n");
 }

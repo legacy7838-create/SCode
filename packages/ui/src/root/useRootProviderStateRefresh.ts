@@ -6,10 +6,10 @@ type RootProviderStateServices = Pick<IServiceAccessor, "providerSettingsService
 
 async function refreshRootProviderState(services: RootProviderStateServices): Promise<void> {
   try {
-    // Provider Runtime 统一刷新 Config、Account Source 与 Registry；Root 不再维护旧快照。
+    // Provider Runtime refreshes Config, Account Source and Registry uniformly; Root no longer maintains old snapshots.
     await services.providerSettingsService.refresh("root-provider-state-refresh");
   } catch (error) {
-    logger.error("[Root] 刷新 Provider Runtime 失败:", error);
+    logger.error("[Root] failed to refresh the Provider Runtime:", error);
   }
 }
 

@@ -9,9 +9,9 @@ export function validateRemoteServerBundle({ source }: RemoteServerBundleValidat
   const hasUnresolvedUndiciRuntimeImport = unresolvedUndiciRuntimeImportPattern.test(source);
 
   if (hasUnresolvedUndiciRuntimeImport) {
-    // remote deploy 只会上传单个 zcode-server.cjs 到 ~/.zcode/server/。
-    // 只有 bundle 里残留裸 undici 运行时导入才说明远端还依赖 node_modules；
-    // 若当前代码已经不使用 undici，则不应把“无依赖”误判成“未内联”。
+    // remote deploy will only upload a single zcode-server.cjs to ~/.zcode/server/.
+    // Only the bare undici runtime import remaining in the bundle means that the remote end still depends on node_modules;
+    // If the current code no longer uses undici, "no dependencies" should not be misjudged as "not inlined".
     throw new Error(
       'Remote server bundle must inline undici. Found unresolved runtime dependency "undici".',
     );

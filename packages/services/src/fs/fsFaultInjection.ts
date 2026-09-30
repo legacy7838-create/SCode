@@ -309,7 +309,7 @@ function createFsFaultInjectorFromEnv(
     return createFsFaultInjector();
   }
 
-  // 测试故障注入必须默认被生产环境隔离，避免用户机器残留环境变量后误伤真实配置和会话落盘。
+  // Test fault injection must be isolated from the production environment by default to avoid accidentally damaging the real configuration and session disk after leaving environment variables on the user machine.
   if (env.ZCODE_ENV !== "test" && env[ZCODE_E2E_FS_FAULTS_ALLOW_ENV] !== "1") {
     return createFsFaultInjector();
   }

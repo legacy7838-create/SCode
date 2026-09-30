@@ -57,8 +57,8 @@ function createContextQuotaResetOpportunityDismissalStore() {
   };
 }
 
-// 会话切换会重新挂载 composer；已读状态必须归当前 renderer 窗口所有，
-// 否则同一个重置机会会在每次切换会话后重新弹出。模块实例天然按窗口隔离且不落盘。
+// Session switching will remount composer; the read status must belong to the current renderer window.
+// Otherwise the same reset opportunity will pop up again after each session switch. Module instances are naturally isolated by window and are not dropped to disk.
 export const contextQuotaResetOpportunityDismissalStore =
   createContextQuotaResetOpportunityDismissalStore();
 

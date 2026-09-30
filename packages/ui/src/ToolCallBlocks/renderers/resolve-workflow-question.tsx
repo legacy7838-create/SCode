@@ -9,10 +9,16 @@ const RESOLVE_QUESTION_TOOL_ICON = (
   <MessageCircleReply className="size-4 shrink-0 text-foreground-subtle" />
 );
 
-/** 折叠头部的单行概要上限：概要只是「大概答了什么」，整段答案在展开后的 body 里。 */
+/**
+ * Collapsed header's single-line summary cap: the summary is only "roughly what was answered"; the
+ * full answer lives in the expanded body.
+ */
 const INLINE_PREVIEW_MAX_LENGTH = 160;
 
-/** 读时把 input 归一成对象：字符串先试**一次**宽容 `JSON.parse`（照 submit-result 的读侧惯例）。 */
+/**
+ * Normalize input to an object on read: for a string, first try **one** lenient `JSON.parse`
+ * (following the read-side convention of submit-result).
+ */
 function toRecord(value: unknown): Record<string, unknown> | undefined {
   if (typeof value === "object" && value !== null && !Array.isArray(value)) {
     return value as Record<string, unknown>;
@@ -34,7 +40,9 @@ function readText(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }
 
-/** 折叠头部的单行概要：换行折叠成空格，超长截断。 */
+/**
+ * Collapsed header's single-line summary: newlines collapse to spaces, overlong text is truncated.
+ */
 function toInlinePreview(value: string | undefined): string | undefined {
   if (value === undefined) return undefined;
   const collapsed = value.replace(/\s+/gu, " ").trim();
@@ -45,14 +53,17 @@ function toInlinePreview(value: string | undefined): string | undefined {
 }
 
 /**
- * ResolveWorkflowQuestion 工具卡。主代理按 qid 回答一个
- * 子代理从**正在跑的** workflow 里升级上来的阻塞问题；答案会成为那次 escalate 调用的结果原文。
+ * The ResolveWorkflowQuestion tool card. The main agent answers, by qid, a blocking question a
+ * sub-agent escalated up from a **running** workflow; the answer becomes the verbatim result of
+ * that escalate call.
  *
- * 折叠行：kindLabel（answering/answered）+ 答案单行概要。展开：question_id（mono qid 行）+ 完整
- * 答案 + 工具输出文本（成功确认，或三种结构化拒绝之一）。
+ * Collapsed row: kindLabel (answering/answered) + a single-line summary of the answer. Expanded:
+ * question_id (mono qid row) + the full answer + tool output text (a success acknowledgment, or one
+ * of three structured rejections).
  *
- * 关键：拒绝（未知 qid / 已作答 / run 不在飞 / 本会话无应答能力）走的是结构化失败，会带上
- * `status==="failed"`，此时才走失败样式；成功确认是普通结果。
+ * Key point: a rejection (unknown qid / already answered / run not in flight / no answering
+ * capability in this session) takes the structured failure path and carries `status==="failed"`;
+ * only then does the failure styling apply. A success acknowledgment is an ordinary result.
  */
 export function ResolveWorkflowQuestionToolCallBlock(context: ToolCallBlockRenderContext) {
   const { intl } = useZCodeIntl();
@@ -82,7 +93,7 @@ export function ResolveWorkflowQuestionToolCallBlock(context: ToolCallBlockRende
     id: "chat.toolCall.workflow.resolveQuestion.fallbackName",
   });
 
-  // 结果文本：成功的确认文案（普通结果 → output），或结构化拒绝（错误通道优先）。
+  // Result text: success confirmation text (normal result → output), or structured rejection (error channel takes precedence).
   const outcomeText = isFailed
     ? (context.errorText ?? readText(toolCall.error) ?? readText(toolCall.output))
     : isAnswering
@@ -105,7 +116,7 @@ export function ResolveWorkflowQuestionToolCallBlock(context: ToolCallBlockRende
         {questionId !== undefined ? (
           <section className="space-y-1.5">
             <h4 className="text-ui-sm font-medium text-foreground-subtlest">{questionIdHeading}</h4>
-            {/* qid 是不透明标识键 → mono。 */}
+            {/* qid is an opaque identifier key → mono. */}
             <code className="block break-all rounded-lg border border-border bg-panel px-4 py-2 font-mono text-ui-sm text-foreground-subtle">
               {questionId}
             </code>

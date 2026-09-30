@@ -186,7 +186,7 @@ export class RendererUserActionTelemetry implements UserActionTelemetry {
       try {
         await this.sendBatch(batch);
       } catch {
-        // Telemetry 是严格旁路；传输失败不能回压或改变用户操作结果。
+        // Telemetry is strictly bypassed; transmission failures cannot be backpressured or change the results of user operations.
       }
     }
   }

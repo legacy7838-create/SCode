@@ -64,7 +64,7 @@ async function requirePlainDirectory(path: string): Promise<void> {
 
 async function requireProjectMemoriesRoot(): Promise<string> {
   const projectsRoot = getProjectMemoriesRoot();
-  // 只校验 workspace 子目录时，projectsRoot symlink 会让 list/read 跟随到本地数据目录外。
+  // When only verifying the workspace subdirectory, the projectsRoot symlink will cause list/read to follow outside the local data directory.
   await requirePlainDirectory(projectsRoot);
   return projectsRoot;
 }
@@ -77,7 +77,7 @@ async function requireExactProjectMemoryFile(
   const fileEntry = memoryEntries.find((entry) => entry.name === fileName);
   const requestedFilePath = join(memoryRoot, fileName);
   if (!fileEntry) {
-    // 文件确实不存在时继续透传原始 ENOENT；只有大小写别名能命中时才拒绝读取。
+    // If the file does not exist, continue to transparently transmit the original ENOENT; only refuse to read when the upper and lower case alias can hit.
     await lstat(requestedFilePath);
     throw new Error(`Project Memory file name does not match exactly: ${fileName}`);
   }
@@ -140,7 +140,7 @@ export function createMemoryService(): IMemoryService {
       try {
         memoryEntries = await readdir(memoryRoot, { withFileTypes: true });
       } catch (error) {
-        // 目录检查后 Memory Agent 仍可能删除目录；catalog 快照只跳过已消失的 workspace。
+        // Memory Agent may still delete catalogs after a catalog check; catalog snapshots only skip workspaces that have disappeared.
         if (isNotFoundError(error)) {
           continue;
         }
@@ -161,7 +161,7 @@ export function createMemoryService(): IMemoryService {
         try {
           fileMetadata = await lstat(filePath);
         } catch (error) {
-          // readdir 后事实文件可能被并发删除；它不再属于本次只读快照。
+          // The file may be deleted concurrently after readdir; it no longer belongs to this read-only snapshot.
           if (isNotFoundError(error)) {
             continue;
           }
@@ -216,7 +216,7 @@ export function createMemoryService(): IMemoryService {
     await requirePlainDirectory(workspaceRoot);
     await requirePlainDirectory(memoryRoot);
 
-    // 大小写不敏感文件系统会让请求名称命中不同大小写的磁盘文件，绕过 catalog 白名单。
+    // A case-insensitive file system will cause the request name to hit disk files with different cases, bypassing the catalog whitelist.
     const filePath = await requireExactProjectMemoryFile(memoryRoot, params.fileName);
     return readProjectMemoryFileFromStableHandle({
       fileName: params.fileName,

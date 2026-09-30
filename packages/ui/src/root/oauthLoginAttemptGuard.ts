@@ -1,4 +1,7 @@
-/** 同一轮登录已经成功或正在完成成功回调时，忽略另一条路径的迟到失败。 */
+/**
+ * A late failure arriving on another path is ignored once the same login attempt has already
+ * succeeded or is finishing its success callback.
+ */
 export function shouldApplyOAuthPollingFailure(
   loginSucceeded: boolean,
   loginSuccessInFlight = false,

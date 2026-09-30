@@ -5,11 +5,17 @@ import { logger } from "@/logger.js";
 export interface AccountConnectionLoss {
   readonly providerId: string;
   readonly connectionKey: string;
-  /** 新账号/新连接/恢复可用会立即废弃旧建议，包括其在途查询。 */
+  /**
+   * A new account, a new connection, or a recovery to available immediately invalidates old
+   * suggestions, including their in-flight queries.
+   */
   readonly isCurrent: () => boolean;
 }
 
-/** 只比较同一连接的确定状态；手动选未开通套餐不能触发自动回退。 */
+/**
+ * Only the settled state of the same connection is compared; manually picking a plan that has not
+ * been activated must not trigger an automatic fallback.
+ */
 export function createAccountConnectionRefreshObserver(
   notify: (event: AccountConnectionLoss) => void | Promise<void>,
 ) {
@@ -35,7 +41,7 @@ export function createAccountConnectionRefreshObserver(
         previous = undefined;
         generation++;
       }
-      // 旧 Host 无身份事实时不猜测；unknown 不抹除已有确定基线。
+      // No guessing will be done when the old Host has no identity facts; unknown will not erase the established baseline.
       if (!key || !current || !next || next === "unknown") return;
       const lost = (previous === "available" || previous === "pending") && next === "unavailable";
       if (next !== previous) generation++;
@@ -50,8 +56,11 @@ export function createAccountConnectionRefreshObserver(
             !disposed && generation === eventGeneration && previous === "unavailable",
         });
       } catch (error) {
-        // 提示查询失败不等于新的失效事件；不能由重复 View 发起无限通知/重试。
-        logger.lifecycle.warn("[AccountConnection] 生成套餐失效提示失败，保留当前选择", { error });
+        // Prompt query failure does not equal a new failure event; unlimited notifications/retries cannot be initiated by repeated Views.
+        logger.lifecycle.warn(
+          "[AccountConnection] failed to build plan-loss notice, keeping current selection",
+          { error },
+        );
       }
     },
     invalidate() {

@@ -125,7 +125,7 @@ export function projectAssistantCodeComments(
       protectedRanges,
     );
     if (unclosedStart !== null) {
-      // 流式尾部如果直接交给 Markdown，会在闭合前把内部协议原文闪给用户。
+      // If the streaming tail were handed straight to Markdown, the raw internal protocol would flash to the user before it closes.
       replacements.push({ start: unclosedStart, end: content.length, replacement: "" });
     } else {
       const prefixStart = findAssistantDirectivePrefixStart(

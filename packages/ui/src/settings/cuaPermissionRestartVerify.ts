@@ -1,17 +1,20 @@
-// 重启 Helper 后的 accessibility 验证:吸收 tccd 传播 lag + 决定是否升级到"重启 ZCode"兜底。
+// Accessibility verification after restarting Helper: absorb tccd propagation lag + decide whether to upgrade to "restart ZCode".
 //
-// 背景:macOS Accessibility 授权后,运行中 Helper 的 AXIsProcessTrusted 被进程级缓存,必须重启 Helper
-// (出新进程)才能吃到。restartHelper 返回时新 Helper 的 broker socket 已健康,但 AX 状态可能仍读 stale
-// (tccd 传播有几秒 lag)。若只 refresh 一次,很可能又读到 stale,让用户以为重启无效。
+// Background: After macOS Accessibility authorization, the AXIsProcessTrusted of the running Helper is cached at the process level, and the Helper must be restarted.
+// You can only eat it if you create a new process. When restartHelper returns, the broker socket of the new Helper is healthy, but the AX status may still read stale
+// (tccd propagation has a few seconds lag). If you only refresh once, it is likely to read stale again, making the user think that the restart is invalid.
 //
-// 本 helper 在重启后轮询 accessibility:脱离 stale(granted/denied/unknown)即视为"已解决"返回 false;
-// 直到超时仍 stale(或一直 unavailable/抛错)才返回 true,触发 UI 升级到"重启 ZCode"兜底。
+// This helper polls accessibility after restart: leaving stale(granted/denied/unknown) is regarded as "Resolved" and returns false;
+// It will not return true until the timeout is still stale (or it is unavailable/throws an error), triggering the UI upgrade to "restart ZCode".
 import { isCuaPermissionStatusAvailable, type CuaPermissionStatusResult } from "@zcode/services";
 
 interface WaitForAccessibilityNotStaleOptions {
-  /** 总超时(默认 6s):覆盖 tccd 传播 lag,首轮通常立即 granted。 */
+  /**
+   * Overall timeout (default 6s): covers tccd propagation lag, the first round is usually granted
+   * immediately.
+   */
   timeoutMs?: number;
-  /** 轮询间隔(默认 500ms)。 */
+  /** Polling interval (default 500ms). */
   intervalMs?: number;
 }
 
@@ -23,16 +26,20 @@ const DEFAULT_INTERVAL_MS = 500;
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * 重启 Helper 后轮询 accessibility,判断是否脱离 stale。
+ * Polls accessibility after restarting the Helper to decide whether it has left `stale`.
  *
- * @returns `false` —— accessibility 在超时内脱离 stale(granted/denied/unknown),无需升级。
- *          `true`  —— 直到超时仍 stale(或持续 unavailable/抛错),升级到"重启 ZCode"兜底。
+ * @returns `false` — accessibility left `stale` within the timeout (granted/denied/unknown), no
+ * escalation needed. `true` — still `stale` at the timeout (or persistently unavailable/throwing),
+ * escalate to the "restart ZCode" fallback.
  *
- * 语义说明:
- *  - `granted` → 重启吃到授权了,解决。
- *  - `denied`/`unknown` → 是真实权限缺口(用户没授权),不是"重启失败",不升级(交给授权引导)。
- *  - `stale` 持续 → tccd 缓存没刷新 / 重启机制卡住 → 升级。
- *  - unavailable / 抛错 → 重启中途瞬时态,继续轮询;超时仍未恢复 → 升级。
+ * Semantics:
+ * - `granted` → the restart picked up the grant, resolved.
+ * - `denied`/`unknown` → a real permission gap (the user did not grant), not a "restart failure",
+ *   so no escalation (the permission onboarding takes it).
+ * - `stale` persisting → the tccd cache never refreshed / the restart mechanism is stuck →
+ *   escalate.
+ * - unavailable / throwing → a transient state in the middle of the restart, keep polling; if it
+ *   has still not recovered at the timeout → escalate.
  */
 export async function waitForAccessibilityNotStale(
   getStatus: GetCuaPermissionStatusFn,
@@ -48,7 +55,7 @@ export async function waitForAccessibilityNotStale(
         return false;
       }
     } catch {
-      // 重启中途 getStatus 可能瞬时失败(socket 切换 / Helper 刚起)。视为未解决,继续轮询。
+      // getStatus may fail momentarily during restart (socket switching/Helper startup). Consider it unresolved and continue polling.
     }
     if (Date.now() >= deadline) return true;
     await sleep(intervalMs);

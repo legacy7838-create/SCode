@@ -1,14 +1,14 @@
 /**
- * 浏览器安全的纯投影桶：
- * `@zcode/dynamic-workflow/projections`。
+ * The browser-safe pure projection bucket:
+ * `@zcode/dynamic-workflow/projections`.
  *
- * 下游浏览器端消费者把 `AnalysisCore` 冻结成 core.json，在浏览器里解码后现场重算站点图 / 因果图 /
- * CFG / 交接图 / actor 图，再用 `*ToMermaid` 或 display 契约画出来。那条链上不能有
- * `typescript`——它是分析器铸造 core 时才需要的编译器，几 MB 大，也不该进前端包。
+ * Downstream browser-side consumers freeze `AnalysisCore` into core.json, decode it in the browser and recompute the site graph / causal graph /
+ * CFG / handoff graph / actor graph on the spot, then draw them with `*ToMermaid` or the display contract. `typescript` must not be on that chain
+ * -- it is a compiler only needed when the analyzer forges the core, it is several MB in size, and it does not belong in a frontend bundle.
  *
- * 因此这里**只**再导出运行时不 import `typescript` 的模块：core 的类型与规范文本、JSON
- * 编解码、五个投影、归约器、mermaid 与文本序列化器、图类型。`analyzeWorkflowScript`、
- * 编译器、lowering、引擎一概不在——它们走根导出。
+ * Therefore this module **only** re-exports the modules that do not import `typescript` at runtime: core's types and canonical text, JSON
+ * encode/decode, the five projections, the reducers, the mermaid and text serializers, and the graph types. `analyzeWorkflowScript`,
+ * the compiler, lowering and the engine are all absent -- they are served by the root export.
  */
 export {
   isActorSite,

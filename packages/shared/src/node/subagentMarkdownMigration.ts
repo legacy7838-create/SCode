@@ -10,7 +10,7 @@ interface SubagentMarkdownMigrationResult {
   failures: Array<{ path: string; error: unknown }>;
 }
 
-/** 共享原子导入边界：JSON 的旧字段只在这里解释，完成落盘后 reader 只读当前字段。 */
+/** Shared atomic import boundary: the legacy fields of the JSON are interpreted only here, and once the write lands the readers only read the current fields. */
 export async function migrateSubagentStateFile(path: string): Promise<void> {
   try {
     await migrateFile(path, (original) => {
@@ -22,7 +22,7 @@ export async function migrateSubagentStateFile(path: string): Promise<void> {
         : JSON.stringify(next, null, 2);
     });
   } catch (error) {
-    // 损坏文件维持既有空覆盖语义，不覆盖原文；IO 错误不冒充迁移成功。
+    // Damaged files maintain the existing empty override semantics and do not overwrite the original; IO errors do not masquerade as migration success.
     if (error instanceof SyntaxError || (error as NodeJS.ErrnoException).code === "ENOENT") return;
     throw error;
   }
@@ -46,7 +46,7 @@ async function migrateFile(
     try {
       await writeFile(temp, next, { flag: "wx", mode: before.mode & 0o777 });
       await chmod(temp, before.mode & 0o777);
-      // 外部编辑器不持有应用锁：写前比较原文和文件身份，不能覆盖并发修改。
+      // External editors do not hold the application lock: compare the original content and file identity before writing, and do not overwrite concurrent modifications.
       const current = await lstat(path);
       if (
         !current.isFile() ||
@@ -65,14 +65,14 @@ async function migrateFile(
   });
 }
 
-/** 调用方只传所属环境的用户 agents 根目录；项目/插件不得进入自动写入入口。 */
+/** Callers only pass the user agents root of the environment they belong to; project/plugin files must never reach the automatic write entry point. */
 export async function migrateUserSubagentMarkdown(
   userRoot: string,
 ): Promise<SubagentMarkdownMigrationResult> {
   const result: SubagentMarkdownMigrationResult = { migrated: [], failures: [] };
   async function visit(directory: string): Promise<void> {
     try {
-      // 不能沿用户目录内的链接写到项目/插件或其他目录。
+      // Must not follow links within the user directory to write to projects/plugins or other directories.
       const rootStat = await lstat(directory);
       if (!rootStat.isDirectory()) return;
       for (const entry of await readdir(directory, { withFileTypes: true })) {

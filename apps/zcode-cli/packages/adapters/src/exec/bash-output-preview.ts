@@ -3,7 +3,7 @@ import type { ExecutionOutputPreview } from "@zcode/contracts";
 const SHORT_PREVIEW_LINES = 5;
 const FULL_PREVIEW_LINES = 100;
 
-/** 只扫描本次有界尾读；原始字节数用于 Windows 编码下的行数估计。 */
+/** Only scans this bounded tail read; the raw byte count is used to estimate the line count under Windows encodings. */
 export function buildBashOutputPreview(
   text: string,
   bytesRead: number,

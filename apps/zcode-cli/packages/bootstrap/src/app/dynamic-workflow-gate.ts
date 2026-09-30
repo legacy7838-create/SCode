@@ -3,20 +3,20 @@ import type { SkillRoot } from "@zcode/contracts";
 import { DYNAMIC_WORKFLOW_SKILL_NAME } from "./bundled-skills.js";
 
 /**
- * App 装配层按动态工作流开关过滤配套技能。
- * 工具面的减法在 core 的 registerBuiltInTools，`/` 目录与 `/workflow` 展开的减法分别在
- * zcode-protocol/slash-commands.ts 与 builtin-prompt-command.ts；这里只放需要 bootstrap 侧路径推导的技能剔除。
+ * The app wiring layer filters the companion skills by the dynamic workflow switch.
+ * The subtraction on the tool surface lives in core's registerBuiltInTools; the subtraction for the `/` directory and for `/workflow` expansion lives in
+ * zcode-protocol/slash-commands.ts and builtin-prompt-command.ts respectively; only the skill exclusions that need path derivation on the bootstrap side belong here.
  */
 
 const SKILL_MANIFEST_FILE_NAME = "SKILL.md";
 
 /**
- * 动态工作流关闭时要从技能发现中剔除的 SKILL.md 绝对路径。
+ * Absolute SKILL.md paths to exclude from skill discovery when the dynamic workflow switch is off.
  *
- * 为什么按路径而不是按 root 过滤：NodeSkillAdapter 只提供 `disabledPaths` 这一个剔除机制
- * （config.json 的 `skill.<path>.enable=false` 走的也是它）。传入的是内置技能包的根
- * （bundled-skills.ts），路径不存在时只是一个永不命中的 Set 成员，没有副作用；技能包日后再放
- * 与动态工作流开关无关的技能时，它们也不会被连坐。
+ * Why filter by path rather than by root: NodeSkillAdapter offers only one exclusion mechanism, `disabledPaths`
+ * (config.json's `skill.<path>.enable=false` goes through it too). What is passed in is the root of the built-in skill bundle
+ * (bundled-skills.ts); when the path does not exist it is merely a Set member that never matches, with no side effects; when the skill bundle later holds
+ * skills unrelated to the dynamic workflow switch, they will not be collaterally excluded either.
  */
 export function collectDynamicWorkflowDisabledSkillPaths(
   bundledSkillRoots: readonly SkillRoot[],

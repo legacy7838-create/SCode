@@ -12,14 +12,14 @@ export type OffPeakTemplateIconName =
 const OFF_PEAK_TEMPLATE_ICONS: Record<OffPeakTemplateIconName, LucideIcon> = {
   standupGitSummary: List,
   ciFlakyReport: Activity,
-  // 合并 release/current 后新增文档同步模板；沿用检查清单语义，避免目录与图标联合类型漂移。
+  // After merging release/current, a new document synchronization template is added; the checklist semantics are used to avoid directory and icon union type drift.
   documentationSyncCheck: ListChecks,
   customize: SlidersHorizontal,
   standupGitSummarySecondary: List,
   followUpMonitor: ListChecks,
 };
 
-/** Automations case 的语义图标映射；首页 case 统一使用 Moon。 */
+/** The semantic icon mapping for the Automations case; the home case uniformly uses Moon. */
 export function OffPeakTemplateIcon({
   className,
   iconName,

@@ -76,15 +76,15 @@ export async function materializeRemotePromptAttachments(
       }
       await lockDownRemotePromptAttachmentFile(options.backend, remotePath);
     } catch (error) {
-      // 上传成功但 chmod/后续提交失败时，远端文件已经存在；若只抛错会一直
-      // 占用用户空间并绕过 renderer 删除清理。这里在原始失败边界内尽力回收。
+      // When the upload is successful but chmod/subsequent submission fails, the remote file already exists; if only an error is thrown, it will remain
+      // Occupies user space and bypasses renderer removal cleanup. Here a best-effort recovery is performed within the original failure bounds.
       await cleanupRemotePromptAttachment(options.backend, remotePath).catch(() => {});
-      throw new Error(`远端附件上传失败：${attachment.filename}`, {
+      throw new Error(`Failed to upload remote attachment: ${attachment.filename}`, {
         cause: error,
       });
     }
 
-    // remote workspace 的 agent 只能读取远端文件系统；host localPath 必须先上传并改写。
+    // The agent of the remote workspace can only read the remote file system; the host localPath must be uploaded and rewritten first.
     nextAttachments.push({
       ...attachment,
       localPath: remotePath,
@@ -101,7 +101,7 @@ export async function materializeRemotePromptAttachments(
   };
 }
 
-/** eager staging 删除入口；只允许操作附件私有根目录下的路径。 */
+/** Eager staging deletion entry point; only paths under the attachment's private root may be touched. */
 export async function cleanupRemotePromptAttachment(
   backend: Pick<IRemoteBackend, "exec">,
   remotePath: string,
@@ -115,7 +115,7 @@ export async function cleanupRemotePromptAttachment(
   );
 }
 
-/** host 重建后回收无 renderer 持有者的历史暂存附件。 */
+/** Reclaim historical staged attachments that no renderer holds a reference to, after the host is rebuilt. */
 export async function cleanupStaleRemotePromptAttachments(
   backend: Pick<IRemoteBackend, "exec">,
   olderThanMinutes = 24 * 60,
@@ -149,7 +149,7 @@ async function ensureRemotePromptAttachmentDirectory(
 ): Promise<void> {
   const remoteDir = remoteDirname(remotePath);
   const privateDirs = collectRemotePromptAttachmentPrivateDirs(remoteDir, root);
-  // prompt 附件可能包含剪贴板、图片和本地文件内容，不能落在公共 /tmp；远端物化前先创建用户私有目录并收紧权限。
+  // The prompt attachment may contain clipboard, pictures and local file contents and cannot be placed in the public /tmp; create a user private directory and tighten permissions before remote materialization.
   const command = [
     `mkdir -p ${quotePosixPathArg(remoteDir)}`,
     `command chmod 700 ${privateDirs.map((dir) => quotePosixPathArg(dir)).join(" ")}`,

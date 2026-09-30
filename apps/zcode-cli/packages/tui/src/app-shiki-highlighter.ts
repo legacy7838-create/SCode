@@ -13,7 +13,6 @@ const SHIKI_THEMES = [SHIKI_DARK_THEME, SHIKI_LIGHT_THEME] as const;
 const HIGHLIGHT_TIMEOUT_MS = 2_500;
 
 const LANGUAGE_BY_FILENAME: Record<string, BundledLanguage> = {
-  dockerfile: "dockerfile",
   makefile: "makefile",
 };
 

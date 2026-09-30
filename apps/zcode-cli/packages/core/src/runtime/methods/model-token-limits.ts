@@ -7,8 +7,8 @@ const DEFAULT_NORMAL_REQUEST_MAX_OUTPUT_TOKENS = 32_000;
 export function resolveNormalRequestMaxOutputTokens(input: {
   modelMaxOutputTokens: number | undefined;
 }): number {
-  // 32K 是模型未声明输出预算时的默认值，不是对模型级配置的全局上限。
-  // 已解析到模型值时必须原样使用，否则 64K 模型的请求预算会被错误裁剪为 32K。
+  // 32K is the default value when the model does not declare an output budget, and is not a global upper limit for model-level configuration.
+  // Model values ​​that have been parsed must be used as is, otherwise the request budget for a 64K model will be incorrectly clipped to 32K.
   return (
     positiveFlooredTokens(input.modelMaxOutputTokens) ?? DEFAULT_NORMAL_REQUEST_MAX_OUTPUT_TOKENS
   );
@@ -20,7 +20,7 @@ export function resolveModelStepMaxOutputTokens(input: {
   estimatedCurrentUsage: number;
   modelContextBudgetStrategy: "legacy" | "preflight-v1" | undefined;
 }): number {
-  // legacy 仅为入参兼容；所有请求（含工具续轮）都按剩余窗口计算 preflight cap。
+  // legacy is only compatible with input parameters; all requests (including tool continuation rounds) calculate preflight cap based on the remaining window.
   if (
     input.contextWindow === undefined ||
     !Number.isFinite(input.contextWindow) ||
@@ -33,7 +33,7 @@ export function resolveModelStepMaxOutputTokens(input: {
 
   const estimatedAvailable = Math.floor(input.contextWindow - input.estimatedCurrentUsage - 1_000);
   if (estimatedAvailable <= 0) {
-    // 本地估算不是 provider 权威拒绝；无正数可发送时保留 baseline 走既有错误恢复。
+    // Local estimates are not authoritatively rejected by the provider; baseline is retained when no positive number can be sent to recover from existing errors.
     return input.baselineMaxOutputTokens;
   }
   const candidate = Math.min(input.baselineMaxOutputTokens, estimatedAvailable);

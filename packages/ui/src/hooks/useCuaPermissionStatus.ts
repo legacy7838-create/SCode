@@ -1,15 +1,15 @@
-// Computer Use Helper 的 macOS 权限状态。状态来自 Helper 当前 runtime preflight，
-// 历史 TCC 行不参与判定；展示口径见 cuaPermissionStatusStore 的 isCuaPermissionTccGranted。
+// macOS permission state of the Computer Use Helper. The state comes from the Helper's current runtime preflight;
+// historical TCC rows do not participate in the decision; see cuaPermissionStatusStore's isCuaPermissionTccGranted for the display criteria.
 //
-// 刷新策略**不再定时轮询**，改为事件驱动，只在这三个时机各拉一次——
-// - 挂载（进入设置页 / 输入框入口首次渲染）；
-// - 窗口重获焦点（用户刚从 macOS 系统设置授权完切回来）；
-// - 调用方显式 refresh（插件开关、Helper 重启、授权返回恢复链）。
+// The refresh strategy **no longer polls on a timer**; it is event-driven, pulling exactly once at each of three moments —
+// - mount (entering the Settings page / the composer entry's first render);
+// - the window regains focus (the user just came back from authorizing in macOS System Settings);
+// - an explicit refresh from the caller (plugin toggle, Helper restart, the authorization return recovery chain).
 //
-// 去掉轮询的原因：授权状态是低频事件，秒级轮询除了压 host RPC，还会让 UI 持续抖动——
-// 每轮查询开始都要把 fresh 置回 false，设置页的授权按钮就在「打开系统设置」与「验证中…」
-// 之间反复横跳。状态本身存放在 lib/cuaPermissionStatusStore 的进程内共享缓存里，
-// 设置页与输入框入口读同一份，重新进入页面时先渲染上次的授权状态，不再从「未知」闪起。
+// Why polling was removed: the grant state is a low-frequency event, and per-second polling not only hammers host RPC but also makes the UI jitter continuously —
+// every query round sets fresh back to false, so the Settings page's authorization button flip-flops between "Open System Settings" and "Verifying…".
+// The state itself lives in a process-wide shared cache in lib/cuaPermissionStatusStore;
+// the Settings page and the composer entry read the same copy, so re-entering the page renders the last known state first instead of flashing from "unknown".
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 import type { CuaPermissionStatusQueryOptions, CuaPermissionStatusResult } from "@zcode/services";
 import {
@@ -26,13 +26,13 @@ export function useCuaPermissionStatus(
 ): {
   status: CuaPermissionStatusResult | null;
   fresh: boolean;
-  /** 展示用的稳定标志：有可展示内容即为 true，不随每次查询回落。见 store 内注释。 */
+  /** Stable flag for display: true whenever there is something to show; it does not fall back with each query. See the comment inside the store. */
   settled: boolean;
   refresh: (options?: CuaPermissionStatusQueryOptions) => void;
 } {
   const services = useOptionalServices();
-  // cuaPermissionService 在 main 是可选字段（远端 host 无 CUA）。缺失时不查询，
-  // 快照恒为空——调用方据此显示「未知」。
+  // cuaPermissionService is an optional field in main (remote hosts have no CUA). When it's missing, no query runs and
+  // the snapshot is always empty — callers display "unknown" accordingly.
   const cuaPermissionService = services?.cuaPermissionService;
   const key =
     workspacePath && cuaPermissionService
@@ -65,9 +65,9 @@ export function useCuaPermissionStatus(
 
   useEffect(() => {
     if (!workspacePath || !cuaPermissionService) return;
-    // 进入页面拉一次。设置页与输入框入口可能先后挂载，用 ensure 让后者搭上前者在飞的查询。
+    // Pull once on page entry. The Settings page and the composer entry may mount in either order; ensure lets the latter piggyback on the former's in-flight query.
     query("ensure");
-    // 用户刚从 macOS 系统设置授权完切回来：状态可能已变，必须是强制重查。
+    // The user just came back from authorizing in macOS System Settings: the state may have changed, so it must be a forced re-query.
     const onFocus = (): void => query("refresh");
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);

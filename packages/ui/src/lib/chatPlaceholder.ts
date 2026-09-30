@@ -11,10 +11,10 @@ export function resolveChatPlaceholderKey(options: {
 }): ChatPlaceholderMessageKey {
   const { compactNewTask = false, hasHistoryMessages, isTaskProcessing } = options;
 
-  // 按语义分流：
-  // 1) 无历史 -> newTask
-  // 2) 有历史且空闲 -> followUpAsk
-  // 3) 有历史且处理中 -> followUpQueue
+  // Divided by semantics:
+  // 1) No history -> newTask
+  // 2) History and free -> followUpAsk
+  // 3) There is history and is being processed -> followUpQueue
   if (!hasHistoryMessages) {
     return compactNewTask ? "chat.placeholder.newTaskMobile" : "chat.placeholder.newTask";
   }

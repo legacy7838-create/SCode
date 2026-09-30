@@ -1,21 +1,31 @@
 /**
- * 预置图表的序列调色板与**次级编码**。
+ * Series palette and **secondary encoding** for the preset charts.
  *
- * 颜色直接复用设计系统里既有的 `--color-usage-chart-1..6`（DESIGN.md「Color Usage Rules」：
- * 用语义 token，不自造一次性色值）。这套 token 在四套主题（light / dark / zai-light / zai-dark）
- * 里都有定义，因此图表天然跟着主题走，组件里不需要任何主题分支。
+ * The colors reuse the design system's existing `--color-usage-chart-1..6` (DESIGN.md "Color Usage
+ * Rules": use semantic tokens, never invent one-off color values). These tokens are defined in all
+ * four themes (light / dark / zai-light / zai-dark), so charts follow the theme automatically and
+ * the components need no theme branching at all.
  *
- * **为什么每条序列还要带一个虚线样式**：这 6 个色槽在色觉障碍（protan / deutan）下不是两两可分的
- * ——把它们喂给 dataviz 的调色板校验脚本，紫↔蓝、橙↔红两对在 all-pairs 下低于 ΔE 8 的门槛。
- * 校验脚本对这种情况给出的唯一合法出路是「配次级编码」：所以这里每条序列除了颜色还固定带一种
- * 线型，图例与直接标注也一律在场，身份从不只由颜色承担（DESIGN.md「Use semantic status colors
- * together with readable text, never by color alone」的同一条精神）。调色板本身是仓库级资产。
+ * **Why every series also carries a dash style**: these 6 color slots are not pairwise
+ * distinguishable under color vision deficiency (protan / deutan) — feeding them to the dataviz
+ * palette validation script, the violet↔blue and orange↔red pairs fall below the ΔE 8 threshold in
+ * the all-pairs check. The only legitimate way out the validation script offers for that case is
+ * "pair it with a secondary encoding": so here every series carries a fixed line style in addition
+ * to its color, the legend and direct labels are always present, and identity is never borne by
+ * color alone (the same spirit as DESIGN.md's "Use semantic status colors together with readable
+ * text, never by color alone"). The palette itself is a repo-level asset.
  */
 
-/** 色槽数 = 一张图最多画几条序列；超出的 y 字段不画（宁可少画也不循环复用颜色）。 */
+/**
+ * Number of color slots = how many series a single chart can draw; extra y fields are not drawn
+ * (better to draw less than cycle the colors).
+ */
 export const ARTIFACT_CHART_MAX_SERIES = 6;
 
-/** 第 index 条序列的颜色（CSS 变量引用，主题切换即时生效）。 */
+/**
+ * The color of the index-th series (a CSS variable reference, so it takes effect immediately on a
+ * theme switch).
+ */
 export function artifactSeriesColorVar(index: number): string {
   return `var(--color-usage-chart-${(index % ARTIFACT_CHART_MAX_SERIES) + 1})`;
 }
@@ -29,14 +39,16 @@ const SERIES_DASH: readonly (string | undefined)[] = [
   "12 4",
 ];
 
-/** 第 index 条序列的线型；第一条是实线。 */
+/** The line style of the index-th series; the first one is solid. */
 export function artifactSeriesDash(index: number): string | undefined {
   return SERIES_DASH[index % SERIES_DASH.length];
 }
 
 const SERIES_SYMBOL = ["circle", "cross", "diamond", "square", "triangle", "star"] as const;
 
-/** 散点图的点形；与线型同理，是颜色之外的第二条身份线索。 */
+/**
+ * The marker shape for scatter plots; like line styles, it is a second identity cue beyond color.
+ */
 export function artifactSeriesSymbol(index: number): (typeof SERIES_SYMBOL)[number] {
   return SERIES_SYMBOL[index % SERIES_SYMBOL.length]!;
 }

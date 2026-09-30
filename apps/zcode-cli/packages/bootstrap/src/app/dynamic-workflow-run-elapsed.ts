@@ -1,30 +1,26 @@
-// dwf run 的活动时长，用于完成卡的「时间」格。
-// 本 run 的每次启动，以及沿 `resumedFrom` 上溯的每个前驱，都按各自活动区间求和；
-// 停止或进程退出后、下次 resume 前的空档不计入。
+// The activity duration of dwf run is used to complete the "time" grid of the card.
+// Each start of this run, and each predecessor traced along `resumedFrom`, are summed according to their respective activity intervals;
+// The gap between stopping or process exit and before the next resume is not counted.
 //
-// 不能只用当前注册表条目的 `completedAt - startedAt`：resume 或修订会重置该时钟，
-// 从而漏掉之前的运行时间。时长与 token 用量都应覆盖整条 lineage。
+// You cannot just use the current registry entry's `completedAt - startedAt`: resume or revision to reset the clock,
+// thus missing previous running times. The duration and token usage should cover the entire lineage.
 //
-// 事件日志已记录每段区间的起点和最后活动时刻，因此只需读取求和，无须额外持久化。
+// The event log has recorded the starting point and last activity moment of each interval, so only the summation is required and no additional persistence is required.
 
 import type { JournalStorePort } from "@zcode/dynamic-workflow";
 import { supportsRunLifeSpans } from "./dynamic-workflow-run-journal.js";
 
 /**
- * lineage 上溯的跳数上限。一次修订一跳，链条实际是个位数；上限只为「行里的 `resumedFrom`
- * 被外力写成一条长链」留一道闸——读一条 run 的时长不该扫过任意多行。
+ * The hop limit when walking lineage upward. One revision is one hop and the chain is really single-digit; the cap only exists to put a gate against "a row's `resumedFrom` was written by an outside force into a long chain" -- reading one run's elapsed time must not sweep over an arbitrary number of rows.
  */
 const LINEAGE_HOP_LIMIT = 64;
 
 /**
- * 本 run 及其 lineage 的活动时长（毫秒），或 `undefined`（无任何一世的证据）。
+ * The active duration (in milliseconds) of this run and its lineage, or `undefined` (no evidence of any generation at all).
  *
- * `undefined` 与 `0` 是两件事：前者是「journal 说不出话」（读面不在场、run 的事件早于本记账、
- * 行已被清理），调用方据此退回自己观察到的那一世；后者是「确有一世，但它的时长不足 1 毫秒」。
+ * `undefined` and `0` are two different things: the former means "the journal cannot speak" (the reading surface is not present, the run's events predate this bookkeeping, the row has already been cleaned up), and callers fall back to the generation they observed themselves; the latter means "there definitely is a generation, but its duration is under 1 millisecond".
  *
- * 防环不是防御性编程的摆设：`resumedFrom` 是建 run 那一刻写死的元数据，理论上不成环，但这个
- * 循环的终止条件依赖的是**库里的数据**而不是本进程的逻辑——一条被外力写成自指的行会把一次
- * 读快照变成死循环，而快照读在后台追踪器的轮询路径上。
+ * Loop protection is not defensive-programming decoration: `resumedFrom` is metadata frozen at the moment the run is created and theoretically cannot form a cycle, but this loop's termination condition depends on **the data in the store** rather than on this process's logic -- a row that an outside force wrote to point at itself would turn a snapshot read into an infinite loop, and snapshot reads sit on the background tracker's polling path.
  */
 export function runLineageActiveMs(journal: JournalStorePort, runId: string): number | undefined {
   if (!supportsRunLifeSpans(journal)) return undefined;
@@ -37,12 +33,12 @@ export function runLineageActiveMs(journal: JournalStorePort, runId: string): nu
     visited.add(cursor);
     for (const life of journal.listRunLifeSpans(cursor)) {
       sawLife = true;
-      // 钳到非负：两个时刻同源于 `dwf_event.time_created`，但那是**墙钟**——一次系统对时可以
-      // 让「最后一条」早于「第一条」。负数会从总和里减掉别的世的真实时长，那比丢掉这一世更糟。
+      // Clamp to non-negative: Both moments originate from `dwf_event.time_created`, but that is a **wall clock** - a system time adjustment can
+      // Let the "last item" be earlier than the "first item". Negative numbers subtract the true duration of other lifetimes from the total, which is worse than losing this lifetime.
       total += Math.max(0, life.lastActivityAt - life.startedAt);
     }
-    // 只上溯 lineage，不下溯 supersededBy：修订是「同一件工作的下一版」，而被替代的前驱的活
-    // 是这一版的底座；反方向的后继与本 run 的时长无关（它有自己的卡）。
+    // Only trace up lineage, not down supersededBy: The revision is "the next version of the same work", and the replaced activity of the predecessor
+    // is the base for this version; the successor in the opposite direction has nothing to do with the duration of this run (it has its own card).
     cursor = journal.getRun(cursor)?.resumedFrom;
   }
   return sawLife ? total : undefined;

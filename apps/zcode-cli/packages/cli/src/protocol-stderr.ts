@@ -1,6 +1,7 @@
 /**
- * 协议进程的诊断出口只有一个。必须监听真实流的异步 error，而不只是 catch write：
- * 否则 EPIPE -> uncaughtException -> 再写 stderr 会形成高 CPU 自激循环。
+ * A protocol process has exactly one diagnostic egress. The async error of the real stream must be
+ * listened to, and not just the write caught:
+ * otherwise EPIPE -> uncaughtException -> writing to stderr again forms a high-CPU self-exciting loop.
  */
 export function installProtocolStderrBoundary(stderr: NodeJS.WritableStream): () => void {
   const originalWrite = stderr.write;
@@ -23,7 +24,7 @@ export function installProtocolStderrBoundary(stderr: NodeJS.WritableStream): ()
         unavailable = true;
       }
     }
-    // 诊断是 best effort；出口失效后仍完成调用方的 flush，不再写坏流或报告自身失败。
+    // Diagnosis is best effort; the caller's flush is still completed after the exit fails, and it no longer writes bad streams or reports itself as a failure.
     if (writeCallback) queueMicrotask(() => writeCallback());
     return true;
   }) as typeof stderr.write;

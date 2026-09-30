@@ -8,7 +8,7 @@ import type {
 export interface ZCodeAgentWorkspaceTarget {
   workspacePath: string;
   workspaceIdentity?: string;
-  /** 远程 workspace 的运行时会话身份；只用于隔离/路由，不能替代 workspacePath。 */
+  /** The runtime session identity of the remote workspace; only used for isolation/routing, not a replacement for the workspacePath. */
   remoteSessionId?: string;
 }
 
@@ -95,15 +95,15 @@ export interface ZCodeAgentSetPluginEnabledParams extends ZCodeAgentWorkspaceTar
   scope?: "user" | "workspace";
 }
 
-// Plugin 对话引用 catalog：
-// 带 sessionId → session-owned 冻结 catalog（必须路由到持有该 session 的 workspace client）；
-// 不带 → workspace 当前 catalog（新建草稿 Picker）。
+// The Plugin dialog references the catalog:
+// With sessionId → session-owned frozen catalog (must be routed to the workspace client holding the session);
+// Without → workspace current catalog (new draft Picker).
 export interface ZCodeAgentPluginReferenceCatalogParams extends ZCodeAgentWorkspaceTarget {
   sessionId?: string;
 }
 
-// Composer Skill catalog：与 Plugin 引用相同，以 sessionId 区分 workspace 当前目录和
-// resident Session runtime 快照；不参与 Settings 管理目录。
+// Composer Skill catalog: Same as Plugin reference, using sessionId to distinguish workspace current directory and
+// Resident Session runtime snapshot; does not participate in the Settings management directory.
 export interface ZCodeAgentSkillReferenceCatalogParams extends ZCodeAgentWorkspaceTarget {
   sessionId?: string;
 }
@@ -114,7 +114,7 @@ export interface ZCodeAgentResolveSuggestedPluginReferenceParams extends ZCodeAg
   deliveryKind: "desktop-continuous" | "web-remote-replayable";
 }
 
-// ---- 定时任务(automation)管理参数 ----
+// ---- Scheduled task (automation) management parameters ----
 
 export interface ZCodeAgentCreateAutomationParams extends ZCodeAgentWorkspaceTarget {
   title: string;

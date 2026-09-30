@@ -14,9 +14,9 @@ import {
 import { cn } from "@/components/lib/utils.js";
 
 /**
- * Settings 与同级管理页在窗口框架内共享同一内容列。
- * Automations 曾在 shell 与页面内各自居中、加 padding，导致它与 Skills 等
- * Settings 功能的标题起点、顶部基线和内容宽度不一致。
+ * Settings and its sibling management pages share the same content column inside the window frame.
+ * Automations used to be centered and padded both in the shell and inside the page, which made its
+ * title start, top baseline, and content width inconsistent with Settings features such as Skills.
  */
 export const SETTINGS_FRAME_CONTENT_CLASSNAME =
   "mx-auto w-full max-w-4xl px-4 pb-8 pt-0 lg:px-8 lg:pb-10";
@@ -96,8 +96,8 @@ export function ThemePreviewCard({
           showLineNumbers={showLineNumbers}
           wrapLongLines={wrapLongLines}
           fontSizePx={fontSizePx}
-          // Light/Dark Preview 是预览目标主题，不应继承当前应用主题的 background token。
-          // CodeBlock 内部会把 @pierre/diffs 背景映射到 card，这里同时固定 background/card。
+          // Light/Dark Preview is the preview target theme and should not inherit the background token of the current application theme.
+          // CodeBlock internally maps the @pierre/diffs background to card, and the background/card is also fixed here.
           className={`overflow-hidden border-0 bg-background ${previewSurfaceClassName}`}
           style={previewThemeStyle}
         />

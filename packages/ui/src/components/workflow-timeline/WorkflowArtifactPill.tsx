@@ -11,19 +11,26 @@ import { cn } from "@/components/lib/utils.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 
 /**
- * 产物药丸：与子代理药丸同一套语法——
- * 同样的高度、圆角、底色、悬停抬起、尾槽里 ↗ 顶替原有内容——只换两样：**方**的墨灰瓦片代替
- * **圆**的带色头像（颜色说「谁」，形状说「什么」），尾槽里放版本号而不是状态标记。
+ * Artifact pill: the same grammar as the sub-agent pill — the same height, corner radius,
+ * background color, hover lift, and ↗ in the tail slot taking the place of the existing content —
+ * with only two things swapped: a **square** ink-gray tile instead of the **round** colored avatar
+ * (color says “who”, shape says “what”), and a version number in the tail slot instead of a status
+ * marker.
  *
- * ⚠ 术语：这里的 artifact 是脚本经 `artifact.*` 发布给用户看的产出，不是引擎内部「脚本顶层返回值」的同名词。
+ * ⚠ Terminology: the artifact here is an output that a script publishes for the user to see via
+ * `artifact.*`, not the same-named engine-internal term for a “script top-level return value”.
  *
- * 两个尺寸：`md`（32px）用在药丸本来就在的地方——时间线下的产物条、中枢的「最近产物」；
- * `sm`（24px）用在单行里——完成通知的折叠头部、中枢的运行历史行。产物**有地方**时（完成卡、
- * run 侧板的画廊）用的是瓦片（`WorkflowArtifactTile`），说明行就是这枚药丸的语法。
+ * Two sizes: `md` (32px) is used where the pill already lived — the artifact bar under the
+ * timeline, the hub's “recent artifacts”; `sm` (24px) is used inside a single row — the collapsed
+ * header of a completion notification, the hub's run history rows. When an artifact has
+ * **somewhere** to live (the completion card, the gallery in the run side panel) a tile is used
+ * (`WorkflowArtifactTile`), and its caption line speaks this pill's grammar.
  *
- * 永远是 `<button>`：产物是一个「可以打开的东西」，宿主没给回调时它是**禁用**的按钮，看起来与
- * 没有会话的子代理药丸一样安静——「交付了什么」是事实，「能不能打开」是能力。版本号从 v2 起才
- * 出现（v1 是常态，写出来是噪音）；同 id 再发布时尾槽按版本重挂，播标记的弹入动画。
+ * Always a `<button>`: an artifact is a “thing that can be opened”, and when the host gives no
+ * callback it is a **disabled** button, looking as quiet as a sub-agent pill with no session —
+ * “what was delivered” is a fact, “whether it can be opened” is a capability. The version number
+ * only appears from v2 onward (in v1 it is the norm, and writing it out is noise); when the same id
+ * is republished, the tail slot is remounted per version and plays the marked pop-in animation.
  */
 export interface ArtifactPillData {
   id: string;
@@ -50,17 +57,26 @@ export function WorkflowArtifactPill({
   variant?: "pill" | "link";
   artifact: ArtifactPillData;
   size?: ArtifactPillSize;
-  /** 名字之后、尾槽之前的等宽附属信息（侧栏行的 `PDF · 1.2 MB` / `12 items`）。 */
+  /**
+   * Monospace secondary information after the name and before the tail slot (the sidebar row's `PDF
+   * · 1.2 MB` / `12 items`).
+   */
   detail?: ReactNode;
-  /** 在场即可打开；缺席即禁用（回调的存在即门控）。 */
+  /** Present means openable; absent means disabled (the presence of the callback is the gate). */
   onOpen?: (artifactId: string) => void;
-  /** 名字占满剩余宽度（侧栏行）；缺席时药丸按内容收拢（时间线下的产物条）。 */
+  /**
+   * The name fills the remaining width (sidebar rows); when absent, the pill shrinks to its content
+   * (the artifact bar under the timeline).
+   */
   fill?: boolean;
-  /** 条里的标题截到 24 字（完整标题在 tooltip 里）；侧栏行靠 CSS truncate，不截字。 */
+  /**
+   * The title in the bar is truncated to 24 characters (the full title lives in the tooltip);
+   * sidebar rows rely on CSS truncate and are not character-truncated.
+   */
   truncateTitle?: boolean;
-  /** tooltip 覆盖；缺席时是「种类词 · 标题」。 */
+  /** Overrides the tooltip; when absent it is “kind word · title”. */
   title?: string;
-  /** 入场延迟（产物条里依次落地，每枚错 30 ms）。 */
+  /** Entry delay (in the artifact bar they land one after another, each offset by 30 ms). */
   enterDelayMs?: number;
   testId?: string;
   className?: string;
@@ -77,13 +93,13 @@ export function WorkflowArtifactPill({
     { version: String(version) },
   );
   const md = size === "md";
-  // 有延迟的入场要 backwards 填充：等待期间保持起始帧（与子代理药丸同一条理由）。
+  // Delayed entries have to be filled backwards: the starting frame is kept during the wait (same reason as for subagent pills).
   const style: CSSProperties | undefined =
     enterDelayMs === undefined || enterDelayMs <= 0
       ? undefined
       : { animationDelay: `${enterDelayMs}ms`, animationFillMode: "backwards" };
 
-  // 通知摘要复用 Read 链接语法，避免工具行中出现厚重的产物药丸。
+  // Notification summaries reuse Read link syntax to avoid thick product pills in the toolbar.
   if (variant === "link")
     return (
       <button
@@ -152,7 +168,7 @@ export function WorkflowArtifactPill({
           data-testid="workflow-pill-tail"
         >
           {showVersion ? (
-            // 按版本重挂：同 id 再发布时尾槽弹入一次（wf-mark 的进场），悬停时让位给 ↗。
+            // Rehang by version: When re-releasing with the same id, the tail slot will pop in once (the entry of wf-mark), and give way to ↗ when hovering.
             <span
               className="wf-mark font-mono text-ui-xs leading-none tabular-nums text-foreground-subtlest"
               data-testid="workflow-run-artifact-version"

@@ -4,10 +4,11 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import type { CodingPlanQuotaResetUiStatus } from "@/lib/codingPlanQuotaResetUi.js";
 
 /**
- * 自动重置提示内容（纯展示），供 composer 额度入口的受控 tooltip 使用：
- * - processing：转圈 +「正在重置 5 小时/周额度…」
- * - completed： 绿色勾选 +「5 小时/周额度已重置」
- * 带 role="status" 让读屏在状态切换时朗读。
+ * Auto-reset status text (presentation only), for the controlled tooltip on the composer's quota
+ * entry:
+ * - processing: spinner + "Resetting 5-hour quota…" ("Resetting weekly quota…")
+ * - completed: green check + "5-hour quota reset" ("Weekly quota reset") role="status" makes screen
+ *   readers announce the change when the state switches.
  */
 export function CodingPlanQuotaResetStatusContent({
   status,

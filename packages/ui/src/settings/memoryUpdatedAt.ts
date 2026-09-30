@@ -17,41 +17,11 @@ function formatTime(timestamp: number, locale: Locale): string {
   }).format(timestamp);
 }
 
-function formatWeekday(
-  timestamp: number,
-  locale: Locale,
-  formatMessage: IntlInstance["formatMessage"],
-): string {
-  if (locale === "zh-CN") {
-    return formatMessage(
-      { id: "settings.memory.viewer.updated.weekdayZh" },
-      { weekday: "日一二三四五六"[new Date(timestamp).getDay()] ?? "" },
-    );
-  }
+function formatWeekday(timestamp: number, locale: Locale): string {
   return new Intl.DateTimeFormat(locale, { weekday: "short" }).format(timestamp);
 }
 
-function formatDate(
-  timestamp: number,
-  locale: Locale,
-  includeYear: boolean,
-  formatMessage: IntlInstance["formatMessage"],
-): string {
-  const date = new Date(timestamp);
-  if (locale === "zh-CN") {
-    return formatMessage(
-      {
-        id: includeYear
-          ? "settings.memory.viewer.updated.dateYearMonthDay"
-          : "settings.memory.viewer.updated.dateMonthDay",
-      },
-      {
-        year: String(date.getFullYear()),
-        month: String(date.getMonth() + 1),
-        day: String(date.getDate()),
-      },
-    );
-  }
+function formatDate(timestamp: number, locale: Locale, includeYear: boolean): string {
   return new Intl.DateTimeFormat(locale, {
     day: "numeric",
     month: "short",
@@ -102,7 +72,7 @@ export function formatMemoryUpdatedAt({
   if (updatedDayStart >= weekStart.getTime()) {
     return formatMessage(
       { id: "settings.memory.viewer.updated.weekday" },
-      { time, weekday: formatWeekday(updatedAt, locale, formatMessage) },
+      { time, weekday: formatWeekday(updatedAt, locale) },
     );
   }
 
@@ -113,7 +83,6 @@ export function formatMemoryUpdatedAt({
         updatedAt,
         locale,
         new Date(updatedAt).getFullYear() !== today.getFullYear(),
-        formatMessage,
       ),
       time,
     },

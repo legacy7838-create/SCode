@@ -36,7 +36,7 @@ const CUSTOM_INPUT_FLAGS = [
   "allowFreeText",
 ] as const;
 const CUSTOM_INPUT_LABEL_PATTERN =
-  /(其他|其它|自定义|自行|自己|补充|填写|填入|输入|other|custom|free\s*text|specify|write\s*in)/i;
+  /(other|other|custom|self|yourself|supplement|fill in|fill in|enter|other|custom|free\s*text|specify|write\s*in)/i;
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -104,7 +104,7 @@ function readQuestions(input: unknown): unknown[] {
   if (Array.isArray(questions)) {
     return questions;
   }
-  // ZCode Agent 的单题输入与交互请求的多题输入共用展示管线。
+  // ZCode Agent's single-question input and the interaction request's multi-question input share the display pipeline.
   return typeof input.question === "string" && Array.isArray(input.options) ? [input] : [];
 }
 
@@ -337,7 +337,7 @@ export function getAskUserQuestionAnswerText(
   const value = answers?.[question.question] ?? answers?.[question.id];
   if (Array.isArray(value)) {
     const values = value.map((item) => String(item).trim()).filter((item) => item.length > 0);
-    return values.length > 0 ? values.join("，") : noAnswerText;
+    return values.length > 0 ? values.join(", ") : noAnswerText;
   }
   if (typeof value === "string") {
     return value.trim().length > 0 ? value : noAnswerText;

@@ -5,11 +5,13 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { workflowRunQuestionWaitedLabel } from "@/app-shell/workflowRunQuestions.js";
 
 /**
- * 一条升级问题：挂在提问者那一行下面。
+ * One escalation question: hung below the asker's row.
  *
- * **只读，v1 没有应答框**：应答者是主代理，不是用户——它拿不准时本就可经 AskUserQuestion
- * 转询用户。qid 是主代理作答时要用的那个 token；用户自己答不了，但把它显示出来，就能指着
- * 某一个问题让主代理去答——这是只读面里唯一可被转达的抓手。
+ * **Read-only, v1 has no answer box**: the answerer is the main agent, not the user — when it is
+ * unsure it can already forward the query to the user through AskUserQuestion. qid is the token the
+ * main agent uses when it answers; the user cannot answer it themselves, but showing it lets the
+ * user point at a particular question and have the main agent answer it — the only handle a
+ * read-only surface can relay through.
  */
 export function WorkflowRunQuestionRow({
   className,
@@ -17,12 +19,21 @@ export function WorkflowRunQuestionRow({
   question,
   showAsker = false,
 }: {
-  /** 落位由调用方给（脊线里挂在提问者下面再退 26px；末尾的孤儿块自己有内缩）。 */
+  /**
+   * Placement is supplied by the caller (in the spine it hangs below the asker and is pulled back
+   * another 26px; a trailing orphan block indents itself).
+   */
   className?: string;
-  /** 由清单的定时器喂进来的"现在"，好让等待时长在没有事件流的时候也照走。 */
+  /**
+   * The "now" fed in by the list's timer, so that the elapsed wait keeps ticking even when there is
+   * no event stream.
+   */
   now: number;
   question: WorkflowRunPendingQuestion;
-  /** 匹配不上提问者的问题（挂在阶段末尾）要自己报名字；挂在行下的不必重复。 */
+  /**
+   * A question that matches no asker (hung at the end of a stage) has to report its own name; one
+   * hung below a row need not repeat it.
+   */
   showAsker?: boolean;
 }) {
   const { intl } = useZCodeIntl();
@@ -49,7 +60,7 @@ export function WorkflowRunQuestionRow({
                 : `${question.actorSiteId}@${question.actorOrdinal}`)}
           </span>
         ) : null}
-        {/* 问题正文是人话，不是技术值，所以按正文排版；pre-wrap 保住模型可能带的换行。 */}
+        {/* The question body is human prose, not a technical value, so it is typeset as body text; pre-wrap preserves any line breaks the model may bring along. */}
         <span className="whitespace-pre-wrap break-words">{question.question}</span>
         {question.context === undefined ? null : (
           <p
@@ -61,8 +72,10 @@ export function WorkflowRunQuestionRow({
         )}
       </div>
       <span className="flex shrink-0 items-baseline gap-2 font-mono text-ui-xs">
-        {/* 等了多久。刻意**不**用 warning 着色：长等待是设计内的正常状态，不是告警。askedAt
-            缺席（老 journal 重放）时整段不渲染，绝不编一个"刚刚"出来。 */}
+        {/* How long has been waited. Deliberately **not** colored as a warning: a long wait is a
+            normal state by design, not an alert. When askedAt is absent (replaying an old journal)
+            the whole block is not rendered — never fabricate a "just now".
+            */}
         {waited === undefined ? null : (
           <span data-testid="workflow-run-question-waited">{waited}</span>
         )}

@@ -22,13 +22,13 @@ export function useDesktopNativeThemeSync({
     let disposed = false;
     const titleBarTheme = theme === "system" ? "system" : resolveTheme(theme);
 
-    // 原生窗口主题会影响 macOS vibrancy；启动 loading 阶段先不写 nativeTheme，
-    // 避免 RootStartupLoading 观察窗口壳时被应用主题提前覆盖，进入主界面后再同步。
+    // The native window theme will affect macOS vibrancy; do not write nativeTheme during the startup loading phase.
+    // To prevent RootStartupLoading from being overwritten by the application theme in advance when observing the window shell, synchronize again after entering the main interface.
     platform.setTitleBarTheme(titleBarTheme).catch((error) => {
       if (disposed) {
         return;
       }
-      logger.error("[Root] 同步标题栏主题失败", { titleBarTheme, error });
+      logger.error("[Root] failed to sync the title bar theme", { titleBarTheme, error });
     });
 
     return () => {

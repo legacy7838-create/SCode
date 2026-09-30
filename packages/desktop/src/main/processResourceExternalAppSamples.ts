@@ -1,14 +1,17 @@
 /**
- * 设备级应用总量的外部样本入口。
+ * The entry point for external samples feeding the device-level app totals.
  *
- * `perf_system_window` 的应用总量定义为「Chromium 体系每 10 秒的精确合计，
- * 加上最近一次已知的外部样本」。外部进程（CLI 60 秒自采、MCP 5 分钟采样）不在
- * `app.getAppMetrics()` 里，也不可能按 main 的 10 秒节拍给出读数，所以这里只保留
- * 每个来源的最近一次样本，并按该来源自己的采样周期判定过期：
- * 超过两个采样周期没有新样本，说明进程已退出或采样链路断了，宁可少算也不能拿旧值充当当前事实。
+ * The app total for `perf_system_window` is defined as "the exact sum across the Chromium
+ * processes every 10 seconds, plus the most recent known external samples". External processes
+ * (CLI self-sampling every 60 seconds, MCP sampling every 5 minutes) are not in
+ * `app.getAppMetrics()` and can never produce a reading on main's 10-second beat, so only the
+ * latest sample per source is kept here, and staleness is judged against that source's own
+ * sampling interval: going more than two sampling intervals without a new sample means the
+ * process exited or the sampling link broke, and undercounting is better than passing a stale
+ * value off as a current fact.
  *
- * CLI 角色与 MCP 角色在各自的摄入点调用 `recordExternalAppResourceSample`。
- * 纯内存、有界、失败即丢：不排队、不持久化、不重试。
+ * The CLI role and the MCP role each call `recordExternalAppResourceSample` at their own ingest
+ * point. Purely in-memory, bounded, and drop-on-failure: no queueing, no persistence, no retry.
  */
 
 import type { ProcessResourceRuntimeSurface } from "@zcode/shared";
@@ -18,27 +21,27 @@ import {
   type AppResourceTotals,
 } from "./processResourceAppTotals.js";
 
-/** 未自报采样周期时的默认周期（CLI 自采节拍）。 */
+/** The default period when the sampling period is not self-reported (CLI self-sampling beat). */
 const EXTERNAL_APP_RESOURCE_SAMPLE_DEFAULT_INTERVAL_MS = 60_000;
 
 /**
- * 来源条目上限（内存有界）。
- * CLI 改为按最多 64 个实例保存后，预算增加这 64 项，保留原有 MCP 来源空间。
- * 只提高内存上限，不新增队列或定时器；超出后新来源直接丢弃。
+ * Source entry upper limit (memory bounded).
+ * After the CLI is changed to save up to 64 instances, the budget increases by these 64 items, retaining the original MCP source space.
+ * Only the memory limit is increased, no queues or timers are added; new sources are discarded directly after exceeding the limit.
  */
 const PROCESS_RESOURCE_MAX_EXTERNAL_SAMPLE_SOURCES = 128;
 
 interface ExternalAppResourceSample extends AppResourceTotals {
   /**
-   * 来源的稳定 key（如 CLI 实例、MCP 来源组）：只用于覆盖旧样本与判定过期，
-   * 不进入任何 ARMS 属性，因此不得放 pid、路径或 workspace 标识。
+   * Stable key of the source (such as CLI instance, MCP source group): only used to overwrite old samples and determine expiration.
+   * No ARMS properties are entered, so no pid, path or workspace id must be put.
    */
   sourceKey: string;
-  /** 设备级总量只统计本机进程；远端 CLI / MCP 的样本在这里直接丢弃。 */
+  /** Device-level totals only count local processes; remote CLI/MCP samples are directly discarded here. */
   runtimeSurface: ProcessResourceRuntimeSurface;
-  /** 该来源的采样周期；过期判据为 2 倍周期未更新。缺省按 60 秒计。 */
+  /** The sampling period of this source; the expiration criterion is 2 times the period and has not been updated. The default is 60 seconds. */
   intervalMs?: number;
-  /** main 侧收到该样本的时刻。 */
+  /** The moment when main side receives this sample. */
   receivedAt: number;
 }
 
@@ -53,7 +56,7 @@ function isNonNegativeFinite(value: number): boolean {
   return Number.isFinite(value) && value >= 0;
 }
 
-/** 记录某个外部来源的最近一次样本；非法样本直接丢弃，不影响已有合计。 */
+/** Records the latest sample for one external source; an invalid sample is dropped outright and does not affect the existing totals. */
 export function recordExternalAppResourceSample(sample: ExternalAppResourceSample): void {
   if (sample.runtimeSurface !== "local" || !sample.sourceKey) {
     return;
@@ -89,7 +92,7 @@ export function recordExternalAppResourceSample(sample: ExternalAppResourceSampl
   });
 }
 
-/** 汇总未过期的外部来源；顺手清掉过期条目，避免长会话里僵尸来源常驻。 */
+/** Totals up the external sources that have not expired; expired entries are swept away along the way so zombie sources do not linger in long sessions. */
 export function collectExternalAppResourceTotals(now: number): AppResourceTotals {
   let totals = createEmptyAppResourceTotals();
   for (const [sourceKey, sample] of latestSamplesBySource) {
@@ -102,7 +105,7 @@ export function collectExternalAppResourceTotals(now: number): AppResourceTotals
   return totals;
 }
 
-/** 采样启停时清空全部来源，避免跨采样会话串数据。 */
+/** Clears every source when sampling starts or stops, so data never leaks across sampling sessions. */
 export function resetExternalAppResourceSamples(): void {
   latestSamplesBySource.clear();
 }

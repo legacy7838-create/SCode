@@ -1,7 +1,7 @@
 /**
- * CreateWorkflow 的结果卡 display 构造。从 result-display.ts 拆出（400 行纪律）：
- * 与 workflow-observation-display.ts 同族——按工具名分派、safeParse 输出 schema、
- * display 侧独立限长。
+ * Builds the display of the CreateWorkflow result card. Split out of result-display.ts (the 400-line discipline):
+ * of the same family as workflow-observation-display.ts — dispatch by tool name, safeParse the output schema,
+ * an independent length bound on the display side.
  */
 
 import {
@@ -14,29 +14,30 @@ import {
 } from "@zcode/contracts";
 
 /**
- * ⚠ 这个投影的字段集合是**冻结**的（contracts 的 schema 注释说明了为什么）。gate 专属的
- * 事实——比如 saved run 的来源与解析出的脚本——一律走**工具入参**通道，不上 display。
+ * ⚠ The field set of this projection is **frozen** (the schema comment in contracts explains why). Gate-specific
+ * facts — such as the origin of a saved run and the resolved script — go through the **tool input** channel
+ * only, never onto the display.
  */
 export function createCreateWorkflowDisplay(
   toolName: string,
   output: unknown,
 ): ToolResultDisplayPayload | undefined {
-  // 两个启动工具共用同一个 display kind：图、草稿笔与诊断卡在 UI 侧只有一份实现
+  // The two startup tools share the same display kind: there is only one implementation on the UI side for pictures, scratch pens and diagnostic cards.
   if (toolName !== CREATE_WORKFLOW_TOOL_NAME && toolName !== AMEND_WORKFLOW_TOOL_NAME) {
     return undefined;
   }
   const parsed = CreateWorkflowOutputSchema.safeParse(output);
   if (!parsed.success) return undefined;
-  // 就地调并发没有 display：这条路一行脚本都没编译，而 `create_workflow` 这块载荷的 `ok` 在 UI 上读作
-  // 「已编译」。判据是**显式的 `retuned` 块**而不是形状——「ok 且没有 status」在本工具上还有
-  // 「没有 run 端口、只 typecheck」这条来路。工具卡因此退回响应正文那一段。
+  // There is no display for in-place concurrency adjustment: not a single line of script in this path is compiled, and the `ok` of the `create_workflow` payload is read on the UI as
+  // "Compiled". The criterion is an explicit `retuned` block** rather than a shape - "ok and no status" is also available on this tool
+  // This is the origin of "no run port, only typecheck". The tool card therefore returns to the response body section.
   if (parsed.data.retuned !== undefined) return undefined;
 
   const { causalityGraph, diagnostics, ok } = parsed.data;
-  // display 不经过 tool result budget：诊断条数与单条 message 长度都必须在进入实时事件和
-  // 持久化 metadata 前独立限长，避免类型错误把 continuous/replayable 消息扩成无界载荷。
-  // causalityGraph 已在工具输出边界限长（handler 的 boundCausalityGraph + 输出 schema），
-  // 直接透传。
+  // Display does not go through the tool result budget: the number of diagnoses and the length of a single message must be entered into the real-time event and
+  // The length of persistent metadata is independently limited to avoid type errors and extending continuous/replayable messages into unbounded payloads.
+  // The causalityGraph has been bounded by the tool output boundary (handler's boundCausalityGraph + output schema),
+  // Direct passthrough.
   const errorCount = diagnostics.length;
   const bounded = diagnostics
     .slice(0, CREATE_WORKFLOW_DISPLAY_MAX_DIAGNOSTICS)

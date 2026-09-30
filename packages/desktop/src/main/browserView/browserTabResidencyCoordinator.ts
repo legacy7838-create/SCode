@@ -15,8 +15,9 @@ interface BrowserTabResidencyCoordinatorOptions {
 }
 
 /**
- * 每个 main 进程实例协调所有 BrowserWindow，但逻辑 tab 上限与 victim 选择都按 window 隔离。
- * BrowserGuestManager 仍拥有 guest/CDP；本类只维护正交 residency 状态与串行关闭事务。
+ * Each main process instance coordinates all BrowserWindows, but the logical tab limit and victim
+ * selection are isolated per window. BrowserGuestManager still owns the guest/CDP; this class only
+ * maintains orthogonal residency state and the serialized close transaction.
  */
 export class BrowserTabResidencyCoordinator {
   private readonly records = new Map<string, BrowserTabResidencyRecord>();
@@ -105,7 +106,7 @@ export class BrowserTabResidencyCoordinator {
         record.mediaActive ||
         record.downloadActive);
     if (protectedDuringSuspend) {
-      // 迟到 suspend ack 只能命中旧 generation；保护状态出现后立即取消本轮淘汰。
+      // Late suspend ack can only hit the old generation; this round of elimination will be canceled immediately after the protection state appears.
       record.generation += 1;
       record.residency = record.visible ? "live-visible" : "live-background";
     }
@@ -148,9 +149,9 @@ export class BrowserTabResidencyCoordinator {
     if (!record || record.generation !== generation || record.residency !== "restoring") {
       return null;
     }
-    // attach timeout/恢复取消原来没有失败终态，tab 会永久停在 restoring，
-    // 且同 generation 的迟到 guest 仍能 attach。推进 generation 后回到 suspended，
-    // 下一次访问才能安全重发恢复事务。
+    // Attach timeout/restore cancellation originally did not have a failed final state, and the tab will permanently stop at restoring.
+    // And late guests of the same generation can still attach. After advancing the generation, return to suspended,
+    // The recovery transaction can be safely reissued on the next visit.
     record.generation += 1;
     record.loading = false;
     record.residency = "suspended";
@@ -171,8 +172,8 @@ export class BrowserTabResidencyCoordinator {
     ) {
       return null;
     }
-    // renderer 已收到旧 suspend 后，main 仅拒绝 stale ack 会造成两端分裂。
-    // 此处提交 renderer 已卸载的物理事实，随后 manager 再用新 generation 完整恢复。
+    // After the renderer has received the old suspend, main rejecting only the stale ack will cause a split at both ends.
+    // The physical fact that the renderer has been uninstalled is submitted here, and then the manager completely restores it with the new generation.
     record.loading = false;
     record.residency = "suspended";
     record.lastActivityAt = this.now();
@@ -202,8 +203,8 @@ export class BrowserTabResidencyCoordinator {
   markDetached(tabId: string): void {
     const record = this.records.get(tabId);
     if (!record) return;
-    // guest destroyed/detach 后 logical residency 仍可能暂时是 live-background。
-    // 单独清除物理事实；logical shell 仍计入 32 个上限，也允许在没有 guest 时被完整关闭。
+    // After the guest is destroyed/detached, the logical residency may still be temporarily live-background.
+    // Clear the physical fact alone; the logical shell still counts against the 32 cap and is also allowed to be shut down cleanly without a guest.
     record.guestAttached = false;
     this.requestEvaluation(record.windowId);
   }
@@ -263,7 +264,7 @@ export class BrowserTabResidencyCoordinator {
         if (!record) continue;
         const evicted = await this.options.onEvict({ ...record });
         if (!evicted) break;
-        // manager 的 durable close 会先移除本记录；纯协调器调用方则由这里收口。
+        // The manager's durable close will first remove this record; pure coordinator callers will stop here.
         this.remove(record.tabId);
       }
     }

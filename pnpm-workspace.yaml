@@ -3,6 +3,7 @@ packages:
   - apps/zcode-cli
   - apps/zcode-cli/packages/*
   - apps/zcode-cli/tools/*
+  - apps/zcode-tauri
 supportedArchitectures:
   os:
     - current

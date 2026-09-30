@@ -65,8 +65,8 @@ export interface CoreFanoutSite {
   loc: ScriptLoc;
   within?: string;
   /**
-   * 字面量基数：被迭代的是无展开的数组字面量
-   * 或从未被写入的 `const` 字面量绑定时的元素个数；其余缺席。铸造期算好，投影只读。
+   * Literal cardinality: the array literal being iterated over is an unexpanded array literal.
+   * or the number of elements in a `const` literal binding that has never been written; the rest are absent. The casting period counts well, and the projection is read-only.
    */
   cardinality?: number;
 }

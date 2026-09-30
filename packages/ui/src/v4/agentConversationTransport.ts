@@ -1,10 +1,12 @@
 import { sendWithConversationDelayE2E } from "@/v4/conversationTransportDelayE2E.js";
 import { getLocalTtftObserver } from "@/v4/telemetry/localTtftObserver.js";
 import { calibrateLocalTtftClock, localTtftNow } from "@zcode/shared";
-/* oxlint-disable eslint(max-lines) -- transport 将上传、分块读取和 runtime 生命周期保持在同一 host 边界。 */
-// ConversationTransport 的 desktop/host 实现：桥到 IZCodeAgentService 的 v4 转发面
-// （依赖注入原则——数据层不感知 host 细节，
-// web 直连 ws relay 时换一个实现即可）。
+/* oxlint-disable eslint(max-lines) -- transport keeps uploads, chunked reads and the runtime
+ * lifecycle within the same host boundary.
+ */
+// desktop/host implementation of ConversationTransport: bridge to the v4 forwarding surface of IZCodeAgentService
+// (Dependency injection principle - the data layer is not aware of host details,
+// Just change the implementation when the web is directly connected to ws relay).
 import type { IZCodeAgentService } from "@zcode/services";
 import {
   conversationTopicFrameSchema,
@@ -47,7 +49,9 @@ import {
 interface AgentConversationTransportTarget {
   workspacePath: string;
   workspaceIdentity?: string;
-  /** Desktop 本地媒体协议 URL；Web/remote 不注入，因此保持分片读取。 */
+  /**
+   * Desktop local media protocol URL; it is not injected on Web/remote, so chunked reads are kept.
+   */
   createLocalMediaPreviewUrl?: (path: string) => string;
 }
 
@@ -84,8 +88,9 @@ type ConversationV4AgentService = Pick<
   Partial<Pick<IZCodeAgentService, "onAgentRuntimeLifecycle">>;
 
 /**
- * 一条 host 连接（= 一个 workspace）上的 v4 conversation 传输面。
- * connectionId 由 host 侧补齐；这里只负责 workspace 定位与帧监听生命周期。
+ * The v4 conversation transport surface on one host connection (= one workspace). The connectionId
+ * is filled in by the host side; this is responsible only for locating the workspace and for the
+ * frame-listener lifecycle.
  */
 export function createAgentConversationTransport(
   agentService: ConversationV4AgentService,
@@ -146,8 +151,8 @@ export function createAgentConversationTransport(
       try {
         if (!target.workspaceIdentity?.trim()) {
           getLocalTtftObserver()?.receive(target.workspacePath, frame, deliveryKind);
-          // Bug 原因：校准只在 ensureHandshake 顺带刷新，排队/慢发送等待期间没有传输调用，
-          // 首输出时校准已超过 60 秒有效期，跨进程阶段被整体丢弃。内容帧到达即刷新过期校准。
+          // Bug reason: calibration is only refreshed incidentally in ensureHandshake, and there is no transmission call during the queue/slow send waiting period.
+          // The calibration has exceeded the 60 second validity period when first output, and the cross-process stage is discarded as a whole. Expired calibrations are refreshed on content frame arrival.
           calibrate();
         }
       } catch (error) {
@@ -211,8 +216,8 @@ export function createAgentConversationTransport(
           ...(params.visibility ? { visibility: params.visibility } : {}),
         });
         if (subscribeRuntimeGeneration !== runtimeGeneration) {
-          // 旧 runtime 的迟到 ACK 可能复用新 runtime 的 subId；此处只能
-          // 丢本地 pending，不能向新 runtime 盲退订同名 subscription。
+          // The old runtime's late ACK may reuse the new runtime's subId; here only
+          // If the local pending is lost, the subscription with the same name cannot be blindly unsubscribed from the new runtime.
           barrier.cancel(pending);
           logger.lifecycle.warn("v4 conversation subscription ACK became stale", {
             ...lifecycleContext,
@@ -229,8 +234,8 @@ export function createAgentConversationTransport(
         try {
           barrier.bind(pending, result.ack.subscriptionId);
         } catch (error) {
-          // ACK 前 physical batch 一旦越界就已经不完整，必须撤销 host
-          // subscription 并把明确 fault 交给调用方，不能返回一个可 activate 的 ACK。
+          // Once the pre-ACK physical batch crosses the boundary, it is already incomplete and the host must be revoked.
+          // subscription and hands an explicit fault to the caller and cannot return an activateable ACK.
           try {
             await agentService.unsubscribeConversationV4({
               ...workspace,
@@ -290,8 +295,8 @@ export function createAgentConversationTransport(
       await ensureHandshake();
       const topic = topicBySubscriptionId.get(params.subscriptionId);
       if (!topic) throw new Error("fault.subscription.notOwned");
-      // 必须在 RPC 前解开 decoder fail-closed 门；assembler ordinal tombstone 仍保留，
-      // 因此同 read 中早于 Promise continuation 到达的 K+1 recovery 可进入，<=K 仍丢。
+      // The decoder fail-closed door must be unlocked before RPC; the assembler ordinal tombstone remains,
+      // Therefore, K+1 recovery that arrives earlier than Promise continuation in the same read can enter, but <=K is still lost.
       decoder.recover(topic, params.subscriptionId);
       return agentService.resyncConversationV4({
         ...workspace,
@@ -301,7 +306,7 @@ export function createAgentConversationTransport(
       });
     },
     async unsubscribe(subscriptionId: string): Promise<void> {
-      // 本地 ownership 先释放；旧 service proxy 的 handshake/RPC 已失败时也不能继续投帧。
+      // Local ownership is released first; the old service proxy cannot continue to deliver frames when its handshake/RPC fails.
       const startedAt = Date.now();
       barrier.forget(subscriptionId);
       const subscriptionTopic = topicBySubscriptionId.get(subscriptionId);
@@ -354,7 +359,7 @@ export function createAgentConversationTransport(
         config?: { planEnabled?: boolean };
         firstInput?: { planEnabled?: boolean };
       };
-      // 旧 Host 会剥掉未知字段；不能把 yolo + Plan 错发成完全访问执行。
+      // Old Host will strip unknown fields; you cannot mistakenly send yolo + Plan to full access execution.
       if (
         hello.capabilities.independentPlanState !== true &&
         (payload.planEnabled || payload.config?.planEnabled || payload.firstInput?.planEnabled)
@@ -388,7 +393,7 @@ export function createAgentConversationTransport(
         sessionId: params.sessionId,
       });
     },
-    // dwf journal 的两个只读查询拆在 agentConversationTransportWorkflowRuns.ts（max-lines 边界）。
+    // The two read-only queries for dwf journal are split in agentConversationTransportWorkflowRuns.ts (max-lines boundaries).
     ...createWorkflowRunTransportMethods({ agentService, ensureHandshake, workspace }),
     async fileChanges(
       params: V4ConversationFileChangesParams,
@@ -450,7 +455,7 @@ export function createAgentConversationTransport(
 
       for (let chunkIndex = 0; ; chunkIndex += 1) {
         params.signal?.throwIfAborted();
-        // 已发送视频读取曾误用上传事务的 64-chunk 上限，导致 20MiB 以上视频无法预览。
+        // The sent video read had misused the 64-chunk upper limit for upload transactions, resulting in the inability to preview videos over 20MiB.
         if (chunkIndex >= PROTOCOL_V4_LIMITS.attachmentPreviewMaxChunks) {
           throw new Error("fault.attachment.previewTooManyChunks");
         }
@@ -465,8 +470,8 @@ export function createAgentConversationTransport(
           offset,
           limit: PROTOCOL_V4_LIMITS.attachmentChunkMaxBytes,
         });
-        // 旧的 request-id 保护只会忽略晚到结果，Dialog 关闭后仍会继续拉取
-        // 最多 30MiB 视频。高层读取拥有取消语义，在每个在途 chunk 返回后立即停住。
+        // The old request-id protection will only ignore late results, and will continue to pull after the Dialog is closed.
+        // Up to 30MiB video. High-level reads have cancellation semantics and stop immediately after each in-transit chunk is returned.
         params.signal?.throwIfAborted();
         totalBytes ??= result.totalBytes;
         mediaType ??= result.mediaType;
@@ -536,8 +541,8 @@ export function createAgentConversationTransport(
           ttftUpstream = agentService.onDynamicLocalTtftFacts?.(workspace)((facts) => {
             try {
               getLocalTtftObserver()?.checkpoint(target.workspacePath, facts);
-              // CLI 在 admitted/execution/各准备阶段都会发检查点：排队输入开始执行时
-              // 就能在首输出前拿到 60 秒内的新校准，不需要额外定时器或协议。
+              // The CLI will send checkpoints during the admitted/execution/preparation stages: when the queued input starts executing
+              // You can get new calibrations within 60 seconds of first output, without the need for additional timers or protocols.
               calibrate();
             } catch (error) {
               logger.debug("[local-ttft] checkpoint failed", { error });
@@ -584,7 +589,7 @@ export function createAgentConversationTransport(
         if (!target.workspaceIdentity?.trim())
           getLocalTtftObserver()?.interrupt(target.workspacePath);
         runtimeGeneration += 1;
-        // runtime generation 可复用 subId/ordinal；ownership 与 assembler 必须原子失效。
+        // Runtime generation can reuse subId/ordinal; ownership and assembler must be invalidated atomically.
         barrier.clear();
         decoder.clear();
         topicBySubscriptionId.clear();
@@ -607,10 +612,10 @@ export function createAgentConversationTransport(
                 if (event.workspaceKey !== targetWorkspaceKey) return;
                 if (event.state === "unavailable" && !target.workspaceIdentity?.trim())
                   getLocalTtftObserver()?.interrupt(target.workspacePath);
-                // 只转发、不动 runtimeGeneration/barrier/decoder/topicBySubscriptionId：那是
-                // onRuntimeRestart 的语义（新 runtime 已存在、可安全重订阅）。unavailable 时
-                // 旧 CLI 已死不会再有帧到达，而提前递增 generation 会让随后 restart 的
-                // ownership 判定错位。available 与 restart 同刻到达，清理由那一路完成。
+                // Only forward, do not move runtimeGeneration/barrier/decoder/topicBySubscriptionId: that is
+                // Semantics of onRuntimeRestart (new runtime already exists, safe to resubscribe). unavailable
+                // If the old CLI is dead, no more frames will arrive, and incrementing generation in advance will cause subsequent restarts.
+                // The ownership judgment is misplaced. available and restart arrive at the same time, and the cleanup is completed by that route.
                 for (const lifecycleListener of runtimeLifecycleListeners) {
                   lifecycleListener(event.state);
                 }

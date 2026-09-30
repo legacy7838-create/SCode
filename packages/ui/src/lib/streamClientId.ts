@@ -1,24 +1,26 @@
 /**
- * 设备标识符 —— renderer 进程内单例缓存
+ * Device identifier — a singleton cached within the renderer process
  *
- * 生成策略：
- * - 桌面端：使用 main 进程提供的 deviceMid（基于 userData 路径的 SHA-256，稳定且唯一）
- * - 手机端（Web 远程控制）：使用物理属性指纹（browserPlatform + screen.width/height + colorDepth），
- *   抗浏览器/网络/语言/时区变化，换手机才会变
+ * Generation strategy:
+ * - Desktop: use the deviceMid provided by the main process (a SHA-256 over the userData path,
+ *   stable and unique)
+ * - Mobile (Web remote control): use a physical-property fingerprint (browserPlatform +
+ *   screen.width/height + colorDepth), which resists browser/network/language/timezone changes and
+ *   only changes when the phone is swapped
  */
 import { createUuid } from "@zcode/shared";
 
 let cachedStreamClientId: string | null = null;
 
 /**
- * 设置稳定的设备 ID（由 platform.getDeviceId() 提供）。
- * 必须在首次调用 getStreamClientId() 之前调用。
+ * Sets the stable device ID (supplied by platform.getDeviceId()). Must be called before the first
+ * call to getStreamClientId().
  */
 export function setStreamClientId(deviceId: string): void {
   const normalizedDeviceId = deviceId.trim();
   if (!normalizedDeviceId) {
-    // deviceId 注入异常时如果写入空字符串，所有实例会共享 "renderer:"，
-    // owner/observer 过滤会误判成同一客户端。这里回退到进程内稳定随机值，避免跨实例碰撞。
+    // If deviceId writes an empty string when injecting an exception, all instances will share "renderer:".
+    // owner/observer filtering will misjudge the same client. This falls back to a stable random value within the process to avoid cross-instance collisions.
     cachedStreamClientId = cachedStreamClientId ?? `renderer:fallback-${createUuid()}`;
     return;
   }
@@ -26,8 +28,8 @@ export function setStreamClientId(deviceId: string): void {
 }
 
 /**
- * 生成手机端物理属性指纹。
- * 用于手机端在 platform.getDeviceId() 返回之前自行生成稳定的设备 ID。
+ * Generates the mobile physical-property fingerprint. Used on mobile to derive a stable device ID
+ * on its own before platform.getDeviceId() returns.
  */
 export function generateMobileDeviceFingerprint(): string {
   const nav = globalThis.navigator as Navigator & { platform?: string };

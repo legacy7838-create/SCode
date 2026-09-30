@@ -3,12 +3,14 @@ import type { WorkerInitializationRenderOptions } from "@pierre/diffs/react";
 import type { BundledTheme } from "shiki";
 
 /**
- * @pierre/diffs 默认使用 shiki 的 JavaScript 正则引擎（shiki-js）。该引擎把 TextMate
- * 语法逐条翻译成巨型 RegExp 并在引擎级缓存里永久持有，V8 会把执行过的正则编译成原生代码放进
- * code space；双字节文本（中文注释等）还会再编译一份。主窗口和 4 个 diff worker 共用同一个
- * 256MB code range，长时间运行后会被这些正则占满，触发 renderer 的 V8 OOM
- * （CALL_AND_RETRY_LAST，old-space 仍有大量空闲，code cage "ran out of reservation"）。
- * oniguruma WASM 引擎的正则活在 wasm 线性内存里，不占 V8 代码区，且是 TextMate 语法的参考实现。
+ * @pierre/diffs uses shiki's JavaScript regex engine (shiki-js) by default. That engine translates
+ * each TextMate grammar into a giant RegExp and holds it permanently in an engine-level cache; V8
+ * compiles every executed regex to native code in code space, and double-byte text (Chinese
+ * comments and the like) gets a second compiled copy. The main window and the 4 diff workers share
+ * a single 256MB code range, so after long runs these regexes fill it and trigger a V8 OOM in the
+ * renderer (CALL_AND_RETRY_LAST, with plenty of old-space still free and the code cage reporting
+ * "ran out of reservation"). The oniguruma WASM engine keeps its regexes in wasm linear memory, so
+ * they never occupy V8's code area, and it is the reference implementation for TextMate grammars.
  */
 export const DIFFS_PREFERRED_HIGHLIGHTER: HighlighterTypes = "shiki-wasm";
 
@@ -17,7 +19,10 @@ interface DiffsHighlighterThemeSettings {
   darkTheme: BundledTheme;
 }
 
-/** diff worker 池初始化参数；主线程兜底渲染与 worker 必须使用同一个引擎选择。 */
+/**
+ * Initialization parameters for the diff worker pool; the main-thread fallback rendering and the
+ * workers must use the same engine choice.
+ */
 export function createDiffsWorkerHighlighterOptions(
   settings: DiffsHighlighterThemeSettings,
 ): WorkerInitializationRenderOptions {
@@ -26,8 +31,8 @@ export function createDiffsWorkerHighlighterOptions(
       light: settings.lightTheme,
       dark: settings.darkTheme,
     },
-    // 不同 patch 的逐词差异计算会额外占用主线程；先沿用库默认阈值，
-    // 后续可基于慢日志再单独收紧，避免一次改动引入“高亮信息突然消失”的回归。
+    // The word-by-word difference calculation of different patches will additionally occupy the main thread; the library default threshold will be used first.
+    // Subsequent tightening can be done individually based on the slow log to avoid the regression of "sudden disappearance of highlighted information" caused by one change.
     lineDiffType: "word-alt",
     maxLineDiffLength: 1_000,
     tokenizeMaxLineLength: 1_000,

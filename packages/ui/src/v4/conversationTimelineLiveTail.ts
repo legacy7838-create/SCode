@@ -7,10 +7,11 @@ interface ConversationTimelineLiveTailSplit {
 }
 
 /**
- * running turn 继续放在绝对定位虚拟行里时，正文 DOM 会先长高，
- * ResizeObserver 下一帧才回填 totalSize/scrollTop，导致轮尾 ChatLoading 来回跳。
- * 只把真正的最后一个 running unit 拆成 normal-flow live tail；历史或陈旧 running
- * 行仍归虚拟列表，避免扩大常驻 DOM。
+ * While a running turn stays in the absolutely positioned virtual rows, the body DOM grows first
+ * and only the next frame does the ResizeObserver write back totalSize/scrollTop, which makes the
+ * ChatLoading at the tail jump back and forth. Only the genuinely last running unit is split out as
+ * a normal-flow live tail; historical or stale running rows still belong to the virtual list, so
+ * the resident DOM does not grow.
  */
 export function splitConversationTimelineLiveTail(
   units: readonly ConversationTurnRenderUnit[],

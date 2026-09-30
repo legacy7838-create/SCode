@@ -43,7 +43,7 @@ export {
   createRemoteWorkspaceDisconnectedError,
 } from "./lib/remoteWorkspaceServiceError.js";
 
-// Hooks —— 统一的服务和平台操作访问层
+// Hooks — unified service and platform operation access layer
 export {
   ServiceProvider,
   useServices,
@@ -65,7 +65,7 @@ export {
   useGitActions,
 } from "./hooks/index.js";
 
-export { ZCodeIntlProvider, useZCodeIntl, LocaleSwitcher } from "./i18n/index.js";
+export { ZCodeIntlProvider, useZCodeIntl } from "./i18n/index.js";
 export { ResourceManagerApp } from "./resource-manager/ResourceManagerApp.js";
 export type {
   ResourceManagerAppProps,

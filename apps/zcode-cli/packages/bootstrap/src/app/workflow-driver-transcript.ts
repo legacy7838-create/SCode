@@ -1,11 +1,11 @@
 // ============================================================
-// AgentRuntime-backed WorkflowDriver：转录编排（amend-resume 的两件 driver 私有事）
+// AgentRuntime-backed WorkflowDriver: Transcription orchestration (two driver-private things of amend-resume)
 // ============================================================
-// workflow-driver.ts 顶到 oxlint max-lines 上限（400 行），把 driver 侧的转录编排——
-// 分歧 actor 的转录截断（seedActorSession）、ask 边界记账的计数（countSessionTranscript）与回写
-// （journalAskMessageBoundary）——拆到本文件成自由函数；公开面不变。机制本身仍住在
-// workflow-actor-transcript.ts（复制与计数），这里只是 driver 对它的三次调用及其失败取舍，
-// 原方法体逐字保留，只把 `this.deps` / `this.journal` 换成显式递进来的 deps。
+// workflow-driver.ts reaches the upper limit of oxlint max-lines (400 lines), and arranges the transcription on the driver side——
+// Different actor transcription truncation (seedActorSession), ask boundary accounting count (countSessionTranscript) and writeback
+// (journalAskMessageBoundary) - Split this file into free functions; the public side remains unchanged. The mechanism itself still lives in
+// workflow-actor-transcript.ts (copying and counting), here are just three calls made by the driver and their failure choices.
+// The original method body is retained verbatim, only `this.deps` / `this.journal` is replaced with the deps passed in explicitly.
 
 import type { SessionId } from "@zcode/contracts";
 import type { AgentRuntime } from "@zcode/core";
@@ -19,26 +19,32 @@ import { countActorTranscript, seedActorTranscript } from "./workflow-actor-tran
 import type { AgentRuntimeWorkflowDriverDeps, SessionState } from "./workflow-driver-types.js";
 
 /**
- * 分歧 actor 的转录截断（amend-resume）：把源会话的前 N 条消息复制进刚铸的会话，再让 runtime
- * 以这段上文开场。
+ * Transcript truncation of a diverging actor (amend-resume): copy the first N messages of the source session
+ * into the freshly minted session, then let the runtime open with that prior context.
  *
- * 顺序是**载荷性**的，三步一步都不能换位：
- *   1. 工厂已返回 ⇒ 会话行已落库（`message.session_id` 对 `session(id)` 有 FK，先复制必失败）；
- *   2. 复制到**持久层**而不是内存 history——两个读者依赖落库的那一份：本 run 的重水化，
- *      以及**将来对本 run 的修订**（链行走会把这个会话当作转录源读）；
- *   3. 重水化走既有的 `resumeFromStore`（与 resume 重挂同一条机器），绝不另造一条水化路径。
- *      此刻会话行与消息都刚落好，所以这里不复制 launch 侧那条 `SessionNotFound → 全新`
- *      的降级分支：那条分支的成因是"会话被清理"，而在这里它只可能意味着接线错了，该大声失败。
+ * The order is **load-bearing**, and not one of the three steps may be swapped:
+ *   1. The factory has returned => the session row is already in the database (`message.session_id` has an FK
+ *      to `session(id)`, so copying first would necessarily fail);
+ *   2. Copy into the **persistence layer**, not the in-memory history, because two readers depend on the
+ *      persisted copy: this run's rehydration, and **future amendments to this run** (the chain walker will
+ *      read this session as a transcript source);
+ *   3. Rehydration goes through the existing `resumeFromStore` (the same machine as a resume reattach), and
+ *      never a second hydration path. The session row and its messages were both just written, so the
+ *      launch-side `SessionNotFound -> brand new` degradation branch is deliberately not copied here: the cause
+ *      of that branch is "the session was cleaned up", whereas here it could only mean the wiring is wrong, and
+ *      it should fail loudly.
  *
- * 第 3 步的**条件**：真复制了就必须水化；一条没抄（跳过）且 journal 已记下这个会话 id，
- * 说明 runtime 工厂刚才已经按 resume 路径重挂过了（launch 的 attachActorSession），再水化一次
- * 只会多发一条 SessionResumed、多跑一轮 SessionStart 钩子。两个条件都不成立的情形（跳过复制
- * 且 journal 无记录 = 上一世崩在复制与 putActor 之间）仍要水化，否则 runtime 会带着一个装满
- * 消息的会话从空上下文开跑。
+ * The **condition** on step 3: if something was really copied, hydration is mandatory; if nothing was copied
+ * (skipped) and the journal already records this session id, it means the runtime factory has just reattached
+ * via the resume path (launch's attachActorSession), and hydrating again would only emit one extra
+ * SessionResumed and run one more round of SessionStart hooks. The case where neither condition holds (copy
+ * skipped and no journal record = the previous life crashed between the copy and putActor) must still hydrate,
+ * otherwise the runtime would start with an empty context on a session full of messages.
  *
- * 这个条件对 {@link seedActorTranscript} 的**两种**跳过都成立，不必分辨是哪一种：两者的判据
- * 都是「目标会话已经有自己的内容」，而 `attachActorSession` 决定要不要重挂用的是同一个谓词
- * （journal 上有没有这个 actor 的 sessionId），所以两处永远同时成立或同时不成立。
+ * This condition holds for **both** skip reasons of {@link seedActorTranscript}, and there is no need to tell
+ * them apart: the criterion for both is "the target session already has its own content", and
+ * `attachActorSession` uses the same predicate to decide whether to reattach (whether the journal holds a
+ * sessionId for this actor), so the two always hold together or fail together.
  */
 export async function seedActorSession(
   deps: AgentRuntimeWorkflowDriverDeps,
@@ -68,7 +74,7 @@ export async function seedActorSession(
   await runtime.resumeFromStore();
 }
 
-/** 数本会话已落库的消息条数；失败即放弃记账（边界缺席，而不是一个错的边界）。 */
+/** Count the messages already persisted for this session; on failure give up on accounting (an absent boundary rather than a wrong one). */
 export async function countSessionTranscript(
   deps: AgentRuntimeWorkflowDriverDeps,
   state: SessionState,
@@ -91,19 +97,23 @@ export async function countSessionTranscript(
 }
 
 /**
- * 把消息数边界补写进这个 ask 的 journal 行（`NodeRecord.messageBoundary`）。
+ * Backfill the message-count boundary into this ask's journal row (`NodeRecord.messageBoundary`).
  *
- * 与 stats 回填**同族**：引擎结算时写下的记录不含本字段（它是 driver 拥有的事实），所以这里
- * 走同一套读改写——`getNode` 拿到刚结算的整条记录，只加边界再 `putNode`，status / result /
- * actorSeq / inputHash / stats 一个不动。写在结算之后是必须的：引擎的结算是整条替换，写在
- * 它之前会被抹掉。
+ * It is **of the same family** as the stats backfill: the record the engine writes at settlement does not
+ * contain this field (it is a fact owned by the driver), so the same read-modify-write is used here:
+ * `getNode` fetches the whole record just settled, only the boundary is added, then `putNode`; status /
+ * result / actorSeq / inputHash / stats stay untouched. Writing after settlement is mandatory, because the
+ * engine's settlement replaces the whole record and anything written before it would be wiped.
  *
- * 每个 ask 都写，不区分具名/匿名、修订/普通 run：**匿名与否是导入时才判定的**，而任何 run
- * 都是未来修订的潜在前驱。代价是每 ask 一次小写入。
+ * Every ask writes it, without distinguishing named/anonymous or amending/normal run, because **whether it is
+ * anonymous is only decided at import time**, and any run is a potential predecessor of a future amendment.
+ * The cost is one small write per ask.
  *
- * 两处早退各有理由：记录不在（run 已被清理）无处可写；`currentInstance` 已经换人说明这个会话
- * 上已经开始了下一个 ask，此刻数到的长度不再属于本次交换——宁可让边界缺席（该 ask 不可导入），
- * 也不写一个偏大的值（截断会多带一段下一次 ask 的开场）。
+ * The two early exits each have a reason: the record is gone (the run has been cleaned up) so there is
+ * nowhere to write; and `currentInstance` has already changed hands, meaning the next ask has already started
+ * on this session, so the length counted right now no longer belongs to this exchange; better to let the
+ * boundary stay absent (that ask is not importable) than to write a too-large value (truncation would carry an
+ * extra opening stretch of the next ask).
  */
 export function journalAskMessageBoundary(
   deps: AgentRuntimeWorkflowDriverDeps,
@@ -119,8 +129,8 @@ export function journalAskMessageBoundary(
     if (recorded === undefined) return;
     deps.journal.putNode({ ...recorded, messageBoundary: boundary });
   } catch (error) {
-    // 记账写入失败不该打挂一个已经结算好的 ask（且这里跑在游离的 promise 上，抛出只会变成
-    // unhandled rejection）。代价与计数失败相同：这个 ask 不可导入，run 因此不可作前驱。
+    // Failure in accounting writing should not trigger an ask that has been settled (and this is running on a free promise, so the throw will only become
+    // unhandled rejection). The cost is the same as counting failure: the ask is not importable, and run is therefore not a precursor.
     deps.logger?.warn?.("Dynamic workflow ask message boundary write failed", {
       errorMessage: error instanceof Error ? error.message : String(error),
       event: "dynamic_workflow.ask.message_boundary.write_failed",

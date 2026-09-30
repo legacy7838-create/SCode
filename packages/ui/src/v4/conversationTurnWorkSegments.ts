@@ -54,8 +54,8 @@ export function resolveConversationTurnWorkDurationMs(
   if (!header) return undefined;
   if (header.activeMs !== undefined) return header.activeMs;
   if (header.endedAt !== undefined) return Math.max(header.endedAt - header.startedAt, 0);
-  // UI 每秒传入 nowMs 只用于运行中“工作中 N 秒”；完成态缺少
-  // activeMs/endedAt 时不能继续吃当前时钟，否则历史“已工作”会随时间增长。
+  // UI passes in nowMs every second only for "working N seconds" during running; the completion state is missing
+  // You cannot continue to eat the current clock when activeMs/endedAt, otherwise the history of "worked" will increase over time.
   if (isRunning && options.nowMs !== undefined) {
     return Math.max(options.nowMs - header.startedAt, 0);
   }
@@ -120,8 +120,8 @@ function resolveSegmentDurationMs(options: {
       options.segmentRunning,
     );
   }
-  // 兼容旧 guide snapshot：新 CLI 会下发 workSegments；仅旧数据缺事实时才按
-  // guided row 的稳定时间边界恢复，避免刷新后又退回整个 turn 的单一工时。
+  // Compatible with old guide snapshot: the new CLI will deliver workSegments; only when the old data lacks facts, press
+  // The stable time boundary of the guided row is restored to avoid returning to a single working hour of the entire turn after refreshing.
   const startedAt = options.triggerRow?.createdAt ?? options.header?.startedAt;
   const endedAt = options.nextTriggerRow?.createdAt ?? options.header?.endedAt;
   if (startedAt !== undefined && endedAt !== undefined) return Math.max(0, endedAt - startedAt);

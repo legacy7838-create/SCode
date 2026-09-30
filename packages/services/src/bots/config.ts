@@ -11,7 +11,7 @@ import {
 } from "@zcode/shared";
 export { BOT_BIND_CODE_TTL_MS } from "@zcode/shared";
 
-// 回滚兼容：旧 App 对 Options 严格解析，旧文件仅作升级前快照，不得持续回写。
+// Rollback compatibility: The old app strictly parses Options. Old files are only snapshots before the upgrade and are not allowed to be continuously written back.
 export const BOTS_CONFIG_FILE = "bot-config.v3.json";
 export const BOTS_LEGACY_CONFIG_FILE = "bot-config.json";
 export const BOTS_LEGACY_STATE_FILE = "bot-state.json";
@@ -35,7 +35,7 @@ export function createDefaultBotCommands(): BotCommandPolicy {
 export function normalizeBotCommandPolicy(
   commands: Partial<BotCommandPolicy> & { cli?: unknown } = {},
 ): BotCommandPolicy {
-  // Bugfix: /cli 命令已经移除，历史 bot-config.json 里残留的 cli 字段不能继续被保存回新配置。
+  // Bugfix: The /cli command has been removed, and the remaining cli fields in the historical bot-config.json cannot be saved back to the new configuration.
   return {
     ...DEFAULT_BOT_COMMANDS,
     status: commands.status ?? DEFAULT_BOT_COMMANDS.status,
@@ -59,8 +59,8 @@ export function normalizeBotCurrentOptions(
 ): BotCurrentOptions {
   const parsedSelection = modelSelectionSchema.safeParse(options.modelSelection);
   const modelSelection = parsedSelection.success ? parsedSelection.data : undefined;
-  // 旧 model/thoughtLevel 只在 Repository 的一次性导入读取，普通保存只认新字段。
-  // Bugfix: /cli 命令移除后，历史 currentOptions.cli 只作为旧配置兼容读取，不再保存。
+  // The old model/thoughtLevel can only be read in the one-time import of the Repository, and only new fields can be recognized in ordinary saves.
+  // Bugfix: After the /cli command is removed, the historical currentOptions.cli can only be read as the old configuration for compatibility and will no longer be saved.
   return {
     ...(modelSelection ? { modelSelection } : {}),
     ...(options.mode ? { mode: options.mode } : {}),

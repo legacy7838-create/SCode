@@ -1,8 +1,8 @@
 // ============================================================
-// EvalWorkflowSnippet Tool - 同步编译并运行一段动态工作流片段（scratch facade）
+// EvalWorkflowSnippet Tool - synchronously compile and run a dynamic workflow snippet (scratch facade)
 // ============================================================
-// 工作流创作的实验通道：
-// 同一条编译 / lowering / 沙箱 / world-read 执行面，内存 journal，完全瞬态。
+// Experimental channels for workflow authoring:
+// The same compilation / lowering / sandbox / world-read execution surface, memory journal, completely transient.
 
 import { z } from "zod";
 import { CreateWorkflowDiagnosticSchema } from "./create-workflow.js";
@@ -10,12 +10,12 @@ import { toToolJsonSchema } from "./json-schema.js";
 
 export const EVAL_WORKFLOW_SNIPPET_TOOL_NAME = "EvalWorkflowSnippet";
 
-/** snippet 墙钟缺省 60s；上限 600s（测真实构建类检查需要余量）。 */
+/** The snippet wall clock defaults to 60s; the cap is 600s (real build-like checks need headroom). */
 export const EVAL_WORKFLOW_SNIPPET_DEFAULT_TIMEOUT_MS = 60_000;
 export const EVAL_WORKFLOW_SNIPPET_MAX_TIMEOUT_MS = 600_000;
 export const EVAL_WORKFLOW_SNIPPET_MIN_TIMEOUT_MS = 1_000;
 
-/** 「恰好给一段片段」的违规说明（与另外三个工具同一种语气）。 */
+/** The violation message for "exactly one snippet" (the same tone as the other three tools). */
 export const EVAL_WORKFLOW_SNIPPET_SOURCE_ERROR =
   "Provide exactly one snippet source: `code` for the snippet inline, or `path` for a file holding it. Passing both, or neither, is ambiguous.";
 
@@ -23,8 +23,8 @@ export const EvalWorkflowSnippetInputSchema = z
   .object({
     code: z.string().min(1).optional().describe("The snippet, inline. This OR `path`, never both."),
     /**
-     * 片段的第二条来源。**整个文件就是代码**：
-     * 片段没有保存定义那套语义，一段恰好以 `/* zcode-workflow` 开头的文件也不该被当成声明块剥掉。
+     * The second source for a snippet. **The whole file is the code**:
+     * the snippet does not carry the saved-definition semantics, and a file that merely happens to start with `/* zcode-workflow` should not be stripped of its declaration block either.
      */
     path: z
       .string()
@@ -45,20 +45,20 @@ export type EvalWorkflowSnippetInput = z.infer<typeof EvalWorkflowSnippetInputSc
 
 export const EvalWorkflowSnippetInputJsonSchema = toToolJsonSchema(EvalWorkflowSnippetInputSchema);
 
-// logs 的界（协议边界上的所有载荷有界）：条数 × 单条长度，超出在 service 侧截断并标注。
+// The limit of logs (all payloads on the protocol boundary are bounded): number of entries × length of a single entry. Excess logs will be truncated and marked on the service side.
 export const EVAL_WORKFLOW_SNIPPET_MAX_LOGS = 100;
 export const EVAL_WORKFLOW_SNIPPET_MAX_LOG_CHARS = 2_048;
-/** 顶层返回值序列化上限（harness 不量 artifact 体积——这道界属于 service/工具层）。 */
+/** Serialization cap for the top-level return value (the harness does not measure artifact size — that bound belongs to the service/tool layer). */
 export const EVAL_WORKFLOW_SNIPPET_MAX_ARTIFACT_BYTES = 256 * 1024;
 
 export const EvalWorkflowSnippetOutputSchema = z
   .object({
-    /** 编译干净且脚本正常 return 为 true；诊断在场或运行失败（超时 / 抛错 / cap）为 false。 */
+    /** True when compilation is clean and the script returns normally; false when diagnostics are present or the run fails (timeout / throw / cap). */
     ok: z.boolean(),
     diagnostics: z.array(CreateWorkflowDiagnosticSchema),
-    /** 引擎 `log()` 事件按到达序捕获（有界；截断时最后一条是标注）。 */
+    /** Engine `log()` events captured in arrival order (bounded; when truncated, the last entry is an annotation). */
     logs: z.array(z.string().max(EVAL_WORKFLOW_SNIPPET_MAX_LOG_CHARS)),
-    /** 面向模型的文本：产物序列化 / 诊断列表 / 结构化失败（错误码 + message）。 */
+    /** Model-facing text: artifact serialization / diagnostics list / structured failure (error code + message). */
     response: z.string(),
     durationMs: z.number().int().nonnegative(),
   })

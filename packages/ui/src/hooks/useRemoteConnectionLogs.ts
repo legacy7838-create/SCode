@@ -57,9 +57,9 @@ export function appendRemoteConnectionRuntimeLog(
     if (matchingProgressIndex >= 0) {
       const matchingLog = currentLogs[matchingProgressIndex];
       if (matchingLog) {
-        // 上传多个 remote 资源时不同文件的进度会交错到达，只合并相邻进度行时，
-        // 同一文件稍后再更新就会追加成一长串速度行。这里按“传输类型 + 文件标识”在整个日志窗口内去重，
-        // 并把最新进度移到末尾，保证每个活跃传输只占一行且最新速度始终靠近可视区域底部。
+        // When uploading multiple remote resources, progress from different files interleaves; merging only adjacent progress lines makes
+        // later updates to the same file append into a long run of speed lines. Here we dedupe by "transfer type + file identity" across the whole log window,
+        // moving the latest progress to the end so each active transfer occupies exactly one line and the newest speed stays near the bottom of the visible area.
         return [
           ...currentLogs.slice(0, matchingProgressIndex),
           ...currentLogs.slice(matchingProgressIndex + 1),

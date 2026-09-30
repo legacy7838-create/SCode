@@ -26,7 +26,7 @@ function destroyStreamBestEffort(stream: NodeJS.ReadableStream | NodeJS.Writable
   try {
     (stream as NodeJS.ReadableStream & { destroy?: () => void }).destroy?.();
   } catch {
-    // release timeout 后只尽力关闭本次 lock-holder stream；清理失败不能再次覆盖 timeout 诊断。
+    // After the release timeout, only the best effort is made to close this lock-holder stream; if the cleanup fails, the timeout diagnosis cannot be overwritten again.
   }
 }
 
@@ -82,9 +82,9 @@ function encodePosixOctal(value: string): string {
 function buildRemoteDeployLockCommand(lockDir: string, ownerToken: string): string {
   const scriptPath = `${lockDir}.holder-${ownerToken}.sh`;
   const script = buildRemoteDeployLockScript(lockDir, ownerToken);
-  // wsl.exe 会先经默认 shell 重组 `bash -lc` 参数，脚本里的局部 `$var`
-  // 会在真正的 shell 执行前被展开为空。用纯八进制内容落盘后再执行，同时保留 stdin 给 release marker。
-  // 锁脚本只使用 POSIX 语法，显式用 sh 执行，兼容 Alpine/BusyBox 等没有 bash 的远端。
+  // wsl.exe will first reorganize the `bash -lc` parameters through the default shell, and the local `$var` in the script
+  // will be expanded to empty before the actual shell is executed. Use pure octal content to write to the disk before executing, while retaining stdin for the release marker.
+  // The lock script only uses POSIX syntax, is explicitly executed with sh, and is compatible with Alpine/BusyBox and other remote ends without bash.
   return [
     "set -eu",
     `mkdir -p ${quotePosixPathArg(posix.dirname(scriptPath))}`,
@@ -160,8 +160,8 @@ export async function acquireRemoteDeployLock(
         }
         settled = true;
         cleanup();
-        // 其他 owner 持续 heartbeat 时 stale recovery 永远不会触发，waiter 会永久挂住。
-        // deadline 后只销毁本次 waiter 的 stream，不删除远端 lock，也不 dispose 共享 backend。
+        // When other owners continue to heartbeat, stale recovery will never be triggered, and the waiter will hang permanently.
+        // After the deadline, only the stream of this waiter is destroyed, the remote lock is not deleted, and the shared backend is not disposed.
         destroyLockStreamBestEffort(stream);
         reject(
           new Error(
@@ -169,8 +169,8 @@ export async function acquireRemoteDeployLock(
           ),
         );
       };
-      // 先安装 deadline 再订阅 stdout；某些 stream 在注册 data listener 时会同步吐出缓冲 marker。
-      // 若顺序相反，marker 已 resolve 后才创建的 timer 会残留到 deadline。
+      // Install deadline first and then subscribe to stdout; some streams will spit out buffer markers synchronously when registering data listener.
+      // If the order is reversed, the timer created after the marker has been resolved will remain until the deadline.
       timeout = setTimeout(onTimeout, acquireTimeoutMs);
       stream.stdout.on("data", onStdout);
       void close.promise.then((code) => {
@@ -217,8 +217,8 @@ export async function acquireRemoteDeployLock(
             ]);
           } catch (error) {
             if (error === timeoutError) {
-              // 远端半开或 close 事件丢失会让 deployServer 永久卡在 finally。
-              // deadline 后只销毁当前 owner 的 stdio，让 backend 后续 dispose 接管底层连接回收。
+              // The remote half-open or the loss of the close event will cause deployServer to be permanently stuck in finally.
+              // After the deadline, only the stdio of the current owner is destroyed, and the subsequent dispose of the backend takes over the recycling of the underlying connection.
               destroyLockStreamBestEffort(stream);
             }
             throw error;

@@ -5,7 +5,7 @@ import {
   type RemoteWorkspaceIdentityKind,
 } from "./remote-workspace-identity.js";
 
-/** 只提取场景枚举；未知远端身份仍为 remote，禁止向业务埋点暴露地址或路径。 */
+/** Extracts only the scenario enum; an unknown remote identity stays "remote", and addresses or paths must never be exposed to product telemetry. */
 export function resolveWorkspaceTelemetryDetail(scope: {
   workspaceIdentity?: string | null;
   remoteSessionId?: string | null;
@@ -62,7 +62,7 @@ function readErrorSearchText(error: unknown): string {
 }
 
 /**
- * 原始错误只在本地参与匹配，返回值固定为低基数枚举，禁止把远端目标或错误消息带入埋点。
+ * The raw error only participates in local matching; the return value is always a low-cardinality enum, and the remote target or error message must never be carried into telemetry.
  */
 export function classifyRemoteUsageError(error: unknown): RemoteUsageErrorCategory {
   const value = readErrorSearchText(error);
@@ -85,7 +85,7 @@ export function classifyRemoteUsageError(error: unknown): RemoteUsageErrorCatego
   if (/(relay|websocket|web socket|pair|device.*(?:kicked|not.found))/.test(value)) {
     return "relay";
   }
-  if (/(connect|network|socket|ssh|wsl|docker|server|timeout|timedout|econn)/.test(value)) {
+  if (/(connect|network|socket|ssh|wsl|server|timeout|timedout|econn)/.test(value)) {
     return "connect";
   }
   return "unknown";

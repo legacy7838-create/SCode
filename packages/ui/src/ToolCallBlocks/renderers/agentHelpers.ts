@@ -8,8 +8,8 @@ const DEFAULT_AGENT_TYPE_LABEL = "general-purpose";
 
 export function formatAgentMessage(intl: AgentIntl, id: string, fallback: string) {
   const message = intl.formatMessage({ id });
-  // agent 工具块的语言包一旦漏配，SSR/静态渲染会把内部 i18n key 原样打到 UI 上，
-  // 不但测试断言会失败，真实界面也会直接暴露实现细节。这里统一回退到稳定术语。
+  // Once the language package of the agent tool block is missing, SSR/static rendering will print the internal i18n key to the UI as it is.
+  // Not only will test assertions fail, but the real interface will directly expose implementation details. There is a unified fallback to stable terminology here.
   return message === id ? fallback : message;
 }
 
@@ -129,9 +129,9 @@ export function getAgentKindLabel(
     readStringFromNestedRecord(toolCall.raw, ["_meta", "zcode", "agent_type"]) ??
     readStringFromNestedRecord(toolCall.raw, ["_meta", "zcode", "subagent_type"]);
 
-  // 流式 input 的半截 JSON 暂时读不到 subagent_type，若一读不到就按“模型省略字段”
-  // 回退 general-purpose，首帧会误报、之后再跳成真实类型。只有 inputPreviewComplete 明确为 true
-  // 才能确认字段确实省略；已投影的 subagentRow 类型则作为 runtime 权威结果优先展示。
+  // The subagent_type cannot be read in the half JSON of the streaming input. If it cannot be read, press "Model Omit Field"
+  // Falling back to general-purpose, the first frame will be falsely reported, and then it will jump to the real type. Only inputPreviewComplete is explicitly true
+  // Only then can you confirm that the field is indeed omitted; the projected subagentRow type will be displayed first as the runtime authoritative result.
   const explicitName =
     (authoritativeAgentType?.trim() || undefined) ??
     readAgentNameFromRecord(outputRecord) ??
@@ -188,8 +188,8 @@ export function getAgentActivityContent(toolCall: AgentToolCall) {
     readStringFromNestedRecord(toolCall.raw, ["_meta", "zcode", "taskNotification", "result"]) ??
     readStringFromNestedRecord(toolCall.raw, ["_meta", "zcode", "taskNotification", "summary"]);
   if (taskNotificationResult) {
-    // background Agent 的 output_file 是完整 sidechain transcript，
-    // task-notification result 才是适合用户阅读的完成摘要。优先展示摘要，避免展开后被 JSONL 淹没。
+    // The output_file of background Agent is the complete sidechain transcript,
+    // task-notification result is the completion summary suitable for users to read. Display the abstract first to avoid being overwhelmed by JSONL after expansion.
     return taskNotificationResult;
   }
 

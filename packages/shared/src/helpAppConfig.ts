@@ -5,7 +5,6 @@ import { getCommunityUrlFromConfigs, getFeedbackUrlFromConfig } from "./remoteAp
 const helpConfigSchema = z.object({
   community_urls: z
     .object({
-      "zh-CN": z.string().optional().catch(undefined),
       "en-US": z.string().optional().catch(undefined),
     })
     .optional()
@@ -35,17 +34,16 @@ export function resolveHelpAppConfig(remote: unknown, local: unknown): HelpAppCo
   const localConfig = helpConfigSchema.safeParse(local).data;
   return {
     community_urls: {
-      "zh-CN": getCommunityUrlFromConfigs(remoteConfig, localConfig, "zh-CN"),
       "en-US": getCommunityUrlFromConfigs(remoteConfig, localConfig, "en-US"),
     },
     feedback_url: getFeedbackUrlFromConfig(remoteConfig) ?? getFeedbackUrlFromConfig(localConfig),
-    // false 是远端明确配置，不能按 truthy 判断后回退到本地 true。
+    // false is explicitly configured on the remote end and cannot fall back to local true after truthy judgment.
     feedback_use_external_form:
       remoteConfig?.feedback_use_external_form ?? localConfig?.feedback_use_external_form ?? false,
   };
 }
 
-/** 公开帮助配置仅做内存缓存，不共享带用户鉴权的灰度响应。 */
+/** The public help config is memory-cached only; it never shares the user-authenticated rollout response. */
 export function createHelpAppConfigReader(options: {
   fetchImpl: typeof fetch;
   now?: () => number;

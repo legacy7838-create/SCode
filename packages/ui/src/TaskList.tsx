@@ -1,4 +1,7 @@
-/* eslint-disable max-lines -- TaskList 同时承接 workspace 列表渲染、行内操作和外部数据源兼容，先集中收口避免 UI 结构漂移。 */
+/* eslint-disable max-lines -- TaskList also carries workspace list rendering, inline actions, and
+ * external data source compatibility; collecting it in one place first prevents the UI structure
+ * from drifting.
+ */
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Settings2 } from "lucide-react";
 import type { ZCodeTaskMeta } from "@zcode/shared";
@@ -20,12 +23,12 @@ import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 
 export { deriveTaskLeadingIndicator } from "@/lib/taskListItemPresentation.js";
 
-// 默认参数里的 [] 会在每次 TaskList render 时创建新数组；
-// 任务流刷新期间这会放大 memo 子组件的等价数据判断成本。
+// [] in the default parameters will create a new array every time TaskList render;
+// This amplifies the equivalent data judgment cost of the memo subcomponent during task flow refresh.
 const EMPTY_PINNED_TASKS: ZCodeTaskMeta[] = [];
 
-// 父级 App/Shell 可能因 stream 状态更新重渲，但列表 props 本身未变。
-// TaskList 先整体 memo，避免无关父 render 重新遍历任务并触发 MemoTaskItem props 计算。
+// The parent App/Shell may be re-rendered due to stream state updates, but the list props themselves remain unchanged.
+// TaskList first uses the entire memo to avoid irrelevant parent renders from re-traversing the tasks and triggering the calculation of MemoTaskItem props.
 export const TaskList = memo(function TaskList({
   workspacePath,
   remoteSessionId,
@@ -107,8 +110,8 @@ export const TaskList = memo(function TaskList({
     onSelectTaskRef.current(taskId);
   }, []);
   const handleOpenTaskContextMenu = useCallback((taskId: string) => {
-    // 以前每个 task row 都常驻一个 Radix ContextMenu root/trigger。
-    // 现在 row 只上报目标 task，真正的菜单树由列表级单例挂载，避免大会话里按行放大 Popper/MenuProvider 成本。
+    // Previously, each task row had a Radix ContextMenu root/trigger resident.
+    // Now row only reports the target task, and the real menu tree is mounted by a list-level singleton to avoid the cost of amplifying Popper/MenuProvider by row in a large session.
     if (pendingArchiveTaskIdRef.current === taskId) {
       setPendingArchiveTaskId(null);
     }
@@ -119,9 +122,9 @@ export const TaskList = memo(function TaskList({
     if (readOnlyReason) {
       return;
     }
-    // 新建会话如果在按钮点击时就立即 createTask，会把"空任务"也持久化到列表里，
-    // 用户只是想先打开输入框，侧边栏却会平白多出一条没有任何消息的记录。
-    // 这里改成进入 workspace 级草稿态，等用户真正发送首条消息时再自动创建 task。
+    // If you create a new session and createTask immediately when the button is clicked, the "empty task" will also be persisted to the list.
+    // The user just wants to open the input box first, but there will be an extra record without any message in the sidebar.
+    // Here it is changed to enter the workspace level draft state, and the task will be automatically created when the user actually sends the first message.
     startDraft(workspacePath, undefined, workspaceIdentity, { createSource: "project" });
   }, [readOnlyReason, startDraft, workspaceIdentity, workspacePath]);
 
@@ -136,9 +139,9 @@ export const TaskList = memo(function TaskList({
       }
 
       if (pendingArchiveTaskIdRef.current !== taskId) {
-        // 侧边栏 hover 操作现在改成“归档任务”，但它依旧会让任务从当前列表立刻消失，
-        // 如果首击就直接执行，用户很容易把“临时收起”误触成“怎么整条任务没了”。
-        // 这里改成“首次点击进入待确认态，二次点击原位确认”，既保留保护，也不离开当前上下文。
+        // The sidebar hover action is now changed to "Archive Task", but it will still make the task disappear from the current list immediately.
+        // If the first click is executed directly, it is easy for users to mistakenly click "temporarily close" as "why the entire task is gone".
+        // Here it is changed to "the first click enters the pending confirmation state, the second click confirms in place", which retains the protection and does not leave the current context.
         setPendingArchiveTaskId(taskId);
         return;
       }
@@ -228,8 +231,8 @@ export const TaskList = memo(function TaskList({
         return;
       }
 
-      // task 标题如果直接保留用户输入的首尾空格，列表里看起来像“没对齐”或“标题丢了”，
-      // 但真实持久化内容又已经变化，后续排查很难复现。这里在提交前统一 trim，保证显示和存储一致。
+      // If the task title directly retains the leading and trailing spaces entered by the user, the list will look like "misaligned" or "the title is missing".
+      // However, the actual persistent content has changed, making it difficult to reproduce in subsequent investigations. Here, trim is unified before submission to ensure consistent display and storage.
       logger.info("[TaskList] rename submit calling onRenameTask", {
         taskId,
         workspacePath,
@@ -424,7 +427,7 @@ export const TaskList = memo(function TaskList({
         </div>
       ) : null}
 
-      {/* 任务列表 */}
+      {/* Task list */}
       <div>
         <div className="space-y-1">
           {Boolean(inputLoading) && visibleSourceTasks.length === 0 ? (

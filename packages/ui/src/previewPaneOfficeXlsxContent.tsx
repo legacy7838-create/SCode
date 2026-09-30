@@ -44,7 +44,7 @@ function XlsxSheetTabs({ controller, label }: { controller: XlsxViewerController
 
   const selectTab = (tabIndex: number) => {
     setActiveTabIndex(tabIndex);
-    logger.debug("[PreviewPane] Excel 工作表已切换", {
+    logger.debug("[PreviewPane] excel sheet switched", {
       sheetIndex: tabIndex,
       sheetName: tabs[tabIndex]?.name,
     });
@@ -110,7 +110,7 @@ function XlsxPreviewError({
   sourcePath: string;
 }) {
   useEffect(() => {
-    logger.error("[PreviewPane] Excel 文件解析失败", {
+    logger.error("[PreviewPane] failed to parse excel file", {
       path: sourcePath,
       error: error.message,
     });
@@ -139,8 +139,8 @@ export function PreviewPaneOfficeXlsxContent({
   const viewerRef = useRef<HTMLDivElement | null>(null);
   const { intl } = useZCodeIntl();
   const sheetTabsLabel = intl.formatMessage({ id: "codeViewer.excel.sheetTabs" });
-  // react-xlsx 的默认工具栏同时承载编辑动作和 sheet tabs。
-  // 预览关闭默认工具栏后会丢失多表导航，因此只通过 toolbar render prop 补回只读 sheet tabs。
+  // The default toolbar of react-xlsx hosts both editing actions and sheet tabs.
+  // After the preview closes the default toolbar, multi-sheet navigation will be lost, so the read-only sheet tabs are only restored through the toolbar render prop.
   const renderSheetTabs = useCallback(
     (controller: XlsxViewerController) => (
       <XlsxSheetTabs controller={controller} label={sheetTabsLabel} />

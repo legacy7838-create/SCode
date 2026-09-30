@@ -1,7 +1,7 @@
-// 已确认的工作流 run。
-// 已结束的运行行要一直挂着直到用户打开那个会话——没有计时器、没有 settledAt，只有这一份有界、
-// 持久化的 runId 集合：打开会话时把它当时所有已结束的 run 整批放进来。桌面走 localStorage，
-// 手机远控在自己的浏览器里走同一份代码、自己的存储。
+// Confirmed workflow run.
+// The finished running line hangs until the user opens that session - no timer, no settledAt, just this bounded,
+// Persistent runId collection: When opening a session, put in the entire batch of all completed runs at that time. The desktop goes to localStorage,
+// The mobile phone remote control uses the same code and its own storage in its own browser.
 import { useMemo, useSyncExternalStore } from "react";
 
 interface StorageLike {
@@ -10,14 +10,17 @@ interface StorageLike {
 }
 
 const WORKFLOW_RUN_ACK_STORAGE_KEY = "zcode-workflow-run-acknowledged";
-/** 集合上限；满了淘汰最早确认的。256 远大于任何会话列表里同时挂着的已结束 run 数。 */
+/**
+ * Set cap; when it is full, the earliest acknowledged entry is evicted. 256 is far larger than the
+ * number of finished runs any session list can hold at once.
+ */
 const WORKFLOW_RUN_ACK_LIMIT = 256;
 
 interface WorkflowRunAckStore {
   isAcknowledged(runId: string): boolean;
   acknowledge(runIds: readonly string[]): void;
   subscribe(listener: () => void): () => void;
-  /** 版本号快照：每次集合变化 +1，供 useSyncExternalStore 判等。 */
+  /** Version snapshot: incremented on every set change, for useSyncExternalStore to compare by. */
   getVersion(): number;
 }
 
@@ -35,7 +38,7 @@ function readStored(storage: StorageLike | null): string[] {
 }
 
 function createWorkflowRunAckStore(storage: StorageLike | null): WorkflowRunAckStore {
-  // 插入序 = 确认序；Set 的迭代序保证淘汰最早的。
+  // Insertion order = confirmation order; the iteration order of Set ensures that the oldest one is eliminated.
   const acknowledged = new Set<string>(readStored(storage).slice(-WORKFLOW_RUN_ACK_LIMIT));
   const listeners = new Set<() => void>();
   let version = 0;
@@ -44,7 +47,7 @@ function createWorkflowRunAckStore(storage: StorageLike | null): WorkflowRunAckS
     try {
       storage.setItem(WORKFLOW_RUN_ACK_STORAGE_KEY, JSON.stringify([...acknowledged]));
     } catch {
-      // 存储不可用（隐私模式、配额）：本次会话内仍生效，只是不跨重启。
+      // Storage is unavailable (privacy mode, quota): It still takes effect within this session, but it does not span restarts.
     }
   };
   return {
@@ -92,10 +95,13 @@ export function getWorkflowRunAckStore(): WorkflowRunAckStore {
   return defaultStore;
 }
 
-/** 订阅确认集合的版本；返回的谓词随版本变化换引用，调用方据此重算行选择。 */
+/**
+ * The version of the subscribed ack set; the returned predicate changes reference as the version
+ * changes, so callers recompute their row selection.
+ */
 export function useWorkflowRunAcknowledged(): (runId: string) => boolean {
   const store = getWorkflowRunAckStore();
   const version = useSyncExternalStore(store.subscribe, store.getVersion, store.getVersion);
-  // 谓词随版本换引用：调用方把它放进 useMemo 依赖，集合一变行选择就重算。
+  // The predicate changes references from version to version: the caller puts it into the useMemo dependency, and the row selection is recalculated as soon as the collection changes.
   return useMemo(() => (runId: string) => store.isAcknowledged(runId), [store, version]);
 }

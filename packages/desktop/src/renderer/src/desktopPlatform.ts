@@ -27,9 +27,7 @@ export function createDesktopPlatform(options: {
     bindRemoteWorkspaceSessionContext: (context) =>
       window.zcode.bindRemoteWorkspaceSessionContext?.(context) ?? Promise.resolve(),
     disposeRemoteSession: (sessionId) => window.zcode.disposeRemoteSession(sessionId),
-    isDockerAvailable: () => window.zcode.isDockerAvailable(),
     listWSLDistros: () => window.zcode.listWSLDistros(),
-    listDockerContainers: () => window.zcode.listDockerContainers(),
     listSSHConfigAliases: () => window.zcode.listSSHConfigAliases(),
     loadMcpFromUserDirectory: (payload) => window.zcode.loadMcpFromUserDirectory(payload),
     saveMcpToUserDirectory: (payload) => window.zcode.saveMcpToUserDirectory(payload),
@@ -37,7 +35,7 @@ export function createDesktopPlatform(options: {
     openExternal: (url) => window.zcode.openExternal(url),
     openFeedback: () => window.zcode.executeDesktopCommand(DesktopCommandIds.OpenFeedback),
     openCommunity: () => window.zcode.executeDesktopCommand(DesktopCommandIds.OpenCommunity),
-    canOpenCommunity: (locale) => window.zcode.canOpenCommunity(locale),
+    canOpenCommunity: () => window.zcode.canOpenCommunity(),
     openInFileManager: (path) => window.zcode.openInFileManager(path),
     openExternalFile: (path) => window.zcode.openExternalFile(path),
     openCuaPermissionOnboarding: window.zcode.openCuaPermissionOnboarding
@@ -96,9 +94,9 @@ export function createDesktopPlatform(options: {
     ...desktopBrowserPlatformBridge,
     onNewTask: (handler) => window.zcode.onNewTask(handler),
     onOpenWorkspace: (handler) => {
-      // 开发态或升级后的旧窗口可能仍运行未暴露 onOpenWorkspace 的 preload，
-      // renderer 直接调用会在启动时崩溃。这里和 activateOrSetWorkspace 一样做兼容兜底，
-      // 缺少该 bridge 时只禁用原生菜单回调，不影响应用继续打开。
+      // Old windows in development or after upgrade may still run preloads that do not expose onOpenWorkspace.
+      // Calling renderer directly will crash on startup. This is the same as activateOrSetWorkspace for compatibility.
+      // When the bridge is missing, only the native menu callback is disabled, which does not affect the continued opening of the application.
       return window.zcode.onOpenWorkspace?.(handler) ?? (() => {});
     },
     onOpenWorkspacePath: (handler) => window.zcode.onOpenWorkspacePath?.(handler) ?? (() => {}),
@@ -142,8 +140,6 @@ export function createDesktopPlatform(options: {
       window.zcode.getZCodeStdioTapDevState?.() ??
       Promise.resolve({ enabled: false, visible: false, logDir: "", statePath: "" }),
     onSettingsChanged: (callback) => window.zcode.onSettingsChanged?.(callback) ?? (() => {}),
-    onApplicationLocaleChanged: (callback) =>
-      window.zcode.onApplicationLocaleChanged?.(callback) ?? (() => {}),
     onPostUpdateReleaseNotes: (callback) => window.zcode.onPostUpdateReleaseNotes(callback),
     acknowledgePostUpdateReleaseNotes: (version) =>
       window.zcode.acknowledgePostUpdateReleaseNotes(version),
@@ -155,10 +151,6 @@ export function createDesktopPlatform(options: {
     openInEditor: (editorId, path, editorOptions) =>
       window.zcode.openInEditor(editorId, path, editorOptions),
     executeDesktopCommand: (command) => window.zcode.executeDesktopCommand(command),
-    setApplicationLocale: (locale) => window.zcode.setApplicationLocale(locale),
-    getSystemLocale: () =>
-      window.zcode.getSystemLocale?.() ??
-      Promise.resolve(navigator.language.toLowerCase().startsWith("zh") ? "zh-CN" : "en-US"),
     setTitleBarTheme: (theme) => window.zcode.setTitleBarTheme(theme),
     getDeviceId: () =>
       (window as Window & { __ZCODE_DEVICE_ID__?: string }).__ZCODE_DEVICE_ID__ ?? "",

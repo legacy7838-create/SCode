@@ -10,7 +10,7 @@ const SUBMIT_RESULT_TOOL_ICON = (
   <ClipboardCheckIcon className="size-4 shrink-0 text-foreground-subtle" />
 );
 
-/** 折叠头部的单行概要上限：概要只是「大概提交了什么」，整段内容在展开后的 body 里。 */
+/** The upper limit of a single line summary of the collapsed header: the summary is just "roughly what was submitted", and the entire content is in the expanded body. */
 const INLINE_PREVIEW_MAX_LENGTH = 160;
 
 function toRecord(value: unknown): Record<string, unknown> | undefined {
@@ -36,11 +36,11 @@ function readText(value: unknown): string | undefined {
 }
 
 /**
- * 提交内容的读时归一化：字符串先试**一次**宽容 `JSON.parse`，解析出对象/数组才用解析值。
+ * Read-time normalization of submitted content: String is tried **once** tolerantly with `JSON.parse`, and the parsed value is used only after parsing the object/array.
  *
- * 这是引擎侧实盘结论的读侧镜像——`engine/scheduler.ts` 记档「真实模型常把 result 序列化成
- * JSON 字符串」并做同款单次宽容 parse。不做多层递归 parse（引擎也只做一次），解析失败就按
- * 字符串对待，绝不抛错毁卡，也绝不改写任何数据。
+ * This is the read-side image of the engine-side real disk conclusion - `engine/scheduler.ts` file "Real models often serialize result into
+ * JSON string" and do the same single-pass parse. Do not do multi-level recursive parse (the engine only does it once), if the parsing fails, press
+ * String processing will never destroy the card by mistake, and will never overwrite any data.
  */
 function normalizeSubmittedResult(value: unknown): unknown {
   if (typeof value !== "string") {
@@ -52,14 +52,14 @@ function normalizeSubmittedResult(value: unknown): unknown {
 
   try {
     const parsed: unknown = JSON.parse(value);
-    // 数字 / 布尔 / null 的字面量字符串保持原样：那是模型写的那句话，不是结构化载荷。
+    // Literal strings for numeric/boolean/null remain as is: that's what the model wrote, not the structured payload.
     return typeof parsed === "object" && parsed !== null ? parsed : value;
   } catch {
     return value;
   }
 }
 
-/** JSON 分支的缩进文本。循环引用之类的病态载荷退回 `String(...)`，卡片不能因载荷而崩。 */
+/** Indented text for JSON branches. Pathological payloads such as circular references fall back to `String(...)`, and the card cannot crash due to the payload. */
 function stringifyResult(value: unknown): string {
   try {
     return JSON.stringify(value, null, 2) ?? String(value);
@@ -68,7 +68,7 @@ function stringifyResult(value: unknown): string {
   }
 }
 
-/** 折叠头部的单行概要：换行折叠成空格，超长截断。 */
+/** Single-line synopsis with collapsed header: newlines collapsed into spaces, extra long truncated. */
 function toInlinePreview(value: unknown): string | undefined {
   let text: string;
   if (typeof value === "string") {
@@ -95,8 +95,8 @@ export function SubmitResultToolCallBlock(context: ToolCallBlockRenderContext) {
   const { intl } = useZCodeIntl();
   const { toolCall } = context.toolCallNode;
   const input = toRecord(toolCall.input);
-  // 修复原因照 send-message：streaming 首帧的 input 可能还是 `{}`，不能为一个空面板提供
-  // 展开入口。门是「result 键在场」而不是「result 有值」——提交 null 也是一次真实提交。
+  // The reason for the fix is as shown in send-message: the input of the first frame of streaming may still be `{}` and cannot be provided for an empty panel.
+  // Expand the portal. The gate is "result key is present" rather than "result has value" - submitting null is also a real submission.
   const hasResult = input !== undefined && "result" in input;
   const normalizedResult = useMemo(
     () => (hasResult ? normalizeSubmittedResult(input?.result) : undefined),
@@ -105,7 +105,7 @@ export function SubmitResultToolCallBlock(context: ToolCallBlockRenderContext) {
   const isProse = typeof normalizedResult === "string";
 
   const isRejected = toolCall.status === "failed";
-  // 拒绝与停止在卡面上是同一句话：提交没走完。spec 只定义四相，不为 denied 造第五个词条。
+  // Rejection and stop have the same sentence on the card: the submission has not been completed. spec only defines four phases and does not create a fifth entry for denied.
   const isStopped = toolCall.status === "stopped" || toolCall.status === "denied";
   const isSubmitting =
     !isRejected &&
@@ -119,13 +119,13 @@ export function SubmitResultToolCallBlock(context: ToolCallBlockRenderContext) {
         ? "chat.toolCall.submitResult.submitting"
         : "chat.toolCall.submitResult.submitted";
 
-  // 驳回原文：错误通道优先，其次工具自己的错误字段与纯文本输出。接受态的输出恒为
-  // 「The result was accepted.」，没有信息量，从不读。
+  // Reject the original text: Error channel first, followed by the tool's own error field and plain text output. The output of the accepting state is always
+  // "The result was accepted.", no information, never read.
   const rejectionText = isRejected
     ? (context.errorText ?? readText(toolCall.error) ?? readText(toolCall.output))
     : undefined;
-  // 驳回态是扁平行，不给展开入口；驳回原文走失败态 tooltip（可悬停复制），不再有逐字段
-  // 违规面板。rejectionText 只在驳回态存在，故非驳回态的展开门只看 result 键是否在场。
+  // The rejection state is a flat row, with no expansion entry; the rejection of the original text is in the failure state tooltip (can be hovered and copied), and there is no longer field-by-field
+  // Violation panel. rejectionText only exists in the rejection state, so the expansion gate in the non-rejection state only depends on whether the result key is present.
   const hasDetails = !isRejected && hasResult;
 
   const resultLabel = intl.formatMessage({ id: "chat.toolCall.submitResult.resultHeading" });
@@ -148,13 +148,13 @@ export function SubmitResultToolCallBlock(context: ToolCallBlockRenderContext) {
           <section className="space-y-1.5">
             <h4 className="text-ui-sm font-medium text-foreground-subtlest">{resultLabel}</h4>
             {isProse ? (
-              // 人话是 prose：DESIGN.md 把 mono 留给路径/命令/代码/标识符/终端数据。
-              // 刻意不做 markdown 渲染——result 字符串没有 markdown 契约。
+              // The human word is prose: DESIGN.md Leave mono to path/command/code/identifier/terminal-data.
+              // Deliberately not doing markdown rendering - the result string has no markdown contract.
               <p className="whitespace-pre-wrap break-words rounded-lg border border-border bg-panel px-4 py-3 text-ui-base leading-5 text-foreground">
                 {normalizedResult as string}
               </p>
             ) : (
-              // 结构化载荷走 CodeBlock（尊重用户的代码字号设置），容器逐字照 mcp.tsx。
+              // The structured payload uses CodeBlock (respecting the user's code font size setting), and the container uses mcp.tsx verbatim.
               <div className="max-h-72 overflow-auto rounded-xl border border-border bg-card">
                 <CodeBlock
                   appTheme={theme}

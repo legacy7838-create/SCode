@@ -13,9 +13,9 @@ function mapWorkspaceFileToMentionItem(entry: WorkspaceFileEntry): MentionItem {
     label: entry.name,
     description: entry.relativePath,
     value: entry.relativePath,
-    // 文件 mention 的标准转译格式需要保持 `[filename](path)`，
-    // 之前这里误把整条 relativePath 当成链接文本，导致发送后回显和复制内容都退化成“长路径做标题”。
-    // 这里恢复为只用 basename 做 label，路径只放在链接目标里，和输入框 node 样式保持一致。
+    // The standard translation format of file mention needs to maintain `[filename](path)`,
+    // Previously, the entire relativePath was mistakenly regarded as the link text, causing the echo and copy content to degenerate into "long path as title" after sending.
+    // Here we revert to using only basename as the label, and the path is only placed in the link target, consistent with the input box node style.
     markdown: buildFileMentionMarkdown(entry.relativePath, entry.name, entry.type),
     keywords: [entry.relativePath, entry.path],
     data: {
@@ -42,7 +42,7 @@ export function useFileMentionProvider(
   const { fileService } = useServices();
   const limit =
     getMentionGroupLimitForQuery(query, defaultPreviewLimit) ?? WORKSPACE_FILE_SEARCH_DISPLAY_CAP;
-  // 连接实例也属于作用域：相同路径的远程重连不能接纳旧 Host 的查询结果。
+  // The connection instance also belongs to the scope: remote reconnection with the same path cannot accept the query results of the old Host.
   const scope = useMemo(
     () => ({
       error: null as Error | null,
@@ -60,7 +60,7 @@ export function useFileMentionProvider(
   } | null>(null);
 
   useEffect(() => {
-    // 错误态等待面板/工作区/连接生命周期重置，避免 query 变化触发失败重试循环。
+    // The error state waits for the panel/workspace/connection life cycle to be reset to avoid query changes triggering a failed retry loop.
     if (!enabled || scope.error) return;
     let active = true;
     setResult({ scope, query, limit, entries: [], loading: true, error: null });
@@ -72,7 +72,7 @@ export function useFileMentionProvider(
         const normalizedQuery = normalizeRefreshQuery(query);
         if (entries.length === 0 && normalizedQuery && scope.lastMissQuery !== normalizedQuery) {
           scope.lastMissQuery = normalizedQuery;
-          // 无命中补扫必须绕过 Host TTL，否则外部新文件在缓存有效期内永远不可见。
+          // No-hit catch-up scans must bypass the Host TTL, otherwise new external files will never be visible during the cache lifetime.
           entries = await fileService.searchWorkspaceFiles({ ...params, refresh: true });
           if (!active) return;
         }
@@ -84,7 +84,7 @@ export function useFileMentionProvider(
       }
     };
     void search();
-    // 查询、工作区、连接或面板生命周期变化都使已发出的异步响应失效。
+    // Query, workspace, connection, or panel lifecycle changes invalidate issued asynchronous responses.
     return () => {
       active = false;
     };

@@ -5,7 +5,7 @@ import type {
   PromptAttachmentTransferProgress,
 } from "./promptAttachmentTransfer.js";
 
-/** 本地 workspace 保持 localPath 零拷贝，不伪造上传进度。 */
+/** A local workspace keeps localPath zero-copy and does not fake upload progress. */
 export function createLocalPromptAttachmentTransferService(): IPromptAttachmentTransferService {
   const emitters = new Map<string, Emitter<PromptAttachmentTransferProgress>>();
   const getEmitter = (operationId: string) => {

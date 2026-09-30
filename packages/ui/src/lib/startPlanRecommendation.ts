@@ -13,7 +13,10 @@ import {
   getActiveModelBuckets,
 } from "@/v4/startPlanQuotaBuckets.js";
 
-/** 只消费目标 Registry 与已有额度事实；未知额度跳过，不为提交增加查询门禁。 */
+/**
+ * Consumes only the target Registry and the quota facts already at hand; an unknown quota is
+ * skipped, and no query gate is added for submission.
+ */
 export function resolveStartPlanRecommendation(
   selection: ModelSelection,
   view: ModelSelectionView | null | undefined,
@@ -45,7 +48,10 @@ export function resolveStartPlanRecommendation(
   return hasBalance ? candidate : null;
 }
 
-/** 只改思考档位、继承或其他字段不属于模型更换。 */
+/**
+ * Changing only the thinking tier, inheritance, or some other field does not count as switching
+ * models.
+ */
 export function hasExplicitModelChanged(
   previous: ModelSelection | null | undefined,
   next: ModelSelection | null | undefined,

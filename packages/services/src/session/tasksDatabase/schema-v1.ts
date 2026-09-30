@@ -1,4 +1,4 @@
-// 0001 接管已有分散建表；发布后保持声明不变，后续变更新增 migration。
+// 0001 takes over the existing distributed table creation; keep the statement unchanged after release, and add migration for subsequent changes.
 export const TASK_INDEX_SCHEMA = `
       CREATE TABLE IF NOT EXISTS tasks (
         workspace_key TEXT NOT NULL,

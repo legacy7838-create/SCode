@@ -22,8 +22,6 @@ function getRemoteWorkspaceReconnectLogTargetSuffix(
       const distro = target.distro ?? "default";
       return user ? `${distro}-${user}` : distro;
     }
-    case "docker":
-      return target.container;
   }
 }
 
@@ -57,9 +55,9 @@ export function resolveRemoteWorkspaceReconnectLogWorkspaceKeys({
   const matchedEntries = reconnectingEntries.filter((entry) =>
     runtimeLabel.startsWith(buildRemoteWorkspaceReconnectLogLabelPrefix(entry.target)),
   );
-  // 旧版本日志没有 requestId，只能靠 target label 前缀兜底。
-  // 同一 target 并发重连时前缀会相同，继续复制到所有 workspace 会把诊断信息串到错误 tooltip。
-  // 因此只有唯一命中时才按前缀归属，多命中则放弃猜测，等待带 requestId 的日志精确路由。
+  // The old version log does not have requestId, and can only rely on the target label prefix to find out.
+  // When the same target is reconnected concurrently, the prefix will be the same, and continuing to copy to all workspaces will string diagnostic information to the error tooltip.
+  // Therefore, only when there is a unique hit, it will be attributed by prefix. If there are multiple hits, the guessing will be given up and wait for the precise routing of the log with requestId.
   if (matchedEntries.length !== 1) {
     return [];
   }

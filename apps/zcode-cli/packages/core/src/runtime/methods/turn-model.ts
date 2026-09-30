@@ -34,8 +34,8 @@ export function createTurnModel(
 }
 
 /**
- * 在 Submission 真正开始执行或 Guide 被下一次 model step 消费时应用其执行配置。
- * 选择只决定新创建的 Model；已经被其他 Loop 持有的 Model 不会被修改。
+ * Apply a Submission's execution config when it really starts executing, or when a Guide is consumed by the next model step.
+ * The choice only determines a newly created Model; a Model already held by another Loop is never modified.
  */
 export async function applySubmissionExecutionState(
   runtime: AgentRuntimeInternal,

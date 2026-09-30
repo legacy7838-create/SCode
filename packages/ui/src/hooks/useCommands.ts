@@ -11,8 +11,8 @@ import type {
 } from "@zcode/shared";
 
 interface UseCommandsOptions {
-  // service 曾隐式取自 useServices()，而 workspacePath 由调用方按 Scope target 传入，
-  // 于是 B 的路径会被发往 A 的 remote host。改为必传，由调用方按 target 解析后注入。
+  // The service was previously taken implicitly from useServices(), while workspacePath was passed by the caller per the Scope target,
+  // so B's path could be sent to A's remote host. Now both are required, resolved per target by the caller and injected here.
   commandsService: ICommandsService;
   workspacePath?: string;
   workspaceIdentity?: string;
@@ -31,9 +31,9 @@ export function useCommands(options: UseCommandsOptions) {
   const operatingCommandId = useCommandsStore((state) => state.operatingCommandId);
   const loadedWorkspacePath = useCommandsStore((state) => state.loadedWorkspacePath);
   const loadedWorkspaceIdentity = useCommandsStore((state) => state.loadedWorkspaceIdentity);
-  // commandsStore 是单例，Scope 可在同一页面切 target。投影尚未对齐当前 target 时
-  // 不能把上一个 host 的命令交给调用方渲染——那些行的 filePath 属于别的主机，一旦被
-  // delete/toggle 就会拿着旧路径在当前 target 的 host 上执行。
+  // commandsStore is a singleton and the Scope can switch targets on the same page. Until the projection matches the current target,
+  // we must not hand the previous host's commands to the caller for rendering — those rows' filePath belongs to another host, and a
+  // delete/toggle would execute against the current target's host with the stale path.
   const projectionMatchesTarget =
     (loadedWorkspaceIdentity?.trim() || loadedWorkspacePath || "") ===
     (workspaceIdentity?.trim() || workspacePath || "");

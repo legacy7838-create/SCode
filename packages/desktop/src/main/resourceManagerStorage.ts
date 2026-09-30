@@ -1,8 +1,11 @@
 /**
- * 资源管理器「存储」tab 的 main 侧接线：main 持有唯一的 StorageService 实例（Worker 线程遍历），
- * 通过 ipc invoke 暴露命令面，进度快照推给发起请求的资源管理器窗口；窗口关闭即取消扫描。
- * 之所以放在 main 而不是 Window Host：该窗口按设计不接 RPC（见 preload/resourceManager.ts），
- * 而扫盘只是 fs 遍历，跑在 worker_threads 里不会阻塞 main 事件循环。
+ * Main-side wiring for the resource manager's "Storage" tab: main holds the single StorageService
+ * instance (the traversal runs on a Worker thread), exposes its command surface through ipc
+ * invoke, and pushes progress snapshots to the resource manager window that issued the request;
+ * closing the window cancels the scan.
+ * It lives in main rather than in a Window Host because that window is designed not to take RPC
+ * (see preload/resourceManager.ts), and the disk scan is just an fs traversal, which runs inside
+ * worker_threads without blocking the main event loop.
  */
 import { BrowserWindow, ipcMain, shell, type IpcMainInvokeEvent, type WebContents } from "electron";
 import { homedir } from "node:os";
@@ -38,7 +41,7 @@ function getService(): IStorageService {
   return service;
 }
 
-/** 只有资源管理器窗口能发起存储命令；窗口关闭时取消进行中的扫描，避免后台空转。 */
+/** Only the resource manager window can initiate storage commands; ongoing scans are canceled when the window is closed to avoid idling in the background. */
 function bindSubscriber(event: IpcMainInvokeEvent): void {
   if (subscriber === event.sender) return;
   subscriber = event.sender;
@@ -53,7 +56,7 @@ function bindSubscriber(event: IpcMainInvokeEvent): void {
   });
 }
 
-/** 纯函数：定位路径必须落在某个数据根内，防止 renderer 传任意路径让系统文件管理器打开。 */
+/** Pure function: The location path must fall within a certain data root to prevent the renderer from passing any path to be opened by the system file manager. */
 function isPathInsideStorageRoots(absolutePath: string, roots: StorageRootSpec[]): boolean {
   const target = resolve(absolutePath);
   return roots.some((root) => {

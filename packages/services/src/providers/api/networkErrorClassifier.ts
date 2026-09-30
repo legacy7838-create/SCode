@@ -1,5 +1,5 @@
-// feedback 与模型连通性曾分别维护错误码列表，导致 Undici 建连超时只在部分链路被识别。
-// 统一沿 cause/AggregateError 链归一化错误，避免调用方再次因运行时包装层级不同而漏判。
+// Feedback and model connectivity used to maintain error code lists separately, resulting in Undici connection timeout being recognized only on some links.
+// Unify errors along the cause/AggregateError chain to prevent the caller from missing decisions again due to different runtime packaging levels.
 const NETWORK_FAILURE_CODES = new Set([
   "UND_ERR_CONNECT_TIMEOUT",
   "UND_ERR_CONNECT_ERROR",
@@ -39,8 +39,8 @@ export function isRetryableConnectionEstablishmentError(error: unknown): boolean
   if ([...codes].some((code) => RETRYABLE_CONNECTION_ESTABLISHMENT_CODES.has(code))) {
     return true;
   }
-  // ETIMEDOUT 也可能发生在 POST 请求体已经发出后，不能只凭错误码重试创建工单。
-  // Node 的建连超时会明确包含 connection attempts/connect ETIMEDOUT，只有该证据存在时才安全重试。
+  // ETIMEDOUT may also occur after the POST request body has been sent, and you cannot retry creating a work order based on the error code alone.
+  // Node's connection establishment timeout will explicitly include connection attempts/connect ETIMEDOUT, and it is safe to retry only if this evidence exists.
   if (
     codes.has("ETIMEDOUT") &&
     messages.some((message) => /connection attempts timed out|connect ETIMEDOUT/i.test(message))

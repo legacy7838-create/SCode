@@ -75,8 +75,8 @@ export function ControlHintTooltip({
     : undefined;
   const isTriggerElement = isValidElement<TriggerChildProps>(children);
   const childRef = isTriggerElement ? children.props.ref : undefined;
-  // Radix Tooltip/Dropdown/Popper 的 asChild trigger 会在 ref 变化时同步 setState。
-  // 这里必须稳定 callback ref 身份，否则每次 render 都会触发 ref detach/attach 并形成更新循环。
+  // The asChild trigger of Radix Tooltip/Dropdown/Popper will synchronize setState when ref changes.
+  // The callback ref identity must be stabilized here, otherwise ref detach/attach will be triggered every render and an update loop will be formed.
   const composedTriggerRef = useCallback(
     (value: HTMLElement | null) => {
       setRef(childRef, value);
@@ -86,8 +86,8 @@ export function ControlHintTooltip({
   );
   const trigger = isTriggerElement ? (
     cloneElement(children, {
-      // 以前额外包一层 span，Radix Tooltip/Select/Popover 多层 asChild 组合时，
-      // 事件和 ref 会落到不同 DOM 上，触发 SlotClone 渲染栈错误。这里直接合到真实触发器。
+      // In the past, an extra layer of span was included, and when Radix Tooltip/Select/Popover combined multiple layers of asChild,
+      // Events and refs will fall on different DOMs, triggering SlotClone rendering stack errors. Here it goes directly to the real trigger.
       className: cn("shrink-0", children.props.className, triggerClassName),
       ref: composedTriggerRef,
     })
@@ -100,8 +100,8 @@ export function ControlHintTooltip({
     </span>
   );
 
-  // 大会话会为每条消息动作渲染大量 ControlHintTooltip，逐个创建 Provider
-  // 会把 Radix 上下文树放大到消息数量级；共享 Provider 统一放在 Root。
+  // A large session will render a large number of ControlHintTooltips for each message action and create Providers one by one.
+  // The Radix context tree will be enlarged to the message level; the shared Provider will be placed at the Root.
   const tooltip = (
     <Tooltip open={open} onOpenChange={onOpenChange}>
       <TooltipTrigger asChild>{trigger}</TooltipTrigger>
@@ -132,8 +132,8 @@ export function ControlHintTooltip({
             ) : null}
           </div>
         ) : (
-          // 无描述的提示过去同时受 max-w-xs 和 nowrap 约束，长中英文文案会越界裁剪。
-          // 短提示继续按内容宽度展示，超过视口安全宽度时允许自然换行；显式换行用于结构化提示。
+          // In the past, prompts without description were subject to both max-w-xs and nowrap, and long Chinese and English copy would be cropped out of bounds.
+          // Short prompts continue to be displayed according to the content width, and natural line breaks are allowed when the safe width of the viewport is exceeded; explicit line breaks are used for structured prompts.
           <span className="text-ui-sm font-medium whitespace-pre-line break-words text-tooltip-foreground">
             {title}
           </span>
@@ -156,7 +156,7 @@ export function ControlHintTooltip({
     </Tooltip>
   );
 
-  // 少数组件需要支持脱离 Root 的 SSR/单测渲染；由封装按需补 Provider，
-  // 避免业务层重新组合 Tooltip primitives，同时不让列表中的常规提示重复创建上下文。
+  // A few components need to support SSR/single test rendering without Root; the provider is provided by the package as needed.
+  // Prevent the business layer from reassembling Tooltip primitives without duplicating context creation for regular prompts in the list.
   return standalone ? <TooltipProvider>{tooltip}</TooltipProvider> : tooltip;
 }

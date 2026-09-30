@@ -3,25 +3,30 @@ import type { AnalysisCore, CoreSites } from "./core.js";
 import type { TaintOcc } from "./domain.js";
 
 /**
- * `AnalysisCore` 的 JSON 编解码。
+ * The JSON encoding/decoding of `AnalysisCore`.
  *
- * core 本身已是无位置依赖的纯数据，唯一挡住 `JSON.stringify` 的是 `facts.*` 与 `types.*`
- * 里的 `Map`——它们会被序列化成 `{}`。这里把每个 Map 换成**有序** `[key, value][]`：
- * 数组保住插入序，解码用 `new Map(entries)` 原样还回去，于是 `serializeCore(decode(encode(c)))`
- * 与 `serializeCore(c)` 逐字节相同，投影在冻结工件上算出的图与导出当刻一致。
+ * The core is already position-independent pure data, and the only thing standing in the way of
+ * `JSON.stringify` are the `Map`s inside `facts.*` and `types.*` — they would be serialized as `{}`.
+ * Here every Map is replaced with an **ordered** `[key, value][]`:
+ * the array preserves the insertion order and decoding restores it verbatim with `new Map(entries)`, so
+ * `serializeCore(decode(encode(c)))` is byte-identical to `serializeCore(c)`, and the graph the
+ * projection computes over a frozen artifact matches the moment of export.
  *
- * `sites` 与 `trace` 只含普通对象、数组与可选字段，原样穿过：`JSON.stringify` 丢掉值为
- * `undefined` 的属性，解码器**不**把它们补回来——投影全部按「字段缺席」而非「字段为
- * undefined」判定，两种形状等价。唯一的例外是 `joinPortTypes` 的值：`(string | undefined)[]`
- * 里的 `undefined` 落进数组会被 JSON 写成 `null`，所以编码时显式写 `null`，解码时换回
- * `undefined`，让「该端口类型不可知」的洞在往返后仍是 `undefined` 而不是 `null`。
+ * `sites` and `trace` contain only plain objects, arrays and optional fields, and pass through
+ * unchanged: `JSON.stringify` drops the properties whose value is `undefined` and the decoder does
+ * **not** add them back — the projection decides purely on "the field is absent" rather than on "the
+ * field is undefined", so the two shapes are equivalent. The only exception is the value of
+ * `joinPortTypes`: an `undefined` landing inside a `(string | undefined)[]` is written as `null` by
+ * JSON, so the encoder writes `null` explicitly and the decoder converts it back to `undefined`, so
+ * that the hole of "this port's type is unknowable" is still `undefined` after a round trip rather
+ * than `null`.
  */
 
-/** 有序的 Map 条目：数组序即 Map 的插入序。 */
+/** An ordered Map entry: the array order is the Map's insertion order. */
 export type MapEntries<V> = [string, V][];
 
 export interface AnalysisCoreJson {
-  /** 格式版本；解码器只认识它认得的版本，其余抛错而不是猜。 */
+  /** The format version; the decoder only accepts the versions it knows and throws for the rest instead of guessing. */
   version: 1;
   sites: CoreSites;
   facts: {
@@ -35,14 +40,14 @@ export interface AnalysisCoreJson {
   trace: OrderTrace;
   types: {
     siteType: MapEntries<string>;
-    /** 端口类型的洞（`undefined`）在这里是 `null`——JSON 数组里没有 `undefined`。 */
+    /** A hole in a port type (`undefined`) is `null` here — a JSON array has no `undefined`. */
     joinPortTypes: MapEntries<(string | null)[]>;
   };
 }
 
 const VERSION = 1;
 
-/** 把 core 变成可直接 `JSON.stringify` 的纯对象；`sites` 与 `trace` 共享原引用。 */
+/** Turns the core into a plain object that `JSON.stringify` can handle directly; `sites` and `trace` keep their original references. */
 export function encodeAnalysisCore(core: AnalysisCore): AnalysisCoreJson {
   return {
     facts: {
@@ -66,7 +71,7 @@ export function encodeAnalysisCore(core: AnalysisCore): AnalysisCoreJson {
   };
 }
 
-/** 从 JSON 形态重建 core（Map 保持原插入序）。未知版本抛普通 `Error`。 */
+/** Rebuilds the core from its JSON form (Maps keep their original insertion order). An unknown version throws a plain `Error`. */
 export function decodeAnalysisCore(json: AnalysisCoreJson): AnalysisCore {
   if (json.version !== VERSION) {
     throw new Error(`unsupported AnalysisCoreJson version ${String(json.version)} (expected ${VERSION})`);

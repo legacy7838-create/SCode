@@ -69,8 +69,8 @@ export function useRemoteSyncDialogIntent(params: { rpcReady: boolean; targetKey
     params.rpcReady && params.targetKey.length > 0 && openedTargetKey === params.targetKey;
 
   useEffect(() => {
-    // 弹窗 open 曾只绑定 PluginList 组件生命周期，远端断连或切换目标时
-    // Dialog 虽被卸载，用户意图仍会残留并在重连后自动恢复。
+    // The pop-up window open was only bound to the PluginList component life cycle, when the remote end is disconnected or the target is switched.
+    // Although Dialog is uninstalled, user intent will still remain and will be automatically restored after reconnection.
     setOpenedTargetKey(null);
   }, [params.targetKey]);
   useEffect(() => {

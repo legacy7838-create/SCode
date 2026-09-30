@@ -1,0 +1,26 @@
+[package]
+name = "zcode-codec"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# `napi` is only the Node binding layer. It is optional so a native host (the
+# Tauri in-process RPC server) can depend on this crate for the pure-Rust codec
+# without linking the Node ABI. Keep `default = ["napi"]` so the existing
+# `build-native.sh` output is unchanged.
+napi = { workspace = true, optional = true }
+napi-derive = { workspace = true, optional = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+rayon = { workspace = true }
+base64 = { workspace = true }
+crc32fast = { workspace = true }
+
+[features]
+default = ["napi"]
+napi = ["dep:napi", "dep:napi-derive"]

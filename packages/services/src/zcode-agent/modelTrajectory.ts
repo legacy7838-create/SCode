@@ -16,19 +16,20 @@ import {
 } from "#src/zcode-agent/modelTrajectoryFileTail.js";
 import type { TrajectoryFileTail } from "#src/zcode-agent/modelTrajectoryFileTail.js";
 
-// model-io 默认最多返回的调用条数（保留最近 N 条），避免长 session 把 UI 压垮。
+// By default, model-io returns the maximum number of calls (retaining the most recent N) to prevent long sessions from overwhelming the UI.
 const DEFAULT_TRAJECTORY_LIMIT = 200;
 const SESSION_TITLE_PROMPT_PREFIX = "Generate a concise title for this coding session.";
 const logger = createServiceLogger("model-trajectory");
 
 /**
- * 解析 ~/.zcode/cli/{debug,rollout} 下的 model-io JSONL，按 sessionId 还原某个 task 的模型调用轨迹。
+ * Parses the model-io JSONL under ~/.zcode/cli/{debug,rollout} and reconstructs a task's
+ * model call trajectory by sessionId.
  *
- * 设计说明：
- * - model-io 由 adapters/model/runner-debug.ts 落盘；一个 session 一个
- *   `model-io-<sanitizedSessionId>.jsonl`。
- * - ZCode Agent 把 taskId 当作 sessionId（见 zcodeTaskServiceAdapter），所以这里只读取
- *   该 session 的单文件，并按 `record.sessionId === taskId` 精确匹配。
+ * Design notes:
+ * - model-io is written by adapters/model/runner-debug.ts; one file per session,
+ *   `model-io-<sanitizedSessionId>.jsonl`.
+ * - ZCode Agent treats the taskId as the sessionId (see zcodeTaskServiceAdapter), so this
+ *   reads only that session's single file and matches on `record.sessionId === taskId` exactly.
  */
 export async function readModelTrajectory(
   taskId: string,
@@ -47,7 +48,7 @@ export async function readModelTrajectory(
     try {
       names = await readdir(dir);
     } catch {
-      // 目录不存在（没跑过对应模式）或不可读，跳过。
+      // The directory does not exist (the corresponding mode has not been run) or is unreadable, so skip it.
       continue;
     }
 
@@ -59,8 +60,8 @@ export async function readModelTrajectory(
       let tail: TrajectoryFileTail;
       const startedAt = Date.now();
       try {
-        // 同步读取并 split 整个 model-io 会阻塞 Host 事件循环，并在大文件上制造多份字符串峰值。
-        // 从尾部异步读取固定上限；若从行中间开始，则由 readTrajectoryFileTail 丢弃不完整残行。
+        // Reading and splitting the entire model-io synchronously blocks the Host event loop and creates multiple string spikes on large files.
+        // A fixed upper limit of asynchronous reading from the tail; if starting from the middle of the line, incomplete remaining lines are discarded by readTrajectoryFileTail.
         tail = await readTrajectoryFileTail(filePath);
         logger.debug(
           undefined,
@@ -97,7 +98,7 @@ export async function readModelTrajectory(
     }
   }
 
-  // 按开始时间排序；同毫秒/缺失时间时按 requestId 兜底，保证顺序稳定。
+  // Sort by start time; when the millisecond/missing time is the same, press requestId to ensure the order is stable.
   rawRecords.sort((left, right) => {
     const startDiff = toTime(asString(left.startedAt)) - toTime(asString(right.startedAt));
     if (startDiff !== 0) {
@@ -289,8 +290,8 @@ function expandMessageCollection(
   metadataSource: Record<string, unknown> = target,
 ): void {
   if (metadataSource[keys.kindKey] === "tail") {
-    // model-io 文件超限或进程内缓存丢失后会写最近窗口 baseline。
-    // tail 是新的展开起点，不能继续拼接更早历史，否则又会把已裁剪的巨大上下文带回 UI 读取链路。
+    // When the model-io file exceeds the limit or the in-process cache is lost, the latest window baseline will be written.
+    // tail is the new starting point for expansion and cannot continue to splice earlier history, otherwise the huge clipped context will be brought back to the UI reading link.
     return;
   }
   if (metadataSource[keys.kindKey] !== "delta") {
@@ -302,7 +303,7 @@ function expandMessageCollection(
   if (!Array.isArray(deltaMessages) || !Array.isArray(previousMessages) || offset === undefined) {
     return;
   }
-  // 新 model-io 为了避免同一 session 内完整上下文梯度重复，只保存 delta；服务层读出时还原给 UI。
+  // In order to avoid duplication of complete context gradients in the same session, the new model-io only saves delta; it is restored to the UI when the service layer reads it out.
   target[keys.collectionKey] = [...previousMessages.slice(0, offset), ...deltaMessages];
 }
 
@@ -334,17 +335,17 @@ function mapContent(
 ): ZCodeModelTrajectoryContentPart[] {
   if (typeof content === "string") {
     if (content.length === 0) return [];
-    // tool 角色的字符串内容即工具输出，单独标记为 tool-result 便于 UI 区分。
+    // The string content of the tool role is the tool output and is marked separately as tool-result to facilitate UI differentiation.
     if (role === "tool") {
-      // 实际 model-io 把关联字段放在消息顶层，而 content 只保存字符串结果；
-      // 丢掉顶层字段会让 UI 无法把 TOOL 返回关联到对应 tool call。
+      // In fact, model-io puts the related fields at the top level of the message, while content only saves the string result;
+      // Losing the top-level fields will make it impossible for the UI to associate the TOOL return with the corresponding tool call.
       return [
         {
           kind: "tool-result",
           toolCallId: messageTool?.toolCallId,
           toolName: messageTool?.toolName,
-          // 标准化 model-io 会把 error-text 展平为 content + isError；这里必须还原类型，
-          // 否则 UI 只能看到错误字符串，无法显示错误状态。
+          // Standardizing model-io will flatten error-text to content + isError; here the type must be restored,
+          // Otherwise the UI will only see the error string and cannot display the error status.
           output: tryParseJson(content, messageTool?.isError),
         },
       ];
@@ -402,7 +403,7 @@ function mapResponseToolCall(rawToolCall: unknown): ZCodeModelTrajectoryContentP
   }
   return {
     kind: "tool-call",
-    // 归一化后的 response.toolCalls 形如 {id, name, input}。
+    // The normalized response.toolCalls is in the shape of {id, name, input}.
     toolCallId: asString(toolCall.id) ?? asString(toolCall.toolCallId),
     toolName: asString(toolCall.name) ?? asString(toolCall.toolName) ?? "tool",
     input: toolCall.input ?? toolCall.args,

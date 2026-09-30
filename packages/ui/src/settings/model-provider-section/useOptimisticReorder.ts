@@ -25,8 +25,8 @@ export function useOptimisticReorder({
   useLayoutEffect(() => {
     if (persistOwnerRef.current === persist) return;
     persistOwnerRef.current = persist;
-    // 切换 Environment/Service Owner 时，即使 Provider 成员完全相同，也不能继续
-    // 展示或串行等待旧环境的 pending 操作。推进 operation id 使旧 Promise 的迟到结果失效。
+    // When switching Environment/Service Owner, you cannot continue even if the Provider members are exactly the same
+    // Exhibit or serialize pending operations from the old environment. Advancing the operation id invalidates the late result of the old Promise.
     nextOperationIdRef.current += 1;
     persistenceTailRef.current = Promise.resolve();
     setPending(null);
@@ -58,9 +58,9 @@ export function useOptimisticReorder({
       nextOperationIdRef.current = operationId;
       setPending({ operationId, ids: nextIds });
 
-      // 拖拽库在 pointer up 时会立即清除 transform，而正式 Settings View
-      // 要等文件写入和 Registry refresh 后才到达。这里先保留用户最新排序作为纯 UI
-      // pending intent，并串行写入，避免旧请求迟到覆盖连续拖拽的最终顺序。
+      // The drag library will clear the transform immediately when the pointer is up, and the official Settings View
+      // It will arrive after file writing and Registry refresh. Here we first retain the user’s latest sorting as a pure UI
+      // pending intent, and written serially to avoid old requests being late and overwriting the final order of consecutive drags.
       const operation = persistenceTailRef.current
         .catch(() => undefined)
         .then(() => persist(nextIds));

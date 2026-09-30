@@ -15,23 +15,31 @@ import { WorkflowAgentFace, agentColor } from "@/components/workflow-timeline/Wo
 export { agentColor, avatarColor } from "@/components/workflow-timeline/WorkflowAgentFace.js";
 
 /**
- * 子代理药丸：带色头像 +
- * 名字 + 右侧状态标记。卡片的站下与侧栏的行都是它——同一个特性只有一枚药丸。
+ * The subagent pill: a colored avatar + a name + a status marker on the right. The station under
+ * the card and the sidebar row are both this pill — one feature, one pill only.
  *
- * 头像是瓦片脸（`WorkflowAgentFace`）：机身色按代理编号取九色环，表情读 status。
- * 工作区没有身份，所以没有颜色，只有终端字形。`pending` 与无状态逐像素相同（不变式 3）：
- * 没有标记、名字用次淡色、脸睡着。
+ * The avatar is a tile face (`WorkflowAgentFace`): the body color picks from a nine-color ring by
+ * agent number, and the expression reads status. A workspace has no identity, so it has no color,
+ * only a terminal glyph. `pending` is pixel-for-pixel identical to having no status (invariant 3):
+ * no marker, the name in the second-faintest color, and the face asleep.
  *
- * 可打开（`open` 在场）时整枚药丸就是按钮：悬停四件事同时落地（底色抬一级、头像色相的
- * 内描边、头像放大加深、尾槽里 ↗ 顶替状态标记），点一下直接开那个子代理的 transcript。不可
- * 打开的药丸没有悬停态；`inertTitle` 说明为什么。
+ * When it is openable (`open` present) the whole pill is the button: hovering lands all four things
+ * at once (the background steps up one level, an inner stroke in the avatar's hue, the avatar grows
+ * and darkens, and ↗ takes the status marker's place in the tail slot), and a click opens that
+ * subagent's transcript directly. A pill that cannot be opened has no hover state; `inertTitle`
+ * explains why.
  *
- * 尾槽（`wf-pill-tail`）是状态标记与 ↗ 共用的一格 14px：两者叠在同一格里，悬停时标记缩出、
- * 箭头缩入。所以子代理药丸与脚本药丸的状态标记落在同一条右缘上——↗ 从不占自己的位置
- * （↗ 隐身时不能仍占位：否则子代理的标记会比工作区的偏左一格）。
+ * The tail slot (`wf-pill-tail`) is a single 14px cell shared by the status marker and ↗: both
+ * stack in the same cell, and on hover the marker shrinks out while the arrow shrinks in. So the
+ * subagent pill and the script pill land their status markers on the same right edge — ↗ never
+ * occupies a slot of its own (↗ must not still take up room while hidden: otherwise the subagent's
+ * marker would sit one cell further left than the workspace's).
  */
 
-/** 车道字形：agent 车道是瓦片脸（编号定色、status 定表情），工作区 / 未解析车道是图标。 */
+/**
+ * Lane glyph: agent lanes are tile faces (the number picks the color, status picks the expression),
+ * workspace / unresolved lanes are icons.
+ */
 export function LaneGlyph({
   laneClass,
   className,
@@ -59,7 +67,10 @@ export function LaneGlyph({
   return <Glyph aria-hidden className={className} />;
 }
 
-/** 状态标记：转圈 / 对勾 / 叉；`pending` 与 undefined 没有标记。状态变化时新标记弹入；可打开的药丸悬停时它让位给 ↗。 */
+/**
+ * Status marker: spinner / checkmark / cross; `pending` and undefined have no marker. A new marker
+ * pops in when the status changes; on an openable pill it yields to ↗ on hover.
+ */
 export function PillStatusMark({ status }: { status: StepRunStatus | undefined }) {
   const { intl } = useZCodeIntl();
   if (status === undefined || status === "pending") return null;
@@ -69,7 +80,7 @@ export function PillStatusMark({ status }: { status: StepRunStatus | undefined }
       aria-label={label}
       className={cn(
         "wf-mark flex size-3.5 shrink-0 items-center justify-center",
-        // 运行圆环使用中性色，避免正常加载被读成警告。
+        // Use a neutral color for the running ring to avoid normal loading being read as a warning.
         status === "running" && "text-foreground-subtle",
         status === "done" && "text-foreground-subtle",
         status === "failed" && "text-destructive",
@@ -93,7 +104,10 @@ export function PillStatusMark({ status }: { status: StepRunStatus | undefined }
   );
 }
 
-/** 药丸可打开时的接线：点击回调、无障碍标签、↗ 的 testid 与数据属性（侧栏行用它们钉住实例）。 */
+/**
+ * Wiring present when the pill is openable: the click callback, the accessibility label, and ↗'s
+ * testid and data attributes (the sidebar row uses them to pin down the instance).
+ */
 export interface WorkflowAgentPillOpen {
   onOpen: () => void;
   label: string;
@@ -116,28 +130,40 @@ export function WorkflowAgentPill({
   trailing,
 }: {
   avatarIndex?: number | undefined;
-  /** 入场延迟（一列药丸依次落地，每枚错 30 ms）；缺席即立刻。 */
+  /**
+   * Entrance delay (a column of pills lands in sequence, each offset by 30 ms); absent means
+   * immediately.
+   */
   enterDelayMs?: number;
-  /** 已本地化的显示名（运行时名 > 车道显示名）。 */
+  /** The localized display name (runtime name > lane display name). */
   name: string;
   laneClass: LaneClass;
   status: StepRunStatus | undefined;
   title?: string;
   className?: string;
-  /** 在场即整枚药丸是按钮（回调的存在即门控）。 */
+  /** When present, the whole pill is a button (the existence of the callback is the gate). */
   open?: WorkflowAgentPillOpen;
-  /** 不可打开时的提示（「子代理启动后才有会话记录」）；缺席时退回 title / name。 */
+  /**
+   * The hint when it cannot be opened ("a session record only exists once the subagent has
+   * started"); when absent, falls back to title / name.
+   */
   inertTitle?: string;
-  /** 名字之后、状态标记之前的附属信息（侧栏行的活动与计数）。 */
+  /**
+   * Supplementary information after the name and before the status marker (the sidebar row's
+   * activity and counts).
+   */
   children?: ReactNode;
-  /** 状态标记之后的控件。 */
+  /** Controls after the status marker. */
   trailing?: ReactNode;
-  /** `row`（24 px、静止时没有底色、悬停才成药丸）给侧板名单的两列；缺省 32 px。 */
+  /**
+   * `row` (24 px, no background at rest, only becoming a pill on hover) serves the two columns of
+   * the side panel roster; the default is 32 px.
+   */
   size?: "md" | "row";
 }) {
   const tinted = laneClass === "agent";
-  // 有延迟的入场要 backwards 填充：等待期间保持起始帧，否则药丸先满显再闪一下重新进场。
-  // 不用 both：forwards 会把 transform 留在元素上。
+  // Delayed entries must be filled backwards: keep the starting frame during the waiting period, otherwise the pill will be fully displayed first and then flash again to enter again.
+  // Not using both:forwards will leave the transform on the element.
   const style = {
     ...(tinted ? { "--wf-avatar": agentColor(avatarIndex, name) } : {}),
     ...(enterDelayMs === undefined || enterDelayMs <= 0

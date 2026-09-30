@@ -1,4 +1,5 @@
-/* oxlint-disable eslint(max-lines) -- 平台事件和分享导入共用同一生命周期。 */
+/* oxlint-disable eslint(max-lines) -- Platform events and share imports share the same lifecycle.
+ */
 import { useEffect, useRef, useState } from "react";
 import { useZCodeSessionStore } from "@/store/zcodeSessionStore.js";
 import type { IPlatformService } from "@zcode/shared";
@@ -90,8 +91,8 @@ export function useRootPlatformEffects({
   const importToastIdRef = useRef<number | null>(null);
 
   useEffect(() => {
-    // 启动时必须先判断 OAuth 本地会话，再恢复历史/初始 workspace。
-    // 如果这里抢先 addTab，未登录用户会先看到主界面，之后才被登录页覆盖。
+    // When starting, the OAuth local session must be determined first, and then the history/initial workspace can be restored.
+    // If you addTab first here, users who are not logged in will see the main interface first and then be overwritten by the login page.
     if (!canBootstrapInitialWorkspace || didBootstrapInitialWorkspaceRef.current) {
       return;
     }
@@ -112,16 +113,16 @@ export function useRootPlatformEffects({
           .getState()
           .setActiveTaskId(initialWorkspaceAbsPath, initialTaskId, initialWorkspaceIdentity);
       } else if (!isRendererReloadNavigation()) {
-        // main 注入 initial workspace 只表达工作区入口；没有显式 taskId
-        // 的 app 冷启动必须进入草稿，不能让 renderer-local last-session/group/pane
-        // 抢回历史会话；同一 renderer reload 则保留当前 session 续流资格。
+        // main injects initial workspace only to express the workspace entry; there is no explicit taskId
+        // The app cold start must go into draft and cannot let renderer-local last-session/group/pane
+        // Retrieve historical sessions; the same renderer reload retains the current session's continuation qualifications.
         startDraftInWorkspace(initialWorkspaceAbsPath, initialWorkspaceIdentity);
       }
     }
-    // Dock 最近项目会通过 initialWorkspaceAbsPath 直达工作区。
-    // 如果这里仍然等首屏先按默认空 tab 渲染一次，窗口会先闪出打开工作区中间页，
-    // 再异步补上目标 workspace，视觉上像是“打开错页再跳转”。
-    // 这里把初始工作区注入也纳入启动保护期，等首个 tab 准备好后再渲染正式内容。
+    // Dock's recent projects will be directly accessed to the workspace through initialWorkspaceAbsPath.
+    // If we still wait for the first screen to be rendered once by pressing the default empty tab, the window will flash out and open the middle page of the workspace.
+    // Then asynchronously add the target workspace, visually it is like "open the wrong page and then jump".
+    // Here, the initial workspace injection is also included in the startup protection period, and the official content will be rendered after the first tab is ready.
     setIsBootstrappingInitialWorkspace(false);
   }, [
     addTab,
@@ -138,16 +139,16 @@ export function useRootPlatformEffects({
     const disposeFocusTab = platform.onFocusTab((path: string) => {
       logger.info("[Root] onFocusTab:", path);
       if (activateTabByPath(path)) {
-        // 系统 workspace focus 是 workspace-only 导航；任务通知另有
-        // 显式 taskId 路径，不能在这里隐式恢复这个 workspace 上次选中的 session。
+        // System workspace focus is workspace-only navigation; task notifications are otherwise
+        // The explicit taskId path cannot implicitly restore the last selected session of this workspace here.
         startDraftInWorkspace(path);
       }
     });
     const disposeNewTab = platform.onNewTab(() => {
       logger.info("[Root] onNewTab");
       setWorkspaceActionError(null);
-      // 新标签过去会打开工作区中间页，导致启动/快捷键都可能进入中间页。
-      // 现在新标签语义收敛为“打开工作区”动作，由 Root 决定目录选择或默认 workspace 兜底。
+      // In the past, new tabs would open the middle page of the workspace, causing startup/shortcut keys to enter the middle page.
+      // Now the semantics of new tags converge to the "open workspace" action, and Root determines the directory selection or default workspace.
       openWorkspace();
     });
     const disposeNewTask = platform.onNewTask(() => {
@@ -160,14 +161,16 @@ export function useRootPlatformEffects({
     const disposeOpenWorkspacePath = platform.onOpenWorkspacePath
       ? platform.onOpenWorkspacePath((path: string) => {
           if (!allowOpenWorkspace) {
-            logger.info("[Root] 当前模式不支持通过 deep link 打开文件夹，已忽略请求");
+            logger.info(
+              "[Root] deep link folder open is not supported in this mode, ignoring the request",
+            );
             return;
           }
 
           logger.info("[Root] onOpenWorkspacePath:", path);
-          // 系统服务 deep link 对应输入框上方 Open folder 语义。
-          // 这里复用 handleSelectProject，而不是把路径作为聊天附件，才能保留 tab 去重、
-          // 跨窗口激活和 recentProjects 更新这些手动打开文件夹的既有行为。
+          // The system service deep link corresponds to the Open folder semantics above the input box.
+          // Here, handleSelectProject is reused instead of using the path as a chat attachment, so that tab deduplication and deduplication can be retained.
+          // Cross-window activation and recentProjects update the existing behavior of manually opening these folders.
           openWorkspacePath(path);
         })
       : () => {};
@@ -175,7 +178,7 @@ export function useRootPlatformEffects({
       ? platform.onShareImport((payload) => {
           const current = pendingShareImportRef.current ?? activeShareImportRef.current;
           if (current && isShareImportIntentSame(current, payload)) {
-            logger.info("[Root] 忽略重复的 share import deep link", {
+            logger.info("[Root] ignoring a duplicate share import deep link", {
               shareCodeLength: payload.shareCode.length,
             });
             return;
@@ -197,14 +200,14 @@ export function useRootPlatformEffects({
               activeTab?.remoteSessionId || activeTab?.remoteTarget ? "remote" : "local",
           });
           setShareImportRevision((revision) => revision + 1);
-          logger.info("[Root] 收到 share import deep link", {
+          logger.info("[Root] received a share import deep link", {
             shareCodeLength: payload.shareCode.length,
           });
         })
       : () => {};
     const disposeNotificationClick = platform.onTaskNotificationClick((taskId: string) => {
       logger.info("[Root] onTaskNotificationClick:", taskId);
-      // 遍历所有 workspace 找到 taskId 所属的 workspace，然后激活对应 tab 并切换任务
+      // Traverse all workspaces to find the workspace to which taskId belongs, then activate the corresponding tab and switch tasks
       const workspaces = useZCodeSessionStore.getState().workspaces;
       for (const [workspacePath, workspaceState] of Object.entries(workspaces)) {
         const taskMeta = workspaceState.taskListCache?.find((task) => task.taskId === taskId);
@@ -212,8 +215,8 @@ export function useRootPlatformEffects({
         if (hasTask) {
           const targetWorkspacePath = taskMeta?.workspacePath ?? workspacePath;
           const targetWorkspaceIdentity = taskMeta?.workspaceIdentity;
-          // 通知点击会从全局 workspace store 反查 task。
-          // 远端任务必须用 task meta 自带的 workspaceIdentity 激活和选中，否则会落到 path-only 桶。
+          // Clicking on the notification will check the task from the global workspace store.
+          // Remote tasks must be activated and selected using the workspaceIdentity that comes with task meta, otherwise they will fall into the path-only bucket.
           activateTabByPath(
             targetWorkspacePath,
             targetWorkspaceIdentity ? { workspaceIdentity: targetWorkspaceIdentity } : undefined,
@@ -292,8 +295,8 @@ export function useRootPlatformEffects({
       return;
     }
 
-    // 分享页 Deep Link 不应在 Root 层按登录态分叉；未登录与已登录都
-    // 走同一份 continuation/import 流程。公开可导入分享由接口自身决定是否可用。
+    // The shared page Deep Link should not fork according to the logged-in state at the Root layer; both unlogged and logged-in
+    // Follow the same continuation/import process. Whether publicly importable sharing is available is determined by the interface itself.
     pending.status = "importing";
     pendingShareImportRef.current = null;
     activeShareImportRef.current = pending;
@@ -317,8 +320,8 @@ export function useRootPlatformEffects({
       ) {
         return;
       }
-      // complete 只表示导入事务已经收口；成功结果会在下方统一替换进度提示，避免短暂闪过
-      // “导入完成”后又紧接着出现“已从分享导入”的两条成功 Toast。
+      // complete only means that the import transaction has been closed; the successful result will uniformly replace the progress prompt below to avoid a brief flash.
+      // "Import Completed" is followed by two successful Toasts "Imported from Sharing".
       if (progress.phase === "complete") {
         return;
       }
@@ -366,7 +369,7 @@ export function useRootPlatformEffects({
       )
       .then((result) => {
         pending.status = "complete";
-        // 先准备实际落地工作区的独立草稿，再激活；复用导入不覆盖会话选择。
+        // Prepare an independent draft of the actual workspace before activating it; reuse and import will not overwrite session selections.
         seedImportedSessionDraft(result);
         const activated = activateTabByPath(
           result.workspacePath,
@@ -384,15 +387,15 @@ export function useRootPlatformEffects({
           result.sessionId,
           result.workspaceIdentity,
         );
-        // 导入可能复用当前已打开的 session；仅 setActiveTaskId 不会产生可观察的切换。
-        // 每次成功都显式发出一次定位请求，目标 pane 准备好分享内容后再消费。
+        // Imports may reuse currently open sessions; setActiveTaskId alone will not produce an observable switch.
+        // A positioning request is explicitly issued on each success, and the target pane is ready to share the content before consuming it.
         sessionStore.requestTimelineBottom(
           result.workspacePath,
           result.sessionId,
           result.workspaceIdentity,
         );
-        // 回退过的导入会落在与用户当前所看不同的 workspace，必须讲清落在哪、为何回退，
-        // 否则用户只会看到会话“跑到别处去了”。
+        // The rolled-back import will fall into a different workspace than the one currently viewed by the user. It must be explained clearly where it falls and why it was rolled back.
+        // Otherwise the user will just see the session "went somewhere else".
         const resultMessage = result.fallbackReason
           ? intl.formatMessage(
               {
@@ -497,9 +500,9 @@ export function useRootPlatformEffects({
 
     const paths = tabs
       .filter(isWorkspaceTab)
-      // 启动期远程 workspace 现在会先以“断开占位 tab”恢复，
-      // 这些 tab 没有 remoteSessionId，但本质仍是远程会话，不能当成本地路径同步给主进程窗口列表。
-      // 这里改成按完整远程身份字段过滤，避免把远程路径误同步到本地窗口标签。
+      // During startup, the remote workspace will now be restored with "disconnect placeholder tab" first.
+      // These tabs do not have a remoteSessionId, but they are still essentially remote sessions and cannot be synchronized to the main process window list as local paths.
+      // Here it is changed to filter by the complete remote identity field to avoid mistakenly synchronizing the remote path to the local window label.
       .filter((tab) => !tab.remoteSessionId && !tab.workspaceIdentity && !tab.remoteTarget)
       .map((tab) => tab.workspacePath);
     platform.syncWindowTabs(paths);
@@ -511,8 +514,8 @@ export function useRootPlatformEffects({
     }
 
     function handleWindowKeydown(event: KeyboardEvent) {
-      // 录制态键盘归录制器独占。本监听先于录制监听注册（同 capture 阶段），
-      // 不短路的话录制期按 Cmd/Ctrl+N、O 预览会真实触发新建任务/打开工作区。
+      // The recording keyboard is exclusive to the recorder. This monitor is registered before the recording monitor (same as the capture stage).
+      // If there is no short circuit, pressing Cmd/Ctrl+N, O during recording to preview will actually trigger a new task/open workspace.
       if (isShortcutRecordingActive()) {
         return;
       }
@@ -523,10 +526,10 @@ export function useRootPlatformEffects({
         return;
       }
 
-      // Web 端没有宿主菜单，补一层 best-effort 键盘监听，按平台主修饰键落到同一套根级动作。
-      // 耦合说明：这里固定使用默认键位（Ctrl/Cmd+N、+O），与「menu 通道命令在 Web 端不可配置」
-      // （设置页置灰）配套——若未来放开 Web 端 menu 通道改键，
-      // 此处必须改为读快捷键生效表，否则用户改键后 Web 行为会分裂。
+      // There is no host menu on the web side. Add a layer of best-effort keyboard monitoring and press the main modifier key of the platform to fall to the same set of root-level actions.
+      // Coupling description: The default key positions (Ctrl/Cmd+N, +O) are fixed here, and "menu channel commands are not configurable on the Web side"
+      // (The settings page will be grayed out) Supporting - If the menu channel change button on the Web side is released in the future,
+      // The shortcut key validity table must be read here, otherwise the web behavior will be split after the user changes the key.
       event.preventDefault();
       if (isOpenWorkspaceShortcut) {
         openWorkspace();
@@ -547,26 +550,13 @@ export function useRootPlatformEffects({
       return;
     }
 
-    let disposed = false;
-
-    // 原生菜单文案之前在 main 进程里写死，renderer 切换 locale 只会更新 React 标题栏菜单。
-    // 结果就是桌面端会同时出现两套语言，Help 里的反馈/导出日志也无法跟随当前语言切换。
-    // 这里把当前 locale 主动同步给 main，让原生菜单和标题栏菜单都从同一份语言状态重建。
-    platform.setApplicationLocale(locale).catch((error) => {
-      if (disposed) {
-        return;
-      }
-      logger.error("[Root] 同步应用菜单语言失败", { locale, error });
-    });
-
-    return () => {
-      disposed = true;
-    };
-  }, [isDesktop, locale, platform]);
+    // The application now only retains English, and the native menu copy is fixed in English in the main process.
+    // It is no longer necessary to synchronize the locale of the renderer to rebuild the menu.
+  }, [isDesktop]);
 
   useEffect(() => {
-    // Dock badge 一期只统计“后台完成后还没点开”的 task 数。
-    // 失败态红点和 permission tag 仍留在各自 UI 语义里，避免把平台徽标混成泛化告警数。
+    // The first phase of Dock badge only counts the number of tasks that "have not been opened after the background is completed".
+    // The failure red dot and permission tag remain in their respective UI semantics to avoid confusing the platform logo with generalized alarm numbers.
     platform.syncWindowUnreadCount(totalUnreadTaskCount);
   }, [platform, totalUnreadTaskCount]);
 

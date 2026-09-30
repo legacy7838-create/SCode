@@ -143,7 +143,7 @@ function mintCore(
   const checker = workflow.program.getTypeChecker();
   const fanouts: CoreFanoutSite[] = facts.promoted.map((fanout) => {
     const cand = candByOrder.get(fanout.order);
-    // 字面量基数也是铸造期的事：它要看被迭代表达式的 AST 与绑定，投影只读一个数。
+    // Literal cardinality is also a casting matter: it depends on the AST and binding of the iterated expression, and the projection only reads a number.
     const cardinality = cand === undefined ? undefined : literalCardinality(cand.iterated, checker);
     return {
       id: fanoutId.get(fanout.id) as string,

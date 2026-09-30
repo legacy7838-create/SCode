@@ -33,14 +33,14 @@ function CollapsibleContent({
           "group-data-[state=closed]/collapsible-content:animate-out group-data-[state=closed]/collapsible-content:fade-out-0 group-data-[state=closed]/collapsible-content:[animation-fill-mode:forwards]",
         )}
       >
-        {/* 大会话 resize trace 显示 collapsible 动画层只设置 duration/ease 时，
-            浏览器会用默认 transition-property: all 动画 scrollbar-color，拖拽窗口时触发非合成动画。
-            这里显式禁用 CSS transition，只保留 animate-in/out 的关键帧动画。 */}
-        {/* tw-animate-css 并没有 animate-fade-in / animate-fade-out 这类工具类，
-            必须用 animate-in/out 搭配 fade-in-0 / fade-out-0。
-            同时子层 div 本身没有 data-state，所以这里继续读取父层 content 的 state，
-            让透明度动画和高度动画稳定分层。
-            打开时再补一个轻微 delay，避免内容还被 0 高度裁切时就把淡入过程提前消耗掉。 */}
+        {/* Large session resize trace shows collapsible animation layer only when setting duration/ease
+            The browser will use the default transition-property: all animation scrollbar-color, and trigger non-synthetic animation when dragging the window.
+            CSS transitions are explicitly disabled here, leaving only animate-in/out keyframe animations. */}
+        {/* tw-animate-css does not have tool classes such as animate-fade-in / animate-fade-out.
+            Must use animate-in/out with fade-in-0 / fade-out-0.
+            At the same time, the sub-layer div itself does not have data-state, so here we continue to read the state of the parent layer content,
+            Make transparency animation and height animation stable layering.
+            Add a slight delay when opening to prevent the fade-in process from being consumed in advance when the content is still cropped at 0 height. */}
         {children}
       </div>
     </CollapsiblePrimitive.CollapsibleContent>

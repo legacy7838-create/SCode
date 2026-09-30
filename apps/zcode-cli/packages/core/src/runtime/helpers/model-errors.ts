@@ -91,8 +91,8 @@ function createSuspiciousEmptyModelResultError(
       finishReason,
       ...(model ? { modelId: model.modelId, providerId: model.providerId } : {}),
       rawFinishReason,
-      // UI/turn-errors 需识别空 completion，才能展示中文文案与 Coding Plan 恢复动作。
-      // 空响应不能只有展示标记，否则监控无法与 provider/SSE 类故障做结构化聚合。
+      // UI/turn-errors needs to recognize empty completion to display Chinese copywriting and Coding Plan recovery actions.
+      // Empty responses cannot only have display tags, otherwise monitoring cannot perform structured aggregation with provider/SSE failures.
       reason: "empty_model_response",
       source: "provider",
       suspiciousEmpty: true,
@@ -102,7 +102,7 @@ function createSuspiciousEmptyModelResultError(
   });
 }
 
-/** 空流终态诊断：供 core/adapters 日志与 UI 错误归因对照。 */
+/** Empty-stream terminal diagnostics: for cross-checking the core/adapters logs against the UI's error attribution. */
 export function buildSuspiciousEmptyDiagnostics(input: {
   finishReason: string | undefined;
   providerMetadata: Record<string, unknown> | undefined;
@@ -153,8 +153,8 @@ function tryCreateProviderBusinessModelErrorFromMetadata(
     return undefined;
   }
 
-  // adapter 偶发把 zcode-plan 业务错误落成空 finish + 零 usage，core 会先抛 suspicious empty。
-  // 在 anomaly guard 前先从 providerMetadata 恢复 providerCode（如 3007），让 UI 能命中业务错误文案。
+  // The adapter occasionally throws the zcode-plan business error to empty finish + zero usage, and the core will throw suspicious empty first.
+  // Before anomaly guard, restore providerCode (such as 3007) from providerMetadata so that the UI can hit the business error copy.
   return createCoreError(CoreErrorType.ModelError, failure.message, {
     context: {
       ...(model ? { modelId: model.modelId, providerId: model.providerId } : {}),

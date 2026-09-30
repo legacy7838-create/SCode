@@ -66,10 +66,10 @@ function urlMatchRank(target: URL, candidate: URL): number | undefined {
 }
 
 /**
- * open(url) 的 tab 复用匹配：在 agent-owned tabs 里挑最值得原地跳转的一个。
- * 复用阈值 rank <= 2（同 hostname）；rank 3 父子域可能是不同站点，误跳风险高，不复制用。
- * 同 rank 优先 active 的 tab，否则取列表中最新（靠后）的一个。
- * 与 selectBrowserForUrl 同为纯函数，便于共享 contract cases。
+ * The tab reuse match for open(url): it picks the one agent-owned tab most worth navigating in place.
+ * The reuse threshold is rank <= 2 (the same hostname); at rank 3 a parent/child domain pair may well be different sites and the risk of mis-navigation is high, so it is not reused.
+ * Among equal ranks the active tab wins, otherwise the newest (latest) entry in the list is taken.
+ * Like selectBrowserForUrl it is a pure function, so the same contract cases can be shared.
  */
 export function selectTabForUrl<T extends { url?: string; active?: boolean }>(
   targetValue: string,
@@ -83,13 +83,13 @@ export function selectTabForUrl<T extends { url?: string; active?: boolean }>(
     try {
       rank = urlMatchRank(target, parseUrl(tab.url));
     } catch {
-      continue; // 单个坏 URL 不应让复用匹配失效。
+      continue; // A single bad URL should not invalidate a reuse match.
     }
     if (rank === undefined || rank > 2) continue;
     if (
       best === undefined ||
       rank < best.rank ||
-      // 同 rank：active 优先；都不 active 时列表靠后（更新）的胜出。
+      // Same as rank: active takes priority; when neither is active, the one at the bottom of the list (updated) wins.
       (rank === best.rank && (tab.active === true || best.tab.active !== true))
     ) {
       best = { tab, rank };
@@ -99,8 +99,8 @@ export function selectTabForUrl<T extends { url?: string; active?: boolean }>(
 }
 
 /**
- * URL 选择是纯函数，便于用同一组 contract cases 约束 IAB/extension/CDP。
- * 显式 browser selection 不走这里，因此这里的 fallback 不会造成跨 backend 静默切换。
+ * URL selection is a pure function, so that IAB/extension/CDP can be constrained by one and the same set of contract cases.
+ * An explicit browser selection does not come through here, so the fallback here cannot cause a silent switch across backends.
  */
 export function selectBrowserForUrl(
   infos: readonly BrowserInfo[],
@@ -127,7 +127,7 @@ export function selectBrowserForUrl(
         const rank = urlMatchRank(target, parseUrl(value));
         if (rank !== undefined && (best === undefined || rank < best)) best = rank;
       } catch {
-        // backend 返回的单个坏 URL 不应让整个 registry 失效。
+        // A single bad URL returned by the backend should not invalidate the entire registry.
       }
     }
     return best === undefined ? [] : [{ info, matchRank: best }];

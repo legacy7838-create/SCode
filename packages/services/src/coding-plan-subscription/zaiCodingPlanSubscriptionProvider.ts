@@ -8,27 +8,31 @@ import {
 /**
  * ZaiCodingPlanSubscriptionProvider
  *
- * 历史上 Team Plan 企业定价只在 bigmodel family 上落地，service 层把所有
- * enterprise 读请求直接打到 BigModelCodingPlanSubscriptionProvider，硬编码 bigmodel
- * 域名 + bigmodelCodingPlan providerId + bigmodel OAuth token。zai family 即使生成
- * 了 team plan 连接键，也无独立的定价数据来源（死代码）。
+ * Historically Team Plan enterprise pricing only landed on the bigmodel family: the service
+ * layer sent every enterprise read request straight to BigModelCodingPlanSubscriptionProvider,
+ * hardcoding the bigmodel domain + bigmodelCodingPlan providerId + bigmodel OAuth token. Even
+ * when the zai family produced a team plan connection key it had no independent pricing data
+ * source (dead code).
  *
- * zai 与 bigmodel Team Plan 全链路对称化：
- * 本类继承 BigModelCodingPlanSubscriptionProvider，仅覆盖 enterprise 读路径的 family 维度：
+ * zai and bigmodel Team Plan are made symmetric across the whole chain: this class extends
+ * BigModelCodingPlanSubscriptionProvider and overrides only the family dimension of the
+ * enterprise read path:
  *   - providerId  → zaiCodingPlan
- *   - 业务域名   → resolveZaiCodingPlanHost()（测试 配置的 ZAI Business origin / 线上 api.z.ai）
- *   - OAuth token → loadZaiAuthorization()（oauth:zai:access_token，复用父类）
- *   - 鉴权头     → createZaiLoginAuthHeaders()
+ *   - business domain → resolveZaiCodingPlanHost() (ZAI Business origin configured for tests / api.z.ai in production)
+ *   - OAuth token → loadZaiAuthorization() (oauth:zai:access_token, reusing the parent)
+ *   - auth headers → createZaiLoginAuthHeaders()
  *
- * 覆盖范围：仅 getEnterprisePricing + enrichEnterprisePricingTeamProjects 相关的
- * family 维度（通过 protected 虚方法）。企业购买闭环（balance/order/pending/cancel/
- * continue/status）仍由父类走 bigmodel 域，符合 zai Team Plan "仅读定价+团队上下文" 的产品边界。
+ * Override scope: only the family dimension behind getEnterprisePricing +
+ * enrichEnterprisePricingTeamProjects (through protected virtual methods). The enterprise
+ * purchase loop (balance/order/pending/cancel/continue/status) still goes to the bigmodel
+ * domain through the parent, matching the zai Team Plan product boundary of "pricing reads +
+ * team context only".
  *
- * 其余方法（batchPreview/preview/productInfo/checkPayment/checkPendingOrders/
- * Stripe/PayPal/createSign/updateSign/staticConfigs）全部复用父类：
- *   - 购买类已通过 request.providerId 在父类 resolveEndpointConfig 内动态路由
- *     （zai 走 /api/pay + zai host + zai token，bigmodel 走 /api/biz + bigmodel host + bigmodel token）。
- *   - staticConfigs 是平台级 client/configs，与 family 无关。
+ * Every other method (batchPreview/preview/productInfo/checkPayment/checkPendingOrders/
+ * Stripe/PayPal/createSign/updateSign/staticConfigs) fully reuses the parent:
+ *   - purchase calls are already routed dynamically by request.providerId inside the parent's
+ *     resolveEndpointConfig (zai → /api/pay + zai host + zai token, bigmodel → /api/biz + bigmodel host + bigmodel token).
+ *   - staticConfigs is platform-level client/configs, unrelated to family.
  */
 export class ZaiCodingPlanSubscriptionProvider extends BigModelCodingPlanSubscriptionProvider {
   protected codingPlanProviderId(): CodingPlanSubscriptionProviderId {
@@ -40,7 +44,7 @@ export class ZaiCodingPlanSubscriptionProvider extends BigModelCodingPlanSubscri
   }
 
   protected async loadFamilyEnterpriseToken(): Promise<string> {
-    // 复用父类 loadZaiAuthorization：credential key = oauth:zai:access_token。
+    // Reuse parent class loadZaiAuthorization: credential key = oauth:zai:access_token.
     return this.loadZaiAuthorization();
   }
 
@@ -50,9 +54,11 @@ export class ZaiCodingPlanSubscriptionProvider extends BigModelCodingPlanSubscri
 }
 
 /**
- * zai 业务域名（/api/biz 与 /api/pay）。
- * 与父类 file-scoped 的 resolveZaiCodingPlanHost 等价；这里独立保留是因为父类该函数未 export。
- * 必须与父类实现保持一致：跟随产品环境（测试 配置的 ZAI Business origin / 线上 api.z.ai）。
+ * zai business domain (for /api/biz and /api/pay).
+ * Equivalent to the file-scoped resolveZaiCodingPlanHost in the parent; it is duplicated here
+ * because the parent does not export that function. It must stay identical to the parent
+ * implementation: follow the product environment (ZAI Business origin configured for tests /
+ * api.z.ai in production).
  */
 function resolveZaiCodingPlanHost(): string {
   return resolveZaiBusinessBaseUrl(process.env);

@@ -34,7 +34,7 @@ function decodeDiagnosticLog(buffer: Buffer): string | null {
   }
 }
 
-/** 反馈上传唯一归档入口：白名单来源、有界读取、无法安全解码时禁止原文兜底。 */
+/** The single archiving entry point for feedback uploads: allow-listed sources, bounded reads, and no raw-content fallback when decoding is not safe. */
 export async function createFeedbackDiagnosticArchive(options: {
   sources: readonly FeedbackLogSource[];
   outputRootDir: string;
@@ -43,7 +43,7 @@ export async function createFeedbackDiagnosticArchive(options: {
   onProgress?: (event: { processedBytes: number; totalBytes: number }) => void;
 }): Promise<{ path: string; size: number }> {
   const now = options.now?.() ?? new Date();
-  // 按本地自然日筛选文件；次日零点由日历计算，兼容夏令时的 23/25 小时日。
+  // Filter files according to the local natural day; the next day's zero o'clock is calculated by the calendar and is compatible with the 23/25 hour day of daylight saving time.
   const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   const dayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime();
   const isToday = (mtimeMs: number) => mtimeMs >= dayStart && mtimeMs < dayEnd;
@@ -61,7 +61,7 @@ export async function createFeedbackDiagnosticArchive(options: {
   try {
     options.onProgress?.({ processedBytes: 0, totalBytes: 0 });
     for (const source of options.sources) {
-      // 不跟随诊断根目录本身的链接；规范化系统目录别名（如 macOS /var）。
+      // Do not follow links to the diagnostic root directory itself; normalizes system directory aliases (such as macOS /var).
       const root = await realpath(source.directory).catch(() => null);
       if (!root || !(await lstat(source.directory).catch(() => null))?.isDirectory()) continue;
       const walk = async (directory: string, prefix: string, depth: number): Promise<void> => {
@@ -98,7 +98,7 @@ export async function createFeedbackDiagnosticArchive(options: {
             skipLogFile("metadata-policy");
             continue;
           }
-          // O_NOFOLLOW 防止检查后把文件替换为链接；按打开后的 inode 再校验。
+          // O_NOFOLLOW prevents the file from being replaced with a link after checking; press the inode after opening to check again.
           const handle = await open(
             absolutePath,
             constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0),
@@ -121,8 +121,8 @@ export async function createFeedbackDiagnosticArchive(options: {
               skipLogFile("opened-file-policy");
               continue;
             }
-            // 日志追加是正常场景：只读打开时确认的长度，后续追加留待下次归档。
-            // 不能用 size+1 探测增长并丢弃整份 active 日志；短读则仍保守跳过。
+            // Log appending is a normal scenario: only the length confirmed when opening is read, and subsequent appending is left for the next archive.
+            // Size+1 cannot be used to detect growth and discard the entire active log; short reads are still skipped conservatively.
             const bytes = Buffer.alloc(opened.size);
             let length = 0;
             while (length < bytes.length) {
@@ -155,7 +155,7 @@ export async function createFeedbackDiagnosticArchive(options: {
     }
     const zip = new ZipFile();
     const output = createWriteStream(path, { mode: 0o600 });
-    // pipeline 同时监听 ZIP 和输出错误，失败统一清理本次目录。
+    // The pipeline monitors ZIP and output errors at the same time, and cleans the directory if it fails.
     const writing = pipeline(zip.outputStream, output);
     for (const entry of entries) zip.addBuffer(entry.data, entry.name);
     zip.addBuffer(

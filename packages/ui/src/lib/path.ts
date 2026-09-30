@@ -42,9 +42,9 @@ export function decodeFilePathUriEscapes(path: string): string {
   }
 
   try {
-    // markdown/tool 输出里的本地文件路径可能已经按 URI 编码，
-    // 例如 workspace 名里的空格会变成 %20。这里用 decodeURI 只还原路径文本，
-    // 保留 %2F 这类分隔符转义，避免把文件名内容误拆成新的路径层级。
+    // Local file paths in markdown/tool output may be URI-encoded.
+    // For example, a space in the workspace name will become %20. Use decodeURI here to restore only the path text,
+    // Keep delimiter escapes such as %2F to avoid accidentally splitting the file name content into new path levels.
     return decodeURI(path);
   } catch {
     return path;
@@ -66,9 +66,9 @@ export function joinFilePath(basePath: string, childPath: string): string {
   return `${normalizedBasePath}${separator}${normalizedChildPath}`;
 }
 
-// encodeURI 不转义 # 和 ?，但它们在 URL 里是 fragment/query 分隔符。
-// 文件名包含 # 时（如 index#v2.html）生成的 file URL 会被下游 URL 解析截断 pathname
-// （只剩 /E:/dir/index），shell 打开必然失败。这里在 encodeURI 之后补转义。
+// encodeURI does not escape # and ?, but they are fragment/query delimiters in the URL.
+// The file URL generated when the file name contains # (such as index#v2.html) will be truncated by downstream URL parsing pathname
+// (Only /E:/dir/index remains), shell opening will inevitably fail. Here add escaping after encodeURI.
 function encodeUriPathForFileUrl(value: string): string {
   return encodeURI(value).replace(/#/g, "%23").replace(/\?/g, "%3F");
 }

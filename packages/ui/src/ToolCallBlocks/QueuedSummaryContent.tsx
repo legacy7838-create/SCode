@@ -139,8 +139,8 @@ export function QueuedSummaryContent({
       const queue = queuedContentRef.current;
       const existingIndex = queue.findIndex((item) => item.key === snapshot.key);
       if (existingIndex >= 0) {
-        // 文件摘要正在等待播放时，持续到达的 diff 只更新同一快照，不能因为 key 去重
-        // 留下最早的 +N/-N，也不能为每次数值变化新增整条滚动项。
+        // While the file summary is waiting to be played, continuously arriving diffs only update the same snapshot and cannot be deduplicated due to key
+        // Leaving the earliest +N/-N behind, you cannot add an entire scroll item for each value change.
         const nextQueue = [...queue];
         nextQueue[existingIndex] = snapshot;
         queuedContentRef.current = nextQueue;
@@ -152,8 +152,8 @@ export function QueuedSummaryContent({
         return;
       }
 
-      // 摘要滚动总共只能有三格：当前显示、下一条、可插队条。
-      // queuedContentRef 只保存后两格；第二条不能被覆盖，新摘要只能替换第三格。
+      // Summary scrolling can only have three spaces in total: the current display, the next one, and the queue-breaking bar.
+      // queuedContentRef only saves the last two fields; the second field cannot be overwritten, and the new summary can only replace the third field.
       queuedContentRef.current = [queue[0]!, snapshot].slice(0, SUMMARY_ROLL_MAX_PENDING);
     };
     const promote = (snapshot: SummaryContentSnapshot) => {
@@ -167,8 +167,8 @@ export function QueuedSummaryContent({
         animationTimerRef.current = null;
         const queuedContent = queuedContentRef.current;
         const timerDrift = getCurrentTimestamp() - expectedTimerAt;
-        // 主线程繁忙时 timeout 会晚到；如果继续逐条补播旧摘要，
-        // 用户会在卡顿恢复后看到过期状态排队播放，体感上会更卡。
+        // When the main thread is busy, timeout will arrive late; if the old summary continues to be replayed one by one,
+        // After the lag is restored, the user will see the expired status queued for playback, and the experience will become more laggy.
         const nextQueue = resolveQueuedSummaryPlaybackQueue(queuedContent, timerDrift);
         const [nextQueued, ...restQueued] = nextQueue;
         if (!nextQueued) {
@@ -191,8 +191,8 @@ export function QueuedSummaryContent({
     }
 
     if (displayedContentRef.current.key === nextContent.key) {
-      // 同一 Changes child 的 diff 和同一 streaming Assistant message 都不能重播整条摘要；
-      // 前者更新尾部计数，后者用显式 version 原位刷新正文。
+      // Neither the diff of the same Changes child nor the same streaming Assistant message can replay the entire summary;
+      // The former updates the tail count, and the latter refreshes the body in place with an explicit version.
       if (shouldRefreshQueuedSummaryContent(displayedContentRef.current, nextContent)) {
         displayedContentRef.current = nextContent;
         setDisplayedContent(nextContent);
@@ -246,8 +246,8 @@ export function QueuedSummaryContent({
           {displayedContent.secondaryText}
         </motion.span>
       </AnimatePresence>
-      {/* Changes 的 diff count 必须与文件摘要属于同一排队快照，
-          但数字自身继续用 FlipMetricValue 独立翻动，不能跟整条摘要一起纵向滚走。 */}
+      {/* The diff count of Changes must belong to the same queued snapshot as the file digest,
+          However, the numbers themselves continue to be flipped independently using FlipMetricValue and cannot scroll vertically together with the entire summary. */}
       {displayedContent.trailingText}
     </span>
   );

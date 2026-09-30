@@ -93,11 +93,11 @@ export const BUILTIN_ZCODE_SLASH_COMMAND_HELP_ENTRIES: readonly BuiltinZCodeSlas
       aliases: ["language"],
       details: [
         "Shows the current UI locale when called without arguments.",
-        "Use auto, en-US, or zh-CN to switch and persist the UI locale.",
+        "English (en-US) is the only supported language, so there is nothing to switch.",
       ],
       name: "locale",
-      summary: "Show or switch the UI locale.",
-      usage: "/locale [auto|en-US|zh-CN]",
+      summary: "Show the UI locale.",
+      usage: "/locale",
     },
     {
       details: [

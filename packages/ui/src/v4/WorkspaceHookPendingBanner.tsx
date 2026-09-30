@@ -17,24 +17,24 @@ import {
 import { sendWorkspaceHookCommand } from "@/settings/workspaceHookReviewCommands.js";
 
 /**
- * 软门禁 dismiss store：轻量模块级 Map。
- * 幂等 key = sessionId + bundleDigest；bundle 变化后提示条重新出现。
- * 不落盘——刷新或重载后重新提示，符合「用户应该知道」的产品语义。
+ * Soft-gate dismiss store: a lightweight module-level Map. The idempotent key = sessionId +
+ * bundleDigest; the banner reappears once the bundle changes. Nothing is written to disk—the prompt
+ * returns after a refresh or reload, which matches the product semantics of “the user should know”.
  */
 class WorkspaceHookPendingDismissStore {
   private dismissed = new Set<string>();
 
-  /** 标记某个 session+bundle 组合已 dismiss */
+  /** Mark a given session+bundle combination as dismissed */
   dismiss(sessionId: string, bundleDigest: string): void {
     this.dismissed.add(this.key(sessionId, bundleDigest));
   }
 
-  /** 查询是否已 dismiss */
+  /** Query whether it has already been dismissed */
   isDismissed(sessionId: string, bundleDigest: string): boolean {
     return this.dismissed.has(this.key(sessionId, bundleDigest));
   }
 
-  /** 清空全部 dismiss 记录（测试用） */
+  /** Clear all dismiss records (for tests) */
   clear(): void {
     this.dismissed.clear();
   }
@@ -60,12 +60,14 @@ interface WorkspaceHookPendingBannerProps {
 }
 
 /**
- * 软门禁常驻提示条。
+ * The always-on soft-gate banner.
  *
- * 当 snapshot.workspaceHookAdmission.pendingCount > 0 时显示，提供 [去审核] 与 [忽略]。
- * - [去审核]：打开设置页 Hooks 分区 + 发送 requestWorkspaceHookReview 命令。
- *   命令发送失败不阻断导航（容错，logger 记 warn）。
- * - [忽略]：renderer 本地 dismiss，幂等 key = sessionId + bundleDigest。
+ * Shown when snapshot.workspaceHookAdmission.pendingCount > 0, offering [Go review] and [Dismiss].
+ * - [Go review]: opens the Hooks section of the settings page + sends the
+ *   requestWorkspaceHookReview command. A failure to send the command does not block the navigation
+ *   (fault tolerance; the logger records a warn).
+ * - [Dismiss]: dismisses locally in the renderer, with the idempotent key = sessionId +
+ *   bundleDigest.
  */
 export const WorkspaceHookPendingBanner = memo(function WorkspaceHookPendingBanner({
   sessionId,
@@ -79,12 +81,12 @@ export const WorkspaceHookPendingBanner = memo(function WorkspaceHookPendingBann
   const [, setDismissRevision] = useState(0);
 
   const handleReview = useCallback(() => {
-    // 两行式打开设置页：设置 intent 再 open tab（仿 V4ComposerToolbar 的 handleOpenModelProviderSettings）
+    // Open the settings page in two lines: set the intent and then open the tab (imitation of V4ComposerToolbar's handleOpenModelProviderSettings)
     setPendingSettingsSectionIntent("hooks");
     openSettingsTab?.();
 
-    // 通过 command binding 发送 requestWorkspaceHookReview 命令。
-    // 该通道正是为无 pending review interaction 时保留命令通道而设。
+    // Send the requestWorkspaceHookReview command via command binding.
+    // This channel is designed to preserve the command channel when there is no pending review interaction.
     const binding = findWorkspaceHookCommandBinding(
       commandBindings,
       workspacePath,
@@ -102,8 +104,8 @@ export const WorkspaceHookPendingBanner = memo(function WorkspaceHookPendingBann
         "requestWorkspaceHookReview",
         payload,
       ).catch((error) => {
-        // 命令发送失败不阻断导航（容错）——用户已到达设置页，可手动操作。
-        logger.warn("[workspace-hook-pending] requestWorkspaceHookReview 发送失败", {
+        // Failure to send the command does not block navigation (fault tolerance) - the user has reached the settings page and can operate manually.
+        logger.warn("[workspace-hook-pending] failed to send requestWorkspaceHookReview", {
           sessionId,
           bundleDigest: admission.bundleDigest,
           error,
@@ -118,7 +120,7 @@ export const WorkspaceHookPendingBanner = memo(function WorkspaceHookPendingBann
         input: { featureId: "conversation.blocking.hook", action: "dismiss", trigger: "button" },
         operation: () => {
           workspaceHookPendingDismissStore.dismiss(sessionId, admission.bundleDigest);
-          // Bug 原因：模块级 Set 的写入不属于 React 状态，memo 组件不会重渲染。
+          // Reason for the bug: The writing of module-level Set does not belong to the React state, and the memo component will not be re-rendered.
           setDismissRevision((revision) => revision + 1);
         },
         completed: { resultSource: "local_commit" },
@@ -131,7 +133,7 @@ export const WorkspaceHookPendingBanner = memo(function WorkspaceHookPendingBann
     return null;
   }
 
-  // 幂等 dismiss 检查：同 bundle 已 dismiss 则隐藏
+  // Idempotent dismiss check: Same as if bundle has been dismissed, it will be hidden
   if (workspaceHookPendingDismissStore.isDismissed(sessionId, admission.bundleDigest)) {
     return null;
   }

@@ -65,8 +65,8 @@ export function TaskRenameDialog({
                       nativeEvent: event.nativeEvent,
                     })
                   ) {
-                    // task 重命名里中文输入法 Enter 是候选确认，不是确认按钮。
-                    // 同时读取本地 composition 状态，避免平台事件时序让 isComposing 提前变 false。
+                    // The Chinese input method Enter in task renaming is a candidate confirmation, not a confirmation button.
+                    // At the same time, the local composition status is read to prevent the platform event timing from making isComposing false early.
                     logger.debug("[TaskRenameDialog] ignore rename enter during IME", {
                       valueLength: value.length,
                     });

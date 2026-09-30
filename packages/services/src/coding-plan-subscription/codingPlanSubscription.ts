@@ -51,7 +51,7 @@ import { createServiceDescriptor } from "../descriptors.js";
 export interface OffPeakClientConfig {
   readonly enabled: boolean;
   readonly modelSelectionView: ModelSelectionView;
-  /** mock 演示强制通道：真实路径不下发，UI 使用 Host 的 Account support。 */
+  /** Mock demonstrates forced channel: the real path is not delivered, and the UI uses the Host's Account support. */
   readonly codingPlanActive?: boolean;
 }
 
@@ -60,16 +60,16 @@ export interface ICodingPlanSubscriptionService {
   getStaticProducts(): Promise<CodingPlanStaticProductsConfig>;
   getStaticTeamProducts(): Promise<CodingPlanStaticTeamProductsConfig>;
   getStartPlanPreview(): Promise<StartPlanPreviewConfig | null>;
-  /** 闲时任务灰度配置：forceRefresh 供入口打开时补拉（绕过 1h 快照缓存）。 */
+  /** Idle-time task grayscale configuration: forceRefresh is used for re-pull when the portal is opened (bypassing the 1h snapshot cache). */
   getOffPeakClientConfig(options?: { forceRefresh?: boolean }): Promise<OffPeakClientConfig>;
   /**
-   * 动态工作流灰度快照：远端 `configs.dynamicWorkflow.mode`
-   * 与本地覆盖折叠后的结果；forceRefresh 绕过 1h 快照缓存。请求失败 fail-closed（disabled/default）。
+   * Dynamic workflow grayscale snapshot: remote `configs.dynamicWorkflow.mode`
+   * Result after collapse with local override; forceRefresh bypasses 1h snapshot cache. The request failed fail-closed (disabled/default).
    */
   getDynamicWorkflowClientConfig(options?: {
     forceRefresh?: boolean;
   }): Promise<DynamicWorkflowClientConfig>;
-  /** 兼容接口：固定返回 preflight-v1，不读取远端配置或缓存。 */
+  /** Compatible interface: fixedly returns preflight-v1 and does not read remote configuration or cache. */
   getModelContextBudgetStrategy(): Promise<ZCodeModelContextBudgetStrategy>;
   getForceUpdateConfig(): Promise<ForceUpdateConfig | null>;
   productInfo(request: CodingPlanProductInfoRequest): Promise<CodingPlanProductInfo>;

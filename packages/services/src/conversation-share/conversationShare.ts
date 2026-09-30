@@ -1,4 +1,4 @@
-/* oxlint-disable eslint(max-lines) -- Share 的错误/预检公共契约与跨 RPC 脱敏规则必须保持在同一边界，避免 UI、Host 和 API 各自漂移。 */
+/* oxlint-disable eslint(max-lines) -- Share's public error/preflight contracts and the cross-RPC redaction rules must stay within one boundary so the UI, Host and API cannot drift apart. */
 import type {
   ConversationShareAccessMode,
   ConversationShareCapabilities,
@@ -29,7 +29,7 @@ export interface PublishTextConversationInput {
   selection: ConversationShareSelection;
   clientRequestId: string;
   disclosureAcceptedAt: number;
-  /** 界面语言；决定返回的 share_url 落在中文站还是英文站。缺省不改写服务端下发的链接。 */
+  /** UI language; decides whether the returned share_url lands on the Chinese or the English site. When absent the link issued by the server is left untouched. */
   locale?: Locale;
 }
 
@@ -91,8 +91,8 @@ export type ConversationShareFailureReasonCode =
   | "artifact_outside_workspace"
   | "artifact_changed"
   | "artifact_read_failed"
-  // 已知容量超限：附件真实大小超过服务端 max_artifact_bytes 或通道可搬运上限。
-  // 与 artifact_read_failed（不确定）不同，它在选择阶段就是确定阻断。
+  // Known capacity exceeds limit: The actual size of the attachment exceeds the server's max_artifact_bytes or the channel's transport limit.
+  // Unlike artifact_read_failed (indeterminate), it blocks definitely during the selection phase.
   | "artifact_size_limit"
   | "artifact_manifest"
   | "payload_limit"
@@ -116,12 +116,13 @@ export interface ConversationShareFailureIssue {
   rowId?: number;
   turnOrdinal?: number;
   /**
-   * 问题所属的 product turn 身份。
+   * Identity of the product turn the issue belongs to.
    *
-   * UI 的「取消选择该轮」曾用 turnOrdinal 去索引自己的 per-query 列表，
-   * 而 turnOrdinal 是 service 按全部 turnHeader 编号的序号，两套编号在含系统上下文轮
-   * 或多 steer query 的会话里必然错位，导致取消到别的轮次。轮次定位必须按身份，
-   * turnOrdinal 只用于展示文案。
+   * The UI's "deselect this turn" action once used turnOrdinal to index its own per-query
+   * list, but turnOrdinal is the ordinal the service assigns across every turnHeader, so the
+   * two numbering schemes inevitably misalign in sessions with system-context turns or multiple
+   * steer queries, making the action deselect a different turn. Turns must be located by
+   * identity; turnOrdinal is only for display copy.
    */
   productTurnId?: string;
   artifactDisplayName?: string;
@@ -170,8 +171,8 @@ function inferFailureReasonCode(message: string): ConversationShareFailureReason
   if (/extension is missing/iu.test(message)) return "artifact_extension_missing";
   if (/outside the workspace/iu.test(message)) return "artifact_outside_workspace";
   if (/changed after|file changed|size\/mtime/iu.test(message)) return "artifact_changed";
-  // 本地/远程 artifact source 的兜底消息是 "artifact cannot be read"，
-  // 旧正则只覆盖 ended|source|chunk|readable，读失败因此被误判为 invalid_conversation。
+  // The bottom line for local/remote artifact sources is "artifact cannot be read",
+  // The old regular expression only covers ended|source|chunk|readable, and read failure is therefore misjudged as invalid_conversation.
   if (/artifact (?:ended|source|chunk|readable|cannot be read)/iu.test(message)) {
     return "artifact_read_failed";
   }
@@ -191,7 +192,7 @@ interface ConversationShareFailureDetails {
   issues?: readonly ConversationShareFailureIssue[];
   issueCount?: number;
   omittedIssueCount?: number;
-  /** 仅用于 host 侧诊断的底层错误；绝不进入发给 Renderer 的 details。 */
+  /** Underlying error used only for host-side diagnostics; it must never reach the details sent to the Renderer. */
   cause?: unknown;
 }
 
@@ -219,8 +220,8 @@ function sanitizeFailureIssue(
       ? value
       : undefined;
   const artifactDisplayName = issue.artifactDisplayName?.trim();
-  // displayName 含路径/URL 或超长时，整条 issue 返回 null 会被过滤——脱敏目标是
-  // 不泄露路径，而不是丢掉整条诊断信息。改为只剥离该字段，保留 code/scope 等定位信息。
+  // When displayName contains path/URL or is too long, the entire issue returns null and will be filtered - the desensitization target is
+  // Don't reveal the path, rather than throwing away the entire diagnostic information. Instead, only this field is stripped, and positioning information such as code/scope is retained.
   const safeArtifactDisplayName =
     artifactDisplayName &&
     artifactDisplayName.length <= 128 &&
@@ -274,8 +275,9 @@ function sanitizeFailureIssue(
 }
 
 /**
- * 把 issue 列表裁剪并清洗成可安全跨 RPC 的载荷，返回被省略的条数。
- * 非阻断 warning 与阻断 issue 共用同一套脱敏规则。
+ * Trims and sanitizes the issue list into a payload that is safe to cross RPC, returning how
+ * many entries were omitted.
+ * Non-blocking warnings and blocking issues share the same redaction rules.
  */
 export function sanitizeConversationShareIssues(issues: readonly ConversationShareFailureIssue[]): {
   issues: readonly ConversationShareFailureIssue[];
@@ -316,7 +318,7 @@ export class ConversationShareServiceError extends Error {
   readonly issues?: readonly ConversationShareFailureIssue[];
   readonly issueCount: number;
   readonly omittedIssueCount: number;
-  /** 通过现有 RPC details 字段传给 Renderer 的安全错误载荷。 */
+  /** Safe error payload passed to the Renderer through the existing RPC details field. */
   readonly details?: ConversationShareFailureDetails;
 
   constructor(
@@ -366,8 +368,9 @@ export interface ConversationSharePublishProgress {
   completedArtifacts: number;
   totalArtifacts: number;
   /**
-   * 非阻断提示：发布照常继续，但这些结果物被跳过（例如正文引用的文件已不存在）。
-   * 已过 sanitizeConversationShareIssues 脱敏，可安全跨 RPC。
+   * Non-blocking notices: publishing continues as usual but these results were skipped (for
+   * example a file referenced from the body no longer exists).
+   * Already redacted by sanitizeConversationShareIssues, so they are safe to cross RPC.
    */
   warnings?: readonly ConversationShareFailureIssue[];
   omittedWarningCount?: number;
@@ -383,23 +386,25 @@ export interface ConversationShareImportProgress {
 export interface ImportConversationShareInput {
   shareCode: string;
   clientRequestId: string;
-  /** 当前 renderer 捕获的目标；Deep Link 本身不得携带路径或 identity。 */
+  /** Target captured by the current renderer; the Deep Link itself must not carry a path or identity. */
   targetWorkspacePath?: string;
   targetWorkspaceIdentity?: string;
   targetWorkspaceKind?: "local" | "remote";
-  /** 界面语言；决定导入会话的标题前缀。回链本身固定存规范路径。 */
+  /** UI language; decides the title prefix of the imported session. The back link always stores the canonical path. */
   locale?: Locale;
 }
 
-/** 导入时落盘的公开 rows 副本；会话里的只读块靠它渲染，不回源。 */
+/** Public rows copy written to disk on import; the read-only block in the session renders from it and never re-fetches. */
 export interface ImportedConversationShare {
   shareId: string;
   contextId: string;
   title: string;
   rows: ConversationRow[];
   /**
-   * 本端渲染不了、已跳过的行数（副本里有新 row kind，或 formatVersion 比本端新）。
-   * >0 时只读块顶部必须出软提示，否则用户会以为内容丢了。
+   * Number of rows this client cannot render and therefore skipped (the copy contains a new
+   * row kind, or its formatVersion is newer than this client).
+   * When >0 the read-only block must show a soft notice at the top, otherwise users think the
+   * content was lost.
    */
   unsupportedRowCount: number;
   artifacts: Array<{
@@ -434,7 +439,7 @@ export interface IConversationShareService {
     operationId: string,
   ): Promise<ImportConversationShareResult>;
   onDynamicImportProgress(operationId: string): Event<ConversationShareImportProgress>;
-  /** 读取导入时落盘的公开 rows；找不到返回 null（会话里就不渲染只读块）。 */
+  /** Reads the public rows written to disk on import; returns null when not found (the session then renders no read-only block). */
   getImportedConversation(input: {
     workspacePath: string;
     contextId: string;
@@ -451,15 +456,16 @@ export const IConversationShareService = createServiceDescriptor<IConversationSh
 );
 
 /**
- * 分享能力不可用时的统一门禁实现。
+ * Single gate implementation used when sharing is unavailable.
  *
- * 每个不支持分享的宿主（desktop-attached remote、server remote 等）都要拒绝全部
- * 写操作并返回空事件流。手写会让 IConversationShareService 新增方法时漏改某个宿主，
- * 所以由这里集中生成。
+ * Every host that does not support sharing (desktop-attached remote, server remote, …) must
+ * reject all write operations and return an empty event stream. Hand-writing them means that
+ * whenever IConversationShareService gains a method some host is missed, so they are generated
+ * centrally here.
  */
 export function createUnsupportedConversationShareService(options: {
   message: string;
-  /** 可选审计钩子：宿主想记录被拒绝的动作名时传入。 */
+  /** Optional audit hook: pass it when the host wants to record the name of a rejected action. */
   onRejected?: (action: string) => void;
 }): IConversationShareService {
   const reject = (action: string) => async (): Promise<never> => {
@@ -474,7 +480,7 @@ export function createUnsupportedConversationShareService(options: {
     onDynamicPublishProgress: noEvents,
     importShare: reject("importShare"),
     onDynamicImportProgress: noEvents,
-    // 只读查询：不可用环境下返回 null 而不是抛错，会话里就是不渲染只读块。
+    // Read-only query: Returns null instead of throwing an error in unavailable environments, and read-only blocks are not rendered in the session.
     getImportedConversation: async () => null,
     getPreview: reject("getPreview"),
     getContinuation: reject("getContinuation"),

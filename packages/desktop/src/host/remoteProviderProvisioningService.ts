@@ -13,7 +13,7 @@ interface RemoteProviderProvisioningExecutor {
 
 const executors = new WeakMap<ServiceCollection, RemoteProviderProvisioningExecutor>();
 
-/** Window Host 私有执行能力；不会随 ServiceCollection 暴露到 Renderer RPC。 */
+/** Window-host private execution capability; never exposed to renderer RPC through the ServiceCollection. */
 export function getRemoteProviderProvisioningExecutor(
   services: ServiceCollection,
 ): RemoteProviderProvisioningExecutor | undefined {
@@ -34,7 +34,10 @@ function createRemoteProviderProvisioningExecutor(options: {
   const syncLocalToRemote = async (): Promise<ProviderProvisioningResult> => {
     const syncId = randomUUID();
     if (!options.source || !options.target) {
-      return unsupportedResult(syncId, "Local/Remote Provider Provisioning capability 不可用");
+      return unsupportedResult(
+        syncId,
+        "Local/Remote Provider Provisioning capability is unavailable",
+      );
     }
     try {
       const envelope = await options.source.read(syncId);

@@ -4,8 +4,8 @@ import { Slot } from "radix-ui";
 
 import { cn } from "../lib/utils.js";
 
-// 大会话窗口 resize trace 显示基础按钮的 transition-all 会批量启动
-// scrollbar-color/尺寸等非合成动画，放大主线程 style/layout 压力；按钮只需要颜色过渡。
+// Large session window resize trace shows that transition-all of basic buttons will be started in batches
+// Non-synthetic animations such as scrollbar-color/size, amplify the main thread style/layout pressure; buttons only require color transition.
 const buttonVariants = cva(
   "group/button inline-flex shrink-0 items-center justify-center rounded-md border border-transparent bg-clip-padding text-ui-base/relaxed whitespace-nowrap transition-colors outline-none select-none disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-2 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {

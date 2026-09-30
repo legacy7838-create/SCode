@@ -2,8 +2,9 @@ const SPREADSHEET_CLIPBOARD_HTML_PATTERN =
   /(?:<table\b|urn:schemas-microsoft-com:office:excel|\bExcel\.Sheet\b|\bMicrosoft\s+Excel\b|\bmso-(?:number-format|displayed-decimal-separator)\b)/iu;
 
 /**
- * Excel 会同时写入 plain text、HTML 和一张合成 PNG；有表格文本证据时应让文本获胜。
- * 制表符覆盖多列复制，Excel HTML 标记覆盖单单元格和单列复制。
+ * Excel writes plain text, HTML and a composited PNG at the same time; when there is tabular text
+ * evidence, the text should win. Tabs cover multi-column copy, while Excel's HTML markup covers
+ * single-cell and single-column copy.
  */
 export function shouldPreferSpreadsheetClipboardText(text: string, html: string): boolean {
   if (text.length === 0) return false;

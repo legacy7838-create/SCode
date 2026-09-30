@@ -53,10 +53,10 @@ export function ProviderTemplatePicker({
     try {
       await create();
     } catch (error) {
-      // Template 创建失败过去只写日志，用户留在选择页却看不到任何结果。
-      // 失败继续留在当前页，并复用详情栏底部反馈横幅提供同一次创建的重试入口。
-      // 完整 Schema issues 只进入统一 UI 日志；横幅保持可读摘要，避免原始数组撑满详情区。
-      logger.error("[ProviderTemplatePicker] 创建供应商失败", error);
+      // Template creation failed. In the past, only logs were written, and the user was left on the selection page but could not see any results.
+      // Failure will remain on the current page, and the feedback banner at the bottom of the details bar will be reused to provide the retry entry created at the same time.
+      // Complete Schema issues only enter the unified UI log; the banner maintains a readable summary to prevent the original array from filling the details area.
+      logger.error("[ProviderTemplatePicker] create provider failed", error);
       const retry = () => void createWithFeedback(create);
       showFeedback({
         key: feedbackKey,

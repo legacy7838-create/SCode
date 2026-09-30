@@ -2,7 +2,7 @@ import { z } from "zod";
 import { completeModelConfigDataSchema, modelConfigDataSchema } from "@zcode/shared/model-config";
 
 const complete = completeModelConfigDataSchema.shape;
-// 手动模式只冻结产品明确开放的叶子；新增系统字段默认不属于个人手动配置。
+// Manual mode only freezes leaves that are explicitly opened by the product; new system fields do not belong to personal manual configuration by default.
 export const manualModelConfigSchema = completeModelConfigDataSchema
   .pick({ enabled: true })
   .extend({
@@ -28,12 +28,12 @@ export const manualModelConfigSchema = completeModelConfigDataSchema
 
 export type ManualModelConfig = z.infer<typeof manualModelConfigSchema>;
 
-/** 草稿/旧完整规则提取复用 schema 结构，避免维护第二份可编辑字段清单。 */
+/** Drafts and legacy full-rule extraction reuse the schema shape, so there is no second editable field list to maintain. */
 export function extractManualModelConfig(input: unknown): ManualModelConfig {
   return manualModelConfigSchema.parse(pickSchemaFields(manualModelConfigSchema, input));
 }
 
-/** 保留独立 enabled 和系统叶子；恢复智能配置及规则合成都使用同一字段归属。 */
+/** `enabled` and the system leaves are kept separate; restoring the smart config and composing rules both use this same field ownership. */
 export function clearManualModelConfig(input: z.infer<typeof modelConfigDataSchema>) {
   return modelConfigDataSchema.parse(
     omitSchemaFields(manualModelConfigSchema.omit({ enabled: true }), input),

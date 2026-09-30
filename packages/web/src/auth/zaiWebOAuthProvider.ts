@@ -7,7 +7,7 @@ export interface WebZaiOAuthProviderConfig {
   tokenUrl: string;
   clientId: string;
   redirectUri: string;
-  /** BigModel 授权入口；参数名与 ZAI 不同（redirect/appId vs redirect_uri/client_id）。 */
+  /** BigModel authorization entry; parameter name is different from ZAI (redirect/appId vs redirect_uri/client_id). */
   bigmodelAuthorizeUrl: string;
   bigmodelAppId: string;
 }
@@ -123,7 +123,7 @@ function normalizeTokenResponse(
     throw new Error("Token exchange response missing data.token");
   }
 
-  // 服务端按 provider 把 access_token 放在不同子对象里（GrantJWT 的 resp.Zai / resp.Bigmodel）。
+  // The server puts access_token in different sub-objects according to provider (GrantJWT's resp.Zai / resp.Bigmodel).
   const accessToken = (
     provider === BIGMODEL_PROVIDER_ID
       ? payload.data?.bigmodel?.access_token
@@ -171,7 +171,7 @@ export class ZaiWebOAuthProvider {
     provider?: WebOAuthProviderId;
   }): string {
     const redirectUri = params.redirectUri ?? this.config.redirectUri;
-    // 两家的授权参数名完全不同，没有共通形状可抽；直接分支比造一层映射配置更好读。
+    // The authorization parameter names of the two are completely different, and there is no common shape to draw; direct branching is more readable than creating a layer of mapping configuration.
     if (params.provider === BIGMODEL_PROVIDER_ID) {
       const query = new URLSearchParams({
         redirect: redirectUri,
@@ -219,7 +219,7 @@ export class ZaiWebOAuthProvider {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        // 服务端 provider 缺省即 zai，这里仍显式发送：默认值靠约定不如写清楚。
+        // The default value of the server provider is zai, which is still sent explicitly here: it is better to write the default value clearly than to rely on convention.
         provider,
         code: params.code,
         redirect_uri: params.redirectUri ?? this.config.redirectUri,

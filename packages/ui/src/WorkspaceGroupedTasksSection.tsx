@@ -1,4 +1,7 @@
-/* eslint-disable max-lines -- 顶层 grouped task 容器仍集中维护远程 workspace service 解析、group 菜单、task 菜单和列表写回；子行与纯 helper 已拆到 workspace-grouped-tasks 目录。 */
+/* eslint-disable max-lines -- the top-level grouped task container still centrally maintains remote
+ * workspace service resolution, the group menu, the task menu, and list write-back; the child rows
+ * and pure helpers have been split out into the workspace-grouped-tasks directory.
+ */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import {
@@ -552,7 +555,7 @@ export function WorkspaceGroupedTasksSection({
   onGroupedTaskGroupIdsChange?: (groupIds: string[]) => void;
   onCollapsedGroupIdsChange: (updater: (currentGroupIds: Set<string>) => Set<string>) => void;
   onStickyGroupHeaderChange?: (node: ReactNode | null) => void;
-  /** 闲时系统分组的「+」/右键新建路由到 Automations 主视图。 */
+  /** The "+" / right-click create on an idle system group routes to the Automations main view. */
   onOpenAutomations?: () => void;
 }) {
   const { intl } = useZCodeIntl();
@@ -624,9 +627,9 @@ export function WorkspaceGroupedTasksSection({
     });
   }, [archivingTaskKeys.size, authoritativeView]);
   const groupedSectionRootRef = useRef<HTMLDivElement | null>(null);
-  // 已经画出过 grouped 列表：之后任何 loading/未初始化帧都不再回到空白门禁。
-  // 挂载时若模块级缓存已种出非空 view，本帧就会画出列表，闩锁直接种 true——把「渲染期置位」
-  // 的窗口收窄到只剩真正的首屏。
+  // The grouped list has been drawn: any subsequent loading/uninitialized frames will no longer return to a blank gate.
+  // If the module-level cache has planted a non-empty view when mounting, the list will be drawn in this frame, and the latch will directly plant true - set "rendering period"
+  // The window is narrowed down to the real first screen.
   const hasPaintedGroupedListRef = useRef(view.nodes.length > 0);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
   const groupMenuItemsRef = useRef<TaskGroupMenuItem[]>([]);
@@ -664,8 +667,8 @@ export function WorkspaceGroupedTasksSection({
   const isGroupedDraftActive = Boolean(groupedDraftTask && activeTaskId === null);
   const handleGroupedPointerDownCapture = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
-      // 必须在 dnd-kit 激活前监听，才能捕获越过 6px 阈值的首个
-      // pointermove；快速拖到 Workbench 后立即松手也要使用真实 viewport 坐标。
+      // Must listen before dnd-kit is activated to capture the first one that crosses the 6px threshold
+      // pointermove; quickly drag to the Workbench and then release immediately to use the real viewport coordinates.
       workbenchPointerPositionTrackerRef.current?.dispose();
       workbenchPointerPositionTrackerRef.current = createWorkbenchPointerPositionTracker(
         event.currentTarget.ownerDocument,
@@ -745,8 +748,8 @@ export function WorkspaceGroupedTasksSection({
     onCreateTask({ groupedDraftPlacement: draftPlacement });
   }, [onCollapsedGroupIdsChange, onCreateTask]);
   const handleCloseGroupedDraftTask = useCallback(() => {
-    // grouped 草稿会在切 workspace 时迁移到目标 workspace。
-    // 只能由用户关闭、真实 task 创建或明确离开草稿时清理，不能跟随列表组件卸载自动清掉。
+    // Grouped drafts will be migrated to the target workspace when switching workspaces.
+    // It can only be cleared when the user closes it, creates a real task, or explicitly leaves the draft. It cannot be cleared automatically when the list component is uninstalled.
     clearGroupedDraftTask(activeWorkspacePath, activeWorkspaceIdentity);
   }, [activeWorkspaceIdentity, activeWorkspacePath, clearGroupedDraftTask]);
   useEffect(() => {
@@ -763,8 +766,8 @@ export function WorkspaceGroupedTasksSection({
     }
     const frameId = window.requestAnimationFrame(() => {
       const scrollContainer = findNearestScrollableAncestor(rootElement);
-      // 全局 New task 的草稿创建在 grouped 列表顶部。
-      // 用户可能已经滚到下面的 group；这里按入口语义把列表滚动条归零，而不是只保证草稿可见。
+      // A draft of the global New task is created at the top of the grouped list.
+      // The user may have scrolled to the lower group; here, the list scroll bar is reset to zero according to entry semantics, instead of only ensuring that the draft is visible.
       scrollContainer?.scrollTo({ top: 0 });
     });
     return () => {
@@ -950,8 +953,8 @@ export function WorkspaceGroupedTasksSection({
 
   const handleMoveTaskToGroup = useCallback(
     (task: ZCodeTaskMeta, groupId: string | null) => {
-      // archivingTaskKeys 过滤后的 view 只用于渲染；若拿它计算并持久化排序，
-      // 归档请求失败前的任意结构变更都会把被隐藏任务从权威分组中永久删除。
+      // The view filtered by archivingTaskKeys is only used for rendering; if it is used to calculate and persist sorting,
+      // Any structural changes before the archive request fails will permanently remove the hidden task from the authoritative group.
       const nextView = moveTaskByMenu(authoritativeView, task, groupId);
       if (nextView === authoritativeView) {
         return;
@@ -1094,8 +1097,8 @@ export function WorkspaceGroupedTasksSection({
           ...(task.workspaceIdentity ? { workspaceIdentity: task.workspaceIdentity } : {}),
         })
         .then((meta) => {
-          // grouped 的后台 refresh 可能携带归档前的 membership，直接覆盖乐观删除。
-          // 归档成功后主动换代 membership；渲染层在权威列表确认消失前继续屏蔽该 task。
+          // The background refresh of grouped may carry the membership before archiving, directly covering optimistic deletion.
+          // After successful archiving, the membership will be automatically replaced; the rendering layer will continue to block the task before the authoritative list is confirmed to disappear.
           bumpTaskListMembershipVersion();
           removeTaskState(task.workspacePath, task.taskId, task.workspaceIdentity);
           if (task.workspaceIdentity) {
@@ -1248,8 +1251,8 @@ export function WorkspaceGroupedTasksSection({
       }
       dragOriginViewRef.current = authoritativeView;
       dragPreviewViewRef.current = authoritativeView;
-      // task overlay 宽度只在 drag start 测一次。
-      // 之前依赖 view 的 layout effect 会在每次拖拽 preview 重排后同步 setState，容易和 dnd-kit 测量形成嵌套更新循环。
+      // The task overlay width is only measured once at drag start.
+      // The layout effect that previously relied on view will synchronize setState after each drag and drop of the preview, which can easily form a nested update loop with dnd-kit measurement.
       const nextWidth = measureGroupedTaskPreviewWidth(
         groupedSectionRootRef.current,
         nextActiveTaskKey,
@@ -1619,12 +1622,12 @@ export function WorkspaceGroupedTasksSection({
     ],
   );
 
-  // 首次权威请求结束前既需要阻止 grouped draft/空态抢先出现，又曾把这个
-  // 数据门禁直接渲染成“正在获取任务”；切换到分组时，置顶列表下方因此闪出无帮助的文案。
-  // 这里保留 initialized 门禁但隐藏主体，数据就绪后再一次性展示权威列表。
-  // 门禁只该拦首屏。之前每次会话流式节点都可能让它回关，
-  // grouped 整棵子树随之卸载再重挂载——这就是「左侧分组列表整块闪一下」。
-  // 画过一次列表后一律继续渲染，旧数据优于空白。
+  // Before the end of the first authoritative request, it is necessary to prevent the grouped draft/null state from appearing first, and this
+  // The data access control is directly rendered as "Getting tasks"; when switching to grouping, unhelpful copywriting flashes below the pinned list.
+  // The initialized access control is retained here but the subject is hidden. After the data is ready, the authoritative list will be displayed at once.
+  // Access control should only block the first screen. In the past, every session streaming node may have it shut down,
+  // The entire grouped subtree is then unmounted and remounted - this is "the entire grouped list on the left flashes".
+  // After drawing the list once, the rendering will continue. Old data is better than blank.
   if (
     shouldHideGroupedTaskContent({
       initialized,
@@ -1636,9 +1639,9 @@ export function WorkspaceGroupedTasksSection({
     return null;
   }
   if (view.nodes.length > 0) {
-    // 渲染期写 ref 的前提（禁止照搬到非单调状态）：本 ref 是单调闩锁（false→true，永不回落），
-    // 新值只由本次渲染的 view 内容推导。concurrent 下被丢弃的渲染也会执行这次赋值，最坏结果是
-    // 门禁提前开门一帧、显示空态文案而不是隐藏；对可回落状态用同样写法则会产生不可复现的漏帧。
+    // Prerequisite for writing ref during rendering (copying to non-monotonic state is prohibited): This ref is a monotonic latch (false→true, never falls back),
+    // The new value is derived only from the content of the view rendered this time. The discarded rendering under concurrent will also perform this assignment. The worst result is
+    // The access control opens one frame in advance and displays the empty state copy instead of hiding it; using the same writing method for the retractable state will produce unreproducible missed frames.
     hasPaintedGroupedListRef.current = true;
   }
   const dragOverlayWidthStyle = activeDragOverlayWidth
@@ -1733,7 +1736,7 @@ export function WorkspaceGroupedTasksSection({
             </div>
           ) : null}
         </div>
-        {/* overlay 是鼠标浮层，挂到 body，避免被 grouped task 滚动容器的滚动条/裁剪上下文影响。 */}
+        {/* The overlay is a mouse-following layer mounted on body, so it is not affected by the scrollbar/clipping context of the grouped task scroll container. */}
         {typeof document === "undefined"
           ? groupedTaskDragOverlay
           : createPortal(groupedTaskDragOverlay, document.body)}

@@ -29,6 +29,7 @@
   },
   "dependencies": {
     "@zcode/model-option-map": "workspace:*",
+    "@zcode/rpc": "workspace:*",
     "zod": "4.6.5"
   },
   "devDependencies": {

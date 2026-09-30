@@ -1,6 +1,6 @@
-// scheduler(utilityProcess) ↔ main 的控制消息协议。两端都在 Electron 侧，走 parentPort.postMessage。
-// 与 host↔main 的 CronRun/CronRunResult(见 @zcode/shared channels + validation)不同：
-// 这层是 main 与「常驻 cron scheduler 进程」之间的私有通道；main 收到派发请求后再翻译成 CronRun 转发给 host。
+// scheduler(utilityProcess) ↔ main’s control message protocol. Both ends are on the Electron side, go parentPort.postMessage.
+// Different from host↔main's CronRun/CronRunResult (see @zcode/shared channels + validation):
+// This layer is the private channel between main and the "resident cron scheduler process"; after main receives the dispatch request, it translates it into CronRun and forwards it to the host.
 import type { ModelSelection, NodeSelfResourceSample } from "@zcode/shared";
 
 /** scheduler → main */
@@ -17,8 +17,8 @@ export type SchedulerToMainMessage =
       workspaceIdentity?: string;
     }
   | {
-      // 闲时任务派发：与 cron 消息对独立。首跑不带 conversationId/sessionId，
-      // host createTask 新建 session；续跑/中断恢复带上两者 resume 同一会话。
+      // Off-time task dispatching: independent of cron messages. The first run does not have conversationId/sessionId,
+      // host createTask creates a new session; resume/interrupt recovery brings both to resume the same session.
       type: "offpeak-dispatch-request";
       offPeakTaskId: string;
       prompt: string;
@@ -36,14 +36,14 @@ export type SchedulerToMainMessage =
       message: string;
     }
   | {
-      // 闲时任务 running 计数变化 → main 据此 + keepAwakeWhileRunning 设置
-      // 决定是否开 powerSaveBlocker。每次 tick 后上报当前值（幂等）。
+      // The idle task running count changes → main accordingly + keepAwakeWhileRunning is set
+      // Decide whether to enable powerSaveBlocker. Report the current value after each tick (idempotent).
       type: "offpeak-active-count";
       count: number;
     }
   | {
-      // scheduler 进程每 60 秒的自采样本。
-      // main 只取其中的 heap 作 scheduler 角色事件的 heap 维度，CPU 与 RSS 仍以 getAppMetrics 为准。
+      // The scheduler process self-samples every 60 seconds.
+      // main only takes the heap as the heap dimension of the scheduler role event. CPU and RSS are still based on getAppMetrics.
       type: "scheduler-resource-sample";
       sample: NodeSelfResourceSample;
     };
@@ -60,7 +60,7 @@ export type MainToSchedulerMessage =
       failureKind?: "transient" | "permanent";
     }
   | {
-      // 闲时任务派发结果；迟到结果仅凭 offPeakTaskId 结算（无 inFlight 上下文也可，幂等）。
+      // The results are dispatched during idle time; the late results are only settled based on offPeakTaskId (no inFlight context is available, idempotent).
       type: "offpeak-dispatch-result";
       offPeakTaskId: string;
       ok: boolean;
@@ -70,11 +70,11 @@ export type MainToSchedulerMessage =
       failureKind?: "transient" | "permanent";
     }
   | {
-      // main 在退出前通知 scheduler 优雅收尾（释放认领、关库）。
+      // Main notifies the scheduler to finish gracefully (release claims, close the library) before exiting.
       type: "scheduler-dispose";
     }
   | {
-      // manual run 已提交，立即触发一次 tick；automationId 仅用于日志关联。
+      // The manual run has been submitted and triggers a tick immediately; the automationId is only used for log correlation.
       type: "scheduler-wake";
       automationId: string;
     };

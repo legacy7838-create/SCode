@@ -30,8 +30,8 @@ type PersistedSnapshotCacheEntry = {
 };
 let persistedSnapshotCacheLoaded = false;
 const persistedSnapshotCache = new Map<string, PersistedSnapshotCacheEntry>();
-// 内存诊断计数器：WeakMap 无法枚举，记住最近一个
-// service 的内存缓存（renderer 内实际只有一个 task service 实例）。
+// In-memory diagnostics counter: WeakMap cannot be enumerated, so remember the most recent
+// service's in-memory cache (there is actually only one task service instance in the renderer).
 let latestSnapshotCache: Map<string, { etag: string; snapshot: ZCodeTaskSnapshot }> | undefined;
 uiMemoryDiagnosticsRegistry.register("taskSnapshotCache", () => ({
   entries: latestSnapshotCache?.size ?? 0,
@@ -46,17 +46,17 @@ function buildSnapshotDedupeKey(params: GetTaskSnapshotParams): string {
     typeof params.messageLimit === "number" ? String(params.messageLimit) : "",
     typeof params.byteBudget === "number" ? String(params.byteBudget) : "",
     typeof params.toolLimit === "number" ? String(params.toolLimit) : "",
-    // desktop continuous 和手机 remote replayable 的 snapshot 可能经过不同恢复逻辑。
-    // 缓存 key 必须区分 clientMode，否则会把某一端的快照复用到另一端。
+    // Desktop continuous and mobile remote replayable snapshots may pass through different recovery logic.
+    // The cache key must distinguish clientMode, or one side's snapshot would be reused by the other.
     params.clientMode ?? "desktop-continuous",
-    // 手机只读恢复会刻意跳过 task-index 模型回填。
-    // 策略不同代表 host 端恢复语义不同，不能共用同一份 snapshot cache。
+    // Mobile read-only recovery deliberately skips task-index model backfill.
+    // Different policies mean different host-side recovery semantics, so the same snapshot cache cannot be shared.
     params.resumeModelPolicy ?? "task-index",
-    // 手机首屏恢复会用历史模型 hint 激活 session。
-    // 同一 task 若模型 hint 不同，context window 也可能不同，缓存必须隔离。
+    // Mobile first-screen recovery activates the session with a historical model hint.
+    // For the same task, different model hints may also mean different context windows, so the cache must be isolated.
     params.model ?? "",
-    // replayable snapshot 现在会携带 session settings 投影出的 configOptions。
-    // 同一模型下 thoughtLevel 不同也会改变 toolbar 配置和后续发送 hint，不能复用旧快照。
+    // Replayable snapshots now carry configOptions projected from the session settings.
+    // Under the same model, a different thoughtLevel also changes the toolbar config and the follow-up send hint, so an old snapshot cannot be reused.
     params.thoughtLevel ?? "",
   ].join("::");
 }
@@ -188,8 +188,8 @@ function writePersistedSnapshotEntry(key: string, etag: string, snapshot: ZCodeT
   const serializedSnapshot = JSON.stringify(snapshot);
   const sizeBytes = new TextEncoder().encode(serializedSnapshot).byteLength;
   if (sizeBytes > SNAPSHOT_CACHE_MAX_ENTRY_BYTES) {
-    // 大消息 task 的快照若直接写 localStorage，会很快触发配额上限并拖慢主线程。
-    // 这里只持久化小体积快照，超限时删除旧缓存，避免“为了加速加载反而造成存储压力”。
+    // Writing a large-message task's snapshot straight to localStorage would quickly hit the quota limit and slow the main thread.
+    // Only small snapshots are persisted here, and old cache entries are deleted on overflow, avoiding "causing storage pressure in the name of faster loading".
     persistedSnapshotCache.delete(key);
     flushPersistedSnapshotCache();
     return;
@@ -234,11 +234,11 @@ function createZCodeTaskServiceProxy(service: IZCodeTaskService): IZCodeTaskServ
           snapshotCache.set(requestKey, cachedSnapshotEntry);
         }
 
-        // 远控首屏恢复时，多个 hook 会并发请求同一 task snapshot，
-        // 导致 host 连续执行多次 getTaskSnapshot，并把超大快照重复回传到 relay。
-        // 这里按“同一 service + 同一参数”做并发去重，命中时复用同一个 Promise，
-        // 保证同一时刻只发起一次 RPC；同时携带 if-none-match，未变化时复用本地缓存快照，
-        // 避免重复下发大 JSON。
+        // On remote first-screen recovery, multiple hooks concurrently request the same task snapshot,
+        // making the host run getTaskSnapshot several times in a row and ship huge snapshots to the relay repeatedly.
+        // Deduplicate concurrency by "same service + same parameters" here, reusing one Promise on a hit,
+        // so only one RPC goes out at a time; also send if-none-match so an unchanged snapshot reuses the local cached copy,
+        // avoiding repeated delivery of large JSON.
         const request = (async () => {
           const firstResult = await target.getTaskSnapshotWithEtag({
             ...(params as GetTaskSnapshotWithEtagParams),
@@ -248,8 +248,8 @@ function createZCodeTaskServiceProxy(service: IZCodeTaskService): IZCodeTaskServ
             if (cachedSnapshotEntry?.snapshot) {
               return cachedSnapshotEntry.snapshot;
             }
-            // 仅持久化了 etag 但没有可用快照正文时，不能把 notModified 直接透传给上层，
-            // 否则首屏会拿到空数据。这里回退一次“无 if-none-match”硬拉取，确保数据完整性优先。
+            // When only the etag was persisted but no usable snapshot body exists, notModified must not be passed straight up,
+            // or the first screen would get empty data. Fall back to one hard fetch without if-none-match here, prioritizing data integrity.
             const fallbackResult = await target.getTaskSnapshotWithEtag(
               params as GetTaskSnapshotWithEtagParams,
             );
@@ -287,13 +287,13 @@ function createZCodeTaskServiceProxy(service: IZCodeTaskService): IZCodeTaskServ
   });
 }
 
-/** 获取 ZCode task wrapper 服务实例 */
+/** Get the ZCode task wrapper service instance */
 export function useZCodeTaskService(
   workspacePath?: string,
   preferredRemoteSessionId?: string | null,
   workspaceIdentity?: string | null,
 ): IZCodeTaskService {
-  // ZCode task 服务按 workspace 身份解析，保证所有 task RPC 都落到对应的 host。
+  // The ZCode task service resolves by workspace identity, ensuring all task RPCs land on the right host.
   const services = workspacePath
     ? useWorkspaceServices(workspacePath, preferredRemoteSessionId, workspaceIdentity)
     : useServices();

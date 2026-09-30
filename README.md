@@ -4,220 +4,220 @@
   <img src="public/logo/icons/1024x1024.png" alt="ZCode" width="128" height="128" />
 </div>
 <p align="center">
-  <a href="https://applink.feishu.cn/client/chat/chatter/add_by_link?link_token=47ag983c-8fcb-4d6d-814b-5395193a712c&amp;qr_code=true">飞书社群</a> ·
+  <a href="https://applink.feishu.cn/client/chat/chatter/add_by_link?link_token=47ag983c-8fcb-4d6d-814b-5395193a712c&amp;qr_code=true">Feishu Community</a> ·
   <a href="https://discord.gg/z9aBcQXZQ3">Discord</a>
 </p>
 <p align="center">
-  简体中文 | <a href="README.en.md">English</a>
+  <a href="README.zh-CN.md">Simplified Chinese</a> | English
 </p>
 
 
 
-ZCode 是 AI 编程工作台，提供桌面应用、浏览器界面和终端 Agent。本仓库包含客户端、后端服务、共享 UI，以及 Agent CLI 与运行时源码。
+ZCode is an AI coding workbench, providing a desktop app, browser interface, and terminal Agent. This repository contains the client, backend services, shared UI, and Agent CLI with runtime source code.
 
-## 更新
+## Updates
 
-- 2026-9-23：更新至 ZCode v3.14.3 版本。
+- 2026-9-23: Updated to ZCode v3.14.3.
 
-## 初始化
+## Bootstrap
 
-准备 Git、Node.js **24.14.0** 和 pnpm **10.33.2**，版本以 [mise.toml](mise.toml) 为准。以下开发和打包命令均在仓库根目录执行。
+Prepare Git, Node.js **24.14.0**, and pnpm **10.33.2**; versions are governed by [mise.toml](mise.toml). The following development and packaging commands are all run from the repository root.
 
 ```bash
 pnpm bootstrap
 ```
 
-`pnpm bootstrap` 安装 workspace 依赖、准备桌面本地运行资源，再执行 `build:bootstrap`。
+`pnpm bootstrap` installs workspace dependencies, prepares desktop local runtime resources, then runs `build:bootstrap`.
 
-Agent CLI 与运行时源码位于 [apps/zcode-cli/](apps/zcode-cli/)，作为普通目录随本仓库一起克隆，无需单独拉取或初始化 Git submodule。
+Agent CLI and runtime source code are located in [apps/zcode-cli/](apps/zcode-cli/) and are cloned together with this repository as a regular directory; no separate pull or Git submodule initialization is needed.
 
-根据需要选择其他初始化或构建入口：
+Choose other initialization or build entry points as needed:
 
-| 命令                           | 用途                                                              |
-| ------------------------------ | ----------------------------------------------------------------- |
-| `pnpm install`                 | 安装依赖                                                          |
-| `pnpm prepare:desktop-runtime` | 准备桌面运行资源，默认包含远程资源准备                            |
-| `pnpm prepare:remote-assets`   | 单独准备远程运行资源                                              |
-| `pnpm bootstrap:with-remote`   | 初始化依赖、本地与远程资源，并串行构建相关包；跳过桌面应用 bundle |
-| `pnpm build`                   | 递归执行各 workspace 包的构建脚本，包括包内的资源准备步骤         |
+| Command                         | Purpose                                                              |
+| ------------------------------- | -------------------------------------------------------------------- |
+| `pnpm install`                  | Install dependencies                                                 |
+| `pnpm prepare:desktop-runtime`  | Prepare desktop runtime resources; includes remote asset preparation by default |
+| `pnpm prepare:remote-assets`    | Prepare remote runtime resources only                                |
+| `pnpm bootstrap:with-remote`     | Initialize dependencies, local and remote resources, and serially build related packages; skips desktop app bundle |
+| `pnpm build`                    | Recursively run build scripts for each workspace package, including in-package resource preparation steps |
 
-默认 `bootstrap` 跳过远程资源准备，适合本地桌面开发。使用远程工作区或验证远程发行资源时，再运行对应准备命令。
+By default, `bootstrap` skips remote asset preparation, suitable for local desktop development. When using a remote workspace or verifying remote distribution assets, run the corresponding preparation command.
 
-## 开发与运行
+## Development and Running
 
-### 桌面版
+### Desktop
 
 ```bash
 pnpm dev:desktop
 
-# 使用测试环境
+# Use test environment
 pnpm dev:desktop:test
 ```
 
-`pnpm dev:desktop` 默认等同于 `pnpm dev:desktop:prod`，使用生产服务配置。启动脚本会准备本地运行资源、构建桌面 Agent，再启动 Electron 和源码监听。
+`pnpm dev:desktop` is by default equivalent to `pnpm dev:desktop:prod`, using production service configuration. The startup script prepares local runtime resources, builds the desktop Agent, then launches Electron and source watchers.
 
-需要独立开发数据目录时，可设置 `ZCODE_DATA_BASE_DIR`。例如在 macOS / Linux 中：
+When you need an independent development data directory, set `ZCODE_DATA_BASE_DIR`. For example, on macOS / Linux:
 
 ```bash
 ZCODE_DATA_BASE_DIR="$HOME/.zcode-dev-home" pnpm dev:desktop:test
 ```
 
-### 远程功能（SSH/WSL）
+### Remote Features (SSH/WSL)
 
-先执行 `pnpm bootstrap:with-remote` 准备远程资源（mock-cdn），再 `pnpm dev:desktop`；连接远程项目时资源选择「本地下载后上传」。开发态资源取自本地 `packages/desktop/mock-cdn` 和本地构建产物，经 SFTP 上传到远程，不访问 CDN。
+First run `pnpm bootstrap:with-remote` to prepare remote assets (mock-cdn), then `pnpm dev:desktop`; when connecting to a remote project, select "download locally then upload". Development assets come from the local `packages/desktop/mock-cdn` and local build artifacts, uploaded to the remote via SFTP; the CDN is not accessed.
 
-### Web 开发
+### Web Development
 
-修改 Web 或后端源码时，使用开发模式：
+When modifying Web or backend source code, use development mode:
 
 ```bash
 pnpm dev:web
 
-# 指定后端工作区（macOS / Linux）
+# Specify backend workspace (macOS / Linux)
 ZCODE_SERVER_WORKSPACE=/path/to/project pnpm dev:web
 ```
 
-该命令同时启动 Web 开发服务器（默认 `http://localhost:5173`）和后端（默认 `http://localhost:3030`）；浏览器访问前者。`/ws` 和一般 `/api` 请求代理到本地后端，`/api/v1/oauth/token` 单独代理到当前配置的产品服务。
+This command starts both the Web development server (default `http://localhost:5173`) and the backend (default `http://localhost:3030`); access the former from your browser. `/ws` and general `/api` requests are proxied to the local backend; `/api/v1/oauth/token` is proxied separately to the currently configured product service.
 
-Agent 源码修改后，执行 `pnpm --filter @zcode/cli... build` 并重启服务。需要验证完整发行包时，按下方“ZCode 命令行版”打包章节解压运行。
+After modifying Agent source code, run `pnpm --filter @zcode/cli... build` and restart the service. To verify the full distribution package, follow the "ZCode CLI" packaging section below to extract and run.
 
-### ZCode 命令行版
+### ZCode CLI
 
-命令行发行包包含 TUI、Web 和 Agent，统一使用 `zcode` 启动：无参数进入 TUI；第一个参数为 `--web` 时启动 Web；其他参数交给现有 Agent CLI 处理。两种模式都在本机运行，无需 Electron。
+The CLI distribution package includes the TUI, Web, and Agent, all launched via `zcode`: no arguments enters TUI; first argument `--web` launches Web; other arguments are passed to the existing Agent CLI. Both modes run locally without Electron.
 
 ```bash
-# 默认进入终端交互界面
+# Enter terminal interactive interface by default
 zcode
 
-# 启动 Web 界面
+# Launch Web interface
 zcode --web
 
-# 指定项目和端口，不自动打开浏览器
+# Specify project and port, do not auto-open browser
 zcode --web --workspace /path/to/project --port 3030 --no-open
 
-# 查看 CLI 或 Web 参数
+# View CLI or Web parameters
 zcode --help
 zcode --web --help
 ```
 
-Web 模式默认工作目录为当前目录，监听 `127.0.0.1`，默认不启用访问令牌，自动选择空闲端口并打开浏览器。访问终端输出的地址，按 `Ctrl+C` 停止服务。局域网访问可使用 `--host 0.0.0.0`；监听非本机地址时默认生成访问令牌，使用终端输出的带令牌链接。可通过 `--token` 指定令牌或 `--no-token` 关闭令牌认证。
+Web mode defaults to the current directory as working directory, listens on `127.0.0.1`, does not enable access token by default, auto-selects a free port, and opens a browser. Access the address output in the terminal and press `Ctrl+C` to stop the service. For LAN access use `--host 0.0.0.0`; when listening on a non-local address, an access token is generated by default; use the token link output in the terminal. You can specify a token with `--token` or disable token authentication with `--no-token`.
 
-直接启动通用 Web 服务的 HTTP 入口时，通过 `ZCODE_SERVER_AUTH_TOKEN` 配置 API／WebSocket 认证；通过程序接口创建服务时，使用 `authToken` 选项。
+When directly starting the HTTP entry point for the general Web service, configure API/WebSocket authentication via `ZCODE_SERVER_AUTH_TOKEN`; when creating a service programmatically, use the `authToken` option.
 
-构建方式见下方打包章节。`pnpm build:zcode` 只生成发行包，不会替换 `PATH` 中已有的 `zcode`。如果命令仍指向旧安装或其他源码目录，macOS / Linux 可用 `command -v zcode` 检查，Windows 可用 `where.exe zcode` 检查。
+See the packaging section below for build instructions. `pnpm build:zcode` only produces the distribution package; it does not replace an existing `zcode` in `PATH`. If the command still points to an old installation or a different source directory, on macOS / Linux you can check with `command -v zcode`, on Windows with `where.exe zcode`.
 
-### CLI 源码开发
+### CLI Source Development
 
-直接开发 TUI 或 Agent 时，运行源码入口：
+When developing TUI or Agent directly, run the source entry point:
 
 ```bash
 pnpm --filter @zcode/cli dev --help
 pnpm --filter @zcode/cli dev
 
-# 构建 CLI 及其 workspace 依赖
+# Build CLI and its workspace dependencies
 pnpm --filter @zcode/cli... build
 node apps/zcode-cli/packages/cli/dist/zcode.cjs --help
 ```
 
-这个入口直接运行 Agent CLI，不经过发行包的 `--web` 分流。开发 Web 用 `pnpm dev:web`；验证统一的 `zcode` 命令，用下方解压后的 `bin/zcode.mjs`。
+This entry point runs the Agent CLI directly, bypassing the distribution package's `--web` routing. For Web development use `pnpm dev:web`; to verify the unified `zcode` command, use the extracted `bin/zcode.mjs` described below.
 
-## 配置
+## Configuration
 
-根目录 [.env.example](.env.example) 提供服务地址与构建配置示例，可按需复制到 `.env`，本地覆盖放入 `.env.local`。Desktop 的开发环境通过 `dev:desktop:test` / `dev:desktop:prod` 选择。
+The root [.env.example](.env.example) provides service address and build configuration examples; copy to `.env` as needed, and put local overrides in `.env.local`. Desktop's development environment is selected via `dev:desktop:test` / `dev:desktop:prod`.
 
-| 配置                                 | 用途                                             |
-| ------------------------------------ | ------------------------------------------------ |
-| `ZCODE_DATA_BASE_DIR`                | 应用数据基目录，数据写入其下的 `.zcode/`         |
-| `ZCODE_SERVER_WORKSPACE`             | Web 后端的工作区路径                             |
-| `ZCODE_BUILTIN_PROVIDER_CONFIG_FILE` | 本地 Provider 配置文件路径；未设置时使用内置配置 |
-| `ZCODE_DIST_BASE_URL`                | 命令行安装脚本使用的下载根地址                   |
+| Configuration                        | Purpose                                              |
+| ------------------------------------ | ---------------------------------------------------- |
+| `ZCODE_DATA_BASE_DIR`                | Application data base directory; data written under `.zcode/` within it |
+| `ZCODE_SERVER_WORKSPACE`             | Web backend workspace path                            |
+| `ZCODE_BUILTIN_PROVIDER_CONFIG_FILE` | Local Provider config file path; built-in config used when unset |
+| `ZCODE_DIST_BASE_URL`                | Download root address used by CLI install script      |
 
-运行时变量可在启动命令的环境中显式设置。随客户端发布的默认配置见 [config/README.md](config/README.md)。
+Runtime variables can be explicitly set in the startup command's environment. Default configuration shipped with the client is in [config/README.md](config/README.md).
 
-## 打包
+## Packaging
 
-第三方声明生成、发行校验流程及声明在发行物中的位置见 [third-party/README.md](third-party/README.md)。
+For third-party notice generation, distribution verification flow, and notice placement in distribution artifacts, see [third-party/README.md](third-party/README.md).
 
-### 桌面版
+### Desktop
 
 ```bash
 pnpm bundle:desktop
 
-# 指定目标平台与 CPU 架构
+# Specify target platform and CPU architecture
 pnpm bundle:desktop -- --os win --arch x64
 
 pnpm bundle:desktop -- --help
 ```
 
-默认目标为 macOS arm64，默认输出目录为 `packages/desktop/dist/`。`--os` 支持 `mac`、`win`、`linux`，`--arch` 支持 `x64`、`arm64`；实际打包与签名需要目标平台对应的工具和配置。
+Default target is macOS arm64; default output directory is `packages/desktop/dist/`. `--os` supports `mac`, `win`, `linux`; `--arch` supports `x64`, `arm64`. Actual packaging and signing require the corresponding tools and configuration for the target platform.
 
-安装：双击打开产物 DMG，将 ZCode 拖入"应用程序"。本地构建未签名，首次打开若被 macOS 拦截，执行：
+Installation: double-click to open the DMG artifact, then drag ZCode into "Applications". Local builds are unsigned; if blocked on first open on macOS, run:
 
 ```bash
 sudo xattr -rd com.apple.quarantine /Applications/ZCode.app
 ```
 
-### ZCode 命令行版
+### ZCode CLI
 
-构建入口为 `pnpm build:zcode`。脚本会依次构建 CLI/TUI、后端和 Web，收集 TUI 的原生库、worker 与运行时依赖，再组装发行包；运行发行包仍需要 Node.js，版本以 `mise.toml` 为准。
+The build entry point is `pnpm build:zcode`. The script sequentially builds the CLI/TUI, backend, and Web, collects the TUI's native libraries, workers, and runtime dependencies, then assembles the distribution package; running the distribution package still requires Node.js; the version is governed by `mise.toml`.
 
-打包前必须设置下载根地址 `ZCODE_DIST_BASE_URL`（可放在 `.env`、`.env.local` 或环境变量中），也可以通过 `--base-url` 传入。以下地址是占位示例，发布时替换为实际托管地址：
+You must set the download root address `ZCODE_DIST_BASE_URL` before packaging (can be placed in `.env`, `.env.local`, or as an environment variable), or pass it via `--base-url`. The following address is a placeholder example; replace with the actual hosting address at release time:
 
 ```bash
 pnpm build:zcode --base-url https://downloads.example.com/zcode/
 
-# 已配置 ZCODE_DIST_BASE_URL 时
+# When ZCODE_DIST_BASE_URL is already configured
 pnpm build:zcode
 
-# 仅重新组包，复用已有的 Agent、后端和 Web 构建产物
+# Only re-assemble the package, reusing existing Agent, backend, and Web build artifacts
 pnpm build:zcode --skip-build
 
-# 查看版本、输出目录等可选参数
+# View version, output directory, and other optional parameters
 pnpm build:zcode --help
 ```
 
-默认版本取根目录 `package.json`，输出目录为 `dist/zcode/`：
+Default version is taken from the root `package.json`; output directory is `dist/zcode/`:
 
-- `releases/<version>/zcode-<version>.tar.gz`：运行包。
-- `releases/<version>/sha256.txt`：校验摘要。
-- `latest.json`、`install.sh`：版本索引和安装脚本。
+- `releases/<version>/zcode-<version>.tar.gz`: runtime package.
+- `releases/<version>/sha256.txt`: checksum digest.
+- `latest.json`, `install.sh`: version index and install script.
 
-完整目录可上传到配置的下载根地址。安装脚本从该地址下载运行包，默认安装到 `~/.zcode/runtime`，并在 `~/.local/bin` 创建 `zcode` 命令。安装目录可通过 `ZCODE_DIST_HOME` 修改，命令目录可通过 `ZCODE_DIST_BIN_DIR` 修改。
+The full directory can be uploaded to the configured download root address. The install script downloads the runtime package from that address, installs to `~/.zcode/runtime` by default, and creates the `zcode` command in `~/.local/bin`. The install directory can be modified via `ZCODE_DIST_HOME`; the command directory can be modified via `ZCODE_DIST_BIN_DIR`.
 
-旧 Lite 用户需要改用上述构建命令、环境变量和新的安装脚本。新安装不会删除旧 Lite 目录，也不会迁移或删除已有会话数据。
+Existing Lite users need to switch to the above build commands, environment variables, and the new install script. New installation does not delete old Lite directories, nor does it migrate or delete existing session data.
 
-本地调试打包产物时，可直接解压运行，无需上传或安装：
+For local debugging of packaged artifacts, you can extract and run directly without uploading or installing:
 
 ```bash
 zcode_version=$(node -p "require('./dist/zcode/latest.json').version")
 mkdir -p dist/zcode/debug
 tar -xzf "dist/zcode/releases/$zcode_version/zcode-$zcode_version.tar.gz" \
   -C dist/zcode/debug
-# 默认启动 TUI
+# Launch TUI by default
 node dist/zcode/debug/zcode/bin/zcode.mjs
 
-# 启动 Web
+# Launch Web
 node dist/zcode/debug/zcode/bin/zcode.mjs --web \
   --workspace "$PWD" --port 3030 --no-open
 ```
 
-浏览器打开 `http://127.0.0.1:3030`，即可验证同一后端服务托管 Web 页面和 Agent 的完整链路。该端口需要空闲；如正在运行 `pnpm dev:web`，可改用其他 `--port`。
+Open `http://127.0.0.1:3030` in your browser to verify the full chain where the same backend service hosts both Web pages and Agent. The port must be free; if `pnpm dev:web` is running, use a different `--port`.
 
-## 仓库结构
+## Repository Structure
 
-| 目录                                                 | 职责                                       |
-| ---------------------------------------------------- | ------------------------------------------ |
-| `packages/desktop`                                   | Electron Main、Host、Renderer 与桌面打包   |
-| `packages/web`                                       | Web 客户端                                 |
-| `packages/server`                                    | HTTP / WebSocket 服务与远程连接            |
-| `packages/zcode-server-cli`                          | 独立 Server 启动与进程管理                 |
-| `packages/ui`                                        | 共享 React 组件、hooks 与 Zustand 状态     |
-| `packages/services`                                  | 业务服务与持久化                           |
-| `packages/shared`、`packages/rpc`、`packages/client` | 共享协议和类型、RPC 框架、Agent 客户端 SDK |
-| `packages/provider`、`packages/provider-node`        | Provider 公共能力与 Node 实现              |
-| `apps/zcode-cli`                                     | Agent CLI、TUI、运行时与工具               |
-| `scripts`、`config`、`third-party`                   | 构建维护脚本、内置配置与第三方声明材料     |
+| Directory                                              | Responsibility                              |
+| ------------------------------------------------------ | ------------------------------------------- |
+| `packages/desktop`                                     | Electron Main, Host, Renderer, and desktop packaging |
+| `packages/web`                                         | Web client                                 |
+| `packages/server`                                      | HTTP / WebSocket service and remote connections |
+| `packages/zcode-server-cli`                            | Standalone Server startup and process management |
+| `packages/ui`                                          | Shared React components, hooks, and Zustand state |
+| `packages/services`                                    | Business services and persistence           |
+| `packages/shared`, `packages/rpc`, `packages/client`   | Shared protocol and types, RPC framework, Agent client SDK |
+| `packages/provider`, `packages/provider-node`          | Provider common capabilities and Node implementation |
+| `apps/zcode-cli`                                       | Agent CLI, TUI, runtime, and tooling        |
+| `scripts`, `config`, `third-party`                     | Build maintenance scripts, built-in config, and third-party notice materials |
 
-## 项目声明
+## Project Notice
 
-功能与优惠范围、维护规则、执行与数据风险，以及许可和第三方版权说明，详见 [NOTICE.md](NOTICE.md)。
+For feature and offer scope, maintenance rules, execution and data risks, and licensing and third-party copyright notices, see [NOTICE.md](NOTICE.md).

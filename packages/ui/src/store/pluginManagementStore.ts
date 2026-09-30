@@ -13,23 +13,23 @@ import { logger } from "@/logger.js";
 import { loadInto, runWorkspaceOperation } from "@/store/pluginManagementStoreLoading.js";
 import { setPluginEnabledOptimistically } from "@/store/pluginManagementStoreEnabled.js";
 
-// 市场详情按需拉取的组件清单缓存：按 pluginId 记 loading/data/error，避免重复请求与切换闪烁。
+// The component list cache of market details pulled on demand: record loading/data/error according to pluginId to avoid repeated requests and switching flickers.
 export interface PluginDescribeEntry {
   status: "loading" | "loaded" | "error";
   data?: ZCodePluginsDescribeResult;
   error?: string;
 }
 
-// 设置页「插件管理」的数据源: 经 IPluginManagementService 薄服务由 zcode-cli 提供 (list + enable/disable)。
-// UI 不再直触 IZCodeAgentService，plugins/* 旧协议词的消费收拢到服务实现一处。
-// 与已 retired 的 marketplace pluginStore 无关, 故单独建一个精简 store。
+// Data source of "Plug-in Management" in the settings page: provided by zcode-cli via IPluginManagementService (list + enable/disable).
+// The UI no longer touches IZCodeAgentService directly; consumption of the old protocol words under plugins/* is gathered into the service implementation.
+// It has nothing to do with the retired marketplace pluginStore, so a separate simplified store is built.
 export interface PluginManagementState {
   workspacePath: string | null;
   workspaceIdentity: string | null;
   configScope: ZCodePluginScope | null;
   plugins: ZCodePluginInfo[];
   marketplaces: ZCodePluginMarketplaceSummary[];
-  /** 最近一次 overview 是否成功；false 表示来源存在性未知，不能推导孤立状态。 */
+  /** Whether the latest overview was successful; false indicates that the existence of the source is unknown and the isolated state cannot be deduced. */
   marketplaceAvailabilityKnown: boolean;
   availablePlugins: ZCodeAvailablePluginSummary[];
   installedPlugins: ZCodeInstalledPluginSummary[];
@@ -38,10 +38,10 @@ export interface PluginManagementState {
   loading: boolean;
   error: string | null;
   /**
-   * 最近一次失败操作的归属插件：带 pluginId 的操作（如 setEnabled）失败写该
-   * id；无插件目标的操作（marketplace add/update/validate、列表加载、refresh）写 null。
-   * 消费方（CUA 输入框按钮等）只应把「目标是自己」的 error 当成自身错误，避免共享
-   * error 字段把无关失败误映射成自己的错误态。
+   * The plug-in that belongs to the latest failed operation: if the operation with pluginId (such as setEnabled) fails, write this
+   * id; write null for operations without plug-in targets (marketplace add/update/validate, list loading, refresh).
+   * Consumers (CUA input box buttons, etc.) should only treat errors that "the target is themselves" as their own errors and avoid sharing
+   * The error field mismaps unrelated failures into its own error state.
    */
   lastFailedPluginId: string | null;
   togglingPluginId: string | null;
@@ -96,7 +96,7 @@ export interface PluginManagementState {
     pluginService: IPluginManagementService,
     scope?: ZCodePluginScope,
   ) => Promise<boolean>;
-  // 按需拉取插件组件清单（名称+描述）；force 跳过缓存重试。
+  // Pull the plug-in component list (name + description) on demand; force skips caching and retries.
   describePlugin: (
     pluginId: string,
     pluginName: string,
@@ -153,14 +153,14 @@ export const usePluginManagementStore = create<PluginManagementState>((set, get)
       workspacePath,
       workspaceIdentity: normalizedIdentity,
       configScope: normalizedConfigScope,
-      // 有缓存时后台刷新、保留列表, 避免切换 workspace 时闪烁; 无缓存才显示阻塞 loading。
+      // When there is cache, refresh and retain the list in the background to avoid flickering when switching workspaces; only when there is no cache, the blocked loading will be displayed.
       loading: !hasCache,
       marketplaceAvailabilityKnown: hasCache ? current.marketplaceAvailabilityKnown : false,
       error: null,
       lastFailedPluginId: null,
-      // 配置保存后的 overview 刷新可能还没结束，用户已切到另一层配置视图；
-      // 旧层的 operationId 不能继续把新层的输入控件置灰。旧操作结束时由版本号防止
-      // 它误清理新层后来启动的同名操作。
+      // The overview refresh after the configuration is saved may not have finished yet, and the user has switched to another level of configuration view;
+      // The operationId of the old layer cannot continue to gray out the input controls of the new layer. Prevented by version number when old operations end
+      // It mistakenly cleans the new layer by later launching an operation of the same name.
       ...(contextChanged ? { operationId: null } : {}),
     });
     await loadInto(set, get, {
@@ -212,9 +212,9 @@ export const usePluginManagementStore = create<PluginManagementState>((set, get)
           ...workspace,
           ...(marketplace ? { marketplace } : {}),
         });
-        // 刷新允许部分成功，因此仍要 reload overview 保留成功来源；但仅 warn
-        // 并返回 true，桌面与手机 Web 都会把旧快照误报成刷新成功。先记住错误，reload 后再写入
-        // 共用 store 的可见错误态，同时返回 false，让所有入口获得一致的部分失败语义。
+        // Refresh allows partial success, so reload overview still retains the success source; but only warns
+        // and returns true, the desktop and mobile web will falsely report the old snapshot as a refresh success. Remember the error first, reload and then write
+        // Share the visible error state of the store and return false at the same time, allowing all entries to obtain consistent partial failure semantics.
         const blockingDiagnostic = result.diagnostics?.find(
           (diagnostic) => diagnostic.severity === "error",
         );
@@ -227,7 +227,7 @@ export const usePluginManagementStore = create<PluginManagementState>((set, get)
       },
     );
     if (succeeded && refreshError) {
-      // 列表刷新失败无插件目标，归属清空（不指向任何插件）。
+      // The list refresh failed and there is no plug-in target, and the ownership is cleared (does not point to any plug-in).
       set({ error: refreshError, lastFailedPluginId: null });
       return false;
     }
@@ -262,9 +262,9 @@ export const usePluginManagementStore = create<PluginManagementState>((set, get)
           marketplace,
           scope,
         });
-        // CLI 为了保留结构化诊断，安装失败会返回成功的 RPC envelope，
-        // 并把实际错误放进 diagnostics。旧 UI 忽略返回值后继续刷新，看起来像按钮无响应，
-        // 也没有错误和重试入口；这里将 error diagnostic 收敛到既有 operation 错误态。
+        // CLI To preserve structured diagnostics, a successful RPC envelope will be returned on failed installations.
+        // and put the actual errors into diagnostics. The old UI ignores the return value and continues to refresh, making it look like the button is unresponsive.
+        // There are no error and retry entries; here the error diagnostic converges to the existing operation error state.
         throwForErrorDiagnostic(result.diagnostics);
       },
     );
@@ -294,8 +294,8 @@ export const usePluginManagementStore = create<PluginManagementState>((set, get)
       `plugin:update:${pluginId}`,
       async (workspace) => {
         const result = await pluginService.updatePlugin({ ...workspace, pluginId });
-        // update 与 install 共享同一诊断式失败契约。抛入 runWorkspaceOperation 后不会
-        // 覆盖当前 overview，因此旧版本和 update badge 会一直保留到用户重试成功。
+        // update shares the same diagnostic failure contract as install. After throwing into runWorkspaceOperation it will not
+        // Overwrites the current overview, so the old version and update badge are retained until the user retries successfully.
         throwForErrorDiagnostic(result.diagnostics);
       },
     );
@@ -374,7 +374,7 @@ export const usePluginManagementStore = create<PluginManagementState>((set, get)
     const { workspacePath, workspaceIdentity, describeCache } = get();
     if (!workspacePath) return;
     const cached = describeCache[pluginId];
-    // 已加载或正在加载时命中缓存，不重复请求；force 时强制重试。
+    // The cache is hit when loaded or loading, and the request is not repeated; forced retry when force is used.
     if (!force && cached && cached.status !== "error") return;
     set({
       describeCache: { ...get().describeCache, [pluginId]: { status: "loading" } },
@@ -390,9 +390,9 @@ export const usePluginManagementStore = create<PluginManagementState>((set, get)
         (diagnostic) => diagnostic.severity === "error",
       );
       if (data.components.length === 0 && blockingDiagnostic) {
-        // CLI 的 describe 对不可解析来源采用 diagnostics 回包而非 RPC reject。
-        // 旧 UI 把该回包缓存为 loaded，详情只显示空白且永远没有重试入口；这里将无组件的
-        // error diagnostic 映射成可恢复错误态，同时保留正常的部分成功回包。
+        // The CLI's describe uses diagnostics return packets instead of RPC reject for unresolvable sources.
+        // The old UI caches the return packet as loaded, and the details are only blank and there is never a retry entry; there will be no component here
+        // Error diagnostic is mapped to a recoverable error state while retaining normal partial successful return packets.
         set({
           describeCache: {
             ...get().describeCache,

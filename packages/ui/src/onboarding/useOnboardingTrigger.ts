@@ -4,12 +4,14 @@ import type { useOnboardingRecordService } from "@/hooks/useOnboardingRecordServ
 import { logger } from "@/logger.js";
 
 /**
- * 引导触发判定：当前用户在本地记录里没有条目时
- * needsOnboarding=true。settings 回填（换号恢复偏好）只在 userId 运行时变化后发生；
- * 手动修改由各入口回写 record（updateRecordPreferences），record 始终等于该用户最新偏好。
+ * Onboarding trigger decision: needsOnboarding=true when the current user has no entry in the local
+ * record. Settings backfill (restoring preferences after switching accounts) only happens once
+ * userId changes at runtime; manual edits are written back to the record by each entry point
+ * (updateRecordPreferences), so the record always equals that user's latest preferences.
  *
- * 返回 [needsOnboarding, markOnboarded]：null 表示异步判定中；markOnboarded 在引导
- * 保存成功后把判定置 false（记录已落盘，本次会话不再触发）。
+ * Returns [needsOnboarding, markOnboarded]: null means the async decision is still in flight;
+ * markOnboarded sets the decision to false once onboarding saves successfully (the record is on
+ * disk, so it will not trigger again in this session).
  */
 export function useOnboardingTrigger(options: {
   onboardingRecord: ReturnType<typeof useOnboardingRecordService>;
@@ -19,43 +21,47 @@ export function useOnboardingTrigger(options: {
   update: (patch: Partial<AppSettings>) => Promise<void>;
 }): [boolean | null, () => void] {
   const { onboardingRecord, userId, hasStoredOccupation, loadDeviceMid, update } = options;
-  // null 表示异步判定中（按本地使用记录判断是否触发）。
+  // null means asynchronous determination is in progress (whether to trigger is determined based on local usage records).
   const [needsOnboarding, setNeedsOnboarding] = useState<boolean | null>(null);
-  // 记录上一次判定时的 userId，回填只在身份实际变化后发生（见下方回填条件）。
+  // The userId of the last determination is recorded, and backfilling only occurs after the identity actually changes (see backfilling conditions below).
   const lastSyncedUserIdRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {
     let cancelled = false;
     const fallback = () => !hasStoredOccupation;
-    // 服务不可用（旧测试 double / 未注册的 host）时退回旧 settings 判定，行为不回退。
+    // When the service is unavailable (old test double / unregistered host), the old settings judgment will be returned, and the behavior will not be rolled back.
     if (!onboardingRecord) {
       setNeedsOnboarding(fallback());
       return;
     }
-    // shouldOnboard 走 RPC，host 未带上 onboarding-record channel 时调用会挂起，
-    // 之前判定期间渲染 null 会把整个主界面拦成永久黑屏。加超时兜底退回 settings 判定，
-    // 保证任何情况下主界面最多等 3 秒。
+    // shouldOnboard uses RPC, and the call will hang when the host does not bring onboarding-record channel.
+    // Rendering null during the previous determination would block the entire main interface into a permanent black screen. Add a timeout and return to settings for judgment.
+    // Ensure that the main interface waits at most 3 seconds under any circumstances.
     const timeout = setTimeout(() => {
       if (!cancelled) {
-        logger.warn("[occupation-onboarding] shouldOnboard 超时，退回 settings 判定");
+        logger.warn(
+          "[occupation-onboarding] shouldOnboard timed out, falling back to settings check",
+        );
         setNeedsOnboarding(fallback());
       }
     }, 3000);
-    // 登录认领先行：未登录时答的引导（null 条目）移交给当前登录用户，同一人不重复引导。
-    // 必须 await 完成后再判定，否则 shouldOnboard 读到认领前的文件会误判需要引导。
+    // Login redirection: The boot (null entry) when not logged in is handed over to the currently logged in user, and the same person will not be booted repeatedly.
+    // It must be determined after await is completed, otherwise shouldOnboard will misjudge the need for guidance when reading the file before claiming.
     onboardingRecord
       .claimAnonymousRecord()
       .catch((cause: unknown) => {
-        logger.warn("[occupation-onboarding] 认领匿名引导记录失败", { error: String(cause) });
+        logger.warn("[occupation-onboarding] failed to claim anonymous onboarding record", {
+          error: String(cause),
+        });
       })
       .then(() => onboardingRecord.shouldOnboard(loadDeviceMid()))
       .then(
         (result) => {
           if (!cancelled) setNeedsOnboarding(result);
-          // 换账号恢复该用户偏好：settings 不分用户，A 答完后 B 触发引导会把 settings 顶成
-          // B 的答案；再切回 A 时按 record 最近作答回填。同步失败只留日志。
-          // 仅"上次是非空的另一身份"时回填（A→B 直切、B→登出）。null→id 不回填：启动 OAuth
-          // 恢复与运行中登录共用该序列且无法区分，宁可少回填——手动修改已由各入口回写
-          // record（record=最新偏好），缺失回填只影响"apikey 态后登录旧账号"这类边缘场景。
+          // Change the account to restore the user preferences: settings do not distinguish between users. After A completes the answer, B triggers the guidance and the settings will be changed to
+          // B's answer; when switching back to A, press record to fill in the most recent answer. If synchronization fails, only logs will be left.
+          // Only backfill when "last time was another non-empty identity" (A→B straight cut, B→logout). null→id no backfill: start OAuth
+          // Recovery and running login share this sequence and are indistinguishable. It is better to have less backfilling - manual modifications have been written back by each entrance.
+          // record (record=latest preference), the missing backfill only affects edge scenarios such as "logging in to the old account after entering the apikey state".
           const previousUserId = lastSyncedUserIdRef.current;
           lastSyncedUserIdRef.current = userId;
           if (!cancelled && !result && previousUserId != null && previousUserId !== userId) {
@@ -66,14 +72,16 @@ export function useOnboardingTrigger(options: {
                 return update(patch);
               })
               .catch((cause: unknown) => {
-                logger.warn("[occupation-onboarding] 按记录同步偏好失败", {
+                logger.warn("[occupation-onboarding] failed to sync preferences from record", {
                   error: String(cause),
                 });
               });
           }
         },
         (cause) => {
-          logger.warn("[occupation-onboarding] shouldOnboard 检查失败", { error: String(cause) });
+          logger.warn("[occupation-onboarding] shouldOnboard check failed", {
+            error: String(cause),
+          });
           if (!cancelled) setNeedsOnboarding(fallback());
         },
       )
@@ -82,8 +90,8 @@ export function useOnboardingTrigger(options: {
       cancelled = true;
       clearTimeout(timeout);
     };
-    // 不依赖 hasStoredOccupation（对应 settings?.onboardingOccupation）：保存成功会改写该字段，
-    // 若记录写入失败会在当场重开引导；记录缺失导致的再次触发按约定留给下次启动。
+    // Does not rely on hasStoredOccupation (corresponding to settings?.onboardingOccupation): this field will be rewritten if saved successfully.
+    // If the record writing fails, the boot will be restarted on the spot; re-triggering due to missing records will be reserved for the next startup as agreed.
   }, [onboardingRecord, userId, loadDeviceMid]);
   return [needsOnboarding, () => setNeedsOnboarding(false)];
 }

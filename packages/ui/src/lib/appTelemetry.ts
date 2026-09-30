@@ -54,15 +54,15 @@ export async function reportAppTelemetryEvent(
       eventExtraDetail: sanitizeTelemetryEventDetail(payload.elementName, payload.eventExtraDetail),
     };
 
-    // 修复原因：只在 Core 清洗会让原文先经过 IPC/本地日志；此处只记录清洗后的副本。
-    // step 与消息同量级，调试输出使用 debug，不产生 info 落盘副本。
+    // Why this fix: sanitizing only in Core would let the original pass through IPC/local logs first; here only the sanitized copy is recorded.
+    // The step is the same scale as the message, debug output uses debug level and leaves no on-disk info copy.
     if (payload.elementName === "message_completion" || payload.elementName === "agent_step") {
       logger.debug(`[${scope}] ${payload.elementName} payload:`, reportPayload);
     }
 
     await platform.reportTelemetryEvent(reportPayload);
   } catch {
-    // 最终失败由 Desktop Main 的 TelemetryCore 统一记录脱敏告警；UI 只维持业务隔离，
-    // 避免同一失败重复记录，或把 IPC 原始错误带入生产日志。
+    // Ultimate failures are recorded as redacted warnings by TelemetryCore in Desktop Main; the UI only keeps business isolation,
+    // avoiding duplicate records of the same failure or raw IPC errors reaching production logs.
   }
 }

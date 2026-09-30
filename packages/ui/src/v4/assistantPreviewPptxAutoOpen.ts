@@ -26,7 +26,7 @@ interface AssistantPreviewPptxAutoOpenGateInput {
 
 interface AssistantPreviewPptxAutoOpenGateResult {
   state: AssistantPreviewPptxAutoOpenGateState;
-  /** undefined=保持当前 target；null=清空；object=发布新的完成态 target。 */
+  /** undefined=keep the current target; null=clear; object=publish a new completed target. */
   target?: AssistantPreviewPptxAutoOpenTarget | null;
 }
 
@@ -89,8 +89,8 @@ export function advanceAssistantPreviewPptxAutoOpenGate(
     };
   }
 
-  // 冷恢复会直接落在 completedSuccess，但没有观察到本 renderer 的 running 边沿。
-  // 只保留已武装但终态 assistant row 尚未到齐的状态，避免依赖 phase/row 到达顺序。
+  // Cold recovery will fall directly on completedSuccess, but the running edge of this renderer is not observed.
+  // Only keep the status of armed but final assistant rows that have not yet arrived to avoid relying on phase/row arrival order.
   if (!current.armed || !input.completedTurn) {
     return { state: current };
   }

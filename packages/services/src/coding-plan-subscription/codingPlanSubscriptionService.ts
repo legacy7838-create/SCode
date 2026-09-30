@@ -12,18 +12,20 @@ interface CodingPlanSubscriptionServiceDependencies {
 }
 
 /**
- * 原 service 把所有调用直接绑定到单一 BigModelCodingPlanSubscriptionProvider，
- * zai family 没有独立的 Team Plan 定价来源（死代码）。
+ * The original service bound every call directly to a single BigModelCodingPlanSubscriptionProvider;
+ * the zai family has no independent Team Plan pricing source (dead code).
  *
- * zai 与 bigmodel Team Plan 全链路对称化：
- * 同时持有 bigmodel 和 zai 两个 provider 实例；enterprise 读路径（getEnterprisePricing）按
- * request.family 路由到对应实例；缺省 family 时保持 bigmodel，向后兼容既有调用点。
+ * Full-path symmetry between zai and bigmodel Team Plan:
+ * it holds both the bigmodel and zai provider instances at the same time; the enterprise read path
+ * (getEnterprisePricing) routes to the matching instance by request.family; when family is omitted it
+ * stays on bigmodel, staying backward compatible with existing call sites.
  *
- * 其余方法（购买/staticConfigs/preview 等）语义与 family 无关或已在 provider 内部按
- * request.providerId 动态路由，统一委托给 bigmodel provider 即可：
- *   - 企业购买闭环（balance/order/pending/cancel/continue/status）按产品决策仍只走 bigmodel 域。
- *   - staticConfigs 是平台级 client/configs，与 family 无关。
- *   - 购买类（Stripe/PayPal/preview/createSign 等）已通过 request.providerId 在 provider 内路由。
+ * The remaining methods (purchase/staticConfigs/preview, etc.) are family-agnostic in meaning or are
+ * already routed dynamically inside the provider by request.providerId, so they can be uniformly
+ * delegated to the bigmodel provider:
+ *   - The enterprise purchase loop (balance/order/pending/cancel/continue/status) still runs only against the bigmodel domain, per product decision.
+ *   - staticConfigs is the platform-level client/configs, unrelated to family.
+ *   - Purchase-related methods (Stripe/PayPal/preview/createSign, etc.) are already routed inside the provider via request.providerId.
  */
 export function createCodingPlanSubscriptionService(
   dependencies: CodingPlanSubscriptionServiceDependencies,
@@ -31,7 +33,7 @@ export function createCodingPlanSubscriptionService(
   const bigmodelProvider = new BigModelCodingPlanSubscriptionProvider(dependencies);
   const zaiProvider = new ZaiCodingPlanSubscriptionProvider(dependencies);
 
-  // 按 family 选择 enterprise 读路径 provider；缺省（含未指定 family 的历史调用）走 bigmodel。
+  // Select the enterprise read path provider by family; by default (including historical calls without specified family), bigmodel is used.
   const resolveEnterprisePricingProvider = (
     family?: "bigmodel" | "zai",
   ): BigModelCodingPlanSubscriptionProvider => (family === "zai" ? zaiProvider : bigmodelProvider);
@@ -42,8 +44,8 @@ export function createCodingPlanSubscriptionService(
     getStaticTeamProducts: () => bigmodelProvider.getStaticTeamProducts(),
     getStartPlanPreview: () => bigmodelProvider.getStartPlanPreview(),
     getOffPeakClientConfig: (options) => bigmodelProvider.getOffPeakClientConfig(options),
-    // 动态工作流灰度：与 client/configs 同源，
-    // 因此和其它平台级配置一样固定走 bigmodel provider，与 family 无关。
+    // Dynamic workflow grayscale: same origin as client/configs,
+    // Therefore, like other platform-level configurations, the bigmodel provider is fixed and has nothing to do with family.
     getDynamicWorkflowClientConfig: (options) =>
       bigmodelProvider.getDynamicWorkflowClientConfig(options),
     getModelContextBudgetStrategy: () => bigmodelProvider.getModelContextBudgetStrategy(),

@@ -51,7 +51,7 @@ function useHighlightedLightweightDiffTokens({
     let cancelled = false;
 
     if (shouldHighlight) {
-      logger.debug("[HighlightedLightweightDiffPreview] 启动异步 diff 高亮", {
+      logger.debug("[HighlightedLightweightDiffPreview] starting async diff highlight", {
         chars: code.length,
         language,
         path,
@@ -65,7 +65,7 @@ function useHighlightedLightweightDiffTokens({
       }
 
       if (shouldHighlight) {
-        logger.debug("[HighlightedLightweightDiffPreview] 异步 diff 高亮完成", {
+        logger.debug("[HighlightedLightweightDiffPreview] async diff highlight done", {
           durationMs: Date.now() - startedAt,
           language,
           path,

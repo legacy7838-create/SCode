@@ -32,7 +32,7 @@ export interface PromptRuntimeCommand extends RuntimeCommandBase {
   readonly input: string;
   readonly mode: "prompt";
   readonly options?: ExecuteTurnOptions;
-  /** admission 已建立的 reservation；执行阶段不得再次创建/竞争 turn。 */
+  /** The reservation admission has already established; the execution phase must not create or contend for a turn again. */
   readonly startReservation?: ActiveTurnStartReservation;
   readonly reject: (error: unknown) => void;
   readonly resolve: (result: TurnResult) => void;
@@ -88,21 +88,21 @@ export interface SubagentMessageRuntimeCommand extends RuntimeCommandBase {
 }
 
 /**
- * 一条排队的 controlOnly 用户轮：GUI「配置」
- * 已经把 run 修订掉了，这条命令只负责把这件事记进会话。它不进模型轮，却要落一条 user 消息，而
- * user 消息插不进一个正在跑的 turn（provider 语法：assistant 的 tool_use 与 tool_result 之间
- * 不能夹 user），所以它排在队列里、等当前 turn 结束。与通知同一个优先级，因而落在新 run 的任何
- * 通知之前；带 branchGeneration，rewind 后丢弃。
+ * A queued controlOnly user turn: the GUI "configure" action has already amended the run, and this command only records that
+ * fact in the session. It does not enter a model turn, yet it has to land a user message, and
+ * a user message cannot be spliced into a running turn (provider syntax: no user may sit between an assistant's tool_use
+ * and its tool_result), so it waits in the queue until the current turn ends. It shares the priority with a
+ * notification, hence it lands before any notification of the new run; it carries branchGeneration and is dropped after a rewind.
  */
 export interface ControlOnlyTurnRuntimeCommand extends RuntimeCommandBase {
   readonly branchGeneration: number;
   readonly mode: "control-only-turn";
-  /** 进 runtime history 与持久消息的规范句（模型下一回合读它）。 */
+  /** The canonical sentence that enters the runtime history and the persisted messages (the model reads it on its next turn). */
   readonly text: string;
-  /** `ensureSessionPersisted` 的首输入标题种子。 */
+  /** The first-input title seed of `ensureSessionPersisted`. */
   readonly titleInput: string;
   readonly inputId?: string;
-  /** 轮与消息上的同一份元数据（冷热同形）。 */
+  /** The same metadata on the turn and on the messages (same shape hot or cold). */
   readonly workflowLaunch: WorkflowLaunchMeta;
 }
 

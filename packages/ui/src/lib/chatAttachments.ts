@@ -1,4 +1,6 @@
-/* oxlint-disable eslint(max-lines) -- Composer 附件的收集、恢复和序列化必须共享同一套 MIME/大小边界。 */
+/* oxlint-disable eslint(max-lines) -- the collection, recovery, and serialization of Composer
+ * attachments must share the same MIME/size boundaries.
+ */
 import { nanoid } from "nanoid";
 import {
   VIDEO_INPUT_MAX_BYTES,
@@ -71,10 +73,10 @@ function readFileAsDataUrl(file: File): Promise<string> {
         resolve(reader.result);
         return;
       }
-      reject(new Error("读取附件失败"));
+      reject(new Error("Failed to read attachment"));
     };
     reader.onerror = () => {
-      reject(reader.error ?? new Error("读取附件失败"));
+      reject(reader.error ?? new Error("Failed to read attachment"));
     };
     reader.readAsDataURL(file);
   });
@@ -145,8 +147,8 @@ export async function serializeChatComposerAttachment(
   );
   if (mimeType.startsWith("image/")) {
     if (!attachment.localPath && attachment.sizeBytes > INLINE_IMAGE_ATTACHMENT_MAX_BYTES) {
-      // 这里是底层序列化边界，不能直接拼用户可见中文文案；
-      // 抛结构化错误交给 UI 层按当前 locale 格式化，避免英文环境混入中文。
+      // This is the underlying serialization boundary, and user-visible Chinese copy cannot be directly spelled out;
+      // Throw structured errors and hand them to the UI layer to format according to the current locale to prevent the English environment from being mixed into Chinese.
       throw new OversizedInlineImageAttachmentError({
         filename: attachment.filename,
         maxSizeBytes: INLINE_IMAGE_ATTACHMENT_MAX_BYTES,
@@ -158,8 +160,8 @@ export async function serializeChatComposerAttachment(
       attachment.localPath &&
       (!attachment.file || attachment.sizeBytes > INLINE_IMAGE_ATTACHMENT_MAX_BYTES)
     ) {
-      // 大图片如果在 renderer 里转 base64，会同时放大内存和 RPC payload。
-      // 有真实本地路径时改交给 agent 的图片读取链路，它已有 20MiB 等阈值和降级策略。
+      // If a large image is converted to base64 in the renderer, the memory and RPC payload will be enlarged at the same time.
+      // When there is a real local path, the image reading link is handed over to the agent. It already has thresholds such as 20MiB and a degradation policy.
       return {
         kind: "image",
         filename: attachment.filename,
@@ -180,7 +182,7 @@ export async function serializeChatComposerAttachment(
     };
   }
 
-  // video：桌面 localPath 零拷贝；Web inline 在 base64 编码前遵守 V4 现有 transport 上限。
+  // video: Desktop localPath zero copy; Web inline respects V4's existing transport upper limit before base64 encoding.
   if (mimeType.startsWith("video/")) {
     if (attachment.localPath) {
       return {
@@ -191,8 +193,8 @@ export async function serializeChatComposerAttachment(
         sizeBytes: attachment.sizeBytes,
       };
     }
-    // Web 无 localPath 时曾按全局 video 产品上限放行，完成整文件 base64 编码后
-    // 才被 V4 20MiB 上传边界拒绝，既浪费内存又只能展示裸协议错误。
+    // When the Web did not have localPath, it was released according to the global video product upper limit. After completing the base64 encoding of the entire file
+    // It was rejected by the V4 20MiB upload boundary, which wastes memory and can only display naked protocol errors.
     if (attachment.sizeBytes > INLINE_VIDEO_ATTACHMENT_MAX_BYTES) {
       throw new OversizedInlineVideoAttachmentError({
         filename: attachment.filename,
@@ -238,8 +240,8 @@ export async function serializeChatComposerAttachment(
   }
 
   if (attachment.localPath) {
-    // 普通文件过去会被 renderer 读成 base64 再进入 session/send，
-    // 既占用内存也绕过 agent 侧文件读取阈值。桌面端已有真实路径时只传路径引用。
+    // Ordinary files used to be read into base64 by the renderer and then entered into session/send.
+    // It both occupies memory and bypasses the agent-side file reading threshold. When the real path already exists on the desktop, only the path reference is passed.
     return {
       kind: "file",
       filename: attachment.filename,
@@ -265,12 +267,12 @@ export async function serializeChatComposerAttachment(
 
 async function readAttachmentBase64(attachment: ChatComposerAttachment): Promise<string> {
   if (!attachment.file) {
-    throw new Error("附件缺少可读取内容");
+    throw new Error("Attachment has no readable content");
   }
   const dataUrl = await readFileAsDataUrl(attachment.file);
   const base64MarkerIndex = dataUrl.indexOf(",");
   if (base64MarkerIndex === -1) {
-    throw new Error("附件数据格式不正确");
+    throw new Error("Attachment data is malformed");
   }
   return dataUrl.slice(base64MarkerIndex + 1);
 }
@@ -287,7 +289,10 @@ export function isPdfChatComposerAttachment(attachment: ChatComposerAttachment):
   return attachment.mimeType.split(";", 1)[0]?.trim().toLowerCase() === PDF_MIME_TYPE;
 }
 
-/** 图片与视频同属媒体组：输入框与消息流统一按媒体卡片渲染。 */
+/**
+ * Images and videos belong to the same media group: the input box and the message stream both
+ * render them uniformly as media cards.
+ */
 export function isMediaChatComposerAttachment(attachment: ChatComposerAttachment): boolean {
   return isImageChatComposerAttachment(attachment) || isVideoChatComposerAttachment(attachment);
 }
@@ -295,6 +300,6 @@ export function isMediaChatComposerAttachment(attachment: ChatComposerAttachment
 async function readAttachmentText(file: File): Promise<string> {
   const text = await file.text();
   return text.length > INLINE_TEXT_ATTACHMENT_MAX_CHARS
-    ? `${text.slice(0, INLINE_TEXT_ATTACHMENT_MAX_CHARS)}\n\n[内容过长，已截断]`
+    ? `${text.slice(0, INLINE_TEXT_ATTACHMENT_MAX_CHARS)}\n\n[content truncated]`
     : text;
 }

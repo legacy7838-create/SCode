@@ -2,7 +2,7 @@ function byteToHex(byte: number): string {
   return byte.toString(16).padStart(2, "0");
 }
 
-/** 普通 main command 与 background wake 共用 UUID v7（48-bit 时间戳 + 随机位）。 */
+/** Shared UUID v7 (48-bit timestamp + random bits) for ordinary main commands and background wake. */
 export function uuidv7(now: number = Date.now()): string {
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
@@ -47,9 +47,9 @@ export function createUuid(): string {
     return formatUuid(bytes);
   }
 
-  // 部分移动端 WebView 只有 `crypto` 对象但没有 `randomUUID()`，
-  // 之前 UI 初始化直接调用会在首屏崩掉。这里退回到最小可用的随机实现，
-  // 保证移动端至少能生成 tab / history / request 所需的临时 ID。
+  // Some mobile WebViews only have `crypto` objects but no `randomUUID()`,
+  // Previously, direct calls to UI initialization would crash on the first screen. Falling back here to the smallest available random implementation,
+  // Ensure that the mobile terminal can at least generate the temporary ID required for tab / history / request.
   const bytes = new Uint8Array(16);
   for (let index = 0; index < bytes.length; index += 1) {
     bytes[index] = Math.floor(Math.random() * 256);

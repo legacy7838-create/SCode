@@ -1,27 +1,34 @@
 /**
- * workflow run 里**任意脚本值**（顶层返回的产物、`report(item)` 的条目）→ 给模型或读者看的
- * 文本。规则：string 原样；其余 `JSON.stringify(v, null, 2)`；stringify 回 undefined 或抛错
- * 时退 `String(v)`；`undefined` 回 `undefined`（调用方据此让整个字段缺席）。
+ * Any **script value** inside a workflow run (an artifact returned at the top level, a
+ * `report(item)` entry) → the text shown to a model or reader. Rules: a string passes through;
+ * everything else goes through `JSON.stringify(v, null, 2)`; when stringify returns undefined or
+ * throws, fall back to `String(v)`; `undefined` returns `undefined` (the caller then leaves the
+ * whole field absent).
  *
- * 原住 contracts（dynamic-workflow-run.port.ts），因为它当时的三个跨包消费者——完成通知的
- * `<result>` / `<reports>`（core）、runtime task 条目上的 `resultText`（core，TaskOutput 的
- * 唯一来源）、`workflowRuns.reports[].preview`（v4 投影，详情页 Results 区的那一行）——给出
- * 的文本必须逐字节相同。第四个消费者出现后搬到这里：`reports[].preview` 的归约随共享
- * reducer 下沉进本包（workflow-runs-reducer.ts），而依赖方向是 contracts → shared，本包
- * import 不了 contracts。contracts 原位保留 re-export，core 侧的消费者一行不改。
+ * It lived in contracts (dynamic-workflow-run.port.ts) because its three cross-package consumers
+ * at the time — the completion notification's `<result>` / `<reports>` (core), the `resultText`
+ * on runtime task entries (core, the only source for TaskOutput), and
+ * `workflowRuns.reports[].preview` (v4 projection, the line in the detail page's Results section)
+ * — must all produce byte-identical text. It moved here once a fourth consumer appeared: the
+ * reduction of `reports[].preview` sank into this package along with the shared reducer
+ * (workflow-runs-reducer.ts), and the dependency direction is contracts → shared, so this
+ * package cannot import contracts. contracts keeps a re-export in place, and no core-side
+ * consumer changes.
  *
- * 同理这里不设长度上限：通知端有 120k 截断、TaskOutput 端有 artifact 预算、投影端有
- * `maxReportPreviewLength`，界属于各自的边界。
+ * For the same reason there is no length cap here: the notification side truncates at 120k, the
+ * TaskOutput side has an artifact budget, and the projection side has `maxReportPreviewLength`
+ * — each bound belongs to its own boundary.
  *
- * 产物形状不受约束——record、数组、字符串、数字、null 都合法，所以这里没有 `isRecord` 门
- * （原实现按 legacy `Workflow` 的 `output.response` 取值，正是那个桌面实测 bug 的成因）。
+ * The artifact shape is unconstrained — records, arrays, strings, numbers, and null are all
+ * legal, so there is no `isRecord` gate here (the original implementation read the legacy
+ * `Workflow`'s `output.response`, which is exactly what caused that desktop-observed bug).
  */
 export function serializeWorkflowArtifact(value: unknown): string | undefined {
   if (value === undefined) return undefined;
   if (typeof value === "string") return value;
   try {
-    // JSON.stringify 对 undefined / function / symbol 回 undefined，对循环引用抛错——
-    // 两种情况都退到 String(value)，绝不把值整段丢掉。
+    // JSON.stringify returns undefined for undefined / function / symbol, and throws an error for circular references——
+    // In both cases, fall back to String(value), never discarding the entire value.
     const text = JSON.stringify(value, null, 2);
     return text === undefined ? String(value) : text;
   } catch {

@@ -2,16 +2,24 @@ import { useCallback, useEffect, useReducer, useRef } from "react";
 import { useZCodeSessionStore } from "@/store/zcodeSessionStore.js";
 
 /**
- * 重建窗口上限。实测 agent start→ready 约 550-650ms，createSession 再数百 ms，5s 有充分余量。
- * 超时只解除门禁，不取消重建——迟到的 binding 仍会正常更新 effectiveSessionId 并唤醒附件重传。
+ * Rebuild window cap. Measured agent start→ready is about 550-650ms and createSession takes a few
+ * hundred ms more, so 5s has ample headroom. A timeout only releases the gate, it does not cancel
+ * the rebuild — a late binding still updates effectiveSessionId normally and wakes the attachment
+ * re-upload.
  */
 const DRAFT_RUNTIME_REBUILD_TIMEOUT_MS = 5000;
 
 interface DraftRuntimeRebuildGateState {
   rebuilding: boolean;
-  /** 换代发生时的预热会话 id；出现与之不同的非空 id 即视为重建完成。 */
+  /**
+   * The warm-up session id at the moment the generation changed; a different non-empty id appearing
+   * means the rebuild is complete.
+   */
   pendingFrom: string | null;
-  /** 单调递增，仅用于让计时器 effect 在「重建中再次换代」时重新起算。 */
+  /**
+   * Monotonically increasing, used only to make the timer effect restart when a generation change
+   * happens during a rebuild.
+   */
   epoch: number;
 }
 
@@ -39,7 +47,7 @@ function reduceDraftRuntimeRebuildGate(
       };
     case "prewarmSessionChanged":
       if (!state.rebuilding) return state;
-      // retire 到重建完成之间 binding 为 null，不能据此解除门禁。
+      // The binding is null between retire and the reconstruction is completed, and the access control cannot be released based on this.
       if (event.prewarmSessionId === null) return state;
       if (event.prewarmSessionId === state.pendingFrom) return state;
       return { epoch: state.epoch, pendingFrom: null, rebuilding: false };
@@ -50,31 +58,39 @@ function reduceDraftRuntimeRebuildGate(
 }
 
 interface DraftRuntimeRebuildGate {
-  /** 预热会话正在重建；true 时必须禁止发送，否则附件会挂在已消失的会话上。 */
+  /**
+   * The warm-up session is being rebuilt; sending must be forbidden while it is true, otherwise
+   * attachments hang off a session that no longer exists.
+   */
   rebuilding: boolean;
 }
 
 /**
- * CUA Helper 就绪、liveness 恢复等原因会回收 agent runtime（workspace-dispose），把草稿态
- * 尚未持久化的预热会话一并冲掉。此 hook 在 runtime 换代时递增 draftRuntimeInvalidationVersion
- * 触发重建，并在重建窗口内给出 rebuilding=true 供发送门禁使用。
+ * CUA Helper readiness, liveness recovery, and similar causes reclaim the agent runtime
+ * (workspace-dispose), flushing away the warm-up session whose draft state is not persisted yet.
+ * This hook increments draftRuntimeInvalidationVersion when the runtime generation changes to
+ * trigger a rebuild, and reports rebuilding=true within the rebuild window for the send gate to
+ * use.
  *
- * 换代信号优先取 onRuntimeLifecycle 的 unavailable：它在 dispose 当场到达。onRuntimeRestart
- * 只在新 agent 进程 spawn 时才发，而 agent 是懒启动——没人发请求就不 spawn，于是换代通知
- * 永不到达、预热会话永不重建，附件一直卡在 waitingSession，直到用户手动点一次发送才被踹活
- * （生产实测 helper ready 到重建间隔 2.3s/6.0s/26.3s，全等于用户点击时刻）。
+ * The generation-change signal prefers onRuntimeLifecycle's unavailable: it arrives at the moment
+ * of dispose. onRuntimeRestart only fires when a new agent process spawns, and the agent spawns
+ * lazily — no request, no spawn — so the generation-change notification never arrives, the warm-up
+ * session is never rebuilt, and attachments stay stuck in waitingSession until the user manually
+ * clicks send once and kicks it alive (production measurements show the gap from helper ready to
+ * rebuild at 2.3s/6.0s/26.3s, all of them exactly at the moment of the user's click).
  *
- * 正式会话态（sessionId !== null）不启用：那条路径由 CLI 的 cold-session-resume 负责。
+ * Not enabled for the real session state (sessionId !== null): that path is handled by the CLI's
+ * cold-session-resume.
  */
 export function useDraftRuntimeRebuildGate(params: {
-  /** 仅草稿态（sessionId === null）启用。 */
+  /** Enabled only in draft state (sessionId === null). */
   enabled: boolean;
   workspacePath: string;
   workspaceIdentity?: string;
-  /** 当前预热会话 id；出现新的非空值即视为重建完成。 */
+  /** The current warm-up session id; a new non-empty value means the rebuild is complete. */
   prewarmSessionId: string | null;
   onRuntimeRestart?: (listener: () => void) => () => void;
-  /** 承载 transport 暴露 runtime 存活态时优先用它，替代 onRuntimeRestart。 */
+  /** Preferred over onRuntimeRestart when the hosting transport exposes runtime liveness. */
   onRuntimeLifecycle?: (listener: (state: "available" | "unavailable") => void) => () => void;
   timeoutMs?: number;
 }): DraftRuntimeRebuildGate {
@@ -92,9 +108,9 @@ export function useDraftRuntimeRebuildGate(params: {
     DRAFT_RUNTIME_REBUILD_GATE_IDLE,
   );
 
-  // enabled / prewarmSessionId 走 ref：若让 handleRuntimeRestart 依赖它们，每次会话 id 变化
-  // 都会取消订阅再重订阅，而 transport 在 listeners 清空时会 dispose upstream——那个窗口里
-  // 到达的换代事件会被丢掉。
+  // enabled / prewarmSessionId go ref: If handleRuntimeRestart depends on them, every time the session id changes
+  // Will unsubscribe and then resubscribe, and the transport will dispose upstream when the listeners are cleared - in that window
+  // Arriving generation events will be discarded.
   const enabledRef = useRef(enabled);
   enabledRef.current = enabled;
   const prewarmSessionIdRef = useRef(prewarmSessionId);
@@ -107,10 +123,10 @@ export function useDraftRuntimeRebuildGate(params: {
   }, [workspaceIdentity, workspacePath]);
 
   useEffect(() => {
-    // 二选一订阅：两条通道都订会让同一次换代被处理两次，白建一个预热会话、附件多传一遍。
+    // Choose one of the two subscriptions: Subscribing to both channels will cause the same update to be processed twice. It is useless to create a warm-up session and upload the attachment one more time.
     if (onRuntimeLifecycle) {
       return onRuntimeLifecycle((state) => {
-        // available 不必处理：重建已由 unavailable 发起，门禁解除交给 prewarmSessionChanged。
+        // available No need to process: reconstruction has been initiated by unavailable, access control release is handed over to prewarmSessionChanged.
         if (state === "unavailable") handleRuntimeRestart();
       });
     }
@@ -122,8 +138,8 @@ export function useDraftRuntimeRebuildGate(params: {
     dispatch({ prewarmSessionId, type: "prewarmSessionChanged" });
   }, [prewarmSessionId]);
 
-  // 依赖 epoch 而非 rebuilding：重建中再次换代时 rebuilding 保持 true，
-  // 只有 epoch 变化才能让计时器重新起算。
+  // Rely on epoch rather than rebuilding: rebuilding remains true when another generation is replaced during reconstruction.
+  // Only epoch changes can restart the timer.
   useEffect(() => {
     if (!state.rebuilding) return;
     const timer = setTimeout(() => dispatch({ type: "rebuildTimeout" }), timeoutMs);

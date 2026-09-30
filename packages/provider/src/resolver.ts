@@ -1,4 +1,4 @@
-/* oxlint-disable eslint(max-lines) -- Resolver 同时产出 Settings 分层结果与唯一 Registry 完整类型证明。 */
+/* oxlint-disable eslint(max-lines) -- the Resolver produces both the layered Settings result and the single Registry's complete type proof. */
 import type { z } from "zod";
 import type { completeModelConfigDataSchema } from "@zcode/shared/model-config";
 import type {
@@ -217,7 +217,7 @@ export class ProviderConfigResolver {
     for (const providerId of resolveProviderOrder(input, effectiveProviders)) {
       const rule = effectiveProviders.getRule(providerId)!;
       const { config, providerName } = rule;
-      // 账号不再支持总禁用；旧覆盖值不能让无开关的账号永久失效，其他资格仍正常校验。
+      // Accounts no longer support a global disable; stale override values must not permanently disable accounts without a switch; other eligibility checks still apply normally.
       const enabled = config.access?.type === "zhipu-account" || (rule.enabled ?? true);
       const providerPath = ["providers", providerId];
       const registryProviderResult = createRegistryProviderConfig(config, providerPath);
@@ -230,7 +230,7 @@ export class ProviderConfigResolver {
         providerIssues.push({
           code: "missing-template",
           path: [...providerPath, "templateId"],
-          message: `Provider Template 不存在: ${templateId}`,
+          message: `Provider Template does not exist: ${templateId}`,
         });
       }
       issues.push(...providerIssues);
@@ -248,8 +248,8 @@ export class ProviderConfigResolver {
       );
       const accessEntitled =
         config.access?.type !== "zhipu-account" || config.access.entitled === true;
-      // 账号权益与当前连接是两件事。非当前账号仍保留设置展示，不向普通 Registry 发布模型。
-      // Off-Peak 不定义 current，沿用其独立调度、隐藏和鉴权规则。
+      // Account entitlement and current connection are two separate things. Non-current accounts still retain settings display but do not publish models to the regular Registry.
+      // Off-Peak does not define current and follows its own independent scheduling, hiding, and authentication rules.
       const accountCurrent = input.accountStates?.[providerId]?.current !== false;
       const providerExecutable =
         enabled && accessEntitled && accountCurrent && providerIssues.length === 0;
@@ -318,7 +318,9 @@ export class ProviderConfigResolver {
             modelId,
           ]);
           if (!result.ok)
-            throw new Error(`Registry Model 完整性结果不一致: ${providerId}/${modelId}`);
+            throw new Error(
+              `Registry Model integrity result is inconsistent: ${providerId}/${modelId}`,
+            );
           return Object.freeze({ modelId, config: result.config });
         });
       if (validModels.length === 0) continue;

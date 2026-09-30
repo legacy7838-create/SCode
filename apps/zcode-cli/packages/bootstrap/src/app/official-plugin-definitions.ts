@@ -1,12 +1,11 @@
 import { ZCODE_OFFICIAL_PLUGIN_MARKETPLACE } from "@zcode/contracts";
 
-// 内置插件的商店信息 seed（原样写入官方 marketplace.json 的条目 raw，键名与 CDN 目录
-// schema 一致：displayName_i18n / examplePrompts_i18n 等），解析复用 adapter 的
-// parseEntryStoreListing。icon 指向官方 assets CDN；请求失败时 UI 会安全降级为默认图标。
+// Store listing seed for the built-in plugins (written verbatim into the official
+// marketplace.json entry, parsed via the adapter's parseEntryStoreListing).
+// icon points at the official assets CDN; the UI safely falls back to a default
+// icon when the request fails. Descriptions come from each plugin's manifest.
 export interface OfficialPluginListingSeed {
   displayName?: string;
-  displayName_i18n?: Record<string, string>;
-  description_i18n?: Record<string, string>;
   category?: string;
   author?: { name: string; url?: string };
   icon?: string;
@@ -15,19 +14,20 @@ export interface OfficialPluginListingSeed {
   termsOfService?: string;
   heroImage?: string;
   examplePrompts?: string[];
-  examplePrompts_i18n?: Record<string, string[]>;
 }
 
 const OFFICIAL_BROWSER_USE_PLUGIN_NAME = "browser-use";
 export const OFFICIAL_BROWSER_USE_PLUGIN_ID = `${OFFICIAL_BROWSER_USE_PLUGIN_NAME}@${ZCODE_OFFICIAL_PLUGIN_MARKETPLACE}`;
 /**
- * node_repl 宿主。它不是面向用户的插件：没有 skill、没有 listing、不进市场，唯一职责是
- * 携带 `dist/mcp/server.js` 这个 Browser Use 与 Computer Use 共用的运行时产物。
+ * The node_repl host. It is not a user-facing plugin: no skill, no listing, no marketplace
+ * presence — its only job is to carry `dist/mcp/server.js`, the runtime artifact shared by
+ * Browser Use and Computer Use.
  *
- * 为什么它需要成为一个 seed 单元：宿主产物过去长在 browser-use 包里，于是
- * resolveBuiltInNodeReplMcpServers 只能在 browser-use 的 rootPath 下找它 —— browser-use
- * 包缺失时，即便 Computer Use 自己启用也拿不到宿主。做成独立 seed 单元后，两个插件
- * 各自只贡献自己的领域资产，谁启用都能拿到同一个宿主。
+ * Why it has to become its own seed unit: the host artifact used to live inside the
+ * browser-use package, so resolveBuiltInNodeReplMcpServers could only look for it under
+ * browser-use's rootPath — with the browser-use package missing, even Computer Use could not
+ * get the host when enabled on its own. As a separate seed unit, each of the two plugins
+ * contributes only its own domain assets, and whichever is enabled gets the same host.
  */
 export const OFFICIAL_NODE_REPL_HOST_PLUGIN_NAME = "node-repl-host";
 export const OFFICIAL_NODE_REPL_HOST_PLUGIN_ID = `${OFFICIAL_NODE_REPL_HOST_PLUGIN_NAME}@${ZCODE_OFFICIAL_PLUGIN_MARKETPLACE}`;
@@ -35,18 +35,19 @@ const OFFICIAL_CUA_PLUGIN_NAME = "computer-use";
 export const OFFICIAL_CUA_PLUGIN_ID = `${OFFICIAL_CUA_PLUGIN_NAME}@${ZCODE_OFFICIAL_PLUGIN_MARKETPLACE}`;
 
 export interface OfficialPluginDefinition {
-  // 内容型 plugin (无 MCP server / 无系统依赖) 可以设为 true,
-  // 这样用户首次 `/skill <name>` 就能用,不必先 `zcode plugins enable`。
-  // 默认 false 保持 ios-simulator / android-emulator 这类重负载 plugin 原来行为。
+  // Content-based plugin (no MCP server / no system dependencies) can be set to true,
+  // In this way, users can use `/skill <name>` for the first time without having to `zcode plugins enable` first.
+  // The default is false to maintain the original behavior of heavy-load plugins such as ios-simulator / android-emulator.
   defaultEnabled?: boolean;
   listing?: OfficialPluginListingSeed;
   /**
-   * 由宿主为该官方插件提供、但不属于 plugin manifest 的 MCP server。
-   * 仅用于产品归属和设置页状态展示；运行时仍保留宿主 identity。
+   * MCP servers the host provides for this official plugin but that are not part of its
+   * plugin manifest. Used only for product attribution and the settings page's status
+   * display; at runtime the host identity is still what is kept.
    */
   hostMcpServerNames?: readonly string[];
   name: string;
-  /** filesystem/SEA seed 缺少任一项时拒绝生成残缺的官方插件缓存。 */
+  /** Refuse to generate a half-built official plugin cache when any filesystem/SEA seed is missing. */
   requiredSeedPaths?: readonly string[];
   rootCandidates: readonly string[];
   /** Extra top-level paths intentionally staged as plugin runtime assets. */
@@ -63,7 +64,7 @@ export const OFFICIAL_BROWSER_USE_REQUIRED_SEED_PATHS = [
   "docs/api.json",
   "docs/documents.json",
   "docs/overview.md",
-  // documents.json 已注册 recording lookup；若不强制校验正文，会 seed 出无法读取录屏指南的残缺插件。
+  // documents.json has registered recording lookup; if the text is not forcibly verified, incomplete plug-ins that cannot read the screen recording guide will be seeded.
   "docs/recording.md",
   "docs/workflow.md",
   "scripts/browser-client.mjs",
@@ -77,8 +78,8 @@ const OFFICIAL_CUA_REQUIRED_SEED_PATHS = [
   "skills/computer-use/SKILL.md",
 ] as const;
 
-// zcode-guide 原本没有 requiredSeedPaths，seed 丢文件时会静默装出一个
-// 没有 /workflow 命令的插件——症状是命令不存在，没有任何诊断。commands/ 与技能正文都钉住。
+// zcode-guide originally does not have requiredSeedPaths, and seed will silently install one when it loses files.
+// There is no plugin for the /workflow command - the symptom is that the command does not exist without any diagnostics. commands/ are pinned to the skill text.
 const OFFICIAL_ZCODE_GUIDE_REQUIRED_SEED_PATHS = [
   "commands/workflow.md",
   "skills/dynamic-workflows/SKILL.md",
@@ -88,12 +89,12 @@ const OFFICIAL_ZCODE_GUIDE_REQUIRED_SEED_PATHS = [
 
 export const OFFICIAL_PLUGIN_DEFINITIONS: readonly OfficialPluginDefinition[] = [
   {
-    // 无 listing：宿主不进市场、不对用户露出。它必须始终可用，因为 node_repl 的注册门禁
-    // 是「Browser Use 或 Computer Use 任一启用」，宿主自己不参与那个判断。
+    // No listing: The host does not enter the market and is not exposed to users. It must always be available because of node_repl's registration gate
+    // It is "enable either Browser Use or Computer Use", and the host itself does not participate in that judgment.
     //
-    // 这里的 defaultEnabled 不违反「仅限内容型插件」那条约定（见下方 computer-use 的说明）：
-    // 约定要防的是「首启即注入整套工具集并拉起 Helper」，而 seed 宿主两件都不做——工具是否
-    // 进模型工具池由两个能力插件的启停决定，Helper 由 SDK 首次调用时才拉起。
+    // The defaultEnabled here does not violate the "content-based plug-ins only" agreement (see the description of computer-use below):
+    // The agreement is to prevent "injecting the entire tool set and pulling up the Helper upon first startup", but the seed host does neither - whether the tool
+    // The entry into the model tool pool is determined by the start and stop of the two capability plug-ins, and the Helper is only started when the SDK calls it for the first time.
     defaultEnabled: true,
     name: OFFICIAL_NODE_REPL_HOST_PLUGIN_NAME,
     requiredSeedPaths: OFFICIAL_NODE_REPL_HOST_REQUIRED_SEED_PATHS,
@@ -110,11 +111,7 @@ export const OFFICIAL_PLUGIN_DEFINITIONS: readonly OfficialPluginDefinition[] = 
       author: ZAI_AUTHOR,
       category: "developer-tools",
       displayName: "Android Emulator",
-      displayName_i18n: { "zh-CN": "Android 模拟器" },
       icon: `${OFFICIAL_PLUGIN_ASSETS_BASE_URL}/android-emulator/icon.png`,
-      description_i18n: {
-        "zh-CN": "提供 Android 开发工作流与模拟器自动化能力。",
-      },
     },
     name: "android-emulator",
     rootCandidates: [
@@ -126,19 +123,15 @@ export const OFFICIAL_PLUGIN_DEFINITIONS: readonly OfficialPluginDefinition[] = 
     version: "0.1.0",
   },
   {
-    // manifest 只声明 browser-use skill；宿主 node_repl MCP 独立注入，package 另外携带其 server/client
-    // runtime 资产。默认启用仅控制「何时/如何用内置浏览器」的 skill 与 browser bridge。
+    // The manifest only declares the browser-use skill; the host node_repl MCP is injected independently, and the package also carries its server/client
+    // runtime assets. Skills and browser bridges that only control "when/how to use the built-in browser" are enabled by default.
     defaultEnabled: true,
     hostMcpServerNames: ["node_repl"],
     listing: {
       author: ZAI_AUTHOR,
       category: "productivity",
       displayName: "Browser Use",
-      displayName_i18n: { "zh-CN": "浏览器操作" },
       icon: `${OFFICIAL_PLUGIN_ASSETS_BASE_URL}/browser-use/icon.png`,
-      description_i18n: {
-        "zh-CN": "操作 ZCode 内置浏览器，检查网页并验证交互。",
-      },
     },
     name: OFFICIAL_BROWSER_USE_PLUGIN_NAME,
     requiredSeedPaths: OFFICIAL_BROWSER_USE_REQUIRED_SEED_PATHS,
@@ -148,28 +141,26 @@ export const OFFICIAL_PLUGIN_DEFINITIONS: readonly OfficialPluginDefinition[] = 
       "../../browser-use-plugin",
       "../../../browser-use-plugin",
     ],
-    // 插件 package/manifest 升版时遗漏官方 seed 版本，会继续加载旧缓存目录。
-    // package、manifest、definition 三处版本应保持一致，避免发布内容和安装版本再次分叉。
+    // The official seed version is omitted when the plug-in package/manifest is upgraded, and the old cache directory will continue to be loaded.
+    // The three versions of package, manifest, and definition should be consistent to avoid the release content and installation version from bifurcating again.
     version: "0.5.1",
   },
   ...(
     [
-      ["documents", "docx", "Documents", "Word文档"],
-      ["pdf", "pdf", "PDF", "PDF"],
-      ["presentations", "pptx", "Presentations", "演示文档"],
-      ["spreadsheets", "xlsx", "Spreadsheets", "电子表格"],
+      ["documents", "docx", "Documents"],
+      ["pdf", "pdf", "PDF"],
+      ["presentations", "pptx", "Presentations"],
+      ["spreadsheets", "xlsx", "Spreadsheets"],
     ] as const
   ).map(
-    ([name, skill, displayName, chineseName]): OfficialPluginDefinition => ({
+    ([name, skill, displayName]): OfficialPluginDefinition => ({
       defaultEnabled: true,
       listing: {
         author: ZAI_AUTHOR,
         category: "productivity",
         displayName,
-        displayName_i18n: { "zh-CN": chineseName },
-        // 复用已发布的文档图标，拆分插件无需依赖新 CDN 资源。
+        // Reuse the published document icon so the split-out plugins need no new CDN asset.
         icon: `${OFFICIAL_PLUGIN_ASSETS_BASE_URL}/document-skills/icon.png`,
-        description_i18n: { "zh-CN": `创建、编辑与审阅${chineseName}（${skill.toUpperCase()}）。` },
       },
       name,
       requiredSeedPaths: ["agents/visual-judge.md", `skills/${skill}/SKILL.md`],
@@ -183,14 +174,12 @@ export const OFFICIAL_PLUGIN_DEFINITIONS: readonly OfficialPluginDefinition[] = 
     }),
   ),
   {
-    // 沿用原聚合文档插件的官方搜图能力，仅拆出独立开关；认证仍由官方 MCP adapter 注入。
+    // The official image search capability of the original aggregation document plug-in is still used, and only the independent switch is removed; the authentication is still injected by the official MCP adapter.
     defaultEnabled: true,
     listing: {
       author: ZAI_AUTHOR,
       category: "productivity",
       displayName: "Image Search",
-      displayName_i18n: { "zh-CN": "搜图" },
-      description_i18n: { "zh-CN": "查找插图与参考配图。" },
     },
     name: "image-search",
     requiredSeedPaths: [".mcp.json"],
@@ -207,11 +196,7 @@ export const OFFICIAL_PLUGIN_DEFINITIONS: readonly OfficialPluginDefinition[] = 
       author: ZAI_AUTHOR,
       category: "developer-tools",
       displayName: "iOS Simulator",
-      displayName_i18n: { "zh-CN": "iOS 模拟器" },
       icon: `${OFFICIAL_PLUGIN_ASSETS_BASE_URL}/ios-simulator/icon.png`,
-      description_i18n: {
-        "zh-CN": "提供 iOS 开发工作流与模拟器自动化能力。",
-      },
     },
     name: "ios-simulator",
     rootCandidates: [
@@ -227,11 +212,7 @@ export const OFFICIAL_PLUGIN_DEFINITIONS: readonly OfficialPluginDefinition[] = 
       author: ZAI_AUTHOR,
       category: "utilities",
       displayName: "Restore Legacy Sessions",
-      displayName_i18n: { "zh-CN": "恢复旧版会话" },
       icon: `${OFFICIAL_PLUGIN_ASSETS_BASE_URL}/restore-legacy-sessions/icon.png`,
-      description_i18n: {
-        "zh-CN": "将旧版会话恢复为 ZCode 任务与会话记录。",
-      },
     },
     name: "restore-legacy-sessions",
     rootCandidates: [
@@ -250,11 +231,7 @@ export const OFFICIAL_PLUGIN_DEFINITIONS: readonly OfficialPluginDefinition[] = 
       author: ZAI_AUTHOR,
       category: "utilities",
       displayName: "Plugin Creator",
-      // 创建器使用客户端自带图标，不再借用 skill-creator 的远端图片。
-      displayName_i18n: { "zh-CN": "插件创建器" },
-      description_i18n: {
-        "zh-CN": "开发、校验 ZCode 插件，完成本地 dev 市场安装、试用与更新。",
-      },
+      // The creator uses the client's own icon and no longer borrows the remote image from skill-creator.
     },
     rootCandidates: [
       "packages/plugin-creator-plugin",
@@ -279,9 +256,7 @@ export const OFFICIAL_PLUGIN_DEFINITIONS: readonly OfficialPluginDefinition[] = 
       author: ZAI_AUTHOR,
       category: "utilities",
       displayName: "Skill Creator",
-      displayName_i18n: { "zh-CN": "技能创建器" },
       icon: `${OFFICIAL_PLUGIN_ASSETS_BASE_URL}/skill-creator/icon.png`,
-      description_i18n: { "zh-CN": "创建、编辑和验证可复用的 ZCode 技能。" },
     },
     name: "skill-creator",
     rootCandidates: [
@@ -293,25 +268,18 @@ export const OFFICIAL_PLUGIN_DEFINITIONS: readonly OfficialPluginDefinition[] = 
     version: "0.1.0",
   },
   {
-    // 纯内容型插件（只有 commands + skills，无 MCP / 无系统依赖），默认启用，
-    // 让用户/agent 开箱即用地拿到 ZCode 配置指南、自诊断技能与 dynamic workflow 编写指南。
+    // Pure content plug-in (only commands + skills, no MCP / no system dependencies), enabled by default,
+    // Let users/agents get ZCode configuration guide, self-diagnosis skills and dynamic workflow writing guide out of the box.
     defaultEnabled: true,
     listing: {
       author: ZAI_AUTHOR,
       category: "utilities",
       displayName: "ZCode Guide",
-      displayName_i18n: { "zh-CN": "ZCode 使用指南" },
       icon: `${OFFICIAL_PLUGIN_ASSETS_BASE_URL}/zcode-guide/icon.png`,
-      description_i18n: {
-        "zh-CN": "提供 ZCode 配置指南与插件、技能、MCP、命令和钩子诊断。",
-      },
       examplePrompts: [
         "How do I configure MCP servers in ZCode?",
         "Diagnose my current ZCode setup",
       ],
-      examplePrompts_i18n: {
-        "zh-CN": ["ZCode 里怎么配置 MCP 服务器？", "帮我诊断当前的 ZCode 配置"],
-      },
     },
     name: "zcode-guide",
     requiredSeedPaths: OFFICIAL_ZCODE_GUIDE_REQUIRED_SEED_PATHS,
@@ -324,28 +292,24 @@ export const OFFICIAL_PLUGIN_DEFINITIONS: readonly OfficialPluginDefinition[] = 
     version: "0.2.0",
   },
   {
-    // 产品决策：电脑控制回退为默认关闭，需用户在设置页显式开启。
-    // 因此这里不声明 defaultEnabled——computer-use 携带 MCP server 与系统 Helper 依赖，
-    // 默认开启意味着每个新用户首启即注入整套工具集并拉起 Helper。
-    // 「defaultEnabled 仅限内容型插件」的旧约定随之恢复完整。
-    // 判定式是 enabledPlugins[id] ?? defaultEnabled：曾在设置页手动开过的用户已落盘
-    // 显式 true，不受本次默认值变更影响。改回默认开启时，需同步
-    // packages/shared/src/plugin-marketplaces.ts 的名单（bootstrap 单测机械对照两者）、
-    // isZCodeCuaInternalFeatureEnabled（打包层默认 true）与输入框入口 hidden 默认值的联动语义。
+    // Product decision: Computer control fallback is turned off by default, and users need to explicitly turn it on on the settings page.
+    // Therefore, defaultEnabled is not declared here—computer-use carries MCP server and system Helper dependencies.
+    // Turning on by default means that every new user will inject the entire tool set and start the Helper upon first startup.
+    // The old convention of "defaultEnabled content-based plug-ins only" is restored to integrity.
+    // The judgment formula is enabledPlugins[id] ?? defaultEnabled: Users who have manually opened it on the settings page have already placed it.
+    // Explicitly true, not affected by this change to the default value. When changing back to the default enabled, synchronization is required
+    // The list of packages/shared/src/plugin-marketplaces.ts (bootstrap single test machine compares the two),
+    // The linkage semantics between isZCodeCuaInternalFeatureEnabled (packaging layer default is true) and the input box entrance hidden default value.
     name: "computer-use",
     hostMcpServerNames: ["node_repl"],
-    // 用户露出名统一为「Computer Use / 电脑控制」。包名与 producer 仓库仍保持 zcode-cua，
-    // 以兼容原生 Helper identity；EN 描述基线走 manifest
-    // description，这里只放 zh-CN 覆盖；resolveLocalizedText 在 en-US 时回退到 manifest。
+    // The user-facing name is "Computer Use". The package name and producer repo
+    // stay zcode-cua to keep the native Helper identity stable; the English
+    // description baseline comes from the manifest.
     listing: {
       author: ZAI_AUTHOR,
       category: "productivity",
       displayName: "Computer Use",
-      displayName_i18n: { "zh-CN": "电脑控制" },
-      description_i18n: {
-        "zh-CN": "自动化桌面应用：智能体驱动鼠标、键盘与界面元素，代你完成实际任务。",
-      },
-      // 插件更名为 computer-use 后，CDN 图标仍发布在 zcode-cua 目录；沿用资源路径避免 404。
+      // After the plug-in is renamed computer-use, the CDN icon is still published in the zcode-cua directory; use the resource path to avoid 404.
       icon: `${OFFICIAL_PLUGIN_ASSETS_BASE_URL}/zcode-cua/icon.png`,
     },
     rootCandidates: [
@@ -355,18 +319,18 @@ export const OFFICIAL_PLUGIN_DEFINITIONS: readonly OfficialPluginDefinition[] = 
       "../../../zcode-cua-plugin",
     ],
     requiredSeedPaths: OFFICIAL_CUA_REQUIRED_SEED_PATHS,
-    // 当前 CUA 为不可用占位包，无需复制 native runtime；避免把本地旧依赖继续带入缓存。
+    // The current CUA is an unavailable placeholder package, so there is no need to copy the native runtime; it avoids bringing old local dependencies into the cache.
     runtimeTopLevelPaths: [],
-    // 这里的 version 追踪上游 zcode-cua runtime 版本，使插件 UI 展示、缓存路径、
-    // marketplace 条目都对齐；具体版本由原子 producer bump 工作流维护。
+    // The version here tracks the upstream zcode-cua runtime version to enable plug-in UI display, cache path,
+    // Marketplace entries are all aligned; specific versions are maintained by the atomic producer bump workflow.
     version: "0.6.3",
   },
 ];
 
-// 在 official plugin 定义里标了 defaultEnabled: true 的, 拼成 `<name>@<marketplace>` 形式,
-// 透传给 adapter 让它在用户没显式配置时默认开启 (内容型 plugin 才适用)。
-// 注意: 任何解析 plugin 的入口 (CLI 子命令 resolveZCodePlugins、应用启动 resolveStartupPlugins)
-// 都必须把这个集合传给 discoverNodePluginsSync, 否则 defaultEnabled 不生效。
+// If defaultEnabled: true is marked in the official plugin definition, it should be spelled in the form of `<name>@<marketplace>`.
+// Pass it transparently to the adapter so that it is enabled by default when the user does not configure it explicitly (only applicable to content-based plugins).
+// Note: Any entry point for resolving plugins (CLI subcommand resolveZCodePlugins, application startup resolveStartupPlugins)
+// This collection must be passed to discoverNodePluginsSync, otherwise defaultEnabled will not take effect.
 export const DEFAULT_ENABLED_OFFICIAL_PLUGIN_IDS: ReadonlySet<string> = new Set(
   OFFICIAL_PLUGIN_DEFINITIONS.filter((definition) => definition.defaultEnabled).map(
     (definition) => `${definition.name}@${ZCODE_OFFICIAL_PLUGIN_MARKETPLACE}`,
@@ -381,8 +345,9 @@ export function resolveOfficialPluginHostMcpServerNames(pluginId: string): strin
 }
 
 /**
- * 官方插件由 host CLI 注入的 MCP（如 browser-use 的 `node_repl`）server name 不带 `plugin:` 前缀，
- * 资源管理器归属插件时需要反查所属官方插件名。
+ * MCP servers the host CLI injects for an official plugin (such as browser-use's
+ * `node_repl`) carry a server name without the `plugin:` prefix, so the resource manager has
+ * to look up the owning official plugin's name in reverse when attributing plugins.
  */
 export function resolveOfficialPluginNameByHostMcpServerName(
   serverName: string,

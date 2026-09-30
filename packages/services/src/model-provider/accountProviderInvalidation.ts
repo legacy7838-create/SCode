@@ -14,17 +14,19 @@ const ACCOUNT_PROVIDER_SETTING_KEYS = new Set([
 ]);
 
 /**
- * 把会改变账号连接选择的 Settings 变化收敛为 AccountProviderService 刷新。
+ * Converges the Settings changes that affect account connection selection into an
+ * AccountProviderService refresh.
  *
- * OAuth 登录、登出和购买完成由对应业务流程直接刷新 Account Source；这里不再
- * 订阅已退役旧 Registry 的事件，避免重新引入并行事实源。
+ * OAuth login, logout and completed purchases refresh the Account Source directly from their
+ * own business flows; we no longer subscribe to events from the retired legacy Registry, which
+ * would reintroduce a parallel source of truth.
  */
 export function bindAccountProviderInvalidation(
   options: AccountProviderInvalidationOptions,
 ): () => void {
   const requestRefresh = (reason: string): void => {
     void options.refresh(reason).catch(() => {
-      // AccountProviderService 通过 onDidRefreshError 统一记录失败并保留 last-known-good。
+      // AccountProviderService uniformly records failures through onDidRefreshError and retains last-known-good.
     });
   };
   const disposeSetting = options.onDidUpdateSetting((event) => {

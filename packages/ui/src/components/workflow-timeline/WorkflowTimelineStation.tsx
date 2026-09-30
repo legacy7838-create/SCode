@@ -16,12 +16,14 @@ import { StationMeta } from "./WorkflowStationMeta.js";
 import { stationLampClass } from "./WorkflowTimelineLedge.js";
 
 /**
- * 站头：名字 + 元数据，一枚没有背景的
- * 药丸。没有带时它排在轨道行上、灯的右边；有带时它搬到站台行，
- * 灯留在自己那条轨道上——两处的标记完全一样，所以从 `WorkflowTimeline.tsx` 拆出来共用一份。
+ * The station head: name + metadata, a pill with no background. Without a band it sits on the rail
+ * row to the right of the lamp; with a band it moves to the station row while the lamp stays on its
+ * own rail — the markup is exactly the same in both places, so it was split out of
+ * `WorkflowTimeline.tsx` to share one copy.
  *
- * 不可点的站头是 `span` 而不是禁用的 `button`：浏览器对禁用控件不派发
- * click，整块开关就收不到；span 没有语义，点击照常冒泡。
+ * A non-clickable station head is a `span` rather than a disabled `button`: browsers do not
+ * dispatch click on a disabled control, so the whole-block toggle would never receive it; a span
+ * has no semantics and the click bubbles as usual.
  */
 export function StationHead({
   caret,
@@ -33,11 +35,14 @@ export function StationHead({
 }: {
   station: TimelineStation;
   name: string;
-  /** 草稿里跟着笔走的光标；其余时候 null。 */
+  /** The cursor that follows the pen during a draft; null at all other times. */
   caret: ReactNode;
   foldClass: string;
   title: string;
-  /** 缺席即站头不是控件——点击冒泡给宿主（轮尾摘要的整块开关）。 */
+  /**
+   * Absent means the station head is not a control — the click bubbles to the host (the tail
+   * summary's whole-block toggle).
+   */
   onSelect?: () => void;
 }) {
   const pending = station.status === undefined || station.status === "pending";
@@ -83,7 +88,9 @@ export function StationHead({
 
 interface RowProps {
   stations: readonly TimelineStation[];
-  /** 站的全名，按下标；草稿里笔只写出前几个字。 */
+  /**
+   * The station's full name, by index; during a draft the pen only writes the first few characters.
+   */
   fullNames: readonly string[];
   folded: ReadonlySet<number>;
   titleOf: (station: TimelineStation) => string;
@@ -91,8 +98,10 @@ interface RowProps {
 }
 
 /**
- * 轨道行（没有带时）：站头（灯 + 名字 + 元数据）与到下一站的轨道段，一站一格。折到檐上的站只留
- * 轨道段；药丸列不折（用户修订：两侧对称）——它们只随滚动走，在视口真正的边界处渐隐。
+ * The rail row (when there is no band): the station head (lamp + name + metadata) and the rail
+ * segment to the next station, one cell per station. Stations folded onto the ledge keep only the
+ * rail segment; the pill column is not folded (user revision: symmetric on both sides) — those
+ * pills only move with the scroll and fade at the viewport's true boundary.
  */
 export function WorkflowStationRow({
   draft,
@@ -106,7 +115,7 @@ export function WorkflowStationRow({
   top,
   width,
 }: RowProps & {
-  /** 相邻两站之间的轨道段，按 `railKey` 查。 */
+  /** The rail segment between two adjacent stations, looked up by `railKey`. */
   rails: ReadonlyMap<string, TimelineRail>;
   draft: boolean;
   pen: TypewriterState;
@@ -144,7 +153,7 @@ export function WorkflowStationRow({
             <StationHead
               caret={
                 penHere ? (
-                  // 光标跟着笔：写字时稳住，追上流时闪烁。
+                  // The cursor follows the pen: steady when writing, flashing when catching up.
                   <span
                     aria-hidden
                     className={cn(
@@ -171,7 +180,7 @@ export function WorkflowStationRow({
                   "wf-ink relative h-0 min-w-3 flex-1 rounded-full border-t border-foreground-subtlest",
                   draft && "wf-rail-grow",
                   rail === undefined && "invisible",
-                  // 行进的段照常画底线，再叠一道不动的光（`.wf-rail-march::after`）：朝着灯渐亮。
+                  // The traveling section is drawn as a bottom line as usual, and then superimposed with a motionless light (`.wf-rail-march::after`): it gradually becomes brighter towards the light.
                   rail?.ink === "march" && "wf-rail-march",
                 )}
                 data-rail-from={i}
@@ -189,9 +198,10 @@ export function WorkflowStationRow({
 }
 
 /**
- * 站台行：有带时站头一律搬到轨道下面
- * 这一行，灯留在自己的轨道上，分支轨道的站由一条点状引线接回名字——主线的站不需要，它的灯就在
- * 名字正上方。草稿永远没有带，所以这里不必管笔。
+ * The station row: with a band present the station head always moves to the row below the rail, the
+ * lamp stays on its own rail, and stations on a branch rail are tied back to the name by a dotted
+ * leader line — stations on the main rail do not need one, their lamp is directly above the name. A
+ * draft never has a band, so there is nothing for the pen to do here.
  */
 export function WorkflowStationPlatform({
   folded,

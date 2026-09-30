@@ -25,8 +25,8 @@ export function SessionSubscriptionErrorPanel({
     openFeedbackSubmit({
       title: error.slice(0, 80),
       type: "bug",
-      module: "Agent任务执行失败",
-      severity: "P2-中",
+      module: "Agent Task Execution Failure",
+      severity: "P2-Medium",
       includeLogs: false,
       description: buildErrorFeedbackDescription({
         message: error,

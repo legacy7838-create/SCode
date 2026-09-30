@@ -1,8 +1,10 @@
 /**
- * Electron `percentCPUUsage` 的整机口径归一化。
+ * Whole-machine normalization for Electron's `percentCPUUsage`.
  *
- * 资源管理器 UI 展示的整机 CPU 口径统一走这一份归一化实现：
- * darwin / win32 上 Chromium 已按整机归一化；linux 上是单核口径，需要除以逻辑核数。
+ * The whole-machine CPU figure the resource manager UI shows always goes through this single
+ * normalization implementation: on darwin / win32 Chromium has already normalized it across the
+ * whole machine, while on linux it is a per-core figure that has to be divided by the logical core
+ * count.
  */
 
 import os from "node:os";

@@ -1,7 +1,13 @@
-/** 分享选择面板的几何约束；面板内容本身仍由 CSS 自适应。 */
+/**
+ * The geometric constraints of the share selection panel; the panel content itself is still adapted
+ * by CSS.
+ */
 const CONVERSATION_SHARE_SELECTION_PANEL_EDGE_INSET_PX = 24;
 const CONVERSATION_SHARE_SELECTION_PANEL_DOCK_GAP_PX = 16;
-/** 两行候选（各 48px、间距 8px）加面板上下 padding 16px，低于此高度面板不再可用。 */
+/**
+ * Two candidate rows (48px each, 8px apart) plus 16px of top and bottom panel padding — below this
+ * height the panel is no longer usable.
+ */
 const CONVERSATION_SHARE_SELECTION_PANEL_MIN_HEIGHT_PX = 120;
 export const CONVERSATION_SHARE_SELECTION_PANEL_MAX_HEIGHT_PROPERTY =
   "--conversation-share-selection-panel-max-height";
@@ -9,9 +15,12 @@ export const CONVERSATION_SHARE_SELECTION_PANEL_CENTER_Y_PROPERTY =
   "--conversation-share-selection-panel-center-y";
 
 interface ConversationShareSelectionPanelLayoutInput {
-  /** 会话内容容器高度，不包含 WorkspaceHeader。 */
+  /** The height of the conversation content container, excluding the WorkspaceHeader. */
   containerHeightPx: number;
-  /** 底部 composer/share dock 顶部，相对于会话内容容器的坐标。 */
+  /**
+   * The top edge of the bottom composer/share dock, in coordinates relative to the conversation
+   * content container.
+   */
   dockStartPx: number;
 }
 
@@ -27,15 +36,19 @@ function normalizeSize(value: number): number {
 }
 
 /**
- * 计算面板的最大可视高度和垂直锚点。
+ * Computes the panel's maximum visible height and its vertical anchor.
  *
- * 面板内容少时由内容测量决定实际高度；这里仅提供 max-height，避免
- * 自然高度超过底部 dock 后遮挡输入区。顶部基线固定在边距安全区内，
- * 发生底部碰撞时只压缩面板可视高度，列表仍由 ScrollArea 承接滚动。
+ * When the panel holds little content the actual height is decided by measuring the content; this
+ * only supplies a max-height, so that a natural height exceeding the bottom dock does not cover the
+ * input area. The top baseline is pinned inside the margin safe area, and on a bottom collision
+ * only the panel's visible height is compressed, with the list still scrolling inside the
+ * ScrollArea.
  *
- * 不能只做 `min(容器可用高度, dock 之上的高度)`，短视口或高 dock 下
- * 后者会趋近 0，面板被压成不可用的零高度薄片。现在保留一个最小高度：
- * 先回收顶部安全距，仍不够时才允许侵入 dock 间距，且始终不超出容器本身。
+ * `min(height available in the container, height above the dock)` alone is not enough: on a short
+ * viewport or a tall dock the latter approaches 0 and the panel is squeezed into an unusable
+ * zero-height sliver. A minimum height is therefore kept now: the top safe margin is reclaimed
+ * first, and only if that is still not enough is it allowed to encroach on the dock's spacing,
+ * never exceeding the container itself.
  */
 function resolveConversationShareSelectionPanelLayout({
   containerHeightPx,
@@ -72,7 +85,10 @@ function resolveConversationShareSelectionPanelLayout({
   };
 }
 
-/** 将布局结果写入共享父容器，让面板和 Timeline 使用同一套坐标系。 */
+/**
+ * Writes the layout result into the shared parent container, so that the panel and the Timeline use
+ * one and the same coordinate system.
+ */
 export function syncConversationShareSelectionPanelLayout(
   container: HTMLElement,
   dock: HTMLElement,

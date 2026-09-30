@@ -14,9 +14,9 @@ export interface WorkspaceFileSearchCandidate {
   relativePath: string;
   type: WorkspaceFileEntry["type"];
   /**
-   * 预计算的小写形式：打分热路径不再对每条候选反复 toLowerCase。
-   * 放开 node_modules 后候选基数可达数十万，
-   * 每键 3-4 次全串 toLowerCase 是卡顿主因之一；索引构建时一次性归一化。
+   * Pre-computed lowercase form: the scoring hot path no longer repeatedly calls toLowerCase for each candidate.
+   * After opening up node_modules, the candidate base can reach hundreds of thousands,
+   * 3-4 full-string toLowerCase per keystroke is one of the main causes of lag; normalize once during index construction.
    */
   lowercaseName: string;
   lowercaseRelativePath: string;
@@ -36,7 +36,7 @@ export function mapWorkspaceFileEntriesToSearchCandidates(
   entries: WorkspaceFileEntry[],
 ): WorkspaceFileSearchCandidate[] {
   return entries.map((entry) => {
-    // trim 与原打分函数的归一化保持一致（防御首尾空格文件名），严格行为等价。
+    // trim is consistent with the original scoring function's normalization (defending against leading/trailing space filenames), strictly equivalent behavior.
     const lowercaseRelativePath = entry.relativePath.trim().toLowerCase();
     return {
       id: entry.relativePath,
@@ -88,7 +88,7 @@ export function scoreWorkspaceFileFuzzyMatch(text: string, query: string): numbe
   return score + (normalizedText.length - normalizedQuery.length);
 }
 
-/** scoreWorkspaceFileFuzzyMatch 的热路径版本：text/query 均为已归一化（trim+lower）输入。 */
+/** Hot-path version of scoreWorkspaceFileFuzzyMatch: text/query are both normalized (trim+lower) inputs. */
 function scoreNormalizedFuzzyMatch(normalizedText: string, normalizedQuery: string): number | null {
   if (!normalizedText) {
     return null;
@@ -133,8 +133,8 @@ export function getWorkspaceFileSearchCandidateScore(
     normalizedQuery,
   );
   const pathScore = scoreNormalizedFuzzyMatch(candidate.lowercasePath, normalizedQuery);
-  // relativePath 打分只计 +25 档；更高的 +100 档恒被同一打分的 +25 项压制，属于死代码；
-  // keywords 项（+300）保留，覆盖"query 跨目录段子序列命中"的场景。
+  // relativePath scoring only counts the +25 tier; the higher +100 tier is always suppressed by the +25 items with the same score, making it dead code;
+  // keywords items (+300) are retained, covering the scenario of "query spanning directory segment subsequence matches".
   const keywordScore = Math.min(
     relativePathScore !== null ? relativePathScore + 300 : Number.POSITIVE_INFINITY,
     pathScore !== null ? pathScore + 300 : Number.POSITIVE_INFINITY,
@@ -194,11 +194,11 @@ function compareScoredWorkspaceFileSearchCandidates(
 }
 
 /**
- * 大 workspace（数万候选）下 top-K 插入点曾用 findIndex 线性扫，最坏
- * O(候选数 × limit)（65k 候选 × 1000 ≈ 6500 万次比较，实测单键 155ms 同步阻塞
- * 主线程，@ 面板键入时整窗冻结）。compareScoredWorkspaceFileSearchCandidates 按
- * (score, index) 严格全序（index 单次遍历内唯一），二分查找插入点安全，
- * 单次过滤降到 O(n log K)。
+ * In large workspaces (tens of thousands of candidates), the top-K insertion point previously used findIndex for linear scanning, with worst case
+ * O(candidates × limit) (65k candidates × 1000 ≈ 65 million comparisons, measured 155ms synchronous blocking per keystroke
+ * main thread, entire window freezes when typing in the @ panel). compareScoredWorkspaceFileSearchCandidates follows
+ * (score, index) strict total order (index is unique within a single traversal), binary search for insertion point is safe,
+ * single filtering reduced to O(n log K).
  */
 function findInsertionIndexByBinarySearch(
   bestMatches: ScoredWorkspaceFileSearchCandidate[],
@@ -243,8 +243,8 @@ export function filterWorkspaceFileSearchCandidates(
     }
 
     const scored = { candidate, index, score };
-    // 快速路径：数组按序维护，末尾即当前最差；已满且 scored 不优于末尾时必然落选，
-    // 跳过查找与 splice（宽匹配 query 下大多数候选走这条分支）。
+    // Fast path: the array is maintained in order, with the end being the current worst; when full and scored is not better than the end, it is definitely eliminated,
+    // skip search and splice (most candidates take this branch under broad match queries).
     const worst = bestMatches[bestMatches.length - 1];
     if (
       worst !== undefined &&

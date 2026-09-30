@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- Windows 进程树清理需要集中维护跨阶段的安全边界与 deadline。 */
+/* eslint-disable max-lines -- Windows process tree cleanup needs its cross-stage safety boundaries and deadline maintained in one place. */
 import type { ChildProcess } from "node:child_process";
 import {
   captureProcessGroupSnapshot,
@@ -57,7 +57,7 @@ interface InternalProcessTreeTerminatorOptions extends ProcessTreeTerminatorOpti
   onForceTimerScheduled?: (timer: ReturnType<typeof setTimeout>) => void;
   onGracefulCleanupScheduled?: (flight: Promise<void>) => void;
   resolvedOwnership?: ProcessTreeOwnershipResolution;
-  /** 进程身份查询失败，只观察原 ChildProcess，禁止向裸 PID 发送 taskkill。 */
+  /** Process identity lookup failed; only the original ChildProcess is observed and sending taskkill to a bare PID is forbidden. */
   unverifiedRootOnly?: boolean;
 }
 
@@ -119,7 +119,11 @@ function killPid(
     return true;
   } catch (error) {
     if (!isMissingProcessError(error)) {
-      warn(options, `发送 runtime 进程终止信号失败 pid=${pid} signal=${signal}:`, error);
+      warn(
+        options,
+        `failed to send runtime process termination signal pid=${pid} signal=${signal}:`,
+        error,
+      );
     }
     return false;
   }
@@ -135,7 +139,11 @@ function killPosixProcessGroup(
     return true;
   } catch (error) {
     if (!isMissingProcessError(error)) {
-      warn(options, `发送 runtime 进程组终止信号失败 pgid=${pid} signal=${signal}:`, error);
+      warn(
+        options,
+        `failed to send runtime process group termination signal pgid=${pid} signal=${signal}:`,
+        error,
+      );
     }
     return false;
   }
@@ -149,14 +157,14 @@ async function runWindowsTaskkill(
   const timeoutMs = Math.max(options.windowsTaskkillTimeoutMs ?? WINDOWS_TASKKILL_TIMEOUT_MS, 1);
   const runner = options.windowsTaskkillRunner ?? defaultWindowsTaskkillRunner;
   const startedAt = Date.now();
-  debug(options, "Windows runtime 进程树 taskkill started", { force, pid, timeoutMs });
+  debug(options, "Windows runtime process tree taskkill started", { force, pid, timeoutMs });
   let result;
   try {
     result = await runner({ force, pid, timeoutMs });
   } catch (error) {
     result = { error };
   }
-  debug(options, "Windows runtime 进程树 taskkill completed", {
+  debug(options, "Windows runtime process tree taskkill completed", {
     durationMs: Date.now() - startedAt,
     force,
     pid,
@@ -165,7 +173,7 @@ async function runWindowsTaskkill(
   if (result.error && isPidAlive(pid)) {
     warn(
       options,
-      `${force ? "强制清理" : "请求"} runtime 进程树退出失败 pid=${pid} status=${String(
+      `${force ? "forced cleanup" : "requested"} runtime process tree exit failed pid=${pid} status=${String(
         typeof result.error === "object" && result.error !== null && "code" in result.error
           ? ((result.error as { code?: unknown }).code ?? "unknown")
           : "unknown",
@@ -187,9 +195,9 @@ async function forceTerminateWindowsProcessTree(
   const { childStillOwned, currentIdentities } =
     verifiedOwnership ??
     (await resolveCurrentOwnedIdentitiesAsync(child, knownIdentities, options, false));
-  // 旧快照和滞后的 Node exitCode 都不能证明 deadline 时 PID 仍属于原进程树。
-  // deadline 路径只允许强杀预留窗口内重新核对过 CreationDate 的 root/后代；查询失败的
-  // 旧身份继续交给 waiter 报告残留，但绝不作为 /F 目标，避免 PID 复用误杀。
+  // Neither the old snapshot nor the lagging Node exitCode can prove that the PID still belongs to the original process tree at the deadline.
+  // The deadline path only allows root/descendants whose CreationDate has been rechecked within the reservation window; the query fails
+  // The old identity will continue to be handed over to the waiter to report the residue, but will never be used as a /F target to avoid accidental killing by PID reuse.
   const targets = new Set(
     deadlineSnapshotOnly
       ? deadlineVerifiedIdentities.map((identity) => identity.pid)
@@ -199,8 +207,8 @@ async function forceTerminateWindowsProcessTree(
   if (childStillOwned && child.pid != null && !unverifiedRootOnly && !deadlineSnapshotOnly) {
     targets.add(child.pid);
   }
-  // 定向 CIM 复核超时不应让仍由 ChildProcess 句柄持有的 root 永久残留。
-  // 句柄确认 root 仍存活后，taskkill /T 只针对该 root，不会按失效快照认领新 PID。
+  // Directed CIM review timeouts should not leave root still held by the ChildProcess handle permanently.
+  // After the handle confirms that the root is still alive, taskkill /T will only target the root and will not claim a new PID based on the expired snapshot.
   if (
     deadlineSnapshotOnly &&
     !unverifiedRootOnly &&
@@ -238,16 +246,16 @@ function terminateWindowsProcessTreeWithOwnership(
     ownership.childStillOwned && !internalOptions.unverifiedRootOnly
       ? [pid]
       : ownership.currentIdentities.map((identity) => identity.pid);
-  // CIM 查询在系统高负载下可能超过一次 cleanup deadline，但仍存活的
-  // ChildProcess 句柄可以证明 root 属于当前 Host。此时允许用 root /T 作为安全兜底，
-  // 只扩大到该句柄对应的活进程，不沿裸 PID 重新发现或认领进程树。
+  // CIM queries may exceed a cleanup deadline under high system load, but still survive
+  // The ChildProcess handle can prove that root belongs to the current Host. At this time, you are allowed to use root /T as a safety net.
+  // Only expands to the live process corresponding to the handle, without rediscovering or claiming the process tree along the naked PID.
   if (gracefulTargets.length === 0 && childHandleOwnsLiveRoot) gracefulTargets.push(pid);
   const gracefulFlight = Promise.all(
     [...new Set(gracefulTargets)].map((targetPid) => runWindowsTaskkill(targetPid, false, options)),
   ).then(() => undefined);
-  // 等待式清理过去把 graceful taskkill fire-and-forget 后只等 force 窗口，
-  // taskkill callback/ChildProcess exit 稍晚到达时会把正常退出误报为 remaining PID。
-  // 非等待式调用仍不 await；等待式 waiter 通过回调把同一 flight 纳入完成屏障。
+  // Waiting for cleanup, just wait for the force window after graceful taskkill fire-and-forget.
+  // When the taskkill callback/ChildProcess exit arrives later, the normal exit will be mistakenly reported as the remaining PID.
+  // Non-awaited calls still do not await; awaited waiters include the same flight into the completion barrier through callbacks.
   internalOptions.onGracefulCleanupScheduled?.(gracefulFlight);
   void gracefulFlight;
   const forceDelayMs = Math.max(
@@ -261,13 +269,13 @@ function terminateWindowsProcessTreeWithOwnership(
     identitiesToRecheck.length > 0 && forceDelayMs >= WINDOWS_FORCE_IDENTITY_RECHECK_BUDGET_MS;
   const forceTimer = scheduleForceCleanup(
     () => {
-      // 非等待式关闭不会注入观察回调；强制回收必须先独立执行，
-      // 不能作为 optional call 的参数，否则回调缺失时参数也不会求值。
+      // Non-waiting shutdown does not inject observation callbacks; forced recycling must be executed independently first.
+      // It cannot be used as a parameter of optional call, otherwise the parameter will not be evaluated when the callback is missing.
       void (async () => {
-        // 只定向复核并强杀 root 是不够的：当 graceful /T 失败或后代已经
-        // reparent 时，已知 MCP/runtime 后代永远没有 force flight。这里在 force 前预留的
-        // 同一份预算内并发复核所有已知身份，不增加总 deadline；每个 PID 只有 CreationDate
-        // 本次仍匹配才进入 /F，查询失败继续 fail-closed。
+        // Directed review and killing root is not enough: when graceful /T fails or the descendant has
+        // When reparented, MCP/runtime descendants are known to never have force flight. This is reserved before force
+        // Concurrently review all known identities within the same budget, without increasing the total deadline; each PID has only CreationDate
+        // Enter /F only when there is still a match this time. If the query fails, continue fail-closed.
         const deadlineVerifiedIdentities = canRecheckIdentitiesWithinDeadline
           ? (
               await Promise.all(
@@ -376,8 +384,8 @@ function terminatePosixProcessTree(
     ? killPosixProcessGroup(pid, POSIX_TERMINATION_SIGNAL, options)
     : false;
 
-  // detached runtime/MCP 后代不在 root 进程组内；只对创建标识仍匹配的
-  // 生前快照成员发信号，避免延迟回收把复用后的同 PID 进程当成旧后代误杀。
+  // detached runtime/MCP descendants are not in the root process group; only creation IDs still match
+  // The lifetime snapshot member sends a signal to prevent delayed recycling from accidentally killing the reused process with the same PID as an old descendant.
   for (const identity of ownership.currentIdentities) {
     if (identity.pid !== pid) {
       killPid(identity.pid, POSIX_TERMINATION_SIGNAL, options);
@@ -389,8 +397,8 @@ function terminatePosixProcessTree(
 
   const forceTimer = scheduleForceCleanup(
     () => {
-      // 非等待式关闭不会注入观察回调；强制回收必须先独立执行，
-      // 不能作为 optional call 的参数，否则回调缺失时参数也不会求值。
+      // Non-waiting shutdown does not inject observation callbacks; forced recycling must be executed independently first.
+      // It cannot be used as a parameter of optional call, otherwise the parameter will not be evaluated when the callback is missing.
       const result = forceTerminatePosixProcessTree(child, ownership.knownIdentities, options);
       internalOptions.onForceCleanup?.(result);
     },
@@ -405,12 +413,12 @@ export function terminateProcessTree(
   options: ProcessTreeTerminatorOptions = {},
 ): void {
   if (child.pid == null) {
-    // 测试替身或极早期 spawn 失败场景可能拿不到 pid。
-    // 这时无法按进程组/进程树兜底，但仍保留旧的 child.kill() 关闭语义。
+    // Test doubles or very early spawn failure scenarios may not get pid.
+    // At this time, it is not possible to drill down by process group/process tree, but the old child.kill() shutdown semantics are still retained.
     try {
       child.kill(POSIX_TERMINATION_SIGNAL);
     } catch (error) {
-      warn(options, "发送 runtime 进程终止信号失败 pid=unknown:", error);
+      warn(options, "failed to send runtime process termination signal pid=unknown:", error);
     }
     return;
   }
@@ -437,16 +445,16 @@ export async function terminateProcessTreeAndWait(
           : captureExitedRootDescendantsSnapshot(child.pid, options);
   const snapshotIdentities = cleanupSnapshot?.identities ?? [];
   const identityVerificationUnavailable = cleanupSnapshot?.identityVerification === "unavailable";
-  // 刚取得的异步快照已经固定了 Windows 创建标识，避免在 EOF 前立刻重复执行一次
-  // 代价较高的 CIM 查询。force 阶段仍会异步复核身份，防止 PID 复用误杀。
+  // The asynchronous snapshot just taken has fixed the Windows creation flag to avoid repeating it immediately before EOF.
+  // Costly CIM queries. In the force phase, the identity will still be checked asynchronously to prevent accidental killing due to PID reuse.
   const initialOwnership =
     process.platform === "win32" &&
     cleanupSnapshot &&
     child.exitCode === null &&
     child.signalCode === null
       ? {
-          // 查询失败不等于进程不存在。保留未验证 root 让 waiter 在整个
-          // 有界预算内观察 ChildProcess，并在仍存活时通过 remainingPids 报告失败。
+          // Query failure does not mean that the process does not exist. Leave unauthenticated root and let waiter run the entire
+          // Observes ChildProcess within a bounded budget and reports failure via remainingPids if still alive.
           childStillOwned:
             identityVerificationUnavailable ||
             snapshotIdentities.some((identity) => identity.pid === child.pid),
@@ -460,9 +468,9 @@ export async function terminateProcessTreeAndWait(
       ? ({ ...options, unverifiedRootOnly: true } as ProcessTreeTerminatorWaitOptions)
       : options,
     initialOwnership,
-    // 身份查询失败且没有已验证 identity 时，terminator 的 graceful/force
-    // targets 都为空。只有存在真实信号目标才为 taskkill flight 预留命令超时；其余
-    // 情况保持完整预算，禁止按 Promise 的瞬时 settle 状态激进缩短边界。
+    // graceful/force of terminator when identity query fails and there is no verified identity
+    // targets are all empty. Command timeouts are reserved for taskkill flight only if there is a real signal target; otherwise
+    // The case maintains full budget, prohibiting aggressive shortening of the bounds by the Promise's instantaneous settle state.
     initialOwnership.currentIdentities.length > 0 ||
       (!identityVerificationUnavailable && initialOwnership.childStillOwned),
     terminateProcessTree,

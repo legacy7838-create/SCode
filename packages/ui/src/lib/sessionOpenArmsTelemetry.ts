@@ -86,10 +86,10 @@ function emit(
   if (!targetReporter) return;
   try {
     void Promise.resolve(targetReporter.reportArmsCustomEvent(payload)).catch((error) => {
-      logger.warn("[session-open] ARMS 上报失败", { name: payload.name, error });
+      logger.warn("[session-open] ARMS report failed", { name: payload.name, error });
     });
   } catch (error) {
-    logger.warn("[session-open] ARMS 上报异常", { name: payload.name, error });
+    logger.warn("[session-open] ARMS report threw", { name: payload.name, error });
   }
 }
 

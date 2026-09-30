@@ -59,10 +59,11 @@ function shouldGrantCurrentWorkspaceSnapshot(reasonCode: string | undefined): bo
 }
 
 /**
- * Settings 行内 Trust 的单次用户动作：已有精确 flow 时直接 respond；否则先通过当前
- * session command binding 请求 flow，再等待 Runtime 投影出的 immutable request。
- * 当前 session 的 immutable snapshot 无法审核 Settings bundle 时，转由 workspace
- * Agent authority 重新发现 canonical snapshot；UI 静态 snapshot 始终只提供 exact target。
+ * The one-shot user action behind inline Trust in Settings: when an exact flow already exists,
+ * respond directly; otherwise first request the flow through the current session command binding,
+ * then wait for the immutable request projected by the Runtime. When the current session's
+ * immutable snapshot cannot review the Settings bundle, the workspace Agent authority rediscovers
+ * the canonical snapshot; the UI static snapshot always supplies only the exact target.
  */
 export async function trustWorkspaceHookWithReview(input: {
   hook: Hook;
@@ -129,9 +130,9 @@ export async function trustWorkspaceHookWithReview(input: {
       },
     );
     if (!requested.accepted) {
-      // 只要存在活跃 session binding 就把 Trust 固定路由给该
-      // session；Settings 保存新 Hook 后，活跃 session 仍持有启动时不可变 snapshot，
-      // 因而无法审核当前 bundle，却也阻断了本来安全可用的 workspace pretrust。
+      // As long as there is an active session binding, the Trust is fixedly routed to the
+      // session; Settings After saving the new Hook, the active session still holds the immutable snapshot at startup.
+      // Therefore, the current bundle cannot be audited, but the originally safe and available workspace pretrust is also blocked.
       if (shouldGrantCurrentWorkspaceSnapshot(requested.reasonCode)) {
         const granted = grantCurrentWorkspaceSnapshot();
         if (granted) return granted;

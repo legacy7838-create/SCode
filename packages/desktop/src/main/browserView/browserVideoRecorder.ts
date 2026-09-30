@@ -11,9 +11,9 @@ export interface BrowserWebmRecorderFactoryInput {
 }
 
 export interface BrowserWebmRecorderSession {
-  /** 停止 Chromium MediaRecorder，并等待最后一个 WebM chunk 安全写盘。 */
+  /** Stops the Chromium MediaRecorder and waits for the last WebM chunk to reach disk safely. */
   stop(): Promise<void>;
-  /** 中止录制并关闭 renderer/stream/文件句柄；必须可重复调用。 */
+  /** Aborts the recording and closes the renderer/stream/file handles; must be safe to call repeatedly. */
   cancel(): Promise<void>;
 }
 
@@ -30,8 +30,9 @@ function throwIfAborted(signal: AbortSignal): void {
 }
 
 /**
- * 编排一次 IAB WebM 录制。具体媒体能力由 Desktop main 注入，纯编排层不依赖 Electron，
- * 便于验证失败清理与 artifact 合同，也避免 Service/Host 反向引用 Runtime 实现。
+ * Orchestrates one IAB WebM recording. The concrete media capabilities are injected by Desktop main,
+ * so the pure orchestration layer stays free of Electron: that keeps failure cleanup and the artifact
+ * contract verifiable, and avoids Service/Host referencing the Runtime implementation in reverse.
  */
 export async function recordBrowserVideo(input: {
   targetFrame: unknown;
@@ -68,7 +69,7 @@ export async function recordBrowserVideo(input: {
     throwIfAborted(input.signal);
     const durationMs = Math.max(0, Math.round(now() - captureStartedAt));
 
-    // 页面取景已经结束：先释放 background surface watchdog，再等待 recorder flush 尾块。
+    // Page framing has ended: release the background surface watchdog first, and then wait for the recorder flush tail block.
     input.onCaptureComplete?.();
     input.onPhase?.("finalizing");
     await recorder.stop();
@@ -90,8 +91,8 @@ export async function recordBrowserVideo(input: {
     };
   } finally {
     if (!completed) {
-      // MediaRecorder 失败或场景动作抛错时，残留的 EBML 头看起来像视频但不可播放；
-      // 必须同时关闭 recorder 并删除半成品，避免 status 暴露伪 artifact。
+      // When the MediaRecorder fails or the scene action is thrown incorrectly, the remaining EBML header looks like a video but cannot be played;
+      // The recorder must be closed and the semi-finished product must be deleted at the same time to avoid status from exposing false artifacts.
       await recorder?.cancel().catch(() => undefined);
       await rm(outputPath, { force: true }).catch(() => undefined);
     }

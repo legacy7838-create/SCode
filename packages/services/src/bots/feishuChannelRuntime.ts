@@ -68,8 +68,8 @@ export function createFeishuChannelRuntime(deps: FeishuChannelRuntimeDeps) {
         if (signal.aborted) {
           return;
         }
-        // Bugfix: runtime 停止或锁目录异常时，锁文件创建可能在进入连接 try 块前失败。
-        // 必须把 acquire 纳入可恢复循环，否则多窗口关闭会留下未处理 rejection。
+        // Bugfix: When the runtime is stopped or the lock directory is abnormal, the lock file creation may fail before entering the connection try block.
+        // Acquire must be included in a resumable loop, otherwise multi-window closing will leave an unhandled rejection.
         deps.logger.warn(
           undefined,
           `acquire Feishu WebSocket lock failed bot=${bot.id}: ${error instanceof Error ? `${error.message}${"code" in error && typeof error.code === "string" ? ` code=${error.code}` : ""}` : String(error)}`,
@@ -146,12 +146,12 @@ export function createFeishuChannelRuntime(deps: FeishuChannelRuntimeDeps) {
           botId: bot.id,
           provider: bot.provider,
           status: "connected",
-          // 修复：运行状态会直接展示到 UI。补充 messageId，让前端按当前语言渲染，message 仅作为旧版本兜底。
+          // Fix: Running status will be displayed directly to the UI. Add messageId to let the front end render according to the current language, and the message is only used as a cover for the old version.
           message: "Feishu WebSocket is running.",
           messageId: "bots.runtime.feishuWebSocketRunning",
         });
-        // Bugfix：首次 ready 不是长连接生命周期终点。SDK 重连耗尽必须进入 catch，
-        // 才能更新错误状态、关闭 client、释放跨窗口锁并进入外层恢复循环。
+        // Bugfix: ready for the first time is not the end of the long connection life cycle. If the SDK reconnection is exhausted, you must enter the catch.
+        // Only then can the error status be updated, the client closed, the cross-window lock released, and the outer recovery loop entered.
         await Promise.race([
           waitForAbort(signal),
           client.terminated,
@@ -186,7 +186,7 @@ export function createFeishuChannelRuntime(deps: FeishuChannelRuntimeDeps) {
           );
         });
       }
-      // 修复原因：重试退避不能占着旧 client 和跨窗口锁等待，必须先完整清理资源。
+      // Reason for repair: Retry backoff cannot occupy the old client and cross-window lock waiting, and the resources must be completely cleared first.
       if (retryAfterError) {
         await waitFor(5_000, signal);
       }
@@ -289,8 +289,8 @@ export function createFeishuChannelRuntime(deps: FeishuChannelRuntimeDeps) {
         }
         const runtime = runtimes.get(bot.id);
         if (runtime && runtime.fingerprint !== fingerprint) {
-          // Bugfix: 飞书/Lark 的 provider、App ID 或凭据变化后，旧 WebSocket 仍持有旧配置。
-          // 必须等待旧 client 和跨窗口锁释放后再启动新连接，保证同一 Bot 只有一个配置版本在线。
+          // Bugfix: After the provider, App ID or credentials of Feishu/Lark are changed, the old WebSocket still retains the old configuration.
+          // You must wait for the old client and cross-window lock to be released before starting a new connection to ensure that only one configuration version of the same Bot is online.
           await stopWebSocket(bot.id);
           if (!isLatest()) {
             return;
@@ -315,8 +315,8 @@ export function createFeishuChannelRuntime(deps: FeishuChannelRuntimeDeps) {
 
   function scheduleRefresh(config?: BotsConfigFile): void {
     if (deps.runBackgroundTasks === false) {
-      // 修复原因：remote workspace host / desktop-attached 远端只暴露控制面服务；
-      // bot runtime 后台连接必须留在本地桌面 host，避免配置变更后重新抢跑。
+      // Reason for repair: remote workspace host / desktop-attached remote only exposes control plane services;
+      // The bot runtime background connection must remain on the local desktop host to avoid re-running after configuration changes.
       return;
     }
     void refresh(config).catch((error: unknown) => {
@@ -333,7 +333,7 @@ export function createFeishuChannelRuntime(deps: FeishuChannelRuntimeDeps) {
     for (const runtime of activeRuntimes) {
       runtime.controller.abort();
     }
-    // Bugfix：abort 只是发出取消信号；销毁终态必须等 WebSocket 关闭和 finally 释放跨进程锁。
+    // Bugfix: abort only sends a cancellation signal; the destruction of the final state must wait for the WebSocket to close and finally release the cross-process lock.
     await Promise.allSettled(activeRuntimes.map((runtime) => runtime.done));
     for (const [botId, runtime] of runtimes) {
       if (activeRuntimes.includes(runtime)) {

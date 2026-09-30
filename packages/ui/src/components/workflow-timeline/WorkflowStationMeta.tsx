@@ -2,7 +2,11 @@ import { Repeat2Icon } from "lucide-react";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import type { TimelineStation } from "./timeline-model.js";
 
-/** 站头元数据（从 `WorkflowTimeline.tsx` 拆出以守 400 行）：`⟳ n` 轮次（只在循环上的站）与 `a/b` 步数分数（只在观察到节点后）。 */
+/**
+ * Station header metadata (split out of `WorkflowTimeline.tsx` to stay under 400 lines): the `⟳ n`
+ * round (only on stations on a loop) and the `a/b` step fraction (only after nodes have been
+ * observed).
+ */
 export function StationMeta({ station }: { station: TimelineStation }) {
   const { intl } = useZCodeIntl();
   const showRounds = station.onLoop && station.rounds > 0;

@@ -1,6 +1,8 @@
 /**
- * Chromium 体系（main 侧 getAppMetrics）的进程角色归类与按角色聚合。
- * 纯函数、零 Electron 运行时依赖，便于单测；pid 集合由 resourceManagerWindow 的注册表提供。
+ * Process role classification and per-role aggregation for the Chromium family
+ * (`getAppMetrics` on the main side).
+ * Pure functions with zero Electron runtime dependencies, so they are easy to unit-test; the pid
+ * sets come from the registry in resourceManagerWindow.
  */
 
 import type { ProcessResourceRole } from "@zcode/shared";
@@ -11,7 +13,7 @@ import {
 } from "./processResourceAppTotals.js";
 import { roundMetric } from "./resourceMetricsStats.js";
 
-/** getAppMetrics 能覆盖的七个角色；cli_* 与 mcp 由 CLI 样本贡献，不在这里出现。 */
+/** The seven roles that getAppMetrics can cover; cli_* and mcp are contributed by the CLI samples and do not appear here. */
 const CHROMIUM_PROCESS_RESOURCE_ROLES = [
   "main",
   "renderer_main",
@@ -24,19 +26,20 @@ const CHROMIUM_PROCESS_RESOURCE_ROLES = [
 
 type ChromiumProcessResourceRole = (typeof CHROMIUM_PROCESS_RESOURCE_ROLES)[number];
 
-/** 规整后的单进程采样：CPU 已归一化到整机口径，内存单位 KB。 */
+/** A normalized single-process sample: CPU is already normalized to whole-machine scale, memory in KB. */
 export interface ChromiumProcessMetricSample {
   pid: number;
   type: string;
   cpuPercent: number;
   rssKb: number;
-  /** 进程创建时间（epoch ms）；缺省表示未知，运行时长按 0 计。 */
+  /** Process creation time (epoch ms); absent means unknown, and uptime is counted as 0. */
   creationTime?: number;
 }
 
 /**
- * 角色归属的 pid 快照。renderer 必须区分主窗口与 `<webview>` guest，
- * host 与 scheduler 的 utilityProcess pid 由各自 spawn 点登记。
+ * A snapshot of which pids belong to which role. Renderers must distinguish the main window from
+ * `<webview>` guests; the utilityProcess pids for host and scheduler are registered by their
+ * respective spawn points.
  */
 export interface ChromiumProcessRolePids {
   mainPid: number;
@@ -48,18 +51,19 @@ export interface ChromiumProcessRolePids {
 
 export interface ChromiumRoleAggregate {
   role: ChromiumProcessResourceRole;
-  /** 角色内全部进程的 CPU 之和（整机归一化百分比）。 */
+  /** Sum of CPU across every process in the role (percentage normalized to the whole machine). */
   cpuPercent: number;
   rssKbTotal: number;
   rssKbMaxProcess: number;
   processCount: number;
-  /** 角色内最老进程的运行分钟数。 */
+  /** Uptime in minutes of the oldest process in the role. */
   uptimeMinutes: number;
 }
 
 /**
- * 汇总一个 tick 的全部 Chromium 角色，得到 main 能精确枚举到的应用进程合计。
- * 设备级应用总量只从这里取 Chromium 部分：CLI 与 MCP 走外部样本入口，两边不会重复计数。
+ * Sums every Chromium role of one tick into the total for the app processes main can enumerate
+ * exactly. The device-level app total takes its Chromium part only from here: CLI and MCP come in
+ * through the external sample entry points, so the two sides never double-count.
  */
 export function sumChromiumRoleAggregates(
   aggregates: readonly ChromiumRoleAggregate[],
@@ -108,7 +112,7 @@ function uptimeMinutesOf(sample: ChromiumProcessMetricSample, now: number): numb
   return Math.max(0, Math.round((now - creationTime) / 60_000));
 }
 
-/** 按角色聚合一个 tick 的全部 Chromium 进程；只返回本 tick 有存活进程的角色。 */
+/** Aggregates all Chromium processes of one tick by role; only roles with live processes in this tick are returned. */
 export function aggregateChromiumProcessRoles(input: {
   processes: readonly ChromiumProcessMetricSample[];
   pids: ChromiumProcessRolePids;
@@ -131,7 +135,7 @@ export function aggregateChromiumProcessRoles(input: {
       });
       continue;
     }
-    // 只在累加结束后取整：逐次 round 会让误差随进程数累积。
+    // Only round after accumulation: successive rounds will cause the error to accumulate with the number of processes.
     existing.cpuPercent += sample.cpuPercent;
     existing.rssKbTotal += sample.rssKb;
     existing.rssKbMaxProcess = Math.max(existing.rssKbMaxProcess, sample.rssKb);
@@ -139,7 +143,7 @@ export function aggregateChromiumProcessRoles(input: {
     existing.uptimeMinutes = Math.max(existing.uptimeMinutes, uptimeMinutes);
   }
 
-  // 输出顺序按角色枚举固定，事件顺序在单测与看板里都可预期。
+  // The output order is fixed based on role enumeration, and the event order can be expected in both single tests and Kanban boards.
   return CHROMIUM_PROCESS_RESOURCE_ROLES.map((role) => byRole.get(role))
     .filter((aggregate): aggregate is ChromiumRoleAggregate => aggregate !== undefined)
     .map((aggregate) => ({ ...aggregate, cpuPercent: roundMetric(aggregate.cpuPercent) }));

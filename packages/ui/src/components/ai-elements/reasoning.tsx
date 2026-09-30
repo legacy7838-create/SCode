@@ -139,8 +139,8 @@ export const Reasoning = memo(
         startTimeRef.current = Date.now();
       }
 
-      // 收起态展示流式摘要，不需要为了隐藏的耗时每秒触发整块 reasoning 重渲染；
-      // 展开时再按同一个开始时间补算并持续更新时间。
+      // Display streaming summary in the collapsed state, without triggering the entire reasoning re-rendering every second to hide the time consuming;
+      // When expanded, the same start time will be used to calculate and continue to update the time.
       if (!isOpen) {
         return;
       }
@@ -165,7 +165,7 @@ export const Reasoning = memo(
         return;
       }
 
-      // 输出边界是结束收起的补充信号；用户手动操作后，自动规则不能覆盖选择。
+      // The output boundary is a supplementary signal to end the collapse; automatic rules cannot overwrite the selection after manual operation by the user.
       if (
         shouldAutoCollapseReasoning({
           autoCollapseKey,
@@ -191,8 +191,8 @@ export const Reasoning = memo(
         return;
       }
 
-      // 思考内容收起时不能立刻卸载 children。Radix 的高度动画需要
-      // closed 阶段仍能读到真实内容高度；先让 300ms 收起动画跑完，再卸载重 DOM。
+      // Children cannot be uninstalled immediately when the thinking content is collapsed. Radix height animation requires
+      // The real content height can still be read in the closed stage; let the 300ms closing animation run out first, and then unload the heavy DOM.
       contentUnmountDelayRef.current = window.setTimeout(() => {
         setShouldRenderContent(false);
         contentUnmountDelayRef.current = null;
@@ -309,8 +309,8 @@ export const ReasoningTrigger = memo(
           const next = isReasoningSummaryOverflowing(viewport);
           return current === next ? current : next;
         });
-        // 流式摘要超过可用宽度后，普通 overflow-hidden 会固定显示旧前缀，
-        // 最新 token 被裁在右侧。每次内容增长后把单行视口推到末尾，让旧内容向左移。
+        // After the streaming summary exceeds the available width, ordinary overflow-hidden will display the old prefix fixedly.
+        // The latest token is cropped on the right. Push the single-line viewport to the end after each content growth, and move the old content to the left.
         scrollReasoningSummaryToEnd(viewport);
       };
 
@@ -334,8 +334,8 @@ export const ReasoningTrigger = memo(
         </span>
       ) : duration === undefined ? (
         <span className="inline-flex items-center gap-2">
-          {/* 完成态“思考”单独使用 semibold，比同列工具类型标签更粗。
-              统一为 medium，保持对话时间线的视觉层级一致。 */}
+          {/* The perfect "thinking" uses semibold alone, which is bolder than the tool type label in the same column.
+              Unify to medium to keep the visual hierarchy of the conversation timeline consistent. */}
           <span className="font-medium text-foreground-subtlest">
             {intl.formatMessage({ id: "chat.reasoning.thought" })}
           </span>
@@ -370,11 +370,11 @@ export const ReasoningTrigger = memo(
       >
         {children ?? (
           <>
-            {/* thinking 会在长流式回复里持续存在，旋转 loader 会长期占用渲染资源；
-            运行态保留文案扫光，图标固定为静态思考语义。 */}
+            {/* Thinking will continue to exist in long streaming replies, and rotating loaders will occupy rendering resources for a long time;
+            The running state retains the copywriting sweep, and the icons are fixed to static thinking semantics. */}
             <BrainIcon className="size-4 shrink-0 text-foreground-subtlest" />
-            {/* 右侧流式摘要是可伸缩内容；如果左侧标签也参与 flex shrink，
-                长摘要会把思考状态标签挤成多行。固定语义标签宽度，只让摘要占剩余空间。 */}
+            {/* The flow summary on the right is scalable content; if the label on the left also participates in flex shrink,
+                A long summary will squeeze the thought status label into multiple lines. Fixed semantic label width, allowing only the abstract to take up the remaining space. */}
             <span className="shrink-0 whitespace-nowrap" data-reasoning-label="true">
               {thinkingMessage}
             </span>
@@ -488,8 +488,8 @@ export const ReasoningContent = memo(
         return;
       }
 
-      // thought 内容流式追加时 scrollHeight 会变化；同时监听容器和内容尺寸。
-      // 默认吸底跟随最新思考；用户主动离底后暂停，直到用户自己滚回底部再恢复。
+      // Thought scrollHeight will change when content is appended in a streaming manner; both container and content sizes are monitored.
+      // By default, the bottom is followed by the latest thinking; the user takes the initiative to leave the bottom and pauses until the user rolls back to the bottom before resuming.
       const syncScrollPosition = () => {
         if (autoFollowBottomRef.current) {
           scrollToReasoningBottom();
@@ -545,19 +545,19 @@ export const ReasoningContent = memo(
               ref={scrollRef}
               className={cn(
                 "max-h-60 space-y-2 overflow-auto text-ui-base text-foreground-subtlest",
-                // CUA Group 已提供清晰的父级边界；子思考继续显示左导线与缩进会形成重复层级。
+                // CUA Group has provided a clear parent boundary; child reflections continue to display left traverses and indentations resulting in repeated hierarchies.
                 variant === "default" && "ml-2 border-border border-l pl-3.5",
               )}
               data-reasoning-scroll-mask={scrollMaskData}
               onScroll={handleScroll}
               style={scrollMaskStyle}
             >
-              {/* 思考块之前打开时把 Radix content 一起按需挂载并强制 forceMount，
-                  content 首帧已经是 open 状态，高度动画来不及从 closed 状态过渡，看起来像突然展开。
-                  这里和工具详情保持一致：CollapsibleContent 只负责 Presence/高度动画，重内容单独延迟卸载；
-                  间距放在动画内容内部，避免 closed 动画结束时父级 gap/padding 被移除造成末帧跳动。
-                  性能修复：thought 内容可能非常长且会流式追加，展开后如果继续走 MessageResponse/Streamdown，
-                  每次 chunk 都会重跑 Markdown 解析和插件渲染，字数越多越卡；这里按纯文本展示并保留换行。 */}
+              {/* When the thinking block is opened before, mount the Radix content together on demand and force forceMount.
+                  The first frame of content is already in the open state, and the height animation does not have time to transition from the closed state, and it looks like it suddenly expands.
+                  This is consistent with the tool details: CollapsibleContent is only responsible for presence/height animation, and heavy content is delayed and unloaded separately;
+                  The spacing is placed inside the animation content to avoid the last frame jumping caused by the parent gap/padding being removed at the end of the closed animation.
+                  Performance fix: Thought content may be very long and will be appended in a streaming manner. If you continue to use MessageResponse/Streamdown after expansion,
+                  Each chunk will rerun Markdown parsing and plug-in rendering, and the more words there are, the more stuck it will be; here it is displayed as plain text and retains line breaks. */}
               <div
                 ref={contentRef}
                 className="min-w-0 whitespace-pre-wrap break-words text-foreground-subtlest"

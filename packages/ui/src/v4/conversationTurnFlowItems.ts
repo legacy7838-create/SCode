@@ -45,9 +45,9 @@ export function buildConversationFlowItems(options: {
   assistantHistoryRows: readonly AssistantWorkRow[];
   assistantFollowingRows: readonly AssistantWorkRow[];
   assistantTailRows: readonly AssistantWorkRow[];
-  /** 当前 visual work segment 外置展示的末段正文。 */
+  /** The last text of the current visual work segment's external display. */
   visibleAssistantTextRow?: AssistantTextRow;
-  /** 整个 product turn 唯一可挂 action 的最终正文。 */
+  /** The only final text of the entire product turn that can be linked to action. */
   latestAssistantTextRow?: AssistantTextRow;
   timelineOnly: boolean;
 }): ConversationTurnFlowItem[] {
@@ -62,9 +62,9 @@ export function buildConversationFlowItems(options: {
       continue;
     }
     if (!isAssistantWorkRow(row)) continue;
-    // 轮尾 boundary 已从 assistant flow 拆成 assistantTailRows；若再把它追加回
-    // flowItems，renderer 会把它渲染在定时任务卡片、文件 summary 和消息操作栏之前。
-    // 这里只保留真实 flow；boundary 由 TurnGroup 在全部 turn-local 附属 UI 之后统一收尾。
+    // The tail boundary has been split from assistant flow into assistantTailRows; if it is added back
+    // flowItems, the renderer will render it before the scheduled task card, file summary and message action bar.
+    // Only the real flow is retained here; the boundary is unified by TurnGroup after all turn-local affiliated UIs.
     if (tailRowIds.has(row.rowId)) continue;
     if (
       isAssistantTextRow(row) &&

@@ -66,8 +66,8 @@ export function createHostWorkspaceTaskTracker(
       if (entry.activeTaskIds.size === 0) {
         entries.delete(workspaceKey);
       }
-      // sendPrompt resolve 只是 ACK，不能代表 Agent 已空闲。计数只由 task ready
-      // 事件结束，避免共享 WSL Host 在关闭 workspace 时误杀仍在执行工具的 Agent。
+      // sendPrompt resolve is just ACK and does not mean that the Agent is idle. The count is only determined by task ready
+      // The event ends to prevent the shared WSL Host from accidentally killing the Agent that is still executing the tool when closing the workspace.
       reportEntry(entry);
     },
 

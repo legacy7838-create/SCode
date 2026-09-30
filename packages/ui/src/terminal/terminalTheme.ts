@@ -5,9 +5,9 @@ function readTerminalColor(style: CSSStyleDeclaration, name: string, fallback: s
 }
 
 /**
- * xterm 的 `css.toColor` 不认 `color-mix()`、`var()`、现代 `rgb(r g b / a)` 新语法。
- * 这里先用隐藏元素让浏览器解析掉 `var()/color-mix()`，再通过 canvas 将结果规范化为
- * xterm 能解析的老式 `rgba(r, g, b, a)` 字符串。
+ * xterm's `css.toColor` does not recognize `color-mix()`, `var()`, or the modern `rgb(r g b / a)` new syntax.
+ * Here we first use hidden elements to let the browser parse out `var()/color-mix()`, and then use canvas to normalize the results as
+ * The old `rgba(r, g, b, a)` string that xterm can parse.
  */
 const colorResolverEl: HTMLSpanElement | null =
   typeof document === "undefined" ? null : document.createElement("span");
@@ -66,7 +66,7 @@ const TERMINAL_THEME_TOKENS = {
   brightWhite: ["--color-terminal-bright-white", "#f9fafb"],
 } satisfies Partial<Record<keyof ITheme, readonly [string, string]>>;
 
-/** 从 CSS 变量读取 terminal 主题色，跟随 dark/light 切换 */
+/** Read the terminal theme color from CSS variables and follow the dark/light switch */
 function getTerminalTheme() {
   const style = getComputedStyle(document.documentElement);
   return Object.fromEntries(
@@ -83,9 +83,9 @@ function restrictInheritedTerminalTheme(profileTheme: ITheme | undefined): IThem
   }
 
   const inheritedTheme = { ...profileTheme };
-  // macOS iTerm2 / Terminal profile 会带回 background / foreground / cursor，
-  // 直接覆盖 ZCode 主题 token 会让浅色 app 里出现深色终端块，或光标和当前背景撞色后不可见。
-  // 这些基础可读性颜色必须跟随 app 主题；系统 profile 只继承 ANSI、选区等终端细节色。
+  // macOS iTerm2 / Terminal profile will bring back background / foreground / cursor,
+  // Directly overwriting the ZCode theme token will cause a dark terminal block to appear in a light-colored app, or the cursor will be invisible when it conflicts with the current background.
+  // These basic readability colors must follow the app theme; the system profile only inherits terminal detail colors such as ANSI and selection colors.
   delete inheritedTheme.background;
   delete inheritedTheme.foreground;
   delete inheritedTheme.cursor;

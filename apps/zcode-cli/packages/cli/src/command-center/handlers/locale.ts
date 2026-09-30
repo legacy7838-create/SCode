@@ -1,33 +1,24 @@
-import { isUiLocale, SUPPORTED_LOCALES, type UiLocale } from "@zcode/i18n";
+import type { UiLocale } from "@zcode/i18n";
 import type { TuiSubmitPromptResult } from "@zcode/tui";
 import type { CommandCenterDeps } from "../types.js";
 
-const CONFIGURABLE_LOCALES = ["auto", ...SUPPORTED_LOCALES] as const satisfies readonly UiLocale[];
+// English is the only language, so every requested tag — including a legacy
+// "zh-CN" someone typed into an old config — coerces to this one value.
+const ONLY_LOCALE: UiLocale = "en-US";
+const ONLY_LOCALE_NOTE =
+  "English (en-US) is the only supported language, so there is nothing to switch.";
 
 export async function handleLocaleCommand(
   args: string,
   deps: CommandCenterDeps,
 ): Promise<TuiSubmitPromptResult> {
-  const current = (await readCurrentLocale(deps)) ?? "en-US";
+  const current = (await readCurrentLocale(deps)) ?? ONLY_LOCALE;
 
   if (args.length === 0 || args === "status" || args === "list") {
     return {
       locale: current,
       mode: deps.getMode?.(),
-      response: [
-        `Current locale: ${current}.`,
-        `Available locales: ${CONFIGURABLE_LOCALES.join(", ")}.`,
-        "Use /locale <locale> to switch and persist the UI locale.",
-      ].join("\n"),
-    };
-  }
-
-  const requested = args.trim();
-  if (!isUiLocale(requested)) {
-    return {
-      locale: current,
-      mode: deps.getMode?.(),
-      response: `Unsupported locale: ${args}. Available locales: ${CONFIGURABLE_LOCALES.join(", ")}.`,
+      response: [`Current locale: ${current}.`, ONLY_LOCALE_NOTE].join("\n"),
     };
   }
 
@@ -41,18 +32,18 @@ export async function handleLocaleCommand(
   }
 
   try {
-    const result = await setLocale(requested);
+    const result = await setLocale(ONLY_LOCALE);
     return {
       locale: result.locale,
       mode: deps.getMode?.(),
-      response: formatLocaleSwitchResult(result.requestedLocale, result.locale, result.configPath),
+      response: formatLocaleSetResult(args.trim(), result.locale, result.configPath),
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return {
       locale: current,
       mode: deps.getMode?.(),
-      response: `Unable to switch locale: ${message}`,
+      response: `Unable to set locale: ${message}`,
     };
   }
 }
@@ -71,14 +62,14 @@ async function createAppLocaleSetter(
   return app.setLocale?.bind(app);
 }
 
-function formatLocaleSwitchResult(
-  requestedLocale: UiLocale,
+function formatLocaleSetResult(
+  requested: string,
   locale: string,
   configPath: string | undefined,
 ): string {
   const effective =
-    requestedLocale === locale
-      ? `Locale switched to ${locale}.`
-      : `Locale set to ${requestedLocale}; effective locale is ${locale}.`;
+    requested === locale
+      ? `Locale is ${locale}.`
+      : `${ONLY_LOCALE_NOTE} Effective locale is ${locale}.`;
   return configPath ? `${effective}\nConfig: ${configPath}` : effective;
 }

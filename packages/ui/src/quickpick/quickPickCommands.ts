@@ -102,7 +102,7 @@ export function createQuickPickCommands({
       titleId: "quickPick.command.newTask",
       icon: "message",
       shortcut: shortcuts.newTask,
-      keywords: ["new", "task", "任务", "新任务", "新建任务"],
+      keywords: ["new", "task", "Task", "new tasks", "Create new task"],
       run: handlers.createTask,
     },
     {
@@ -111,7 +111,7 @@ export function createQuickPickCommands({
       titleId: "quickPick.command.openWorkspace",
       icon: "folder",
       shortcut: shortcuts.openWorkspace,
-      keywords: ["open", "workspace", "folder", "project", "打开", "文件夹", "项目"],
+      keywords: ["open", "workspace", "folder", "project", "open", "folder", "Project"],
       disabled: !allowOpenWorkspace,
       run: handlers.openWorkspace,
     },
@@ -120,7 +120,7 @@ export function createQuickPickCommands({
       sectionId: "suggested",
       titleId: "quickPick.command.settings",
       icon: "settings",
-      keywords: ["settings", "preferences", "配置", "设置"],
+      keywords: ["settings", "preferences", "Configuration", "settings"],
       run: handlers.openSettings,
     },
     {
@@ -129,7 +129,14 @@ export function createQuickPickCommands({
       titleId: "quickPick.command.toggleSidebar",
       icon: isSidebarVisible ? "sidebarClose" : "sidebarOpen",
       shortcut: shortcuts.toggleSidebar,
-      keywords: ["sidebar", "left sidebar", "toggle sidebar", "侧栏", "侧边栏", "切换侧栏"],
+      keywords: [
+        "sidebar",
+        "left sidebar",
+        "toggle sidebar",
+        "sidebar",
+        "sidebar",
+        "Toggle sidebar",
+      ],
       run: handlers.toggleSidebar,
     },
     {
@@ -138,7 +145,7 @@ export function createQuickPickCommands({
       titleId: "quickPick.command.toggleTerminal",
       icon: "terminal",
       shortcut: shortcuts.toggleTerminal,
-      keywords: ["terminal", "shell", "console", "终端"],
+      keywords: ["terminal", "shell", "console", "terminal"],
       run: handlers.toggleTerminal,
     },
     ...(supportsEmbeddedBrowser
@@ -154,11 +161,11 @@ export function createQuickPickCommands({
               "web",
               "show",
               "hide",
-              "预览",
-              "浏览器",
-              "网页",
-              "显示",
-              "隐藏",
+              "Preview",
+              "Browser",
+              "web page",
+              "show",
+              "hide",
             ],
             run: handlers.togglePreview,
           } satisfies QuickPickCommand,
@@ -169,7 +176,7 @@ export function createQuickPickCommands({
       sectionId: "panels",
       titleId: "quickPick.command.addTerminalTab",
       icon: "terminal",
-      keywords: ["add", "terminal", "tab", "new terminal", "添加终端", "终端标签"],
+      keywords: ["add", "terminal", "tab", "new terminal", "add terminal", "terminal label"],
       run: handlers.openTerminalTab,
     },
     ...(supportsEmbeddedBrowser
@@ -179,7 +186,7 @@ export function createQuickPickCommands({
             sectionId: "panels",
             titleId: "quickPick.command.addBrowserTab",
             icon: "browser",
-            keywords: ["add", "browser", "tab", "preview", "添加浏览器", "浏览器标签"],
+            keywords: ["add", "browser", "tab", "preview", "Add browser", "browser tab"],
             run: handlers.openBrowserTab,
           } satisfies QuickPickCommand,
         ]
@@ -189,7 +196,7 @@ export function createQuickPickCommands({
       sectionId: "panels",
       titleId: "quickPick.command.addReviewTab",
       icon: "diff",
-      keywords: ["add", "review", "diff", "changes", "添加审查", "审查标签", "变更"],
+      keywords: ["add", "review", "diff", "changes", "add review", "censorship tag", "change"],
       run: handlers.openReviewTab,
     },
     {
@@ -197,7 +204,7 @@ export function createQuickPickCommands({
       sectionId: "configure",
       titleId: "quickPick.command.settings",
       icon: "settings",
-      keywords: ["settings", "preferences", "配置", "设置"],
+      keywords: ["settings", "preferences", "Configuration", "settings"],
       run: handlers.openSettings,
     },
     {
@@ -208,7 +215,7 @@ export function createQuickPickCommands({
           ? "quickPick.command.switchThemeToDark"
           : "quickPick.command.switchThemeToLight",
       icon: themeTarget === "dark" ? "themeDark" : "themeLight",
-      keywords: ["theme", "dark", "light", "主题", "深色", "浅色"],
+      keywords: ["theme", "dark", "light", "Topic", "Dark", "light color"],
       run: handlers.switchTheme,
     },
     {
@@ -216,7 +223,7 @@ export function createQuickPickCommands({
       sectionId: "configure",
       titleId: "quickPick.command.skills",
       icon: "skills",
-      keywords: ["skills", "skill", "配置", "技能"],
+      keywords: ["skills", "skill", "Configuration", "Skills"],
       run: handlers.openSkillsSettings,
     },
     {
@@ -224,7 +231,7 @@ export function createQuickPickCommands({
       sectionId: "configure",
       titleId: "quickPick.command.mcpServers",
       icon: "mcp",
-      keywords: ["mcp", "server", "servers", "MCP", "服务器"],
+      keywords: ["mcp", "server", "servers", "MCP", "server"],
       run: handlers.openMcpSettings,
     },
   ];
@@ -239,11 +246,11 @@ export function createQuickPickCommands({
       "issue",
       "support",
       "tickets",
-      "问题上报",
-      "问题反馈",
-      "反馈",
-      "我的反馈",
-      "工单",
+      "Issue escalation",
+      "Problem feedback",
+      "feedback",
+      "my feedback",
+      "work order",
     ],
     run: handlers.openFeedback,
   });
@@ -254,7 +261,7 @@ export function createQuickPickCommands({
       sectionId: "app",
       titleId: "quickPick.command.community",
       icon: "community",
-      keywords: ["community", "users", "chat", "用户社群", "社群"],
+      keywords: ["community", "users", "chat", "user community", "community"],
       run: handlers.openCommunity,
     });
   }
@@ -264,7 +271,7 @@ export function createQuickPickCommands({
     sectionId: "app",
     titleId: "quickPick.command.productDocs",
     icon: "book",
-    keywords: ["docs", "documentation", "product docs", "文档", "产品文档"],
+    keywords: ["docs", "documentation", "product docs", "Documentation", "Product documentation"],
     run: handlers.openProductDocs,
   });
 
@@ -274,7 +281,7 @@ export function createQuickPickCommands({
       sectionId: "app",
       titleId: "quickPick.command.logout",
       icon: "logout",
-      keywords: ["disconnect", "logout", "sign out", "断开连接", "登出"],
+      keywords: ["disconnect", "logout", "sign out", "Disconnect", "Log out"],
       run: handlers.logout,
     });
   } else if (!isLoggedIn && handlers.login) {
@@ -283,8 +290,8 @@ export function createQuickPickCommands({
       sectionId: "app",
       titleId: "quickPick.command.login",
       icon: "login",
-      // 命令面板的账号动作对用户表达为“连接/断开连接”，搜索词也要同步。
-      keywords: ["connect", "login", "sign in", "连接", "登录"],
+      // The account actions in the command panel are expressed to the user as "connect/disconnect", and the search terms must also be synchronized.
+      keywords: ["connect", "login", "sign in", "connect", "Login"],
       run: handlers.login,
     });
   }

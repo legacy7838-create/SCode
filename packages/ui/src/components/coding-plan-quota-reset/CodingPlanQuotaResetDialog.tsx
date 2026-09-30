@@ -85,13 +85,13 @@ function resetTypeAriaId(resetType: CodingPlanResetType) {
 }
 
 interface ResetRowCount {
-  /** 服务端最近一次稳定读数给出的可用张数。 */
+  /** The number of available sheets given by the server's latest stable reading. */
   authoritative: number;
-  /** 本弹框内已成功核销、但服务端读数尚未反映的张数。 */
+  /** The number of sheets in this pop-up box that have been successfully written off but have not yet been reflected in the server reading. */
   consumedLocally: number;
 }
 
-/** 展示张数 = 权威张数 − 本地已核销，钳到 0；无本地记录时回退到 config 的 count。 */
+/** The number of displayed pictures = the number of authoritative pictures - the local has been written off, clamped to 0; when there is no local record, it falls back to the count of config. */
 function remainingResetCount(state: ResetRowCount | undefined, fallback: number): number {
   return state ? Math.max(0, state.authoritative - state.consumedLocally) : fallback;
 }
@@ -120,8 +120,8 @@ export function CodingPlanQuotaResetDialog({
   const [resettingType, setResettingType] = useState<CodingPlanResetType | null>(null);
   const [successfulType, setSuccessfulType] = useState<CodingPlanResetType | null>(null);
   const [exitingType, setExitingType] = useState<CodingPlanResetType | null>(null);
-  // 同一类型可能持有多张机会。按类型维护 { 权威张数, 本地已核销张数 }，成功后只减 1，
-  // 归零才隐藏该行——避免核销一张就把整行（含剩余机会）隐藏，逼用户关闭再打开。
+  // There may be multiple opportunities of the same type. Maintain {number of authoritative sheets, number of local canceled sheets} by type, and only decrease by 1 after success.
+  // Hide the row only when it is reset to zero - avoid hiding the entire row (including remaining opportunities) after one write-off, forcing the user to close and then reopen.
   const [rowCounts, setRowCounts] = useState<Map<CodingPlanResetType, ResetRowCount>>(
     () => new Map(),
   );
@@ -132,7 +132,7 @@ export function CodingPlanQuotaResetDialog({
 
   useEffect(() => {
     if (open !== wasOpenRef.current) {
-      // 成功反馈使用延时任务收起行；若用户中途关闭并重新打开，旧任务会污染新弹框状态。
+      // Use a delayed task to close the row for successful feedback; if the user closes and reopens it midway, the old task will contaminate the new pop-up state.
       for (const timer of timersRef.current) window.clearTimeout(timer);
       timersRef.current = [];
     }
@@ -157,10 +157,10 @@ export function CodingPlanQuotaResetDialog({
     if (viewport) setScrollMasks(readScrollMasks(viewport));
   }, [config.resetItems.length, rowCounts]);
 
-  // 用服务端权威读数对账本地张数：读数抬高视为新发放机会，读数下降视为核销已被反映
-  // 并抵扣等量的本地待确认张数。count===0（processing/completed 过渡态）与动画进行中
-  // 都不回填，避免核销前快照或完成占位把刚核销的行“复活”。列表已移除的类型（服务端确认
-  // 耗尽）清除本地记录以隐藏该行。
+  // Use the server's authoritative reading to reconcile the local number of sheets: an increase in the reading is regarded as a new issuance opportunity, and a decrease in the reading is regarded as the write-off has been reflected
+  // And deduct the same amount of local pending confirmations. count===0 (processing/completed transition state) and animation in progress
+  // There is no backfilling to avoid taking a snapshot before write-off or completing the placeholder to "resurrection" the row that has just been written off. Types that have been removed from the list (confirmed by server
+  // exhaustion) clears local logging to hide the row.
   useEffect(() => {
     if (!open) return;
     setRowCounts((current) => {
@@ -194,8 +194,8 @@ export function CodingPlanQuotaResetDialog({
             consumedLocally: Math.max(0, state.consumedLocally - drop),
           });
         }
-        // item.count === state.authoritative：服务端仍停在核销前的张数（读数尚未追上），
-        // 保持本地乐观值不动，避免刚核销的行被旧读数复活。
+        // item.count === state.authoritative: The number of pieces the server still stops at before write-off (the reading has not yet caught up),
+        // Keep local optimistic values unchanged to prevent newly written-off rows from being resurrected by old readings.
       }
       for (const type of current.keys()) {
         if (!presentTypes.has(type)) {
@@ -243,8 +243,8 @@ export function CodingPlanQuotaResetDialog({
       burstCodingPlanQuotaResetConfetti(origin);
       const exitTimer = window.setTimeout(() => setExitingType(item.resetType), SUCCESS_DISPLAY_MS);
       const removeTimer = window.setTimeout(() => {
-        // 只把该类型的本地已核销张数 +1（钳到权威张数），归零才隐藏；多张时行会以剩余
-        // 张数的形态继续展示，无需关闭重开。服务端读数追上后由对账 effect 抵扣该本地值。
+        // Only add 1 to the number of local canceled sheets of this type (clamp to the authoritative number of sheets) and reset it to zero before hiding it; if there are multiple sheets, the remaining ones will be used.
+        // The shape of the number of photos continues to show, no need to close and reopen. After the server reading catches up, the local value will be deducted by the reconciliation effect.
         setRowCounts((current) => {
           const next = new Map(current);
           const state = next.get(item.resetType) ?? {
@@ -263,7 +263,7 @@ export function CodingPlanQuotaResetDialog({
       }, ROW_EXIT_MS);
       timersRef.current.push(exitTimer, removeTimer);
     } catch {
-      // 失败原因与 toast 由 useCodingPlanQuotaResetUi 统一处理；弹框只恢复可点击状态。
+      // The failure reason and toast are handled uniformly by useCodingPlanQuotaResetUi; the pop-up box only returns to the clickable state.
       setResettingType(null);
     }
   };
@@ -324,10 +324,10 @@ export function CodingPlanQuotaResetDialog({
                   const isExiting = exitingType === item.resetType;
                   const effectiveProcessing = item.processing || resettingType === item.resetType;
                   const remainingSeconds = getRemainingSeconds(item.expiresAt, now);
-                  // 同一类型可能持有多张机会，但服务端 /use 不支持指定核销哪一张，entry 只保留
-                  // 张数与最早到期时刻。展示张数取本地对账后的剩余值：核销一张后行会以剩余
-                  // 张数继续展示。多张时显式标注张数与「最快」，避免用户把最早到期时间误读成
-                  // 全部机会的统一期限。
+                  // The same type may hold multiple opportunities, but the server /use does not support specifying which one to write off, and the entry only retains
+                  // Number of tickets and earliest expiration time. The remaining value after local reconciliation is calculated from the number of displayed sheets: after writing off one sheet, the bank will use the remaining value
+                  // The number of pictures continues to be displayed. When there are multiple sheets, explicitly mark the number of sheets and "fastest" to prevent users from misreading the earliest expiry time.
+                  // Uniform deadline for all opportunities.
                   const remaining = remainingResetCount(rowCounts.get(item.resetType), item.count);
                   const hasMultipleOpportunities = remaining > 1;
                   return (

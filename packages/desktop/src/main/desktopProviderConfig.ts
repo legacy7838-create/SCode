@@ -15,7 +15,7 @@ export function resolveZCodeBuiltinProviderConfigFilePath(options?: {
       "config/provider/zcode-builtin.json",
     );
   }
-  // 开发态与打包共用唯一线上配置源。
+  // The development state and packaging share a single online configuration source.
   const filename = "zcode-builtin.json";
   return join(options?.appPath ?? app.getAppPath(), "../../config/provider", filename);
 }

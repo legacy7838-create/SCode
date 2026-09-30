@@ -10,8 +10,8 @@ import {
 } from "@/components/ui/alert-dialog.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 
-// 卸载是破坏性的彻底清除（缓存 + data 目录 + config 残留），UI 各入口共用同一个确认弹窗，
-// 文案与行为保持一致，避免「已安装」与「市场」两个面板各写一份。
+// Uninstallation is a destructive and complete cleanup (cache + data directory + config residue). Each UI entrance shares the same confirmation pop-up window.
+// Keep the copywriting consistent with the behavior, and avoid writing one copy for each of the "Installed" and "Market" panels.
 export function PluginUninstallConfirmDialog({
   open,
   pluginName,
@@ -61,7 +61,7 @@ export function PluginUninstallConfirmDialog({
             size="sm"
             disabled={pending}
             onClick={(event) => {
-              // 阻止 Radix 默认在点击 action 后关闭弹窗；卸载是异步操作，等结果再由父组件收起。
+              // Prevent Radix from closing the pop-up window by default after clicking the action; uninstalling is an asynchronous operation and will be closed by the parent component after the result.
               event.preventDefault();
               onConfirm();
             }}

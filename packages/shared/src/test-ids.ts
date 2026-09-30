@@ -1,685 +1,679 @@
 /**
- * 统一管理所有 data-testid，UI 组件和 E2E 测试共用此单一来源。
- * 新增 testid 时请在此文件添加，不要在组件中硬编码字符串。
- * 并且每个都需要中文注释
+ * Single source of truth for every data-testid, shared by UI components and E2E tests.
+ * Add new test ids here instead of hardcoding strings inside components.
+ * Each one also needs a comment explaining what it targets
  */
 
 // Login entry
-/** 右上角登录触发按钮 */
+/** Sign-in trigger button in the top-right corner */
 export const TID_LOGIN_TRIGGER = "login-trigger";
-/** 用户菜单中的登录操作 */
+/** Sign-in action in the user menu */
 export const TID_LOGIN_MENU_ITEM = "login-menu-item";
-/** 登录页切换到 API Key 登录方式按钮 */
+/** Button on the login page that switches to API Key sign-in */
 export const TID_LOGIN_USE_API_KEY_BUTTON = "login-use-api-key-button";
-/** API Key 登录 provider 选择触发器 */
+/** Provider picker trigger for API Key sign-in */
 export const TID_LOGIN_API_KEY_PROVIDER_TRIGGER = "login-api-key-provider-trigger";
-/** API Key 登录 provider 选择项（动态后缀为 provider choice） */
+/** Provider option for API Key sign-in (dynamic suffix is the provider choice) */
 export const TID_LOGIN_API_KEY_PROVIDER_ITEM = "login-api-key-provider-item";
-/** API Key 登录密钥输入框 */
+/** API Key input field for API Key sign-in */
 export const TID_LOGIN_API_KEY_INPUT = "login-api-key-input";
-/** API Key 登录继续按钮 */
+/** Continue button for API Key sign-in */
 export const TID_LOGIN_API_KEY_CONTINUE_BUTTON = "login-api-key-continue-button";
-/** API Key 登录取消按钮 */
+/** Cancel button for API Key sign-in */
 export const TID_LOGIN_API_KEY_CANCEL_BUTTON = "login-api-key-cancel-button";
-/** API Key 登录暂时跳过按钮 */
+/** "Skip for now" button for API Key sign-in */
 export const TID_LOGIN_API_KEY_SKIP_BUTTON = "login-api-key-skip-button";
-/** API Key 登录错误提示 */
+/** Error message for API Key sign-in */
 export const TID_LOGIN_API_KEY_ERROR = "login-api-key-error";
-/** OAuth 弹窗内的登录按钮 */
+/** Sign-in button inside the OAuth popup */
 export const TID_OAUTH_LOGIN_BUTTON = "oauth-login-button";
-/** OAuth 弹窗取消按钮 */
+/** Cancel button in the OAuth popup */
 export const TID_OAUTH_CANCEL = "oauth-cancel";
-/** OAuth 错误提示文本 */
+/** Error text for OAuth */
 export const TID_OAUTH_ERROR = "oauth-error";
 
 // App
-/** 顶部导航栏 */
+/** Top navigation bar */
 export const TID_APP_HEADER = "app-header";
-/** 语言切换按钮 */
+/** Language switch button */
 export const TID_LOCALE_TOGGLE = "locale-toggle";
-/** 主题切换按钮 */
+/** Theme switch button */
 export const TID_THEME_TOGGLE = "theme-toggle";
-/** 退出登录按钮 */
+/** Sign-out button */
 export const TID_LOGOUT_BUTTON = "logout-button";
-/** 终端显隐切换按钮 */
+/** Button that shows/hides the terminal */
 export const TID_TERMINAL_TOGGLE = "terminal-toggle";
 export const TID_SIDE_PANE_TOGGLE = "side-pane-toggle";
-/** 终端面板关闭按钮 */
+/** Close button for the terminal panel */
 export const TID_TERMINAL_CLOSE_BUTTON = "terminal-close-button";
-/** 浏览器显隐切换按钮 */
+/** Button that shows/hides the browser */
 export const TID_BROWSER_TOGGLE = "browser-toggle";
-/** Git 显隐切换按钮 */
+/** Button that shows/hides Git */
 export const TID_GIT_TOGGLE = "git-toggle";
-/** 浏览器面板容器 */
+/** Browser panel container */
 export const TID_BROWSER_PANE = "browser-pane";
-/** 浏览器面板关闭按钮 */
+/** Close button for the browser panel */
 export const TID_BROWSER_CLOSE_BUTTON = "browser-close-button";
-/** Git 面板容器 */
+/** Git panel container */
 export const TID_GIT_PANE = "git-pane";
-/** Git 面板关闭按钮 */
+/** Close button for the Git panel */
 export const TID_GIT_CLOSE_BUTTON = "git-close-button";
-/** 顶部 Git 提交或推送主入口 */
+/** Main Git commit or push entry point in the header */
 export const TID_GIT_ACTION_TRIGGER = "git-action-trigger";
-/** Git 提交弹窗 */
+/** Git commit dialog */
 export const TID_GIT_COMMIT_DIALOG = "git-commit-dialog";
-/** Git 提交信息输入框 */
+/** Git commit message input */
 export const TID_GIT_COMMIT_MESSAGE_INPUT = "git-commit-message-input";
-/** Git 提交信息生成按钮 */
+/** Button that generates the Git commit message */
 export const TID_GIT_COMMIT_GENERATE_BUTTON = "git-commit-generate-button";
-/** Git 提交弹窗包含未暂存更改开关 */
+/** Toggle in the Git commit dialog for including unstaged changes */
 export const TID_GIT_COMMIT_INCLUDE_UNSTAGED = "git-commit-include-unstaged";
-/** Git 提交弹窗底部 Command 动作列表 */
+/** Command action list at the bottom of the Git commit dialog */
 export const TID_GIT_COMMIT_ACTION_COMMAND = "git-commit-action-command";
-/** Git 提交弹窗底部动作项（动态后缀为动作 id） */
+/** Action item at the bottom of the Git commit dialog (dynamic suffix is the action id) */
 export const TID_GIT_COMMIT_ACTION_ITEM = "git-commit-action-item";
-/** 浏览器地址栏输入框 */
+/** Browser address bar input */
 export const TID_BROWSER_ADDRESS_INPUT = "browser-address-input";
-/** 浏览器后退按钮 */
+/** Browser back button */
 export const TID_BROWSER_BACK_BUTTON = "browser-back-button";
-/** 浏览器前进按钮 */
+/** Browser forward button */
 export const TID_BROWSER_FORWARD_BUTTON = "browser-forward-button";
-/** 浏览器刷新按钮 */
+/** Browser refresh button */
 export const TID_BROWSER_REFRESH_BUTTON = "browser-refresh-button";
-/** 浏览器自由尺寸模式按钮 */
+/** Button for the browser responsive (free-size) mode */
 export const TID_BROWSER_RESPONSIVE_BUTTON = "browser-responsive-button";
-/** 浏览器自由尺寸视口 */
+/** Viewport of the browser responsive mode */
 export const TID_BROWSER_RESPONSIVE_VIEWPORT = "browser-responsive-viewport";
-/** 浏览器自由尺寸顶部控制条 */
+/** Toolbar at the top of the browser responsive mode */
 export const TID_BROWSER_RESPONSIVE_TOOLBAR = "browser-responsive-toolbar";
-/** 浏览器自由尺寸宽度输入框 */
+/** Width input for the browser responsive mode */
 export const TID_BROWSER_RESPONSIVE_WIDTH_INPUT = "browser-responsive-width-input";
-/** 浏览器自由尺寸高度输入框 */
+/** Height input for the browser responsive mode */
 export const TID_BROWSER_RESPONSIVE_HEIGHT_INPUT = "browser-responsive-height-input";
-/** 浏览器自由尺寸缩放选择器 */
+/** Zoom selector for the browser responsive mode */
 export const TID_BROWSER_RESPONSIVE_ZOOM_SELECT = "browser-responsive-zoom-select";
-/** 浏览器自由尺寸缩放选项（动态后缀为 zoom 值） */
+/** Zoom option in the browser responsive mode (dynamic suffix is the zoom value) */
 export const TID_BROWSER_RESPONSIVE_ZOOM_OPTION = "browser-responsive-zoom-option";
-/** 浏览器自由尺寸缩放后的画布占位 */
+/** Placeholder for the scaled canvas in the browser responsive mode */
 export const TID_BROWSER_RESPONSIVE_SCALED_FRAME = "browser-responsive-scaled-frame";
-/** 浏览器自由尺寸左边拖拽条 */
+/** Left resize handle for the browser responsive mode */
 export const TID_BROWSER_RESPONSIVE_RESIZE_LEFT = "browser-responsive-resize-left";
-/** 浏览器自由尺寸右边拖拽条 */
+/** Right resize handle for the browser responsive mode */
 export const TID_BROWSER_RESPONSIVE_RESIZE_WIDTH = "browser-responsive-resize-width";
-/** 浏览器自由尺寸上边拖拽条 */
+/** Top resize handle for the browser responsive mode */
 export const TID_BROWSER_RESPONSIVE_RESIZE_TOP = "browser-responsive-resize-top";
-/** 浏览器自由尺寸下边拖拽条 */
+/** Bottom resize handle for the browser responsive mode */
 export const TID_BROWSER_RESPONSIVE_RESIZE_HEIGHT = "browser-responsive-resize-height";
-/** 浏览器自由尺寸左上角拖拽区 */
+/** Top-left resize corner for the browser responsive mode */
 export const TID_BROWSER_RESPONSIVE_RESIZE_CORNER_TOP_LEFT =
   "browser-responsive-resize-corner-top-left";
-/** 浏览器自由尺寸右上角拖拽区 */
+/** Top-right resize corner for the browser responsive mode */
 export const TID_BROWSER_RESPONSIVE_RESIZE_CORNER_TOP_RIGHT =
   "browser-responsive-resize-corner-top-right";
-/** 浏览器自由尺寸左下角拖拽区 */
+/** Bottom-left resize corner for the browser responsive mode */
 export const TID_BROWSER_RESPONSIVE_RESIZE_CORNER_BOTTOM_LEFT =
   "browser-responsive-resize-corner-bottom-left";
-/** 浏览器自由尺寸右下角拖拽区 */
+/** Bottom-right resize corner for the browser responsive mode */
 export const TID_BROWSER_RESPONSIVE_RESIZE_CORNER = "browser-responsive-resize-corner";
-/** 浏览器网页元素选择按钮 */
+/** Element picker button in the browser */
 export const TID_BROWSER_ELEMENT_PICKER_BUTTON = "browser-element-picker-button";
-/** 浏览器地址栏更多操作按钮 */
+/** More-actions button in the browser address bar */
 export const TID_BROWSER_MORE_BUTTON = "browser-more-button";
-/** 浏览器在默认浏览器中打开菜单项 */
+/** Menu item that opens the page in the default browser */
 export const TID_BROWSER_OPEN_EXTERNAL_ITEM = "browser-open-external-item";
-/** 浏览器打开调试工具按钮 */
+/** Button that opens the browser devtools */
 export const TID_BROWSER_DEVTOOLS_BUTTON = "browser-devtools-button";
-/** 浏览器网页视图 */
+/** Browser web view */
 export const TID_BROWSER_WEBVIEW = "browser-webview";
-/** 浏览器页面加载失败的可读错误态 */
+/** Readable error state shown when the browser page fails to load */
 export const TID_BROWSER_LOAD_ERROR = "browser-load-error";
-/** 浏览器加载失败错误态里的证书放行指引 */
+/** Certificate-acceptance guidance shown inside the browser load-error state */
 export const TID_BROWSER_LOAD_ERROR_CERT_HINT = "browser-load-error-cert-hint";
-/** 预览面板容器 */
+/** Preview panel container */
 export const TID_PREVIEW_PANE = "preview-pane";
-/** 预览面板关闭按钮 */
+/** Close button for the preview panel */
 export const TID_PREVIEW_CLOSE_BUTTON = "preview-close-button";
-/** 预览面板上一段按钮 */
+/** Previous-chunk button in the preview panel */
 export const TID_PREVIEW_PREV_BUTTON = "preview-prev-button";
-/** 预览面板下一段按钮 */
+/** Next-chunk button in the preview panel */
 export const TID_PREVIEW_NEXT_BUTTON = "preview-next-button";
-/** 工具调用里的“查看代码”按钮 */
+/** "View code" button inside a tool call */
 export const TID_TOOL_CODE_VIEWER_BUTTON = "tool-code-viewer-button";
-/** 工具调用摘要行触发按钮（动态后缀为 toolId） */
+/** Trigger on a tool call summary row (dynamic suffix is the toolId) */
 export const TID_TOOL_SUMMARY_TRIGGER = "tool-summary-trigger";
 
 // Terminal
-/** 终端容器 */
+/** Terminal container */
 export const TID_TERMINAL = "terminal";
 
 // SSHDialog
-/** 打开 SSH 连接弹窗的触发按钮 */
+/** Trigger that opens the SSH connect dialog */
 export const TID_SSH_CONNECT_TRIGGER = "ssh-connect-trigger";
-/** SSH 连接弹窗容器 */
+/** SSH connect dialog container */
 export const TID_SSH_DIALOG = "ssh-dialog";
-/** 远程连接方式切换到 SSH */
+/** Remote connection kind: switch to SSH */
 export const TID_REMOTE_KIND_SSH = "remote-kind-ssh";
-/** 远程连接方式切换到 WSL */
+/** Remote connection kind: switch to WSL */
 export const TID_REMOTE_KIND_WSL = "remote-kind-wsl";
-/** 远程连接方式切换到 Docker */
-export const TID_REMOTE_KIND_DOCKER = "remote-kind-docker";
-/** SSH 主机地址输入框 */
+/** SSH host address input */
 export const TID_SSH_HOST_INPUT = "ssh-host-input";
-/** SSH 端口号输入框 */
+/** SSH port input */
 export const TID_SSH_PORT_INPUT = "ssh-port-input";
-/** SSH 用户名输入框 */
+/** SSH username input */
 export const TID_SSH_USERNAME_INPUT = "ssh-username-input";
-/** SSH config alias 选择框 */
+/** SSH config alias picker */
 export const TID_SSH_CONFIG_ALIAS_SELECT = "ssh-config-alias-select";
-/** SSH 密码输入框 */
+/** SSH password input */
 export const TID_SSH_PASSWORD_INPUT = "ssh-password-input";
-/** SSH 私钥路径输入框 */
+/** SSH private key path input */
 export const TID_SSH_PRIVATE_KEY_INPUT = "ssh-private-key-input";
-/** SSH 认证方式：密码 */
+/** SSH auth method: password */
 export const TID_SSH_AUTH_PASSWORD = "ssh-auth-password";
-/** SSH 认证方式：私钥 */
+/** SSH auth method: private key */
 export const TID_SSH_AUTH_PRIVATE_KEY = "ssh-auth-private-key";
-/** WSL 发行版选择框 */
+/** WSL distribution picker */
 export const TID_WSL_DISTRO_SELECT = "wsl-distro-select";
-/** WSL Linux 用户输入框 */
+/** WSL Linux user input */
 export const TID_WSL_USER_INPUT = "wsl-user-input";
-/** Docker 容器选择框 */
-export const TID_DOCKER_CONTAINER_SELECT = "docker-container-select";
-/** Docker 容器名称/ID 输入框 */
-export const TID_DOCKER_CONTAINER_INPUT = "docker-container-input";
-/** SSH 连接确认按钮 */
+/** SSH connect confirm button */
 export const TID_SSH_CONNECT_BUTTON = "ssh-connect-button";
-/** SSH 弹窗取消按钮 */
+/** Cancel button in the SSH dialog */
 export const TID_SSH_CANCEL_BUTTON = "ssh-cancel-button";
 
 // Sidebar
-/** 侧边栏容器 */
+/** Sidebar container */
 export const TID_SIDEBAR = "sidebar";
-/** 侧边栏打开工作区按钮 */
+/** Button that opens a workspace from the sidebar */
 export const TID_WORKSPACE_OPEN_BUTTON = "workspace-open-button";
-/** 侧边栏工作区列表 */
+/** Workspace list in the sidebar */
 export const TID_WORKSPACE_LIST = "workspace-list";
-/** 侧边栏工作区条目（动态后缀为 workspacePath） */
+/** Workspace entry in the sidebar (dynamic suffix is the workspacePath) */
 export const TID_WORKSPACE_ITEM = "workspace-item";
-/** 侧边栏关闭工作区按钮（动态后缀为 workspacePath） */
+/** Button that closes a workspace from the sidebar (dynamic suffix is the workspacePath) */
 export const TID_WORKSPACE_CLOSE = "workspace-close";
-/** 项目视图里的对话二级分区 */
+/** Secondary conversations section in the project view */
 export const TID_CONVERSATION_SECTION = "conversation-section";
-/** 项目视图里的项目二级分区 */
+/** Secondary projects section in the project view */
 export const TID_PROJECT_SECTION = "project-section";
-/** 对话分区新建任务按钮 */
+/** New task button in the conversations section */
 export const TID_CONVERSATION_NEW_TASK = "conversation-new-task";
-/** 项目分区添加菜单按钮 */
+/** Add menu button in the projects section */
 export const TID_PROJECT_ADD = "project-add";
-/** Composer workspace 选择触发器 */
+/** Composer workspace picker trigger */
 export const TID_COMPOSER_WORKSPACE_TRIGGER = "composer-workspace-trigger";
-/** Composer workspace 菜单的远程连接入口 */
+/** Remote connection entry in the Composer workspace menu */
 export const TID_COMPOSER_REMOTE_CONNECTION = "composer-remote-connection";
-/** Composer 当前项目解绑按钮 */
+/** Button that detaches the current project in the Composer */
 export const TID_COMPOSER_PROJECT_DETACH = "composer-project-detach";
-/** Composer workspace 菜单的非项目工作入口 */
+/** "Work outside a project" entry in the Composer workspace menu */
 export const TID_COMPOSER_WORK_OUTSIDE_PROJECT = "composer-work-outside-project";
 // ChatView
-/** 聊天视图容器 */
+/** Chat view container */
 export const TID_CHAT_VIEW = "chat-view";
-/** 聊天消息列表 */
+/** Chat message list */
 export const TID_CHAT_MESSAGES = "chat-messages";
-/** 聊天输入区上方的错误横幅 */
+/** Error banner above the chat input area */
 export const TID_CHAT_ERROR_BANNER = "chat-error-banner";
-/** Hook 阻断错误的详情按钮 */
+/** Details button for a hook-blocked error */
 export const TID_CHAT_ERROR_DETAILS_BUTTON = "chat-error-details-button";
-/** Hook 阻断错误横幅左侧图标 */
+/** Icon on the left of the hook-blocked error banner */
 export const TID_CHAT_ERROR_HOOK_ICON = "chat-error-hook-icon";
-/** 聊天空状态容器 */
+/** Chat empty state container */
 export const TID_CHAT_EMPTY = "chat-empty";
-/** 聊天输入框 */
+/** Chat input box */
 export const TID_CHAT_INPUT = "chat-input";
-/** 聊天附件按钮 */
+/** Chat attachment button */
 export const TID_CHAT_ATTACHMENT_BUTTON = "chat-attachment-button";
-/** 聊天附件菜单项 */
+/** Chat attachment menu item */
 export const TID_CHAT_ATTACHMENT_MENU_ITEM = "chat-attachment-menu-item";
-/** 聊天发送按钮 */
+/** Chat send button */
 export const TID_CHAT_SEND_BUTTON = "chat-send-button";
-/** 聊天停止按钮 */
+/** Chat stop button */
 export const TID_CHAT_STOP_BUTTON = "chat-stop-button";
-/** 聊天加载指示器 */
+/** Chat loading indicator */
 export const TID_CHAT_LOADING = "chat-loading";
-/** 聊天右上角状态摘要面板 */
+/** Status summary panel in the top-right of the chat */
 export const TID_CHAT_SUMMARY_PANEL = "chat-summary-panel";
-/** 聊天上下文压缩 timeline 横条（动态后缀为 inputId 或 operationId） */
+/** Context-compaction bar on the chat timeline (dynamic suffix is the inputId or operationId) */
 export const TID_CHAT_COMPACT_MARKER = "chat-compact-marker";
-/** 聊天上下文压缩失败/中断后的重试按钮（动态后缀为 inputId 或 operationId） */
+/** Retry button after a context compaction failed or was interrupted (dynamic suffix is the inputId or operationId) */
 export const TID_CHAT_COMPACT_RETRY_BUTTON = "chat-compact-retry-button";
-/** 聊天 goal verification timeline 横条（动态后缀为 targetId:goalIteration 或 verificationId） */
+/** Goal verification bar on the chat timeline (dynamic suffix is targetId:goalIteration or verificationId) */
 export const TID_CHAT_GOAL_VERIFICATION_MARKER = "chat-goal-verification-marker";
-/** 聊天队列面板 */
+/** Chat queue panel */
 export const TID_CHAT_QUEUE_PANEL = "chat-queue-panel";
-/** 聊天队列项（动态后缀为 queueItemId） */
+/** Chat queue item (dynamic suffix is the queueItemId) */
 export const TID_CHAT_QUEUE_ITEM = "chat-queue-item";
-/** 聊天队列项内容（动态后缀为 queueItemId） */
+/** Chat queue item content (dynamic suffix is the queueItemId) */
 export const TID_CHAT_QUEUE_ITEM_CONTENT = "chat-queue-item-content";
-/** 聊天队列项立即发送按钮（动态后缀为 queueItemId） */
+/** Send-now button on a chat queue item (dynamic suffix is the queueItemId) */
 export const TID_CHAT_QUEUE_SEND_NOW_BUTTON = "chat-queue-send-now-button";
-/** 聊天队列项编辑按钮（动态后缀为 queueItemId） */
+/** Edit button on a chat queue item (dynamic suffix is the queueItemId) */
 export const TID_CHAT_QUEUE_EDIT_BUTTON = "chat-queue-edit-button";
-/** 聊天队列项编辑输入框（动态后缀为 queueItemId） */
+/** Edit input on a chat queue item (dynamic suffix is the queueItemId) */
 export const TID_CHAT_QUEUE_EDIT_INPUT = "chat-queue-edit-input";
-/** 聊天队列项编辑保存按钮（动态后缀为 queueItemId） */
+/** Save button in the chat queue item editor (dynamic suffix is the queueItemId) */
 export const TID_CHAT_QUEUE_EDIT_SAVE_BUTTON = "chat-queue-edit-save-button";
-/** 聊天队列项编辑取消按钮（动态后缀为 queueItemId） */
+/** Cancel button in the chat queue item editor (dynamic suffix is the queueItemId) */
 export const TID_CHAT_QUEUE_EDIT_CANCEL_BUTTON = "chat-queue-edit-cancel-button";
-/** 聊天队列项删除按钮（动态后缀为 queueItemId） */
+/** Remove button on a chat queue item (dynamic suffix is the queueItemId) */
 export const TID_CHAT_QUEUE_REMOVE_BUTTON = "chat-queue-remove-button";
-/** 聊天队列项拖拽手柄（动态后缀为 queueItemId） */
+/** Drag handle on a chat queue item (dynamic suffix is the queueItemId) */
 export const TID_CHAT_QUEUE_DRAG_HANDLE = "chat-queue-drag-handle";
-/** 聊天用户消息容器（动态后缀为 messageId） */
+/** Chat user message container (dynamic suffix is the messageId) */
 export const TID_CHAT_USER_MESSAGE = "chat-user-message";
-/** 聊天助手消息容器（动态后缀为 messageId） */
+/** Chat assistant message container (dynamic suffix is the messageId) */
 export const TID_CHAT_ASSISTANT_MESSAGE = "chat-assistant-message";
-/** 聊天助手消息历史折叠触发器（动态后缀为 historyStateKey） */
+/** Trigger that collapses assistant message history in the chat (dynamic suffix is the historyStateKey) */
 export const TID_CHAT_ASSISTANT_HISTORY_TRIGGER = "chat-assistant-history-trigger";
-/** 聊天助手消息历史折叠内容（动态后缀为 historyStateKey） */
+/** Collapsed assistant message history content in the chat (dynamic suffix is the historyStateKey) */
 export const TID_CHAT_ASSISTANT_HISTORY_CONTENT = "chat-assistant-history-content";
-/** 独立后台结果轮的任务标题（动态后缀为 turn key） */
+/** Task title of a standalone background result turn (dynamic suffix is the turn key) */
 export const TID_CHAT_BACKGROUND_RESULT_TITLE = "chat-background-result-title";
-/** 聊天工具调用块容器（动态后缀为 toolCallId） */
+/** Chat tool call block container (dynamic suffix is the toolCallId) */
 export const TID_CHAT_TOOL_CALL_BLOCK = "chat-tool-call-block";
-/** 聊天用户消息编辑按钮（动态后缀为 messageId） */
+/** Edit button on a chat user message (dynamic suffix is the messageId) */
 export const TID_CHAT_MESSAGE_EDIT_BUTTON = "chat-message-edit-button";
-/** 聊天用户消息编辑输入框（动态后缀为 messageId） */
+/** Edit input for a chat user message (dynamic suffix is the messageId) */
 export const TID_CHAT_MESSAGE_EDIT_INPUT = "chat-message-edit-input";
-/** 聊天用户消息编辑提交按钮（动态后缀为 messageId） */
+/** Submit button in the chat user message editor (dynamic suffix is the messageId) */
 export const TID_CHAT_MESSAGE_EDIT_SUBMIT = "chat-message-edit-submit";
-/** 聊天用户消息编辑取消按钮（动态后缀为 messageId） */
+/** Cancel button in the chat user message editor (dynamic suffix is the messageId) */
 export const TID_CHAT_MESSAGE_EDIT_CANCEL = "chat-message-edit-cancel";
-/** 聊天助手消息 fork 按钮（动态后缀为 messageId） */
+/** Fork button on a chat assistant message (dynamic suffix is the messageId) */
 export const TID_CHAT_MESSAGE_FORK_BUTTON = "chat-message-fork-button";
-/** 聊天变更摘要撤销/重新应用按钮（动态后缀为 messageId） */
+/** Undo/re-apply button in the chat change summary (dynamic suffix is the messageId) */
 export const TID_CHAT_CHANGE_SUMMARY_TOGGLE_FILES_BUTTON =
   "chat-change-summary-toggle-files-button";
-/** 聊天输入框前缀提示面板 */
+/** Prompt suggestion panel above the chat input */
 export const TID_PROMPT_SUGGESTION_PANEL = "prompt-suggestion-panel";
-/** 聊天输入框前缀提示分组（动态后缀为分组 id） */
+/** Prompt suggestion group in the chat input (dynamic suffix is the group id) */
 export const TID_PROMPT_SUGGESTION_SECTION = "prompt-suggestion-section";
-/** 聊天输入框前缀提示选项（动态后缀为选项 id） */
+/** Prompt suggestion option in the chat input (dynamic suffix is the option id) */
 export const TID_PROMPT_SUGGESTION_OPTION = "prompt-suggestion-option";
-/** 聊天输入框前缀提示状态行（动态后缀为分组 id） */
+/** Status row of a prompt suggestion group in the chat input (dynamic suffix is the group id) */
 export const TID_PROMPT_SUGGESTION_STATUS = "prompt-suggestion-status";
 
 // TaskList
-/** 任务列表容器 */
+/** Task list container */
 export const TID_TASK_LIST = "task-list";
-/** 新建任务按钮 */
+/** New task button */
 export const TID_TASK_NEW_BUTTON = "task-new-button";
-/** 任务列表条目（动态后缀为 taskId） */
+/** Task list entry (dynamic suffix is the taskId) */
 export const TID_TASK_ITEM = "task-item";
-/** 任务列表空状态 */
+/** Task list empty state */
 export const TID_TASK_EMPTY = "task-empty";
-/** 任务归档按钮（动态后缀为 taskId） */
+/** Task archive button (dynamic suffix is the taskId) */
 export const TID_TASK_ARCHIVE = "task-archive";
-/** 任务列表下方设置入口按钮 */
+/** Settings entry button below the task list */
 export const TID_TASK_SETTINGS_BUTTON = "task-settings-button";
 
 // Settings
-/** 设置页容器 */
+/** Settings page container */
 export const TID_SETTINGS_PAGE = "settings-page";
-/** 设置页返回工作区按钮 */
+/** Button that returns from settings to the workspace */
 export const TID_SETTINGS_BACK_BUTTON = "settings-back-button";
-/** 设置页左侧分区入口（动态后缀为 section id） */
+/** Section entry in the left nav of the settings page (dynamic suffix is the section id) */
 export const TID_SETTINGS_SECTION_NAV = "settings-section-nav";
-/** 常规设置中的增强 Find/Grep 开关 */
+/** Enhanced Find/Grep toggle in General settings */
 export const TID_SETTINGS_NATIVE_SEARCH_SWITCH = "settings-native-search-switch";
-/** 常规设置中的数据存储路径只读输入框 */
+/** Read-only data storage path input in General settings */
 export const TID_SETTINGS_DATA_BASE_DIR_INPUT = "settings-data-base-dir-input";
-/** 常规设置中的数据存储路径目录选择按钮 */
+/** Directory picker button for the data storage path in General settings */
 export const TID_SETTINGS_DATA_BASE_DIR_BROWSE = "settings-data-base-dir-browse";
-/** 常规设置中的数据存储路径保存按钮 */
+/** Save button for the data storage path in General settings */
 export const TID_SETTINGS_DATA_BASE_DIR_SAVE = "settings-data-base-dir-save";
-/** 常规设置中的数据存储路径复制/待重启/失败状态 */
+/** Copied / pending-restart / failed status of the data storage path in General settings */
 export const TID_SETTINGS_DATA_BASE_DIR_STATUS = "settings-data-base-dir-status";
-/** 资源管理器顶部 tab（suffix=cpu|memory|storage） */
+/** Tab at the top of the resource manager (suffix=cpu|memory|storage) */
 export const TID_RESOURCE_MANAGER_TAB = "resource-manager-tab";
-/** 资源管理器「存储」tab：分区容器 */
+/** Resource manager "Storage" tab: partition container */
 export const TID_RESOURCE_MANAGER_STORAGE_SECTION = "resource-manager-storage-section";
-/** 资源管理器「存储」tab：总占用数字 */
+/** Resource manager "Storage" tab: total usage number */
 export const TID_RESOURCE_MANAGER_STORAGE_TOTAL = "resource-manager-storage-total";
-/** 资源管理器「存储」tab：扫描状态（data-state=scanning|complete|cancelled|failed|idle） */
+/** Resource manager "Storage" tab: scan status (data-state=scanning|complete|cancelled|failed|idle) */
 export const TID_RESOURCE_MANAGER_STORAGE_STATUS = "resource-manager-storage-status";
-/** 资源管理器「存储」tab：重新计算按钮 */
+/** Resource manager "Storage" tab: rescan button */
 export const TID_RESOURCE_MANAGER_STORAGE_RESCAN = "resource-manager-storage-rescan";
-/** 资源管理器「存储」tab：磁盘卡片（suffix=卷 key 序号） */
+/** Resource manager "Storage" tab: disk card (suffix=volume key index) */
 export const TID_RESOURCE_MANAGER_STORAGE_DISK_CARD = "resource-manager-storage-disk-card";
-/** 资源管理器「存储」tab：磁盘卡片里的根目录行（suffix=rootId） */
+/** Resource manager "Storage" tab: root directory row inside a disk card (suffix=rootId) */
 export const TID_RESOURCE_MANAGER_STORAGE_ROOT = "resource-manager-storage-root";
-/** 资源管理器「存储」tab：类别行（suffix=categoryId） */
+/** Resource manager "Storage" tab: category row (suffix=categoryId) */
 export const TID_RESOURCE_MANAGER_STORAGE_CATEGORY_ROW = "resource-manager-storage-category-row";
-/** 资源管理器「存储」tab：类别行大小（suffix=categoryId） */
+/** Resource manager "Storage" tab: size on a category row (suffix=categoryId) */
 export const TID_RESOURCE_MANAGER_STORAGE_CATEGORY_SIZE = "resource-manager-storage-category-size";
-/** 资源管理器「存储」tab：类别清理按钮（suffix=categoryId） */
+/** Resource manager "Storage" tab: clean button for a category (suffix=categoryId) */
 export const TID_RESOURCE_MANAGER_STORAGE_CATEGORY_CLEAN =
   "resource-manager-storage-category-clean";
-/** 资源管理器「存储」tab：类别明细视图 */
+/** Resource manager "Storage" tab: category detail view */
 export const TID_RESOURCE_MANAGER_STORAGE_DETAIL = "resource-manager-storage-detail";
-/** 资源管理器「存储」tab：明细返回按钮 */
+/** Resource manager "Storage" tab: back button from the detail view */
 export const TID_RESOURCE_MANAGER_STORAGE_DETAIL_BACK = "resource-manager-storage-detail-back";
-/** 资源管理器「存储」tab：明细条目行 */
+/** Resource manager "Storage" tab: detail entry row */
 export const TID_RESOURCE_MANAGER_STORAGE_DETAIL_ENTRY = "resource-manager-storage-detail-entry";
-/** 资源管理器「存储」tab：清理确认框 */
+/** Resource manager "Storage" tab: clean confirmation dialog */
 export const TID_RESOURCE_MANAGER_STORAGE_CONFIRM_DIALOG =
   "resource-manager-storage-confirm-dialog";
-/** 资源管理器「存储」tab：清理确认框确认按钮 */
+/** Resource manager "Storage" tab: confirm button of the clean confirmation dialog */
 export const TID_RESOURCE_MANAGER_STORAGE_CONFIRM_ACCEPT =
   "resource-manager-storage-confirm-accept";
-/** 资源管理器「存储」tab：清理确认框取消按钮 */
+/** Resource manager "Storage" tab: cancel button of the clean confirmation dialog */
 export const TID_RESOURCE_MANAGER_STORAGE_CONFIRM_CANCEL =
   "resource-manager-storage-confirm-cancel";
-/** Memory 设置模块中的总开关 */
+/** Master switch in the Memory settings section */
 export const TID_SETTINGS_MEMORY_SWITCH = "settings-memory-switch";
-/** Memory 设置模块刷新按钮 */
+/** Refresh button in the Memory settings section */
 export const TID_SETTINGS_MEMORY_REFRESH = "settings-memory-refresh";
-/** Memory Workspace Scope 菜单触发器 */
+/** Memory workspace scope menu trigger */
 export const TID_SETTINGS_MEMORY_SCOPE_TRIGGER = "settings-memory-scope-trigger";
-/** Memory Workspace Scope 图标 */
+/** Memory workspace scope icon */
 export const TID_SETTINGS_MEMORY_SCOPE_ICON = "settings-memory-scope-icon";
-/** Memory 当前 Workspace 文件数量 */
+/** Number of files in the current Memory workspace */
 export const TID_SETTINGS_MEMORY_COUNT = "settings-memory-count";
-/** Memory 文件名搜索输入框 */
+/** Memory file-name search input */
 export const TID_SETTINGS_MEMORY_SEARCH_INPUT = "settings-memory-search-input";
-/** Memory 文件名搜索清空按钮 */
+/** Clear button for the Memory file-name search */
 export const TID_SETTINGS_MEMORY_SEARCH_CLEAR = "settings-memory-search-clear";
-/** Memory 项目文件列表返回项目列表按钮 */
+/** Button that goes from the Memory project file list back to the project list */
 export const TID_SETTINGS_MEMORY_BACK_PROJECTS = "settings-memory-back-projects";
-/** Memory 文件正文返回项目文件列表按钮 */
+/** Button that goes from a Memory file body back to the project file list */
 export const TID_SETTINGS_MEMORY_BACK_MEMORIES = "settings-memory-back-memories";
-/** Memory workspace 行（动态后缀为 workspace id） */
+/** Memory workspace row (dynamic suffix is the workspace id) */
 export const TID_SETTINGS_MEMORY_WORKSPACE = "settings-memory-workspace";
 
-/** Memory 文件行（动态后缀为文件名） */
+/** Memory file row (dynamic suffix is the file name) */
 export const TID_SETTINGS_MEMORY_FILE = "settings-memory-file";
-/** Memory 文件类型图标（动态后缀为文件名） */
+/** Memory file type icon (dynamic suffix is the file name) */
 export const TID_SETTINGS_MEMORY_FILE_ICON = "settings-memory-file-icon";
-/** Memory 文件名称（动态后缀为文件名） */
+/** Memory file name (dynamic suffix is the file name) */
 export const TID_SETTINGS_MEMORY_FILE_NAME = "settings-memory-file-name";
-/** Memory 文件更新时间（动态后缀为文件名） */
+/** Memory file updated-at (dynamic suffix is the file name) */
 export const TID_SETTINGS_MEMORY_FILE_UPDATED_AT = "settings-memory-file-updated-at";
-/** Memory 文件编辑器按钮组（动态后缀为文件名） */
+/** Memory file editor action group (dynamic suffix is the file name) */
 export const TID_SETTINGS_MEMORY_FILE_EDITOR_ACTIONS = "settings-memory-file-editor-actions";
-/** Memory 原始 Markdown 预览 */
+/** Raw Markdown preview of a Memory file */
 export const TID_SETTINGS_MEMORY_PREVIEW = "settings-memory-preview";
-/** 常规设置中的 AskUserQuestion 自动继续开关 */
+/** AskUserQuestion auto-continue toggle in General settings */
 export const TID_SETTINGS_ASK_USER_QUESTION_AUTO_RESOLUTION_SWITCH =
   "settings-ask-user-question-auto-resolution-switch";
-/** 设置页通用分区的界面语言下拉触发器 */
+/** Interface language dropdown trigger in the General section of the settings page */
 export const TID_SETTINGS_LOCALE_SELECT_TRIGGER = "settings-locale-select-trigger";
-/** 设置页通用分区的界面语言下拉项（动态后缀为 locale preference） */
+/** Interface language dropdown item in the General section of the settings page (dynamic suffix is the locale preference) */
 export const TID_SETTINGS_LOCALE_SELECT_ITEM = "settings-locale-select-item";
-/** 用户/工作区 MCP 列表行（动态后缀为 MCP runtime 名称） */
+/** User/workspace MCP list row (dynamic suffix is the MCP runtime name) */
 export const TID_MCP_SERVER_ROW = "mcp-server-row";
-/** 插件 MCP 列表行（动态后缀为 MCP runtime 名称） */
+/** Plugin MCP list row (dynamic suffix is the MCP runtime name) */
 export const TID_PLUGIN_MCP_SERVER_ROW = "plugin-mcp-server-row";
-/** MCP OAuth 授权按钮（动态后缀为 MCP runtime 名称） */
+/** MCP OAuth authorization button (dynamic suffix is the MCP runtime name) */
 export const TID_MCP_OPEN_AUTHORIZATION_BUTTON = "mcp-open-authorization-button";
-/** 子智能体列表行（动态后缀为子智能体名称） */
+/** Subagent list row (dynamic suffix is the subagent name) */
 export const TID_SUBAGENT_ROW = "subagent-row";
-/** 内置子智能体模型选择控件（动态后缀为子智能体名称） */
+/** Model picker for a built-in subagent (dynamic suffix is the subagent name) */
 export const TID_SUBAGENT_BUILT_IN_MODEL_TRIGGER = "subagent-built-in-model-trigger";
-/** 设置页使用统计顶层 tab（动态后缀为 usage tab id） */
+/** Top-level usage tab on the settings page (dynamic suffix is the usage tab id) */
 export const TID_SETTINGS_USAGE_TAB = "settings-usage-tab";
-/** 侧边栏头像菜单剩余额度子菜单入口 */
+/** Remaining-quota submenu entry in the sidebar avatar menu */
 export const TID_SIDEBAR_USAGE_REMAINING_TRIGGER = "sidebar-usage-remaining-trigger";
-/** 侧边栏头像菜单使用统计入口 */
+/** Usage entry in the sidebar avatar menu */
 export const TID_SIDEBAR_CODING_PLAN_USAGE_BUTTON = "sidebar-coding-plan-usage-button";
 
 // Model Provider Settings
-/** 模型供应商顶部添加按钮 */
+/** Add button at the top of the model provider settings */
 export const TID_MODEL_PROVIDER_ADD_PROVIDER_BUTTON = "model-provider-add-provider-button";
-/** 模型供应商 Template 选择页 */
+/** Model provider template picker page */
 export const TID_MODEL_PROVIDER_TEMPLATE_PICKER = "model-provider-template-picker";
-/** 模型供应商 Template 选择项（动态后缀为 templateId，custom 表示纯自定义） */
+/** Model provider template item (dynamic suffix is the templateId, where `custom` means fully custom) */
 export const TID_MODEL_PROVIDER_TEMPLATE_ITEM = "model-provider-template-item";
-/** 模型供应商 Template 选择页返回当前 Provider 详情的按钮 */
+/** Button that returns from the model provider template picker to the current provider details */
 export const TID_MODEL_PROVIDER_TEMPLATE_BACK_BUTTON = "model-provider-template-back-button";
-/** 模型供应商左侧导航条目（动态后缀为 provider node key） */
+/** Model provider nav item in the left sidebar (dynamic suffix is the provider node key) */
 export const TID_MODEL_PROVIDER_NAV_ITEM = "model-provider-nav-item";
-/** 模型供应商连接方式下拉触发器 */
+/** Connection mode dropdown trigger for a model provider */
 export const TID_MODEL_PROVIDER_CONNECTION_MODE_TRIGGER = "model-provider-connection-mode-trigger";
-/** 设置页已有 Start Plan 的数量快捷入口。 */
+/** Shortcut entry showing how many Start Plans already exist on the settings page. */
 export const TID_MODEL_PROVIDER_START_PLAN_COUNT_SHORTCUT =
   "model-provider-start-plan-count-shortcut";
 export const TID_MODEL_PROVIDER_START_PLAN_SWITCH_PREFIX =
   "model-provider-start-plan-switch-prefix";
-/** 模型供应商连接方式下拉项（动态后缀为连接方式 key） */
+/** Connection mode dropdown item for a model provider (dynamic suffix is the connection mode key) */
 export const TID_MODEL_PROVIDER_CONNECTION_MODE_ITEM = "model-provider-connection-mode-item";
-/** 模型供应商详情 API Key 输入框 */
+/** API Key input in the model provider details */
 export const TID_MODEL_PROVIDER_API_KEY_INPUT = "model-provider-api-key-input";
-/** 模型供应商名称编辑按钮 */
+/** Name edit button for a model provider */
 export const TID_MODEL_PROVIDER_NAME_EDIT_BUTTON = "model-provider-name-edit-button";
-/** 模型供应商名称编辑输入框 */
+/** Name input for a model provider */
 export const TID_MODEL_PROVIDER_NAME_INPUT = "model-provider-name-input";
-/** 模型供应商 Base URL 输入框 */
+/** Base URL input for a model provider */
 export const TID_MODEL_PROVIDER_BASE_URL_INPUT = "model-provider-base-url-input";
-/** 模型供应商 API 格式下拉触发器 */
+/** API format dropdown trigger for a model provider */
 export const TID_MODEL_PROVIDER_API_FORMAT_TRIGGER = "model-provider-api-format-trigger";
-/** 模型供应商 API 格式下拉项（动态后缀为 API 格式） */
+/** API format dropdown item for a model provider (dynamic suffix is the API format) */
 export const TID_MODEL_PROVIDER_API_FORMAT_ITEM = "model-provider-api-format-item";
-/** 模型供应商模型输入框（动态后缀为模型行号） */
+/** Model input for a model provider (dynamic suffix is the model row index) */
 export const TID_MODEL_PROVIDER_MODEL_INPUT = "model-provider-model-input";
-/** 模型供应商模型删除按钮（动态后缀为模型行号） */
+/** Delete button on a model provider model (dynamic suffix is the model row index) */
 export const TID_MODEL_PROVIDER_MODEL_DELETE_BUTTON = "model-provider-model-delete-button";
-/** 模型供应商添加模型按钮 */
+/** Add model button for a model provider */
 export const TID_MODEL_PROVIDER_ADD_MODEL_BUTTON = "model-provider-add-model-button";
 
 // Chat Toolbar
-/** 聊天工具栏模型选择按钮 */
+/** Model picker button in the chat toolbar */
 export const TID_CHAT_MODEL_SELECT_TRIGGER = "chat-model-select-trigger";
-/** 聊天工具栏模型供应商分组（动态后缀为 provider group key） */
+/** Model provider group in the chat toolbar (dynamic suffix is the provider group key) */
 export const TID_CHAT_MODEL_SELECT_GROUP = "chat-model-select-group";
-/** 聊天工具栏模型选择条目（动态后缀为模型 value） */
+/** Model picker item in the chat toolbar (dynamic suffix is the model value) */
 export const TID_CHAT_MODEL_SELECT_ITEM = "chat-model-select-item";
-/** 聊天工具栏思考深度选择按钮 */
+/** Thought-level picker button in the chat toolbar */
 export const TID_CHAT_THOUGHT_LEVEL_SELECT_TRIGGER = "chat-thought-level-select-trigger";
-/** 聊天工具栏思考深度选择条目（动态后缀为思考深度 value） */
+/** Thought-level picker item in the chat toolbar (dynamic suffix is the thought-level value) */
 export const TID_CHAT_THOUGHT_LEVEL_SELECT_ITEM = "chat-thought-level-select-item";
-/** 聊天工具栏模式选择按钮（v4 switchCollaborationMode e2e 锚点） */
+/** Mode picker button in the chat toolbar (e2e anchor for the v4 switchCollaborationMode) */
 export const TID_CHAT_MODE_SELECT_TRIGGER = "chat-mode-select-trigger";
-/** 聊天工具栏模式选择条目（动态后缀为 mode value） */
+/** Mode picker item in the chat toolbar (dynamic suffix is the mode value) */
 export const TID_CHAT_MODE_SELECT_ITEM = "chat-mode-select-item";
-/** 聊天工具栏 context 消耗按钮 */
+/** Context usage button in the chat toolbar */
 export const TID_CHAT_CONTEXT_USAGE_TRIGGER = "chat-context-usage-trigger";
-/** 思考块折叠触发按钮 */
+/** Trigger that collapses a reasoning block */
 export const TID_CHAT_REASONING_TRIGGER = "chat-reasoning-trigger";
-/** 思考块折叠内容容器 */
+/** Collapsed reasoning block content container */
 export const TID_CHAT_REASONING_CONTENT = "chat-reasoning-content";
 
 // Workspace
-/** 主内容区 header */
+/** Header of the main content area */
 export const TID_WORKSPACE_HEADER = "workspace-header";
-/** 工作区标题 */
+/** Workspace title */
 export const TID_WORKSPACE_TITLE = "workspace-title";
-/** 工作区路径 */
+/** Workspace path */
 export const TID_WORKSPACE_PATH = "workspace-path";
-/** 工作区 Header 更多菜单按钮 */
+/** More-menu button in the workspace header */
 export const TID_WORKSPACE_MORE_BUTTON = "workspace-more-button";
-/** 右上角问号帮助菜单触发按钮 */
+/** Question-mark help menu trigger in the top-right corner */
 export const TID_WORKSPACE_HELP_MENU_TRIGGER = "workspace-help-menu-trigger";
-/** 问号帮助菜单里的「资源管理器」项（仅桌面端） */
+/** "Resource Manager" item in the question-mark help menu (desktop only) */
 export const TID_WORKSPACE_HELP_MENU_RESOURCE_MANAGER = "workspace-help-menu-resource-manager";
-/** 侧边栏打开工作区文件树按钮（动态后缀为 workspacePath） */
+/** Button that opens the workspace file tree from the sidebar (dynamic suffix is the workspacePath) */
 export const TID_WORKSPACE_FILE_TREE_BUTTON = "workspace-file-tree-button";
-/** 工作区文件树面板 */
+/** Workspace file tree panel */
 export const TID_WORKSPACE_FILE_TREE_PANEL = "workspace-file-tree-panel";
-/** 工作区文件树刷新按钮 */
+/** Refresh button in the workspace file tree */
 export const TID_WORKSPACE_FILE_TREE_REFRESH_BUTTON = "workspace-file-tree-refresh-button";
-/** 工作区文件树条目（动态后缀为文件绝对路径） */
+/** Workspace file tree entry (dynamic suffix is the absolute file path) */
 export const TID_WORKSPACE_FILE_TREE_ROW = "workspace-file-tree-row";
-// SSH 错误提示
-/** SSH 连接错误信息 */
+// SSH error message
+/** SSH connection error message */
 export const TID_SSH_ERROR = "ssh-error";
-/** SSH 连接成功提示 */
+/** SSH connection success message */
 export const TID_SSH_SUCCESS = "ssh-success";
 
-// V4 会话 pane（protocol-v4 竖切；定位协议带 paneId 维度：同 session 双 pane 时靠 paneId 后缀区分）
-/** v4 会话 pane 容器（动态后缀为 paneId） */
+// V4 session pane (protocol-v4 vertical cut; positioning protocol with paneId dimension: same as session double pane, distinguished by paneId suffix)
+/** v4 session pane container (dynamic suffix is the paneId) */
 export const TID_V4_SESSION_PANE = "v4-session-pane";
-/** v4 消息时间线容器 */
+/** v4 message timeline container */
 export const TID_V4_TIMELINE = "v4-timeline";
-/** v4 时间线空态占位 */
+/** v4 timeline empty state placeholder */
 export const TID_V4_TIMELINE_EMPTY = "v4-timeline-empty";
-/** v4 投影行（动态后缀为 rowId） */
+/** v4 projection row (dynamic suffix is the rowId) */
 export const TID_V4_ROW = "v4-row";
-/** v4 工作区 Hook 待审核提示条容器 */
+/** Container of the v4 workspace hook pending-review banner */
 export const TID_V4_WORKSPACE_HOOK_PENDING_BANNER = "v4-workspace-hook-pending-banner";
-/** v4 工作区 Hook 待审核提示条「去审核」按钮 */
+/** "Review" button on the v4 workspace hook pending-review banner */
 export const TID_V4_WORKSPACE_HOOK_PENDING_REVIEW = "v4-workspace-hook-pending-review";
-/** v4 工作区 Hook 待审核提示条「忽略」按钮 */
+/** "Dismiss" button on the v4 workspace hook pending-review banner */
 export const TID_V4_WORKSPACE_HOOK_PENDING_DISMISS = "v4-workspace-hook-pending-dismiss";
-/** v4 composer 容器 */
+/** v4 composer container */
 export const TID_V4_COMPOSER = "v4-composer";
-/** v4 composer 文本输入 */
+/** v4 composer text input */
 export const TID_V4_COMPOSER_INPUT = "v4-composer-input";
-/** v4 composer 当前会话后台任务入口 */
+/** Entry point for background tasks of the current session in the v4 composer */
 export const TID_V4_COMPOSER_BACKGROUND_WORK_TRIGGER = "v4-composer-background-work-trigger";
-/** v4 composer 电脑操作（CUA）常驻入口按钮 */
+/** Always-visible computer use (CUA) entry button in the v4 composer */
 export const TID_V4_COMPOSER_CUA_ENTRY = "v4-composer-cua-entry";
-/** v4 composer 发送按钮 */
+/** v4 composer send button */
 export const TID_V4_COMPOSER_SEND = "v4-composer-send";
-/** v4 暂停队列发送确认：清空队列并发送 */
+/** v4 paused-queue send confirmation: clear the queue and send */
 export const TID_V4_COMPOSER_CLEAR_QUEUE_SEND = "v4-composer-clear-queue-send";
-/** v4 暂停队列发送确认：保留队列并发送 */
+/** v4 paused-queue send confirmation: keep the queue and send */
 export const TID_V4_COMPOSER_KEEP_QUEUE_SEND = "v4-composer-keep-queue-send";
-/** v4 暂停队列发送确认弹窗 */
+/** v4 paused-queue send confirmation dialog */
 export const TID_V4_PAUSED_QUEUE_SEND_DIALOG = "v4-paused-queue-send-dialog";
-/** V4 composer 附件 chip（动态后缀为附件 id） */
+/** V4 composer attachment chip (dynamic suffix is the attachment id) */
 export const TID_V4_ATTACHMENT = "v4-attachment";
-/** V4 composer 附件上传进度（动态后缀为附件 id） */
+/** V4 composer attachment upload progress (dynamic suffix is the attachment id) */
 export const TID_V4_ATTACHMENT_UPLOAD_PROGRESS = "v4-attachment-upload-progress";
-/** V4 composer 附件上传重试（动态后缀为附件 id） */
+/** V4 composer attachment upload retry (dynamic suffix is the attachment id) */
 export const TID_V4_ATTACHMENT_UPLOAD_RETRY = "v4-attachment-upload-retry";
-/** v4 stop 按钮 */
+/** v4 stop button */
 export const TID_V4_STOP = "v4-stop";
-/** v4 assistant 行 fork 按钮（动态后缀为 rowId） */
+/** Fork button on a v4 assistant row (dynamic suffix is the rowId) */
 export const TID_V4_FORK = "v4-fork";
-/** v4 assistant 行 retry 按钮（动态后缀为 rowId） */
+/** Retry button on a v4 assistant row (dynamic suffix is the rowId) */
 export const TID_V4_RETRY = "v4-retry";
-/** v4 assistant 行点赞按钮（动态后缀为 rowId） */
+/** Thumbs-up button on a v4 assistant row (dynamic suffix is the rowId) */
 export const TID_V4_FEEDBACK_LIKE = "v4-feedback-like";
-/** v4 assistant 行点踩按钮（动态后缀为 rowId） */
+/** Thumbs-down button on a v4 assistant row (dynamic suffix is the rowId) */
 export const TID_V4_FEEDBACK_DISLIKE = "v4-feedback-dislike";
-/** v4 turn Hook 详情按钮（动态后缀为 product turnId） */
+/** Details button for a turn hook (dynamic suffix is the product turnId) */
 export const TID_V4_HOOK_DETAILS_TRIGGER = "v4-hook-details-trigger";
-/** v4 turn Hook 详情 Popover（动态后缀为 product turnId） */
+/** Popover with the turn hook details (dynamic suffix is the product turnId) */
 export const TID_V4_HOOK_DETAILS_CONTENT = "v4-hook-details-content";
-/** v4 user 行 edit 按钮（动态后缀为 rowId） */
+/** Edit button on a v4 user row (dynamic suffix is the rowId) */
 export const TID_V4_EDIT = "v4-edit";
-/** v4 user query 编辑输入框（动态后缀为 rowId） */
+/** Edit input for a v4 user query (dynamic suffix is the rowId) */
 export const TID_V4_EDIT_INPUT = "v4-edit-input";
-/** v4 user query 编辑提交按钮（动态后缀为 rowId） */
+/** Submit button in the v4 user query editor (dynamic suffix is the rowId) */
 export const TID_V4_EDIT_SUBMIT = "v4-edit-submit";
-/** v4 user query 编辑取消按钮（动态后缀为 rowId） */
+/** Cancel button in the v4 user query editor (dynamic suffix is the rowId) */
 export const TID_V4_EDIT_CANCEL = "v4-edit-cancel";
-/** v4 user query 编辑附件删除按钮（动态后缀为 rowId-index） */
+/** Attachment remove button in the v4 user query editor (dynamic suffix is rowId-index) */
 export const TID_V4_EDIT_ATTACHMENT_REMOVE = "v4-edit-attachment-remove";
 export const TID_V4_EDIT_REWIND_WORKSPACE = "v4-edit-rewind-workspace";
-/** v4 edit 文件冲突弹窗 */
+/** v4 edit file conflict dialog */
 export const TID_V4_EDIT_WORKSPACE_CONFLICT_DIALOG = "v4-edit-workspace-conflict-dialog";
-/** v4 edit 文件冲突后降级为仅裁剪对话 */
+/** Fallback to trimming only the conversation when the v4 edit hits a file conflict */
 export const TID_V4_EDIT_WORKSPACE_CONFLICT_CONVERSATION_ONLY =
   "v4-edit-workspace-conflict-conversation-only";
-/** v4 queue 面板容器 */
+/** v4 queue panel container */
 export const TID_V4_QUEUE = "v4-queue";
-/** v4 暂停队列原因/恢复提示条 */
+/** v4 paused-queue reason / resume banner */
 export const TID_V4_QUEUE_PAUSED_BANNER = "v4-queue-paused-banner";
-/** v4 暂停队列继续自动消费按钮 */
+/** Button that resumes auto-draining the paused v4 queue */
 export const TID_V4_QUEUE_RESUME = "v4-queue-resume";
-/** v4 queue 项行内编辑输入框（动态后缀为 queueItemId） */
-/** v4 queue 项（动态后缀为 queueItemId） */
+/** Inline edit input of a v4 queue item (dynamic suffix is the queueItemId) */
+/** v4 queue item (dynamic suffix is the queueItemId) */
 export const TID_V4_QUEUE_ITEM = "v4-queue-item";
-/** v4 queue 项删除按钮（动态后缀为 queueItemId） */
+/** Delete button on a v4 queue item (dynamic suffix is the queueItemId) */
 export const TID_V4_QUEUE_ITEM_DELETE = "v4-queue-item-delete";
-/** v4 queue 项编辑按钮（动态后缀为 queueItemId） */
+/** Edit button on a v4 queue item (dynamic suffix is the queueItemId) */
 export const TID_V4_QUEUE_ITEM_EDIT = "v4-queue-item-edit";
-/** v4 queue 项立即发送按钮（动态后缀为 queueItemId） */
+/** Send-now button on a v4 queue item (dynamic suffix is the queueItemId) */
 export const TID_V4_QUEUE_ITEM_SEND_NOW = "v4-queue-item-send-now";
-/** v4 queue 项上移按钮（动态后缀为 queueItemId） */
+/** Move-up button on a v4 queue item (dynamic suffix is the queueItemId) */
 export const TID_V4_QUEUE_ITEM_UP = "v4-queue-item-up";
-/** v4 输入控制：queue autoDrain 开关按钮（setAutoDrain 命令） */
+/** v4 input control: queue autoDrain toggle button (setAutoDrain command) */
 export const TID_V4_AUTODRAIN_TOGGLE = "v4-autodrain-toggle";
-/** v4 输入控制：followup 路由模式开关按钮（setFollowupMode 命令） */
+/** v4 input control: followup routing mode toggle button (setFollowupMode command) */
 export const TID_V4_FOLLOWUP_TOGGLE = "v4-followup-toggle";
-/** v4 会话标题显示（meta.title，空则显示占位） */
+/** v4 session title display (meta.title; a placeholder is shown when it is empty) */
 export const TID_V4_SESSION_TITLE = "v4-session-title";
-/** v4 会话重命名输入框（renameSession 命令） */
+/** v4 session rename input (renameSession command) */
 export const TID_V4_RENAME_INPUT = "v4-rename-input";
-/** v4 会话重命名提交按钮（renameSession 命令） */
+/** v4 session rename submit button (renameSession command) */
 export const TID_V4_RENAME_SUBMIT = "v4-rename-submit";
-/** v4 goal 状态横幅（objective + status，sendGoalCommand/resumeGoal 效果投影） */
+/** v4 goal status banner (objective + status, a projection of the sendGoalCommand/resumeGoal effects) */
 export const TID_V4_GOAL_BANNER = "v4-goal-banner";
-/** v4 会话删除按钮（deleteSession 命令；删除后回 draft） */
+/** v4 session delete button (deleteSession command; falls back to the draft after deletion) */
 export const TID_V4_DELETE_SESSION = "v4-delete-session";
-/** v4 后台工作面板（backgroundWorks 投影） */
+/** v4 background work panel (a projection of backgroundWorks) */
 export const TID_V4_BACKGROUND_WORKS = "v4-background-works";
-/** v4 后台工作项（动态后缀为 workId） */
+/** v4 background work item (dynamic suffix is the workId) */
 export const TID_V4_BACKGROUND_WORK_ITEM = "v4-background-work-item";
-/** v4 后台工作取消按钮（cancelBackgroundWork 命令；动态后缀为 workId） */
+/** Cancel button on a v4 background work item (cancelBackgroundWork command; dynamic suffix is the workId) */
 export const TID_V4_BACKGROUND_WORK_CANCEL = "v4-background-work-cancel";
-/** v4 模型配置显示（data-provider/data-model/data-thought，switchModelConfig 效果投影） */
+/** v4 model config display (data-provider/data-model/data-thought, a projection of the switchModelConfig effects) */
 export const TID_V4_MODEL_CONFIG = "v4-model-config";
 // v4-model-provider-input / v4-model-model-input / v4-model-thought-input /
-// v4-model-apply（调试表单）已退役——模型切换由 composer 工具条的
-// TID_CHAT_MODEL_SELECT_* / TID_CHAT_THOUGHT_LEVEL_SELECT_* 承载。
-/** v4 订阅失败重连按钮 */
+// v4-model-apply (debug form) is retired - model switching is done by composer toolbar
+// TID_CHAT_MODEL_SELECT_* / TID_CHAT_THOUGHT_LEVEL_SELECT_* bearers.
+/** Reconnect button after a v4 subscription failure */
 export const TID_V4_RETRY_SUBSCRIBE = "v4-retry-subscribe";
-/** v4 userInput 交互弹窗容器 */
+/** v4 userInput interaction dialog container */
 export const TID_V4_USER_INPUT_DIALOG = "v4-user-input-dialog";
-/** v4 userInput 选项按钮（动态后缀为 optionId） */
+/** v4 userInput option button (dynamic suffix is the optionId) */
 export const TID_V4_USER_INPUT_OPTION = "v4-user-input-option";
-/** v4 userInput 自由文本输入 */
+/** v4 userInput free-text input */
 export const TID_V4_USER_INPUT_TEXT = "v4-user-input-text";
-/** v4 时间线「回到底部」按钮（解除底部跟随后出现，虚拟滚动锚定） */
+/** "Back to bottom" button of the v4 timeline (appears once bottom-following is released; the virtual-scroll anchor) */
 export const TID_V4_TIMELINE_BOTTOM = "v4-timeline-bottom";
-/** v4 pane 外壳（Layout/Focus 层包装，动态后缀为 paneId；data-focused 标记焦点 pane，分屏） */
+/** v4 pane shell (wrapper added by the Layout/Focus layer, dynamic suffix is the paneId; data-focused marks the focused pane in a split) */
 export const TID_V4_PANE_SHELL = "v4-pane-shell";
-/** v4 向右拆分窗格按钮（pane header；一期为「打开分屏」，二期语义泛化为拆分） */
+/** Button that splits the pane to the right (pane header; phase 1 means "open split view", phase 2 generalizes it to a split) */
 export const TID_V4_SPLIT_OPEN = "v4-split-open";
-/** v4 向下拆分窗格按钮（pane header，网格布局） */
+/** Button that splits the pane downward (pane header, grid layout) */
 export const TID_V4_SPLIT_DOWN = "v4-split-down";
-/** v4 关闭窗格按钮（非 primary pane header；一期为「关闭分屏」） */
+/** Button that closes a pane (header of a non-primary pane; phase 1 means "close split view") */
 export const TID_V4_SPLIT_CLOSE = "v4-split-close";
-/** v4 分屏拖拽分隔条（pointer 拖动调宽；data-split-id 标记分割节点） */
+/** Split-view drag divider (pointer drag resizes the width; data-split-id marks the split node) */
 export const TID_V4_SPLIT_DIVIDER = "v4-split-divider";
-/** v4 pane header 的 workspace 徽标（跨 workspace pane 显示归属） */
+/** Workspace badge in a v4 pane header (shows ownership for panes that span workspaces) */
 export const TID_V4_PANE_WORKSPACE_BADGE = "v4-pane-workspace-badge";
-/** 侧栏会话项上下文菜单「在分屏打开」（仅桌面 shell，收尾） */
+/** "Open in split view" item in the sidebar conversation context menu (desktop shell only, finishing touch) */
 export const TID_V4_TASK_OPEN_IN_SPLIT = "v4-task-open-in-split";
-/** v4 时间线「加载更早」按钮（游标分页；窗口首行未到全序首行时出现） */
+/** "Load earlier" button of the v4 timeline (cursor pagination; appears while the first line of the window has not reached the first line of the full order) */
 export const TID_V4_TIMELINE_LOAD_OLDER = "v4-timeline-load-older";
-/** v4 对话轮次全局导航 rail（宽屏 2+ 可导航 turn 时出现） */
+/** Global turn navigation rail of the v4 conversation (appears on wide screens once 2+ turns are navigable) */
 export const TID_V4_TURN_NAVIGATOR = "v4-turn-navigator";
-/** v4 对话轮次导航项（动态后缀为 render unit key） */
+/** v4 turn navigation item (dynamic suffix is the render unit key) */
 export const TID_V4_TURN_NAVIGATOR_ITEM = "v4-turn-navigator-item";
-/** v4 对话轮次导航 HoverCard 预览（动态后缀为 render unit key） */
+/** HoverCard preview in the v4 turn navigation (dynamic suffix is the render unit key) */
 export const TID_V4_TURN_NAVIGATOR_TOOLTIP = "v4-turn-navigator-tooltip";
-/** v4 subagent 行下钻开关（动态后缀为 rowId；有 childSessionId 才可点） */
+/** Drill-down toggle on a v4 subagent row (dynamic suffix is the rowId; only clickable when a childSessionId exists) */
 export const TID_V4_SUBAGENT_TOGGLE = "v4-subagent-toggle";
-/** v4 subagent 下钻迷你时间线容器（动态后缀为 childSessionId） */
+/** Mini timeline container of a v4 subagent drill-down (dynamic suffix is the childSessionId) */
 export const TID_V4_SUBAGENT_DRILLDOWN = "v4-subagent-drilldown";
-/** v4 subagent 下钻「在分屏打开」入口（动态后缀为 childSessionId） */
-/** @deprecated subagent 详情已迁移到右侧 tabs；保留常量避免外部旧测试编译失败。 */
+/** "Open in split view" entry of a v4 subagent drill-down (dynamic suffix is the childSessionId) */
+/** @deprecated subagent details moved to the tabs on the right; the constant is kept so older external tests still compile. */
 export const TID_V4_SUBAGENT_OPEN_SPLIT = "v4-subagent-open-split";
 export const TID_V4_SUBAGENT_OPEN_SIDE_PANE = "v4-subagent-open-side-pane";
-/** v4 userInput 行附件列表（动态后缀为 rowId） */
+/** v4 userInput row attachment list (dynamic suffix is the rowId) */
 export const TID_V4_ROW_ATTACHMENTS = "v4-row-attachments";
 
-// Plugin 商店
-/** Plugin 设置页里进入插件商店的入口按钮（商店是 WorkspaceShell 主视图，不是设置页分区） */
+// Plugin store
+/** Entry button that opens the plugin store from the Plugin settings page (the store is a main WorkspaceShell view, not a settings section) */
 export const TID_PLUGIN_STORE_BROWSE = "plugin-store-browse";
 
-// Automations / 定时任务
+// Automations / scheduled tasks
 export const TID_AUTOMATIONS_OPEN = "automations-open";
 export const TID_AUTOMATIONS_LIST = "automations-list";
-/** 定时 / 闲时列表共用的状态筛选胶囊行（全部 / 进行中 / 已完成 / 失败） */
+/** Status filter pill row shared by the scheduled and off-peak lists (all / running / done / failed) */
 export const TID_AUTOMATIONS_STATUS_FILTER = "automations-status-filter";
 export const TID_AUTOMATION_CREATE_MENU = "automation-create-menu";
 export const TID_AUTOMATION_CREATE_MANUALLY = "automation-create-manually";
 export const TID_AUTOMATION_CARD = "automation-card";
-// 闲时任务（off-peak，独立面）
+// Off-peak tasks (off-peak, independent)
 export const TID_OFFPEAK_CREATE_BUTTON = "offpeak-create-button";
 export const TID_OFFPEAK_CARD = "offpeak-card";
-/** 闲时卡片脚注：绑定会话标题（会话内创建）。 */
+/** Off-peak card footnote: the title of the bound session (created from inside a session). */
 export const TID_OFFPEAK_CARD_SESSION = "offpeak-card-session";
 export const TID_OFFPEAK_CARD_MENU = "offpeak-card-menu";
 export const TID_OFFPEAK_EDIT_VIEW = "offpeak-edit-view";
@@ -698,7 +692,7 @@ export const TID_AUTOMATION_FORM_PROMPT = "automation-form-prompt";
 export const TID_AUTOMATION_FORM_SUBMIT = "automation-form-submit";
 export const TID_AUTOMATION_RUN_NOW = "automation-run-now";
 export const TID_AUTOMATION_EDIT_BACK = "automation-edit-back";
-// 调度 builder / 自定义重复 / 年度月日选择器（e2e 稳定锚点）
+// Scheduling builder / custom repeat / year month and day selector (e2e stable anchor)
 export const TID_AUTOMATION_FREQUENCY_SELECT = "automation-frequency-select";
 export const TID_AUTOMATION_FREQUENCY_OPTION = "automation-frequency-option";
 export const TID_AUTOMATION_CUSTOM_UNIT_SELECT = "automation-custom-unit-select";
@@ -721,12 +715,12 @@ export const TID_OFFPEAK_CREATE_CARD = "offpeak-create-card";
 export const TID_OFFPEAK_CREATE_OPEN = "offpeak-create-open";
 export const TID_CONFIRM_DIALOG_CONFIRM = "confirm-dialog-confirm";
 
-/** 为动态元素生成带后缀的 testid，如 file-tree-item-/home/user */
+/** Builds a suffixed test id for dynamic elements, e.g. file-tree-item-/home/user */
 export function testId(base: string, suffix: string): string {
   return `${base}-${suffix}`;
 }
 
 export const TID_START_PLAN_RECOMMENDATION_DIALOG = "start-plan-recommendation-dialog";
 
-/** 用户反馈的诊断日志授权开关 */
+/** Opt-in switch for sharing diagnostic logs for user feedback */
 export const TID_FEEDBACK_LOGS_OPT_IN = "feedback-logs-opt-in";

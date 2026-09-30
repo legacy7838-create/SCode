@@ -42,8 +42,8 @@ export function buildVisibleMentionGroups<TItem>(
   );
 }
 
-// 中文查询只走前缀/子串两级：逐字符子序列匹配对 CJK 过宽（「浏器」会命中「浏览器操作」），
-// 中文用户的预期是连续子串命中；英文 query 保持子序列级不变。
+// Chinese queries only use prefix/substring levels: character-by-character subsequence matching is too wide for CJK ("browser" will hit "browser operation"),
+// Chinese users expect consecutive subsequence hits; English queries keep the subsequence level unchanged.
 const HAN_QUERY_RE = /\p{Script=Han}/u;
 
 function scoreFuzzyMatch(text: string, query: string): number | null {
@@ -155,9 +155,9 @@ export function filterMentionItemsWithOptions(
   const effectiveLimit = options.limit ?? MENTION_DISPLAY_CAP;
   const normalizedQuery = query.trim();
   if (!normalizedQuery) {
-    // `@` 面板一打开就会进入这里。之前空 query 直接返回全量文件，
-    // 大工作区会瞬间渲染成千上万条 option，随后上下键每切一次都要让整棵列表参与更新，体感就会非常卡。
-    // 这里支持按需要求”必须先输入 query 才展示结果”，并保留结果上限，避免再次把大列表打进渲染层。
+    // `@` You will enter here as soon as the panel is opened. Previously, the empty query directly returned the full amount of files.
+    // A large workspace will instantly render thousands of options, and then every time the up and down keys are used, the entire list will be updated, which will cause a very laggy experience.
+    // This supports the on-demand requirement that "you must enter the query before displaying the results", and retains the upper limit of the results to avoid entering the large list into the rendering layer again.
     return options.requireQuery
       ? []
       : applyMentionItemLimit(sortDefaultMentionItems(items), effectiveLimit);
@@ -168,7 +168,7 @@ export function filterMentionItemsWithOptions(
       items,
       (item) => {
         const labelScore = scoreFuzzyMatch(item.label, normalizedQuery);
-        // 插件长描述仅展示，避免子序列匹配把无关候选带入搜索（plugin-reference-mention）。
+        // The long description of the plug-in is only displayed to avoid subsequence matching that brings irrelevant candidates into the search (plugin-reference-mention).
         const descriptionScore =
           item.category === "plugins" ? null : scoreFuzzyMatch(item.description, normalizedQuery);
         const valueScore = scoreFuzzyMatch(item.value, normalizedQuery);

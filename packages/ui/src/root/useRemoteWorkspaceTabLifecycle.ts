@@ -55,8 +55,8 @@ function collectClosedRemoteWorkspaceSessionIds(
   return collectClosedRemoteWorkspaceKeys(previousWorkspaceTabs, nextWorkspaceTabs).flatMap(
     (workspaceKey) => {
       const sessionId = rememberedSessionIdsByWorkspaceKey.get(workspaceKey);
-      // 仍带 remoteSessionId 的 tab 会由本 hook 下方的正常移除流程释放，
-      // 这里只补释放“先断连、后清掉 tab 字段”的 session，避免重复 dispose。
+      // The tab that still has remoteSessionId will be released by the normal removal process below this hook.
+      // Here we only release the session that "disconnects first and then clears the tab field" to avoid repeated dispose.
       return sessionId && !previousLiveSessionIds.has(sessionId) ? [sessionId] : [];
     },
   );
@@ -104,11 +104,14 @@ export function useRemoteWorkspaceTabLifecycle({
     for (const sessionId of closedRemoteSessionIds) {
       void (async () => {
         try {
-          // 断连事件会先清掉 tab 上的 remoteSessionId，导致下方正常移除流程
-          // 无法释放该 session。这里使用记忆的 sessionId 补齐“断连后再关闭 tab”的清理路径。
+          // The disconnection event will first clear the remoteSessionId on the tab, resulting in the normal removal process below.
+          // The session cannot be released. Here, the memorized sessionId is used to complete the cleanup path of "disconnect and then close the tab".
           await platform.disposeRemoteSession(sessionId);
         } catch (error) {
-          logger.warn("[Root] 释放断连远程 session 失败:", { sessionId, error });
+          logger.warn("[Root] failed to dispose the disconnected remote session:", {
+            sessionId,
+            error,
+          });
         } finally {
           unregisterRemoteWorkspaceSession(sessionId);
         }
@@ -144,8 +147,8 @@ export function useRemoteWorkspaceTabLifecycle({
       });
 
       if (survivingRemoteTab?.remoteSessionId) {
-        // 之前只按 workspacePath 维护映射，关闭同路径 remote tab 时会把另一个远端 tab 一起“解绑”。
-        // 这里优先复用幸存 tab 的绑定，并同步刷新 workspaceIdentity 映射，避免后续 RPC 命中错误 session。
+        // Previously, mapping was only maintained based on workspacePath. When closing a remote tab with the same path, the other remote tab would be "unbound" together.
+        // Here, priority is given to reusing the bindings of surviving tabs, and refreshing the workspaceIdentity mapping synchronously to avoid subsequent RPC hitting wrong sessions.
         bindRemoteWorkspacePath(
           survivingRemoteTab.workspacePath,
           survivingRemoteTab.remoteSessionId,
@@ -175,14 +178,14 @@ export function useRemoteWorkspaceTabLifecycle({
       const workspacePath = previousTab.workspacePath;
       void (async () => {
         try {
-          logger.info("[Root] remote workspace tab 已移除，主动释放远程 session", {
+          logger.info("[Root] remote workspace tab removed, disposing the remote session", {
             workspacePath,
             workspaceIdentity: previousTab.workspaceIdentity,
             sessionId,
           });
           await platform.disposeRemoteSession(sessionId);
         } catch (error) {
-          logger.warn("[Root] 释放远程 session 失败:", {
+          logger.warn("[Root] failed to dispose the remote session:", {
             sessionId,
             error,
           });
@@ -200,9 +203,9 @@ export function useRemoteWorkspaceTabLifecycle({
       return;
     }
 
-    // 同一路径的多个 remote tab 之间切换时，不能只在建连时绑定一次路径映射，
-    // 否则切换后映射仍停留在旧 tab，按 workspacePath 解析服务的 hook 仍可能命中旧 session。
-    // 这里在 active tab 切换后把路径与 workspaceIdentity 映射刷新到当前 tab，保证 workspace 级 RPC 跟着当前 tab 走。
+    // When switching between multiple remote tabs on the same path, you cannot only bind the path mapping once when establishing a connection.
+    // Otherwise, the mapping will still stay in the old tab after switching, and the hook of the workspacePath parsing service may still hit the old session.
+    // Here, after switching the active tab, the path and workspaceIdentity mapping is refreshed to the current tab to ensure that the workspace-level RPC follows the current tab.
     bindRemoteWorkspacePath(activeWorkspaceTab.workspacePath, activeWorkspaceTab.remoteSessionId);
     if (activeWorkspaceTab.workspaceIdentity) {
       bindRemoteWorkspaceIdentity(

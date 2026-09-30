@@ -17,7 +17,7 @@ const SUPPORTED_PLATFORMS = new Set<NodeJS.Platform>(["darwin", "linux", "win32"
 interface ChromeExecutableDiscoveryOptions extends ChromeInstallationPathOptions {
   installations?: ChromeInstallationCandidate[];
   processCommandLines?: string[];
-  /** 测试可注入已由操作系统注册表/索引解析出的可执行文件，避免依赖宿主环境。 */
+  /** Tests can inject executable files that have been parsed from the operating system registry/index, avoiding dependencies on the host environment. */
   registeredExecutablePaths?: string[];
 }
 
@@ -73,7 +73,7 @@ export async function readRunningChromeProcessCommandLines(
       .split(/\r?\n/)
       .filter((line) => /(?:chrome|chromium)/i.test(line));
   } catch {
-    // 进程枚举受系统策略限制时，仍应继续使用注册信息和标准目录，不能阻断导入。
+    // When process enumeration is restricted by system policies, registration information and standard directories should continue to be used, and imports cannot be blocked.
     return [];
   }
 }
@@ -153,12 +153,12 @@ async function readMacRegisteredChromeExecutablePaths(): Promise<string[]> {
           }
         }
       } catch {
-        // Spotlight 索引可能含已移除应用；忽略陈旧记录并继续检查其他候选。
+        // The Spotlight index may contain removed apps; ignore stale records and continue checking other candidates.
       }
     }
     return uniquePaths(executablePaths);
   } catch {
-    // Spotlight 被禁用或受系统策略限制时，仍会继续使用运行进程和标准目录。
+    // When Spotlight is disabled or restricted by system policy, running processes and standard directories continue to be used.
     return [];
   }
 }
@@ -189,11 +189,11 @@ async function readLinuxDesktopChromeExecutablePaths(
             if (command) executablePaths.push(...resolvePathCommand(command, env));
           }
         } catch {
-          // 单个 desktop entry 损坏或无权限不应阻断其他已注册应用发现。
+          // Corruption or lack of permissions for a single desktop entry should not block discovery by other registered applications.
         }
       }
     } catch {
-      // 某个 XDG applications 目录不存在是正常状态。
+      // It is normal for an XDG applications directory not to exist.
     }
   }
   return uniquePaths(executablePaths);

@@ -9,7 +9,7 @@ import {
   subscribeRecommendedPrompts,
   unregisterRecommendedPromptPane,
 } from "@/v4/featureSuggestedPromptRotation.js";
-/* oxlint-disable eslint(max-lines) -- 推荐 Prompt 同时收口 latest-wins、取消、可信解析、操作反馈和 Composer 收尾，拆分会打散这条状态机。 */
+/* oxlint-disable eslint(max-lines) -- It is recommended that Prompt close latest-wins, cancellation, trusted parsing, operation feedback and Composer ending at the same time. Splitting will break up this state machine. */
 import {
   useCallback,
   useEffect,
@@ -87,7 +87,7 @@ export function ConversationDraftSuggestedPromptsContainer({
   onOpenAutomations,
   isDesktop = false,
 }: Props) {
-  const { intl, locale } = useZCodeIntl();
+  const { intl } = useZCodeIntl();
   const platform = usePlatform();
   const isOfficeMode = useIsOfficeMode();
   const { update } = useSettings();
@@ -111,16 +111,20 @@ export function ConversationDraftSuggestedPromptsContainer({
   const closeRecommendations = async () => {
     setClosing(true);
     try {
-      // 关闭按钮与引导、设置页共用持久化设置，避免另一份本地开关重新显示推荐。
+      // The close button shares persistent settings with the boot and settings pages to prevent another local switch from re-displaying recommendations.
       await update({ proactiveSuggestionsEnabled: false });
-      // 手动修改反向回写 record，换号同步时不会把已关闭的推荐复活；失败不阻塞关闭流程。
+      // Manually modify the reverse writeback record, and closed recommendations will not be resurrected during number change synchronization; failure will not block the closing process.
       await onboardingRecordService
         ?.updateRecordPreferences({ proactiveSuggestionsEnabled: false })
         .catch((cause: unknown) => {
-          logger.warn("[v4-suggested-prompts] 回写引导记录失败", { error: String(cause) });
+          logger.warn("[v4-suggested-prompts] failed to write back onboarding record", {
+            error: String(cause),
+          });
         });
     } catch (error) {
-      logger.warn("[v4-suggested-prompts] 关闭推荐失败", { error: String(error) });
+      logger.warn("[v4-suggested-prompts] failed to close recommendations", {
+        error: String(error),
+      });
       toast(intl.formatMessage({ id: "chat.officeSuggestions.closeError" }));
     } finally {
       setClosing(false);
@@ -131,7 +135,7 @@ export function ConversationDraftSuggestedPromptsContainer({
     remoteSessionId,
     workspaceIdentity,
   );
-  // Plugin RPC 是异步的；草稿、Popover 和 chip 都只允许最后一次点击收尾。
+  // Plugin RPC is asynchronous; draft, popover, and chip all allow only the last click to end.
   const requestVersionRef = useRef(0);
   const activeOperationRef = useRef<DraftSuggestedPluginOperation | null>(null);
   const [cancelling, setCancelling] = useState(false);
@@ -189,11 +193,14 @@ export function ConversationDraftSuggestedPromptsContainer({
             operationId: operation.operationId,
           });
         } catch (error) {
-          logger.warn("[v4-suggested-prompts] 取消旧插件操作失败，继续丢弃其迟到结果", {
-            operationId: operation.operationId,
-            error: error instanceof Error ? error.message : String(error),
-            workspaceKey,
-          });
+          logger.warn(
+            "[v4-suggested-prompts] failed to cancel the previous plugin operation, still discarding its late result",
+            {
+              operationId: operation.operationId,
+              error: error instanceof Error ? error.message : String(error),
+              workspaceKey,
+            },
+          );
         } finally {
           await operation.pending?.catch(() => undefined);
           if (activeOperationRef.current === operation) {
@@ -208,7 +215,7 @@ export function ConversationDraftSuggestedPromptsContainer({
 
   useEffect(() => {
     return () => {
-      // workspace/attachment 切换后立即移除旧反馈，远端迟到结果继续由版本与 abort 双重拦截。
+      // Old feedback is removed immediately after the workspace/attachment switch, and remote late results continue to be intercepted by both version and abort.
       requestVersionRef.current += 1;
       clearOperationFeedback();
       const active = activeOperationRef.current;
@@ -219,8 +226,8 @@ export function ConversationDraftSuggestedPromptsContainer({
   const prependResolvedPlugin = useCallback(
     (plugin: { stableId: string; label: string }, requestVersion: number, icon?: string) => {
       if (requestVersion !== requestVersionRef.current) return null;
-      // 推荐流程的状态与展示图标都由目标 Host 的同一次可信解析返回；当前不存在
-      // workspace 级 Plugin，再读取 referenceCatalog 会重复校验并引入额外 RPC。
+      // The status and display icon of the recommendation process are returned by the same trusted parsing of the target Host; currently do not exist
+      // Workspace-level Plugin, and then reading the referenceCatalog will repeat the verification and introduce additional RPC.
       const mention = buildDraftSuggestedPluginMention(plugin, icon);
       return useZCodeSessionStore
         .getState()
@@ -266,8 +273,8 @@ export function ConversationDraftSuggestedPromptsContainer({
         return null;
       }
       if (prompt.includes("](plugin://")) {
-        // 正文已有插件引用时交给 Composer 解析全部内联提及。目标插件已在正文中就保留
-        // 原位置，否则只补一次前置引用；单个 mention 的旧路径会让其余引用退化为裸文本。
+        // When the text is already referenced by a plug-in, it is handed over to Composer to parse all inline mentions. The target plug-in is already in the text and is retained.
+        // original location, otherwise only one forward reference will be added; the old path of a single mention will cause the remaining references to degrade into bare text.
         const hasTarget = prompt.includes(`(plugin://${plugin.stableId})`);
         const text = hasTarget
           ? prompt
@@ -320,7 +327,7 @@ export function ConversationDraftSuggestedPromptsContainer({
     (flow: DraftSuggestedPluginFlow, kind: PluginMutationKind, succeeded: boolean) => {
       const active = activeOperationRef.current;
       if (active?.operationId === flow.operationId) activeOperationRef.current = null;
-      // 成功态不能固定使用 installSucceeded，否则仅启用已安装插件时误显示“安装成功”。
+      // The success state cannot be fixed using installSucceeded, otherwise "Installation Successful" will be mistakenly displayed when only installed plug-ins are enabled.
       const messageId = `chat.draft.suggestedPrompt.pluginFlow.${kind}${
         succeeded ? "Succeeded" : "Failed"
       }`;
@@ -353,8 +360,8 @@ export function ConversationDraftSuggestedPromptsContainer({
             ) {
               return;
             }
-            // 确认态曾依赖固定倒计时退出，既会打断仍在阅读的用户，也无法表达明确取消意图。
-            // 现在仅由 Popover 外部主指针点击关闭，并取消同一 operation 以继续拦截迟到结果。
+            // The confirmation state used to rely on a fixed countdown to exit, which would not only interrupt users who were still reading, but also fail to express a clear intention to cancel.
+            // The Popover is now closed only on click of the external main pointer, and the same operation is canceled to continue intercepting late results.
             clearOperationFeedback(operation.operationId);
             void cancelOperation(operation);
           },
@@ -392,8 +399,8 @@ export function ConversationDraftSuggestedPromptsContainer({
       let installTimedOut = false;
       let mutationCompleted = false;
       const restoreInstallConfirmation = (errorMessage: string) => {
-        // 安装失败结果态会把操作入口一起收走；恢复同一 PopoverContent 并换新 operation，
-        // 既允许立即重试，也防止超时或失败的旧 operation 迟到覆盖新状态。
+        // If the installation fails, the operation entry will be taken away; restore the same PopoverContent and replace it with a new operation.
+        // This allows immediate retries and prevents old operations that time out or fail from late overwriting the new state.
         operation.abort.abort();
         const retryOperation = createDraftSuggestedPluginOperation(requestVersion);
         const retryFlow: DraftSuggestedPluginFlow = {
@@ -401,12 +408,15 @@ export function ConversationDraftSuggestedPromptsContainer({
           operationId: retryOperation.operationId,
         };
         activeOperationRef.current = retryOperation;
-        logger.warn("[v4-suggested-prompts] 推荐插件安装失败，恢复确认态以便重试", {
-          error: errorMessage,
-          operationId: flow.operationId,
-          pluginId: flow.plugin.stableId,
-          workspaceKey,
-        });
+        logger.warn(
+          "[v4-suggested-prompts] suggested plugin install failed, restoring confirmation state for retry",
+          {
+            error: errorMessage,
+            operationId: flow.operationId,
+            pluginId: flow.plugin.stableId,
+            workspaceKey,
+          },
+        );
         toast(
           intl.formatMessage(
             { id: "chat.draft.suggestedPrompt.pluginFlow.installFailureToast" },
@@ -436,7 +446,7 @@ export function ConversationDraftSuggestedPromptsContainer({
             if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
           });
           const timeoutRequest = new Promise<never>((_, reject) => {
-            // 安装超时后必须主动取消同一 operation；仅结束 UI 等待会允许远端迟到成功继续污染草稿。
+            // The same operation must be actively canceled after the installation times out; simply ending the UI wait will allow late successes on the remote end to continue to pollute the draft.
             timeoutHandle = setTimeout(() => {
               installTimedOut = true;
               void cancelOperation(operation);
@@ -503,12 +513,15 @@ export function ConversationDraftSuggestedPromptsContainer({
           restoreInstallConfirmation(toPluginMutationErrorMessage(error));
           return;
         }
-        logger.warn(`[v4-suggested-prompts] 推荐插件${kind === "install" ? "安装" : "启用"}失败`, {
-          error: toPluginMutationErrorMessage(error),
-          operationId: flow.operationId,
-          pluginId: flow.plugin.stableId,
-          workspaceKey,
-        });
+        logger.warn(
+          `[v4-suggested-prompts] suggested plugin ${kind === "install" ? "install" : "enable"} failed`,
+          {
+            error: toPluginMutationErrorMessage(error),
+            operationId: flow.operationId,
+            pluginId: flow.plugin.stableId,
+            workspaceKey,
+          },
+        );
         finishMutation(flow, kind, false);
       }
     },
@@ -530,10 +543,10 @@ export function ConversationDraftSuggestedPromptsContainer({
     async (item: DraftSuggestedPromptItem) => {
       const requestVersion = requestVersionRef.current + 1;
       requestVersionRef.current = requestVersion;
-      const templateName = resolveDraftSuggestedPromptText(item.label, locale);
-      const prompt = resolveDraftSuggestedPromptText(item.prompt, locale);
+      const templateName = resolveDraftSuggestedPromptText(item.label, "en-US");
+      const prompt = resolveDraftSuggestedPromptText(item.prompt, "en-US");
       if (isDesktop) {
-        // 埋点是旁路观测，必须早于导航或异步插件解析，且不能阻塞既有交互。
+        // Buried points are side-channel observations, which must be resolved earlier than navigation or asynchronous plug-ins, and cannot block existing interactions.
         void reportPromptTemplateClick(platform, {
           templateId: item.id,
           templateName,
@@ -557,19 +570,19 @@ export function ConversationDraftSuggestedPromptsContainer({
       const plugin = item.plugin
         ? {
             stableId: item.plugin.stableId,
-            label: resolveDraftSuggestedPromptText(item.plugin.label, locale),
+            label: resolveDraftSuggestedPromptText(item.plugin.label, "en-US"),
           }
         : undefined;
 
-      // 无 Plugin 的推荐项没有远端校验，继续立即替换普通草稿；Plugin-backed 推荐项必须等
-      // 可信解析后一次性决定写入纯 prompt 还是 Plugin + prompt，避免 Composer 两阶段更新。
+      // Recommended items without Plugin have no remote verification and continue to replace the normal draft immediately; Plugin-backed recommended items must wait
+      // After trusted parsing, it is decided once to write pure prompt or Plugin + prompt to avoid Composer two-stage update.
       if (!plugin || !resolution.rpcReady) {
         replacePlainPrompt(prompt, requestVersion);
       }
 
       const previous = activeOperationRef.current;
       if (previous) {
-        // 手动切换推荐项属于预期接管：关闭旧反馈，但不显示取消或中断提示。
+        // Manually switching recommendations is an expected takeover: closing old feedback without showing a cancellation or interruption prompt.
         clearOperationFeedback(previous.operationId);
         setCancelling(true);
         await cancelOperation(previous);
@@ -577,8 +590,8 @@ export function ConversationDraftSuggestedPromptsContainer({
         setCancelling(false);
       }
       if (!plugin || !resolution.rpcReady) return;
-      // 在旧 operation 取消收敛后再取基线：旧 operation 可能刚把自己的普通 prompt
-      // 交给 Composer 消费；它属于本次推荐流程的程序性写入，不应让新推荐项被误判为用户编辑。
+      // Baseline again after the old operation has deconverged: the old operation may have just put its own normal prompt
+      // Leave it to Composer for consumption; it belongs to the programmatic writing of this recommendation process, and new recommended items should not be misjudged as user edits.
       const draftRevision = getComposerDraftRevision(workspacePath, workspaceIdentity);
 
       const operation = createDraftSuggestedPluginOperation(requestVersion);
@@ -589,9 +602,9 @@ export function ConversationDraftSuggestedPromptsContainer({
         plugin,
         stage: "unavailable",
       };
-      // missing 的可信解析需要等待官方 Marketplace 刷新，旧流程直到请求完成才
-      // 打开确认 Popover，网络等待期间看起来像点击卡住。先订阅同一 operation 的本地检查结果，
-      // 只更新现有唯一 Popover 的 phase，后续确认/操作/结果继续复用同一挂载点。
+      // The trusted resolution of missing needs to wait for the official Marketplace to be refreshed. The old process does not wait until the request is completed.
+      // Open Confirm Popover and it looks like the click is stuck while the network is waiting. First subscribe to the local check results of the same operation,
+      // Only the phase of the only existing Popover is updated, and subsequent confirmations/operations/results continue to reuse the same mount point.
       const progressSubscription =
         resolution.services.pluginManagementService.onDynamicPluginOperationProgress(
           operation.operationId,
@@ -650,8 +663,8 @@ export function ConversationDraftSuggestedPromptsContainer({
           return;
         }
         if (flow.stage === "missing" || flow.stage === "disabled") {
-          // disabled 无需刷新 Marketplace，不一定有 Agent 进度通知；在写入纯 prompt 前也先让
-          // 同一个 Popover 进入 checking，随后等待 Composer 落地并原地切换确认态。
+          // disabled There is no need to refresh the Marketplace, and there may not be an Agent progress notification; also allow it before writing a pure prompt
+          // The same Popover enters checking, then waits for Composer to land and switches to the confirmation state in place.
           showPluginActionPopover(
             flow,
             "chat.draft.suggestedPrompt.pluginFlow.checking",
@@ -663,8 +676,8 @@ export function ConversationDraftSuggestedPromptsContainer({
             activeOperationRef.current = null;
             return;
           }
-          // 确认 Popover 先于 Composer 消费纯 prompt 打开时，输入区随后增高会让
-          // 推荐项锚点整体移动，浮层因而先按旧坐标出现再跳位。安装与开启都等插入落地后再测量锚点。
+          // Confirm that when Popover consumes the pure prompt before Composer is opened, the subsequent increase in the input area will cause
+          // The anchor point of the recommended item moves as a whole, so the floating layer first appears according to the old coordinates and then jumps. During installation and opening, wait until the anchor is inserted into the ground before measuring the anchor point.
           const applied = await trackDraftSuggestedPluginOperation(
             operation,
             waitForComposerTextInsertApplied(composerRequestId, operation.abort.signal),
@@ -691,7 +704,7 @@ export function ConversationDraftSuggestedPromptsContainer({
         activeOperationRef.current = null;
       } catch (error) {
         if (operation.abort.signal.aborted || requestVersion !== requestVersionRef.current) return;
-        logger.warn("[v4-suggested-prompts] 推荐插件可信解析失败", {
+        logger.warn("[v4-suggested-prompts] failed to resolve trusted suggested plugin", {
           error: error instanceof Error ? error.message : String(error),
           pluginId: plugin.stableId,
           workspaceKey,
@@ -706,7 +719,6 @@ export function ConversationDraftSuggestedPromptsContainer({
     [
       cancelOperation,
       clearOperationFeedback,
-      locale,
       onOpenAutomations,
       platform,
       replacePlainPrompt,
@@ -728,8 +740,8 @@ export function ConversationDraftSuggestedPromptsContainer({
   return (
     <div data-v4-draft-suggested-prompts-slot="true" className={cn(!proactive && "h-8", className)}>
       <ConversationDraftSuggestedPrompts
-        // 绝对定位让推荐区脱离 Composer 的正常结构，调试和间距语义都不直观。
-        // 旧场景推荐保留固定槽位；主动推荐列表必须由内容撑高，否则多行会溢出并覆盖下方内容。
+        // Absolute positioning makes the recommendation area separate from Composer's normal structure, and debugging and spacing semantics are not intuitive.
+        // Old scene recommendations retain fixed slots; the active recommendation list must be supported by content, otherwise multiple lines will overflow and cover the content below.
         items={items}
         layout={proactive ? "list" : "chips"}
         onSelect={handleSelect}

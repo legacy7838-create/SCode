@@ -4,7 +4,7 @@ import type { IZCodeAgentService } from "@zcode/services";
 import type { TaskListE2EActions } from "@/lib/taskListE2EActions.js";
 import { useEffect } from "react";
 
-// Vite 注入的 import.meta.env 类型声明
+// Type declarations for Vite-injected import.meta.env
 declare global {
   interface ImportMeta {
     env: { PROD: boolean; DEV: boolean; [key: string]: unknown };
@@ -12,33 +12,33 @@ declare global {
 }
 
 /**
- * E2E 测试可通过 window.__testActions 调用的操作集合。
- * 仅在非 production 环境下注册，避免泄露到生产。
+ * The set of actions E2E tests can call through window.__testActions. Registered only in
+ * non-production environments, so nothing leaks into production.
  */
 export interface TestActions extends TaskListE2EActions {
-  /** 获取当前主题 */
+  /** Get the current theme */
   getTheme: () => string;
-  /** 设置主题 */
+  /** Set the theme */
   setTheme: (theme: "light" | "dark" | "zai-light" | "zai-dark" | "system") => void;
-  /** 获取当前语言，仅供跨语言展示 E2E */
-  getLocale: () => "zh-CN" | "en-US";
-  /** 设置当前语言，仅供跨语言展示 E2E */
-  setLocale: (locale: "zh-CN" | "en-US") => void;
-  /** 注入聊天展示用的 mock 消息 */
+  /** Get the current language, only for cross-language display E2E */
+  getLocale: () => "en-US";
+  /** Set the current language, only for cross-language display E2E */
+  setLocale: (locale: "en-US") => void;
+  /** Inject mock messages for chat display */
   setChatMessages: (messages: ChatMessage[]) => void;
-  /** 获取当前 mock 消息数量 */
+  /** Get the current mock message count */
   getChatMessageCount: () => number;
-  /** E2E 通过真实 zcodeAgentService 拉取插件 overview */
+  /** E2E fetches the plugin overview through the real zcodeAgentService */
   getPluginsOverview: IZCodeAgentService["getPluginsOverview"];
-  /** E2E 通过真实 zcodeAgentService 添加 marketplace */
+  /** E2E adds a marketplace through the real zcodeAgentService */
   addPluginMarketplace: IZCodeAgentService["addPluginMarketplace"];
-  /** E2E 通过真实 zcodeAgentService 刷新 marketplace */
+  /** E2E refreshes a marketplace through the real zcodeAgentService */
   updatePluginMarketplace: IZCodeAgentService["updatePluginMarketplace"];
-  /** E2E 通过真实 zcodeAgentService 安装 marketplace plugin */
+  /** E2E installs a marketplace plugin through the real zcodeAgentService */
   installPlugin: IZCodeAgentService["installPlugin"];
-  /** E2E 通过真实 zcodeAgentService 触发插件 discover */
+  /** E2E triggers plugin discover through the real zcodeAgentService */
   listPlugins: IZCodeAgentService["listPlugins"];
-  /** E2E 通过真实 zcodeAgentService 查询 Workspace/Session Plugin catalog */
+  /** E2E queries the Workspace/Session Plugin catalog through the real zcodeAgentService */
   getPluginReferenceCatalog: IZCodeAgentService["getPluginReferenceCatalog"];
 }
 
@@ -49,12 +49,12 @@ declare global {
 }
 
 /**
- * 将 test actions 注册到 window.__testActions。
- * 仅在 import.meta.env.PROD 为 true 时跳过注册（Vite 环境）。
+ * Register the test actions onto window.__testActions. Registration is skipped only when
+ * import.meta.env.PROD is true (Vite environment).
  */
 export function useTestActions(actions: TestActions) {
   useEffect(() => {
-    // E2E 的 production renderer 也需要服务入口；只能由专用 bridge 开关打开，避免普通生产包泄露。
+    // E2E production renderer also needs the service entry; it can only be opened by a dedicated bridge switch to avoid leaking into normal production builds.
     if (import.meta.env.PROD && !shouldExposeE2EStoreBridge()) return;
     window.__testActions = actions;
     return () => {

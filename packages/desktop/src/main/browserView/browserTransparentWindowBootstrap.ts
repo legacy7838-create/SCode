@@ -17,16 +17,18 @@ export interface TransparentWindowBootstrap {
 }
 
 /**
- * showInactive 后 Viz surface 建立前的有界 presentation grace：同 turn 读回会抛
- * UnknownVizError（并发时曾 SIGSEGV）。所有"刚 showInactive 就要 capture"的路径
- * （activity pump、整幅 capture）都必须遵守同一常量。
+ * Bounded presentation grace between `showInactive` and the Viz surface becoming available: reading
+ * it back in the same turn throws UnknownVizError (SIGSEGV under concurrency). Every "capture right
+ * after showInactive" path (activity pump, full capture) must honour this same constant.
  */
 export const TRANSPARENT_WINDOW_PRESENTATION_GRACE_MS = 100;
 
 /**
- * 为 macOS hide-close 后才创建的 guest 提供一次对用户不可见的窗口级 presentation。
+ * Gives the macOS guest — created only after hide-close — one window-level presentation that is
+ * invisible to the user.
  *
- * 返回 undefined 表示不需要 bootstrap，false 表示当前窗口无法安全 bootstrap。
+ * Returning undefined means no bootstrap is needed; false means this window cannot be bootstrapped
+ * safely.
  */
 export function startBrowserScreenshotTransparentWindowBootstrap(options: {
   win: BrowserWindowForTransparentBootstrap;
@@ -111,15 +113,15 @@ export function startBrowserScreenshotTransparentWindowBootstrap(options: {
     }
   };
   const handleFocus = () => {
-    // 透明 bootstrap 与用户从 Dock/second-instance 主动恢复窗口可能竞争。
-    // focus 表示窗口所有权已回到用户；这里只恢复透明度，后续 Ready/release 禁止再次 hide。
+    // Transparent bootstrap may compete with user-initiated recovery of windows from the Dock/second-instance.
+    // focus indicates that the window ownership has been returned to the user; here only the transparency is restored, and subsequent Ready/release prohibits hiding again.
     release(true);
   };
 
   try {
-    // owner hidden 后才 attach 的 guest 从未获得 compositor 首帧；capturer count
-    // 只能维持已有 surface。必须先透明再 showInactive，给 guest 一次不可见的 presentation
-    // opportunity，并在 Ready/release 时恢复原窗口状态。
+    // The guest attached after owner hidden never gets the first frame of compositor; capturer count
+    // Only existing surfaces can be maintained. It must be transparent first and then showInactive to give the guest an invisible presentation.
+    // opportunity, and restore the original window state when Ready/release.
     if (options.hideTaskbarDuringBootstrap) {
       win.setSkipTaskbar?.(true);
       taskbarHidden = true;

@@ -22,7 +22,7 @@ function clearFeedbackContactPreference(storage: Storage | null = getStorage()):
   try {
     storage.removeItem(FEEDBACK_CONTACT_STORAGE_KEY);
   } catch {
-    // localStorage 在隐私模式或 WebView 限制下可能不可用；联系方式记忆失败不能阻断反馈提交。
+    // localStorage may not be available in privacy mode or under WebView restrictions; failure to remember contact information does not prevent feedback submission.
   }
 }
 
@@ -39,7 +39,7 @@ export function persistFeedbackContactPreference(
   try {
     storage.setItem(FEEDBACK_CONTACT_STORAGE_KEY, normalized);
   } catch {
-    // localStorage 在隐私模式或 WebView 限制下可能不可用；联系方式记忆失败不能阻断反馈提交。
+    // localStorage may not be available in privacy mode or under WebView restrictions; failure to remember contact information does not prevent feedback submission.
   }
 }
 

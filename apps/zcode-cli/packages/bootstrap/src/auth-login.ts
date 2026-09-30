@@ -344,7 +344,7 @@ async function persistStandaloneCodingPlanConnection(input: {
     input.personalProviderConfigPath ??
     input.env[ZCODE_PERSONAL_PROVIDER_CONFIG_FILE_ENV]?.trim() ??
     join(dirname(input.credentialStore.filePath), PERSONAL_PROVIDER_CONFIG_FILE_NAME);
-  // 登录与运行时共享文件和事务；首次写入仍先保留旧用户 Provider，不能仅写默认值。
+  // Login and runtime share files and transactions; first write still retains the old user Provider, cannot just write the default value.
   const personalRepository = new NodePersonalProviderConfigRepository({
     filePath: path,
     importLegacy: () => readLegacyCliPersonalProviderConfig({}),

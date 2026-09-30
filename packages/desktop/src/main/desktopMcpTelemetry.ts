@@ -17,7 +17,7 @@ export function reportMcpTelemetryToArms(
   event: ZCodeMcpTelemetryEvent,
   runtimeSurface: "local" | "remote",
 ): void {
-  // 旧 CLI 的内存通知仍允许协议解析，但不能再生成已废弃的 ARMS 事件。
+  // The old CLI's memory notifications still allow protocol parsing, but the deprecated ARMS events can no longer be generated.
   if (!context || event.kind === "memory") return;
   const mapped = mapMcpTelemetryEvent(event);
   try {

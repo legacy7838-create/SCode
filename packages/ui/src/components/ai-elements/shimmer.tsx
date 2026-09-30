@@ -60,9 +60,9 @@ const ShimmerComponent = ({
       style={
         {
           "--spread": `${dynamicSpread}px`,
-          // 当前主题没有定义 ai-elements 默认依赖的 --color-muted-foreground，
-          // 之前这里整条 background-image 会因为变量缺失而失效，配合 text-transparent 后文字就完全不可见。
-          // 这里保留上游 token 作为第一优先级，同时回退到项目里稳定存在的 --color-foreground-subtle。
+          // The current theme does not define --color-muted-foreground, which ai-elements relies on by default.
+          // Previously, the entire background-image here would be invalid due to missing variables. With text-transparent, the text will be completely invisible.
+          // Here, the upstream token is retained as the first priority, while falling back to --color-foreground-subtle, which is stable in the project.
           backgroundImage:
             "var(--bg), linear-gradient(var(--color-muted-foreground, var(--color-foreground-subtle)), var(--color-muted-foreground, var(--color-foreground-subtle)))",
         } as CSSProperties

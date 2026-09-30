@@ -1,4 +1,7 @@
-/* eslint-disable max-lines -- 远端 MCP 同步弹窗集中维护加载、选择、结果和批量选择状态，拆分会增加跨状态传递复杂度。 */
+/* eslint-disable max-lines -- The remote MCP sync dialog centrally maintains the loading,
+ * selection, result and bulk-selection state; splitting it would add cross-state plumbing
+ * complexity.
+ */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircleIcon, Loader2, Server, UploadCloud } from "lucide-react";
 import type {

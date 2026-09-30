@@ -85,8 +85,8 @@ export function useSubagents(
 
   useEffect(() => {
     if (!workspacePath || !workspaceRpcEnabled) {
-      // 远程 workspace 断连或 session 尚未重挂时，@ 面板会随输入框挂载预加载子智能体。
-      // 这里先跳过 workspace RPC，避免 disconnected proxy 的内部错误码显示成红色子智能体提示。
+      // When the remote workspace is disconnected or the session has not been remounted yet, the @ panel preloads subagents as the input box mounts.
+      // Skip the workspace RPC here so a disconnected proxy's internal error codes do not show up as a red subagent notice.
       return;
     }
     if (context) return;

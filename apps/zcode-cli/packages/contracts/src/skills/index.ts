@@ -30,7 +30,7 @@ export interface SkillRoot {
   scope: SkillScope;
   source: SkillSource;
   priority: number;
-  /** 所属 plugin 的完整 id；仅 plugin root 可用。 */
+  /** The full id of the owning plugin; available only at the plugin root. */
   pluginId?: string;
 }
 
@@ -43,7 +43,7 @@ export interface SkillMetadata {
   description: string;
   whenToUse?: string;
   pluginName?: string;
-  /** 所属 plugin 的完整 id；非 plugin skill 不设置。 */
+  /** The full id of the owning plugin; not set for a non-plugin skill. */
   pluginId?: string;
   qualifiedName?: string;
   path: string;
@@ -56,7 +56,7 @@ export interface SkillMetadata {
   policy?: SkillPolicy;
 }
 
-/** Skill tool result 中允许跨边界传播的最小 metadata；不包含正文或 description。 */
+/** The minimal metadata allowed to cross the boundary in a Skill tool result; does not include the body or the description. */
 export interface SkillTelemetryMetadata {
   qualifiedName?: string;
   pluginId?: string;

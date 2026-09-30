@@ -1,4 +1,6 @@
-/* oxlint-disable eslint(max-lines) -- 确认、发布进度和结构化失败详情必须共享同一 dock 状态与操作上下文。 */
+/* oxlint-disable eslint(max-lines) -- confirmation, publish progress and structured failure details
+ * must share the same dock state and action context.
+ */
 import { memo, useRef } from "react";
 import { Circle, CircleAlert, CircleCheck, CircleX, LoaderCircle, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
@@ -51,7 +53,10 @@ interface ConversationShareConfirmationDockProps {
   pending?: boolean;
   error?: ConversationShareDisplayError | null;
   warnings?: ConversationShareDisplayWarnings | null;
-  /** 整轮取消选择，按 productTurnId 定位（turnOrdinal 只用于展示文案）。 */
+  /**
+   * Cancel selection for the whole turn, located by productTurnId (turnOrdinal is only used for
+   * display copy).
+   */
   onDeselectTurn?: (productTurnId: string) => void;
   onDismissError?: () => void;
   onDismissWarnings?: () => void;
@@ -84,14 +89,14 @@ function ConversationShareConfirmationDockImpl({
   onDismissWarnings,
   onCopyRequestId,
 }: ConversationShareConfirmationDockProps) {
-  const { intl, locale } = useZCodeIntl();
+  const { intl } = useZCodeIntl();
   const errorDetailsLabel = intl.formatMessage({ id: "conversationShare.issue.details" });
   const disclosureRef = useRef<HTMLElement>(null);
   const checkboxRef = useRef<HTMLInputElement>(null);
   const reviewAnimationRef = useRef<Animation | null>(null);
   const handleConfirm = () => {
     if (!error && !disclosureAccepted) {
-      // 未确认时只定位检查入口，不能把点击直接交给发布回调；重复点击先取消上次动画。
+      // When it is not confirmed, only the inspection entrance is located, and the click cannot be directly handed over to the release callback; repeated clicks cancel the last animation first.
       disclosureRef.current?.scrollIntoView({ block: "nearest", behavior: "instant" });
       checkboxRef.current?.focus({ preventScroll: true });
       reviewAnimationRef.current?.cancel();
@@ -153,14 +158,14 @@ function ConversationShareConfirmationDockImpl({
   };
 
   return (
-    // 分享 dock 曾在同一输入区额外叠加 popover ring、阴影和固定宽度，
-    // 切换时会产生不必要的层级光晕；这里只继承普通 Composer 的基础输入 surface。
+    // Share dock used to overlay popover ring, shadow and fixed width in the same input area.
+    // Unnecessary layer halo will be generated when switching; only the basic input surface of ordinary Composer is inherited here.
     <section
       data-conversation-share-keep-open="confirmation-dock"
       data-testid="conversation-share-confirmation-dock"
       className="@container/share flex max-h-[70dvh] w-full min-w-0 flex-col overflow-hidden rounded-2xl border border-input-border bg-input text-foreground"
     >
-      {/* 窄面板下表单会增高；正文独立滚动，避免把发布操作挤出视口。 */}
+      {/* The form grows taller in narrow panels; the body scrolls independently so the publish action is not pushed out of the viewport. */}
       <div
         data-testid="conversation-share-confirmation-body"
         className="min-h-0 overflow-y-auto overscroll-contain"
@@ -350,7 +355,7 @@ function ConversationShareConfirmationDockImpl({
                 }
               />
             </div>
-            {/* 设计原因：敏感信息确认需要保留警示语义，但把详细检查范围收进锚定浮层，避免确认 dock 被长文案撑高。 */}
+            {/* Design rationale: the sensitive-information confirmation needs to keep its warning semantics, but the detailed inspection scope is folded into an anchored popover so that long copy cannot stretch the confirmation dock taller. */}
             <section
               ref={disclosureRef}
               data-testid="conversation-share-disclosure"
@@ -487,7 +492,7 @@ function ConversationShareConfirmationDockImpl({
           </>
         )}
         {error ? (
-          // 单行 Toast 无法同时承载文件、轮次和限制上限；详情固定留在分享面板，避免用户丢失修复路径。
+          // A single line of Toast cannot carry files, rounds and upper limits at the same time; details are fixed in the sharing panel to prevent users from losing the repair path.
           <section
             role="alert"
             data-testid="conversation-share-error-details"
@@ -515,7 +520,7 @@ function ConversationShareConfirmationDockImpl({
                         { count: error.issueCount },
                       )}
                 </span>
-                {/* 服务端 request ID 属于诊断信息，常驻错误区会拉高 dock 并分散修复文案注意力；改为按需 Popover 展示。*/}
+                {/* The server request ID is diagnostic information; keeping it permanently in the error area would raise the dock and divert attention from the fix copy, so it is shown in an on-demand Popover instead.*/}
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button
@@ -592,10 +597,10 @@ function ConversationShareConfirmationDockImpl({
                   const values = {
                     turnOrdinal: issue.turnOrdinal ?? "—",
                     artifactDisplayName: issue.artifactDisplayName ?? "—",
-                    artifactType: formatConversationShareArtifactType(issue, locale),
+                    artifactType: formatConversationShareArtifactType(issue, "en-US"),
                     extension: issue.extension ?? "—",
                     mimeType: issue.mimeType ?? "—",
-                    allowedFormats: formatConversationShareAllowedArtifacts(issue, locale),
+                    allowedFormats: formatConversationShareAllowedArtifacts(issue, "en-US"),
                     actual: formatValue(issue.actual, issue.code),
                     limit: formatValue(issue.limit, issue.code),
                     phase: issue.phase ?? "—",
@@ -631,7 +636,7 @@ function ConversationShareConfirmationDockImpl({
           </section>
         ) : null}
         {warnings && warnings.issues.length > 0 && !pending ? (
-          // 发布已成功，只是部分正文引用的文件读不到被跳过；与失败区分开，也不提供「取消该轮」。
+          // The publication has been successful, but some files referenced in the text cannot be read and are skipped; to distinguish it from failure, "cancel this round" is not provided.
           <section
             role="status"
             data-testid="conversation-share-warning-details"
@@ -662,10 +667,10 @@ function ConversationShareConfirmationDockImpl({
                     {
                       turnOrdinal: issue.turnOrdinal ?? "—",
                       artifactDisplayName: issue.artifactDisplayName ?? "—",
-                      artifactType: formatConversationShareArtifactType(issue, locale),
+                      artifactType: formatConversationShareArtifactType(issue, "en-US"),
                       extension: issue.extension ?? "—",
                       mimeType: issue.mimeType ?? "—",
-                      allowedFormats: formatConversationShareAllowedArtifacts(issue, locale),
+                      allowedFormats: formatConversationShareAllowedArtifacts(issue, "en-US"),
                       actual: formatValue(issue.actual, issue.code),
                       limit: formatValue(issue.limit, issue.code),
                       phase: issue.phase ?? "—",
@@ -693,7 +698,7 @@ function ConversationShareConfirmationDockImpl({
           {intl.formatMessage({ id: footerMetaMessageId }, footerMetaValues)}
         </p>
         <div className="grid w-full min-w-0 grid-cols-2 gap-2 @min-[480px]/share:flex @min-[480px]/share:w-auto @min-[480px]/share:flex-1 @min-[480px]/share:flex-wrap @min-[480px]/share:justify-end">
-          {/* 根因：内层按钮强制横排时仍会被外层裁切；窄屏主操作与次要操作分行。 */}
+          {/* Root cause: even when the inner buttons are forced into a row they are still clipped by the outer container; on narrow screens the primary and secondary actions go on separate lines. */}
           <Button
             type="button"
             size="lg"

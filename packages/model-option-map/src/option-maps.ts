@@ -16,7 +16,7 @@ export interface CompiledModelOptionMaps {
   apply(body: JsonObject, values: ModelOptionValues): JsonObject;
 }
 
-/** Model 创建时编译一次；每个请求只绑定本轮冻结的 Option value。 */
+/** Compiled once when the Model is created; each request only binds the Option value frozen for that round. */
 export function compileModelOptionMaps(specs: ModelOptionMapSpecs): CompiledModelOptionMaps {
   const reasoningLevel = compileModelOptionMap(specs.reasoningLevel.map, "reasoningLevel");
   const maxOutputTokens = compileModelOptionMap(specs.maxOutputTokens.map, "maxOutputTokens");

@@ -114,8 +114,8 @@ export async function refreshLegacyBigModelCachedProfile(
   }
 
   try {
-    // BigModel 旧缓存只保存 nickName，升级后 restoreCachedSession 会绕过
-    // fetchUserInfo。这里对无版本缓存做 best-effort 刷新，失败仍保留本地登录态。
+    // The old BigModel cache only saves nickName. After the upgrade, restoreCachedSession will bypass it.
+    // fetchUserInfo. Here, best-effort refresh is performed on the non-version cache. If it fails, the local login status will still be retained.
     const refreshedProfile = await runWithAdapterError(() =>
       adapter.fetchUserInfo!(tokenSet, {
         providerId: BIGMODEL_PROVIDER_ID,
@@ -125,9 +125,9 @@ export async function refreshLegacyBigModelCachedProfile(
       }),
     );
     if (isBigModelUserInfoFallback(refreshedProfile)) {
-      // 旧版本可能把 zcode JWT 写进 BigModel access token。
-      // adapter 会返回 unknown/User 哨兵值表示无法查 BigModel 用户信息；
-      // 迁移不能把已有可信缓存覆盖成这个哨兵值，否则版本标记会永久固化错误展示名。
+      // Older versions may write zcode JWT into the BigModel access token.
+      // The adapter will return the unknown/User sentinel value to indicate that BigModel user information cannot be found;
+      // Migration cannot overwrite the existing trusted cache with this sentinel value, otherwise the version mark will permanently solidify the wrong display name.
       await saveProfile(withProviderProfileSchema(BIGMODEL_PROVIDER_ID, cachedProfile));
       return cachedProfile;
     }
@@ -140,8 +140,8 @@ export async function refreshLegacyBigModelCachedProfile(
       return cachedProfile;
     }
 
-    // 离线、超时或 5xx 只是暂时性失败，不能永久写入 schema version 2。
-    // 写入 retry-after 可避免每次启动都打 userinfo，同时保留后续成功迁移机会。
+    // Offline, timeout, or 5xx are just temporary failures and cannot permanently write to schema version 2.
+    // Writing retry-after can avoid hitting userinfo every time it is started, while retaining the chance of subsequent successful migration.
     await saveProfile(withBigModelProfileMigrationRetryAfter(cachedProfile, now()));
     return cachedProfile;
   }

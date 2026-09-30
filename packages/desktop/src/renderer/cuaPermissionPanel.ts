@@ -30,11 +30,11 @@ const hintSuffix = document.getElementById("hintSuffix");
 const completion = document.getElementById("completion");
 const icon = document.querySelector<HTMLElement>(".icon");
 
-// 挂载即预热：install+verify 是异步的，必须在用户开始拖之前完成，
-// 否则 dragstart 里无法同步发起拖拽（等 I/O 就会错过手势窗口）。
-// 顺便拿回 Helper 的真实 display name —— tile 必须显示它而不是硬编码字符串，
-// 因为 macOS 权限列表里那一行的名字就是这个值（dev 下带 Dev 后缀），
-// 两边一致用户才能确认「拖进去的就是它」。
+// Mounting means preheating: install+verify is asynchronous and must be completed before the user starts dragging.
+// Otherwise, dragging cannot be initiated synchronously in dragstart (the gesture window will be missed while waiting for I/O).
+// By the way, get back the real display name of the Helper - the tile must display it instead of a hard-coded string,
+// Because the name of the row in the macOS permission list is this value (with the Dev suffix under dev),
+// Only when both sides are consistent can the user confirm that "the one dragged in is it."
 bridge
   ?.prepareDrag?.()
   .then((result) => {
@@ -46,7 +46,7 @@ bridge
   .catch(() => {});
 
 bridge?.onState?.((state) => {
-  const messages = resolveCuaPermissionPanelMessages(state.locale, state.permission);
+  const messages = resolveCuaPermissionPanelMessages(state.permission);
   document.documentElement.lang = state.locale;
   document.title = messages.documentTitle;
   if (tile) tile.title = messages.dragTitle;
@@ -54,7 +54,7 @@ bridge?.onState?.((state) => {
   if (permissionLabel) permissionLabel.textContent = messages.permissionLabel;
   if (hintSuffix) hintSuffix.textContent = messages.hintSuffix;
   if (completion) completion.textContent = messages.completion;
-  // 用真实 ZCode 图标替换占位渐变，和系统设置列表里那一行的图标保持一致。
+  // Replace the placeholder gradient with a real ZCode icon, consistent with the icon in the row in the system settings list.
   if (state.iconDataUrl && icon) {
     icon.style.backgroundImage = `url("${state.iconDataUrl}")`;
   }
@@ -63,23 +63,23 @@ bridge?.onState?.((state) => {
 let dragStarted = false;
 
 tile?.addEventListener("dragstart", (event) => {
-  // 必须阻止 HTML5 默认拖拽，改由 main 用 webContents.startDrag 发起原生文件拖拽——
-  // 只有原生 drag session 才能被系统设置的权限列表接收。
+  // HTML5 default drag and drop must be prevented, and main uses webContents.startDrag to initiate native file drag and drop——
+  // Only native drag sessions can be accepted by the system-set permission list.
   event.preventDefault();
   dragStarted = true;
   bridge?.startDrag?.();
 });
 
-// 拖完授权即完成，浮窗该让位。用拖拽结束而不是在 dragstart 里就收窗：startDrag 只是
-// 把 drag session 交给 OS（非阻塞），drag source 立刻消失可能打断正在进行的拖拽。
+// After dragging the authorization, it is completed, and the floating window should give way. Use drag to end instead of closing the window in dragstart: startDrag just
+// By handing the drag session to the OS (non-blocking), the drag source disappears immediately and may interrupt ongoing dragging.
 const notifyDragEnded = () => {
-  if (!dragStarted) return; // 只点一下没拖，不该关窗。
+  if (!dragStarted) return; // If you just click it without dragging it, you should not close the window.
   dragStarted = false;
   bridge?.notifyDragEnded?.();
 };
 
-// preventDefault 之后 dragend 是否仍触发取决于 Electron 实现，所以再用 mouseup 兜一层
-// （原生 drag session 结束后鼠标事件回到页面）。两个信号都受 dragStarted 约束，且 main
-// 侧 hide 是幂等的，重复通知无害。收不到任何信号时仍有 freezePosition 兜底：浮窗不乱跑。
+// Whether dragend is still triggered after preventDefault depends on the Electron implementation, so use mouseup to take another step.
+// (Mouse events return to the page after the native drag session ends). Both signals are subject to dragStarted, and main
+// Side hide is idempotent and duplicate notifications are harmless. There is still freezePosition when no signal is received: the floating window will not run around.
 tile?.addEventListener("dragend", notifyDragEnded);
 document.addEventListener("mouseup", notifyDragEnded);

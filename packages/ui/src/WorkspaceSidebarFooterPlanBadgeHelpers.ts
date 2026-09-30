@@ -36,8 +36,8 @@ export function resolveSidebarFooterProfilePlanBadge({
     return null;
   }
 
-  // 头像旁徽标只展示已确认的权益。个人权益显示套餐等级；没有个人权益但有团队权益时才显示团队。
-  // 不能把当前连接方式或历史 selectedKey 当作 Team 兜底，否则切换 family 后会误显示 Team。
+  // The logo next to the avatar only shows confirmed rights and interests. Personal rights show the package level; teams are shown only when there are no personal rights but team rights.
+  // The current connection method or historical selectedKey cannot be regarded as Team, otherwise Team will be displayed by mistake after switching family.
   return hasTeamPlanEntitlement ? { audience: "team" } : null;
 }
 

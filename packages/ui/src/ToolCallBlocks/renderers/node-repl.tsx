@@ -27,8 +27,8 @@ const NODE_REPL_TOOL_ICON = (
   <SquareMousePointerIcon className="size-4 shrink-0 text-foreground-subtle" />
 );
 
-// Radix 会在浏览器工具及执行详情打开时立即测量高度；代码块默认的 200px 离屏占位
-// 会让动画先展开过头再回落。两层内容都只在对应区域展开时挂载，使用真实布局不会损失长会话性能。
+// Radix will measure the height immediately when the browser tool and execution details are opened; the default 200px off-screen placeholder for the code block
+// This will cause the animation to expand over and then back down. Both layers of content are only mounted when the corresponding area is expanded, and long-session performance will not be lost by using the real layout.
 const COLLAPSIBLE_CODE_LAYOUT_STYLE = {
   containIntrinsicSize: "none",
   contentVisibility: "visible",
@@ -172,9 +172,9 @@ export function NodeReplToolCallBlock(context: ToolCallBlockRenderContext) {
     () => getSummary(model, toolCall.status, context.isRunning, formatMessage),
     [context.isRunning, formatMessage, model, toolCall.status],
   );
-  // Computer Use 的 cell 携带目标应用身份时，leading icon 换成该应用的真实图标 —— 连续
-  // CUA 步骤据此一眼看出各步操作的是哪个 app。图标由平台服务按
-  // locator 现取，取不到时保持 node_repl 自己的图标，不切换成另一个指针图形。
+  // When the cell of Computer Use carries the identity of the target application, the leading icon is replaced with the real icon of the application - continuous
+  // CUA steps can use this to see at a glance which app each step operates on. The icon is pressed by the platform service
+  // The locator is fetched now. When it cannot be fetched, it keeps node_repl's own icon and does not switch to another pointer graphic.
   const leadingIcon = useMemo(() => {
     if (!model.app) return NODE_REPL_TOOL_ICON;
     const iconRequest = cuaAppKeyToIconRequest(model.app.appKey);
@@ -231,8 +231,8 @@ export function NodeReplToolCallBlock(context: ToolCallBlockRenderContext) {
   );
   const renderContent = useCallback(
     () => (
-      // ToolLayout 已提供展开间距，Node REPL 再叠加横向 padding 会让 BUA
-      // 结果相对摘要行二次缩进，在窄屏消息流里尤其突兀。
+      // ToolLayout already provides expansion spacing, and Node REPL superimposes horizontal padding to make BUA
+      // The result is double indentation relative to the summary line, which is particularly jarring in narrow-screen news streams.
       <div className="mb-2 space-y-3 py-1" data-testid="node-repl-expanded-content">
         {visibleError ? (
           <section className="space-y-1.5">
@@ -242,8 +242,8 @@ export function NodeReplToolCallBlock(context: ToolCallBlockRenderContext) {
             </p>
           </section>
         ) : model.resultText && isCompactResult(model.resultText) ? (
-          // BUA 常返回 done、标题或 URL 等短结果，完整代码块的标题栏、边框和
-          // 操作按钮会让内容重量远大于信息本身；短结果按普通次级正文展示。
+          // BUA often returns short results such as done, title or URL, title bar, border and
+          // Action buttons make the content much heavier than the information itself; short results are displayed as ordinary sub-text.
           <p
             className="break-words rounded-xl border border-border bg-card px-3 py-2 text-ui-base text-foreground-subtle"
             data-testid="node-repl-result-surface"

@@ -1,8 +1,10 @@
 /**
- * 快捷键内核的 React 桥接：生效表与展示 label 的唯一 hook 出口。
+ * The React bridge for the shortcut kernel: the only hook entry point for the effective table and
+ * the display labels.
  *
- * 数据来源是 useSettings 的共享快照（setting.json），因此设置页写入 → update → refresh
- * 后所有消费方自动重算；不引入独立的 store/广播通道。
+ * The data source is useSettings' shared snapshot (setting.json), so once the settings page has
+ * written → update → refresh, every consumer recomputes automatically; no separate store or
+ * broadcast channel is introduced.
  */
 import { useMemo } from "react";
 import { type ShortcutCommandId } from "@zcode/shared";
@@ -10,7 +12,10 @@ import { useSettings } from "@/hooks/useSettingService.js";
 import { resolveEffectiveShortcutBindings, type EffectiveShortcutBindings } from "./bindings.js";
 import { formatShortcutBindingLabel } from "./label.js";
 
-/** 当前生效的快捷键表（默认 + 用户覆盖合并后的只读视图）。 */
+/**
+ * The currently effective shortcut table (a read-only view after merging the defaults with the
+ * user's overrides).
+ */
 export function useEffectiveShortcutBindings(): EffectiveShortcutBindings {
   const { settings } = useSettings();
   const overrides = settings?.shortcutBindings;
@@ -18,10 +23,13 @@ export function useEffectiveShortcutBindings(): EffectiveShortcutBindings {
 }
 
 /**
- * 命令展示 label：生效表首个绑定格式化。
- * 未分配（覆盖为显式空数组）返回空串、不回退默认展示——tooltip 提示的键位必须与实际
- * 生效一致，否则清除后的命令仍提示默认键、按键却不响应（空数组语义的展示侧延伸）。
- * 生效表按命令表全集构建，只有非法 commandId 才会缺键，同样按无键处理。
+ * A command's display label: the first binding in the effective table, formatted. Unassigned
+ * (overridden to an explicit empty array) returns an empty string and does not fall back to the
+ * default display — the keys a tooltip advertises must match what is actually in effect, otherwise
+ * a cleared command would still advertise the default keys while no longer responding to them (the
+ * display-side extension of the empty-array semantics). The effective table is built over the full
+ * set of commands, so only an illegal commandId can be missing a key, and that is treated the same
+ * way.
  */
 export function useShortcutCommandLabel(commandId: ShortcutCommandId): string {
   const effective = useEffectiveShortcutBindings();

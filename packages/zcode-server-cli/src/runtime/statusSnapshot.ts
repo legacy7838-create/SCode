@@ -10,8 +10,8 @@ type PersistedStatusRead =
 export async function readPersistedStatusDetailed(
   layout: ServerLayout,
 ): Promise<PersistedStatusRead> {
-  // 文件缺失表示离线，JSON/schema 损坏表示观测不可信；两者不能再折叠成同一个 null，
-  // 否则 uninstall/stop 会把“无法确认已停止”误判成“已经停止”。
+  // Missing files indicate offline, and damaged JSON/schema indicates untrustworthy observations; the two cannot be collapsed into the same null.
+  // Otherwise, uninstall/stop will misjudge "unable to confirm stopped" as "stopped".
   let raw: string;
   try {
     raw = await readFile(layout.statusFile, "utf8");
@@ -41,8 +41,8 @@ export function createStatusPersister<T>(
 ): () => Promise<void> {
   let inFlight: Promise<void> = Promise.resolve();
   return async () => {
-    // 一次 status 写盘失败不能让排队链永久 reject，否则后续生命周期快照
-    // 会全部丢失；status.json 只是观测快照，失败时记录告警并继续服务生命周期。
+    // A status disk writing failure cannot cause the queuing chain to be permanently rejected, otherwise subsequent life cycle snapshots
+    // All will be lost; status.json is just an observation snapshot. If it fails, an alarm will be recorded and the service life cycle will continue.
     inFlight = inFlight
       .then(async () => {
         const temporary = `${statusFile}.${process.pid}.tmp`;

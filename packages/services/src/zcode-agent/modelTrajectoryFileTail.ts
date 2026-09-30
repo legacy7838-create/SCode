@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { getDataBaseDir } from "#src/paths.js";
 
-// 32 MiB 足以覆盖常规最近调用，同时避免 64/256 MiB 诊断文件造成 Host 内存峰值。
+// 32 MiB is enough to cover regular recent calls while avoiding Host memory spikes from 64/256 MiB diagnostic files.
 const MAX_TRAJECTORY_READ_BYTES = 32 * 1024 * 1024;
 
 export interface TrajectoryFileTail {
@@ -12,7 +12,7 @@ export interface TrajectoryFileTail {
   truncated: boolean;
 }
 
-// debug（开发态）与 rollout（生产态）都尝试，避免数据目录环境变量差异导致读不到。
+// Try both debug (development state) and rollout (production state) to avoid being unable to read due to differences in data directory environment variables.
 export function resolveModelIODirs(): string[] {
   const roots = new Set<string>([
     join(homedir(), ".zcode", "cli"),
@@ -21,7 +21,7 @@ export function resolveModelIODirs(): string[] {
   return [...roots].flatMap((root) => [join(root, "debug"), join(root, "rollout")]);
 }
 
-// 与 runner-debug.ts 的 sanitizeFileSegment 保持一致：仅保留文件名安全字符。
+// Consistent with runner-debug.ts's sanitizeFileSegment: only filename safe characters are preserved.
 export function sanitizeSessionSegment(value: string): string {
   return value
     .replace(/[^a-zA-Z0-9_-]+/g, "-")

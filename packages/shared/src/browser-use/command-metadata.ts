@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-/** 内置自由尺寸与 Agent viewport API 共用同一组 CSS px 安全边界。 */
+/** The built-in free-size mode and the Agent viewport API share this same set of CSS px safety bounds. */
 export const BROWSER_VIEWPORT_LIMITS = {
   minWidth: 320,
   maxWidth: 3840,
@@ -8,7 +8,7 @@ export const BROWSER_VIEWPORT_LIMITS = {
   maxHeight: 2160,
 } as const;
 
-/** Agent 创建或打开的新页面使用的固定逻辑 viewport；不属于人类浏览器显示偏好。 */
+/** The fixed logical viewport used for new pages the Agent creates or opens; it is not a human browser display preference. */
 export const DEFAULT_AGENT_BROWSER_VIEWPORT = {
   width: 1280,
   height: 720,
@@ -22,7 +22,7 @@ export const browserViewportSizeSchema = z
   .strict();
 export type BrowserViewportSize = z.infer<typeof browserViewportSizeSchema>;
 
-/** setViewportSize 输入边界；实际自然 viewport 可能大于自由尺寸画布上限。 */
+/** Input bounds for setViewportSize; the actual natural viewport may exceed the free-size canvas upper bound. */
 export const browserViewportInputSchema = browserViewportSizeSchema.extend({
   width: z
     .number()
@@ -50,7 +50,7 @@ export type BrowserViewportZoom = z.infer<typeof browserViewportZoomSchema>;
 
 export const DEFAULT_BROWSER_VIEWPORT_ZOOM: BrowserViewportZoom = "fit";
 
-/** 仅用于人类用户主动打开 Browser tab 的显示偏好；Agent viewport 运行态不得读写。 */
+/** A display preference used only when a human user opens a Browser tab themselves; the Agent viewport runtime state must never read or write it. */
 export const embeddedBrowserViewportPreferenceSchema = z
   .object({
     mode: z.enum(["normal", "responsive"]),
@@ -68,7 +68,7 @@ export const DEFAULT_EMBEDDED_BROWSER_VIEWPORT_PREFERENCE: EmbeddedBrowserViewpo
   zoom: DEFAULT_BROWSER_VIEWPORT_ZOOM,
 };
 
-/** browser-use 的统一命令方法集，各分支由 BrowserCommand 的 method 判别。 */
+/** The unified command method set of browser-use; each branch is discriminated by the `method` of BrowserCommand. */
 export const browserCommandMethodSchema = z.enum([
   "navigate",
   "back",
@@ -122,17 +122,17 @@ export const browserCommandMethodSchema = z.enum([
 ]);
 export type BrowserCommandMethod = z.infer<typeof browserCommandMethodSchema>;
 
-/** 客户端模式；决定桌面 continuous 与手机 replayable 的边界处理。 */
+/** Client mode; it decides how the desktop continuous and mobile replayable boundary cases are handled. */
 export const browserClientModeSchema = z.enum(["desktop-continuous", "web-remote-replayable"]);
 export type BrowserClientMode = z.infer<typeof browserClientModeSchema>;
 
-/** 每条命令携带的会话上下文。 */
+/** The session context carried by every command. */
 export const browserCommandContextSchema = z
   .object({
-    /** workspaceIdentity?.trim() || workspacePath，用于隔离与受控 tab 复用。 */
+    /** `workspaceIdentity?.trim() || workspacePath`, used for isolation and controlled tab reuse. */
     workspaceKey: z.string().min(1),
     sessionId: z.string().min(1),
-    /** 受控 tab id；缺省表示该 session 的活动受控 tab。 */
+    /** Controlled tab id; when omitted it means the active controlled tab of that session. */
     tabId: z.string().min(1).optional(),
     requestId: z.string().min(1),
     clientMode: browserClientModeSchema,
@@ -140,7 +140,7 @@ export const browserCommandContextSchema = z
   .strict();
 export type BrowserCommandContext = z.infer<typeof browserCommandContextSchema>;
 
-/** 结构化错误码：不静默兜底，明确失败原因给模型。 */
+/** Structured error code: no silent fallback, the failure reason is stated explicitly to the model. */
 export const browserErrorCodeSchema = z.enum([
   "backend_unavailable",
   "capability_unsupported",
@@ -154,7 +154,7 @@ export const browserErrorCodeSchema = z.enum([
 ]);
 export type BrowserErrorCode = z.infer<typeof browserErrorCodeSchema>;
 
-/** 页面基础状态（getState / 导航后回传）。 */
+/** Basic page state (returned by getState and after navigation). */
 export const browserPageStateSchema = z
   .object({
     url: z.string(),

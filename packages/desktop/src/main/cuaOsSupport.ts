@@ -1,13 +1,13 @@
 import { release } from "node:os";
 import type { CuaOsSupport } from "@zcode/shared";
 
-// 承诺地板 = max(Helper Info.plist LSMinimumSystemVersion 12.0, SEA 二进制 minos 11.0)。
-// 2026-08 事故：地板检查缺位时，低版本 macOS 用户只看到授权反复无响应
-// （真因是 LaunchServices -10825 拒启 Helper）。
+// Promise Floor = max(Helper Info.plist LSMinimumSystemVersion 12.0, SEA Binary minos 11.0).
+// 2026-08 Incident: When the floor check is missing, users of lower versions of macOS only see authorization repeatedly and no response.
+// (The real reason is LaunchServices -10825 refusing to launch Helper).
 const CUA_MINIMUM_MACOS_VERSION = "12.0";
-// 地板与上游 zcode-cua helperAppBundle.ts 的 Info.plist LSMinimumSystemVersion(12.0) 联动，
-// bump 任一侧必须同步其余常量。
-const CUA_MINIMUM_DARWIN_MAJOR = 21; // Darwin major - 9 = macOS major（21↔12, 22↔13）
+// The floor is linked with the Info.plist LSMinimumSystemVersion(12.0) of the upstream zcode-cua helperAppBundle.ts,
+// Either side of bump must synchronize the remaining constants.
+const CUA_MINIMUM_DARWIN_MAJOR = 21; // Darwin major - 9 = macOS major (21↔12, 22↔13)
 
 function darwinMajorToMacosMajor(major: number): number {
   return major - 9;

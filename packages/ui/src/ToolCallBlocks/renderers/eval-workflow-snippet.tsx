@@ -20,7 +20,10 @@ import {
 
 const ICON = <FlaskConical className="size-4 shrink-0 text-foreground-subtle" />;
 
-/** 三态摘要不放结果预览，展开内容按执行状态排序。 */
+/**
+ * The three-state summary carries no result preview; the expanded content is sorted by execution
+ * status.
+ */
 export function EvalWorkflowSnippetToolCallBlock(context: ToolCallBlockRenderContext) {
   const { intl } = useZCodeIntl();
   const { toolCall } = context.toolCallNode;
@@ -29,9 +32,9 @@ export function EvalWorkflowSnippetToolCallBlock(context: ToolCallBlockRenderCon
   const running = context.isRunning;
   const failed = !running && (toolCall.status === "failed" || snippet?.ok === false);
   const startedAt = toolCall.startedAt;
-  // 进行中按整秒走、每秒一格（与面板里其他计时同一粒度）；终态定格在工具结果的精确毫秒。
-  // 不能每 100ms 显示一次毫秒——尾数肉眼读不了，却是聊天区里最频繁的待处理更新
-  // （React 嵌套更新计数在投影帧积压时的种子）。
+  // During the process, it moves in whole seconds, one frame per second (the same granularity as other timings in the panel); the final state is fixed at the precise millisecond of the tool result.
+  // Milliseconds cannot be displayed every 100ms - the mantissa cannot be read with the naked eye, but it is the most frequent pending update in the chat area
+  // (React nested update count is seeded when projected frames are backlogged).
   const now = useNowTicker(running && typeof startedAt === "number");
   const durationText = running
     ? typeof startedAt === "number"
@@ -61,7 +64,7 @@ export function EvalWorkflowSnippetToolCallBlock(context: ToolCallBlockRenderCon
   const error =
     context.errorText ||
     (failed ? response || snippet?.diagnostics.map((d) => d.message).join("\n") : undefined);
-  // 展开入口与当前实际展示的内容一致，不能因隐藏的代码/日志留下空面板。
+  // The expanded entrance is consistent with the currently displayed content, and no empty panels can be left due to hidden code/logs.
   const hasDetails = running
     ? code !== undefined
     : failed
@@ -227,7 +230,10 @@ function SnippetBody({
   );
 }
 
-/** 共用 Markdown 工具栏，正文独立滚动，避免复制按钮随长内容卷走。 */
+/**
+ * A shared Markdown toolbar, with the body scrolling on its own so the copy button does not scroll
+ * away with long content.
+ */
 function SnippetTextPanel({
   text,
   language,

@@ -1,4 +1,7 @@
-/* oxlint-disable eslint(max-lines) -- ConversationTimeline 集中承载虚拟滚动、滚动锚定、loadOlder 与 find 高亮协调；拆散会让同一滚动状态跨文件传递。 */
+/* oxlint-disable eslint(max-lines) -- ConversationTimeline centrally hosts virtual scrolling,
+ * scroll anchoring, and loadOlder plus find highlight coordination; scattering them would make the
+ * same scroll state travel across files.
+ */
 import {
   Component,
   memo,
@@ -90,8 +93,8 @@ import { useConversationTimelineFind } from "@/v4/useConversationTimelineFind.js
 import { ConversationSelectionTooltip } from "@/v4/ConversationSelectionTooltip.js";
 import type { ConversationSelectionReference } from "@/lib/conversationSelectionReference.js";
 
-// memo 组件参数中的 `pendingGuides = []` 会在每次调用时创建新引用，
-// 让未传该属性的渲染绕过稳定引用边界；共享只读空数组可保持默认值恒定。
+// `pendingGuides = []` in the memo component parameter will create a new reference on each call,
+// Lets rendering without passing this property bypass stable reference boundaries; sharing a read-only empty array keeps the default value constant.
 const EMPTY_PENDING_GUIDES: readonly QueueItem[] = [];
 
 const ROW_OVERSCAN = 8;
@@ -104,8 +107,8 @@ const CONTENT_WIDTH_RESIZE_SETTLE_MS = 120;
 const SCROLL_MEMORY_RESTORE_TOLERANCE_PX = 1;
 
 function scheduleMicrotask(callback: () => void): void {
-  // 部分 WebView/最小 DOM 运行时没有 window.queueMicrotask；调度能力应从
-  // globalThis 注入，并保留 Promise 微任务降级，避免滚动恢复在 commit 阶段直接中断。
+  // Some WebView/minimum DOM runtimes do not have window.queueMicrotask; scheduling capabilities should start from
+  // globalThis injection, and retain the Promise microtask downgrade to avoid rolling recovery from being directly interrupted in the commit phase.
   if (typeof globalThis.queueMicrotask === "function") {
     globalThis.queueMicrotask(callback);
     return;
@@ -123,8 +126,8 @@ function isEditableScrollTarget(target: EventTarget | null): boolean {
   );
 }
 
-// v4 时间线重写滚动控件时把可访问名称误做成了可见文字，偏离旧版
-// 的圆形下箭头样式；这里集中渲染图标按钮，避免两个定位分支再次产生视觉差异。
+// When the v4 timeline rewrote the scroll control, the accessible name was mistakenly made into visible text, deviating from the old version
+// The circular down arrow style; here, the icon button is concentrated to avoid visual differences between the two positioning branches again.
 function ConversationBackToBottomButton({
   className,
   label,
@@ -196,8 +199,8 @@ function canReleasePendingScrollMemoryRestore(
   if (targetIsRepresentable || element.scrollHeight >= pendingRestore.state.scrollHeight) {
     return true;
   }
-  // 新 lease 的首帧 rows 可能仍是截断尾窗；只要还能拉取更早历史，就继续保留原始
-  // 恢复意图，避免把临时 clamp 后的 scrollTop 当成最终阅读锚点。
+  // The first frame rows of the new lease may still have a truncated tail window; as long as earlier history can be pulled, the original
+  // Restore the intention and avoid using the temporarily clamped scrollTop as the final reading anchor point.
   return rowCount > 0 && !hasOlderRows && pendingRestore.rowWindowKey !== rowWindowKey;
 }
 
@@ -207,7 +210,10 @@ interface ConversationScrollMemoryScopeCaptureProps {
   commit: (snapshot: ConversationScrollMemoryScopeSnapshot | null) => void;
 }
 
-/** React 的 before-mutation snapshot：scope cleanup 时普通 layout effect 已看到新 DOM。 */
+/**
+ * React's before-mutation snapshot: by scope cleanup time an ordinary layout effect has already
+ * seen the new DOM.
+ */
 class ConversationScrollMemoryScopeCapture extends Component<
   ConversationScrollMemoryScopeCaptureProps,
   unknown,
@@ -233,7 +239,10 @@ class ConversationScrollMemoryScopeCapture extends Component<
   }
 }
 
-/** tanstack 默认测量的竖向复刻：优先 ResizeObserver entry（不触发同步布局）。 */
+/**
+ * A vertical port of tanstack's default measurement: prefer the ResizeObserver entry (which does
+ * not trigger a synchronous layout).
+ */
 function measureRowHeight(element: Element, entry: ResizeObserverEntry | undefined): number {
   const boxSize = entry?.borderBoxSize?.[0];
   if (boxSize) {
@@ -248,20 +257,36 @@ function getUnitHeightCacheKey(unit: ConversationTurnRenderUnit | undefined): st
 
 interface ConversationTimelineProps {
   rows: readonly ConversationRow[];
-  /** CLI 权威 queue 中等待 model-step 注入的 guide；只改变 renderer 落位。 */
+  /**
+   * A guide waiting in the CLI-authoritative queue for model-step injection; it only changes where
+   * the renderer places it.
+   */
   pendingGuides?: readonly QueueItem[];
-  /** runtime memory 状态，只交给当前 live turn，不进入历史虚拟列表。 */
+  /**
+   * runtime memory state, handed only to the current live turn and never entering the historical
+   * virtual list.
+   */
   apiRetry?: ApiRetryState | null;
-  /** 投影全序行数（rows.totalCount；窗口截断后大于 rows.length，仅用于滚动条估计/诊断）。 */
+  /**
+   * The projected total-order row count (rows.totalCount; after the window truncates it exceeds
+   * rows.length and is used only for scrollbar estimation/diagnostics).
+   */
   totalCount: number;
   /**
-   * 会话身份键（sessionId ?? "draft"）。切换时重置滚动锚定与测高缓存——
-   * rowId 在不同 session 间会重复，测高缓存禁止跨会话串号。
+   * The session identity key (sessionId ?? "draft"). On a switch, scroll anchoring and the
+   * measurement cache are reset — rowId repeats across sessions, so the measurement cache is
+   * forbidden from mixing numbers between sessions.
    */
   sessionKey: string;
-  /** renderer-local 滚动记忆 key；draft 为 null，不参与保存或恢复。 */
+  /**
+   * The renderer-local scroll memory key; null for drafts, which take part in neither saving nor
+   * restoring.
+   */
   scrollMemoryKey?: string | null;
-  /** 行渲染上下文（theme/codePreviewSettings/workspacePath）；宿主保证引用稳定。 */
+  /**
+   * The row render context (theme/codePreviewSettings/workspacePath); the host guarantees a stable
+   * reference.
+   */
   rowContext: ConversationRowRenderContext;
   onFork?: (target: ConversationRowTarget) => void;
   onRetry?: (target: ConversationRowTarget) => void;
@@ -272,45 +297,73 @@ interface ConversationTimelineProps {
     attachments?: readonly AttachmentRef[],
     workspaceMode?: "preserve" | "rewind",
   ) => Promise<CommandAck | boolean | void> | CommandAck | boolean | void;
-  /** 还有更早历史可拉（窗口首行 > 全序首行）。 */
+  /**
+   * Earlier history is still available to load (the window's first row > the total order's first
+   * row).
+   */
   canLoadOlder?: boolean;
-  /** loadOlder 在途，抑制重复触发。 */
+  /** loadOlder is in flight, suppressing duplicate triggers. */
   loadingOlder?: boolean;
-  /** 拉取更早一窗历史（接近顶部时自动预取）。 */
+  /** Fetch one earlier window of history (auto-prefetched when nearing the top). */
   onLoadOlder?: () => Promise<void> | void;
-  /** 宽屏问题目录挂载后一次补齐当前有效分支的全部历史。 */
+  /**
+   * After the wide-screen question outline mounts, fill in the entire history of the currently
+   * valid branch in one go.
+   */
   onLoadAllOlder?: () => Promise<ConversationTurnNavigatorHydrationResult>;
   /**
-   * 问题导航目录失效代际（store turnNavigatorDirectoryRevision）。
-   * real-user query 增删后终态必须失效重探测；组件 hydration key
-   * 追加此 revision，避免同一 logEpoch 内永久拦截。
+   * The generation that invalidates the question navigation outline (store
+   * turnNavigatorDirectoryRevision). After real-user queries are added or removed, the terminal
+   * state must be invalidated and re-probed; the component hydration key appends this revision, so
+   * interception does not persist forever within the same logEpoch.
    */
   turnNavigatorDirectoryRevision?: number;
-  /** 与旧 ChatView 对齐：composer dock 属于同一个滚动视口，sticky 到滚动容器底部。 */
+  /**
+   * Aligned with the old ChatView: the composer dock belongs to the same scroll viewport and is
+   * sticky to the bottom of the scroll container.
+   */
   bottomDock?: ReactNode;
-  /** 分享选择面板所在的共享父容器；用于把 dock 的真实位置写入同一坐标系。 */
+  /**
+   * The shared parent container holding the share selection panel; used to write the dock's real
+   * position into the same coordinate system.
+   */
   selectionPanelLayoutContainerRef?: { current: HTMLElement | null };
   /**
-   * 锁定背景滚动。
+   * Lock background scrolling.
    *
-   * 分享选择面板只用 scrim 隔离了正文指针事件，滚动容器仍是 overflow-y-auto，
-   * 原生滚动条拖拽和键盘 PageUp/Down 仍能改变 scrollTop，勾选目标会在面板下方漂走。
+   * The share selection panel only isolates the body text's pointer events with a scrim, while the
+   * scroll container is still overflow-y-auto, so dragging the native scrollbar and the PageUp/Down
+   * keys can still change scrollTop, and the checked target drifts below the panel.
    */
   backgroundScrollLocked?: boolean;
-  /** rows 为空时的可选内容；正式空 session 传空，草稿态传问候语。 */
+  /**
+   * Optional content when rows is empty; a real empty session passes nothing, the draft state
+   * passes the greeting.
+   */
   emptyState?: ReactNode;
   /**
-   * 滚动容器内、消息层之上的常驻内容（分享导入的只读块 + 分割线）。
+   * Persistent content inside the scroll container, above the message layer (the read-only block
+   * imported from sharing + a divider).
    *
-   * 必须在容器内而不是做成固定横幅，才能与实时对话一起滚动；rows 为空时也要渲染，
-   * 所以它落在 emptyState 分支之外。
+   * It has to be inside the container rather than a fixed banner, so that it scrolls together with
+   * the live conversation; it must also render when rows is empty, which is why it falls outside
+   * the emptyState branch.
    */
   headerSlot?: ReactNode;
-  /** 草稿态让 emptyState 与同一个 bottomDock 作为整体居中，不重挂 composer。 */
+  /**
+   * In the draft state, emptyState is centered as a whole together with the same bottomDock,
+   * without remounting the composer.
+   */
   centerEmptyStateWithDock?: boolean;
-  /** 窄屏/粗指针视口保留紧凑居中布局，不复用桌面草稿安全间距。 */
+  /**
+   * Narrow-screen / coarse-pointer viewports keep the compact centered layout and do not reuse the
+   * desktop draft safe spacing.
+   */
   compactEmptyStateWithDock?: boolean;
-  /** 右侧状态面板对消息列的布局模式；auto 由 conversation container query 裁决。 */
+  /**
+   * The layout mode the right-hand status panel imposes on the message column; auto is decided by
+   * the conversation container query.
+   */
   summaryPanelLayout?: "none" | "auto" | "inline";
   conversationFindQuery?: string;
   conversationFindActiveIndex?: number;
@@ -319,9 +372,14 @@ interface ConversationTimelineProps {
   searchResultHighlightRequest?: ChatSearchResultHighlightRequest | null;
   onSearchResultHighlightDone?: (requestId: number) => void;
   sessionPhase?: SessionPhase;
-  /** 宿主可调用的一次性“滚动到底部”动作；不持有 conversation 或跨 renderer 状态。 */
+  /**
+   * A one-shot "scroll to bottom" action the host can call; it holds no conversation or
+   * cross-renderer state.
+   */
   scrollToBottomActionRef?: { current: (() => void) | null };
-  /** 宿主可调用的一次性 query 定位动作；不改变分享面板 view。 */
+  /**
+   * A one-shot query locating action the host can call; it does not change the share panel's view.
+   */
   scrollToQueryActionRef?: {
     current: ((target: { unitIndex: number; rowId: number }) => void) | null;
   };
@@ -331,23 +389,33 @@ interface ConversationTimelineProps {
     onAddToCurrentTask: (reference: ConversationSelectionReference) => void;
     onAskInSideChat: (reference: ConversationSelectionReference) => void;
   };
-  /** 分享选择阶段的本轮勾选状态；仅桌面分享时间线传入。 */
+  /**
+   * The selection state of this round during the share selection phase; passed in only by the
+   * desktop share timeline.
+   */
   shareSelection?: {
     eligibleRowIds: ReadonlySet<number>;
     selectedRowIds: ReadonlySet<number>;
     onToggle: (rowId: number) => void;
   };
-  /** 分享选择流程存在时，左侧 rail 由分享面板或 reopen 按钮独占。 */
+  /**
+   * When the share selection flow exists, the left rail is owned exclusively by the share panel or
+   * the reopen button.
+   */
   hideTurnNavigator?: boolean;
 }
 
 /**
- * 虚拟滚动 timeline：动态测高（ResizeObserver 驱动 remeasure）+ 底部锚定 +
- * 「回到底部」。滚动位置/跟随态/测高缓存全部为组件实例状态——多 pane（同会话或
- * 异会话）各自独立，互不干扰；数据订阅共享经 sessionDataLayer lease 处理。
+ * The virtual scrolling timeline: dynamic measurement (ResizeObserver-driven remeasure) + bottom
+ * anchoring + "back to bottom". The scroll position / follow state / measurement cache are all
+ * per-component-instance state — multiple panes (same session or different sessions) are
+ * independent and never interfere; the shared data subscription is handled through the
+ * sessionDataLayer lease.
  *
- * React 性能：rows 高频变化（流式 delta），滚动相关回调全部经 ref 读取最新值，
- * 保持稳定引用；跟随态存 ref（每帧变化不触发渲染），仅「回到底部」可见性走 state。
+ * React performance: rows change at high frequency (streaming delta), so all scroll-related
+ * callbacks read the latest values through refs and keep stable references; the follow state lives
+ * in a ref (per-frame changes do not trigger a render) and only the visibility of "back to bottom"
+ * goes through state.
  */
 function ConversationTimelineImpl({
   rows,
@@ -390,11 +458,11 @@ function ConversationTimelineImpl({
   const { intl } = useZCodeIntl();
   const scrollRef = useRef<HTMLDivElement>(null);
   const headerSlotRef = useRef<HTMLDivElement>(null);
-  // headerSlot 高度参与虚拟窗口换算（scrollMargin），必须随内容与宽度变化实时跟进，
-  // 否则只读块加载完成或窗口变宽换行后，虚拟行会整体错位。
+  // The headerSlot height participates in the virtual window conversion (scrollMargin) and must be followed in real time as the content and width change.
+  // Otherwise, after the read-only block is loaded or the window is widened and the line breaks, the virtual lines will be overall misaligned.
   //
-  // 依赖必须是「有没有 slot」而不是 headerSlot 本身：后者是 ReactNode，宿主传的是内联 JSX，
-  // 每次渲染都是新对象，会让 ResizeObserver 在流式输出期间每帧重建。
+  // The dependency must be "whether there is a slot" rather than headerSlot itself: the latter is ReactNode, and the host passes inline JSX.
+  // Each render is a new object, causing the ResizeObserver to be rebuilt every frame during streaming output.
   const hasHeaderSlot = Boolean(headerSlot);
   const [headerSlotHeight, setHeaderSlotHeight] = useState(0);
   useEffect(() => {
@@ -440,7 +508,7 @@ function ConversationTimelineImpl({
   turnNavigatorQueryRowIdsRef.current = turnNavigatorQueryRowIds;
   const centeredEmptyLayout = centerEmptyStateWithDock && renderUnits.length === 0;
   const responsiveCenteredEmptyLayout = centeredEmptyLayout && !compactEmptyStateWithDock;
-  // 高频值经 ref 供稳定回调读取（不进依赖数组）。
+  // High-frequency values ​​are read through ref for stable callbacks (not dependent on arrays).
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
   const unitsRef = useRef(renderUnits);
@@ -463,7 +531,7 @@ function ConversationTimelineImpl({
         currentContentWidth !== stableContentWidth)
     );
   }, []);
-  // loadOlder 相关值经 ref 读取，保持 handleScroll 稳定引用。
+  // The relevant value of loadOlder is read through ref, keeping handleScroll as a stable reference.
   const loadOlderRef = useRef({ canLoadOlder, loadingOlder, onLoadOlder });
   loadOlderRef.current = { canLoadOlder, loadingOlder, onLoadOlder };
   const followingRef = useRef(initialFollowing());
@@ -482,11 +550,11 @@ function ConversationTimelineImpl({
     state: ChatSessionScrollMemoryState;
   } | null>(null);
   const pendingDetachedScrollRestoreRef = useRef<PendingScrollMemoryRestore | null>(null);
-  // 组件「已账目」的 scrollTop——scroll 事件读取值或组件自身
-  // 程序化写入（贴底/prepend 平移）后的回读值。贴底 effect 拿它对账未观察滚动
-  // （滚动已发生、scroll 事件未派发），防止过期 following=true 把用户/测试的上滚拽回底部。
+  // The scrollTop of the component "Accounted" - the scroll event reads the value or the component itself
+  // The readback value after programmatic writing (bottom/prepend translation). The bottom effect is used to reconcile it without observing the scrolling.
+  // (Scrolling has occurred and the scroll event has not been dispatched) to prevent expiration. Following=true drags the user/test's scroll back to the bottom.
   const lastObservedScrollTopRef = useRef(0);
-  // prepend 锚定基线（上一 commit 的首行/总高度），见下方对账效应。
+  // prepend anchors the baseline (the first line/total height of the previous commit), see the reconciliation effect below.
   const prependAnchorRef = useRef<{
     firstRowId: number | null;
     totalSize: number;
@@ -517,8 +585,8 @@ function ConversationTimelineImpl({
     centerYPx: number;
     maxHeightPx: number;
   } | null>(null);
-  // 右侧状态面板完整 inline 展开时，中间消息列和输入 dock 必须使用同一偏移；
-  // 否则面板会覆盖正文，而不是并排布局。
+  // When the right status panel is fully expanded inline, the middle message column and input dock must use the same offset;
+  // Otherwise the panels will cover the text instead of being laid out side by side.
   const summaryPanelInlineOffsetClassName =
     getConversationStatusPanelOffsetClassName(summaryPanelLayout);
   const contentWidthClassName = getConversationContentWidthClassName({
@@ -532,8 +600,8 @@ function ConversationTimelineImpl({
     const dock = composerDockRef.current;
     if (!container || !dock) return;
 
-    // 选择面板是 SessionPane 的兄弟节点，不能把 CSS 变量写在 Timeline
-    // 自身，否则面板拿不到 dock 的真实边界；统一写入共享父容器供两者使用。
+    // The selection panel is a sibling node of SessionPane, and CSS variables cannot be written in Timeline.
+    // itself, otherwise the panel cannot get the real boundary of the dock; it is uniformly written to the shared parent container for use by both.
     const layout = syncConversationShareSelectionPanelLayout(container, dock);
     const previous = shareSelectionPanelLayoutRef.current;
     if (previous?.centerYPx === layout.centerYPx && previous.maxHeightPx === layout.maxHeightPx) {
@@ -558,8 +626,8 @@ function ConversationTimelineImpl({
       resizeObserver.observe(dock);
     }
 
-    // ResizeObserver 在部分 Electron flex 布局中可能晚于窗口尺寸变化回调，
-    // 因此窗口 resize 也始终触发一次几何同步，保证面板随窗口放大/缩小。
+    // ResizeObserver may call back later than the window size change in some Electron flex layouts.
+    // Therefore, window resize always triggers a geometry synchronization to ensure that the panel expands/shrinks with the window.
     window.addEventListener("resize", syncShareSelectionPanelLayout);
     return () => {
       window.removeEventListener("resize", syncShareSelectionPanelLayout);
@@ -572,8 +640,8 @@ function ConversationTimelineImpl({
       return;
     }
 
-    // 运行中的 assistant work 状态文案要显示“工作中 N 秒”并随时间推进；
-    // 完成态耗时由协议事实固定，builder 会拒绝把这个 UI 时钟用于已结束轮次。
+    // The status copy of the running assistant work should display "Working for N seconds" and advance with time;
+    // The completion time is fixed by the protocol fact, and the builder will refuse to use this UI clock for the completed round.
     setLiveNowMs(Date.now());
     const timer = window.setInterval(() => {
       setLiveNowMs(Date.now());
@@ -586,9 +654,9 @@ function ConversationTimelineImpl({
     const element = timelineRootRef.current;
     if (!element) return;
 
-    // rail 改由 CSS container query 隐藏后，完整历史补拉失去了同一宽度
-    // 资格边界，手机远控与窄分屏也会请求全部 rows。这里仅同步只读分页资格；
-    // rail 的显隐、占位与过渡仍完全由 CSS 裁决，不恢复 composer 几何测量。
+    // After the rail was changed to be hidden by CSS container query, the complete history supplement lost the same width.
+    // Qualification boundaries, mobile phone remote control and narrow split screen will also request all rows. Only read-only paging qualifications are synchronized here;
+    // The visibility, placement, and transition of rails are still entirely determined by CSS and do not restore composer geometry measurements.
     const commitWidth = (width: number) => {
       const normalizedWidth = Math.max(0, Math.round(width));
       setTurnNavigatorContainerWidthPx((current) =>
@@ -623,9 +691,9 @@ function ConversationTimelineImpl({
     ) {
       return;
     }
-    // terminal key 必须与 store turnNavigatorDirectoryRevision 同步。
-    // 仅用 sessionKey + logEpoch 时，real-user query 增删不换 epoch，
-    // 组件层 terminal 永久拦截，store 即使失效缓存也无法重新探测。
+    // The terminal key must be synchronized with store turnNavigatorDirectoryRevision.
+    // When using sessionKey + logEpoch only, real-user query will not change epoch when adding or deleting it.
+    // The component layer terminal is permanently intercepted, and the store cannot be re-detected even if the cache is invalidated.
     const hydrationKey = `${sessionKey}:${rowContext.logEpoch ?? "unknown"}:${turnNavigatorDirectoryRevision}`;
     const attempt = turnNavigatorHydrationAttemptRef.current;
     if (attempt.key !== hydrationKey) {
@@ -639,7 +707,7 @@ function ConversationTimelineImpl({
     }
     if (attempt.status !== "idle" || !onLoadAllOlder) return;
     attempt.status = "in-flight";
-    logger.debug("[v4-turn-navigator] 目录请求补齐完整历史", {
+    logger.debug("[v4-turn-navigator] toc request hydrating full history", {
       attempt: attempt.attemptCount + 1,
       loadedRows: rows.length,
       sessionKey,
@@ -697,7 +765,7 @@ function ConversationTimelineImpl({
     (index: number) => virtualizedUnitsRef.current[index]?.key ?? index,
     [],
   );
-  // 测高缓存兜底：行卸载重挂（甚至 virtualizer 重建）时用上次真实测量代替固定估计。
+  // Altimeter caching: Use the last real measurement instead of a fixed estimate when unloading and remounting (or even rebuilding the virtualizer).
   const estimateSize = useCallback(
     (index: number) =>
       heightCacheRef.current?.estimate(
@@ -706,8 +774,8 @@ function ConversationTimelineImpl({
       ) ?? DEFAULT_ROW_HEIGHT_ESTIMATE_PX,
     [],
   );
-  // 动态测高：virtualizer 对窗口内元素挂 ResizeObserver，流式行长高即回调此处；
-  // 同时把真实高度写入稳定的 turnId 缓存。
+  // Dynamic height measurement: The virtualizer attaches ResizeObserver to the elements in the window, and the streaming line height is called back here;
+  // At the same time, the real height is written to the stable turnId cache.
   const measureElement = useCallback((element: Element, entry: ResizeObserverEntry | undefined) => {
     const height = measureRowHeight(element, entry);
     const indexAttr = element.getAttribute("data-index");
@@ -726,9 +794,9 @@ function ConversationTimelineImpl({
     overscan: ROW_OVERSCAN,
     getItemKey,
     measureElement,
-    // headerSlot（分享导入的只读块）与虚拟列表同处一个滚动容器，
-    // 且高度可观。不告知这段偏移，虚拟窗口会按 scrollTop 直接索引 item，
-    // 渲染窗口整体偏移一个 header 高度，用户滚到的区域会是空白。
+    // headerSlot (shares the imported read-only block) and the virtual list are in the same scroll container,
+    // And the height is impressive. Without telling this offset, the virtual window will directly index the item according to scrollTop.
+    // The entire rendering window is offset by a header height, and the area the user scrolls to will be blank.
     scrollMargin: headerSlotHeight,
   });
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item) => {
@@ -754,7 +822,7 @@ function ConversationTimelineImpl({
       {
         index: liveUnitIndex,
         start: totalSize,
-        // live tail 不参与 virtualizer 测高；覆盖剩余滚动区即可供目录判定当前轮次。
+        // Live tail does not participate in virtualizer height measurement; covering the remaining scroll area can be used by the directory to determine the current round.
         size: Number.MAX_SAFE_INTEGER - totalSize,
       },
     ];
@@ -808,9 +876,9 @@ function ConversationTimelineImpl({
       if (intent === "none") return;
       userScrollIntentRef.current = { intent, observedAt: Date.now() };
       const element = scrollRef.current;
-      // running -> terminal 会在同一帧迁移 live tail、折叠工作历史并触发
-      // virtualizer 测高。向上滚动必须在 scroll 事件之前先拿走滚动权，否则终态
-      // layout effect 会拿过期的 following=true 把用户重新拽到底部。
+      // running -> terminal will migrate live tail, collapse work history and trigger in the same frame
+      // virtualizer height measurement. To scroll upward, the scrolling right must be taken away before the scroll event, otherwise the final state
+      // The layout effect will take the expired following=true and drag the user to the bottom again.
       if (intent === "awayFromBottom" && element && element.scrollHeight > element.clientHeight) {
         commitFollowing(false);
       }
@@ -859,8 +927,8 @@ function ConversationTimelineImpl({
 
   const handlePointerDownCapture = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
-      // 内容区点击（尤其 composer 发送）不是滚动意图；只有 scrollbar/空白命中
-      // scroll container 自身时才登记未知方向，随后由真实 scroll 落点裁决。
+      // Content area clicks (esp. sent by composer) are not scroll intent; only scrollbar/whitespace hits
+      // The unknown direction is registered only when the scroll container itself is located, and is then determined by the actual scroll landing point.
       if (event.target !== event.currentTarget) return;
       scrollbarPointerIdRef.current = event.pointerId;
       markUserScrollIntent("unknown");
@@ -885,8 +953,8 @@ function ConversationTimelineImpl({
         contentHeight: element.scrollHeight,
       })
     ) {
-      // 贴底时消息已经位于正常文档流末尾，不会经过 sticky composer；
-      // 继续保留 mask 会无意义地淡出最后一条消息，只有离底滚动时才需要遮罩。
+      // When sticking to the bottom, the message is already at the end of the normal document flow and will not go through sticky composer;
+      // Continuing to leave the mask on will pointlessly fade out the last message, and the mask is only needed for off-bottom scrolling.
       messageLayer.style.maskImage = "none";
       messageLayer.style.webkitMaskImage = "none";
       return;
@@ -901,8 +969,8 @@ function ConversationTimelineImpl({
     const viewportTopInLayer = Math.max(0, element.scrollTop - messageLayer.offsetTop);
     const maskImage = `linear-gradient(to bottom, black 0, black ${opaqueEnd}px, transparent ${transparentStart}px, transparent 100%)`;
 
-    // dock 的透明 padding 能保留分屏 focus ring，但消息会从留白透出；
-    // mask 必须随 scroll viewport 对齐且只裁消息层，不能裁掉 sticky composer 与按钮。
+    // The transparent padding of the dock can retain the split-screen focus ring, but the message will show through the blank space;
+    // The mask must be aligned with the scroll viewport and only clip the message layer, not the sticky composer and buttons.
     messageLayer.style.maskImage = maskImage;
     messageLayer.style.webkitMaskImage = maskImage;
     messageLayer.style.maskPosition = `0 ${viewportTopInLayer}px`;
@@ -928,8 +996,8 @@ function ConversationTimelineImpl({
       const nextViewport = {
         scrollOffsetPx: element.scrollTop,
         viewportHeightPx: element.clientHeight,
-        // turn 级 active 只能命中同 turn 的第一条 query。这里从已挂载
-        // 的稳定 row anchor 推导当前 query；虚拟 turn 尚未挂载时组件再回退 unit。
+        // Turn-level active can only hit the first query with the same turn. Mounted from here
+        // The stable row anchor deduces the current query; when the virtual turn has not been mounted, the component will fall back to unit.
         activeQueryRowId: resolveConversationTurnNavigatorActiveQueryRowId({
           positions: queryPositions,
           scrollOffsetPx: element.scrollTop,
@@ -1010,8 +1078,8 @@ function ConversationTimelineImpl({
     (previousKey: string | null): ConversationScrollMemoryScopeSnapshot | null => {
       const pendingRestore = pendingDetachedScrollRestoreRef.current;
       if (pendingRestore?.key === previousKey) {
-        // 会话数据尚未到达时 DOM 只能读到被钳制的 scrollTop=0；此时切换
-        // 任务不能用空时间线覆盖原记忆，必须保留尚未落地的 detached 恢复意图。
+        // When the session data has not yet arrived, the DOM can only read the clamped scrollTop=0; switch at this time
+        // The task cannot overwrite the original memory with an empty timeline, and must retain the detached recovery intention that has not yet been implemented.
         return pendingRestore;
       }
       const element = scrollRef.current;
@@ -1033,15 +1101,15 @@ function ConversationTimelineImpl({
     [],
   );
 
-  // 贴底必须 instant（scrollTop 赋值）：smooth 的中间帧会被 scroll 判定误读为「离底」。
+  // The bottom must be instant (scrollTop assignment): the smooth intermediate frame will be misinterpreted as "off the bottom" by scroll judgment.
   const scrollToBottom = useCallback(() => {
     const element = scrollRef.current;
     if (!element) return;
     markProgrammaticScroll();
-    // 草稿安全居中允许内容在低高度下向下溢出；若沿用真实会话吸底，
-    // 顶部安全留白会被滚走。草稿始终展示顶部，真实会话继续吸底。
+    // Safe centering of drafts allows content to overflow downwards at low heights; if real conversation bottoming is used,
+    // The top safety margin will roll away. Drafts always show the top, real sessions continue to show the bottom.
     element.scrollTop = responsiveCenteredEmptyLayout ? 0 : element.scrollHeight;
-    // 回读取钳制后的落点入账（浏览器会把赋值钳到最大可滚动距离）。
+    // Read back the clamped landing point and record it (the browser will clamp the assignment to the maximum scrollable distance).
     lastObservedScrollTopRef.current = element.scrollTop;
     syncTurnNavigatorViewport(element);
     userAdjustedScrollSinceRestoreRef.current = false;
@@ -1064,8 +1132,8 @@ function ConversationTimelineImpl({
       const nextWidth = contentColumn.clientWidth;
       if (nextWidth === stableContentWidthRef.current) return;
 
-      // 宽度变化会让虚拟行分批重新测高；逐行补偿或逐批追底都会
-      // 连续改写 scrollTop。resize 期间暂停两者，稳定后只执行一次最终贴底。
+      // Width changes will cause the virtual rows to be re-measured in batches; either row-by-row compensation or batch-by-batch tracing will result.
+      // Continuously rewrite scrollTop. Both are paused during resize, and only executed once for final bottoming after stabilization.
       contentWidthResizeActiveRef.current = true;
       if (contentWidthResizeSettleTimerRef.current !== null) {
         window.clearTimeout(contentWidthResizeSettleTimerRef.current);
@@ -1104,10 +1172,10 @@ function ConversationTimelineImpl({
     let observedHeight = cacheHeight();
     if (typeof ResizeObserver === "undefined") return;
 
-    // projection revision 的父 layout effect 可能早于 Markdown 子树最终测高；
-    // 旧 observer 只缓存高度，正文会先把 loading 槽顶下去，后续 commit 才补 scrollTop。
-    // ResizeObserver 在绘制前拿到真实高度，这里仅在仍拥有 following 滚动权时同步吸底；
-    // 用户已经上滚（包括 scroll event 尚未入账的竞态）则只缓存，不夺回阅读位置。
+    // The parent layout effect of the projection revision may be earlier than the final height of the Markdown subtree;
+    // The old observer only caches the height. The text will push the loading slot down first, and then the scrollTop will be added in subsequent commits.
+    // ResizeObserver gets the real height before drawing, and only absorbs the bottom synchronously when it still has the following scrolling rights;
+    // If the user has scrolled up (including the scroll event that has not yet been recorded), it will only be cached and the reading position will not be regained.
     const observer = new ResizeObserver((entries) => {
       const nextHeight = cacheHeight(entries[0]);
       if (nextHeight === observedHeight) return;
@@ -1187,8 +1255,8 @@ function ConversationTimelineImpl({
       programmaticScrollFrameRef.current !== null &&
       Math.abs(element.scrollTop - lastObservedScrollTopRef.current) < 1;
     const userScrollIntent = getActiveUserScrollIntent();
-    // 用户输入优先；其余 scroll 若落在内容/测高 guard 内视为布局补偿，guard 外的
-    // 未分类事件继续按真实用户滚动处理，兼容原生滚动条和辅助技术。
+    // User input takes priority; if other scrolls fall within the content/height measurement guard, they will be considered layout compensation, and those outside the guard will be considered as layout compensation.
+    // Uncategorized events continue to be handled as real user scrolling, compatible with native scroll bars and assistive technologies.
     const scrollSource =
       userScrollIntent !== "none"
         ? "user"
@@ -1197,8 +1265,8 @@ function ConversationTimelineImpl({
           : Date.now() <= layoutScrollGuardUntilRef.current
             ? "layout"
             : "user";
-    // virtualizer 的原生 offset observer 会先于 React onScroll 入账；到这里即可确认它
-    // 已看见恢复后的真实 scrollTop。用户滚动也应立即结束保护窗，把滚动权交还用户。
+    // Virtualizer's native offset observer will be credited before React onScroll; you can confirm it here
+    // The restored true scrollTop has been seen. User scrolling should also end the protection window immediately and return scrolling rights to the user.
     if (scrollSource !== "layout") {
       suppressVirtualizerAdjustmentDuringRestoreRef.current = false;
     }
@@ -1219,8 +1287,8 @@ function ConversationTimelineImpl({
       userAdjustedScrollSinceRestoreRef.current = true;
       saveCurrentScrollMemory();
     }
-    // 只在 64px 顶边才补页时，用户会先撞到窗口边界再看到内容跳入；提前两个
-    // 视口预取，让桌面和手机 Web 共用的 renderer 在用户抵达边界前完成补页。
+    // When the page is added only at the top edge of 64px, the user will hit the window boundary first and then see the content jump in; two
+    // Viewport prefetching allows the renderer shared by desktop and mobile web to complete page filling before the user reaches the boundary.
     const loadOlder = loadOlderRef.current;
     const triggerPx = historyPrefetchTriggerPx(element.clientHeight);
     if (
@@ -1231,8 +1299,8 @@ function ConversationTimelineImpl({
         triggerPx,
       })
     ) {
-      // 前插超过 viewport + overscan 后旧可见 turn 会被卸载，DOM 不能作为跨
-      // commit 锚点；这里保存 virtualizer 按稳定 turn key 维护的 measurement 起点。
+      // After the forward insertion exceeds the viewport + overscan, the old visible turn will be unloaded, and the DOM cannot be used as a cross-over
+      // Commit anchor point; here saves the measurement starting point maintained by the virtualizer according to the stable turn key.
       const anchorMeasurement = virtualizer.getVirtualItemForOffset(element.scrollTop);
       const anchorUnit = anchorMeasurement
         ? virtualizedUnitsRef.current[anchorMeasurement.index]
@@ -1245,7 +1313,7 @@ function ConversationTimelineImpl({
               start: anchorMeasurement.start,
             }
           : null;
-      logger.debug("[v4-timeline] 接近历史窗口顶部，自动预取更早行", {
+      logger.debug("[v4-timeline] near the top of the history window, prefetching older rows", {
         scrollTop: element.scrollTop,
         triggerPx,
       });
@@ -1264,8 +1332,8 @@ function ConversationTimelineImpl({
     clearUserScrollIntent();
     commitFollowing(true);
     scrollToBottom();
-    // scrollToBottom 只更新组件内 ref；若用户点击后立刻切任务，scope
-    // cleanup/scroll 事件可能还没运行，旧 Map 会把下次恢复重新带回中部甚至顶部。
+    // scrollToBottom only updates the ref within the component; if the user clicks and immediately switches to the task, the scope
+    // The cleanup/scroll event may not have run yet, and the old Map will bring the next recovery back to the middle or even the top.
     saveCurrentScrollMemory();
   }, [clearUserScrollIntent, commitFollowing, saveCurrentScrollMemory, scrollToBottom]);
 
@@ -1273,7 +1341,7 @@ function ConversationTimelineImpl({
     if (!scrollToBottomActionRef) return;
     scrollToBottomActionRef.current = handleBackToBottom;
     return () => {
-      // 只清理本实例登记的动作，避免切 pane 时旧 cleanup 覆盖新 timeline。
+      // Only clean up the actions registered by this instance to prevent the old cleanup from overwriting the new timeline when cutting pane.
       if (scrollToBottomActionRef.current === handleBackToBottom) {
         scrollToBottomActionRef.current = null;
       }
@@ -1303,7 +1371,7 @@ function ConversationTimelineImpl({
         }
         lastObservedScrollTopRef.current = element.scrollTop;
         syncTurnNavigatorViewport(element);
-        logger.debug("[v4-turn-navigator] 定位用户 query", {
+        logger.debug("[v4-turn-navigator] navigating to user query", {
           behavior,
           rowId: target.rowId,
           unitIndex: target.unitIndex,
@@ -1314,8 +1382,8 @@ function ConversationTimelineImpl({
       const element = scrollRef.current;
       if (!element || scrollMountedQuery(element)) return;
 
-      // product turn 是虚拟列表的最小挂载单元，steer query 是单元内锚点。目标未挂载时
-      // 先无动画挂载所属 turn，再按用户 motion 偏好精确滚到 row，不能退回 turn 开头。
+      // product turn is the smallest mounting unit of the virtual list, and steward query is the anchor point within the unit. When the target is not mounted
+      // First, mount the corresponding turn without animation, and then scroll to the row exactly according to the user's motion preference. You cannot return to the beginning of the turn.
       if (target.unitIndex === liveUnitIndex) {
         const liveTail = liveTailRef.current;
         if (liveTail) {
@@ -1338,7 +1406,7 @@ function ConversationTimelineImpl({
         if (currentElement && scrollMountedQuery(currentElement)) return;
         remainingAttempts -= 1;
         if (remainingAttempts <= 0) {
-          logger.warn("[v4-turn-navigator] query 锚点挂载超时", {
+          logger.warn("[v4-turn-navigator] timed out waiting for the query anchor to mount", {
             rowId: target.rowId,
             unitIndex: target.unitIndex,
           });
@@ -1423,7 +1491,7 @@ function ConversationTimelineImpl({
 
   useLayoutEffect(() => {
     return () => {
-      // 真正卸载时 DOM 尚在；scope 更新则由 before-mutation capture 读取旧 DOM。
+      // When it is actually uninstalled, the DOM is still there; when the scope is updated, the old DOM is read by before-mutation capture.
       saveCurrentScrollMemoryRef.current();
     };
   }, []);
@@ -1432,17 +1500,17 @@ function ConversationTimelineImpl({
   const rowWindowKey = `${rows.length}:${rows[0]?.rowId ?? "none"}:${rows[rows.length - 1]?.rowId ?? "none"}`;
   const pendingGuideKey = pendingGuides.map((item) => item.queueItemId).join(":");
 
-  // V4 迁移删除旧 ChatView 滚动 hook 后，sessionKey effect 仍固定滚到底部，
-  // 导致残留的 renderer-local 记忆模块彻底断线。这里在清测高并重新 measure 后按 scope
-  // 恢复；首个 layout 立即写入防闪动，下一帧再校正异步测高，但必须把滚动权让给用户。
+  // After V4 migration deletes the old ChatView scroll hook, the sessionKey effect is still fixed to scroll to the bottom.
+  // As a result, the remaining renderer-local memory module is completely disconnected. Here, after clearing the height measurement and re-measure, press scope
+  // Restore; the first layout is immediately written to prevent flickering, and the asynchronous height measurement is corrected in the next frame, but the scrolling rights must be given to the user.
   useLayoutEffect(() => {
     clearUserScrollIntent();
     heightCacheRef.current?.clear();
-    // prepend 锚定基线一并重置：rowId 跨会话可重复，禁止拿旧会话首行比较。
+    // The prepend anchor baseline is reset together: rowId can be repeated across sessions, and comparison with the first row of the old session is prohibited.
     prependAnchorRef.current = { firstRowId: null, totalSize: 0 };
     pendingPrependVirtualAnchorRef.current = null;
-    // draft 默认吸底会留下旧 virtualizer.scrollOffset；在恢复写入派发 scroll 事件前，
-    // 测高若继续按旧 offset 校正，会把刚恢复的历史位置重新推回 draft 的落点。
+    // By default, draft will leave the old virtualizer.scrollOffset; before resuming writing and dispatching scroll events,
+    // If the height measurement continues to be calibrated according to the old offset, the newly restored historical position will be pushed back to the draft landing point.
     suppressVirtualizerAdjustmentDuringRestoreRef.current = true;
     virtualizer.measure();
     userAdjustedScrollSinceRestoreRef.current = false;
@@ -1505,8 +1573,8 @@ function ConversationTimelineImpl({
       return;
     }
 
-    // session scope 往往先于 rows 订阅完成；只在 scope commit 和下一帧
-    // 恢复会把历史 scrollTop 钳成 0。首批内容到达后重新落地，并再等一帧校正测高。
+    // session scope is often completed before rows subscription; only after scope commit and next frame
+    // Restoration will clamp the history scrollTop to 0. After the first batch of content arrives, it lands again and waits for another frame to correct the altimetry.
     suppressVirtualizerAdjustmentDuringRestoreRef.current = true;
     restoreScrollMemory(pendingRestore.state);
     let releaseGuardFrame: number | null = null;
@@ -1551,10 +1619,10 @@ function ConversationTimelineImpl({
     totalSize,
   ]);
 
-  // prepend 锚定：loadOlder 前插历史行时平移 scrollTop，阅读位置不跳。
-  // 既有 turn key=turnId 且测量缓存不失效 → 前插只把总高度撑高 delta，scrollTop += delta
-  // 即恢复锚点（绘制前完成，无闪动）；本效应声明在会话切换效应之后，切换 commit 上
-  // 先重置基线再对账，防跨会话 rowId 误判为前插。
+  // prepend anchor: loadOlder translates the scrollTop when inserting historical lines, and the reading position does not jump.
+  // There is a turn key=turnId and the measurement cache is not invalid → forward insertion only increases the total height by delta, scrollTop += delta
+  // That is, the anchor point is restored (completed before drawing, no flickering); this effect is declared after the session switch effect, on the switch commit
+  // Reset the baseline first and then reconcile to prevent cross-session rowId from being misjudged as forward insertion.
   useLayoutEffect(() => {
     const prev = prependAnchorRef.current;
     const nextFirstRowId = rowsRef.current[0]?.rowId ?? null;
@@ -1597,29 +1665,29 @@ function ConversationTimelineImpl({
       const element = scrollRef.current;
       markLayoutScrollGuard();
       element.scrollTop += adjustment;
-      // 程序化平移同样入账，避免被下方贴底对账误读为「未观察滚动」。
+      // Programmed translation is also recorded in the account to avoid misinterpretation as "unobserved scroll" by the reconciliation below.
       lastObservedScrollTopRef.current = element.scrollTop;
       syncTurnNavigatorViewport(element);
       cacheCurrentScrollMemoryState(element);
-      // 一次前插数千行时，measurement cache 与 scrollTop 会在同一 commit
-      // 更新，Chromium 可能合并掉原生 scroll 通知，virtualizer 仍按旧 offset 挂载首屏，
-      // 形成“滚动条在底部、正文却空白”。commit 后按最终落点补发只读通知；若同帧存在
-      // 用户 wheel/pointer 意图，handleScroll 仍会优先识别为 user，不夺回滚动权。
+      // When inserting thousands of rows at a time, the measurement cache and scrollTop will be in the same commit
+      // Update, Chromium may merge the native scroll notification, and the virtualizer will still mount the first screen according to the old offset.
+      // This results in "the scroll bar is at the bottom, but the text is blank." After committing, a read-only notification will be reissued according to the final placement point; if the same frame exists
+      // For user wheel/pointer intent, handleScroll will still be identified as user first and the scrolling right will not be taken back.
       notifyScrollObserversAfterCommit(element);
     }
-    // 待恢复的离底记忆拥有当前 commit 的坐标系；不能让 prepend 把临时 clamp 值再次
-    // 平移。恢复 effect 会在同一 commit 的下一帧按最终内容高度重放原始位置。
+    // The off-bottom memory to be restored has the coordinate system of the current commit; prepend cannot be allowed to change the temporary clamp value again.
+    // Pan. Restoring the effect will replay the original position at the final content height on the next frame of the same commit.
     prependAnchorRef.current = {
       firstRowId: nextFirstRowId,
       totalSize: nextTotalSize,
     };
   });
 
-  // 底部锚定：内容变化（新行 / 流式 delta / 动态测高修正 → totalSize 变化）时，
-  // 跟随中贴底，解除跟随保持阅读位置。useLayoutEffect 在绘制前完成贴底，避免闪动。
-  // terminal 会同时迁移 live tail、自动折叠历史并
-  // 触发 virtualizer 多阶段测高；这些 scrollTop 回退属于布局，必须保持 following。
-  // 若同帧有用户向上滚动，capture handler 会先登记 awayFromBottom，本 effect 必须让位。
+  // Bottom anchoring: When the content changes (new line / streaming delta / dynamic height correction → totalSize changes),
+  // Follow the middle and stick to the bottom, and release the following to maintain the reading position. useLayoutEffect completes the bottom layer before drawing to avoid flickering.
+  // The terminal will also migrate the live tail, automatically collapse the history and
+  // Trigger virtualizer multi-stage height measurement; these scrollTop fallbacks belong to the layout and must be kept following.
+  // If a user scrolls up in the same frame, the capture handler will first register awayFromBottom, and this effect must give way.
   useLayoutEffect(() => {
     const element = scrollRef.current;
     markLayoutScrollGuard();
@@ -1661,8 +1729,8 @@ function ConversationTimelineImpl({
     }
   }, [pendingGuideKey, rowCount, syncTurnNavigatorViewport, totalSize]);
 
-  // 行清空（如 editUserQuery 大范围 rewind）：重置为跟随并收起按钮，
-  // 后续重新出现的行走上面的锚定 effect 贴底。
+  // Row clearing (such as editUserQuery large-scale rewind): reset to follow and collapse buttons,
+  // The anchoring effect on the walking surface that reappears later is attached to the bottom.
   useEffect(() => {
     if (rowCount === 0) {
       if (pendingDetachedScrollRestoreRef.current?.key === scrollMemoryKey) {
@@ -1684,8 +1752,8 @@ function ConversationTimelineImpl({
     };
   }, []);
 
-  // raw projection row 与按 turn 合并后的 render unit 不是同一计量单位；
-  // 分开暴露才能让恢复/分页验证不再把可见 unit 误当成持久 row。
+  // The raw projection row and the render unit merged by turn are not the same unit of measurement;
+  // Separate exposure allows recovery/pagination verification to no longer mistake visible units for persistent rows.
   return (
     <div ref={timelineRootRef} className="relative flex min-h-0 flex-1 flex-col">
       {selectionActions ? (
@@ -1704,8 +1772,11 @@ function ConversationTimelineImpl({
         capture={captureScrollMemoryBeforeScopeMutation}
         commit={commitCapturedScrollMemory}
       />
-      {/* 分享选择流程无论面板展开还是收起，左 rail 都由分享面板或 reopen 按钮独占，
-          必须隐藏对话轮导航，避免两个绝对定位控件互相覆盖。退出分享选择后自动恢复。 */}
+      {/* Whether the share selection panel is expanded or collapsed, the left rail is owned
+          exclusively by the share panel or the reopen button, and the turn navigation must be
+          hidden to stop two absolutely positioned controls from covering each other. It is restored
+          automatically after leaving share selection.
+          */}
       {hideTurnNavigator ? null : (
         <ConversationTurnNavigator
           renderUnits={renderUnits}
@@ -1742,36 +1813,36 @@ function ConversationTimelineImpl({
         onTouchStartCapture={handleTouchStartCapture}
         onWheelCapture={handleWheelCapture}
         className={cn(
-          // 原生滚动条按内容高度动态出现时会缩窄会话视口，导致消息与 composer
-          // 横向跳动；稳定预留 gutter，让桌面与手机 Web 共用的滚动区宽度保持不变。
-          // 只声明 overflow-y-auto 会让浏览器把横轴计算为 auto，宽内容会把
-          // 整条 Conversation 撑出横向滚动；表格和代码块应由各自内部容器滚动。
+          // Native scroll bars that appear dynamically based on content height narrow the session viewport, resulting in messages that are inconsistent with the composer
+          // Horizontal jump; stable reserve gutter, so that the width of the scroll area shared by the desktop and mobile web remains unchanged.
+          // Only declaring overflow-y-auto will cause the browser to calculate the horizontal axis as auto, and wide content will
+          // The entire Conversation supports horizontal scrolling; tables and code blocks should be scrolled by their respective inner containers.
           "min-h-0 flex-1 overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable] [--markdown-table-layout-left-inset:16px] [--markdown-table-layout-right-inset:16px] max-md:[--markdown-table-layout-left-inset:8px] max-md:[--markdown-table-layout-right-inset:8px]",
-          // 分享选择面板展开时改为 overflow-hidden：scrollTop 与 scrollbar-gutter 都保持不变，
-          // 但原生滚动条、滚轮和键盘翻页都不再能移动背景，勾选目标不会漂走。
+          // Change the share selection panel to overflow-hidden when expanded: scrollTop and scrollbar-gutter remain unchanged.
+          // However, the native scroll bar, wheel and keyboard page turning can no longer move the background, and the checked target will not float away.
           backgroundScrollLocked && "!overflow-y-hidden",
-          // Conversation turn map 覆盖 timeline 左侧 48px；表格增强滚动如果仍按
-          // 普通 16px 边距借位，会有 32px 落到 turn map 下方，必须把完整占用计入左边界。
+          // Conversation turn map covers 48px on the left side of timeline; table enhances scrolling if still pressed
+          // If the normal 16px margin is borrowed, 32px will fall below the turn map, and the complete occupation must be included in the left border.
           turnNavigatorQueryRowIds.size >= 2 &&
             "@min-[864px]/conversation:[--markdown-table-layout-left-inset:48px]",
         )}
       >
         <div
           className={cn(
-            // 固定高度断点会在窗口跨过临界值时让问候语与 composer 整组跳动。
-            // 顶部留白按视口高度伸缩，输入框的位置不再受下方推荐列表高度影响；
-            // 空间不足时顶部可收缩到底线，底部继续随内容自然排布。
+            // Fixed height breakpoints will make the greeting and composer group jump when the window crosses the threshold.
+            // The top margin expands and contracts according to the height of the viewport, and the position of the input box is no longer affected by the height of the recommendation list below;
+            // When there is insufficient space, the top can be shrunk to the bottom line, and the bottom can continue to be naturally arranged with the content.
             responsiveCenteredEmptyLayout
-              ? // 动态修改原生窗口下限会把内容换行反馈到窗口拖动，产生阻尼；
-                // 容器保留固有最小高度，由外层 timeline 统一承接受限高度下的溢出内容。
+              ? // Dynamically modifying the lower limit of the native window will feed back the content line wrapping to the window drag, causing damping;
+                // The container retains an inherent minimum height, and the outer timeline uniformly accepts overflow content under the limited height.
                 "flex min-h-full flex-col items-center px-4 before:block before:min-h-[52px] before:w-full before:shrink before:basis-[29dvh] before:content-[''] after:block after:min-h-4 after:w-full after:flex-1 after:content-['']"
               : centeredEmptyLayout
                 ? "flex min-h-full flex-col items-center justify-center gap-4 px-4"
                 : "flex min-h-full flex-col",
           )}
-          // session 切到 draft 时内容高度骤降，Chrome 会把子树里的
-          // sticky composer 选作原生 scroll anchor，并在切回后覆盖 layout/RAF 恢复值。
-          // V4 已自管 prepend、吸底和记忆锚点；和其它虚拟列表一致，应从内容子树禁用锚点候选。
+          // When the session is switched to draft, the content height drops sharply, and Chrome will
+          // Sticky composer selects as native scroll anchor and overrides layout/RAF recovery values after switching back.
+          // V4 already takes care of prepend, absorb, and remember anchors; consistent with other virtual lists, anchor candidates should be disabled from the content subtree.
           style={{ overflowAnchor: "none" }}
         >
           {renderUnits.length === 0 && !headerSlot ? (
@@ -1792,8 +1863,9 @@ function ConversationTimelineImpl({
               className="relative w-full flex-1 [mask-repeat:no-repeat] [-webkit-mask-repeat:no-repeat]"
             >
               {/*
-               * headerSlot 必须落在被 mask 的消息层内、并套用与实时消息列相同的宽度类：
-               * 放在消息层之外会既比正文宽、又从 sticky composer 下方透出来。
+               * headerSlot must land inside the masked message layer and carry the same width class
+               * as the live message column: placed outside the message layer it would both be wider
+               * than the body and show through from under the sticky composer.
                */}
               {headerSlot ? (
                 <div
@@ -1814,9 +1886,9 @@ function ConversationTimelineImpl({
                 data-v4-timeline-virtual-history="true"
                 data-v4-timeline-content-column="true"
                 className={cn(
-                  // 默认（< 1280px）过渡 width/max-width/transform，让 w-full ↔ max-w-4xl
-                  // 的中等宽度切换平滑；≥1280px 触发的面板让位（max-w-6xl + 168px 左移）
-                  // 用 @min-[1280px] 降级为只过渡 transform，避免大范围跳变叠加位移抖动。
+                  // Default (< 1280px) transition width/max-width/transform, let w-full ↔ max-w-4xl
+                  // Smooth mid-width switching; panel yield triggered by ≥1280px (max-w-6xl + 168px left shift)
+                  // Use @min-[1280px] to downgrade to only transition transform to avoid large-scale jumps and superimposed displacement jitter.
                   "relative mx-auto w-full shrink-0 transition-[width,max-width,transform] duration-150 ease-out @min-[1280px]/conversation:transition-[transform]",
                   contentWidthClassName,
                   summaryPanelInlineOffsetClassName,
@@ -1833,8 +1905,8 @@ function ConversationTimelineImpl({
                       data-index={virtualRow.index}
                       data-v4-turn-unit="true"
                       data-turn-id={unit.turnId}
-                      // virtual history 的子项通过 absolute 定位，父级 padding 不会缩小
-                      // 它们的 containing block；正文响应式内边距必须落在 turn wrapper 自身。
+                      // The children of virtual history are positioned absolutely, and the parent padding will not shrink.
+                      // Their containing block; body responsive padding must fall within the turn wrapper itself.
                       className="absolute left-0 top-0 w-full"
                       style={{ transform: `translateY(${virtualRow.start - headerSlotHeight}px)` }}
                     >
@@ -1862,7 +1934,7 @@ function ConversationTimelineImpl({
                   data-turn-id={liveUnit.turnId}
                   data-v4-timeline-content-column="true"
                   className={cn(
-                    // ≥1280px 面板让位时降级为只过渡 transform，避免大范围跳变叠加位移抖动。
+                    // ≥1280px When the panel gives way, it is downgraded to only transition transform to avoid large-scale jumps and superimposed displacement jitter.
                     "relative mx-auto w-full shrink-0 transition-[width,max-width,transform] duration-150 ease-out @min-[1280px]/conversation:transition-[transform]",
                     contentWidthClassName,
                     summaryPanelInlineOffsetClassName,
@@ -1908,8 +1980,8 @@ function ConversationTimelineImpl({
               ref={composerDockRef}
               data-v4-composer-dock="true"
               className={cn(
-                // sticky dock 是 z-20 的全宽透明层，过去会盖住 z-10 rail
-                // 在 composer 左侧留白内的按钮。外壳不接事件，只让实际内容列恢复命中。
+                // The sticky dock is a full-width transparent layer on the z-20 that used to cover the z-10 rail
+                // The button in the blank space to the left of composer. The shell does not receive events and only allows the actual content column to be restored.
                 "pointer-events-none z-20 flex w-full justify-center",
                 responsiveCenteredEmptyLayout
                   ? "mt-3 shrink-0"
@@ -1921,8 +1993,8 @@ function ConversationTimelineImpl({
               <div
                 data-v4-composer-dock-content="true"
                 className={cn(
-                  // 同 virtual history/live tail，恢复宽度过渡避免硬跳。
-                  // ≥1280px 面板让位时降级为只过渡 transform，避免大范围跳变叠加位移抖动。
+                  // Same as virtual history/live tail, restore width transition to avoid hard jumps.
+                  // ≥1280px When the panel gives way, it is downgraded to only transition transform to avoid large-scale jumps and superimposed displacement jitter.
                   "pointer-events-auto relative z-10 w-full shrink-0 transition-[width,max-width,transform] duration-150 ease-out @min-[1280px]/conversation:transition-[transform]",
                   contentWidthClassName,
                   !centeredEmptyLayout && "px-4 pb-4",
@@ -1932,11 +2004,11 @@ function ConversationTimelineImpl({
                 <div data-v4-back-to-bottom-anchor="composer-dock" className="relative">
                   {backToBottomVisible ? (
                     <ConversationBackToBottomButton
-                      // 分屏下 composer 属于滚动视口内的 sticky dock；按钮若挂在
-                      // timeline 外层 absolute bottom，会相对整个 pane 落到 input 下方。
+                      // In split screen, composer belongs to the sticky dock in the scrolling viewport; if the button is hung on
+                      // The outer absolute bottom of the timeline will fall below the input relative to the entire pane.
                       //
-                      // 圆钮采用自己的居中定位；`pointer-events-auto` 保留：
-                      // 它是"按钮点得动"唯一可断言的契约。
+                      // Circle buttons adopt their own centered positioning; `pointer-events-auto` remains:
+                      // It is the only assertable contract that can be reached at the click of a button.
                       className="pointer-events-auto absolute bottom-full left-1/2 z-30 mb-2 -translate-x-1/2 shadow-sm"
                       label={intl.formatMessage({ id: "chat.scrollToBottom" })}
                       onClick={handleBackToBottom}

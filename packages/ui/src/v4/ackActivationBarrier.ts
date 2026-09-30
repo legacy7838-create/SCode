@@ -1,6 +1,6 @@
-// subscribe ACK activation barrier：notification 可能先于 RPC response 抵达 renderer。
-// transport 先按 topic 有界暂存，store 写入 ACK subscriptionId 后显式 activate；
-// 这里只暂存 physical wire；logical assembly 在 ownership 激活后执行。
+// subscribe ACK activation barrier: notification may arrive at renderer before RPC response.
+// The transport first stores it temporarily by topic bounding, and the store writes the ACK subscriptionId and then activates it explicitly;
+// Only physical wires are temporarily stored here; logical assembly is executed after ownership is activated.
 interface PendingFrameSubscription<T> {
   topic: string;
   subscriptionId: string | null;
@@ -26,11 +26,14 @@ interface AckActivationBarrier<T extends { topic: string; subscriptionId: string
   ): { topic: string; previousSubscriptionId: string | null } | undefined;
   forget(subscriptionId: string): void;
   accept(frame: T): void;
-  /** runtime/attachment generation invalidation：丢弃全部 active/pending ownership。 */
+  /** runtime/attachment generation invalidation: drops all active/pending ownership. */
   clear(): void;
 }
 
-/** transport-local physical-wire barrier；同 topic 并发 pending 各自等 ACK 决定 owner。 */
+/**
+ * A transport-local physical-wire barrier; concurrent pendings on the same topic each wait for the
+ * ACK to decide the owner.
+ */
 export function createAckActivationBarrier<T extends { topic: string; subscriptionId: string }>(
   deliver: (frame: T) => void,
 ): AckActivationBarrier<T> {
@@ -118,8 +121,8 @@ export function createAckActivationBarrier<T extends { topic: string; subscripti
           pending.frames.length + 1 > MAX_STAGED_FRAMES ||
           pending.stagedBytes + bytes > MAX_STAGED_BYTES
         ) {
-          // 通过 shift 头部来“维持上限”会留下一个看似可激活、
-          // 实际缺片的 physical batch。越界必须整批清空并让 subscribe 明确失败。
+          // "Maintaining the cap" by shifting the head leaves a seemingly activatable,
+          // The actual physical batch with missing slices. If the boundary is exceeded, the entire batch must be cleared and subscribe must fail explicitly.
           pending.frames.length = 0;
           pending.stagedBytes = 0;
           pending.overflowReason = STAGING_OVERFLOW_REASON;

@@ -61,7 +61,7 @@ export function createWindowHostAttachmentRegistry<
     scope: WindowHostAttachmentScope;
     port: TPort;
   }): void {
-    // scope 必须先由 Host registry 验证；验证失败时不能影响同 attachmentId 的现有端口。
+    // The scope must first be verified by the Host registry; failure to verify cannot affect existing ports with the same attachmentId.
     const resolved = options.resolveScope(params.scope);
     const exposedParams: WindowHostExposeAttachmentParams<TServices, TPort, TCapabilities> = {
       ...params,

@@ -1,32 +1,32 @@
 // ============================================================
-// 表外条目的归属账：`unlistedByPhase` 的每一格怎么加、怎么减、什么时候整格消失
+// Attribution account of items outside the table: how to add, subtract, and when the entire cell of `unlistedByPhase` disappears
 // ============================================================
-// 本模块是纯函数，不读取时钟或执行 I/O。淘汰规则决定谁离开表，这里维护离开后的分阶段计数。
+// This module is a pure function and does not read the clock or perform I/O. Elimination rules determine who leaves the table, where a staged count after leaving is maintained.
 //
-// 读面是按**站**画的：一个站点
-// 的花名册、计数环和「N more」都得把自己那一格的表外条目加回去。run 级的两个计数器
-// （workflow-runs-caps.ts）说得出一条 run 总共少列了多少，说不出少在哪一站——这张格子表就是
-// 那个缺口。
+// The reading surface is drawn by **station**: a station
+// The roster, counting ring and "N more" all have to add back the off-table entries of their own grid. Two counters at run level
+// (workflow-runs-caps.ts) You can tell how many columns are missing for a run, but you can’t tell which station is missing - this grid table is
+// That gap.
 //
-// 一格里四个数各回答一个问题，四个都只描述**此刻**（而不是历史累计）：
-//   - `actors`：这个出生阶段有多少个子代理**此刻不在表上**，不论它是被拒、被淘汰，还是
-//     出生即结算的孤儿。它可加可减——一个被淘汰的子代理在下一次被派活时会回到表上
-//     （workflow-runs-eviction.ts 的 activation），那一刻这一格要减回去；
-//   - `actorsSettled` / `actorsFailed`：其中已经**结束**的、以及结束时失败的；
-//   - `settled`：记在这一格上的表外**已结算节点**数。
-// 四个数全为零的格子整个丢掉，最后一格也丢掉时整个键消失——与本族其余「无则缺席」同规。
+// Each of the four numbers in one grid answers a question, and all four of them only describe the current moment (not the historical accumulation):
+//   - `actors`: How many child agents are **not on the table at this moment** for this birth stage, whether it was rejected, eliminated, or
+//     Orphans settled at birth. It can be added or subtracted - an eliminated subagent will return to the list the next time it is dispatched
+//     (activation of workflow-runs-eviction.ts), at that moment this grid will be reduced;
+//   - `actorsSettled` / `actorsFailed`: those that have **ended** and those that failed at the end;
+//   - `settled`: The number of settled nodes outside the table recorded in this cell.
+// The four squares with all zero numbers are completely discarded. When the last square is also discarded, the entire key disappears - the same as the other "no or absent" rules of this family.
 //
-// 每次改动之后整格夹到 `actorsFailed ≤ actorsSettled ≤ actors`，这是这一格的**法律**而不是
-// 一道补丁：它正是让 `actorsSettled` 既能涨也能落的那条规则。它必须能落——一个子代理在它两次
-// ask 之间看上去就是「已完成」，淘汰于是给它盖了个已结束的戳，而它的下一次派发又把它接回表上。这一格不记录**是谁**回来了，所以在 activation 那一刻去减
-// `actorsSettled` 只能靠猜，而在宽 fan-out 里会猜得离谱：那个阶段有几百个子代理是**出生时**
-// 就被拒的、根本没结算过，每一次回表都会去扣一笔不属于它的账。夹取只在一格拥挤时错，而且是
-// 暂时的——回表的那个已完成子代理把自己的已结束标记留给同阶段另一个未列出的子代理，直到这一格
-// 排空为止；随着子代理陆续上表，每个阶段的数字自己会走正。run 级两个计数器全程精确。
+// After each change, the entire grid is clipped to `actorsFailed ≤ actorsSettled ≤ actors`, which is the **law** of this grid rather than
+// A patch: it's the exact rule that allows `actorsSettled` to rise as well as fall. It must be able to drop - a subagent on it twice
+// It looks like "completed" between ask, so elimination stamps it as completed, and its next dispatch puts it back on the list. This box does not record who came back, so subtract it at the moment of activation.
+// `actorsSettled` can only be guessed, and in a wide fan-out the guesses will be outrageous: at that stage hundreds of child agents are **at birth**
+// For those that were rejected, they were never settled at all, and every time they returned the statement, an account that did not belong to them would be deducted. Clamping is only wrong when one square is crowded, and it is
+// Temporary - the completed sub-agent returning to the table leaves its completed mark to another unlisted sub-agent in the same stage until this box
+// Until it is empty; as the sub-agents are added to the table one after another, the numbers at each stage will go straight. The two run-level counters are accurate throughout.
 
 import type { WorkflowRunState, WorkflowRunUnlistedPhase } from "./workflow-runs.js";
 
-/** 往一格上加的增量。`actors` 可以是负数（子代理回表），其余只会是正数。 */
+/** The increments added to one bucket. `actors` can be negative (a subagent returning to the table); the rest are only ever positive. */
 export interface WorkflowRunUnlistedDelta {
   actors?: number;
   actorsSettled?: number;
@@ -35,13 +35,15 @@ export interface WorkflowRunUnlistedDelta {
 }
 
 /**
- * 往某个出生阶段那一格上加数。
+ * Adds a number to the bucket of a given birth phase.
  *
- * **格子表满了就丢归属**（返回原表）：一个站点可以少一个它本来就没有的数字，run 级计数不可以
- * 说假话——后者由调用方照加不误。表长比 `maxPhases` 多一格：多出来的那格是「无阶段」，它与
- * 具名阶段共用同一张表。
+ * **When the bucket table is full, drop the attribution** (return the table unchanged): a station
+ * may be short one number it never had, but a run-level count must not lie — the latter the caller
+ * adds to regardless. The table is one longer than `maxPhases`: the extra slot is "no phase", and
+ * it shares the same table with the named phases.
  *
- * 返回 `undefined` 恒等于「一格都没有」（键缺席），所以减到全零的最后一格会把整张表收掉。
+ * Returning `undefined` always means "not a single bucket" (the key is absent), so decrementing the
+ * last all-zero bucket collapses the whole table away.
  */
 export function addToUnlistedBucket(
   buckets: readonly WorkflowRunUnlistedPhase[] | undefined,
@@ -55,11 +57,11 @@ export function addToUnlistedBucket(
     return buckets === undefined ? undefined : [...buckets];
   }
   const base = index < 0 ? undefined : current[index]!;
-  // 夹零：`actors` 的减法有两处够不着的前提（归属在格子表满时被丢过、事实上的出生阶段与
-  // 派发重发的那个对不上），夹一下只会少算一格，不夹会在协议线上发出一个负数。
+  // Clamp zero: The subtraction of `actors` has two out-of-reach premises (attribution is lost when the grid is full, the actual birth stage and
+  // The one that distributes the reissue does not match). If you clip it, it will only count one less square. If you don't clip it, a negative number will be sent on the agreement line.
   const actors = atLeastZero((base?.actors ?? 0) + (delta.actors ?? 0));
-  // 夹到 `actorsFailed ≤ actorsSettled ≤ actors`（文件头的那条法律）：这一格认不出是谁回的表，
-  // 所以「已结束」的数目只能跟着「不在表上」的数目一起落。
+  // Clip to `actorsFailed ≤ actorsSettled ≤ actors` (the law in the file header): I can’t identify who returned the table in this box.
+  // Therefore, the number of "Ended" can only fall together with the number of "Not on the list".
   const actorsSettled = Math.min(
     atLeastZero((base?.actorsSettled ?? 0) + (delta.actorsSettled ?? 0)),
     actors,
@@ -74,7 +76,7 @@ export function addToUnlistedBucket(
     const remaining = current.filter((_, position) => position !== index);
     return remaining.length > 0 ? remaining : undefined;
   }
-  // 键序 = schema 声明序：这份对象会原样被增量搬上线，两边的字节必须对得上。
+  // Key order = schema declaration order: This object will be incrementally moved online as it is, and the bytes on both sides must match.
   const merged: WorkflowRunUnlistedPhase = {
     ...(phaseName === undefined ? {} : { phaseName }),
     actors,
@@ -89,10 +91,12 @@ export function addToUnlistedBucket(
 }
 
 /**
- * 把一张格子表落回 run 上：**空表摘键**（而不是留一个空数组）。
+ * Writes a bucket table back onto the run: **an empty table removes the key** (rather than leaving
+ * an empty array).
  *
- * 「零条 ⇒ 键缺席」是这个字段的协议约定（见 schema 注释），也是幂等的支点：一次什么都没改的
- * 归约要得到逐字节相同的 run 对象，顶层的结构比对才会返回 null。
+ * "Zero entries ⇒ key absent" is the protocol contract of this field (see the schema comment) and
+ * is also the idempotent pivot: a reduction that changed nothing has to produce a byte-for-byte
+ * identical run object for the top-level structural comparison to return null.
  */
 export function withUnlistedBuckets(
   run: WorkflowRunState,

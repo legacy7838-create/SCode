@@ -65,8 +65,8 @@ function buildLoginShellExecutionOptions(baseEnv: NodeJS.ProcessEnv): LoginShell
     maxBuffer: 2 * 1024 * 1024,
     env: {
       ...baseEnv,
-      // GUI / remote service 进程的 PATH 往往不经过 login shell 初始化。
-      // 给探测 shell 一个最小系统 PATH，再由 profile 回放用户自己的命令路径。
+      // The PATH of the GUI/remote service process is often not initialized by the login shell.
+      // Give the probing shell a minimum system PATH, and then let the profile play back the user's own command path.
       PATH: buildShellBootstrapPath(baseEnv.PATH),
       TERM: "dumb",
       CI: "1",
@@ -80,13 +80,13 @@ function killLoginShellProcessTree(child: ChildProcess): void {
       process.kill(-child.pid, "SIGKILL");
       return;
     } catch {
-      // 进程可能已在 close 前退出；继续尝试直接 kill，避免留下采集后代。
+      // The process may have exited before close; continue trying to kill directly to avoid leaving collection descendants.
     }
   }
   try {
     child.kill("SIGKILL");
   } catch {
-    // 超时与自然退出可能竞争，进程已经不存在时无需额外处理。
+    // Timeout and natural exit may compete, and no additional processing is required when the process no longer exists.
   }
 }
 
@@ -96,8 +96,8 @@ const executeLoginShell: LoginShellExecutor = (shellPath, shellArgs, options) =>
       env: options.env,
       windowsHide: options.windowsHide,
       stdio: ["ignore", "pipe", "pipe"],
-      // login profile 可能启动继承 stdout/stderr 的后代进程；只 kill shell 会让
-      // execFile 一直等 pipe close。POSIX 下独立进程组才能在 deadline 时完整终止采集树。
+      // login profile may start descendant processes that inherit stdout/stderr; only kill shell will
+      // execFile waits for pipe close. Only independent process groups under POSIX can completely terminate the collection tree at the deadline.
       detached: process.platform !== "win32",
     });
     let stdout = "";
@@ -200,8 +200,8 @@ export async function captureLoginShellEnvSnapshot(
         signal: abortController.signal,
       },
     );
-    // Node execFile 的 timeout 仍会等待所有继承 pipe 的后代关闭。
-    // 外层 deadline 独立结算 API；默认 executor 同时通过 AbortSignal 杀完整 POSIX 进程组。
+    // Node's execFile's timeout will still wait for all descendants inheriting pipe to close.
+    // The outer deadline independent settlement API; the default executor kills the entire POSIX process group through AbortSignal at the same time.
     const deadlinePromise = new Promise<never>((_resolve, reject) => {
       deadlineTimer = setTimeout(() => {
         abortController.abort();
@@ -232,7 +232,7 @@ export function captureLoginShellEnvSnapshotSync(
     return cachedLoginShellEnvSnapshot;
   }
   try {
-    // 兼容非 Desktop 的同步 createLocalServices 入口。这里即使走兼容 fallback 也只采集一次完整 snapshot。
+    // Compatible with non-Desktop synchronous createLocalServices entry. Even if fallback compatibility is used here, a complete snapshot will only be collected once.
     const output = execFileSync(
       shellPath,
       buildLoginShellArgs(shellPath),

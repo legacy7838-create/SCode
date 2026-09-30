@@ -114,7 +114,7 @@ function FeedbackBackgroundUploadJobCard({
 
   const handleOpen = () => {
     const target = getFeedbackBackgroundOpenTarget(job);
-    logger.debug("[FeedbackBackgroundUploadIndicator] 打开后台反馈卡片", {
+    logger.debug("[FeedbackBackgroundUploadIndicator] opening background feedback card", {
       jobId: job.id,
       status: job.status,
       target: target.kind,
@@ -124,7 +124,7 @@ function FeedbackBackgroundUploadJobCard({
       dismissFeedbackSubmissionJob(job.id);
       return;
     }
-    // 多个上传任务必须按被点击卡片的 jobId 打开，不能再回退到最后一个活动任务。
+    // Multiple upload tasks must be opened according to the jobId of the clicked card, and cannot be returned to the last active task.
     onOpenSubmissionJob(target.jobId);
   };
 
@@ -181,8 +181,8 @@ function FeedbackBackgroundUploadIndicatorView({
         )}
       >
         <Icon
-          // 后台提示是 toast 语义，状态图标不应再包一层边框底座，
-          // 否则会被误读成独立按钮，也会和外层浮层圆角形成重复层级。
+          // The background prompt is toast semantics, and the status icon should not be wrapped with a border base.
+          // Otherwise, it will be misread as an independent button, and it will also form a duplicate level with the outer floating layer's rounded corners.
           className={cn("mt-0.5 shrink-0", expanded ? "size-4" : "size-3.5", statusTone)}
         />
         <button
@@ -224,7 +224,7 @@ function FeedbackBackgroundUploadIndicatorView({
             size="icon-sm"
             variant="ghost"
             onClick={() => {
-              // 收起态再点“展开”只露出一小截状态条，用户还要二次操作；这里直接打开完整反馈页。
+              // Collapsing the state and then clicking "Expand" only reveals a small status bar, and the user has to perform a second operation; the complete feedback page is directly opened here.
               if (!expanded) {
                 onOpen();
                 return;
@@ -238,7 +238,7 @@ function FeedbackBackgroundUploadIndicatorView({
           >
             {expanded ? <ChevronDown className="size-3" /> : <ChevronUp className="size-3" />}
           </Button>
-          {/* paused-log 只能继续上传；如果允许隐藏，会把等待用户动作的后台 job 变成不可恢复的悬挂状态。*/}
+          {/* paused-log can only continue to upload; if hidden, it will put the background job waiting for user action into an unrecoverable suspended state.*/}
           {!isPaused ? (
             <Button
               type="button"

@@ -1,14 +1,15 @@
-/* eslint-disable max-lines -- 远程连接向导的多个步骤暂集中在同一文件，避免拆分时扩大 SSH/Docker/WSL 回归面。 */
+/* eslint-disable max-lines -- The remote connection wizard's steps are temporarily kept in one
+ * file, so that splitting it does not widen the SSH/WSL regression surface.
+ */
 import { useState } from "react";
 import type {
-  DockerContainerInfo,
   RemoteAssetInstallMode,
   RemoteTarget,
   RemoteWorkspaceSessionEntry,
   SSHConfigAliasOption,
   WSLDistro,
 } from "@zcode/shared";
-import { TID_REMOTE_KIND_DOCKER, TID_REMOTE_KIND_SSH, TID_REMOTE_KIND_WSL } from "@zcode/shared";
+import { TID_REMOTE_KIND_SSH, TID_REMOTE_KIND_WSL } from "@zcode/shared";
 import type {
   IMcpSyncService,
   IPluginSyncService,
@@ -20,7 +21,6 @@ import {
   AlertTriangleIcon,
   ChevronRightIcon,
   LoaderIcon,
-  MonitorCogIcon,
   ServerIcon,
   TerminalIcon,
 } from "lucide-react";
@@ -41,8 +41,6 @@ function getKindIcon(kind: RemoteTarget["kind"]) {
   switch (kind) {
     case "ssh":
       return ServerIcon;
-    case "docker":
-      return MonitorCogIcon;
     case "wsl":
       return TerminalIcon;
   }
@@ -75,13 +73,7 @@ export function RemoteConnectionKindStep({
               key={value}
               type="button"
               onClick={() => onKindChange(value)}
-              data-testid={
-                value === "ssh"
-                  ? TID_REMOTE_KIND_SSH
-                  : value === "wsl"
-                    ? TID_REMOTE_KIND_WSL
-                    : TID_REMOTE_KIND_DOCKER
-              }
+              data-testid={value === "ssh" ? TID_REMOTE_KIND_SSH : TID_REMOTE_KIND_WSL}
               className={cn(
                 "flex min-h-32 flex-col items-start gap-4 rounded-2xl border p-4 text-left transition-colors",
                 selected
@@ -146,10 +138,6 @@ export function RemoteConnectionSettingsStep({
   wslDistro,
   wslUser = "",
   wslDistros,
-  dockerContainer,
-  manualDockerContainer,
-  dockerContainers,
-  dockerAvailable,
   sshConfigAliases,
   sshConfigAliasesLoading,
   sshConfigAliasesError,
@@ -170,9 +158,6 @@ export function RemoteConnectionSettingsStep({
   onPrivateKeyPassphraseChange,
   onWslDistroChange,
   onWslUserChange,
-  onDockerContainerChange,
-  onManualDockerContainerChange,
-  onDockerContainersRefresh,
   onApplySshConfigAlias,
   onClearSelectedSshConfigAlias,
   onConnect,
@@ -189,10 +174,6 @@ export function RemoteConnectionSettingsStep({
   wslDistro: string;
   wslUser?: string;
   wslDistros: WSLDistro[];
-  dockerContainer: string;
-  manualDockerContainer: string;
-  dockerContainers: DockerContainerInfo[];
-  dockerAvailable: boolean | null;
   sshConfigAliases: SSHConfigAliasOption[];
   sshConfigAliasesLoading: boolean;
   sshConfigAliasesError: string;
@@ -213,9 +194,6 @@ export function RemoteConnectionSettingsStep({
   onPrivateKeyPassphraseChange: (value: string) => void;
   onWslDistroChange: (value: string) => void;
   onWslUserChange?: (value: string) => void;
-  onDockerContainerChange: (value: string) => void;
-  onManualDockerContainerChange: (value: string) => void;
-  onDockerContainersRefresh?: () => void;
   onApplySshConfigAlias: (value: SSHConfigAliasOption) => void;
   onClearSelectedSshConfigAlias: () => void;
   onConnect: () => void;
@@ -226,8 +204,8 @@ export function RemoteConnectionSettingsStep({
     <div className="flex min-h-0 flex-1 flex-col gap-6 h-full">
       <div
         data-testid="remote-connection-settings-scroll"
-        // SSH 配置项增多时，表单内容以前没有自己的滚动边界，会继续绘制到下方按钮区域。
-        // 这里把中间内容区限定为可滚动区域，让 footer 始终占据独立空间，不遮挡最后几项配置。
+        // When the number of SSH configuration items increases, the form content previously did not have its own scroll boundary and will continue to be drawn to the button area below.
+        // Here, the middle content area is limited to a scrollable area, so that the footer always occupies an independent space and does not block the last few configurations.
         className="flex-1 min-h-0 space-y-4 overflow-y-auto pr-1"
       >
         {currentRuntimeOptionsError ? (
@@ -250,10 +228,6 @@ export function RemoteConnectionSettingsStep({
           wslDistro={wslDistro}
           wslUser={wslUser}
           wslDistros={wslDistros}
-          dockerContainer={dockerContainer}
-          manualDockerContainer={manualDockerContainer}
-          dockerContainers={dockerContainers}
-          dockerAvailable={dockerAvailable}
           sshConfigAliases={sshConfigAliases}
           sshConfigAliasesLoading={sshConfigAliasesLoading}
           sshConfigAliasesError={sshConfigAliasesError}
@@ -272,9 +246,6 @@ export function RemoteConnectionSettingsStep({
           setPrivateKeyPassphrase={onPrivateKeyPassphraseChange}
           setWslDistro={onWslDistroChange}
           setWslUser={onWslUserChange}
-          setDockerContainer={onDockerContainerChange}
-          setManualDockerContainer={onManualDockerContainerChange}
-          refreshDockerContainers={onDockerContainersRefresh}
         />
       </div>
 
@@ -417,8 +388,11 @@ export function RemoteConnectionDirectoryStep({
             onOpenPluginSync={() => setRemotePluginSyncOpen(true)}
           />
         </div>
-        {/* 该容器之前不是 flex，导致子级 DirectoryBrowser 的 flex-1 无法拿到有效高度，
-            目录项变多时 overflow-y-auto 不生效，列表不能垂直滚动。 */}
+        {/*
+            This container was not a flex container before, so the child DirectoryBrowser's flex-1
+            could not resolve an effective height, and once there were more directory items
+            overflow-y-auto had no effect and the list could not scroll vertically.
+            */}
         <div
           className={cn(
             "min-h-0 flex flex-1 overflow-hidden",

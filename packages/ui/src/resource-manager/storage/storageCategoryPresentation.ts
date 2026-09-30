@@ -46,7 +46,10 @@ export interface StorageCategoryTotal {
   cleanability: StorageCategoryUsage["cleanability"];
 }
 
-/** 把多个根的同类别占用合并，按 bytes 降序（同为 0 时保持目录顺序）。 */
+/**
+ * Merges same-category usage across multiple roots, sorted by bytes descending (directory order is
+ * kept when both are 0).
+ */
 export function sumCategoriesAcrossRoots(roots: StorageRootUsage[]): StorageCategoryTotal[] {
   const totals = new Map<StorageCategoryId, StorageCategoryTotal>();
   for (const root of roots) {
@@ -75,7 +78,10 @@ export interface StorageLegendItem {
   restCount?: number;
 }
 
-/** 图例与进度条：最多 N 个彩色类别，其余非零类别折叠成一个灰色「其余」项。 */
+/**
+ * Legend and progress bar: at most N colored categories, with the remaining non-zero categories
+ * collapsed into a single gray "Other" entry.
+ */
 export function buildStorageLegend(totals: StorageCategoryTotal[]): StorageLegendItem[] {
   const nonZero = totals.filter((item) => item.bytes > 0);
   const head = nonZero.slice(0, STORAGE_LEGEND_MAX_ITEMS);
@@ -96,7 +102,10 @@ export function buildStorageLegend(totals: StorageCategoryTotal[]): StorageLegen
   return legend;
 }
 
-/** 明细里「在文件管理器中显示」需要绝对路径；根路径来自 host，按其分隔符拼接。 */
+/**
+ * "Show in Finder" in the details needs an absolute path; root paths come from the host and are
+ * joined with its separator.
+ */
 export function joinStoragePath(rootPath: string, relativePath: string): string {
   const separator = rootPath.includes("\\") && !rootPath.includes("/") ? "\\" : "/";
   const normalizedRelative = separator === "\\" ? relativePath.replace(/\//g, "\\") : relativePath;

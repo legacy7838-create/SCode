@@ -1,17 +1,16 @@
-/* eslint-disable max-lines -- 远程连接字段较多，SSH/WSL/Docker 分支暂集中在单文件维护。 */
+/* eslint-disable max-lines -- there are many remote connection fields; the SSH/WSL branches are
+ * still maintained together in a single file.
+ */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
-  DockerContainerInfo,
   RemoteAssetInstallMode,
   RemoteTarget,
   RemoteWorkspaceSessionEntry,
   SSHConfigAliasOption,
   WSLDistro,
 } from "@zcode/shared";
-import { AlertTriangleIcon, CheckIcon, ChevronDownIcon, LoaderIcon, Plus } from "lucide-react";
+import { AlertTriangleIcon, ChevronDownIcon, Plus } from "lucide-react";
 import {
-  TID_DOCKER_CONTAINER_INPUT,
-  TID_DOCKER_CONTAINER_SELECT,
   TID_SSH_CONFIG_ALIAS_SELECT,
   TID_SSH_AUTH_PASSWORD,
   TID_SSH_AUTH_PRIVATE_KEY,
@@ -72,17 +71,12 @@ export function RemoteConnectionFields({
   wslDistro,
   wslUser = "",
   wslDistros,
-  dockerContainer,
-  manualDockerContainer,
-  dockerContainers,
-  dockerAvailable,
   sshConfigAliases,
   sshConfigAliasesLoading,
   sshConfigAliasesError,
   selectedSshConfigAlias,
   runtimeOptionsLoading,
   remoteWorkspaceSessions = [],
-  refreshDockerContainers,
   applySshConfigAlias,
   clearSelectedSshConfigAlias,
   setHost,
@@ -95,8 +89,6 @@ export function RemoteConnectionFields({
   setPrivateKeyPassphrase,
   setWslDistro,
   setWslUser,
-  setDockerContainer,
-  setManualDockerContainer,
 }: {
   kind: RemoteTarget["kind"];
   host: string;
@@ -110,17 +102,12 @@ export function RemoteConnectionFields({
   wslDistro: string;
   wslUser?: string;
   wslDistros: WSLDistro[];
-  dockerContainer: string;
-  manualDockerContainer: string;
-  dockerContainers: DockerContainerInfo[];
-  dockerAvailable: boolean | null;
   sshConfigAliases: SSHConfigAliasOption[];
   sshConfigAliasesLoading: boolean;
   sshConfigAliasesError: string;
   selectedSshConfigAlias: string | null;
   runtimeOptionsLoading: boolean;
   remoteWorkspaceSessions?: RemoteWorkspaceSessionEntry[];
-  refreshDockerContainers?: () => void;
   applySshConfigAlias: (value: SSHConfigAliasOption) => void;
   clearSelectedSshConfigAlias: () => void;
   setHost: (value: string) => void;
@@ -133,13 +120,13 @@ export function RemoteConnectionFields({
   setPrivateKeyPassphrase: (value: string) => void;
   setWslDistro: (value: string) => void;
   setWslUser?: (value: string) => void;
-  setDockerContainer: (value: string) => void;
-  setManualDockerContainer: (value: string) => void;
 }) {
+  const wslUserIsInvalid = wslUser.trim().length > 0 && !isValidWslUser(wslUser.trim());
+  const wslUserIsRoot = wslUser.trim() === "root";
+
   const { intl } = useZCodeIntl();
   const platform = usePlatform();
   const [sshAliasPopoverOpen, setSshAliasPopoverOpen] = useState(false);
-  const [dockerContainerPopoverOpen, setDockerContainerPopoverOpen] = useState(false);
   const sshAliasListRef = useRef<HTMLDivElement | null>(null);
   const sshHistorySuggestions = buildSshConnectionHistorySuggestions(remoteWorkspaceSessions);
   const selectedSshAliasOption =
@@ -158,50 +145,19 @@ export function RemoteConnectionFields({
       return;
     }
 
-    // Popover 嵌在 Dialog 中时，外层滚动锁会吞掉默认滚轮行为，
-    // 导致 alias CommandList 只能拖滚动条、不能直接滚轮滚动。
-    // 这里显式驱动列表自身 scrollTop，确保鼠标滚轮和触控板都能滚动候选项。
+    // When the Popover is embedded in the Dialog, the outer scroll lock will swallow the default scroll wheel behavior.
+    // As a result, alias CommandList can only drag the scroll bar and cannot scroll directly with the wheel.
+    // Here, we explicitly drive the scrollTop of the list itself to ensure that both the mouse wheel and the trackpad can scroll the candidates.
     listElement.scrollTop += event.deltaY;
     event.preventDefault();
     event.stopPropagation();
   }, []);
-  const dockerContainerEmptyText =
-    dockerAvailable === false
-      ? intl.formatMessage({ id: "docker.unavailable" })
-      : intl.formatMessage({ id: "docker.noContainers" });
-  const dockerContainerTriggerLabel =
-    dockerContainer.trim() ||
-    (runtimeOptionsLoading
-      ? intl.formatMessage({ id: "docker.loading" })
-      : dockerContainers.length === 0
-        ? dockerContainerEmptyText
-        : intl.formatMessage({ id: "docker.selectContainer" }));
-  const dockerContainerTriggerIsPlaceholder =
-    !dockerContainer.trim() && dockerContainers.length === 0;
-  const manualDockerContainerIsEmpty = manualDockerContainer.trim().length === 0;
-  const wslUserIsRoot = wslUser.trim().toLowerCase() === "root";
-  const wslUserIsInvalid = wslUser.trim().length > 0 && !isValidWslUser(wslUser);
-  const handleDockerContainerPopoverOpenChange = useCallback(
-    (nextOpen: boolean) => {
-      setDockerContainerPopoverOpen(nextOpen);
-      if (nextOpen) {
-        refreshDockerContainers?.();
-      }
-    },
-    [refreshDockerContainers],
-  );
 
   useEffect(() => {
     if (kind !== "ssh" && sshAliasPopoverOpen) {
       setSshAliasPopoverOpen(false);
     }
   }, [kind, sshAliasPopoverOpen]);
-
-  useEffect(() => {
-    if (kind !== "docker" && dockerContainerPopoverOpen) {
-      setDockerContainerPopoverOpen(false);
-    }
-  }, [dockerContainerPopoverOpen, kind]);
 
   useEffect(() => {
     if (!sshAliasPopoverOpen) {
@@ -320,13 +276,23 @@ export function RemoteConnectionFields({
             </p>
           </div>
 
-          {/* Electron / Chromium 的原生 autocomplete 在 SSH 向导里不稳定，
-              而且默认值（如 localhost / 22）会把历史候选提前过滤掉。
-              这里改成用应用自身持久化的远程连接历史做显式候选，focus 时先展示完整历史；密码仍然不参与历史回填。 */}
-          {/* 建议列表之前直接跟着全宽输入框展开，在大对话框里会变成长条。
-              这里把宽度限制在字段语义范围内，只收窄建议列表，不改变原输入框布局。 */}
-          {/* 示例值直接作为 placeholder 会被误认为已有默认值。
-              这里改成“输入提示 + 示例”，让用户知道仍需手动填写必填字段。 */}
+          {/* Electron / Chromium's native autocomplete is unreliable in the SSH wizard,
+              and default values (such as localhost / 22) filter the history candidates prematurely.
+              Instead we use explicit candidates drawn from the app's own persisted remote
+              connection history, showing the full history on focus; passwords still never take part
+              in history backfill.
+              */}
+          {/*
+              The suggestion list used to expand right after the full-width input, which turned into
+              a long strip inside large dialogs. Here the width is limited to what the field
+              actually means: only the suggestion list narrows, the original input layout is
+              unchanged.
+              */}
+          {/*
+              Using an example value directly as the placeholder makes it look like a default is
+              already filled in. We use a "hint + example" instead, so users know they still have to
+              fill in the required fields themselves.
+              */}
           <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_6.5rem]">
             <RemoteConnectionHistoryInput
               className="h-9 text-ui-base"
@@ -355,8 +321,12 @@ export function RemoteConnectionFields({
             />
           </div>
 
-          {/* 认证方式之前复用了端口的 6.5rem 窄列，两个选项扣除 padding 后会把中英文文案挤到换行或溢出。
-              这里单独给认证方式保留 12rem，并禁止选项文字换行。 */}
+          {/*
+              The auth method used to reuse the port field's 6.5rem narrow column, and after
+              subtracting padding the two options squeezed the mixed Chinese/English labels into
+              wrapping or overflow. Here the auth method gets its own 12rem, and option labels are
+              forbidden from wrapping.
+              */}
           <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_12rem] sm:items-end">
             <RemoteConnectionHistoryInput
               className="h-9 text-ui-base"
@@ -599,115 +569,6 @@ export function RemoteConnectionFields({
               <span>{intl.formatMessage({ id: "wsl.rootWarning" })}</span>
             </div>
           ) : null}
-        </div>
-      );
-    case "docker":
-      return (
-        <div className="space-y-3">
-          <p className="text-ui-base text-foreground-subtle">
-            {intl.formatMessage({ id: "docker.description" })}
-          </p>
-          <div>
-            <label className="mb-1 block text-ui-base text-foreground-subtle">
-              {intl.formatMessage({ id: "docker.selectContainer" })}
-            </label>
-            <Popover
-              open={dockerContainerPopoverOpen}
-              onOpenChange={handleDockerContainerPopoverOpenChange}
-            >
-              <PopoverTrigger asChild>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="lg"
-                  data-testid={TID_DOCKER_CONTAINER_SELECT}
-                  className="h-9 w-full justify-between rounded-lg border-input-border bg-input px-3 text-ui-base font-normal hover:border-input-border-hover hover:bg-input aria-expanded:border-input-border-focused aria-expanded:bg-input-focused"
-                >
-                  <span
-                    className={cn(
-                      "min-w-0 truncate text-left",
-                      dockerContainerTriggerIsPlaceholder
-                        ? "text-foreground-subtlest"
-                        : "text-foreground",
-                    )}
-                  >
-                    {dockerContainerTriggerLabel}
-                  </span>
-                  {runtimeOptionsLoading ? (
-                    <LoaderIcon className="size-3.5 shrink-0 animate-spin text-foreground-subtle" />
-                  ) : (
-                    <ChevronDownIcon className="size-3.5 shrink-0 text-foreground-subtle" />
-                  )}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent
-                align="start"
-                sideOffset={6}
-                className="max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-menu p-1 shadow-lg"
-                style={{ width: "var(--radix-popover-trigger-width)" }}
-              >
-                <Command className="rounded-lg bg-transparent p-0 text-foreground">
-                  <CommandList className="max-h-56 scroll-py-1">
-                    {runtimeOptionsLoading ? (
-                      <div className="flex min-h-8 items-center gap-2 rounded-lg px-3 py-1.5 text-ui-base text-foreground-subtle">
-                        <LoaderIcon className="size-3.5 shrink-0 animate-spin" />
-                        <span className="truncate">
-                          {intl.formatMessage({ id: "docker.loading" })}
-                        </span>
-                      </div>
-                    ) : null}
-                    {dockerContainers.length === 0 && !runtimeOptionsLoading ? (
-                      <CommandEmpty className="px-3 py-5 text-ui-base text-foreground-subtle">
-                        {dockerContainerEmptyText}
-                      </CommandEmpty>
-                    ) : (
-                      dockerContainers.map((container) => {
-                        const selected = container.name === dockerContainer;
-
-                        return (
-                          <CommandItem
-                            key={container.id}
-                            value={container.name}
-                            className="min-h-8 cursor-pointer rounded-lg px-3 py-1.5 text-ui-base text-foreground data-selected:bg-menu-hover data-selected:text-foreground"
-                            onSelect={() => {
-                              setDockerContainer(container.name);
-                              setDockerContainerPopoverOpen(false);
-                            }}
-                          >
-                            <span className="min-w-0 flex-1 truncate">{container.name}</span>
-                            <CheckIcon
-                              className={cn(
-                                "size-4 shrink-0 text-foreground-subtle",
-                                selected ? "opacity-100" : "opacity-0",
-                              )}
-                            />
-                          </CommandItem>
-                        );
-                      })
-                    )}
-                  </CommandList>
-                </Command>
-              </PopoverContent>
-            </Popover>
-          </div>
-          <div>
-            <label className="mb-1 block text-ui-base text-foreground-subtle">
-              {intl.formatMessage({ id: "docker.container" })}
-            </label>
-            <Input
-              size="lg"
-              className="h-9 text-ui-base"
-              value={manualDockerContainer}
-              onChange={(event) => setManualDockerContainer(event.target.value)}
-              placeholder={intl.formatMessage({ id: "docker.containerPlaceholder" })}
-              data-testid={TID_DOCKER_CONTAINER_INPUT}
-            />
-            {manualDockerContainerIsEmpty ? (
-              <p className="mt-1 text-ui-base text-foreground-subtle">
-                {intl.formatMessage({ id: "docker.manualContainerHint" })}
-              </p>
-            ) : null}
-          </div>
         </div>
       );
   }

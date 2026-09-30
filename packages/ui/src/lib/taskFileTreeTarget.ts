@@ -14,8 +14,8 @@ function resolveTaskFileTreeTarget(
   task: ZCodeTaskMeta,
   tab: WorkspaceTabState | undefined,
 ): TaskFileTreeTarget | null {
-  // 旧本地 task 没有 workspaceIdentity，key 会回退到 workspacePath；如果同路径
-  // 远程 tab 也缺 identity，仅按 key 会误带远程 session。匹配前必须先保证本地/远程类型一致。
+  // The old local task does not have workspaceIdentity, and the key will fall back to workspacePath; if the path is the same
+  // The remote tab also lacks identity, and just pressing the key will mistakenly bring up the remote session. The local/remote types must be consistent before matching.
   const taskIsRemote = Boolean(task.workspaceIdentity?.trim());
   const tabIsRemote = Boolean(
     tab?.workspaceIdentity?.trim() || tab?.remoteTarget || tab?.remoteSessionId,
@@ -33,8 +33,8 @@ function resolveTaskFileTreeTarget(
   const isRemoteWorkspace = Boolean(
     task.workspaceIdentity?.trim() || matchingTab?.remoteTarget || matchingTab?.remoteSessionId,
   );
-  // 远端 task 的 workspacePath 可能和本地 workspace 相同。缺少对应 remoteSessionId
-  // 时禁止打开文件树，否则文件读取会错误降级到本地 service。
+  // The workspacePath of the remote task may be the same as the local workspace. Missing corresponding remoteSessionId
+  // It is forbidden to open the file tree when the file tree is opened, otherwise file reading will be downgraded to the local service by mistake.
   if (isRemoteWorkspace && !matchingTab?.remoteSessionId) {
     return null;
   }
@@ -53,16 +53,16 @@ export function resolveTaskFileTreeTargetFromTabs(
   task: ZCodeTaskMeta,
   tabs: readonly WorkspaceTabState[],
 ): TaskFileTreeTarget | null {
-  // 同一路径的本地与旧远程 tab 可能生成相同 key，不能先压成单值 Map；
-  // 必须保留全部候选，再由单 tab 解析器校验 workspace 类型与远程 session。
+  // The local and old remote tabs with the same path may generate the same key and cannot be compressed into a single-value Map first;
+  // All candidates must be retained, and then the single-tab parser verifies the workspace type and remote session.
   for (const tab of tabs) {
     const target = resolveTaskFileTreeTarget(task, tab);
     if (target) {
       return target;
     }
   }
-  // 本地 task 不依赖已打开 tab；所属 workspace 已关闭时仍应按路径打开文件树。
-  // 远程 task 则必须命中 tab 以取得受身份隔离的 remoteSessionId，禁止同样回退。
+  // Local tasks do not depend on open tabs; the file tree should still be opened according to the path when the workspace it belongs to is closed.
+  // For remote tasks, you must hit the tab to obtain the identity-isolated remoteSessionId, and the same rollback is prohibited.
   if (!task.workspaceIdentity?.trim()) {
     return resolveTaskFileTreeTarget(task, undefined);
   }

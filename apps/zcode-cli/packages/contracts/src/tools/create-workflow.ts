@@ -9,27 +9,27 @@ import { SAVED_WORKFLOW_MAX_NAME_CHARS, SavedWorkflowScopeSchema } from "./saved
 export const CREATE_WORKFLOW_TOOL_NAME = "CreateWorkflow";
 
 /**
- * 教模型写工作流的内置技能名（apps/zcode-cli/packages/bundled-skills/skills/<name>/SKILL.md）。
- * 四个创作工具（Create/Amend/Save/EvalWorkflowSnippet）的 resolveInput 以它为门：会话里没有
- * 加载过这份技能就拒绝提交脚本。
- * 住在 contracts 里是因为 core 的门与 bootstrap 的技能包都读它，而两者不能互相 import。
+ * The name of the built-in skill that teaches the model to write workflows (apps/zcode-cli/packages/bundled-skills/skills/<name>/SKILL.md).
+ * The resolveInput of the four authoring tools (Create/Amend/Save/EvalWorkflowSnippet) uses it as a gate: a session that has never
+ * loaded that skill is refused a script submission.
+ * It lives in contracts because core's gate and bootstrap's skill bundle both read it, and the two must not import each other.
  */
 export const DYNAMIC_WORKFLOW_SKILL_NAME = "dynamic-workflows";
 
-/** 「恰好给一个执行体来源」的违规说明。写成常量是因为模型是它唯一的读者，三条路径同一句话。 */
+/** The violation message for "exactly one execution-body source". It is a constant because the model is its only reader, and all three paths use the same sentence. */
 export const CREATE_WORKFLOW_SOURCE_ERROR =
   "Provide exactly one workflow source: `script` for a one-off script written inline, `saved` to run a workflow saved in this project, or `path` for a script file on disk (the file a previous result named). Passing more than one, or none, is ambiguous.";
 
-/** `args` 只属于 `path` 来源的违规说明（`saved` 有自己的 `saved.args`，内联脚本没有声明）。 */
+/** The violation message for `args` belonging only to the `path` source (`saved` has its own `saved.args`, and an inline script declares nothing). */
 export const CREATE_WORKFLOW_ARGS_WITHOUT_PATH_ERROR =
   "`args` belongs to the `path` source: it carries values for the arguments a script file declares in its `/* zcode-workflow` block. For a saved workflow pass `saved.args`; an inline `script` declares no arguments, so it takes none.";
 
 /**
- * `saved` 来源。模型填 `name`，可选 `args` 与 `scope`（消歧用）；`path` 是 `resolveInput`
- * 解析后**回填**的事实，`scope` 归一化后也变成命中的那一根，所以两者都可选。
+ * The `saved` source. The model fills in `name`, optionally `args` and `scope` (for disambiguation); `path` is a fact **backfilled** after `resolveInput`
+ * resolved it, and `scope` likewise becomes the one that hit after normalization, so both are optional.
  *
- * 归一化输入因此是一个 `script` 与 `saved` **同时在场**的合法执行态——这正是 XOR 不能写在
- * zod 上的原因（见 {@link CreateWorkflowInputSchema}）。
+ * The normalized input is therefore a legal execution state in which `script` and `saved` are **present at the same time** — which is exactly why the XOR cannot be written
+ * on zod (see {@link CreateWorkflowInputSchema}).
  */
 export const CreateWorkflowSavedSourceSchema = z
   .object({
@@ -42,11 +42,11 @@ export const CreateWorkflowSavedSourceSchema = z
       .record(z.unknown())
       .optional()
       .describe("Values for the arguments the saved workflow declares."),
-    /** 解析回填：保存文件的落点。模型不填。 */
+    /** Resolution backfill: where the saved file lands. The model does not fill this in. */
     path: z.string().min(1).optional(),
     /**
-     * 消歧：从哪一档取这个 workflow。缺省走既有查找顺序（同名时项目档遮蔽全局档）。
-     * 归一化后 `scope` 变成**命中**的那一根，见 create-workflow-source.ts。
+     * Disambiguation: which tier this workflow is taken from. By default the existing lookup order applies (a project-level definition shadows a global one of the same name).
+     * After normalization `scope` becomes the one that **hit**; see create-workflow-source.ts.
      */
     scope: SavedWorkflowScopeSchema.optional().describe(
       "Which archive to take it from; omit for the normal lookup order.",
@@ -57,11 +57,11 @@ export const CreateWorkflowSavedSourceSchema = z
 export type CreateWorkflowSavedSource = z.infer<typeof CreateWorkflowSavedSourceSchema>;
 
 /**
- * 运行时的 `saved` 块：模型面那些字段 + `draft`。
+ * The runtime `saved` block: the model-facing fields plus `draft`.
  *
- * `draft` 是 `resolveInput` 写下那份工作副本之后回填的**落点**：保存的定义永远不因为一次 run 被改动，模型要改的是这份拷贝。它与
- * `AmendWorkflow.predecessor` 同一个姿态——事实由工具算，模型的 JSON schema 不列它，所以模型
- * 不会以为自己该填一个路径。写不下去时字段整个缺席（草稿是尽力而为）。
+ * `draft` is the **landing spot** backfilled once `resolveInput` has written that working copy: a saved definition is never modified by a run, what the model wants to change is this copy. It stands in the
+ * same posture as `AmendWorkflow.predecessor` — the fact is computed by the tool and is not listed in the model's JSON schema, so the model
+ * never thinks it is supposed to fill in a path. When the draft cannot be written the field is absent entirely (drafting is best-effort).
  */
 export const CreateWorkflowResolvedSavedSourceSchema = CreateWorkflowSavedSourceSchema.extend({
   draft: z.string().min(1).optional(),
@@ -72,14 +72,14 @@ export type CreateWorkflowResolvedSavedSource = z.infer<
 >;
 
 /**
- * 执行体有三个来源，恰好给一个——但这条 XOR **刻意不写在 schema 上**。
+ * The execution body has three sources and exactly one must be given — but this XOR is **deliberately not written on the schema**.
  *
- * 理由是归一化：`resolveInput` 把保存的脚本（或 `path` 文件）解析出来之后，输入同时带着
- * `script`（要跑的字节）与 `saved` / `path`（它的来龙去脉）。一条 superRefine 会在两个地方炸掉
- * 这个合法形状——handler 自己的 `parse`，以及 hook 改写输入后 call-runner 的二次校验——而且
- * **只在非内联路径上**炸，属于那种测不到就上线的错误。XOR 因此由 `entry.validateInput` 在
- * **模型入参**上强制，那里正是它唯一为真的地方。JSON schema 本来也表达不了 refinement，
- * 模型侧靠字段描述引导。
+ * The reason is normalization: once `resolveInput` has resolved the saved script (or the `path` file), the input carries
+ * `script` (the bytes to run) and `saved` / `path` (where it came from) at the same time. A superRefine would blow this legal shape up in two places —
+ * the handler's own `parse`, and the call-runner's second validation after a hook rewrote the input — and it
+ * blows up **only on the non-inline paths**, the kind of bug that ships because nobody could test it. The XOR is therefore enforced by `entry.validateInput` on the
+ * **model's arguments**, which is the one place where it is actually true. JSON schema could not express a refinement in the first place,
+ * so the model is guided by the field descriptions instead.
  */
 const CreateWorkflowModelInputSchema = z
   .object({
@@ -98,10 +98,10 @@ const CreateWorkflowModelInputSchema = z
       "A saved workflow to run, by name. Exactly one of `script`, `saved` and `path`.",
     ),
     /**
-     * 第三条来源：
-     * 盘上的一个脚本文件。它是内联提交的**回程**——工具写下草稿、结果点名那个文件，模型下一次
-     * 只改一行再把同一个路径交回来。带 `/* zcode-workflow` 块的文件按保存定义解析（块剥掉、
-     * 正文当脚本、`args` 按块里的声明校验）。
+     * The third source:
+     * A script file on disk. It is the **return leg** of an inline submission — the tool writes a draft, the result names that file, and next time the model
+     * changes one line and hands the same path back. A file carrying a `/* zcode-workflow` block is parsed as a saved definition (the block is stripped,
+     * the body serves as the script, and `args` is validated against the declaration inside the block).
      */
     path: z
       .string()
@@ -111,17 +111,17 @@ const CreateWorkflowModelInputSchema = z
         "A script file on disk (relative or absolute), usually the file a previous result named. Exactly one of `script`, `saved` and `path`.",
       ),
     /**
-     * `path` 文件声明的实参。`saved` 有自己的 `saved.args`（同一套校验规则），内联脚本没有声明，
-     * 所以这个字段与 `path` 同进同退——`validateInput` 在模型入参上把这条钉住。
+     * The arguments declared by the `path` file. `saved` has its own `saved.args` (the same validation rules), an inline script declares nothing,
+     * so this field comes and goes with `path` — `validateInput` pins that down on the model's arguments.
      */
     args: z
       .record(z.unknown())
       .optional()
       .describe("Values for the arguments a `path` file declares. Only with `path`."),
     /**
-     * run 自己的并发上界。只压低、不抬高：
-     * `resolveInput` 钳到 `[1, 天花板]`，确认窗与 handler 看到的就是将要生效的值。缺席即天花板。
-     * 只在用户要求时设——provider 限流由运行时自适应，模型不该拿它当保险。
+     * The run's own concurrency ceiling. It only lowers, never raises:
+     * `resolveInput` clamps it to `[1, ceiling]`, and the confirmation window and the handler see exactly the value that will take effect. Absent means the ceiling.
+     * Set it only when the user asks for it — provider rate limiting adapts itself at runtime, and the model must not treat it as insurance.
      */
     max_concurrency: z
       .number()
@@ -132,10 +132,10 @@ const CreateWorkflowModelInputSchema = z
         "Upper bound on subagents working at once. Only when the user asks to limit parallelism; never as a reaction to provider errors.",
       ),
     /**
-     * 本 run 子代理跑在哪个模型上。与
-     * `max_concurrency` 同族：模型面收一个宽松的字符串，`resolveInput` 经模型目录端口解析成
-     * 规范形 `providerId/modelId[$reasoningLevel]`——确认窗与 handler 读到的就是将要生效的值，
-     * 解不出来在开窗**之前**就作为业务失败退回。主代理自己恒留在会话模型上；缺席即子代理也是。
+     * Which model this run's subagent runs on. In the same
+     * family as `max_concurrency`: the model surface takes a loose string, and `resolveInput` resolves it through the model catalog port into the
+     * canonical form `providerId/modelId[$reasoningLevel]` — what the confirmation window and the handler read is the value that will take effect, and an
+     * unresolvable value comes back as a business failure **before** the window opens. The main agent itself always stays on the session model; absent means the subagent does too.
      */
     subagent_model: z
       .string()
@@ -145,29 +145,29 @@ const CreateWorkflowModelInputSchema = z
       .describe(
         "Model for the subagents (`providerId/modelId` or a model id). Only when the user asks; you stay on the session model.",
       ),
-    // 修订续跑不在这里：它是 `AmendWorkflow` 的工作（amend-workflow.ts）。`.strict()` 让旧写法 `resume_from` 成为可见的 schema 错误，
-    // 而不是被静默忽略后变成一次全价重跑。
+    // Revision continuation is not here: it is the work of `AmendWorkflow` (amend-workflow.ts). `.strict()` makes the old way of writing `resume_from` a visible schema error,
+    // Rather than being silently ignored and then turned into a full-price rerun.
   })
   .strict();
 
 /**
- * 运行时入参：模型面那些字段 + `resolveInput` 回填的事实。
+ * The runtime arguments: the model-facing fields plus the facts backfilled by `resolveInput`.
  *
- * 回填项与 `AmendWorkflow.predecessor` 同一个姿态——模型的 JSON schema 不列它们，因为它们不是
- * 可填的参数而是解析结果；模型若硬填，归一化会无条件覆盖。
+ * The backfilled items stand in the same posture as `AmendWorkflow.predecessor` — the model's JSON schema does not list them, because they are not
+ * fillable parameters but resolution results; if the model fills them in anyway, normalization overwrites them unconditionally.
  */
 export const CreateWorkflowInputSchema = CreateWorkflowModelInputSchema.extend({
   saved: CreateWorkflowResolvedSavedSourceSchema.optional(),
   /**
-   * 正文行 → 文件行的偏移（`path` / `saved` 文件带元数据块时才非零）。诊断按文件行报出来时
-   * 加它，好让行号能直接粘进一次对该文件的 `Edit`。
+   * The offset from body lines to file lines (non-zero only when the `path` / `saved` file carries a metadata block). Add it
+   * when diagnostics are reported in file lines, so that the line number can be pasted straight into an `Edit` of that file.
    */
   script_line_offset: z.number().int().nonnegative().optional(),
 }).strict();
 
 export type CreateWorkflowInput = z.infer<typeof CreateWorkflowInputSchema>;
 
-/** 交给模型的 JSON schema：不含 `script_line_offset`，`saved` 里也不含 `draft`。 */
+/** The JSON schema handed to the model: no `script_line_offset`, and no `draft` inside `saved` either. */
 export const CreateWorkflowInputJsonSchema = toToolJsonSchema(CreateWorkflowModelInputSchema);
 
 export const CreateWorkflowDiagnosticSchema = z
@@ -181,11 +181,11 @@ export const CreateWorkflowDiagnosticSchema = z
 
 export type CreateWorkflowDiagnostic = z.infer<typeof CreateWorkflowDiagnosticSchema>;
 
-// CreateWorkflow display 是独立于模型文本的有界投影：诊断可能很多，必须在协议边界限长，
-// 避免类型检查结果把 continuous/replayable 消息扩成无界载荷。
-// 诊断的 display 条目形状同时被 create_workflow 与 eval_workflow_snippet 两个 display
-// payload 复用（同一 TS 诊断形状、同一道限长），因此定义在这里而不是 tool-result-metadata.ts
-// ——后者要反向引用本文件里的 schema，放那里会成环。
+// CreateWorkflow display is a bounded projection independent of the model text: diagnostics may be numerous and must be bounded at protocol boundaries,
+// Avoid type checking results from expanding continuous/replayable messages into unbounded payloads.
+// The diagnostic display entry shape is displayed by both create_workflow and eval_workflow_snippet at the same time.
+// Payload reuse (same TS diagnostic shape, same limit length), so defined here instead of tool-result-metadata.ts
+// ——The latter needs to back-reference the schema in this file, which will form a loop.
 export const CREATE_WORKFLOW_DISPLAY_MAX_DIAGNOSTICS = 100;
 export const CREATE_WORKFLOW_DISPLAY_MAX_MESSAGE_CHARS = 2_048;
 
@@ -198,12 +198,12 @@ export const createWorkflowToolResultDisplayDiagnosticSchema = z
   })
   .strict();
 
-// Causality graph 是 display 通道的有界投影，但直接在工具输出边界限长：持久化的 tool
-// output 与实时 display 载荷共用同一个契约，避免两处各自演化出不同的截断语义。
-// 载荷只装 GUI 真正读的字段：边是
-// `{from, to, back?}` 一种形状，region / certainty / 边种类都留在分析器里。第二层
-// 是子代理导向：每阶段的参与者卡 + 交接边；
-// step 级边因此不再进载荷（没有读者），step / 车道留作运行状态与检视器的键。
+// The Causality graph is a bounded projection of the display channel, but bounded directly at the tool output boundaries: persistent tool
+// The output and real-time display payloads share the same contract to prevent the two from evolving different truncation semantics.
+// The payload only loads the fields that the GUI actually reads: the side is
+// `{from, to, back?}` A shape, region / certainty / edge type are all left in the analyzer. second floor
+// Is subagent-oriented: participant card + handover edge at each stage;
+// The step edge is therefore no longer loaded (no readers), and the step / lane is left as a key for the run state and inspector.
 export const CREATE_WORKFLOW_GRAPH_MAX_STEPS = 64;
 export const CREATE_WORKFLOW_GRAPH_MAX_LANES = 32;
 export const CREATE_WORKFLOW_GRAPH_MAX_PARTICIPANTS = 64;
@@ -216,9 +216,9 @@ export const CREATE_WORKFLOW_GRAPH_MAX_NAME_CHARS = 128;
 
 export const CREATE_WORKFLOW_STEP_KINDS = ["ask", "world-read"] as const;
 
-// 名字只在运行时成形（`` agent(`研究员${i + 1}`) ``）时静态能拿到的那部分：第一个洞之前的
-// 字面量（head）与最后一个洞之后的字面量（tail）。两者至少有一个在场——分析器拿不到就整个
-// 字段缺席，不会发空 pattern。**只搬数据**：把它渲染成「研究员…」的省略号是渲染层的决定。
+// The name is only the part that is statically available when it is formed at runtime (`` agent(`researcher${i + 1}`) ``): before the first hole
+// The literal (head) and the literal after the last hole (tail). At least one of the two is present - if the analyzer can't get it, the whole
+// If the field is absent, the empty pattern will not be emitted. **Move data only**: The ellipsis that renders it as "researcher..." is a decision of the rendering layer.
 export const CreateWorkflowNamePatternSchema = z
   .object({
     head: z.string().min(1).max(CREATE_WORKFLOW_GRAPH_MAX_NAME_CHARS).optional(),
@@ -228,17 +228,17 @@ export const CreateWorkflowNamePatternSchema = z
 
 export type CreateWorkflowNamePattern = z.infer<typeof CreateWorkflowNamePatternSchema>;
 
-// 一个 step = 一次要等待的 facade 操作（ask / files.*）。lane 是执行它的 actor（或
-// workspace / unknown）；lanes 只在接收者是 may-set 时出现，此时该 step 已按候选车道展开成
-// 每车道一份拷贝（各带 source）。repeat 区分两种多重性线索：stack（实例共存，画叠卡）与
-// serial（实例相继，已由闭环箭头表达）。
-// certainty / region 不进载荷：GUI 不画它们。
+// a step = a facade operation to wait for (ask/files.*). lane is the actor executing it (or
+// workspace / unknown); lanes only appears when the receiver is may-set. At this time, the step has been expanded into candidate lanes.
+// One copy per lane (with source for each). repeat distinguishes two multiplicity cues: stack (instance coexistence, drawing stacked cards) and
+// serial (succession of instances, already expressed by closed-loop arrows).
+// Certainty / region does not load: the GUI does not draw them.
 export const CreateWorkflowStepSchema = z
   .object({
     id: z.string().min(1).max(CREATE_WORKFLOW_GRAPH_MAX_ID_CHARS),
     kind: z.enum(CREATE_WORKFLOW_STEP_KINDS),
     label: z.string().min(1).max(CREATE_WORKFLOW_GRAPH_MAX_NAME_CHARS),
-    /** `label` 只拿到兜底串（内联 `agent()` receiver）时，那个名字的静态形状。 */
+    /** The static shape of the name when `label` only gets the fallback string (the inline `agent()` receiver). */
     labelPattern: CreateWorkflowNamePatternSchema.optional(),
     line: z.number().int().positive().optional(),
     column: z.number().int().positive().optional(),
@@ -248,16 +248,16 @@ export const CreateWorkflowStepSchema = z
       .max(CREATE_WORKFLOW_GRAPH_MAX_LANES)
       .optional(),
     /**
-     * 展开自的站点 id，只在 may-set 车道展开的拷贝上出现（拷贝 id 形如 `ask#2~actor#1`）。
-     * 它是实时叠加的关联键：运行时实例报的是站点 id，所以带 source 的卡片按
-     * `(node.siteId === source, node.actorSiteId === lane)` 收状态。刻意不参与引用完整性
-     * 收敛——它指向的是被拷贝替换掉的那个站点，图里没有这个节点。
+     * The site id this was expanded from, present only on copies produced by may-set lane expansion (copy ids look like `ask#2~actor#1`).
+     * It is a correlation key for the live overlay: a runtime instance reports a site id, so a card carrying the source collects state by
+     * `(node.siteId === source, node.actorSiteId === lane)`. It deliberately takes no part in referential-integrity
+     * convergence — it points at the site the copy replaced, and that node is not in the graph.
      */
     source: z.string().min(1).max(CREATE_WORKFLOW_GRAPH_MAX_ID_CHARS).optional(),
     /**
-     * 作者用 `phase("…")` 标记划入的阶段（`phase#2`，或保留的 `unphased`）。与图的
-     * `phases` / `phaseEdges` / `exits` 同进同退：四者要么全在场（此时**每个** step 都带一个，
-     * 划分是全的），要么全缺席（零标记脚本）。
+     * The phase the author marked this into with `phase("…")` (`phase#2`, or the reserved `unphased`). It comes and goes together with the graph's
+     * `phases` / `phaseEdges` / `exits`: either all four are present (then **every** step carries one and the partition is total),
+     * or all are absent (a script with no markers).
      */
     phase: z.string().min(1).max(CREATE_WORKFLOW_GRAPH_MAX_ID_CHARS).optional(),
     repeat: z.enum(["stack", "serial"]).optional(),
@@ -266,13 +266,13 @@ export const CreateWorkflowStepSchema = z
 
 export type CreateWorkflowStep = z.infer<typeof CreateWorkflowStepSchema>;
 
-// Lane = 一个 actor（外加一条 workspace 车道）。多重性不再挂在车道上（曾是 families →
-// nesting）：车道不再渲染，家族的成员数由参与者的 `member` / `many` 表达。
+// Lane = one actor (plus one workspace lane). Multiplicity no longer hangs in the driveway (it used to be families →
+// nesting): lanes are no longer rendered, and the number of family members is expressed by the `member` / `many` of the participant.
 export const CreateWorkflowLaneSchema = z
   .object({
     id: z.string().min(1).max(CREATE_WORKFLOW_GRAPH_MAX_ID_CHARS),
     name: z.string().min(1).max(CREATE_WORKFLOW_GRAPH_MAX_NAME_CHARS).optional(),
-    /** `name` 缺席而 `agent()` 首参是带洞的模板串时的静态形状；与 `name` 互斥。 */
+    /** The static shape when `name` is absent and the first argument of `agent()` is a template string with holes; mutually exclusive with `name`. */
     namePattern: CreateWorkflowNamePatternSchema.optional(),
     line: z.number().int().positive().optional(),
     column: z.number().int().positive().optional(),
@@ -281,9 +281,9 @@ export const CreateWorkflowLaneSchema = z
 
 export type CreateWorkflowLane = z.infer<typeof CreateWorkflowLaneSchema>;
 
-// 边只表示一件事：runs after。阶段边与交接边同一形状。`back` 标记循环回边——画法与其他
-// 边完全相同、不标注，只有布局排秩（回边不参与列序）与帧头 cycle 计数读它。分析器的
-// kind / certainty / exact 不进载荷；两层边都做过统一的传递归约。
+// The edge only means one thing: runs after. The phase edge and the transition edge have the same shape. `back` marks the loop back edge - drawing method and others
+// The edges are exactly the same, not labeled, only the layout ranking (the edges do not participate in the column order) and the frame header cycle count to read it. Analyzer's
+// Kind / certainty / exact does not enter the load; both edges have undergone unified transitive reduction.
 export const CreateWorkflowEdgeSchema = z
   .object({
     from: z.string().min(1).max(CREATE_WORKFLOW_GRAPH_MAX_ID_CHARS),
@@ -294,15 +294,15 @@ export const CreateWorkflowEdgeSchema = z
 
 export type CreateWorkflowEdge = z.infer<typeof CreateWorkflowEdgeSchema>;
 
-// 参与者 = 板面第二层的一张卡：某阶段里在某条车道上有 step 的那个子代理（或工作区 /
-// 未解析）。fan-out 家族按字面量基数展开时每成员一张（`member`），基数未知时一张 `many`
-// 卡代表全部成员。`steps` 是它在本阶段的 step——运行状态由此聚合，检视器由此列 ask。
-// 数组顺序就是交接序（分析器定）：折叠面自上而下、展开面自左而右，第一张是开局者。
+// Participant = a card on the second level of the board: the subagent (or workspace /
+// not parsed). When the fan-out family is expanded according to the literal cardinality, there is one piece for each member (`member`), and when the cardinality is unknown, there is one piece of `many`
+// The card represents all members. `steps` is its step in this phase - the run state is aggregated from it and the inspector is listed from ask.
+// The order of the array is the handover order (determined by the analyzer): the folded surface is from top to bottom, the expanded surface is from left to right, and the first one is the starter.
 export const CreateWorkflowParticipantSchema = z
   .object({
-    /** `${phase}:${lane}`，家族成员 `${phase}:${lane}[${index}]`。 */
+    /** `${phase}:${lane}`, and a family member is `${phase}:${lane}[${index}]`. */
     id: z.string().min(1).max(CREATE_WORKFLOW_GRAPH_MAX_ID_CHARS),
-    /** 阶段 id；脚本无阶段词汇时恒为 `unphased`（此时 `phases` 缺席）。 */
+    /** The phase id; always `unphased` when the script has no phase vocabulary (`phases` is absent in that case). */
     phase: z.string().min(1).max(CREATE_WORKFLOW_GRAPH_MAX_ID_CHARS),
     lane: z.string().min(1).max(CREATE_WORKFLOW_GRAPH_MAX_ID_CHARS),
     steps: z
@@ -322,8 +322,8 @@ export const CreateWorkflowParticipantSchema = z
 
 export type CreateWorkflowParticipant = z.infer<typeof CreateWorkflowParticipantSchema>;
 
-// 交接 = 参与者之间的 runs after（归约后 happens-before 按卡取商）。`types` 是跨越这条边的
-// 产物类型（站点图 data 边），只进检视器，不上箭头。
+// Handover = runs after between participants (what happens-before after reduction). `types` spans this edge
+// Product type (data side of site map), only enter the viewer, no arrow.
 export const CreateWorkflowHandoffSchema = CreateWorkflowEdgeSchema.extend({
   types: z
     .array(z.string().min(1).max(CREATE_WORKFLOW_GRAPH_MAX_NAME_CHARS))
@@ -334,9 +334,9 @@ export const CreateWorkflowHandoffSchema = CreateWorkflowEdgeSchema.extend({
 
 export type CreateWorkflowHandoff = z.infer<typeof CreateWorkflowHandoffSchema>;
 
-// Phase = 作者用 `phase("…")` 标记出的一组 step。名字是键（同名的两处标记是同一个阶段），
-// 所以 `name` 就是作者原词；合成兜底阶段 `unphased` **无 name**，显示名由 UI 本地化
-// （与 workspace/unknown 车道同一模式）。loc 是首个标记的位置。
+// Phase = a set of steps marked by the author with `phase("…")`. The name is the key (two tags with the same name are the same stage),
+// So `name` is the author's original word; in the synthesis stage `unphased` **no name**, the display name is localized by UI
+// (Same pattern as the workspace/unknown lane). loc is the position of the first mark.
 export const CreateWorkflowPhaseSchema = z
   .object({
     id: z.string().min(1).max(CREATE_WORKFLOW_GRAPH_MAX_ID_CHARS),
@@ -344,13 +344,13 @@ export const CreateWorkflowPhaseSchema = z
     line: z.number().int().positive().optional(),
     column: z.number().int().positive().optional(),
     /**
-     * 进入本阶段时**还在跑**的其他阶段：它们 fan-out 出去的 strand 当时尚未 join。阶段表序，
-     * 列出的阶段 id，不含自己，为空时整个字段缺席（与词汇表同进同退）。
+     * The other phases still **running** when this phase is entered: the strands they fanned out had not joined yet. In phase-table order,
+     * listing phase ids, excluding itself, and the whole field is absent when empty (it comes and goes with the vocabulary).
      *
-     * 它是**节点事实**而不是边——控制并没有从那些阶段转移过来，两边是同时在场的，所以它既不
-     * 进 `phaseEdges` 也不参与边的归约（归约会把它当成 runs after，砍掉真正的边）。
-     * 读者是时间轴：把由它串起来的相邻阶段折成一条分叉的「带」，主线之上再起支线轨道；
-     * 侧栏迷你轨道据此画双线段。
+     * It is a **node fact** rather than an edge — control was not transferred from those phases, both sides are present at the same time, so it neither
+     * goes into `phaseEdges` nor takes part in edge reduction (reduction would treat it as runs-after and cut the real edges away).
+     * The reader is the timeline: it folds the adjacent phases it links into one forked "band", branching a side track off the main line;
+     * the sidebar mini-track draws a double segment from it.
      */
     alongside: z
       .array(z.string().min(1).max(CREATE_WORKFLOW_GRAPH_MAX_ID_CHARS))
@@ -362,9 +362,9 @@ export const CreateWorkflowPhaseSchema = z
 
 export type CreateWorkflowPhase = z.infer<typeof CreateWorkflowPhaseSchema>;
 
-// 名字沿用历史（它曾只装因果图）。三层：step 层是站点（运行状态的键，不再画）；参与者层
-// 是每阶段的卡与交接（因果事实按卡取商）；阶段层是控制流事实（控制流图的阶段商）。层间的桥
-// 是 `Participant.phase` / `Participant.steps`、`Step.phase` 与 `exits`。
+// The name follows history (it once only housed cause and effect diagrams). Three layers: the step layer is the site (the key of the running state, no longer drawn); the participant layer
+// It is the card and handover of each stage (the causal fact is quotient according to the card); the stage layer is the control flow fact (the stage quotient of the control flow graph). bridge between floors
+// Is `Participant.phase` / `Participant.steps`, `Step.phase` and `exits`.
 export const CreateWorkflowCausalityGraphSchema = z
   .object({
     steps: z.array(CreateWorkflowStepSchema).max(CREATE_WORKFLOW_GRAPH_MAX_STEPS),
@@ -374,9 +374,9 @@ export const CreateWorkflowCausalityGraphSchema = z
       .max(CREATE_WORKFLOW_GRAPH_MAX_PARTICIPANTS),
     handoffs: z.array(CreateWorkflowHandoffSchema).max(CREATE_WORKFLOW_GRAPH_MAX_HANDOFFS),
     /**
-     * 阶段词汇表，与 `phaseEdges`、`exits`、`Step.phase` **全有或全无**：零标记脚本四者全
-     * 缺席，UI 的视图切换条件就是「词汇表在场与否」。超界时也是整体缺席（+ `truncated`）
-     * ——裁一半的阶段图会说谎。零成员的阶段（只有标记、没有 step）也在表里：控制流会经过它。
+     * The phase vocabulary, all-or-nothing with `phaseEdges`, `exits` and `Step.phase`: for a script with no markers all four are
+     * absent, and "is the vocabulary present" is exactly the UI's view-toggle condition. On overflow it is absent as a whole too (plus `truncated`)
+     * — a phase graph cut in half would lie. Phases with zero members (markers only, no steps) are in the table as well: control flow passes through them.
      */
     phases: z.array(CreateWorkflowPhaseSchema).max(CREATE_WORKFLOW_GRAPH_MAX_PHASES).optional(),
     phaseEdges: z
@@ -384,15 +384,15 @@ export const CreateWorkflowCausalityGraphSchema = z
       .max(CREATE_WORKFLOW_GRAPH_MAX_PHASE_EDGES)
       .optional(),
     /**
-     * 控制流可以在其后正常完成的阶段（控制流图阶段商里指向 sink 终端的边的源），阶段表序。
-     * 阶段视图的「阶段 → 返回物」箭头读它，让那张画面上的每条箭头都是控制流。组内可为空
-     * （脚本没有正常完成路径），组外不得单独出现。
+     * The phases after which control flow can complete normally (the sources of the edges that point at sink terminals in the control flow graph's phase quotient), in phase-table order.
+     * The phase view's "phase → artifact" arrows read it, so that every arrow on that screen is control flow. The group may be empty
+     * (the script has no normal completion path), but a member must never appear on its own outside the group.
      */
     exits: z
       .array(z.string().min(1).max(CREATE_WORKFLOW_GRAPH_MAX_ID_CHARS))
       .max(CREATE_WORKFLOW_GRAPH_MAX_PHASES)
       .optional(),
-    /** 返回物由哪些 step 供给（数据事实，下钻用）；脚本无返回时缺省。 */
+    /** Which steps supply the artifact (a data fact, for drill-down); absent when the script returns nothing. */
     sink: z
       .array(z.string().min(1).max(CREATE_WORKFLOW_GRAPH_MAX_ID_CHARS))
       .max(CREATE_WORKFLOW_GRAPH_MAX_STEPS)
@@ -404,11 +404,11 @@ export const CreateWorkflowCausalityGraphSchema = z
 export type CreateWorkflowCausalityGraph = z.infer<typeof CreateWorkflowCausalityGraphSchema>;
 
 /**
- * run 的声明阶段表：因果图里**有名**的
- * 阶段，按声明序。运行状态只知道已进入的阶段，侧栏迷你轨道要画"前方还有哪些站"就得在提交时把这张表
- * 交给引擎记进 `run-launched`。两条提交路径（`CreateWorkflow` 工具、中枢直接启动）共用本函数，
- * 于是同一份脚本在两条路上画出同一条轨道。无图 / 无阶段词汇表 / 只有合成的 `unphased` → `undefined`
- * （字段整个缺席，而不是空数组：UI 据缺席画一个隐含站点）。
+ * The run's declared phase table: the **named** phases of the causality
+ * graph, in declaration order. Run state only knows the phases already entered, so for the sidebar mini-track to draw "which stops are still ahead" this table has to be
+ * handed to the engine at submit time to record in `run-launched`. Both submit paths (the `CreateWorkflow` tool, a hub direct launch) share this function,
+ * so the same script draws the same track on both routes. No graph / no phase vocabulary / only the synthetic `unphased` → `undefined`
+ * (the field is absent entirely rather than an empty array: the UI draws an implicit stop from the absence).
  */
 export function createWorkflowPhaseNames(
   graph: Pick<CreateWorkflowCausalityGraph, "phases"> | undefined,
@@ -417,16 +417,16 @@ export function createWorkflowPhaseNames(
 }
 
 /**
- * 与 {@link createWorkflowPhaseNames} **按位置对齐**的「同时在跑」表：`out[i]` 是声明表里第 i
- * 个有名阶段被进入时，strand 仍在跑的其他阶段的下标（同一张有名阶段表里的下标）。
+ * The "running alongside" table **positionally aligned** with {@link createWorkflowPhaseNames}: `out[i]` holds the indices of the other phases
+ * whose strands are still running when the i-th named phase of the declaration table is entered (indices into that same named phase table).
  *
- * 下标空间是**有名阶段**的，不是因果图原阶段表的：无名阶段（合成的 `unphased`）被跳过，
- * 指向它、指向未列出阶段、或指向自己的引用一并丢掉——侧栏拿到一个越界下标就会把「同时在跑」
- * 连到错误的站上。它随 `DynamicWorkflowRunSubmitRequest.phaseAlongside` 进入 `run-launched`，
- * 侧栏迷你轨道据此把带内相邻的两站画成双线段。
+ * The index space is that of the **named phases**, not of the causality graph's original phase table: unnamed phases (the synthetic `unphased`) are skipped,
+ * and references to them, to unlisted phases, or to itself are dropped as well — an out-of-range index would make the sidebar link "running alongside"
+ * to the wrong stop. It enters `run-launched` as `DynamicWorkflowRunSubmitRequest.phaseAlongside`,
+ * and the sidebar mini-track uses it to draw two adjacent stops inside a band as a double segment.
  *
- * 无图 / 无阶段词汇表 / 没有任何阶段带 alongside → `undefined`（字段整个缺席，而不是一串空
- * 数组：缺席就是「这条轨道是一条直线」）。
+ * No graph / no phase vocabulary / no phase carries alongside → `undefined` (the field is absent entirely rather than a list of empty
+ * arrays: absence means "this track is a straight line").
  */
 export function createWorkflowPhaseAlongside(
   graph: Pick<CreateWorkflowCausalityGraph, "phases"> | undefined,
@@ -448,13 +448,13 @@ export function createWorkflowPhaseAlongside(
   return any ? out : undefined;
 }
 
-/** 有名阶段（声明序，截到上界），`name` 已收窄。 */
+/** The named phases (declaration order, truncated at the cap), with `name` already narrowed. */
 type CreateWorkflowNamedPhase = CreateWorkflowPhase & { name: string };
 
 /**
- * 上面两个函数共用的那张表：因果图里**有名**的阶段，声明序，截到
- * `CREATE_WORKFLOW_GRAPH_MAX_PHASES`。抽成一个函数正是为了让它们走同一条过滤、落在同一个
- * 下标空间里——`phaseAlongside[i]` 说的必须是 `phaseNames[i]` 这一站。
+ * The table shared by the two functions above: the **named** phases of the causality graph, in declaration order, truncated at
+ * `CREATE_WORKFLOW_GRAPH_MAX_PHASES`. Factoring it into one function is exactly so that both go through the same filter and land in the same
+ * index space — what `phaseAlongside[i]` talks about must be the stop `phaseNames[i]`.
  */
 function namedPhases(
   graph: Pick<CreateWorkflowCausalityGraph, "phases"> | undefined,
@@ -470,28 +470,28 @@ function namedPhases(
   return named.length === 0 ? undefined : named;
 }
 
-// 两个新字段只在「确认后真启动了一个 run」时出现；诊断-only 的结果保持原形状。
-// 走显式 schema 而不是经 raw 夹带：.strict() 的意义就是形状变更必须是一次显式提交。
+// The two new fields only appear if a run is actually started after confirmation; the results of diagnostic-only remain unchanged.
+// Use explicit schema instead of raw entrainment: The meaning of .strict() is that the shape change must be an explicit commit.
 export const CreateWorkflowOutputSchema = z
   .object({
     diagnostics: z.array(CreateWorkflowDiagnosticSchema),
     ok: z.boolean(),
     response: z.string(),
     causalityGraph: CreateWorkflowCausalityGraphSchema.optional(),
-    /** 仅在启动了后台 run 时出现；不是通用状态字段，故只收这一个字面量。 */
+    /** Appears only when a background run was started; since it is not a general status field, only this single literal is accepted. */
     status: z.literal("backgrounded").optional(),
-    /** 后台任务 id ≡ taskId ≡ runId（取消与状态查询都以它为键）。 */
+    /** The background task id ≡ taskId ≡ runId (cancellation and status queries are both keyed on it). */
     backgroundTaskId: z.string().min(1).optional(),
     /**
-     * `AmendWorkflow` 只改并发、就地生效时才在场：**没有**新 run，所以既没有 `status: "backgrounded"` 也没有
-     * `backgroundTaskId`，run 还是调用里那一个。
+     * Present only when `AmendWorkflow` changes concurrency and takes effect in place: there is **no** new run, so there is neither `status: "backgrounded"` nor
+     * `backgroundTaskId`, and the run is still the one from the call.
      *
-     * 是一个显式的块而不是让消费方按形状去猜：「ok 且没有 status」在这个工具上还有别的来路
-     * （没有 run 端口时的「只 typecheck」）。数都是绝对值，`maxConcurrency === ceiling` 即
-     * 「这个 run 没有自己的界」。
+     * It is an explicit block rather than letting consumers guess by shape: "ok and no status" has other origins on this tool
+     * (the "typecheck only" case when there is no run port). The numbers are all absolute, and `maxConcurrency === ceiling` means
+     * "this run has no ceiling of its own".
      *
-     * ⚠ 这条事实**不跨 v4**：协议的 `toolOutputSchema` 只带 `text` / `display` / `truncated`，
-     * 所以它服务的是 CLI/TUI、进程内消费方，桌面 UI 读不到它。
+     * ⚠ This fact **does not cross v4**: the protocol's `toolOutputSchema` carries only `text` / `display` / `truncated`,
+     * so it serves the CLI/TUI and in-process consumers; the desktop UI cannot read it.
      */
     retuned: z
       .object({

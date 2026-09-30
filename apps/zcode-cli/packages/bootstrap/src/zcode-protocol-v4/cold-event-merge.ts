@@ -19,9 +19,9 @@ interface ConversationMaterializationSource {
   goalVerificationEntries: HydratedGoalVerificationEntry[];
   memoryEvents: SessionEvent[];
   messages: MessageWithParts[];
-  /** shared_context 正文仍是 provider-only；这里只下发脱敏的 handover metadata。 */
+  /** The shared_context body is still provider-only; only the redacted handover metadata is dispatched here. */
   sharedContextImport?: ConversationSnapshot["sharedContextImport"];
-  /** 只有成功读取 session_target 后才存在；显式 null 也是持久 authority。 */
+  /** It only exists after session_target has been read successfully; an explicit null is a persistent authority too. */
   target?: SessionGoal | null;
 }
 
@@ -47,11 +47,11 @@ interface PersistedConversationMaterializationStore {
 }
 
 /**
- * cold materialization 的单一持久事实入口。
+ * The single entry point for the persistent facts of cold materialization.
  *
- * 旧 bridge 只读取全量 message/part，既没有读取 session.revert 来裁掉
- * 已回滚分支，也没有读取 session_target；结果 runtime resume / stable fork 已经使用
- * active branch，而刷新 projection 却会复活旧分支并把 goal 恢复成 null。
+ * The old bridge only read the full message/part set: it neither read session.revert to prune
+ * already-reverted branches nor read session_target; as a result runtime resume / stable fork were already
+ * using the active branch, while refreshing the projection resurrected old branches and restored the goal to null.
  */
 export async function loadPersistedConversationMaterialization(input: {
   memoryEvents: readonly SessionEvent[];
@@ -60,8 +60,8 @@ export async function loadPersistedConversationMaterialization(input: {
   store?: PersistedConversationMaterializationStore;
 }): Promise<ConversationMaterializationSource> {
   if (!input.store) {
-    // 无 sessionStore 时旧 bridge 人工填 target:null，把“没有读取”误当成
-    // “持久层明确清空”，进而压掉唯一的内存 TargetChanged 并强制 synthesized。
+    // When there is no sessionStore, the old bridge manually fills in target:null, mistaking "not read" as
+    // "The persistence layer is explicitly cleared", thus suppressing the only memory TargetChanged and forcing synthesized.
     return {
       goalVerificationEntries: [],
       memoryEvents: [...input.memoryEvents],
@@ -159,10 +159,10 @@ const MEMORY_ONLY_EVENT_TYPES = new Set<string>([
   SessionEventType.BackgroundTaskStarted,
   SessionEventType.BackgroundTaskUpdated,
   SessionEventType.BackgroundTaskCompleted,
-  // workflow run 进度：权威事实在 dwf_event journal 与内存事件里，durable transcript（message/part）
-  // 从不合成它，所以它与 BackgroundTask* 同类——memory-only 权威。不分类的后果不是丢事件
-  // （兜底分支同样保留），而是每次冷恢复刷一条 unclassified 诊断，把"真的漏了词汇表"这个
-  // 信号淹掉。
+  // workflow run progress: authoritative facts in dwf_event journal and memory events, durable transcript (message/part)
+  // It is never synthesized, so it is in the same class as BackgroundTask* - memory-only authoritative. The consequences of not classifying are not missing events
+  // (The bottom branch is also retained), but brushes an unclassified diagnosis for each cold recovery, and removes the "really missing vocabulary"
+  // The signal is flooded.
   SessionEventType.DynamicWorkflowRunProgress,
   SessionEventType.TargetChanged,
   SessionEventType.RewindTriggered,
@@ -207,8 +207,8 @@ function hookInvocationTurnIds(events: readonly SessionEvent[]): Map<string, str
       if (!invocationId) continue;
       const eventName = stringField(event.payload, "hookEventName");
       if (eventName === "SessionStart") {
-        // startup SessionStart 可能已经携带尚未映射的 runtime turnId；只有后续真实
-        // TurnStarted 才能给出 durable product turn。async terminal 若已解析则沿用。
+        // startup SessionStart may already carry an unmapped runtime turnId; only subsequent ones are true
+        // TurnStarted can give durable product turn. async terminal will be used if it has been parsed.
         if (!resolved.has(invocationId)) pending.add(invocationId);
         continue;
       }
@@ -223,11 +223,11 @@ function hookInvocationTurnIds(events: readonly SessionEvent[]): Map<string, str
     if (event.type !== SessionEventType.TurnStarted || !event.turnId || pending.size === 0) {
       continue;
     }
-    // model-only 维护 turn（manual /compact、goal continuation）没有资格承载
-    // SessionStart 摘要；resume SessionStart 必须等下一条 user-visible 真实 turn 归位。
+    // model-only maintenance turns (manual/compact, goal continuation) are not eligible to host
+    // SessionStart summary; resume SessionStart must wait for the next user-visible real turn to return.
     if (stringField(event.payload, "inputVisibility") === "model-only") continue;
-    // resume SessionStart 在 Runtime 中先于下一条真实 TurnStarted；cold merge 必须沿
-    // 同一事件顺序建立归属，不能把它追加到历史末尾或由 Renderer 猜最近一轮。
+    // resume SessionStart precedes the next real TurnStarted in Runtime; cold merge must follow
+    // The same sequence of events establishes ownership, and it cannot be appended to the end of the history or the Renderer guesses the latest round.
     for (const invocationId of pending) resolved.set(invocationId, String(event.turnId));
     pending.clear();
   }
@@ -394,9 +394,9 @@ function queueStateEventIndexes(events: readonly SessionEvent[]): Set<number> {
     const queuedLifecycle = queuedLifecycleById.get(id) ?? [];
     const dispatch = latestDispatchById.get(id);
     const deliveryChange = latestDeliveryChangeById.get(id);
-    // editQueueItem 在旧事件里可能只重发新 text，完整 intent/附件/来源
-    // 仍只在首次 queued 事件。从空投影 cold replay 时必须保留该 id
-    // 自最近一次 admission 起的全部 queued 生命周期，让 reducer 原地合并字段。
+    // editQueueItem may only resend new text in the old event, complete intent/attachment/source
+    // Still only the first queued event. This id must be preserved when projecting cold replay from null
+    // The entire queued lifetime since the most recent admission, allowing the reducer to merge fields in place.
     for (const queued of queuedLifecycle) keep.add(queued);
     const latestQueued = queuedLifecycle.at(-1) ?? -1;
     if (dispatch !== undefined && dispatch > latestQueued) keep.add(dispatch);
@@ -517,9 +517,9 @@ function eventMessageIds(event: SessionEvent): string[] {
 }
 
 /**
- * 只靠持久实体 ID 建立 transcript message → hydration turn 映射。
- * assistant 没有 text part 时可能不直接产 assistantMessageId，因此再用持久的
- * parentID / anchor.turnId 传播；禁止用文本或时间邻近猜测轮归属。
+ * Builds the transcript message → hydration turn mapping from persistent entity IDs alone.
+ * An assistant with no text part may not directly produce an assistantMessageId, so the persistent parentID / anchor.turnId is used to
+ * propagate instead; guessing turn ownership by text or temporal proximity is forbidden.
  */
 function durableTurnByMessageId(
   messages: readonly MessageWithParts[],
@@ -562,10 +562,10 @@ function durableTurnByMessageId(
 }
 
 /**
- * Hook lifecycle 只携带 runtime turnId，没有持久 messageId；cold transcript 则会
- * 重新生成 hydrate-turn-*。这里只使用持久 message anchor 建立无歧义身份映射，
- * 禁止按文本或时间邻近猜测。若同一 runtime anchor 指向多个 hydration turn，宁可
- * 保留原事件等待显式恢复边界，也不能把 Hook 错挂到另一轮。
+ * A Hook lifecycle carries only a runtime turnId and no persistent messageId, while the cold transcript regenerates hydrate-turn-*.
+ * Here only the persistent message anchor is used to establish an unambiguous identity mapping, and guessing by text or temporal proximity is forbidden.
+ * If one runtime anchor points at several hydration turns, it is better to keep the original event and wait for an explicit recovery
+ * boundary than to misattach the Hook to another turn.
  */
 function durableTurnByRuntimeAnchor(
   messages: readonly MessageWithParts[],
@@ -591,9 +591,9 @@ function durableTurnByRuntimeAnchor(
 }
 
 /**
- * queue drain 可在同一 runtime turn 内切出多个 product turn；Hook 仍只携带
- * runtime turnId，因此必须按事件顺序跟随持久 message boundary。首次 lifecycle
- * 一旦解析成功就冻结 invocation 归属，避免后台 terminal 跨 boundary 后改挂。
+ * A queue drain can cut out several product turns within the same runtime turn; since a Hook still carries only a runtime turnId, the persistent message
+ * boundary has to be followed in event order. Once the first lifecycle resolves successfully, the invocation ownership is frozen, so that a background
+ * terminal cannot later re-attach itself after crossing a boundary.
  */
 function durableHookTurnByInvocationId(
   events: readonly SessionEvent[],
@@ -715,8 +715,8 @@ function resequence(events: readonly SessionEvent[]): SessionEvent[] {
 }
 
 /**
- * 冷恢复三源合并：message/part 是已完成正文权威；session_entry 只补 legacy goal；
- * 内存事件只补未完成 turn 与没有 transcript 形态的当前状态。
+ * The three-source merge of cold recovery: message/part is the authority for finished bodies; session_entry only backfills the legacy goal; in-memory
+ * events only backfill the unfinished turns and the current state that has no transcript shape.
  */
 export function mergeColdConversationEvents(input: MergeInput): ColdEventMergeResult {
   const diagnostics = new Map<ColdEventMergeDiagnostic["code"], ColdEventMergeDiagnostic>();
@@ -724,9 +724,9 @@ export function mergeColdConversationEvents(input: MergeInput): ColdEventMergeRe
   const authorityTurns = memoryAuthorityTurnIds(input.memoryEvents, input.messages);
   const authorityTurnIds = authorityTurns.turnIds;
   for (const event of authorityTurns.ambiguousLegacyStarts) {
-    // 旧 TurnStarted 既没有 messageId，transcript 也没有同 turn anchor 时，
-    // 禁止用 input 文本/时间猜测实体同一性。相同文本可以是两次真实提交；
-    // 宁可保留该内存 turn 并显式诊断，也不能把未持久 in-flight 误当重复删掉。
+    // The old TurnStarted has neither messageId, transcript nor turn anchor at the same time,
+    // Disable guessing entity identity using input text/time. The same text can be two real submissions;
+    // It is better to keep the memory turn and diagnose it explicitly than to delete the non-persistent in-flight as a duplicate.
     recordDiagnostic(diagnostics, "cold_merge.ambiguous_legacy_turn_preserved", event);
   }
   const durableMessages = input.messages.filter(
@@ -782,9 +782,9 @@ export function mergeColdConversationEvents(input: MergeInput): ColdEventMergeRe
   input.memoryEvents.forEach((event, index) => {
     if (HOOK_LIFECYCLE_EVENT_TYPES.has(event.type)) {
       const invocationId = stringField(event.payload, "hookInvocationId");
-      // invocation 扫描会把 startup/resume SessionStart 的临时 runtime turn 修正为
-      // 后续真实 TurnStarted；因此它必须优先于单条事件上尚未建立 product mapping
-      // 的 turnId。普通 prompt/tool invocation 得到的仍是同一个 runtime turn。
+      // The invocation scan will correct the temporary runtime turn of startup/resume SessionStart to
+      // A subsequent true TurnStarted; therefore it must take precedence over a single event on which product mapping has not yet been established
+      // turnId. Ordinary prompt/tool ​​invocation still gets the same runtime turn.
       const resolvedTurnId = invocationId
         ? (hookTurnIdByInvocationId.get(invocationId) ??
           (event.turnId ? String(event.turnId) : undefined))
@@ -802,15 +802,15 @@ export function mergeColdConversationEvents(input: MergeInput): ColdEventMergeRe
         const eventName = stringField(event.payload, "hookEventName");
         const target = eventName === "SessionStart" ? prefixEventsByTurnId : boundaryEventsByTurnId;
         const events = target.get(durableTurnId) ?? [];
-        // memory Hook 保留 runtime turnId，而 transcript synthesis 使用
-        // hydrate-turn-*；直接比较两者会让 completed Hook 变成 orphan row，
-        // SessionStart 也会残留 pending。先改写到 hydration turn 后，既有
-        // ProductProjection TurnStarted 映射会继续收敛到稳定 message product turn。
+        // memory Hook retains runtime turnId, while transcript synthesis uses
+        // hydrate-turn-*; directly comparing the two will make the completed Hook become an orphan row.
+        // SessionStart will also remain pending. After first rewriting to hydration turn, we have
+        // ProductProjection TurnStarted mapping continues to converge to a stable message product turn.
         events.push({ ...event, turnId: durableTurnId as TurnId });
         target.set(durableTurnId, events);
       } else {
-        // 只打开历史而尚无下一真实 turn 的 resume SessionStart 继续留作 projection
-        // pending，不为它制造 synthetic turn；后续 live TurnStarted 会完成归位。
+        // A resume SessionStart that only opens the history but does not yet have the next real turn remains as a projection
+        // pending, no synthetic turn will be created for it; subsequent live TurnStarted will complete the return.
         supplements.push(event);
       }
       return;
@@ -821,21 +821,21 @@ export function mergeColdConversationEvents(input: MergeInput): ColdEventMergeRe
         recordDiagnostic(diagnostics, "cold_merge.durable_event_suppressed", event);
         return;
       }
-      // durable boundary 写 part/session_entry 失败时，内存事件是唯一剩余事实。
-      // boundary 的持久实体 anchor 优先于事件到达时所在的 active runtime turn；
-      // 否则迟到 boundary 会被误留在 unfinished turn 末尾。
+      // durable boundary When writing to part/session_entry fails, the memory event is the only remaining fact.
+      // The boundary's persistent entity anchor takes precedence over the active runtime turn when the event arrives;
+      // Otherwise the late boundary will be mistakenly left at the end of the unfinished turn.
       const anchorMessageId = boundaryAnchorMessageId(event);
       const durableTurnId = anchorMessageId ? turnByMessageId.get(anchorMessageId) : undefined;
       if (durableTurnId) {
         const events = boundaryEventsByTurnId.get(durableTurnId) ?? [];
-        // durableEvents + supplements 不能直接拼接：即使 boundary
-        // 带持久 message anchor，也会被挪到整个 transcript 末尾。这里同时改写为
-        // hydration product turn 并插入该轮 tail，身份和物理顺序一次对齐。
+        // durableEvents + supplements cannot be directly spliced: even if the boundary
+        // With persistent message anchor, it will also be moved to the end of the entire transcript. Here it is also rewritten as
+        // hydration product turn and insert the tail of the turn, the identity and physical order are aligned once.
         events.push({ ...event, turnId: durableTurnId as TurnId });
         boundaryEventsByTurnId.set(durableTurnId, events);
       } else {
-        // legacy 无显式/可解析 anchor：按冻结 fallback 放最后一个已知宿主之后；
-        // memory_boundary_preserved diagnostic 让这次降级保持可观测。
+        // legacy no explicit/resolvable anchor: press freeze fallback after the last known host;
+        // memory_boundary_preserved diagnostic keeps this degradation observable.
         supplements.push(event);
       }
       recordDiagnostic(diagnostics, "cold_merge.memory_boundary_preserved", event);
@@ -865,8 +865,8 @@ export function mergeColdConversationEvents(input: MergeInput): ColdEventMergeRe
       return;
     }
     if (event.type === SessionEventType.TargetChanged && hasPersistedTargetAuthority) {
-      // session_target 已是持久权威，旧 merge 却把内存 TargetChanged 当
-      // ephemeral 尾事件追加，冷恢复终态会被旧 goal 覆盖；显式 null 也必须压掉旧事件。
+      // session_target is already the persistent authority, but the old merge treats the memory TargetChanged as
+      // ephemeral tail events are appended, and the final state of cold recovery will be overwritten by the old goal; explicit null must also suppress the old events.
       recordDiagnostic(diagnostics, "cold_merge.durable_event_suppressed", event);
       return;
     }
@@ -875,8 +875,8 @@ export function mergeColdConversationEvents(input: MergeInput): ColdEventMergeRe
       return;
     }
     if (resumedSubagentIndexes.has(index)) {
-      // SendMessage tool transcript 不会合成它恢复的 child lifecycle；若按普通
-      // transcript-derived Subagent* 去重，replayable 重连会丢失正在运行的 row 和 Stop 控制。
+      // SendMessage tool transcript will not synthesize the child lifecycle it restores; if you press Normal
+      // transcript-derived Subagent* deduplication, replayable reconnection will lose the running row and Stop control.
       supplements.push(event);
       return;
     }
@@ -884,8 +884,8 @@ export function mergeColdConversationEvents(input: MergeInput): ColdEventMergeRe
       recordDiagnostic(diagnostics, "cold_merge.durable_event_suppressed", event);
       return;
     }
-    // ProductProjection 当前可能忽略这类事件，但读取层不能把未知老事实静默删掉；
-    // 保留原事件并聚合诊断，后续 normalizer 扩词表时仍有输入可追溯。
+    // ProductProjection may currently ignore such events, but the reading layer cannot silently delete unknown old facts;
+    // The original events are retained and the diagnoses are aggregated, and the input can still be traced when the normalizer expands the vocabulary later.
     supplements.push(event);
     recordDiagnostic(diagnostics, "cold_merge.unclassified_event_preserved", event);
   });

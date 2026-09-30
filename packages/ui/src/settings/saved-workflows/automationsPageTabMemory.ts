@@ -1,7 +1,7 @@
-// 自动化页顶级标签的记忆：记在 sessionStorage，
-// 照 settingsNavigation.ts 的 last-section 先例——从详情页 / 对话切回来时仍在「工作流」。
-// 中枢升级成跨项目视图后，页不再依赖活动项目：用单一 app 级 key，不再按 workspaceKey 分桶；
-// 不进 Zustand、不跨窗口广播。
+// The memory of the top-level label of the automation page: recorded in sessionStorage,
+// Follow the last-section precedent of settingsNavigation.ts - you are still in the "workflow" when you switch back from the details page/dialogue.
+// After the hub is upgraded to a cross-project view, the page no longer depends on the active project: it uses a single app-level key and no longer buckets by workspaceKey;
+// No entering Zustand, no cross-window broadcasting.
 import type { AutomationsPageTab } from "@/settings/saved-workflows/AutomationsPageTitleSwitch.js";
 
 const STORAGE_KEY = "zcode-automations-page-tab";
@@ -27,6 +27,6 @@ export function writeAutomationsPageTab(tab: AutomationsPageTab): void {
   try {
     storage()?.setItem(STORAGE_KEY, tab);
   } catch {
-    // sessionStorage 不可用（隐私模式 / 配额）就不记；下次打开回到默认标签，不影响功能。
+    // If sessionStorage is unavailable (privacy mode/quota), it will not be remembered; it will return to the default tab next time it is opened, and the functionality will not be affected.
   }
 }

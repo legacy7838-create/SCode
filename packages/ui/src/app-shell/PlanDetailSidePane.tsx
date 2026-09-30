@@ -97,8 +97,8 @@ export const PlanDetailSidePane = memo(function PlanDetailSidePane({
   );
 
   return (
-    // provider 接口已收敛为仅按 scope 做连接路由，不再接受
-    // isShellWorkspace 参数；side pane 不需要额外的 shell 身份分支。
+    // The provider interface has converged to only do connection routing according to scope and no longer accepts it.
+    // isShellWorkspace parameter; side pane does not require an additional shell identity branch.
     <V4PaneConversationProvider scope={scope}>
       <PlanDetailContent
         tab={tab}

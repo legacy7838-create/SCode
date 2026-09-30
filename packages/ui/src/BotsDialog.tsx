@@ -1,12 +1,8 @@
-/* eslint-disable max-lines -- BotsDialog 现在保留数据加载、保存和轮询编排；右侧卡片已拆到 BotsDialog/* 子组件，后续再继续下沉状态 hook。 */
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent,
-} from "react";
+/* eslint-disable max-lines -- BotsDialog now keeps data loading, saving, and polling orchestration;
+ * the right-hand cards have been split into BotsDialog/* subcomponents, and the state hooks will
+ * keep being pushed down later.
+ */
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import QRCode from "qrcode";
 import { Bot, Loader2, Plus } from "lucide-react";
 import type {
@@ -73,8 +69,8 @@ function createEmptyConfig(): BotsConfigFile {
 }
 
 function createDraftBot(params: { provider: BotProvider }): BotConfig {
-  // Bugfix: Bot id 只是配置实体身份，不应该带 provider 前缀；
-  // 新建时如果看到 telegram-* 这类 id，容易误以为渠道被固定到了 Telegram。
+  // Bugfix: Bot id only configures the entity identity and should not be prefixed with provider;
+  // If you see IDs like telegram-* when creating a new channel, you may mistakenly think that the channel is fixed to Telegram.
   const id = `bot-${createUuid()}`;
   return {
     id,
@@ -84,10 +80,7 @@ function createDraftBot(params: { provider: BotProvider }): BotConfig {
     allowedWorkspaces: [ALL_BOT_WORKSPACES],
     allowedCommands: createDefaultCommands(),
     currentOptions: {},
-    replyMode: normalizeBotReplyGranularity(
-      params.provider,
-      DEFAULT_BOT_REPLY_GRANULARITY,
-    ),
+    replyMode: normalizeBotReplyGranularity(params.provider, DEFAULT_BOT_REPLY_GRANULARITY),
   };
 }
 
@@ -108,27 +101,23 @@ export function BotsDialog({
   const platform = usePlatform();
   const confirmDialog = useConfirmDialog();
   const { botsService } = useServices();
-  const [config, setConfig] = useState<BotsConfigFile>(() =>
-    createEmptyConfig(),
-  );
+  const [config, setConfig] = useState<BotsConfigFile>(() => createEmptyConfig());
   const [workspaceRefs, setWorkspaceRefs] = useState<BotWorkspaceRef[]>([]);
   const [status, setStatus] = useState<BotServiceStatus | null>(null);
   const [botStates, setBotStates] = useState<BotState[]>([]);
   const [selectedBotId, setSelectedBotId] = useState<string | null>(null);
   const [creatingBot, setCreatingBot] = useState(false);
   const [configLoaded, setConfigLoaded] = useState(false);
-  const [creatingProvider, setCreatingProvider] = useState<BotProvider | null>(
+  const [creatingProvider, setCreatingProvider] = useState<BotProvider | null>(null);
+  const [bindCode, setBindCode] = useState<BindCodeState | null>(null);
+  const [feishuRegistration, setFeishuRegistration] = useState<FeishuRegistrationState | null>(
     null,
   );
-  const [bindCode, setBindCode] = useState<BindCodeState | null>(null);
-  const [feishuRegistration, setFeishuRegistration] =
-    useState<FeishuRegistrationState | null>(null);
-  const [feishuRegistrationLoading, setFeishuRegistrationLoading] =
-    useState(false);
-  const [weixinRegistration, setWeixinRegistration] =
-    useState<WeixinRegistrationState | null>(null);
-  const [weixinRegistrationLoading, setWeixinRegistrationLoading] =
-    useState(false);
+  const [feishuRegistrationLoading, setFeishuRegistrationLoading] = useState(false);
+  const [weixinRegistration, setWeixinRegistration] = useState<WeixinRegistrationState | null>(
+    null,
+  );
+  const [weixinRegistrationLoading, setWeixinRegistrationLoading] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [credentialValue, setCredentialValue] = useState("");
   const [secretSaving, setSecretSaving] = useState(false);
@@ -150,17 +139,14 @@ export function BotsDialog({
   const currentWorkspace = useMemo(
     () => ({
       id: currentWorkspaceId,
-      label:
-        workspacePath.split(/[\\/]/u).filter(Boolean).at(-1) ?? workspacePath,
+      label: workspacePath.split(/[\\/]/u).filter(Boolean).at(-1) ?? workspacePath,
       workspacePath,
       workspaceIdentity,
     }),
     [currentWorkspaceId, workspaceIdentity, workspacePath],
   );
-  const selectedBot =
-    config.bots.find((bot) => bot.id === selectedBotId) ?? null;
-  const selectedBotState =
-    botStates.find((state) => state.botId === selectedBotId) ?? null;
+  const selectedBot = config.bots.find((bot) => bot.id === selectedBotId) ?? null;
+  const selectedBotState = botStates.find((state) => state.botId === selectedBotId) ?? null;
   const selectedBotName =
     selectedBot && botNameDraft?.botId === selectedBot.id
       ? botNameDraft.value
@@ -168,13 +154,8 @@ export function BotsDialog({
   const fallbackBotName = intl.formatMessage({
     id: "bots.newBot.fallbackName",
   });
-  const selectedBotDisplayName = formatBotDisplayName(
-    selectedBotName,
-    fallbackBotName,
-  );
-  const bindRemainingMs = bindCode
-    ? Math.max(0, bindCode.expiresAt - nowMs)
-    : 0;
+  const selectedBotDisplayName = formatBotDisplayName(selectedBotName, fallbackBotName);
+  const bindRemainingMs = bindCode ? Math.max(0, bindCode.expiresAt - nowMs) : 0;
   const bindExpired = Boolean(bindCode && bindRemainingMs <= 0);
   const bindCountdownProgress = bindCode
     ? Math.max(0, Math.min(100, (bindRemainingMs / bindCode.ttlMs) * 100))
@@ -183,8 +164,8 @@ export function BotsDialog({
   useEffect(() => {
     if (!open || !bindCode) return undefined;
     setNowMs(Date.now());
-    // Bugfix: 绑定码缩短到 30 秒后，1 秒刷新会让进度条明显跳格。
-    // 这里用更细的节奏驱动动画，文字仍由 formatBindCountdown 按秒展示。
+    // Bugfix: After the binding code is shortened to 30 seconds, the 1-second refresh will cause the progress bar to skip significantly.
+    // Here, the animation is driven at a finer pace, and the text is still displayed by formatBindCountdown in seconds.
     const timer = window.setInterval(() => setNowMs(Date.now()), 250);
     return () => window.clearInterval(timer);
   }, [bindCode, open]);
@@ -198,17 +179,15 @@ export function BotsDialog({
         const nextConfig = await botsService.getConfig();
         if (cancelled) return;
         setConfig(nextConfig);
-        const targetBot = nextConfig.bots.find(
-          (bot) => bot.id === bindCode.botId,
-        );
+        const targetBot = nextConfig.bots.find((bot) => bot.id === bindCode.botId);
         if (targetBot?.providerUserId) {
-          // Bugfix: /bind 是从第三方聊天回写配置，UI 没有直接事件。
-          // 绑定码展开期间低频刷新配置，绑定成功后立即收起绑定区域。
+          // Bugfix: /bind is a writeback configuration from a third-party chat, and there is no direct event in the UI.
+          // The configuration is refreshed at low frequency during the expansion of the binding code, and the binding area is immediately closed after the binding is successful.
           setBindCode(null);
         }
       } catch (error) {
         logger.warn(
-          "[BotsDialog] 轮询 Bot 绑定结果失败",
+          "[BotsDialog] failed to poll bot binding result",
           error instanceof Error ? error.message : String(error),
         );
       }
@@ -226,15 +205,11 @@ export function BotsDialog({
   }, [bindCode, bindExpired, botsService, open]);
 
   useEffect(() => {
-    if (
-      !bindCode ||
-      bindCode.botId !== selectedBot?.id ||
-      !selectedBot.providerUserId
-    ) {
+    if (!bindCode || bindCode.botId !== selectedBot?.id || !selectedBot.providerUserId) {
       return;
     }
-    // Bugfix: /bind 成功是服务层异步回写配置；即使轮询刚好被切换/刷新打断，
-    // 只要当前 Bot 已经带 providerUserId，就应该立即收起旧绑定码。
+    // Bugfix: /bind succeeds because the service layer writes back the configuration asynchronously; even if the polling is interrupted by switching/refreshing,
+    // As long as the current Bot already has providerUserId, the old binding code should be put away immediately.
     setBindCode(null);
   }, [bindCode, selectedBot?.id, selectedBot?.providerUserId]);
 
@@ -255,9 +230,9 @@ export function BotsDialog({
         const nextStatus = await botsService.getStatus();
         if (!cancelled) setStatus(nextStatus);
       } catch (error) {
-        logger.debug("[BotsDialog] 刷新 Bot 运行状态失败", error);
+        logger.debug("[BotsDialog] failed to refresh bot run status", error);
       } finally {
-        // 投递在后台完成；只在弹窗可见时串行刷新，避免慢 RPC 堆积或关闭后回写。
+        // Delivery is completed in the background; it is only refreshed serially when the pop-up window is visible to avoid slow RPC accumulation or write-back after closing.
         if (!cancelled) timer = setTimeout(() => void pollStatus(), 2000);
       }
     };
@@ -270,13 +245,12 @@ export function BotsDialog({
 
   const refresh = useCallback(async () => {
     try {
-      const [nextConfig, nextStatus, nextWorkspaces, nextBotStates] =
-        await Promise.all([
-          botsService.getConfig(),
-          botsService.getStatus(),
-          botsService.listWorkspaceRefs({ currentWorkspace }),
-          botsService.getBotStates(),
-        ]);
+      const [nextConfig, nextStatus, nextWorkspaces, nextBotStates] = await Promise.all([
+        botsService.getConfig(),
+        botsService.getStatus(),
+        botsService.listWorkspaceRefs({ currentWorkspace }),
+        botsService.getBotStates(),
+      ]);
       setConfig(nextConfig);
       setStatus(nextStatus);
       setWorkspaceRefs(nextWorkspaces);
@@ -287,7 +261,7 @@ export function BotsDialog({
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      logger.error("[BotsDialog] 加载 Bots 配置失败", message);
+      logger.error("[BotsDialog] failed to load bots config", message);
       toast(intl.formatMessage({ id: "bots.loadFailed" }, { error: message }));
     }
   }, [botsService, creatingBot, currentWorkspace, intl]);
@@ -310,7 +284,7 @@ export function BotsDialog({
         }
       } catch (error) {
         logger.warn(
-          "[BotsDialog] 轮询微信 Bot 激活状态失败",
+          "[BotsDialog] failed to poll wechat bot activation status",
           error instanceof Error ? error.message : String(error),
         );
       }
@@ -384,12 +358,7 @@ export function BotsDialog({
 
   useEffect(() => {
     const registration = feishuRegistration;
-    if (
-      !open ||
-      !selectedBot ||
-      !isFeishuBotProvider(selectedBot.provider) ||
-      !registration
-    ) {
+    if (!open || !selectedBot || !isFeishuBotProvider(selectedBot.provider) || !registration) {
       return undefined;
     }
     if (registration.status !== "pending") {
@@ -421,8 +390,8 @@ export function BotsDialog({
             ) {
               return current;
             }
-            // Bugfix: pending 轮询结果通常不变；如果每次都创建新对象，会触发 effect 依赖变化，
-            // 进而立即重启轮询并造成毫秒级 RPC 风暴。
+            // Bugfix: pending polling results usually remain unchanged; if a new object is created every time, effect dependency changes will be triggered.
+            // This will immediately restart polling and cause a millisecond-level RPC storm.
             return {
               ...current,
               interval: result.interval,
@@ -433,8 +402,8 @@ export function BotsDialog({
           return;
         }
         if (result.status === "success") {
-          // Bugfix: 服务层一直支持飞书扫码注册，但 Bots 重构后的 UI 只保留了手填凭据。
-          // 扫码成功后直接复用 saveBot 的 secret 写入路径，避免把 App Secret 留在明文配置文件里。
+          // Bugfix: The service layer has always supported Feishu QR scan registration, but the UI after Bots reconstruction only retains hand-filled credentials.
+          // After successfully scanning the code, directly reuse saveBot's secret writing path to avoid leaving the App Secret in the clear text configuration file.
           const savedBot = await saveBot(
             {
               ...selectedBot,
@@ -445,13 +414,11 @@ export function BotsDialog({
             { credentialValue: result.appSecret },
           );
           if (!cancelled) {
-            // Bugfix: 飞书/Lark 扫码成功只完成应用凭据接入；绑定码由“有凭据但未绑定”的统一状态机生成。
-            // 这里仅收起二维码，避免二维码和 /bind 面板在一次状态更新里互相抢展示优先级。
+            // Bugfix: Feishu/Lark only completes access with application credentials after successfully scanning the QR code; the binding code is generated by the unified state machine of "with credentials but not bound".
+            // Only the QR code is stored here to prevent the QR code and the /bind panel from competing for display priority in a status update.
             setConfig((previous) => ({
               ...previous,
-              bots: previous.bots.map((bot) =>
-                bot.id === savedBot.id ? savedBot : bot,
-              ),
+              bots: previous.bots.map((bot) => (bot.id === savedBot.id ? savedBot : bot)),
             }));
             setFeishuRegistration(null);
             toast(intl.formatMessage({ id: "bots.feishuRegistrationSuccess" }));
@@ -473,7 +440,7 @@ export function BotsDialog({
         );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        logger.error("[BotsDialog] 飞书扫码注册轮询失败", message);
+        logger.error("[BotsDialog] failed to poll feishu qr registration", message);
         if (!cancelled) {
           setFeishuRegistration((current) =>
             current?.deviceCode === registration.deviceCode
@@ -493,30 +460,14 @@ export function BotsDialog({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [
-    botsService,
-    createBindCodeForBot,
-    feishuRegistration,
-    intl,
-    open,
-    saveBot,
-    selectedBot,
-  ]);
+  }, [botsService, createBindCodeForBot, feishuRegistration, intl, open, saveBot, selectedBot]);
 
   useEffect(() => {
     const registration = weixinRegistration;
-    if (
-      !open ||
-      !selectedBot ||
-      selectedBot.provider !== "weixin" ||
-      !registration
-    ) {
+    if (!open || !selectedBot || selectedBot.provider !== "weixin" || !registration) {
       return undefined;
     }
-    if (
-      registration.status !== "pending" &&
-      registration.status !== "scanned"
-    ) {
+    if (registration.status !== "pending" && registration.status !== "scanned") {
       return undefined;
     }
 
@@ -546,10 +497,7 @@ export function BotsDialog({
             if (current?.qrCode !== registration.qrCode) {
               return current;
             }
-            if (
-              current.interval === result.interval &&
-              current.status === result.status
-            ) {
+            if (current.interval === result.interval && current.status === result.status) {
               return current;
             }
             return {
@@ -572,8 +520,8 @@ export function BotsDialog({
             { credentialValue: result.botToken },
           );
           if (!cancelled) {
-            // Bugfix: 微信扫码成功即完成连接，保留 QR registration 会让用户看到过期的扫码区域。
-            // 清掉临时状态后，Bot token 行会切到已连通的 Unbind 操作。
+            // Bugfix: The connection is completed when WeChat scans the QR code successfully, and retaining the QR registration will allow users to see the expired scan code area.
+            // After clearing the temporary state, the Bot token line will switch to the connected Unbind operation.
             setWeixinRegistration(null);
             toast(intl.formatMessage({ id: "bots.weixinRegistrationSuccess" }));
           }
@@ -596,7 +544,7 @@ export function BotsDialog({
         cancelled = true;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        logger.error("[BotsDialog] 微信扫码登录轮询失败", message);
+        logger.error("[BotsDialog] failed to poll wechat qr login", message);
       }
     };
 
@@ -605,8 +553,8 @@ export function BotsDialog({
       scheduleNextPoll();
     };
 
-    // Bugfix: 微信扫码状态接口会长等待，如果用 setInterval 会在上一次请求未返回时继续堆叠 RPC。
-    // 串行轮询可以避免连续 timeout，也避免多个结果互相覆盖 UI 状态。
+    // Bugfix: The WeChat code scanning status interface will wait for a long time. If setInterval is used, RPCs will continue to be stacked when the last request does not return.
+    // Serial polling can avoid continuous timeouts and multiple results from overwriting each other's UI state.
     void runPoll();
 
     return () => {
@@ -637,9 +585,9 @@ export function BotsDialog({
     setBotNameDraft(null);
     setRenamingBotId(null);
     if (nextName === selectedBot.name) return;
-    // Bugfix: Bot 名称输入过程中如果立即保存，服务层 trim 后的回写会吃掉刚输入的尾部空格，
-    // 导致用户无法继续输入包含空格的名称；改为提交时保存，保留输入过程中的本地草稿。
-    // 同时空名称是合法的未命名状态，展示层统一用多语言 fallback 名称兜底。
+    // Bugfix: If you save immediately during the input of the Bot name, the write-back after trimming in the service layer will eat up the trailing spaces just entered.
+    // As a result, users cannot continue to enter names containing spaces; instead, they are saved when submitting and the local draft during the input process is retained.
+    // At the same time, the empty name is a legal unnamed state, and the display layer uses a multi-language fallback name to cover it all.
     void saveBot({ ...selectedBot, name: nextName });
   }, [saveBot, selectedBot, selectedBotName]);
 
@@ -652,8 +600,8 @@ export function BotsDialog({
             nativeEvent: event.nativeEvent,
           })
         ) {
-          // Bugfix: Bot 名称重命名时中文输入法 Enter 是候选词确认，不是提交重命名。
-          // 这里避免触发 blur，否则 blur 会继续走 commitBotNameDraft。
+          // Bugfix: When the Bot name is renamed, the Chinese input method Enter is used to confirm the candidate word, not to submit the rename.
+          // Avoid triggering blur here, otherwise blur will continue to commitBotNameDraft.
           logger.debug("[BotsDialog] ignore bot name enter during IME", {
             botId: selectedBot?.id ?? null,
           });
@@ -663,7 +611,7 @@ export function BotsDialog({
         return;
       }
       if (event.key === "Escape") {
-        // Bugfix: 重命名输入框里的 Escape 只应该取消编辑，不能继续冒泡触发 Dialog 的关闭快捷键。
+        // Bugfix: Escape in the renamed input box should only cancel editing and cannot continue to bubble to trigger Dialog's closing shortcut key.
         setBotNameDraft(null);
         setRenamingBotId(null);
         event.preventDefault();
@@ -676,8 +624,8 @@ export function BotsDialog({
   const handleDialogEscapeKeyDown = useCallback(
     (event: Event) => {
       if (renamingBotId === null) return;
-      // Bugfix: Radix Dialog 会在输入框 React onKeyDown 冒泡前处理 Escape 关闭。
-      // 正在重命名时需要在 Dialog 的关闭入口拦截，Esc 只取消编辑，不关闭弹窗。
+      // Bugfix: Radix Dialog will handle Escape closing before the input box React onKeyDown bubbles up.
+      // When renaming, you need to intercept it at the closing entrance of Dialog. Esc only cancels editing and does not close the pop-up window.
       event.preventDefault();
       setBotNameDraft(null);
       setRenamingBotId(null);
@@ -698,24 +646,18 @@ export function BotsDialog({
       };
       setConfig((previous) => ({
         ...previous,
-        bots: previous.bots.map((bot) =>
-          bot.id === optimisticBot.id ? optimisticBot : bot,
-        ),
+        bots: previous.bots.map((bot) => (bot.id === optimisticBot.id ? optimisticBot : bot)),
       }));
       try {
         await saveBot(optimisticBot);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        logger.error("[BotsDialog] 保存工作区访问范围失败", message);
+        logger.error("[BotsDialog] failed to save workspace access scope", message);
         setConfig((previous) => ({
           ...previous,
-          bots: previous.bots.map((bot) =>
-            bot.id === previousBot.id ? previousBot : bot,
-          ),
+          bots: previous.bots.map((bot) => (bot.id === previousBot.id ? previousBot : bot)),
         }));
-        toast(
-          intl.formatMessage({ id: "bots.saveFailed" }, { error: message }),
-        );
+        toast(intl.formatMessage({ id: "bots.saveFailed" }, { error: message }));
       } finally {
         setWorkspaceAccessSaving(false);
       }
@@ -726,9 +668,7 @@ export function BotsDialog({
   const toggleWorkspaceAccess = useCallback(
     async (workspaceId: string, checked: boolean) => {
       if (!selectedBot) return;
-      const currentAllowed = isAllWorkspacesAllowed(
-        selectedBot.allowedWorkspaces,
-      )
+      const currentAllowed = isAllWorkspacesAllowed(selectedBot.allowedWorkspaces)
         ? workspaceRefs.map((workspace) => workspace.id)
         : selectedBot.allowedWorkspaces;
       const nextAllowed = checked
@@ -759,16 +699,12 @@ export function BotsDialog({
         await saveBot({
           ...bot,
           name: "",
-          ...(provider === "webhook"
-            ? { webhookAuthHeaderName: "x-zcode-bot-secret" }
-            : {}),
+          ...(provider === "webhook" ? { webhookAuthHeaderName: "x-zcode-bot-secret" } : {}),
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        logger.error("[BotsDialog] 创建 Bot 失败", message);
-        toast(
-          intl.formatMessage({ id: "bots.saveFailed" }, { error: message }),
-        );
+        logger.error("[BotsDialog] failed to create bot", message);
+        toast(intl.formatMessage({ id: "bots.saveFailed" }, { error: message }));
       } finally {
         setCreatingProvider(null);
       }
@@ -797,8 +733,8 @@ export function BotsDialog({
       return;
     }
 
-    // Bugfix: 远程控制弹窗新增 Bot Channel 快捷入口后，进入 BotsDialog 不能停在空白选择页。
-    // 这里在配置加载完成后再判断并创建，避免异步刷新尚未拿到已有 bot 时重复新建。
+    // Bugfix: After adding the Bot Channel shortcut entry to the remote control pop-up window, entering BotsDialog cannot stop at the blank selection page.
+    // Here, it is judged and created after the configuration is loaded to avoid repeated creation when the asynchronous refresh has not obtained the existing bot.
     setCreatingBot(true);
     setSelectedBotId(null);
     void handleAddBot(entry.provider);
@@ -816,7 +752,7 @@ export function BotsDialog({
       await saveBot(selectedBot, { credentialValue });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      logger.error("[BotsDialog] 保存 Bot secret 失败", message);
+      logger.error("[BotsDialog] failed to save bot secret", message);
       toast(intl.formatMessage({ id: "bots.saveFailed" }, { error: message }));
     } finally {
       setSecretSaving(false);
@@ -838,7 +774,7 @@ export function BotsDialog({
         });
       } catch (error) {
         logger.error(
-          "[BotsDialog] 生成飞书注册二维码失败",
+          "[BotsDialog] failed to generate feishu registration qr code",
           error instanceof Error ? error.message : String(error),
         );
       }
@@ -857,13 +793,8 @@ export function BotsDialog({
       toast(intl.formatMessage({ id: "bots.feishuRegistrationStarted" }));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      logger.error("[BotsDialog] 启动飞书扫码注册失败", message);
-      toast(
-        intl.formatMessage(
-          { id: "bots.feishuRegistrationFailed" },
-          { error: message },
-        ),
-      );
+      logger.error("[BotsDialog] failed to start feishu qr registration", message);
+      toast(intl.formatMessage({ id: "bots.feishuRegistrationFailed" }, { error: message }));
     } finally {
       setFeishuRegistrationLoading(false);
     }
@@ -882,7 +813,7 @@ export function BotsDialog({
         });
       } catch (error) {
         logger.error(
-          "[BotsDialog] 生成微信登录二维码失败",
+          "[BotsDialog] failed to generate wechat login qr code",
           error instanceof Error ? error.message : String(error),
         );
       }
@@ -898,13 +829,8 @@ export function BotsDialog({
       toast(intl.formatMessage({ id: "bots.weixinRegistrationStarted" }));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      logger.error("[BotsDialog] 启动微信扫码登录失败", message);
-      toast(
-        intl.formatMessage(
-          { id: "bots.weixinRegistrationFailed" },
-          { error: message },
-        ),
-      );
+      logger.error("[BotsDialog] failed to start wechat qr login", message);
+      toast(intl.formatMessage({ id: "bots.weixinRegistrationFailed" }, { error: message }));
     } finally {
       setWeixinRegistrationLoading(false);
     }
@@ -929,8 +855,8 @@ export function BotsDialog({
           return;
         }
 
-        // Bugfix: 未配置 token 的飞书/Lark Bot 首次进入详情时只显示“扫码”按钮，
-        // 用户会误以为还需要额外展开；自动启动一次二维码流程，让缺失凭据的默认状态直接可操作。
+        // Bugfix: Feishu/Lark Bot without token configuration only displays the “Scan QR Code” button when entering details for the first time.
+        // Users will mistakenly think that additional expansion is needed; a QR code process will be automatically initiated to make the default state of missing credentials directly operable.
         autoQrStartedBotIdsRef.current.add(autoKey);
         void handleStartFeishuRegistration();
         return;
@@ -944,8 +870,8 @@ export function BotsDialog({
           return;
         }
 
-        // Bugfix: 飞书/Lark 的接入凭据和聊天绑定是两个阶段；已有凭据但未绑定时需要自动展示 /bind。
-        // 绑定码现在只有 30 秒有效期，过期后如果还停在旧码会打断自动绑定流程；这里自动续一枚新码。
+        // Bugfix: Feishu/Lark's access credentials and chat binding are two stages; when the credentials are available but not bound, /bind needs to be displayed automatically.
+        // The binding code is now only valid for 30 seconds. If it remains at the old code after expiration, the automatic binding process will be interrupted; a new code will be automatically renewed here.
         autoBindCreatingBotIdsRef.current.add(selectedBot.id);
         void createBindCodeForBot(selectedBot).finally(() => {
           autoBindCreatingBotIdsRef.current.delete(selectedBot.id);
@@ -965,8 +891,8 @@ export function BotsDialog({
         return;
       }
 
-      // Bugfix: Telegram 和飞书/Lark 一样分成凭据接入与私聊绑定两步；
-      // token 保存后自动展示 /bind；绑定码过期也自动续码，避免 30 秒有效期让用户卡在旧码上。
+      // Bugfix: Telegram, like Feishu/Lark, is divided into two steps: credential access and private message binding;
+      // After the token is saved, /bind is automatically displayed; the binding code is automatically renewed when it expires, preventing users from being stuck with the old code due to the 30-second validity period.
       autoBindCreatingBotIdsRef.current.add(selectedBot.id);
       void createBindCodeForBot(selectedBot).finally(() => {
         autoBindCreatingBotIdsRef.current.delete(selectedBot.id);
@@ -989,8 +915,8 @@ export function BotsDialog({
       return;
     }
 
-    // Bugfix: 微信 Bot 没有 token/绑定状态时需要立即给出登录二维码，
-    // 否则新建后右侧默认只露出按钮，和“扫码接入”的主流程不一致。
+    // Bugfix: When WeChat Bot does not have token/binding status, it needs to give the login QR code immediately.
+    // Otherwise, after creating a new one, only the button will appear on the right side by default, which is inconsistent with the main process of "scan QR code to access".
     autoQrStartedBotIdsRef.current.add(autoKey);
     void handleStartWeixinRegistration();
   }, [
@@ -1017,7 +943,7 @@ export function BotsDialog({
     const command = `/bind ${bindCode.code}`;
     await navigator.clipboard?.writeText(command).catch((error: unknown) => {
       logger.warn(
-        "[BotsDialog] 复制绑定命令失败",
+        "[BotsDialog] failed to copy binding command",
         error instanceof Error ? error.message : String(error),
       );
     });
@@ -1038,38 +964,27 @@ export function BotsDialog({
     if (!selectedBot) return;
     try {
       const saved = await botsService.removeBotSecret(selectedBot.id);
-      autoQrStartedBotIdsRef.current.delete(
-        `${selectedBot.id}:feishu-registration`,
-      );
-      autoQrStartedBotIdsRef.current.delete(
-        `${selectedBot.id}:weixin-registration`,
-      );
+      autoQrStartedBotIdsRef.current.delete(`${selectedBot.id}:feishu-registration`);
+      autoQrStartedBotIdsRef.current.delete(`${selectedBot.id}:weixin-registration`);
       autoBindCreatingBotIdsRef.current.delete(selectedBot.id);
       setConfig((previous) => ({
         ...previous,
-        bots: previous.bots.map((item) =>
-          item.id === saved.id ? saved : item,
-        ),
+        bots: previous.bots.map((item) => (item.id === saved.id ? saved : item)),
       }));
       setCredentialValue("");
       setBindCode(null);
       void refresh();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      logger.error("[BotsDialog] 移除 Bot secret 失败", message);
-      toast(
-        intl.formatMessage(
-          { id: "bots.removeSecretFailed" },
-          { error: message },
-        ),
-      );
+      logger.error("[BotsDialog] failed to remove bot secret", message);
+      toast(intl.formatMessage({ id: "bots.removeSecretFailed" }, { error: message }));
     }
   };
 
   const handleDelete = async () => {
     if (!selectedBot) return;
-    // Bugfix: 删除机器人之前没有二次确认，误触会直接移除凭据和绑定入口。
-    // 这里复用项目统一 ConfirmDialog，让破坏性操作和其它设置页保持一致。
+    // Bugfix: There is no secondary confirmation before deleting the robot. If you accidentally touch it, the credentials and binding entry will be removed directly.
+    // The reused items here unify ConfirmDialog to make destructive operations consistent with other settings pages.
     const confirmed = await confirmDialog({
       title: intl.formatMessage(
         { id: "bots.deleteConfirmTitle" },
@@ -1086,10 +1001,8 @@ export function BotsDialog({
       void refresh();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      logger.error("[BotsDialog] 删除 Bot 失败", message);
-      toast(
-        intl.formatMessage({ id: "bots.deleteFailed" }, { error: message }),
-      );
+      logger.error("[BotsDialog] failed to delete bot", message);
+      toast(intl.formatMessage({ id: "bots.deleteFailed" }, { error: message }));
     }
   };
 
@@ -1156,9 +1069,7 @@ export function BotsDialog({
                 </div>
               ) : (
                 config.bots.map((bot) => {
-                  const runtime = status?.botRuntime.find(
-                    (item) => item.botId === bot.id,
-                  );
+                  const runtime = status?.botRuntime.find((item) => item.botId === bot.id);
                   const selected = bot.id === selectedBotId;
                   return (
                     <button
@@ -1214,12 +1125,9 @@ export function BotsDialog({
                   </p>
                 </div>
                 <div className="grid gap-3 md:grid-cols-2">
-                  {BOT_PROVIDERS.filter(
-                    (provider) => provider.id !== "webhook",
-                  ).map((provider) => {
+                  {BOT_PROVIDERS.filter((provider) => provider.id !== "webhook").map((provider) => {
                     const implemented = provider.implemented;
-                    const isCreatingThisProvider =
-                      creatingProvider === provider.id;
+                    const isCreatingThisProvider = creatingProvider === provider.id;
                     const isCreatingAnyProvider = creatingProvider !== null;
                     return (
                       <button
@@ -1227,11 +1135,7 @@ export function BotsDialog({
                         type="button"
                         disabled={!implemented || isCreatingAnyProvider}
                         aria-busy={isCreatingThisProvider}
-                        onClick={() =>
-                          implemented
-                            ? void handleAddBot(provider.id)
-                            : undefined
-                        }
+                        onClick={() => (implemented ? void handleAddBot(provider.id) : undefined)}
                         className={cn(
                           "flex items-start gap-3 rounded-lg border border-card-border bg-card py-4 px-3 text-left transition-colors",
                           implemented && !isCreatingAnyProvider
@@ -1290,9 +1194,7 @@ export function BotsDialog({
                   renaming={renamingBotId === selectedBot.id}
                   onStartRename={startBotNameRename}
                   onCommitNameDraft={commitBotNameDraft}
-                  onNameDraftChange={(value) =>
-                    setBotNameDraft({ botId: selectedBot.id, value })
-                  }
+                  onNameDraftChange={(value) => setBotNameDraft({ botId: selectedBot.id, value })}
                   onNameCompositionEnd={() => {
                     botNameCompositionActiveRef.current = false;
                   }}
@@ -1321,26 +1223,20 @@ export function BotsDialog({
                   onSaveSecret={() => void handleSaveSecret()}
                   onRemoveSecret={() => void handleRemoveSecret()}
                   onOpenTelegramBotFather={handleOpenTelegramBotFather}
-                  onStartWeixinRegistration={() =>
-                    void handleStartWeixinRegistration()
-                  }
-                  onStartFeishuRegistration={() =>
-                    void handleStartFeishuRegistration()
-                  }
+                  onStartWeixinRegistration={() => void handleStartWeixinRegistration()}
+                  onStartFeishuRegistration={() => void handleStartFeishuRegistration()}
                   onCreateBindCode={() => void handleCreateBindCode()}
                   onUnbind={() => void handleUnbind()}
                   onCopyBindCommand={() => void copyBindCommand()}
                 />
 
                 <SettingsGroupCard>
-                  <BotReplyGranularityCard
-                    bot={selectedBot}
-                    onPatchBot={patchSelectedBot}
-                  />
+                  <BotReplyGranularityCard bot={selectedBot} onPatchBot={patchSelectedBot} />
 
                   {/*
-                    暂不暴露命令权限编辑入口，避免用户在 bot 可用前把关键命令关掉。
-                    如果要恢复 UI，重新渲染 selectedBot.allowedCommands 的列表并用 patchSelectedBot 保存。
+                    The command-permission editing entry point is not exposed for now, so that
+                    users cannot switch off key commands before the bot is available.
+                    To restore the UI, render the selectedBot.allowedCommands list again and save it with patchSelectedBot.
                   */}
 
                   <WorkspaceAccessCard

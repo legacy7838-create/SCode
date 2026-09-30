@@ -8,7 +8,7 @@ export type OnboardingWizardStep =
   | "session"
   | "skills-import"
   | "mcp-import"
-  // 插件导入步骤未启用。
+  // Plugin import step is not enabled.
   // | "plugins-import"
   | "commands-import"
   | "agents-file"
@@ -22,7 +22,7 @@ const WIZARD_STEPS: Array<{
   { key: "session", index: 1, titleId: "onboarding.step.session" },
   { key: "skills-import", index: 2, titleId: "onboarding.step.skillsImport" },
   { key: "mcp-import", index: 3, titleId: "onboarding.step.mcpImport" },
-  // 插件导入步骤未启用。
+  // Plugin import step is not enabled.
   // { key: "plugins-import", index: 4, titleId: "onboarding.step.pluginsImport" },
   { key: "commands-import", index: 4, titleId: "onboarding.step.commandsImport" },
   { key: "agents-file", index: 5, titleId: "onboarding.step.agentsFile" },
@@ -126,7 +126,7 @@ export function OnboardingWizardFooter(props: {
   onNextStep: () => void;
   onBeginMigration: () => void;
   onFinish: () => void;
-  /** 未选任何会话或外部导入项时禁用「开始迁移」 */
+  /** Disable Start Migration when no sessions or external imports are selected */
   beginMigrationDisabled?: boolean;
 }) {
   const { intl } = useZCodeIntl();
@@ -232,7 +232,7 @@ function isOnboardingExternalImportStep(step: OnboardingWizardStep): boolean {
   return (
     step === "skills-import" ||
     step === "mcp-import" ||
-    // 插件导入步骤未启用。
+    // Plugin import step is not enabled.
     // step === "plugins-import" ||
     step === "commands-import"
   );

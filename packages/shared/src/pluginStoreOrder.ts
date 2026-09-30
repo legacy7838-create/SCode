@@ -13,7 +13,7 @@ const pluginStoreOrderSchema = z.object({
 export type PluginStoreModeOrder = z.infer<typeof modeOrderSchema>;
 export type PluginStoreOrder = z.infer<typeof pluginStoreOrderSchema>;
 
-/** 排序只是展示配置；错误模式独立回退，不能阻止目录浏览或污染另一种模式。 */
+/** The order is display configuration only; a broken mode falls back on its own and must not block catalog browsing or pollute the other mode. */
 export function parsePluginStoreOrder(value: unknown): PluginStoreOrder | null {
   return pluginStoreOrderSchema.safeParse(value).data ?? null;
 }

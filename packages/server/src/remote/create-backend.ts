@@ -27,9 +27,5 @@ export async function createRemoteBackend(target: RemoteTarget): Promise<IRemote
       const { WSLBackend } = await import("./wsl-backend.js");
       return new WSLBackend(target);
     }
-    case "docker": {
-      const { DockerBackend } = await import("./docker-backend.js");
-      return new DockerBackend(target);
-    }
   }
 }

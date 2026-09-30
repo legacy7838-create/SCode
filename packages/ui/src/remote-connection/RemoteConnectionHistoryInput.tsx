@@ -121,15 +121,15 @@ export function RemoteConnectionHistoryInput({
                   targetNode instanceof Node && containerRef.current?.contains(targetNode) === true,
               })
             ) {
-              // 首次鼠标点击输入框时会先触发 focus 打开建议列表，
-              // 随后的同一次 click 又会被 Popover 视为“内容外点击”而立刻关闭。
-              // 这里把来自当前输入框容器的交互排除掉，避免出现第一次 focus 连续闪两次。
+              // The first time the mouse clicks on the input box, focus will be triggered to open the suggestion list.
+              // The same subsequent click will be regarded as an "out-of-content click" by Popover and will be closed immediately.
+              // Here, interactions from the current input box container are excluded to avoid the first focus flashing twice in a row.
               event.preventDefault();
             }
           }}
           onOpenAutoFocus={(event) => {
-            // Popover 默认会把焦点抢到弹层内，输入框一旦失焦，用户就没法边看历史边继续输入过滤。
-            // 这里在“由输入框触发打开”时拦截自动聚焦，把焦点留在输入框里，保证 focus 展示和连续输入都成立。
+            // Popover will grab the focus within the pop-up layer by default. Once the input box is out of focus, the user will not be able to continue input filtering while viewing the history.
+            // Here, the automatic focus is intercepted when "opened by the input box" and the focus is left in the input box, ensuring that both focus display and continuous input are established.
             if (!keepInputFocusOnOpenRef.current) {
               return;
             }
@@ -157,8 +157,8 @@ export function RemoteConnectionHistoryInput({
                     onSelect={(selected) => {
                       onChange(selected);
                       setFilterWithCurrentValue(false);
-                      // 选中历史项后，input 的 click/focus 会立刻重放，弹层会出现“刚关就重开”。
-                      // 这里用一个很短的抑制窗口屏蔽这次连带事件，避免交互抖动。
+                      // After selecting the historical item, the click/focus of the input will be replayed immediately, and the pop-up layer will appear "Just close and then reopen".
+                      // Here, a short suppression window is used to shield this incident to avoid interaction jitter.
                       suppressOpenUntilRef.current = Date.now() + 120;
                       setOpen(false);
                     }}

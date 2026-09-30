@@ -29,20 +29,20 @@ export interface ConnectOptions extends DeployOptions {
   handshakeTimeout?: number;
   /** Skip deploy step (assume server is already deployed) */
   skipDeploy?: boolean;
-  /** 桌面 app 版本；用于透传给远端 agent，让模型请求 header 能标识发起方版本 */
+  /** Desktop app version; used to transparently transmit to the remote agent so that the model request header can identify the initiator version */
   appVersion?: string;
-  /** 远端 server/agent 需要继承的非敏感产品环境变量；调用方可传较宽的 env，server 侧会按白名单过滤。 */
+  /** Non-sensitive product environment variables that the remote server/agent needs to inherit; the caller can pass a wider env, and the server side will filter according to the whitelist. */
   remoteRuntimeEnv?: Record<string, string | undefined>;
-  /** Desktop Host 为 desktop-attached WSL server 提供的显式 Agent 网络配置。 */
+  /** Desktop Host provides explicit Agent network configuration for the desktop-attached WSL server. */
   remoteRuntimeNetwork?: RemoteRuntimeNetworkOptions;
-  /** 远端 stdio 关闭后的回调（用于上层感知断连并触发回收） */
+  /** Callback after remote stdio is closed (used for the upper layer to sense disconnection and trigger recycling) */
   onDidRemoteClose?: (event: { code: number }) => void;
 }
 
 export interface RemoteRuntimeNetworkOptions {
   httpProxy?: string;
   noProxy?: string;
-  /** 只允许 Host 设置权威值覆盖远端自身的旧设置。 */
+  /** Only the Host is allowed to set authoritative values overriding the remote's own old settings. */
   authoritative?: boolean;
 }
 
@@ -60,10 +60,10 @@ const REMOTE_RUNTIME_ENV_KEYS = [
   "ZAI_OAUTH_ORIGIN",
   "ZAI_BUSINESS_BASE_URL",
   "ZAI_OAUTH_CLIENT_ID",
-  // 由 Desktop Main 计算并下发；远端 server 只消费，不重新计算。
+  // It is calculated and delivered by Desktop Main; the remote server only consumes it and does not recalculate it.
   ZCODE_DESKTOP_CONTEXT_PROMPT_ENABLED_ENV,
-  // 同上：本地覆盖由 Desktop Main 按构建档位写定（buildHostProcessEnv），
-  // 透传后 SSH/WSL/Docker 远端 Host 与本地 Host 得到同一档位。
+  // Same as above: local coverage is written by Desktop Main according to the build gear (buildHostProcessEnv),
+  // After transparent transmission, the SSH/WSL remote host and the local host get the same level.
   ZCODE_DYNAMIC_WORKFLOW_MODE_ENV,
 ] as const;
 
@@ -132,9 +132,9 @@ export async function connectRemote(
     }
     const aborted = new Promise<never>((_resolve, reject) => {
       const onAbort = () => {
-        // 窗口 Host 合并后不能再通过杀独立 SSH Host 进程来取消连接；如果这里只
-        // 结束 logical waiter，detect/deploy/upload 会继续占用旧凭据和连接。连接初始化尚未
-        // 对外发布，可以安全释放它独占的 backend，并让调用方立即结束等待。
+        // After the window Host is merged, the connection cannot be canceled by killing the independent SSH Host process; if there is only
+        // After ending the logical waiter, detect/deploy/upload will continue to occupy the old credentials and connection. The connection has not been initialized yet
+        // Publishing to the outside world can safely release its exclusive backend and let the caller end waiting immediately.
         disposeBackendOnce();
         reject(createRemoteConnectAbortError(signal));
       };
@@ -150,7 +150,7 @@ export async function connectRemote(
     });
     return await Promise.race([guardedConnecting, aborted]);
   } catch (error) {
-    // detect/deploy/handshake 任一步失败时尚未返回 RemoteConnection，调用方无从 dispose backend。
+    // When any step of detect/deploy/handshake fails, RemoteConnection has not yet been returned, and the caller has no way to dispose backend.
     disposeBackendOnce();
     throw error;
   } finally {
@@ -196,8 +196,8 @@ async function connectRemoteUnchecked(
 
   // Forward stderr for debugging
   stream.stderr.on("data", (chunk: Buffer) => {
-    // 远端 zcode-server 的服务日志走 stderr，直接写 host stderr 时可能被结构化日志中继吞掉。
-    // 这里转成 host 的 console 日志，让 remote sqlite 初始化/锁冲突日志能稳定出现在连接日志面板和启动终端。
+    // The service log of the remote zcode-server goes to stderr. When writing directly to host stderr, it may be swallowed by the structured log relay.
+    // This is converted into the console log of the host, so that the remote sqlite initialization/lock conflict log can stably appear in the connection log panel and startup terminal.
     console.log(`[remote] ${chunk.toString().trimEnd()}`);
   });
 
@@ -233,8 +233,8 @@ async function connectRemoteUnchecked(
   };
 
   const backendDisconnectDisposable = backend.onDidDisconnect?.((event) => {
-    // SSH keepalive 发现半开连接时，远端 server stdio channel 未必立刻 close。
-    // 这里把 backend 断连并入同一条关闭上报链路，让 host/main/UI 复用既有 session-close 收口。
+    // When SSH keepalive finds a half-open connection, the remote server stdio channel may not be closed immediately.
+    // Here, the backend disconnection is merged into the same shutdown reporting link, allowing host/main/UI to reuse the existing session-close port.
     const errorMessage = event.error?.message;
     log(
       errorMessage
@@ -260,7 +260,7 @@ async function connectRemoteUnchecked(
     backendDisconnectDisposable?.dispose();
     client.dispose();
     protocol.dispose();
-    // stdin.end 必须在任何 await 之前同步触发，让远端 stdio server 立即收到 EOF。
+    // stdin.end must be triggered synchronously before any await, so that the remote stdio server receives EOF immediately.
     socket.dispose();
   };
   const disposeBackend = () => {
@@ -327,8 +327,8 @@ async function resolveRemoteRuntimeNetwork(
   log: (...args: unknown[]) => void,
 ): Promise<RemoteRuntimeNetworkOptions | undefined> {
   if (!network || !backend.resolveRuntimeProxy) {
-    // 只有实现了远端代理解析能力的 WSL backend 才接收这条权威网络边界；
-    // SSH/Docker 即使误传 options 也保持原有启动命令。
+    // Only the WSL backend that implements the remote proxy resolution capability receives this authoritative network boundary;
+    // SSH keeps the original startup command even if it mistransmits options.
     return undefined;
   }
   if (!network.httpProxy?.trim()) {
@@ -347,7 +347,7 @@ async function resolveRemoteRuntimeNetwork(
     }
     return { ...network, httpProxy: resolvedProxy };
   } catch (error) {
-    // 代理解析只是运行时增强；解析失败时沿用设置页原值，避免把 WSL 本地工作区变成不可连接。
+    // Proxy resolution is only a runtime enhancement; when resolution fails, the original value of the setting page is used to avoid making the WSL local workspace unconnectable.
     log(
       "remote runtime proxy resolution failed; using configured endpoint",
       error instanceof Error ? error.message : String(error),
@@ -371,8 +371,8 @@ function buildRemoteServerCommand(
   }
   const appVersion = options?.appVersion?.trim();
   if (appVersion) {
-    // 远端 server 是通过 SSH/WSL/Docker 单独启动的，不会继承桌面 host env。
-    // 这里显式把 app 版本作为远端进程 env 注入，远端 agent 才能在模型请求 header 中带上版本。
+    // The remote server is started separately through SSH/WSL and will not inherit the desktop host env.
+    // Here, the app version is explicitly injected as the remote process env, so that the remote agent can bring the version in the model request header.
     envParts.push(`${ZCODE_APP_VERSION_ENV}=${quotePosixShellArg(appVersion)}`);
   }
   if (remoteRuntimeNetwork?.authoritative) {

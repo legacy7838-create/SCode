@@ -24,8 +24,9 @@ export function comparePluginVersions(input: {
 }
 
 /**
- * 按最新目录条目实际提供的比较轴判断更新状态：优先比较可解析的 version，缺失时比较
- * source identity pin；两者都缺失时保持 none，避免把无法证明的新旧关系误报为更新。
+ * Update status is decided by the comparison axis the newest directory entry actually provides: a parseable version is
+ * compared first and a missing one falls back to comparing the source identity pin; when both are missing it stays
+ * none, so an unprovable old/new relationship is never misreported as an update.
  */
 export function comparePluginUpdate(input: {
   installedVersion: string | undefined;

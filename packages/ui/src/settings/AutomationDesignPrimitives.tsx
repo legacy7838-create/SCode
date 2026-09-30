@@ -30,12 +30,15 @@ export {
   AutomationTrashIcon,
 } from "@/settings/AutomationIcons.js";
 
-// space-y 给行内 label 添加 margin 时会受字体行盒影响，实际视觉间距小于设计稿的 6px。
+// When space-y adds margin to an inline label, it will be affected by the font line box, and the actual visual spacing is smaller than the 6px of the design draft.
 export const AUTOMATION_FORM_FIELD_CLASSNAME = "flex flex-col gap-1.5";
 
 export type AutomationSettingsHistoryTab = "settings" | "history";
 
-/** 定时与闲时共用运行历史空态，防止透明留白与卡片容器样式再次漂移。 */
+/**
+ * The run-history empty state shared by Scheduled and Off-peak, so the transparent whitespace and
+ * card container styles cannot drift apart again.
+ */
 export function AutomationHistoryEmptyState({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-[226px] items-center justify-center rounded-xl border border-dashed border-card-border bg-background px-4 text-center text-ui-base text-foreground-subtle">
@@ -44,7 +47,10 @@ export function AutomationHistoryEmptyState({ children }: { children: ReactNode 
   );
 }
 
-/** 定时与闲时设置页复用 Hooks scope tabs 的 pill 视觉，避免详情页分段样式漂移。 */
+/**
+ * The Scheduled and Off-peak settings pages reuse the pill visuals of the Hooks scope tabs, so the
+ * detail-page section styles cannot drift.
+ */
 export function AutomationSettingsHistoryTabs({
   value,
   settingsLabel,
@@ -68,7 +74,10 @@ export function AutomationSettingsHistoryTabs({
   );
 }
 
-/** Keep-awake 提示条；开关值由调用方接入全局共享设置，而非页面级 mock store。 */
+/**
+ * The Keep-awake notice bar; the caller wires the toggle value into the globally shared settings
+ * rather than a page-level mock store.
+ */
 export function AutomationKeepAwakeNotice({
   checked,
   onChange,
@@ -77,7 +86,7 @@ export function AutomationKeepAwakeNotice({
   onChange: (value: boolean) => void;
 }) {
   const { intl } = useZCodeIntl();
-  // 桌面断点曾清空提示栏的垂直内边距，导致实际样式偏离 12px 规格。
+  // The desktop breakpoint once cleared the vertical padding of the prompt bar, causing the actual style to deviate from the 12px specification.
   return (
     <div
       data-automations-keep-awake

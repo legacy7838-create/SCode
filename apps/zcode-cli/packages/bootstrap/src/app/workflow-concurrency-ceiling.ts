@@ -1,22 +1,22 @@
 // ============================================================
-// workflow 并发天花板：CPU 推导值的唯一实现
+// Workflow concurrency ceiling: the only implementation of CPU derived values
 // ============================================================
 // `max(1, min(16, availableParallelism() − 2))`
-// 既是每个 run 自己的并发上界（提交时定、落 dwf_run、resume 照用），也是进程级治理器每个
-// provider 桶的**起点与天花板**。公式必须收敛成单一函数：复制在 run service / snippet
-// service / legacy `Workflow` 工具三处时各自漂移，会让「run 上界」与「桶天花板」对不上。
+// It is not only the concurrency upper bound of each run (commit timing, dwf_run, and resume are still used), but also the upper bound of each process-level manager.
+// The **start and ceiling** of the provider bucket. The formula must converge to a single function: copy in run service / snippet
+// Service/legacy `Workflow` tools drift in three places, which will make the "run upper bound" and "bucket ceiling" misaligned.
 
 import { availableParallelism as osAvailableParallelism } from "node:os";
 
-/** 并发上界的硬顶（沿用 legacy 并发式）。 */
+/** Hard ceiling of the concurrency bound (keeps the legacy concurrency formula). */
 const WORKFLOW_CONCURRENCY_CEILING_MAX = 16;
-/** 给主代理与宿主进程留出的核数。 */
+/** Number of cores left aside for the main agent and the host process. */
 const RESERVED_PARALLELISM = 2;
-/** 地板：双核机器上 parallelism − 2 == 0，必须至少留一个探针在跑。 */
+/** Floor: on a dual-core machine parallelism − 2 == 0, and at least one probe has to stay running. */
 const WORKFLOW_CONCURRENCY_FLOOR = 1;
 
 /**
- * CPU 推导的并发天花板。`availableParallelism` 可注入，供测试固定核数（地板/硬顶两条用例）。
+ * The concurrency ceiling derived from the CPU. `availableParallelism` is injectable so tests can pin the core count (the floor / hard-ceiling cases).
  */
 export function resolveWorkflowConcurrencyCeiling(
   availableParallelism: () => number = osAvailableParallelism,
@@ -28,14 +28,14 @@ export function resolveWorkflowConcurrencyCeiling(
 }
 
 /**
- * 请求的并发上界 → 本 run 实际生效的上界。
+ * The requested concurrency bound → the bound actually in effect for this run.
  *
- * **钳制而不是拒绝**：这个旋钮只为压低并发，一个过大的值表达的意愿是「别限制我」，把它变成
- * 一次工具失败只会让模型去猜机器有几个核。缺席 / 非有限数同样读作「不限制」= 天花板，非整数
- * 向下取整（要「3.7 个在飞的 ask」没有意义，而向上取整会偷偷越过用户说的数）。
+ * **Clamp, never reject**: this knob exists only to lower concurrency, and an over-large value expresses the intent
+ * "do not limit me"; turning it into a tool failure would only send the model off guessing how many cores the machine
+ * has. Absent / non-finite values likewise read as "do not limit" = the ceiling, and non-integers are floored ("3.7 in-flight asks" is meaningless, and rounding up would silently exceed the number the user gave).
  *
- * 与天花板同住一个文件：提交时定上界与中途 retune 走的**必须**是同一条钳制（否则同一个
- * `max_concurrency` 经两条路会落成两个数），而那两条路分居 run service 与 retune 两个模块。
+ * It lives in the same file as the ceiling on purpose: the ceiling set at submit time and the mid-flight retune MUST
+ * go through the very same clamp (otherwise one `max_concurrency` would land on two different numbers via two paths), and those two paths sit in the run service and the retune module respectively.
  */
 export function clampRunConcurrency(requested: number | undefined, ceiling: number): number {
   if (requested === undefined || !Number.isFinite(requested)) return ceiling;

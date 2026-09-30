@@ -72,8 +72,8 @@ interface EmbeddedSearchCommandBackend {
   command: string;
   args?: string[];
   /**
-   * backend 调用需要的环境变量。桌面端 Electron Helper 执行
-   * zcode.cjs 时必须带 ELECTRON_RUN_AS_NODE=1，否则会按 Electron 子进程启动。
+   * The environment variables a backend call needs. The desktop's Electron Helper must pass
+   * ELECTRON_RUN_AS_NODE=1 when it executes zcode.cjs, otherwise it starts as an Electron child process.
    */
   env?: Record<string, string>;
 }
@@ -101,7 +101,7 @@ export type EmbeddedSearchBackend =
 export interface ExecutionEmbeddedSearchPrelude {
   kind: "embedded-search";
   backend: EmbeddedSearchBackend;
-  /** false 时不定义 find/grep，只保留与原契约一致的 rg fallback。 */
+  /** When false, find/grep are not defined and only the rg fallback consistent with the original contract is kept. */
   findAndGrepEnabled?: boolean;
 }
 
@@ -117,17 +117,17 @@ export interface ExecutionOutputLimit {
   maxBufferBytes?: number;
   /**
    * Controls whether stdout/stderr should be persisted to execution output files.
-   * 通用执行的 on_truncate 在 inline 截断后开始写盘；Bash 从 spawn 起直接写盘，
-   * 此选项只控制结算后的文件保留。
+   * For a general execution, on_truncate starts writing to disk after the inline truncation; Bash writes to disk
+   * right from spawn, and this option only controls the file retention after settling.
    */
   persistOutput?: "none" | "on_truncate" | "always";
-  /** 通用执行为每路写盘硬上限；Bash 为合并文件的软阈值，每 5 秒检查，严格超出后终止。 */
+  /** The hard cap the general execution writes per stream to disk; for Bash, a soft threshold on the combined file, checked every 5 seconds, terminating the process once it is strictly exceeded. */
   maxPersistedBytes?: number;
-  /** 通用 pipe 执行的 artifact 上限；Bash 直写保留完整文件，不使用此上限。 */
+  /** The artifact cap of a general piped execution; Bash writes straight through and keeps the whole file, so it does not use this cap. */
   maxArtifactBytes?: number;
   /**
    * Stop the process tree when a persisted stream reaches maxPersistedBytes.
-   * 仅控制通用 collector 执行。Bash 的文件软阈值在前后台都生效，不受此开关影响。
+   * Only controls the general collector execution. Bash's soft file threshold applies in both the foreground and the background and is not affected by this switch.
    */
   killProcessOnPersistedLimit?: boolean;
 }
@@ -196,7 +196,7 @@ export interface ExecutionResult {
   resolvedCwd?: string;
 }
 
-/** 单次有界尾读计算的 Bash 进度，不持有完整命令输出。 */
+/** The Bash progress of a single bounded tail read, which does not hold the complete command output. */
 export interface ExecutionOutputPreview {
   text: string;
   fullText: string;
@@ -205,7 +205,7 @@ export interface ExecutionOutputPreview {
   linesEstimated: boolean;
 }
 
-/** Bash 只发送 started/progress/completed/failed；逐 chunk 输出事件仅用于 pipe 执行。 */
+/** Bash only sends started/progress/completed/failed; the per-chunk output events are used only by piped executions. */
 export type ExecutionEvent =
   | {
       type: "started";
@@ -282,7 +282,7 @@ export interface ExecutionPort {
     options?: ExecutionRunOptions,
   ): Promise<BackgroundExecutionStartResult>;
   getBackgroundTask?(taskId: string): Promise<BackgroundExecutionSnapshot | undefined>;
-  /** 只读已登记的后台 Bash，固定读取文件尾部 8 KiB。 */
+  /** Reads only a registered background Bash, always reading the last 8 KiB of the file. */
   readBackgroundBashOutput?(taskId: string, sessionId: string): Promise<BackgroundBashOutputResult>;
   cancelBackgroundTask?(taskId: string): Promise<BackgroundExecutionSnapshot | undefined>;
   close?(): Promise<void>;

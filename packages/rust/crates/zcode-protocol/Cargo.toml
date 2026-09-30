@@ -1,0 +1,14 @@
+[package]
+name = "zcode-protocol"
+version = "0.0.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = { workspace = true }
+napi-derive = { workspace = true }
+serde = { workspace = true }

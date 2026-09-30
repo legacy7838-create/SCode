@@ -27,7 +27,7 @@ interface ElicitationDialogProps {
     action: "accept" | "decline" | "cancel",
     content?: Record<string, unknown>,
   ) => void;
-  /** 普通 AskUserQuestion 首次暂停来源；失败返回 false 后允许下一次操作重试。 */
+  /** Normal AskUserQuestion pauses the source for the first time; returns false after failure to allow the next operation to be retried. */
   onFirstInteraction?: (
     source: ElicitationAutoResolutionSnoozeSource,
   ) => boolean | void | Promise<boolean | void>;
@@ -128,15 +128,15 @@ function resolveElicitationCustomInputKeyAction(event: {
   isPlanApproval?: boolean;
   hasPreviousQuestion?: boolean;
 }): ElicitationCustomInputKeyAction | null {
-  // 自定义回答使用可自动换行的文本框；普通 AskUserQuestion 的 Enter 跟随当前题目的
-  // 推进/提交语义，ExitPlanMode 属于计划审批边界，裸 Enter 才能直接提交。
-  // 中文输入法用 Enter 确认候选时仍属于 composition，不能误提交给 agent。
+  // Custom answers use a text box that wraps automatically; the Enter for a normal AskUserQuestion follows the current question's
+  // Advance/submit semantics, ExitPlanMode belongs to the plan approval boundary, and only Enter can be submitted directly.
+  // When the Chinese input method uses Enter to confirm the candidate, it still belongs to the composition and cannot be submitted to the agent by mistake.
   if (isImeComposingKeyEvent(event)) {
     return null;
   }
 
-  // 原因：输入框也是末尾选项；只处理 Enter/Escape 会让上下键进入后无法离开。
-  // 导航复用选项焦点索引，并放在 IME 检查后，避免组词选候选时跳走。
+  // Reason: The input box is also the last option; processing only Enter/Escape will make it impossible to leave after the up and down keys are entered.
+  // Navigation reuses the option focus index and places it after the IME check to avoid skipping when selecting candidates for group words.
   if (event.key === "ArrowUp") return "previousOption";
   if (event.key === "ArrowDown") return "nextOption";
 
@@ -251,8 +251,8 @@ function getPreferredActiveOptionIndex(
   if (draft?.customAnswer.trim()) {
     return question.options.length;
   }
-  // 不预选任何选项，避免用户将键盘焦点（bg-hover）误认为"已选中"。
-  // 用户必须通过方向键导航或点击才能聚焦选项，聚焦后点继续/提交才会自动补选。
+  // Do not preselect any options to prevent users from mistaking keyboard focus (bg-hover) as "selected".
+  // The user must use the arrow keys to navigate or click to focus on the option. After focusing, click Continue/Submit to automatically subselect.
   return -1;
 }
 
@@ -269,8 +269,8 @@ function buildElicitationResponseContent(
   questions: readonly NormalizedElicitationQuestion[],
   drafts: DraftState,
 ): Record<string, unknown> {
-  // AskUserQuestion 是可选澄清，不是必填表单。只提交用户真实提供的答案，
-  // 避免用空字符串伪造偏好；部分或空 answers 由 Agent 使用最佳判断继续。
+  // AskUserQuestion is an optional clarification and is not a required form. Only submit answers truly provided by users,
+  // Avoid faking preferences with empty strings; partial or empty answers are continued by the Agent using its best judgment.
   const answers = Object.fromEntries(
     questions.flatMap((question) => {
       const questionAnswers = getQuestionAnswers(question, drafts);
@@ -286,7 +286,7 @@ function buildElicitationResponseContent(
     }
   });
 
-  // 兼容旧版单题 agent 读取 { answer } 的路径。
+  // Compatible with the old version of the single question agent to read the path of { answer }.
   const onlyQuestion = questions.length === 1 ? questions[0] : undefined;
   if (onlyQuestion) {
     const questionAnswers = getQuestionAnswers(onlyQuestion, drafts);
@@ -329,10 +329,10 @@ function getElicitationQuestionAdvanceKind(
 }
 
 export function ElicitationDialog(props: ElicitationDialogProps) {
-  // 普通 AskUserQuestion 首次操作会把 autoResolution 从计时态更新为
-  // snoozed，投影因此重建 request 对象，但业务 requestId 没变。若按 request/questions
-  // 引用重置，本地 questionIndex 和 drafts 会被误清空并跳回第一题。
-  // 用 key 把本地表单实例绑定到协议身份：同一请求保留进度，新请求才完整初始化。
+  // The first operation of a normal AskUserQuestion will update the autoResolution from the timing state to
+  // snoozed, the projection therefore rebuilds the request object, but the business requestId remains unchanged. If press request/questions
+  // When the reference is reset, the local questionIndex and drafts will be cleared by mistake and jump back to the first question.
+  // Use key to bind the local form instance to the protocol identity: the same request retains progress, and the new request is not fully initialized.
   return <ElicitationDialogContent key={props.request.requestId} {...props} />;
 }
 
@@ -414,8 +414,8 @@ function ElicitationDialogContent({
     return () => cancelAnimationFrame(frameId);
   }, [activeOptionIndex, currentQuestion]);
 
-  // 初始 activeOptionIndex=-1 时无按钮有焦点。卡片容器自动聚焦后
-  // 可接收键盘事件，在容器层捕获 Tab/↓/↑/Enter 启动导航或推进。
+  // Initially activeOptionIndex=-1 when no button has focus. After the card container is automatically focused
+  // Can receive keyboard events and capture Tab/↓/↑/Enter at the container level to start navigation or advancement.
   useEffect(() => {
     if (activeOptionIndex < 0) {
       const frameId = requestAnimationFrame(() => {
@@ -457,15 +457,15 @@ function ElicitationDialogContent({
   const advanceFromQuestion = useCallback(
     (nextDrafts: DraftState) => {
       if (getElicitationQuestionAdvanceKind(questions, questionIndex) === "submit") {
-        // 最后一题选完要直接提交；这里用传入的最新草稿，避免 React state
-        // 尚未刷新时漏掉最后一次选择。
+        // The last question must be submitted directly after selecting it; the latest draft passed in is used here to avoid React state
+        // Missing the last selection before refreshing.
         submitWithDrafts(nextDrafts);
         return;
       }
       const nextIndex = questionIndex + 1;
       setQuestionIndex(nextIndex);
       const preferred = getPreferredActiveOptionIndex(questions[nextIndex], nextDrafts);
-      // Plan mode 切题后默认聚焦第一项，与普通问答的"不预选"策略区分。
+      // Plan mode focuses on the first item by default after getting to the topic, which is different from the "no pre-selection" strategy of ordinary Q&A.
       setActiveOptionIndex(isPlanApproval && preferred < 0 ? 0 : preferred);
     },
     [questionIndex, questions, submitWithDrafts, isPlanApproval],
@@ -483,9 +483,9 @@ function ElicitationDialogContent({
     [advanceFromQuestion, drafts, reportFirstInteraction],
   );
 
-  // 不预选任何选项（activeOptionIndex 初始 -1），消除"焦点即选中"的 UX 混淆。
-  // 用户通过方向键/Tab 将焦点移到某选项后点继续/提交，代表意图选择该选项，此时自动补选。
-  // 若用户从未按键导航（activeOptionIndex 仍为 -1），提交空答案即为明确的跳过意图。
+  // No options are preselected (activeOptionIndex is initially -1), eliminating "focus is selected" UX confusion.
+  // The user uses the arrow keys/Tab to move the focus to an option and then clicks Continue/Submit, which means that the user intends to select the option, and a by-election is automatically made at this time.
+  // If the user has never pressed a key to navigate (activeOptionIndex is still -1), submitting an empty answer is an explicit skip intent.
   const getDraftsWithAutoSelectedOption = useCallback((): DraftState => {
     if (!currentQuestion || currentQuestion.multiSelect) {
       return drafts;
@@ -511,7 +511,7 @@ function ElicitationDialogContent({
     const nextIndex = Math.max(questionIndex - 1, 0);
     setQuestionIndex(nextIndex);
     const preferred = getPreferredActiveOptionIndex(questions[nextIndex], drafts);
-    // Plan mode 返回上一题后默认聚焦第一项。
+    // Plan mode focuses on the first item by default after returning to the previous question.
     setActiveOptionIndex(isPlanApproval && preferred < 0 ? 0 : preferred);
   }, [drafts, questionIndex, questions, reportFirstInteraction, isPlanApproval]);
 
@@ -561,8 +561,8 @@ function ElicitationDialogContent({
         (option) => option.value === PLAN_APPROVAL_APPROVE_VALUE,
       );
       if (approveOption) {
-        // ExitPlanMode 复用普通问答组件，但空答案在计划审批协议里表示拒绝。
-        // 主提交按钮没有反馈时必须显式提交 approve，不能继承 AskUserQuestion 的跳过语义。
+        // ExitPlanMode reuses the common question and answer component, but an empty answer indicates rejection in the plan approval agreement.
+        // The main submit button must explicitly submit approve when there is no feedback, and cannot inherit the skip semantics of AskUserQuestion.
         selectOption(currentQuestion, approveOption.value);
         return;
       }
@@ -630,8 +630,8 @@ function ElicitationDialogContent({
         case "Enter":
           event.preventDefault();
           if (activeOptionIndex < 0) return;
-          // 多选题 Space 勾选/取消勾选，Enter 确认选择并推进/提交。
-          // 单选题 Enter 等同 Space，选中当前选项。
+          // Multiple-choice questions Space to check/uncheck, Enter to confirm selection and advance/submit.
+          // Single-choice question Enter is equivalent to Space, which selects the current option.
           if (currentQuestion?.multiSelect) {
             continueOrSubmit();
           } else if (activeOptionIndex < currentQuestion.options.length) {
@@ -687,8 +687,8 @@ function ElicitationDialogContent({
         return;
       }
       if (action) {
-        // 原因：空自定义输入框也允许用 Enter / Esc 切题；这仍是明确的题目导航，
-        // 不能因为没有触发 onChange 就继续保留自动结束 deadline。
+        // Reason: An empty custom input box also allows you to use Enter / Esc to get to the topic; this is still clear topic navigation,
+        // You cannot continue to keep the automatic end deadline just because onChange is not triggered.
         reportFirstInteraction("navigation");
       }
       if (action === "advance") {
@@ -705,8 +705,8 @@ function ElicitationDialogContent({
       }
       if (action === "previous") {
         event.preventDefault();
-        // AskUserQuestion 是多题澄清流；中间题按 Esc 应先返回上一题，
-        // 避免用户想改上一题答案时把整个阻塞请求取消掉。
+        // AskUserQuestion is a multi-question clarification flow; pressing Esc in the middle question should return to the previous question first.
+        // This prevents the user from canceling the entire blocking request when he wants to change the answer to the previous question.
         goBack();
         return;
       }
@@ -786,7 +786,7 @@ function ElicitationDialogContent({
             {index + 1}.
           </span>
         )}
-        {/* 界面字号可动态增大，固定 20px 行高会让大字号文字贴边或裁切。*/}
+        {/* The font size of the interface can be increased dynamically, and a fixed line height of 20px will cause large fonts to be welted or cropped.*/}
         <span className="min-w-0 flex-1 text-ui-base leading-normal">
           <span className="text-ui-base font-medium leading-normal text-foreground">
             {optionLabel}
@@ -804,7 +804,7 @@ function ElicitationDialogContent({
   const renderCustomInput = (question: NormalizedElicitationQuestion, index: number) => {
     const isSelected = (currentDraft?.customAnswer.trim().length ?? 0) > 0;
     const isActive = activeOptionIndex >= 0 && activeOptionIndex === index;
-    // 原因：计划审批曾隐藏输入序号；所有单选输入行都接续选项编号。
+    // Reason: Plan approval had hidden input serial numbers; all radio input lines were continued with option numbers.
     return (
       <div
         key="custom-input"
@@ -834,7 +834,7 @@ function ElicitationDialogContent({
         ) : (
           <span
             className={cn(
-              // 与 textarea 首行使用相同行高并让出 1px 边框，避免顶部或整体居中造成错位。
+              // Use the same line height as the first line of the textarea and leave a 1px border to avoid misalignment caused by top or overall centering.
               "mt-px w-5 shrink-0 self-start text-ui-base font-medium leading-normal md:leading-relaxed",
               isSelected ? "text-foreground" : "text-foreground-subtlest",
             )}
@@ -842,7 +842,7 @@ function ElicitationDialogContent({
             {index + 1}.
           </span>
         )}
-        {/* 原因：按内容增高的输入框没有上限会撑满问答卡片；与权限反馈一致，五行后内部滚动。 */}
+        {/* Reason: The input box that increases according to the content has no upper limit and will fill up the Q&A card; consistent with the permission feedback, internal scrolling occurs after five lines. */}
         <Textarea
           ref={customInputRef}
           rows={1}
@@ -869,11 +869,11 @@ function ElicitationDialogContent({
   const canGoPreviousPage = questions.length > 0 && questionIndex > 0;
   const canGoNextPage = questions.length > 0 && questionIndex < questions.length - 1;
 
-  // activeOptionIndex=-1 时卡片有焦点，键盘事件到达卡片 onKeyDown。
-  // Tab/↓/↑ 聚焦选项，Enter 直接推进到下一题（或提交）。
+  // When activeOptionIndex=-1, the card has focus and the keyboard event reaches the card onKeyDown.
+  // Tab/↓/↑ focuses on the option, and Enter advances directly to the next question (or submission).
   const handleCardKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLDivElement>) => {
-      if (activeOptionIndex >= 0) return; // 按钮已有焦点，由按钮 onKeyDown 处理
+      if (activeOptionIndex >= 0) return; // The button has focus, handled by button onKeyDown
       switch (event.key) {
         case "ArrowDown":
           event.preventDefault();
@@ -892,9 +892,9 @@ function ElicitationDialogContent({
           continueOrSubmit();
           return;
         case "Escape":
-          // 初始 activeOptionIndex=-1 时卡片接收焦点，Escape 必须
-          // 由卡片层处理，与按钮 onKeyDown 保持一致：非 plan mode 有上题则返回，
-          // 否则 dismiss。
+          // When the initial activeOptionIndex=-1, the card receives focus, Escape must
+          // Processed by the card layer, consistent with button onKeyDown: non-plan mode will return if there is a previous question.
+          // Otherwise dismiss.
           event.preventDefault();
           if (!isPlanApproval && questionIndex > 0) {
             goBack();
@@ -958,7 +958,7 @@ function ElicitationDialogContent({
 
   return (
     <div className="w-full shrink-0">
-      {/* 手机远控视口较短，长问题和多选项会把按钮顶出弹窗；卡片限高后让内容区内部滚动。*/}
+      {/* The remote control viewport of the mobile phone is short, and long questions and multiple options will push the buttons out of the pop-up window; the height of the card is limited to allow the content area to scroll internally.*/}
       <div
         ref={cardRef}
         tabIndex={activeOptionIndex < 0 ? 0 : -1}
@@ -986,7 +986,7 @@ function ElicitationDialogContent({
                     {titleHeader}
                   </Badge>
                 ) : null}
-                {/* 问题不能只放在会截断的标题行；移动端没有 hover，必须在 tag 后直接完整可读。*/}
+                {/* The problem cannot just be in the truncated title line; there is no hover on the mobile version, it must be completely readable directly after the tag.*/}
                 <span
                   title={titleQuestion}
                   className={cn(

@@ -1,8 +1,8 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { ModelSelection } from "@zcode/shared";
 
-// 冻结 0002 的发布前已裁决编码；不能调用将来可能修改的运行时 parser/身份表。
-// 保持与旧 decodeCustomModelValue / parseModelPickerValue 的转义和分隔优先级一致。
+// Freeze 0002's pre-release adjudicated encoding; runtime parser/identity tables that may be modified in the future cannot be called.
+// Keep escaping and delimiting priorities consistent with old decodeCustomModelValue / parseModelPickerValue.
 const providerNames: Readonly<Record<string, string>> = {
   "builtin:bigmodel": "bigmodel-api",
   "builtin:zai": "zai-api",
@@ -55,7 +55,7 @@ function decodeLegacySelection(row: LegacySelectionRow): ModelSelection | undefi
       model = model.slice(0, levelSeparator);
     }
   } else if (["glm", "zcode"].includes(provider)) {
-    // 旧 provider=glm/zcode 是执行后端，不是供应商身份。
+    // The old provider=glm/zcode is the execution backend, not the provider identity.
     return undefined;
   }
   provider = provider.trim();
@@ -67,9 +67,9 @@ function decodeLegacySelection(row: LegacySelectionRow): ModelSelection | undefi
 }
 
 /**
- * 冻结 0002 的一次转换：运行 Reader 只看新列，旧三列原样保留。
- * 有旧来源允许重建未发布目标值；无法确定身份留 SQL NULL，默认语义写 JSON null。
- * 必须在库级 migration 事务内调用，不得恢复逐次读取导入。
+ * One-time conversion frozen into 0002: the runtime Reader only looks at the new column, and the three legacy columns are kept as-is.
+ * Where a legacy source exists the unpublished target value may be rebuilt; when the identity cannot be determined it stays SQL NULL, and the default semantics are written as JSON null.
+ * Must be called inside the database-level migration transaction; per-read imports must not come back.
  */
 export function importLegacyAutomationSelections(db: DatabaseSync): void {
   const rows = db
@@ -80,14 +80,14 @@ export function importLegacyAutomationSelections(db: DatabaseSync): void {
   for (const row of rows) {
     const decoded = decodeLegacySelection(row);
     if (!decoded) {
-      // 有旧显式意图但无法确定身份，不保留未发布中间态的“默认”，避免静默换模型。
+      // There is an old explicit intention but the identity cannot be determined, the "default" of unreleased intermediate states is not retained, and silent model changes are avoided.
       if (row.model?.trim())
         db.prepare("UPDATE automations SET model_selection=NULL WHERE automation_id=?").run(
           row.automation_id,
         );
       continue;
     }
-    // 外层 IMMEDIATE 事务保证旧来源和写入同一快照；旧列/时间戳都不修改。
+    // The outer IMMEDIATE transaction guarantees that the old source and write are from the same snapshot; none of the old columns/timestamps are modified.
     db.prepare(
       `UPDATE automations SET model_selection = ?
        WHERE automation_id = ?

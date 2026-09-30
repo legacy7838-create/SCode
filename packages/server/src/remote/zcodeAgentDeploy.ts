@@ -110,7 +110,7 @@ async function shouldSkipZCodeAgentDeploy(params: {
     }
   }
 
-  // wrapper 在、但 zcode.cjs 缺失（被清理 / 旧原生二进制部署残留）时也要重新部署。
+  // The wrapper also needs to be redeployed when zcode.cjs is missing (cleaned/remaining from the old native binary deployment).
   if (!(await params.backend.exists(params.remoteBundlePath))) {
     params.loggers.logWarn(
       `[remote-assets] ${params.installer.mode === "remote-download" ? "download required" : "upload required"}: component=${params.componentId} reason=remote bundle missing path=${params.remoteBundlePath}`,
@@ -126,7 +126,7 @@ async function shouldSkipZCodeAgentDeploy(params: {
   }
 
   params.loggers.log(
-    `[zcode-agent-deploy] ${ZCODE_AGENT_PROVIDER}: 制品 SHA ${params.expectedArtifactSha256} 已部署，跳过`,
+    `[zcode-agent-deploy] ${ZCODE_AGENT_PROVIDER}: artifact SHA ${params.expectedArtifactSha256} is already deployed, skipping`,
   );
   return true;
 }
@@ -145,9 +145,10 @@ async function findMissingRemoteOfficialPluginAssetPaths(
 }
 
 /**
- * 部署 ZCode Agent runtime 到远程机器。
+ * Deploys the ZCode Agent runtime to a remote machine.
  *
- * 生产态只用 manifest SHA 判断制品是否变化；语义版本不参与跳过决策。
+ * In production only the manifest SHA decides whether the artifact changed; the semantic version
+ * takes no part in the skip decision.
  */
 export async function deployZCodeAgentRuntime(
   backend: IRemoteBackend,
@@ -159,15 +160,19 @@ export async function deployZCodeAgentRuntime(
   const runtime = ZCODE_AGENT_RUNTIME;
   const componentId = provider;
   if (!isSelectedZCodeAgentComponent(componentId, options.selectedResourcePackageIds)) {
-    loggers.log(`[zcode-agent-deploy] ${provider}: 未选择资源包 ${componentId}，跳过检查和部署`);
+    loggers.log(
+      `[zcode-agent-deploy] ${provider}: resource package ${componentId} is not selected, skipping the check and deploy`,
+    );
     return;
   }
 
-  // binaryName 指 wrapper 可执行文件名（如 zcode-agent / zcode-agent.exe）——
-  // 一个调用远端 node 执行 zcode.cjs 的壳脚本。
+  // binaryName refers to the name of the wrapper executable file (such as zcode-agent / zcode-agent.exe)——
+  // A shell script that calls the remote node to execute zcode.cjs.
   const binaryName = runtime.resolveEntrySegments(env.platform).at(-1);
   if (!binaryName) {
-    loggers.logWarn(`[zcode-agent-deploy] ${provider}: 无法解析 agent 入口名称，跳过部署`);
+    loggers.logWarn(
+      `[zcode-agent-deploy] ${provider}: could not resolve the agent entry name, skipping the deploy`,
+    );
     return;
   }
 
@@ -204,7 +209,7 @@ export async function deployZCodeAgentRuntime(
       (await options.installer.resolveComponentSha256?.(componentId)) ?? null;
   } catch (error) {
     loggers.logWarn(
-      `[zcode-agent-deploy] ${provider}: 读取 manifest SHA 失败，将重新部署: ${String(error)}`,
+      `[zcode-agent-deploy] ${provider}: failed to read the manifest SHA, redeploying: ${String(error)}`,
     );
   }
 
@@ -226,9 +231,9 @@ export async function deployZCodeAgentRuntime(
     return;
   }
 
-  loggers.log(`[zcode-agent-deploy] ${provider}: 开始部署 v${runtime.version}...`);
-  // 缺少远端 plugin 只表示安装不完整，不等于 App 版本变化。
-  // 同 App 版本修复 plugin 时应复用已校验的组件 cache；只有强制部署边界才重新下载制品。
+  loggers.log(`[zcode-agent-deploy] ${provider}: starting to deploy v${runtime.version}...`);
+  // The lack of remote plugin only means that the installation is incomplete and does not mean that the App version has changed.
+  // When repairing the plugin with the same App version, the verified component cache should be reused; only if the deployment boundary is enforced, the product should be re-downloaded.
   const forceRefreshRuntimeAsset = Boolean(options.force);
   const permissionRepairSucceeded = await repairLegacyRemoteOfficialPluginDirectoryPermissions({
     backend,
@@ -256,17 +261,17 @@ export async function deployZCodeAgentRuntime(
     });
 
   if (permissionRepairSucceeded) {
-    // 1) 正常路径保持原部署顺序，避免改变健康 SSH / Docker / WSL 的时序语义。
+    // 1) The normal path maintains the original deployment order to avoid changing the timing semantics of healthy SSH/WSL.
     await installBundle();
-    // 2) 安装随 agent bundle 发布的官方插件源资源，供远端 agent bootstrap seed builtin plugin。
+    // 2) Install the official plug-in source resources released with the agent bundle for remote agent bootstrap seed builtin plugin.
     await installOfficialPluginPackages();
   } else {
-    // 1) chmod 失败时先验证 packages 可替换，避免 bundle 已更新但旧 packages 删除失败。
+    // 1) When chmod fails, first verify that packages are replaceable to avoid failure to delete old packages even though the bundle has been updated.
     await installOfficialPluginPackages();
-    // 2) packages 替换成功后再安装编译产物 zcode.cjs（跨平台同一份，glm 组件里就是它）。
+    // 2) After the packages are successfully replaced, install the compiled product zcode.cjs (the same copy across platforms, it is included in the glm component).
     await installBundle();
   }
-  // 3) 写入 wrapper（即 resolver 期望的 zcode-agent），用远端已部署的 node 执行 zcode.cjs。
+  // 3) Write the wrapper (i.e. the zcode-agent expected by the resolver) and execute zcode.cjs with the remote deployed node.
   await deployRemoteAgentWrapper({
     backend,
     content: buildRemoteAgentBundleWrapper(runtime.bundledResourceDir),
@@ -278,8 +283,8 @@ export async function deployZCodeAgentRuntime(
   );
   await waitForClose(versionStream);
   if (expectedArtifactSha256) {
-    // GLM 的语义版本可能不变但制品内容已更新，必须把 manifest SHA
-    // 写入远端 live marker，下一次连接才能按真实制品身份决定是否重部署。
+    // The semantic version of GLM may not change but the artifact content has been updated. The manifest SHA must be
+    // Write the remote live marker, and the next connection can determine whether to redeploy based on the real product identity.
     await writeRemoteAssetComponentMeta(backend, {
       id: componentId,
       version: runtime.version,
@@ -287,5 +292,5 @@ export async function deployZCodeAgentRuntime(
       platformArch: options.platformArch,
     });
   }
-  loggers.log(`[zcode-agent-deploy] ${provider}: 部署完成 v${runtime.version}`);
+  loggers.log(`[zcode-agent-deploy] ${provider}: deploy completed v${runtime.version}`);
 }

@@ -1,9 +1,9 @@
 // ============================================================
-// 脚本 transcript 条目的展开面板
+// Expand panel for script transcript entries
 // ============================================================
-// 挂载即取正文（条目只在展开时挂它），取回即缓存。三种正文：Terminal（`$ 命令行`、stdout、
-// 单独成段、淡红底的 stderr、页脚 exit · 耗时 · 字节 + Copy）、清单（glob / grep /
-// changed-files，带行号、按行有界）、文本（read / diff，diff 按首字符着墨）。
+// Mounting means fetching the text (the entry is only mounted when expanded), and fetching means caching. Three types of text: Terminal (`$ command line`, stdout,
+// Separate segments, stderr with light red background, footer exit · Time consuming · Bytes + Copy), list (glob / grep /
+// changed-files, with line numbers, bounded by line), text (read/diff, diff inked by first character).
 
 import { memo, useCallback, useState, type ReactNode } from "react";
 import { CheckIcon, CopyIcon } from "lucide-react";
@@ -16,7 +16,7 @@ import {
   type WorkspaceCardModel,
 } from "@/app-shell/workflowWorkspaceTranscript.js";
 
-/** 正文最多画多少行：网关按 32 KB 有界，这里再按行有界——一屏读不完的东西留在 journal 里。 */
+/** The maximum number of lines that can be drawn in the text: The gateway is bounded by 32 KB, and here it is bounded by lines - things that cannot be read in one screen are left in the journal. */
 const WORKSPACE_RESULT_MAX_LINES = 200;
 
 const PRE_CLASS =
@@ -49,7 +49,7 @@ function isGrepMatch(value: unknown): value is { path: string; line: number; tex
   return typeof fields.path === "string" && typeof fields.line === "number";
 }
 
-/** `+` / `-` / `@@` 三种墨：diff 的每一行按首字符着色，其余原样。 */
+/** `+` / `-` / `@@` Three inks: Each line of diff is colored according to the first character, and the rest is left unchanged. */
 function DiffLines({ text }: { text: string }) {
   return (
     <pre className={PRE_CLASS}>
@@ -95,7 +95,7 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-/** 页脚：`exit 1 · 1.94 s · 1.3 KB` + 右侧 Copy；截断说明另起一行，不挤页脚的数字。 */
+/** Footer: `exit 1 · 1.94 s · 1.3 KB` + Copy on the right; truncate the instructions and start a new line without squeezing the numbers in the footer. */
 function Footer({ parts, note, copy }: { parts: ReactNode[]; note?: string; copy: string }) {
   return (
     <div

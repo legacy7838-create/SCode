@@ -220,9 +220,9 @@ function appendDiffBodyWithLargeSegmentFallback(
   const anchors = findIncreasingAnchorMatches(collectUniqueLineMatches(beforeLines, afterLines));
 
   if (anchors.length === 0) {
-    // 之前大区间直接整块退化成“全删再全加”，
-    // 像 cli.ts 这种前后各插几行、但跨度很远的场景，会把整段未改内容误渲染成红绿大块。
-    // 这里优先用唯一行锚点把大区间拆成多个小段，再递归回到正常 diff，尽量保留真实 hunk 边界。
+    // In the past, the large interval directly degenerated into "all deletion and then all addition".
+    // A scene like cli.ts that inserts a few lines before and after but spans a long distance will mistakenly render the entire unmodified content into a large block of red and green.
+    // Here, priority is given to using unique row anchors to split the large interval into multiple small segments, and then recursively return to normal diff, trying to retain the true hunk boundary.
     appendLinesWithPrefix(patchLines, "-", beforeLines);
     appendLinesWithPrefix(patchLines, "+", afterLines);
     return;
@@ -368,13 +368,13 @@ export function buildUnifiedDiff(
   const afterRangeLineCount = limitedPrefixCount + afterMiddle.length + limitedSuffixCount;
 
   const patchLines = [
-    // 仅有 `---/+++` 文件头时，删除一行 SQL 注释（`-- ...`）会生成 `--- ...` 正文。
-    // @pierre/diffs 按该前缀切分 unified diff，会把正文误判为第二个文件并让 FileDiff 崩溃。
-    // 补上 Git 文件边界后，解析器只按 `diff --git` 切分，正文不再参与文件数量判断。
+    // When there is only a `---/+++` file header, deleting a line of SQL comments (`-- ...`) will generate a `--- ...` body.
+    // @pierre/diffs splits unified diff according to this prefix, which will misjudge the main text as the second file and cause FileDiff to crash.
+    // After filling in the Git file boundaries, the parser only splits according to `diff --git`, and the text no longer participates in the judgment of the number of files.
     `diff --git a/${fileLabel} b/${fileLabel}`,
-    // 新建文件之前会被输出成 --- a/file + @@ -0,0，PatchDiff 会把它当成
-    // 普通 rename/change diff 处理；大文件新增时右侧面板可能在行映射和高亮里卡死。
-    // 标准 unified diff 应该用 /dev/null 表示不存在的一侧，让解析器走新增/删除语义。
+    // Before creating a new file, it will be output as --- a/file + @@ -0,0, and PatchDiff will treat it as
+    // Ordinary rename/change diff processing; the right panel may get stuck in line mapping and highlighting when large files are added.
+    // Standard unified diff should use /dev/null to represent the non-existent side and let the parser adopt new/delete semantics.
     isCreatedFile ? "--- /dev/null" : `--- a/${fileLabel}`,
     isDeletedFile ? "+++ /dev/null" : `+++ b/${fileLabel}`,
     hasContextLimit
@@ -382,10 +382,10 @@ export function buildUnifiedDiff(
       : `@@ -${formatDiffRange(beforeLines.length)} +${formatDiffRange(afterLines.length)} @@`,
   ];
 
-  // 消息摘要/Git pane 在 context 模式下只需要“改动附近”窗口。
-  // 之前即使只看 3 行上下文，也会先把整份 shared prefix/suffix 塞进 patch 再 trim，
-  // 大文件（如 1500+ 行 Dockerfile）点展开时会在主线程做大量无效字符串拼接，导致界面卡死。
-  // 这里先按 context 截断前后公共区，再交给 trimPatchContext 做最终 hunk 规整。
+  // Message summary/Git pane in context mode only requires "Changes Nearby" window.
+  // In the past, even if I only looked at 3 lines of context, I would first put the entire shared prefix/suffix into patch and then trim it.
+  // When a large file (such as 1500+ lines) is click-expanded, a large number of invalid string splicing will be done in the main thread, causing the interface to freeze.
+  // Here, the front and rear common areas are first truncated by context, and then handed over to trimPatchContext for final hunk shaping.
   patchLines.push(
     ...beforeLines
       .slice(sharedPrefixCount - limitedPrefixCount, sharedPrefixCount)
@@ -405,10 +405,10 @@ export function buildUnifiedDiff(
 
   const patch = patchLines.join("\n");
   if (hasContextLimit) {
-    // 关键业务逻辑：上一轮更改使用整份 before/after 快照构造 patch。
-    // 如果直接把整份 patch 交给预览器，像“大文件只改 1~2 行”这种场景会整页铺满，
-    // 用户很难第一眼定位修改点。这里统一裁成“变更附近 + 固定上下文行数”的 diff，
-    // 让消息摘要和 Git 面板都优先服务定位问题，而不是回放整份文件。
+    // Key business logic: The previous round of changes uses the entire before/after snapshot to construct the patch.
+    // If you directly hand over the entire patch to the previewer, a scenario like "Only 1~2 lines of a large file should be changed" will cover the entire page.
+    // It is difficult for users to locate the modification point at first glance. This is uniformly cut into a diff of "near change + fixed number of context lines",
+    // Let both message summaries and Git panels prioritize locating issues rather than replaying entire files.
     return trimPatchContext(patch, normalizedContextLines);
   }
 

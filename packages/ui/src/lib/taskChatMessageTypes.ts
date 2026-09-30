@@ -1,9 +1,9 @@
-// re-home 产物（为删除 zcodeChatMessages 铺路，模式同 zcode-task-types-core）。
-// 本文件承载旧消息转换层（zcodeChatMessages/zcodeChatMessageHelpers）中仍被存活栈
-// type-only 消费的承重类型：TaskChatMessage / TaskChatToolCall / TaskChatMessagePart。
-// 消费方：ToolCallBlocks(toolCallTree) / PermissionDialog / taskChangeSummary /
-// treemappingActivity / codeViewer / toolDisplay / toolError / app-shell 测试注入通道。
-// 旧消息拼装运行时（zcodeChatMessages.ts）删除后，这里是该类型面的唯一事实源。
+// re-home product (to pave the way for deletion of zcodeChatMessages, the mode is the same as zcode-task-types-core).
+// This file carries the surviving stack in the old message conversion layer (zcodeChatMessages/zcodeChatMessageHelpers)
+// Type-only consumption type: TaskChatMessage / TaskChatToolCall / TaskChatMessagePart.
+// Consumer: ToolCallBlocks(toolCallTree) / PermissionDialog / taskChangeSummary /
+// treemappingActivity / codeViewer / toolDisplay / toolError / app-shell test injection channel.
+// After the old message assembly runtime (zcodeChatMessages.ts) was removed, this is the only source of truth for this type of surface.
 import type {
   ZCodeAssistantMessagePart,
   ZCodeAssistantMessageFeedback,
@@ -16,24 +16,24 @@ import type {
 
 export interface TaskChatToolCall {
   toolId: string;
-  /** 上级 toolCallId；null 表示主 agent，非空表示来自某个 Task/Agent 子工具。 */
+  /** Superior toolCallId; null means the main agent, non-null means it comes from a Task/Agent sub-tool. */
   parentToolUseId?: string | null;
-  /** ZCode 固定工具名；kind 仍保留给旧 ZCode Agent 快照和 UI 聚合分类兼容。 */
+  /** ZCode fixed tool name; kind still reserved for compatibility with old ZCode Agent snapshots and UI aggregation categories. */
   toolName?: string;
   kind: string;
   title?: string;
   input: unknown;
   status: string;
-  /** parentToolUseId 归属的子 agent 正文输出。 */
+  /** ParentToolUseId belongs to the sub-agent text output. */
   content?: string;
-  /** parentToolUseId 归属的子 agent 思考输出。 */
+  /** parentToolUseId belongs to the child agent thinking output. */
   thought?: string;
   output?: unknown;
   error?: string;
   raw?: unknown;
-  /** 工具大字段被快照预算裁剪后的引用；用于按需回填该工具的完整 input/output/raw。 */
+  /** A reference to the tool's large field after it has been clipped by the snapshot budget; used to backfill the tool's complete input/output/raw on demand. */
   snapshotRefs?: ZCodeTaskSnapshotToolFieldRef[];
-  /** tool call 首次进入当前消息流的本地时间，仅用于识别长时间运行中的工具调用。 */
+  /** tool call The local time when the current message flow is first entered. It is only used to identify long-running tool calls. */
   startedAt?: number;
 }
 
@@ -49,16 +49,16 @@ export type TaskUiTimelineMeta = TaskModelChangeUiTimeline;
 
 export interface TaskChatMessage {
   id: string;
-  /** session snapshot 中的稳定协议 messageId；实时流 id 可能只是临时展示身份。 */
+  /** Stable protocol messageId in session snapshot; live streaming id may only temporarily reveal identity. */
   protocolMessageId?: string;
-  /** snapshot 合并 assistant 后保留的原始 messageId 集合，用于 timeline anchor 命中合并前子消息。 */
+  /** The original messageId set retained after snapshot merges assistant, used for timeline anchor to hit sub-messages before merging. */
   mergedMessageIds?: string[];
   role: "user" | "assistant";
   content: string;
   timestamp: number;
-  /** assistant 归属的 legacy goal 展示迭代；仅用于历史区状态文案，不参与 verifier 轮次判定。 */
+  /** The legacy goal belonging to the assistant displays the iteration; it is only used for the historical area status copy and does not participate in the verifier round determination. */
   goalIteration?: number;
-  /** UI-only streaming 分组；用于切开 model-only goal 续跑，不参与 goal 轮次语义。 */
+  /** UI-only streaming grouping; used to cut off model-only goal continuation and does not participate in goal round semantics. */
   streamGroupId?: string;
   mailboxMessage?: {
     content: string;
@@ -66,34 +66,34 @@ export interface TaskChatMessage {
     fromSessionId: string;
     messageId: string;
   };
-  /** assistant 历史区最终耗时；仅在本轮结束后写入，避免 UI 每次恢复都重新猜测。 */
+  /** The assistant's history area eventually takes time; it is only written after the end of the current round to avoid re-guessing the UI every time it resumes. */
   durationMs?: number;
-  /** assistant 是否以主动停止/中断结束；用于 UI 抑制 latest 区误判为“自然完成”。 */
+  /** Whether assistant ends with active stop/interruption; used for UI to suppress latest area misjudgment as "natural completion". */
   interrupted?: boolean;
-  /** 用户对 assistant 回复的本地反馈；只做展示/持久化，不进入后续模型上下文。 */
+  /** The user's local feedback on the assistant's reply; it is only displayed/persisted and does not enter the subsequent model context. */
   feedback?: ZCodeAssistantMessageFeedback;
   attachments?: ZCodePromptAttachment[];
   toolCalls?: TaskChatToolCall[];
   thought?: string;
   /**
-   * 之前 assistant 消息只按 thought/tool/content 三个聚合字段渲染，
-   * 一旦同一轮里既有正文又有工具调用，UI 就只能固定"工具在上、正文在下"。
-   * 这里额外记录流式事件真实到达顺序，让渲染层可以按事件顺序回放，而不是按字段分组硬排版。
+   * Previously, assistant messages were only rendered based on the three aggregation fields of thought/tool/content.
+   * Once there are both text and tool calls in the same round, the UI can only be fixed with "tools on top and text on the bottom".
+   * Here, the actual arrival order of streaming events is additionally recorded, so that the rendering layer can play back in the order of events instead of hard typesetting by field grouping.
    */
   parts?: TaskChatMessagePart[];
-  /** 该消息所属的对话轮次，用于关联 per-turn 文件变更摘要和回滚 */
+  /** The conversation turn this message belongs to, used to correlate per-turn file change summaries and rollbacks */
   turnIndex?: number;
-  /** 大消息首屏 preview 的完整正文引用。存在时 UI 必须把正文视为未完整加载。 */
+  /** Full text quote of the above-the-fold preview of the big news. When present the UI must treat the body as incompletely loaded. */
   bodyRefs?: ZCodeTaskSnapshotBodyRef[];
-  /** tools 被按条数切片返回时的游标信息；用于“查看更多工具调用”补拉。 */
+  /** The cursor information when tools is returned by slicing by number of items; used for "View more tool calls" supplementary pull. */
   toolSlice?: ZCodeTaskSnapshotToolSlice;
-  /** 是否仍在流式输出，仅用于当前运行期 UI 恢复，不参与持久化 */
+  /** Whether it is still streaming output, it is only used for UI recovery during the current runtime and does not participate in persistence. */
   streaming?: boolean;
-  /** ZCode Agent synthetic timeline 消息，不参与 assistant 正文、工具调用和 fork。 */
+  /** ZCode Agent synthetic timeline message does not participate in assistant body, tool call and fork. */
   syntheticTimeline?: ZCodeTimelineMeta;
-  /** UI-only synthetic timeline 消息，不进入协议快照或本地历史。 */
+  /** UI-only synthetic timeline messages, do not enter protocol snapshots or local history. */
   uiTimeline?: TaskUiTimelineMeta;
-  /** ZCode CLI turn steering 状态标记，仅用于用户消息展示。 */
+  /** ZCode CLI turn steering status mark, only used for user message display. */
   turnSteer?: {
     status: "guided";
   };

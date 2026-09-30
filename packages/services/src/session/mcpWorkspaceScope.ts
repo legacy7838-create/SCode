@@ -43,10 +43,10 @@ export function appendWorkspaceToFilesystemMcpServers(
     }
 
     changed = true;
-    // 用户目录里的 filesystem MCP 可能只包含固定目录，
-    // 不会自动允许当前 workspace，导致 agent 写当前项目文件时报
-    // "Access denied - path outside allowed directories"。这里仅在本机路径存在时
-    // 非持久化追加当前 workspace，避免远程 workspace 被误注入本机 MCP。
+    // The filesystem MCP in the user directory may only contain fixed directories,
+    // The current workspace will not be automatically allowed, causing the agent to fail when writing the current project file.
+    // "Access denied - path outside allowed directories". Here only if the native path exists
+    // Non-persistently append the current workspace to avoid remote workspace being accidentally injected into the local MCP.
     return {
       ...server,
       args: [...server.args, trimmedWorkspacePath],

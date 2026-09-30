@@ -13,8 +13,8 @@ export type ModelConfigMissingUiError = ZCodeError & {
 };
 
 export function buildModelConfigMissingUiError(): ModelConfigMissingUiError {
-  // provider_not_ready 是进程启动门禁的内部等待原因，直接展示会被当成
-  // Agent 故障。草稿首页统一投影成已有 modelConfigMissing banner 的稳定 code。
+  // provider_not_ready is the internal waiting reason for the process to start access control. Direct display will be regarded as
+  // Agent failure. The draft homepage is uniformly projected into the stable code of the existing modelConfigMissing banner.
   return {
     code: MODEL_CONFIG_MISSING_UI_ERROR_CODE,
     message: "No usable model provider is configured.",
@@ -70,7 +70,7 @@ function stringifyUnknownValue(value: unknown): string {
       return serialized;
     }
   } catch {
-    // 部分错误对象会带循环引用，序列化失败时回退到 String，避免二次抛错覆盖原始错误。
+    // Some error objects will have circular references. When serialization fails, they will fall back to String to avoid throwing errors twice and covering the original errors.
   }
 
   return String(value);

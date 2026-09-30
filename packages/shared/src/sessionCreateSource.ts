@@ -1,2 +1,2 @@
-/** Session 首次创建的入口来源：任务分组、项目页或普通会话。 */
+/** Where a Session was first created from: a task group, the project page, or a plain session. */
 export type SessionCreateSource = "group" | "project" | "session";

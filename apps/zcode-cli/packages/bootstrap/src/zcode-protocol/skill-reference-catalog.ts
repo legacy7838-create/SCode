@@ -1,5 +1,5 @@
-// Composer Skill 只读 catalog。
-// 与 Skills Settings 管理接口分离：这里的 sessionId 决定 authority，不提供启停/删除能力。
+// Composer Skill read-only catalog.
+// Separated from the Skills Settings management interface: the sessionId here determines the authority, and does not provide the ability to start, stop/delete.
 import {
   zcodeSkillsReferenceCatalogParamsSchema,
   type ZCodeSkillReferenceCatalogEntry,
@@ -24,9 +24,9 @@ export async function getSkillReferenceCatalog(
     return toResult("session", outcome);
   }
 
-  // 旧 UI cache 只在 workspace 首次挂载时扫描，用户从文件系统手动新增
-  // Skill 后，新建对话仍停在旧快照。草稿请求在 Agent 侧复用 CLI 正式发现配置，
-  // 每次新打开引用面板都读取当前 workspace catalog。
+  // The old UI cache is only scanned when the workspace is mounted for the first time, and the user manually adds it from the file system.
+  // Skill, new conversations are still stuck at the old snapshot. The draft request reuses the CLI formal discovery configuration on the Agent side,
+  // The current workspace catalog is read every time the reference panel is newly opened.
   const outcome = await listZCodeSkills({
     env: context.deps.env,
     logger: context.logger,
@@ -41,8 +41,8 @@ function toResult(
 ): ZCodeSkillsReferenceCatalogResult {
   return {
     authority,
-    // 内置技能包（bundled-skills.ts）不进引用面板：它由内置命令（`/workflow`）加载，不是用户
-    // 管理或引用的对象；协议的 scope 是封闭枚举，旧客户端严格校验，这里不为它扩枚举。
+    // The built-in skills bundle (bundled-skills.ts) does not enter the reference panel: it is loaded by the built-in command (`/workflow`), not the user
+    // Objects managed or referenced; the scope of the protocol is a closed enumeration, which is strictly verified by the old client, and the enumeration is not expanded here.
     skills: outcome.skills
       .filter((skill) => skill.source !== "bundled")
       .map(toReferenceCatalogEntry),
@@ -53,7 +53,7 @@ function toReferenceCatalogEntry(skill: SkillMetadata): ZCodeSkillReferenceCatal
   const scope =
     skill.source === "plugin" ? "plugin" : skill.scope === "project" ? "workspace" : "user";
   return {
-    // `glm:` 是现有 UI provider 过滤契约；路径使同名不同来源仍有稳定行身份。
+    // `glm:` is an existing UI provider filtering contract; the path enables stable identity across different sources with the same name.
     id: `glm:${scope}:${skill.path}`,
     name: skill.name,
     description: skill.description,

@@ -1,7 +1,7 @@
 import { ModelRequestSessionType, ModelRetryBudget, type SessionTaskType } from "@zcode/contracts";
 
 /**
- * 模型请求按宿主 session 做粗分类；workflow child 不是 subagent，服务端统计统一归 other。
+ * Model requests are coarsely classified by their host session; a workflow child is not a subagent, so server-side statistics uniformly count as other.
  */
 export function resolveModelRequestSessionTypeFromTaskType(
   taskType: SessionTaskType | undefined,
@@ -14,9 +14,9 @@ export function resolveModelRequestSessionTypeFromTaskType(
 }
 
 /**
- * workflow actor（含嵌套 workflow 的 actor）的模型请求拿**无上限**重试预算：模型错误绝不是
- * workflow 错误，由 runner 以最大努力恢复。
- * 其余 session（主会话、subagent、fork…）沿用 adapter 的默认预算。
+ * Model requests of a workflow actor (including the actor of a nested workflow) get an **unbounded** retry
+ * budget: a model error is never a workflow error, and the runner recovers it with best effort. All other
+ * sessions (main session, subagent, fork…) keep the adapter's default budget.
  */
 export function resolveModelRetryBudgetFromTaskType(
   taskType: SessionTaskType | undefined,

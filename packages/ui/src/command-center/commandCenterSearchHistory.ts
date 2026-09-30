@@ -76,7 +76,7 @@ function writeCommandCenterSearchHistory(
       JSON.stringify(entries.slice(0, COMMAND_CENTER_HISTORY_LIMIT)),
     );
   } catch {
-    // 搜索历史只是快捷入口，localStorage 不可用时不应阻断命令中心主流程。
+    // The search history is just a quick entry, and the main process of the command center should not be blocked when localStorage is unavailable.
   }
 }
 

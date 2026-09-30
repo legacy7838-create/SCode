@@ -164,8 +164,8 @@ export function getHttpLinksForTerminalBufferLine(
         end: { x: end.cellX + 1, y: end.bufferLine },
       },
       decorations: {
-        // 交互说明：xterm 的 link provider 只在 hover 时绘制装饰。
-        // 这里显式打开下划线和手型，避免 http 链接看起来只是普通终端文本。
+        // Interaction Note: xterm's link provider only draws decorations on hover.
+        // Explicitly turn on underlining and hands here to prevent http links from looking like just normal terminal text.
         underline: true,
         pointerCursor: true,
       },

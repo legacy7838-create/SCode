@@ -1,5 +1,5 @@
 /**
- * MCP 用户目录模块 - 通用工具函数
+ * MCP user directory module - general-purpose utility functions
  */
 
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";

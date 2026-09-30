@@ -4,34 +4,34 @@ import { logger } from "@/logger.js";
 import { useV4Conversation } from "@/v4/V4ConversationContext.js";
 
 /**
- * 一个 workflow run 的脚本 transcript 清单。
+ * The script transcript list of a workflow run.
  *
  * ```
- * 活投影 run.lastEventSequence 抬升 ──┐（刷新信号：每个节点事件都会抬它）
- *                                    ├─▶ workflowRunWorkspace({sessionId, runId}) ─▶ nodes[]
- * tab 打开 / 切 run ─────────────────┘
+ * live projection run.lastEventSequence rises ──┐(refresh signal: every node event raises it)
+ *                                              ├─▶ workflowRunWorkspace({sessionId, runId}) ─▶ nodes[]
+ * tab opens / run switch ──────────────────────┘
  * ```
  *
- * 清单**不带正文**，重查便宜；正文在 `useWorkflowRunNodeResult` 里按需取。信号抬升后
- * 合并 250 ms 再查：一次 `world.run` 结算前后有 queued / dispatched / settled 三个事件，
- * 逐个重查只是把同一份清单读三遍。
+ * The list carries **no bodies**, so refetching is cheap; bodies are fetched on demand in `useWorkflowRunNodeResult`. After the signal
+ * rises, debounce 250 ms more before querying: around one `world.run` settlement there are queued / dispatched / settled events, and
+ * refetching per event would just read the same list three times.
  */
 
 const REFRESH_DEBOUNCE_MS = 250;
 
 interface WorkflowRunWorkspaceState {
   nodes: readonly WorkflowRunWorkspaceNode[];
-  /** 至少成功读过一次（占位与落点都等它）。 */
+  /** Successfully read at least once (both the placeholder and the landing point wait on it). */
   loaded: boolean;
   loading: boolean;
-  /** 清单被网关截尾（超过 maxNodes）。 */
+  /** The list was truncated by the gateway (over maxNodes). */
   truncated: boolean;
-  /** 会话不支持工作区查询（老 CLI）。 */
+  /** The session does not support workspace queries (old CLI). */
   unavailable: boolean;
   error: string | null;
 }
 
-/** 能力缺席的判据同产物 hook：跨 JSON-RPC 之后只剩 message 可靠。 */
+/** The capability-absence test matches the artifact hook: after crossing JSON-RPC only the message is reliable. */
 function isWorkflowRunWorkspaceCapabilityMissing(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return message.includes("capabilityUnsupported") || message.includes("WorkspaceNodes");
@@ -40,7 +40,7 @@ function isWorkflowRunWorkspaceCapabilityMissing(error: unknown): boolean {
 export function useWorkflowRunWorkspace(options: {
   sessionId: string;
   runId: string;
-  /** 刷新信号：活投影里该 run 的 `lastEventSequence`；run 不在投影里时缺席（只查一次）。 */
+  /** Refresh signal: the run's `lastEventSequence` in the live projection; absent when the run is not in the projection (queried once). */
   refreshSignal?: number;
   enabled?: boolean;
 }): WorkflowRunWorkspaceState {
@@ -51,7 +51,7 @@ export function useWorkflowRunWorkspace(options: {
   const [truncated, setTruncated] = useState(false);
   const [unavailable, setUnavailable] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // 请求版本号：切 run / 切会话后的迟到响应必须被丢弃。
+  // Request version: late responses after a run switch / session switch must be discarded.
   const requestVersionRef = useRef(0);
 
   const { runId, sessionId } = options;
@@ -78,12 +78,16 @@ export function useWorkflowRunWorkspace(options: {
         return;
       }
       const message = caught instanceof Error ? caught.message : String(caught);
-      logger.warn("[workflow-workspace] 读取工作区清单失败", { error: message, runId, sessionId });
+      logger.warn("[workflow-workspace] failed to read the workspace list", {
+        error: message,
+        runId,
+        sessionId,
+      });
       setError(message);
     }
   }, [runId, sessionId, workflowRunWorkspace]);
 
-  // 切 run / 切会话：先丢掉旧清单再重查。
+  // Switch run / switch session: drop the old list first, then refetch.
   useEffect(() => {
     requestVersionRef.current += 1;
     setNodes([]);
@@ -98,7 +102,7 @@ export function useWorkflowRunWorkspace(options: {
     void fetchNodes();
   }, [enabled, fetchNodes]);
 
-  // 信号抬升：合并后重查。首次挂载那一拍由上面的 effect 负责，这里跳过 undefined。
+  // Signal rise: refetch after the debounce. The first-mount beat is handled by the effect above; skip undefined here.
   const signal = options.refreshSignal;
   const lastSignalRef = useRef<number | undefined>(undefined);
   useEffect(() => {

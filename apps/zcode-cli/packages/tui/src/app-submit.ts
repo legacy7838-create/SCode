@@ -41,8 +41,8 @@ export function appendAgentResult(
   result: TuiSubmitPromptResult,
   options: { workspaceDirectory?: string } = {},
 ): Message[] {
-  // resume 回放以前只保留 content/role，导致已持久化的 reasoning/tool
-  // part 被初始渲染丢掉；这里恢复成 TUI 结构化 parts，继续复用实时流式组件。
+  // Resume playback previously retained only content/role, resulting in persisted reasoning/tool
+  // The part is discarded by the initial rendering; here it is restored to TUI structured parts and continues to reuse real-time streaming components.
   const restored = result.restoredMessages
     ? result.restoredMessages.map((message) =>
         restoreTranscriptMessage(message, options.workspaceDirectory),
@@ -173,8 +173,8 @@ export async function submitDuringActiveTurn(input: {
     if (result.kind !== "queued") {
       input.setDraftValue(input.text);
     } else {
-      // 排队输入还没有被 runtime 注入模型上下文，直接追加到 transcript
-      // 会和正在流式输出的回复混在一起；先放到输入框上方的队列区。
+      // The queued input has not been injected into the model context by the runtime and is appended directly to transcript
+      // It will be mixed with the replies being streamed out; first put them in the queue area above the input box.
       input.setQueuedInputs((current) =>
         upsertQueuedInput(current, {
           id: result.pendingInputId,
@@ -234,8 +234,8 @@ export async function submitIdleTurn(input: {
   if (!input.submitOptions?.preserveSelection) input.setSelection(undefined);
   input.setSlashSelection(undefined);
   if (compactCommand) {
-    // `/compact` 是控制命令，TUI 之前把它渲染成 user row；
-    // app 侧又有专门的 compaction 横条，导致两端语义不一致。这里直接渲染同一类 timeline row。
+    // `/compact` is a control command, and TUI renders it into user row before;
+    // There is also a special compaction bar on the app side, resulting in inconsistent semantics at both ends. The same type of timeline row is rendered directly here.
     input.setMessages((current) =>
       upsertCompactTimelineMessage(
         current,

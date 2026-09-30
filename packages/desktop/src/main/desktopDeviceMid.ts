@@ -5,27 +5,33 @@ import { createUuid } from "@zcode/shared";
 import { getAppConfigDir } from "@zcode/services/node";
 
 interface EnsureDesktopDeviceMidSyncOptions {
-  /** state 文件所在目录，默认 getAppConfigDir()（即 ~/.zcode/v2）。仅测试注入 */
+  /** The directory where the state file is located, defaults to getAppConfigDir() (i.e. ~/.zcode/v2). Test injection only */
   configDir?: string;
-  /** UUID 生成器，默认 createUuid。仅测试注入 */
+  /** UUID generator, default createUuid. Test injection only */
   createId?: () => string;
 }
 
 /**
- * 同步确保设备身份文件（磁盘文件名沿用 telemetry-state.json，与 CLI / 远端 server 共享）里有 deviceMid，并返回该值。
+ * Synchronously makes sure the device identity file (still named telemetry-state.json on disk, shared
+ * with the CLI / remote server) carries a deviceMid, and returns that value.
  *
- * 与数仓上报（telemetryCore）共用同一个文件的 `deviceMid` 字段，使 ARMS 与数仓两套
- * device_mid 统一为同一个持久化 UUID。ARMS 侧需要在窗口创建前同步取值（经 preload
- * `--device-id=` 注入），故此处用 node:fs 同步读写。
+ * It shares the `deviceMid` field of that same file with the data-warehouse reporting path
+ * (telemetryCore), so the device_mid reported to ARMS and the one reported to the warehouse are the
+ * same persistent UUID. The ARMS side needs the value synchronously before the window is created
+ * (injected through the preload `--device-id=`), hence the synchronous node:fs reads and writes.
  *
- * 竞态规避：
- * - 已存在合法 deviceMid 时直接返回、绝不写盘（老用户/二次启动零写入）。
- * - 缺失才写，且读出「完整 state」只补 deviceMid 再写回，避免冲掉 telemetryCore 写的
- *   lastDailyActiveDate / dailyActiveInFlight 等字段。
- * - 原子写（临时文件 + renameSync），避免被并发读方读到半截 JSON。
+ * Race avoidance:
+ * - When a valid deviceMid already exists it is returned directly and nothing is ever written to disk
+ *   (zero writes for existing users / second launches).
+ * - We write only when it is missing, and we read the *complete* state, add just deviceMid and write
+ *   it back, so the fields telemetryCore writes (lastDailyActiveDate / dailyActiveInFlight, ...) are
+ *   not clobbered.
+ * - The write is atomic (temp file + renameSync), so a concurrent reader can never see half a JSON
+ *   document.
  *
- * 任何 fs / JSON 异常都不抛：写盘失败仍返回内存中生成的 UUID，下次启动再尝试落盘，
- * 保证窗口创建那一刻 deviceMid 一定有值。
+ * No fs / JSON exception is ever thrown: if persisting fails we still return the UUID generated in
+ * memory and try to persist it again on the next launch, so deviceMid always has a value at the
+ * moment the window is created.
  */
 export function ensureDesktopDeviceMidSync(options?: EnsureDesktopDeviceMidSyncOptions): string {
   const createId = options?.createId ?? createUuid;
@@ -43,7 +49,7 @@ export function ensureDesktopDeviceMidSync(options?: EnsureDesktopDeviceMidSyncO
     writeDeviceStateSync(stateFile, state);
     return deviceMid;
   } catch {
-    // fs / JSON 异常兜底：保证一定有返回值，窗口创建不阻塞
+    // fs/JSON Exception Coverage: Ensure there is a return value and window creation is not blocked
     return createId();
   }
 }

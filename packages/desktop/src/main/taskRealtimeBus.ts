@@ -350,7 +350,7 @@ export class TaskRealtimeBus {
     return { leaseRequestId: request.leaseRequestId, acquired: true, ownerHostId: hostId };
   }
 
-  /** 内存诊断计数器；只读 size。 */
+  /** Memory diagnostic counter; read-only size. */
   collectMemoryDiagnostics(): Record<string, number> {
     return {
       streamBatches: this.streamBatches.size,
@@ -504,9 +504,9 @@ export class TaskRealtimeBus {
       ),
     };
     if (JSON.stringify(event).length > STREAM_MIRROR_MAX_BATCH_BYTES) {
-      // 单次 mirror batch 过大时，RPC/base64/JSON 会在链路上多次复制，导致 host 堆内存打满。
-      // owner 仍依赖 mirror seq 流渲染主动发送端，所以这里对 owner 做小批次分片；observer
-      // 不消费正文流，只收到 snapshot invalidation/remoteGenerating 状态。
+      // When a single mirror batch is too large, RPC/base64/JSON will be copied multiple times on the link, causing the host heap memory to become full.
+      // owner still relies on the mirror seq stream rendering active sender, so here we do small batch sharding for owner; observer
+      // The text stream is not consumed and only the snapshot invalidation/remoteGenerating status is received.
       this.deliverOversizedStreamBatchFallback(batch, event);
       return;
     }
@@ -522,9 +522,9 @@ export class TaskRealtimeBus {
     batch: PendingStreamBatch,
     event: TaskStreamMirrorBatchEvent,
   ): void {
-    // 不能丢弃 owner 的 mirror seq。ZCode Agent 有 realtime port 时 owner direct stream 会被关闭，
-    // 如果 oversized batch 只发 gap，service 会因为后续 seq 缺口禁用 mirror，桌面端就停到终态快照。
-    // 这里只给 owner 发送连续小批次；observer 和 late subscriber 统一走快照补齐，避免大 payload 扩散。
+    // The owner's mirror seq cannot be discarded. When ZCode Agent has a realtime port, the owner direct stream will be closed.
+    // If the oversized batch only sends gaps, the service will disable the mirror due to subsequent seq gaps, and the desktop will stop at the final state snapshot.
+    // Here, only consecutive small batches are sent to the owner; the observer and late subscriber use snapshots to complete the batches to avoid the spread of large payloads.
     batch.replayUnavailable = true;
     batch.replay = [];
     for (const chunk of this.splitOversizedBatchForOwner(batch, event)) {
@@ -628,8 +628,8 @@ export class TaskRealtimeBus {
         continue;
       }
 
-      // 文本 chunk 可能被 coalesce 合成超大单 op；后续即使按 op 分 batch，
-      // 单个 op 仍会超过 RPC 安全预算。这里先把文本切成连续小 op，再统一分配 seq。
+      // The text chunk may be synthesized into a very large single op by coalesce; even if it is divided into batches according to op in the future,
+      // A single op can still exceed the RPC security budget. Here, the text is first cut into consecutive small ops, and then seq is allocated uniformly.
       for (
         let offset = 0;
         offset < op.event.content.length;
@@ -697,9 +697,9 @@ export class TaskRealtimeBus {
         event: {
           ...event,
           originHostId: batch.ownerHostId,
-          // owner 和 observer 以前消费两条不同事件源：owner 走不可重放 direct event，
-          // observer 走 mirror batch。切换 task 或跨端 relay 时两边会因为事件丢失/乱序产生分叉。
-          // 这里统一把 mirror batch 回投给 owner，让所有 renderer 都按同一条 seq 流更新 task store。
+          // owner and observer used to consume two different event sources: owner cannot replay direct event,
+          // observer takes mirror batch. When switching tasks or cross-end relays, the two sides will fork due to event loss/out of order.
+          // Here, the mirror batch is uniformly returned to the owner, so that all renderers update the task store according to the same seq stream.
           deliveryPurpose: target.hostId === batch.ownerHostId ? "relay_owner" : "observer",
         } satisfies TaskRealtimeDeliveredEvent,
       });
@@ -727,8 +727,8 @@ export class TaskRealtimeBus {
   }
 
   private rememberReplayBatch(batch: PendingStreamBatch, event: TaskStreamMirrorBatchEvent): void {
-    // 无上限 replay 在长任务中会线性占用主进程内存。
-    // 这里恢复批次数+字节数双阈值，超限后由 replayVisibleRunsToHost 触发 stream_mirror_gap 并走快照补齐。
+    // Unlimited replay will occupy main process memory linearly in long tasks.
+    // Here, the double threshold of the number of batches + the number of bytes is restored. After the limit is exceeded, replayVisibleRunsToHost triggers stream_mirror_gap and takes snapshots to make up for it.
     batch.replay.push(event);
     while (batch.replay.length > STREAM_MIRROR_MAX_REPLAY_BATCHES) {
       batch.replay.shift();

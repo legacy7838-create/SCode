@@ -40,8 +40,10 @@ function isRunningPhase(phase: SessionPhase | null): boolean {
 }
 
 /**
- * V4 quota 业务状态：conversation snapshot 只提供当前 provider/model/错误，额度仍由
- * entitlement 服务读取。两者在 renderer 合并，不把购买或额度状态写回 conversation。
+ * V4 quota business state: the conversation snapshot only provides the current
+ * provider/model/error, while the quota itself is still read by the entitlement service. The two
+ * are merged in the renderer, and purchase or quota state is not written back into the
+ * conversation.
  */
 export function useV4SessionQuotaBanner(params: {
   sessionId: string | null;
@@ -52,8 +54,9 @@ export function useV4SessionQuotaBanner(params: {
   modelId: string | null;
   usageStatsService?: IUsageStatsService;
   /**
-   * 官方 Server MCP 不可用的事实。由调用方从 conversation rows 解析——它是会话事件的投影，
-   * 与 entitlement 服务无关，不放进这个 hook 里取。
+   * The fact that the official Server MCP is unavailable. Parsed by the caller from the
+   * conversation rows—it is a projection of session events, unrelated to the entitlement service,
+   * so it is not fetched inside this hook.
    */
   mcpUnavailableNotice?: McpUnavailableNotice | null;
 }) {
@@ -90,7 +93,7 @@ export function useV4SessionQuotaBanner(params: {
     startPlanQuotaReminderStore.getSnapshot,
     startPlanQuotaReminderStore.getSnapshot,
   );
-  // 展示实例随任务/模型切换而更新；余额刷新不能生成新实例，否则会立即收起当前提醒。
+  // Display instances are updated with task/model switching; balance refresh cannot generate new instances, otherwise the current reminder will be closed immediately.
   const reminderOwner = useMemo(
     () => ({ sessionId: params.sessionId, activeProviderId, modelId }),
     [params.sessionId, activeProviderId, modelId],
@@ -145,7 +148,7 @@ export function useV4SessionQuotaBanner(params: {
   useEffect(() => {
     const previousKey = previousReminderKeyRef.current;
     previousReminderKeyRef.current = state.reminderKey;
-    // 已展示的提醒退出后结束展示实例，避免余额回升再降低时在同一周期重复弹出。
+    // End the display instance of the displayed reminder after exiting to avoid popping up repeatedly in the same cycle when the balance rebounds and then decreases.
     if (previousKey && previousKey !== state.reminderKey) {
       startPlanQuotaReminderStore.dismiss(previousKey);
     }
@@ -176,8 +179,8 @@ export function useV4SessionQuotaBanner(params: {
   const shouldCheckTerminalPlan =
     state.visible &&
     upgradeProviderId !== null &&
-    // 不提供升级入口的提示（如 MCP 今日额度用完）无需判断是否已是顶配套餐，
-    // 省掉一次 refreshOnMount 的 entitlement 请求。
+    // There is no prompt to upgrade the entrance (for example, the MCP quota is used up today). There is no need to judge whether it is the top package.
+    // Save a refreshOnMount entitlement request.
     shouldOfferQuotaBannerUpgrade(state.kind) &&
     !isStartPlanModelProviderId(upgradeProviderId);
   const upgradeEntitlement = useUsageEntitlementWithService(params.usageStatsService, {
@@ -204,7 +207,7 @@ export function useV4SessionQuotaBanner(params: {
     previousPhaseRef.current = params.phase;
     if (!isStartPlanProvider || previousPhase === params.phase) return;
     if (isRunningPhase(previousPhase) !== isRunningPhase(params.phase)) {
-      // 任务开始会预占额度，终止会扣减或释放；必须绕过普通 freshness 校正一次。
+      // The quota will be reserved when the task starts, and will be deducted or released when it is terminated; the normal freshness correction must be bypassed once.
       void entitlement.refresh({ force: true, silent: true, reason: "manual" });
     }
   }, [entitlement.refresh, isStartPlanProvider, params.phase]);
@@ -226,7 +229,7 @@ export function useV4SessionQuotaBanner(params: {
 
   const dismiss = useCallback(() => {
     if (state.reminderKey) {
-      // 点击关闭本身证明用户已看到提示，避免可见性回调尚未执行时关闭无效。
+      // Clicking to close itself proves that the user has seen the prompt, preventing the close from being invalid when the visibility callback has not been executed.
       if (state.reminderExpiresAt !== undefined && state.reminderReferenceTime !== undefined) {
         startPlanQuotaReminderStore.markShown(
           state.reminderKey,

@@ -2,7 +2,7 @@ import type { IProviderSettingsService, ProviderSettingsView } from "@zcode/serv
 import type { ProviderSettingsFormProvider } from "@/lib/providerSettingsFormTypes.js";
 
 /**
- * 保存设置页明确维护的稀疏 Personal Overlay。
+ * The sparse Personal Overlay that the save settings page explicitly maintains.
  */
 export async function persistPersonalProvider(params: {
   provider: ProviderSettingsFormProvider;

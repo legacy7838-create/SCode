@@ -6,8 +6,8 @@ export function formatJsModelContent(output: unknown): ModelMessageContent {
   if (o.error) {
     const errorHeader = `${o.error.name}: ${o.error.message}`;
     parts.push(errorHeader);
-    // Error.stack 首行已经重复 name/message；再拼完整 stack 会让模型看到两遍
-    // 同一错误正文。message 可能包含多行 locator context，必须剥离完整 header，不能只删第一行。
+    // The first line of Error.stack has already repeated name/message; spelling out the entire stack will cause the model to see it twice.
+    // Same error text. The message may contain multiple lines of locator context, and the entire header must be stripped, not just the first line.
     const stackFrames = o.error.stack
       ? o.error.stack.startsWith(`${errorHeader}\n`)
         ? o.error.stack.slice(errorHeader.length + 1).trimEnd()
@@ -23,7 +23,7 @@ export function formatJsModelContent(output: unknown): ModelMessageContent {
     );
   }
   const text = parts.length > 0 ? parts.join("\n") : "(no output)";
-  // nodeRepl.emitImage 收集的图片 → image 内容块（dataUrl），让模型直接"看"到截图。
+  // The images collected by nodeRepl.emitImage → image content block (dataUrl) allow the model to "see" the screenshot directly.
   // Canonical result order puts emitted rasters before their textual summary.
   if (o.images && o.images.length > 0) {
     const blocks: ModelMessageContentBlock[] = [];

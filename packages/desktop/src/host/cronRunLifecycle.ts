@@ -42,7 +42,7 @@ export function startManualClaimHeartbeat(
       .touchManualClaim(params.automationId, params.workspaceKey)
       .catch((error) =>
         params.logWarn(
-          `续租 manual automation claim 失败 automation=${params.automationId} runId=${params.runId}`,
+          `failed to renew manual automation claim automation=${params.automationId} runId=${params.runId}`,
           error,
         ),
       );
@@ -63,7 +63,7 @@ export async function recordCronRunOutcomeBestEffort(
     await params.repo.markRunOutcome(params.runId, params.outcome, params.error);
   } catch (error) {
     params.logWarn(
-      `回写定时任务运行结果失败 automation=${params.automationId} runId=${params.runId}`,
+      `failed to write back cron run outcome automation=${params.automationId} runId=${params.runId}`,
       error,
     );
   }
@@ -79,13 +79,13 @@ async function releaseManualClaimBestEffort(
     await params.repo.releaseManualClaim(params.automationId, params.workspaceKey);
   } catch (error) {
     params.logWarn(
-      `释放 manual automation claim 失败 automation=${params.automationId} runId=${params.runId}`,
+      `failed to release manual automation claim automation=${params.automationId} runId=${params.runId}`,
       error,
     );
   }
 }
 
-/** 派发失败清理永不覆盖调用方持有的原始 dispatch error。 */
+/** Dispatch-failure cleanup must never overwrite the original dispatch error the caller is holding. */
 export async function settleManualDispatchFailureBestEffort(
   params: CronRunLifecycleIdentity & {
     repo: CronRunLifecycleRepo;
@@ -105,14 +105,14 @@ export async function settleManualDispatchFailureBestEffort(
     });
   } catch (error) {
     params.logWarn(
-      `回写 manual automation 派发失败状态失败 automation=${params.automationId} runId=${params.runId}`,
+      `failed to write back manual automation dispatch failure automation=${params.automationId} runId=${params.runId}`,
       error,
     );
   }
   await releaseManualClaimBestEffort(params);
 }
 
-/** manual claim 覆盖 queue 等待和 turn 执行，只能在真实终态后释放。 */
+/** The manual claim spans both the queue wait and the turn execution, so it can only be released after a real terminal state. */
 export async function settleCronRunTerminalOutcome(
   params: CronRunLifecycleIdentity & {
     repo: CronRunLifecycleRepo;

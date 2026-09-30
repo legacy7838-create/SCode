@@ -57,16 +57,16 @@ export interface WorkspaceShellZCodeState {
 }
 
 export interface CreateTaskOptions {
-  /** 异步预填只能提交到解析 Skill 时的同一新任务目标。 */
+  /** Asynchronous prefill can only be submitted to the same new task target as when the skill was resolved. */
   expectedWorkspaceKey?: string;
   provider?: ZCodeProvider;
   groupedDraftPlacement?: GroupedDraftTaskPlacement;
   createSource?: SessionCreateSource;
-  /** 新草稿输入框预填文本；只写草稿，不自动发送。 */
+  /** The new draft input box is pre-filled with text; only drafts are written, not automatically sent. */
   initialPrompt?: string;
-  /** 与 initialPrompt canonical 前缀对应的结构化 mention；仅用于编辑器展示。 */
+  /** A structured mention corresponding to the initialPrompt canonical prefix; for editor display only. */
   initialPromptMention?: ComposerMentionPrefill;
-  /** 新任务落在哪个 workspace；缺省取活动 workspace。 */
+  /** In which workspace the new task falls; the default is the active workspace. */
   targetWorkspace?: { workspacePath: string; workspaceIdentity?: string };
 }
 
@@ -171,7 +171,7 @@ export interface WorkspaceShellLayoutProps extends Omit<AppProps, "baseFeedbackS
     availability?: import("@/store/tabStore.js").WorkspaceAvailability;
   }>;
   activeTaskId: string | null;
-  /** 右侧栏按对话隔离的归属 id：草稿态 = draftSessionId，正式态 = activeTaskId（两者同值衔接）。 */
+  /** The right column isolates the ownership id according to the conversation: draft state = draftSessionId, formal state = activeTaskId (the two are connected with the same value). */
   sidePaneOwnerId: string | null;
   activeTraceId: string | null;
   activeSessionId: string | null;

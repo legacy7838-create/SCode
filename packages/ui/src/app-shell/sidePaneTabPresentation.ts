@@ -32,14 +32,14 @@ export function getSidePaneTabSearchHint(tab: WorkspaceSidePaneTab): string {
     return `${tab.parentSessionId} workflow runs directory history ended`;
   }
   if (tab.type === "workflow-actor-session") {
-    // 会话 id 也进搜索面：排查时手里往往只有它（日志与 journal 都记它）。
+    // The session ID also enters the search interface: it is often the only one you have at hand when troubleshooting (it is recorded in logs and journals).
     return `${tab.actorName ?? ""} ${tab.siteId}@${tab.ordinal} ${tab.actorSessionId ?? ""} ${tab.runId} ${tab.parentSessionId} workflow subagent actor transcript`;
   }
   if (tab.type === "workflow-workspace") {
     return `${tab.workflowName ?? ""} ${tab.runId} ${tab.toolCallId} ${tab.parentSessionId} workflow script steps workspace transcript files git run`;
   }
   if (tab.type === "workflow-artifact") {
-    // 产物 id 是脚本里写死的字面量，用户与排查者手里往往就是它。
+    // The product id is a hard-coded literal in the script, and it is often in the hands of users and troubleshooters.
     return `${tab.title ?? ""} ${tab.artifactId} ${tab.runId} ${tab.parentSessionId} workflow artifact deliverable`;
   }
   if (tab.type === "selection-side-chat") {

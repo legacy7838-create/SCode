@@ -29,8 +29,8 @@ function DialogOverlay({
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
       className={cn(
-        // Linux 旧标题栏避让让模态遮罩从 48px 以下开始，窗口顶部仍保持高亮且 tooltip 可见。
-        // renderer 自绘窗控位于同一窗口，模态态应与其它平台一致覆盖完整视口。
+        // Linux old titlebar avoidance allows the modal mask to start below 48px, with the top of the window still highlighted and the tooltip visible.
+        // The renderer self-drawn window control is located in the same window, and the modal mode should cover the entire viewport consistent with other platforms.
         "fixed inset-0 isolate z-50 bg-black/60 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
         className,
       )}
@@ -39,7 +39,7 @@ function DialogOverlay({
   );
 }
 
-// 圆角规范迁移：默认外壳统一 2xl，三个截图/附件预览入口显式保留 xl，内容层级独立计算。
+// Migration of rounded corner specifications: the default shell is unified to 2xl, the three screenshot/attachment preview entries explicitly retain xl, and the content level is calculated independently.
 function DialogContent({
   className,
   children,
@@ -58,8 +58,8 @@ function DialogContent({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          // Electron 自绘标题栏下，弹窗可能会落进窗口顶部的 drag 区域。
-          // 如果不把弹窗内容整体标成 no-drag，右上角关闭按钮这类交互会被窗口拖拽命中吞掉。
+          // Under Electron's self-drawn title bar, the pop-up window may fall into the drag area at the top of the window.
+          // If the entire pop-up window content is not marked as no-drag, interactions such as the close button in the upper right corner will be swallowed up by window drag hits.
           "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-2xl border border-popover-border bg-popover p-4 text-ui-base/relaxed text-foreground shadow-md duration-100 outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 [app-region:no-drag]",
           className,
         )}

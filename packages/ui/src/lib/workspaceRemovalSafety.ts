@@ -90,11 +90,14 @@ export async function scanWindowsReservedDeviceNameFiles(
     try {
       entries = await fileService.readdir({ path: currentPath, includeHidden: true });
     } catch (error) {
-      // Windows 保留名风险扫描只是移除后的提示能力；单个目录无权限或被删除时不能影响项目移除。
-      logger.debug("[workspaceRemovalRiskScan] 读取目录失败，跳过风险扫描子树", {
-        path: currentPath,
-        error,
-      });
+      // Windows reserved name risk scanning is only a prompt capability after removal; when a single directory has no permissions or is deleted, it cannot affect item removal.
+      logger.debug(
+        "[workspaceRemovalRiskScan] failed to read directory, skipping risk scan subtree",
+        {
+          path: currentPath,
+          error,
+        },
+      );
       continue;
     }
 

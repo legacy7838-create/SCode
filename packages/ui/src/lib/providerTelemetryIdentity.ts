@@ -1,7 +1,7 @@
 import { decodeCustomModelValue, encodeCustomModelValue } from "@zcode/shared";
 
-// Provider 重构拆分了执行身份，但旧报表仍按原桶统计；只在事件构造处使用，禁止回流业务配置。
-// 旧 staging 790884b1ce 的 Team 连接也使用 builtin:* 原 Coding Plan 身份。
+// Provider reconstruction splits the execution identity, but old reports are still based on the original bucket statistics; it is only used in event construction, and reflow of business configuration is prohibited.
+// Team connections from old staging 790884b1ce also use builtin:* original Coding Plan identities.
 const legacyProviderIds: Readonly<Record<string, string>> = Object.freeze({
   "zai-api": "builtin:zai",
   "bigmodel-api": "builtin:bigmodel",
@@ -19,7 +19,10 @@ export function legacyTelemetryProviderId(providerId: string): string {
   return Object.hasOwn(legacyProviderIds, providerId) ? legacyProviderIds[providerId]! : providerId;
 }
 
-/** 只替换已知 Provider 前缀；纯模型 ID、未知身份及模型内部编码保持原样。 */
+/**
+ * Only known Provider prefixes are replaced; plain model IDs, unknown identities and in-model
+ * encodings are left as-is.
+ */
 export function legacyTelemetryModelValue(value: string): string {
   const custom = decodeCustomModelValue(value);
   if (custom) {
@@ -34,7 +37,10 @@ export function legacyTelemetryModelValue(value: string): string {
   return legacyTelemetryProviderId(providerId) + value.slice(slash);
 }
 
-/** 对话事件完成归因后再投影，不改 request/child/seed 的原始事实。 */
+/**
+ * Conversation events are projected only after attribution completes, leaving the original
+ * request/child/seed facts untouched.
+ */
 export function legacyTelemetryModelFields(detail: Record<string, string>): Record<string, string> {
   return {
     ...detail,

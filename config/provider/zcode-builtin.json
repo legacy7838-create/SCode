@@ -227,7 +227,7 @@
         {
           "templateId": "qwen-alibaba-model-studio-cn",
           "templateNameMap": {
-            "zh-CN": "阿里云百炼（中国）",
+            "zh-CN": "Alibaba Cloud Bailian (China)",
             "en-US": "Alibaba Cloud (China)"
           },
           "config": {
@@ -263,7 +263,7 @@
         {
           "templateId": "qwen-alibaba-model-studio-intl",
           "templateNameMap": {
-            "zh-CN": "阿里云百炼（国际）",
+            "zh-CN": "Alibaba Cloud Bailian (International)",
             "en-US": "Alibaba Cloud (Global)"
           },
           "config": {

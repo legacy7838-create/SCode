@@ -1,4 +1,7 @@
-/* eslint-disable max-lines -- Root workspace action hook 集中编排项目、远程和 conversation 入口；合并期保持动作边界完整，后续按领域拆分。 */
+/* eslint-disable max-lines -- The root workspace action hook centrally orchestrates the project,
+ * remote and conversation entry points; during the merge it keeps the action boundaries intact,
+ * with a later split by domain.
+ */
 import { useCallback, useEffect, useState } from "react";
 import {
   DesktopCommandIds,
@@ -36,15 +39,20 @@ interface OpenRemoteConnectionPreference {
   preferredWslDistro?: string;
 }
 
-/** 新任务落点：identity 缺省一律归一化为 null，供只读校验、focus/addTab 统一消费。 */
+/**
+ * Where a new task lands: a missing identity is always normalized to null, so that read-only
+ * validation and focus/addTab consume it uniformly.
+ */
 interface NewTaskTargetResolution {
   workspacePath: string;
   workspaceIdentity: string | null;
 }
 
 /**
- * 解析新任务落点：请求显式带 targetWorkspace 时（跨项目发起已保存工作流）直接采用它，不再询问 workbench 焦点；
- * 否则惰性回退到 resolveWorkbenchNewTaskTarget。identity 缺省归一化为 null。
+ * Resolves where a new task lands: when the request explicitly carries a targetWorkspace (starting
+ * a saved workflow from another project) that value is taken directly, without asking about the
+ * workbench focus; otherwise it falls back lazily to resolveWorkbenchNewTaskTarget. A missing
+ * identity is normalized to null.
  */
 function resolveNewTaskTargetFromRequest(
   request: CreateTaskRequest | undefined,
@@ -125,9 +133,9 @@ export function useRootWorkspaceActions({
   useEffect(() => {
     useWorkbenchGroupStore.getState().configureClientMode(workbenchGroupClientMode);
     if (workbenchGroupClientMode === "desktop-continuous" && !isRendererReloadNavigation()) {
-      // group/pane 是 renderer-local 持久化 UI 状态。app 冷启动如果直接
-      // 激活它们，即使 activeTaskId=null 也会把历史 session 显示出来，违背启动草稿语义。
-      // renderer reload 则保留恢复资格，用于输出中刷新续流。
+      // group/pane is renderer-local persistent UI state. If the app is cold started directly
+      // Activating them, even activeTaskId=null will display the historical session, violating the startup draft semantics.
+      // Renderer reload retains the qualification for recovery and is used to refresh and continue the flow in the output.
       const workbenchState = useWorkbenchGroupStore.getState();
       const activeGroup = workbenchState.activeGroupId
         ? workbenchState.groups[workbenchState.activeGroupId]
@@ -171,16 +179,16 @@ export function useRootWorkspaceActions({
         workbenchGroupClientMode === "desktop-continuous" && workbenchGroupState.activeGroupId
           ? (workbenchGroupState.groups[workbenchGroupState.activeGroupId] ?? null)
           : null;
-      // 跨项目发起已保存工作流时，新任务必须落在工作流归属项目，而非活动项目
-      // request 显式带 targetWorkspace 时采用它，
-      // 否则惰性回退到 workbench 焦点解析，无 target 时行为与旧版逐字节一致。
+      // When initiating a saved workflow across projects, the new task must fall into the workflow's owning project, not the active project
+      // It is used when request explicitly contains targetWorkspace.
+      // Otherwise, it will lazily fall back to workbench focus analysis, and the behavior without target will be consistent with the old version byte by byte.
       const newTaskTarget = resolveNewTaskTargetFromRequest(request, () =>
         resolveWorkbenchNewTaskTarget({
           activeWorkspacePath: currentActiveWorkspacePath,
           activeWorkspaceIdentity: currentActiveWorkspaceIdentity,
           activeGroup,
-          // remote 虽然不显示 paneLayout，但 renderer 里可能仍有 desktop
-          // focused secondary；新任务必须按可见 shell workspace 定位，不能消费隐藏 pane。
+          // Although remote does not display paneLayout, there may still be desktop in renderer
+          // Focused secondary; new tasks must be positioned according to the visible shell workspace and cannot consume hidden panes.
           paneLayout:
             workbenchGroupClientMode === "desktop-continuous"
               ? usePaneLayoutStore.getState()
@@ -202,8 +210,8 @@ export function useRootWorkspaceActions({
         return;
       }
 
-      // 仅禁用按钮无法覆盖桌面菜单和快捷键；启动期失效 workspace
-      // 必须在动作边界再次校验，避免历史只读页被隐式切回可发送草稿态。
+      // Merely disabling the button cannot cover the desktop menu and shortcut keys; invalid workspace during startup
+      // It must be verified again at the action boundary to prevent the historical read-only page from being implicitly switched back to the draft-ready state.
       if (
         isWorkspaceReadOnly(
           state,
@@ -235,14 +243,14 @@ export function useRootWorkspaceActions({
       const groupedDraftPlacement =
         typeof request === "string" ? undefined : request?.groupedDraftPlacement;
       const rawInitialPrompt = typeof request === "string" ? undefined : request?.initialPrompt;
-      // Skill mention 后的尾空格决定光标落在 chip 之后；直接 trim 后再保存
-      // 会把结构化 mention 的可编辑间隔吞掉。这里只用 trim 判空，非空草稿保留调用方原文。
+      // The trailing space after Skill mention determines that the cursor falls after chip; trim directly and then save.
+      // Will eat up the editable intervals of structured mentions. Here only trim is used to detect empty, and non-empty drafts retain the original text of the caller.
       const initialPrompt = rawInitialPrompt?.trim() ? rawInitialPrompt : undefined;
       const initialPromptMention =
         typeof request === "string" ? undefined : request?.initialPromptMention;
       logger.info(`[Root] ${source}:`, newTaskTarget.workspacePath, provider ?? "default-provider");
-      // Cmd/Ctrl+N 是创建新的单 panel 草稿，不是在当前 workbench
-      // group / paneLayout 中继续拆一个 draft；目标 workspace 取 focused pane。
+      // Cmd/Ctrl+N is to create a new single panel draft, not in the current workbench
+      // Continue to split a draft in group/paneLayout; the target workspace is focused pane.
       useWorkbenchGroupStore.getState().deactivateActiveGroup();
       usePaneLayoutStore.getState().resetToPrimaryPane();
       useZCodeSessionStore
@@ -257,9 +265,9 @@ export function useRootWorkspaceActions({
           },
         );
       if (initialPrompt) {
-        // insert request 被首个 composer 消费后会清空；如果随后因 pane/config
-        // 切换 remount，新 composer 会从空的 __draft__ 恢复并覆盖预填。先写草稿事实源，
-        // 再发即时插入请求：当前 composer 立即可见，后续 remount 也恢复同一文本。
+        // The insert request will be cleared after being consumed by the first composer; if it is subsequently consumed by pane/config
+        // Toggle remount and the new composer will restore from an empty __draft__ and overwrite the prefill. Write a draft of the sources first,
+        // Send an instant insertion request again: the current composer will see it immediately, and subsequent remounts will also restore the same text.
         persistV4ComposerDraft(
           newTaskTarget.workspacePath,
           newTaskTarget.workspaceIdentity ?? undefined,
@@ -291,7 +299,10 @@ export function useRootWorkspaceActions({
           ? sessionActivity.runningAgentSessionCount
           : null;
     } catch (error) {
-      logger.warn("[Root] 查询桌面运行中会话数量失败，使用保守退出登录文案", { error });
+      logger.warn(
+        "[Root] failed to query the number of running desktop sessions, using the conservative sign-out copy",
+        { error },
+      );
     }
 
     const confirmed = await requestConfirmation({
@@ -310,8 +321,8 @@ export function useRootWorkspaceActions({
       return;
     }
 
-    // Bug 原因：telemetry 是辅助链路；等待网络重试会延迟退出登录，甚至在旧的无超时实现里
-    // 无限阻塞主流程。这里只调度事件，Main 侧负责有界重试与退出 drain。
+    // Bug reason: telemetry is a secondary link; waiting for network retries delays logging out, even in older no-timeout implementations
+    // Block the main process indefinitely. Only events are scheduled here, and the Main side is responsible for bounded retry and drain exit.
     void reportAppTelemetryEvent(
       platform,
       {
@@ -336,13 +347,13 @@ export function useRootWorkspaceActions({
     if (!nextProviderFamilyDomain) {
       onProviderFamilyDomainClearedAfterLogout?.();
     }
-    // ZAI/BigModel provider 已恢复为 App 登录镜像。
-    // 派生 Coding/Start key 由 OAuth logout 的 host hook 统一清理，Root 只负责刷新展示态。
+    // ZAI/BigModel provider has been reverted to the App login image.
+    // The derived Coding/Start key is uniformly cleaned up by the host hook of OAuth logout, and Root is only responsible for refreshing the display state.
     setOAuthError(null);
     setUser(null);
-    // 退出登录后刷新 Account Source 与 Registry，避免继续展示退出前的 Provider 状态。
+    // Refresh the Account Source and Registry after logging out to avoid continuing to display the Provider status before logging out.
     await refreshProviderState();
-    // Coding Plan 官网 webview 使用独立持久 partition，App logout 必须同步清理。
+    // Coding Plan official website webview uses independent persistent partition, App logout must be cleared synchronously.
     await platform.executeDesktopCommand(DesktopCommandIds.ClearCodingPlanWebviewStorage);
     await platform.executeDesktopCommand(DesktopCommandIds.RelaunchApp);
   }, [
@@ -378,10 +389,13 @@ export function useRootWorkspaceActions({
             cancelLabel: intl.formatMessage({ id: "workspace.wslUncPrompt.continuePath" }),
           });
           if (shouldOpenWslConnection) {
-            logger.info("[Root] 用户选择通过 WSL 远程连接打开 UNC 工作区", {
-              distro: wslUncWorkspace.distro,
-              path,
-            });
+            logger.info(
+              "[Root] the user chose to open the UNC workspace over a WSL remote connection",
+              {
+                distro: wslUncWorkspace.distro,
+                path,
+              },
+            );
             onOpenRemoteConnection({
               preferredKind: "wsl",
               preferredWslDistro: wslUncWorkspace.distro,
@@ -390,25 +404,27 @@ export function useRootWorkspaceActions({
           }
         }
 
-        // 桌面端：检查是否已有其他窗口打开了该目录，如果是则激活该窗口对应 tab
+        // Desktop: Check if there is another window opening the directory, and if so, activate the tab corresponding to the window
         const result = await platform.activateOrSetWorkspace(path);
         if (result.activated) {
-          logger.info("[Root] 目录已在其他窗口打开，已激活该窗口对应 tab，跳过重复打开");
+          logger.info(
+            "[Root] the folder is already open in another window, activated that tab and skipped reopening",
+          );
           return;
         }
 
-        // 新增 tab（如果已在本窗口打开则激活它）
+        // Add a new tab (activate it if it is already open in this window)
         addTab(path);
-        // 打开 workspace 是 workspace-only 意图，不是“继续上次会话”。
-        // 即使命中已存在 tab，也必须清掉该 workspace 的 activeTaskId 并回到单 pane 草稿。
+        // Opening a workspace is a workspace-only intent, not "continue last session".
+        // Even if an existing tab is hit, the activeTaskId of the workspace must be cleared and returned to the single-pane draft.
         startDraftInWorkspace(path);
         setWorkspaceActionError(null);
 
-        // 更新最近项目列表
+        // Update recent projects list
         if (supportsSettings) {
-          // 远程窗口的 host 不提供 settingService，之前这里仍然会更新 recentProjects，
-          // 导致 SSH 场景在打开项目后再次命中不存在的 setting channel。
-          // 只有本地窗口才维护最近项目，远程窗口只负责打开当前 workspace。
+          // The host of the remote window does not provide settingService. Previously, recentProjects would still be updated here.
+          // This causes the SSH scenario to hit the non-existent setting channel again after opening the project.
+          // Only the local window maintains recent projects, and the remote window is only responsible for opening the current workspace.
           logger.info("[Root] calling settingService.get()...");
           const settings = await services.settingService.get();
           const updated = [
@@ -416,8 +432,8 @@ export function useRootWorkspaceActions({
             ...settings.recentProjects.filter((projectPath) => projectPath !== path),
           ].slice(0, 10);
           await services.settingService.update({ recentProjects: updated });
-          // Dock/Jump List 的系统最近文档入口已经下线，这里只保留应用内 recentProjects，
-          // 避免系统最近项和项目选择页列表重复维护，造成两个入口内容漂移。
+          // The recent document entry of the Dock/Jump List system has been offline. Only the recentProjects in the application are retained here.
+          // Avoid repeated maintenance of the system's recent items and project selection page lists, causing the content of the two entrances to drift.
           logger.info("[Root] settingService.update() done");
         }
       } catch (err) {
@@ -438,11 +454,13 @@ export function useRootWorkspaceActions({
 
   const handleOpenWorkspace = useCallback(() => {
     if (!allowOpenWorkspace) {
-      // Web 远程控制当前只保证“进入 desktop 已打开的 workspace”。
-      // 之前这里继续放开“打开工作区”，用户会被带进打开工作区中间页，
-      // 但后续的新工作区/新会话链路并没有在 Web 远程控制模式里补齐，看起来就像页面一直卡住。
-      // 这里直接拦掉入口，避免把用户带进半支持状态。
-      logger.info("[Root] 当前模式不支持打开其他工作区，已忽略请求");
+      // Web remote control currently only guarantees "entering the desktop workspace that has been opened".
+      // If you continue to release "Open Workspace" here, the user will be taken to the middle page of Open Workspace.
+      // However, subsequent new workspace/new session links were not completed in the Web remote control mode, and it looked like the page was stuck all the time.
+      // The entrance is directly blocked here to avoid bringing the user into a semi-supported state.
+      logger.info(
+        "[Root] opening another workspace is not supported in this mode, ignoring the request",
+      );
       return;
     }
     setWorkspaceActionError(null);
@@ -459,12 +477,12 @@ export function useRootWorkspaceActions({
       return;
     }
 
-    // 打开工作区中间页作为“新标签页”会在启动空态、Cmd/Ctrl+O
-    // 和菜单打开工作区时抢占整页。现在打开工作区只保留为动作：本地优先直接弹系统目录选择，
-    // 不再进入中间页面；不支持系统目录选择的壳层由启动兜底负责创建默认 workspace。
+    // Opening the middle page of the workspace as a "new tab" will start in an empty state, Cmd/Ctrl+O
+    // and menus seize the full page when opening a workspace. Opening the workspace is now only reserved as an action: local priority and direct selection of the system directory.
+    // You no longer enter the intermediate page; for shells that do not support system directory selection, the startup package is responsible for creating the default workspace.
     if (!supportsSettings) {
       void handleEnsureConversationWorkspace().catch((error) => {
-        logger.error("[Root] 创建对话 workspace 失败", { error });
+        logger.error("[Root] failed to create the conversation workspace", { error });
       });
       return;
     }
@@ -487,12 +505,14 @@ export function useRootWorkspaceActions({
 
   const handleOpenFolderFromWorkspaceMenu = useCallback(() => {
     if (!allowOpenWorkspace) {
-      logger.info("[Root] 当前模式不支持从空态菜单打开文件夹，已忽略请求");
+      logger.info(
+        "[Root] opening a folder from the empty-state menu is not supported in this mode, ignoring the request",
+      );
       return;
     }
 
-    // 空态 workspace 菜单的 Open folder 需要复用根级打开工作区动作。
-    // 因此这里调用同一个入口函数，只把 Root 里的 selectDirectory 与项目选择回调注入进去。
+    // The Open folder of the empty workspace menu needs to reuse the root-level open workspace action.
+    // Therefore, the same entry function is called here, and only the selectDirectory and project selection callbacks in Root are injected into it.
     if (preferDirectoryBrowser) {
       void openFolderFromWorkspaceEntry({
         preferDirectoryBrowser,
@@ -507,7 +527,10 @@ export function useRootWorkspaceActions({
 
     if (!supportsSettings) {
       void handleEnsureConversationWorkspace().catch((error) => {
-        logger.error("[Root] 从空态菜单创建对话 workspace 失败", { error });
+        logger.error(
+          "[Root] failed to create the conversation workspace from the empty-state menu",
+          { error },
+        );
       });
       return;
     }
@@ -531,7 +554,9 @@ export function useRootWorkspaceActions({
   const handleCreateScratchWorkspace = useCallback(
     async (name: string) => {
       if (!allowOpenWorkspace) {
-        logger.info("[Root] 当前模式不支持从空态菜单创建工作区，已忽略请求");
+        logger.info(
+          "[Root] creating a workspace from the empty-state menu is not supported in this mode, ignoring the request",
+        );
         return null;
       }
 
@@ -554,8 +579,8 @@ export function useRootWorkspaceActions({
       return;
     }
 
-    // 设置页返回最近 workspace 时不能只按 path 激活。
-    // 同一路径可能存在不同远端身份，丢掉 activeWorkspaceIdentity 会把远程工作区切到 path-only 桶。
+    // When the settings page returns to the latest workspace, it cannot be activated by just pressing path.
+    // Different remote identities may exist on the same path. Losing activeWorkspaceIdentity will cut the remote workspace to the path-only bucket.
     tabStoreApi
       .getState()
       .activateTabByPath(

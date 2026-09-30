@@ -9,8 +9,8 @@ import { encodeCustomModelValue } from "@/lib/zcodeCustomModelValue.js";
 
 export type ApiKeyProviderChoice = "zai" | "bigmodel";
 
-export function resolveLoginApiKeyDefaultProvider(locale: Locale): ApiKeyProviderChoice {
-  return locale === "zh-CN" ? "bigmodel" : "zai";
+export function resolveLoginApiKeyDefaultProvider(_locale: Locale): ApiKeyProviderChoice {
+  return "zai";
 }
 
 export function resolveLoginApiKeyTemplateId(
@@ -22,7 +22,7 @@ export function resolveLoginApiKeyTemplateId(
 }
 
 export function resolveLoginApiKeyProviderLabel(choice: ApiKeyProviderChoice): string {
-  // Welcome Screen API Key 错误提示需要使用 BigModel 品牌固定写法。
+  // The Welcome Screen API Key error message needs to use the BigModel brand fixed writing method.
   return choice === "zai" ? "Z.ai" : "BigModel";
 }
 

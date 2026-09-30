@@ -96,10 +96,10 @@ export function createSSHUploadProgressReporter(
       return;
     }
 
-    // SSH 连接弹窗之前只在 CDN 下载阶段展示“完成度 + 速度”，上传阶段只有静态起始日志。
-    // 慢网或大文件时用户无法判断是继续上传还是已经卡死，这里补上节流后的上传进度快照，
-    // 同时带上传输方式和目标文件名，用户才能分辨当前是否已经从 SFTP 切到 exec pipe。
-    // 仍然保留节流，避免每个 chunk 都刷一整屏日志。
+    // The SSH connection pop-up window previously only displayed "Completion + Speed" during the CDN download phase, and only static starting logs during the upload phase.
+    // When the network is slow or the file is large, the user cannot tell whether to continue uploading or if it is stuck. Here is a snapshot of the upload progress after throttling.
+    // At the same time, bring the transmission method and target file name so that users can tell whether they have switched from SFTP to exec pipe.
+    // Throttling is still retained to avoid flushing a full screen of logs for each chunk.
     if (totalMB != null && percent != null) {
       console.log(
         `[ssh] upload progress [${transport}] (${uploadLabel}): ${percent.toFixed(1)}% (${transferredMB.toFixed(1)}/${totalMB.toFixed(1)} MB, ${speedMBPerSecond.toFixed(2)} MB/s)`,

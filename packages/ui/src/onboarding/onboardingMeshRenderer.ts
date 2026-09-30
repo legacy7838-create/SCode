@@ -1,4 +1,4 @@
-// 独立实现的柔和灰阶流场，不包含第三方付费预设代码。
+// Independently implemented soft grayscale flow field, does not include third-party paid preset code.
 const vertexSource = `
 attribute vec2 position;
 varying vec2 uv;
@@ -21,7 +21,7 @@ void main() {
   float fold = smoothstep(0.29, 0.64, sweep) * (1.0 - smoothstep(0.65, 1.18, sweep));
   float halo = exp(-length((p - vec2(0.82, 0.22)) * vec2(aspect, 1.0)) * 2.4);
   float grain = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5;
-  // 下半区逐渐收暗，避免背景亮度变化经过固定文案。
+  // The lower half of the area gradually darkens to prevent the background brightness from changing through the fixed copy.
   float shade = 1.0 - smoothstep(0.42, 0.88, p.y);
   float light = (band * 0.30 + fold * 0.12 + halo * 0.14) * (0.3 + 0.7 * shade);
   float alpha = clamp(light + grain * 0.012, 0.0, 0.55);

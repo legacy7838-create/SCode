@@ -1,21 +1,21 @@
 /**
- * `phase("…")` 标记的编译期校验。
+ * The compile-time validation of `phase("…")` markers.
  *
- * 两条规则，同一个理由——**标记必须在提交前就说清楚它指的是什么**。名字是编译期字面量，
- * 因为阶段集在确认窗上被展示（与 `world.run` 的 cmd 同姿态：运行期才成形的名字没有可展示
- * 的对象）；调用必须是独立语句，因为标记的意义就是「从这里到块尾」，一个待在初始化器/
- * 实参/三元臂里的标记没有可指的范围。两条都是**定位诊断**而不是运行期兜底：教改写发生在
- * 便宜的那一侧。
+ * Two rules, one reason — a **marker has to make clear before the submission what it refers to**. The name is a compile-time literal,
+ * because the phase set is displayed in the confirmation window (the same posture as the cmd of `world.run`: a name that only takes shape at runtime has nothing displayable
+ * to show); the call must be a standalone statement, because the whole meaning of a marker is "from here to the end of the block", and a marker stuck in an initializer /
+ * argument / ternary arm has no range to refer to. Both are **positional diagnostics** rather than runtime fallbacks: teaching the rewrite happens
+ * on the cheap side.
  *
- * 别名逃逸（`const p = phase`）不在这里——`phase` 是 facade 函数声明，facade-misuse 的
- * pass 1 已经拒绝任何非直接调用位置的引用。
+ * The alias escape (`const p = phase`) is not handled here — `phase` is a facade function declaration, and pass 1 of facade-misuse
+ * has already rejected every reference that is not in a direct call position.
  */
 
 import ts from "typescript";
 import type { CompileDiagnostic, ScriptLoc, WorkflowProgram } from "../compiler/compile.js";
 import type { SiteTable } from "./sites.js";
 
-/** phase 标记的诊断码（9001 = facade-siting、9002 = schema、9003 = world-run，顺延）。 */
+/** The diagnostic codes of the phase markers (9001 = facade-siting, 9002 = schema, 9003 = world-run, and so on). */
 export const PHASE_MARKER_CODE = 9004;
 
 const LITERAL_MESSAGE =
@@ -36,10 +36,10 @@ const STATEMENT_MESSAGE =
   "the steps it names.";
 
 /**
- * 校验收集到的 phase 标记。非空即脚本不可提交（`analyzeWorkflowScript` 与 misuse /
- * world.run 同席处理）。
+ * Validates the collected phase markers. Non-empty means the script cannot be submitted (`analyzeWorkflowScript` handles it alongside
+ * misuse / world.run).
  *
- * 一个标记可以同时犯两条（`const x = phase(bad)`），两条都报：作者一次就能看全要改什么。
+ * One marker can break both rules at once (`const x = phase(bad)`), and both are reported: the author sees everything to change in one go.
  */
 export function collectPhaseMarkerDiagnostics(
   workflow: WorkflowProgram,
@@ -51,7 +51,7 @@ export function collectPhaseMarkerDiagnostics(
   };
 
   for (const marker of table.phases) {
-    // 名字的诊断落在**出问题的那个表达式**上（缺席时退回调用位置）：作者要改的是那一处。
+    // The diagnosis of the name falls on the expression in question (returning to the calling position in its absence): that is what the author wants to change.
     const nameLoc =
       marker.nameExpr === undefined
         ? marker.loc

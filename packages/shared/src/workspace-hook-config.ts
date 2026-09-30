@@ -167,9 +167,9 @@ export function resolveWorkspaceHookConfiguredGates(input: {
 }
 
 /**
- * 从已发现的配置目录列表生成 workspace hook 候选文件路径。
- * 纯函数，sync/async discovery 共享，确保候选文件名与顺序规则只在此处维护一次
- * （sync/async 共享同一份 flatMap，避免候选路径的生成规则出现分歧）。
+ * Generate workspace hook candidate file paths from a list of discovered configuration directories.
+ * Pure function, sync/async discovery sharing, ensuring that candidate file names and order rules are only maintained here once
+ * (sync/async share the same flatMap to avoid differences in the generation rules of candidate paths).
  */
 function buildWorkspaceHookCandidatePaths(directories: readonly string[]): string[] {
   return directories.flatMap((directory) => [
@@ -179,16 +179,16 @@ function buildWorkspaceHookCandidatePaths(directories: readonly string[]): strin
 }
 
 /**
- * 对已发现的 config refs 按规范化路径去重，保留首次出现的条目。
+ * Deduplicate the discovered config refs according to the normalized path and retain the first occurrence of the entry.
  *
- * 当 explicit projectConfigPath 恰好指向 auto-discovery 已发现的文件时，
- * 同一文件会以不同 explicitProjectConfig 标记出现两次，进入 snapshot 后产生重复
- * sourceFile 与重复 declaration，导致 bundleDigest 分叉。
+ * When explicit projectConfigPath happens to point to a file that has been discovered by auto-discovery,
+ * The same file will appear twice with different explicitProjectConfig tags, resulting in duplication after entering snapshot
+ * sourceFile with duplicate declaration, causing bundleDigest to fork.
  *
- * 去重策略：保留首次出现者（auto-discovered 条目在前、explicit 在后），丢弃后续重复。
- * 不得改变剩余条目的相对顺序——discoveryOrder 和 explicitProjectConfig 均为 digest 输入，
- * 任何重排都会使既有 trust 记录失效（用户被重新提示全部 Hook）。对于无 explicit path
- * 的 workspace，auto-discovery 本身不会产生重复，此函数为 no-op，bundleDigest 不变。
+ * Deduplication strategy: keep the first occurrence (auto-discovered entries first, explicit last), and discard subsequent duplicates.
+ * The relative order of the remaining entries must not be changed - both discoveryOrder and explicitProjectConfig are digest inputs,
+ * Any rearrangement will invalidate the existing trust record (the user is re-prompted for all Hooks). For no explicit path
+ * In the workspace, auto-discovery itself will not generate duplicates, this function is no-op, and bundleDigest remains unchanged.
  */
 function deduplicateWorkspaceHookConfigRefs(
   refs: readonly WorkspaceHookConfigPathRef[],

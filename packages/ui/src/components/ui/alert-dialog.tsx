@@ -26,7 +26,7 @@ function AlertDialogOverlay({
     <AlertDialogPrimitive.Overlay
       data-slot="alert-dialog-overlay"
       className={cn(
-        // Linux 旧标题栏避让会留下未遮罩的顶部亮条；确认弹窗也应覆盖完整窗口。
+        // Linux old title bar avoidance leaves an unmasked top highlight bar; the confirmation popup should also cover the entire window.
         "fixed inset-0 isolate z-50 bg-black/60 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
         className,
       )}

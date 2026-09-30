@@ -11,9 +11,9 @@ export function createCloseEventController(): CloseEventController {
   let closeCode = 0;
 
   const event: Event<number> = (listener) => {
-    // 远端命令可能在调用方订阅 onClose 之前就瞬间退出。
-    // 如果事件只做“在线分发”不做补发，waitForClose 会永远等不到，表现为连接卡住。
-    // 这里对晚订阅者补发最后一次 close code，避免竞态丢事件。
+    // The remote command may exit instantly before the caller subscribes to onClose.
+    // If the event is only "online distributed" and not reissued, waitForClose will never wait, causing the connection to be stuck.
+    // Here we replay the last close code to late subscribers to avoid race-condition event loss.
     if (closed) {
       queueMicrotask(() => {
         listener(closeCode);

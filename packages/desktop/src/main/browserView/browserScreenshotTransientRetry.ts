@@ -1,5 +1,5 @@
-/** Chromium 在 Viz surface 建立前执行 CopyFromSurface 会抛 UnknownVizError；surface
- * 一旦建立，同样的请求立即成功。除此之外的失败（guest 销毁、跨窗口等）都是致命的。 */
+/** Chromium throws UnknownVizError when CopyFromSurface runs before the Viz surface is established; once the
+ * surface exists, the same request succeeds immediately. Every other failure (guest destroyed, cross-window, …) is fatal. */
 export function isTransientScreenshotCaptureError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return message.includes("UnknownVizError");
@@ -12,13 +12,14 @@ interface ScreenshotTransientRetryContext {
 }
 
 const TRANSIENT_CAPTURE_RETRY_DELAY_MS = 100;
-// 预算必须小于 surface prepare 的 3s 超时（BROWSER_SCREENSHOT_SURFACE_PREPARE_TIMEOUT_MS），
-// 给 renderer 握手留出余量。
+// The budget must be less than the 3s timeout for surface prepare (BROWSER_SCREENSHOT_SURFACE_PREPARE_TIMEOUT_MS),
+// Leave margin for renderer handshake.
 const TRANSIENT_CAPTURE_RETRY_BUDGET_MS = 2_000;
 
 /**
- * prepare 阶段探测的瞬态重试预算：UnknownVizError 归为瞬态、由调用方串行退避重试，
- * 连续失败累计超过预算即放弃（回到快败 invalidate 语义）；任一次成功后 reset 重新计。
+ * Transient retry budget for probes during the prepare phase: UnknownVizError counts as transient
+ * and the caller retries it serially with backoff; once consecutive failures accumulate past the
+ * budget it gives up (falling back to fail-fast invalidate semantics). Any success resets the count.
  */
 export class DesktopBrowserScreenshotTransientRetry {
   private startedAt: number | undefined;
@@ -36,7 +37,7 @@ export class DesktopBrowserScreenshotTransientRetry {
     return this.options.delayMs ?? TRANSIENT_CAPTURE_RETRY_DELAY_MS;
   }
 
-  /** 记录一次瞬态失败；返回 false 表示预算耗尽，不再重试。 */
+  /** Records one transient failure; returns false when the budget is exhausted and retrying stops. */
   schedule(context: ScreenshotTransientRetryContext): boolean {
     this.startedAt ??= Date.now();
     this.attempts += 1;

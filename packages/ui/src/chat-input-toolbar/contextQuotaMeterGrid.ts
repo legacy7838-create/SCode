@@ -1,7 +1,7 @@
 export function getContextQuotaMeterGridClass(count: number): string {
-  // Start/Coding 额度来自服务端快照，实际可能是 1/2/3 条；官方 MCP
-  // 已改为网格下方的贯穿行，因此即使误传更大计数也不能把 320px 浮层压成四列。
-  // 固定三列会让两条额度留下空洞，也会让单条额度被无意义压窄。
+  // The Start/Coding quota comes from the server snapshot, and may actually be 1/2/3; official MCP
+  // Changed to a through row below the grid, so the 320px float cannot be compressed into four columns even if misrepresenting the larger count.
+  // Fixing three columns will leave holes in the two quotas, and will also cause the single quota to be meaninglessly narrowed.
   if (count <= 1) {
     return "grid-cols-1";
   }

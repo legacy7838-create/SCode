@@ -30,15 +30,16 @@ export function isAssistantPathQuoteCharacter(character: string | undefined): bo
 }
 
 /**
- * 仅去掉文件路径外围成对引号；不匹配时保留原文，避免把异常模型输出
- * 或文件名中的引号静默改写成另一个路径。
+ * Only strips a matched pair of quotes around a file path; when they do not match, the text is kept
+ * as-is, so that a quote inside malformed model output or inside a file name is never silently
+ * rewritten into a different path.
  */
 export function stripBalancedAssistantPathQuotes(value: string): string {
   const trimmed = value.trim();
   if (trimmed.length < 2) return trimmed;
 
-  // rehype-harden 可能把带空格的相对 Markdown 目标规整成 `/“path”`；
-  // 仅在引号内容仍是相对路径时还原这个保护层，不影响真正的绝对路径。
+  // rehype-harden may wrap relative Markdown targets with spaces into `/"path"`;
+  // This protection layer is only restored when the quoted content is still a relative path, and does not affect the true absolute path.
   if (trimmed.startsWith("/")) {
     const protectedRelative = stripBalancedAssistantPathQuotes(trimmed.slice(1));
     if (protectedRelative !== trimmed.slice(1)) {

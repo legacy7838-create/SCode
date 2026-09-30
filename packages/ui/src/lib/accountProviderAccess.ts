@@ -16,8 +16,8 @@ export function resolveEntitledAccountProviderAccess(
     return null;
   }
 
-  // Registry Access 是静态 accountType/mode 约束，动态 planKind 与 Team scope
-  // 只能由账号服务在请求期解析。旧 Schema 会把所有真实 Registry Provider 误判为空。
+  // Registry Access is a static accountType/mode constraint; the dynamic planKind and Team scope
+  // can only be resolved by the account service at request time. The old Schema would misjudge every real Registry Provider as empty.
   const parsed = zcodeProviderAccountAccessSchema.safeParse(provider.effectiveConfig.access);
   if (!parsed.success || parsed.data.entitled !== true) return null;
   const label = provider.providerName?.trim();
@@ -37,8 +37,10 @@ export function resolveEntitledAccountProviderAccessFingerprint(
 }
 
 /**
- * 套餐只读查询不等于执行模型。pending/未选中的账号仍需展示权益，不能要求 current。
- * 本函数只给余额/订阅查询使用，不得用于模型请求或 ModelSelection completion。
+ * A read-only plan lookup is not the same as the execution model. Pending / unselected accounts
+ * still have to show their entitlements, so this must not require current. This function is for
+ * balance / subscription lookups only and must not be used for model requests or ModelSelection
+ * completion.
  */
 export function resolveAccountProviderInspectionAccess(
   view: ProviderSettingsView | null | undefined,
@@ -46,7 +48,7 @@ export function resolveAccountProviderInspectionAccess(
 ): EntitledAccountProviderAccess | null {
   const provider = view?.providers.find((entry) => entry.providerId === providerId);
   if (!provider) return null;
-  // 明确无 Start 权益仍需只读查询过期原因；执行权限仍由 entitled 门禁控制。
+  // Even with no Start entitlement, a read-only lookup of the expiry reason is still needed; execution permission stays gated by entitled.
   if (
     provider.accountState?.availability === "unavailable" &&
     !(

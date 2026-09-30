@@ -22,8 +22,8 @@ import {
 const FEEDBACK_ZCODE_AGENT_LABEL = "ZCode Agent";
 
 export const DEFAULT_FEEDBACK_TYPE: FeedbackTicketType = "bug";
-export const DEFAULT_FEEDBACK_SEVERITY: FeedbackTicketSeverity = "P2-中";
-export const DEFAULT_FEEDBACK_MODULE: FeedbackTicketModule = "其它";
+export const DEFAULT_FEEDBACK_SEVERITY: FeedbackTicketSeverity = "P2-Medium";
+export const DEFAULT_FEEDBACK_MODULE: FeedbackTicketModule = "Other";
 
 export async function startSimplifiedFeedbackSubmission({
   feedbackService,
@@ -36,7 +36,6 @@ export async function startSimplifiedFeedbackSubmission({
   ticketSeverity,
   ticketModule,
   modelContext,
-  locale,
   copy,
   formatMessage,
   onTicketCreated,
@@ -53,7 +52,6 @@ export async function startSimplifiedFeedbackSubmission({
   ticketSeverity: FeedbackTicketSeverity;
   ticketModule: FeedbackTicketModule;
   modelContext: FeedbackAgentModelContext;
-  locale: "zh-CN" | "en-US";
   copy: FeedbackSubmissionCopy;
   formatMessage: (descriptor: { id: string }, values?: Record<string, string>) => string;
   onTicketCreated?: (ticketId: string) => void;
@@ -101,7 +99,6 @@ export async function startSimplifiedFeedbackSubmission({
       },
       source: "desktop-app",
       contact: trimmedContact || undefined,
-      locale,
     },
     screenshots: attachmentDrafts,
     includeLogs,

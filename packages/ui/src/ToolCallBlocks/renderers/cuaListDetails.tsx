@@ -64,7 +64,7 @@ function readCuaResultList(
   toolCall: ToolCallBlockRenderContext["toolCallNode"]["toolCall"],
 ): unknown[] {
   const display = readToolResultDisplay(toolCall.raw);
-  // v4/replayable 的稳定事实源是 display；legacy 文本可能已被 head/tail 裁剪。
+  // The stable source of truth for v4/replayable is display; legacy text may have been clipped by head/tail.
   const displayRows =
     display?.kind === "cua" ? parseStructuredCuaResultList(display.structuredContent) : null;
   return (

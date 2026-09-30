@@ -19,14 +19,17 @@ import { useHasV4Conversation } from "@/v4/V4ConversationContext.js";
 import type { WorkflowTurnCompletion } from "@/v4/workflowTurnCompletion.js";
 
 /**
- * 完成卡的落位：把解析出的完成事实接上
- * 宿主回调与产物取数。回调的存在即门控（照 `ConversationWorkflowDigests`）：⤢ 要
- * `onOpenWorkflowRun` + sessionId + 联接到的 `toolCallId`；瓦片与药丸要 `onOpenWorkflowArtifact`
- * + sessionId（不需要 toolCallId，与通知行同一条门）。
+ * Placement of the completion card: wiring the parsed completion facts to the host callbacks and
+ * artifact fetching. The presence of a callback is the gate (following
+ * `ConversationWorkflowDigests`): ⤢ needs `onOpenWorkflowRun` + sessionId + the linked
+ * `toolCallId`; tiles and pills need `onOpenWorkflowArtifact`
+ * + sessionId (no toolCallId needed, the same gate as the notification row).
  *
- * 产物清单**以通知载荷为底**（随通知持久化，冷恢复也在），会话在场时再经既有的产物 hook 补
- * 字节数 / 出处 / 看板 spec / 交付物旗子，并给交付物的框挂预览。没有会话上下文的宿主（静态渲染、
- * 回放）画的是只有字形的冷态卡——同一张卡，少一层。
+ * The artifact list is **based on the notification payload** (persisted with the notification, so
+ * it survives a cold restore); when the session is present, the existing artifact hook fills in
+ * byte counts / origin / kanban spec / deliverable flags, and attaches a preview to the
+ * deliverable's frame. Hosts without session context (static rendering, replay) draw a cold-state
+ * card with glyphs only — the same card, one layer fewer.
  */
 export function ConversationWorkflowCompletion({
   completion,
@@ -49,7 +52,7 @@ export function ConversationWorkflowCompletion({
       : {
           tokens: run.usage.spentTokens,
           subagents: run.actors.length,
-          // 卡上不说「步」：第四格是进过的阶段数；无标记脚本没有它，格写 `—`。
+          // The card does not say "step": the fourth box is the number of stages advanced; unmarked scripts do not have it, so the box is written `—`.
           ...(run.phases !== undefined && run.phases.length > 0
             ? { phases: run.phases.length }
             : {}),
@@ -65,10 +68,10 @@ export function ConversationWorkflowCompletion({
             workflowName: completion.name,
           })
       : undefined;
-  // 打开请求按**当时手上那份清单**构造，所以是一个按清单取参的工厂而不是一个闭死的回调：
-  // 冷态只有通知载荷（有 `contentType`，没有 `sourcePath`），活路径下
-  // `WorkflowCompletionWithData` 拿补齐过的那份再造一次，出处才带得上。宿主据 `contentType`
-  // 决定 html 产物直接开浏览器 tab。
+  // The open request is constructed based on the list currently on hand, so it is a factory that takes parameters based on the list rather than a closed callback:
+  // The cold state only has notification payload (with `contentType`, without `sourcePath`), under the live path
+  // `WorkflowCompletionWithData` takes the completed copy and recreates it, so that the source can be brought along. Host data `contentType`
+  // To determine the html product, open the browser tab directly.
   const openArtifactFrom =
     context.onOpenWorkflowArtifact && sessionId
       ? (artifacts: readonly WorkflowCompletionArtifact[]) => (artifactId: string) => {
@@ -110,9 +113,12 @@ export function ConversationWorkflowCompletion({
 }
 
 /**
- * 通知载荷的清单 + hook 视图的补充。顺序与身份归载荷（它是通知那一刻的事实，且交付物已在最前）；
- * 载荷被砍过（超 8）时 journal 里多出来的产物追加在末尾，进索引或「还有 N 个」。旗子与说明两个来源
- * 任一带上即算（老载荷没有这两个键，hook 从 journal 补回来）。
+ * The list from the notification payload plus what the hook view adds. Order and identity belong to
+ * the payload (it is the fact at the moment of the notification, and the deliverable is already
+ * first); when the payload has been folded (over 8), the extra artifacts in the journal are
+ * appended at the end, going into the index or the "{n} more" door. A flag or caption counts from
+ * either source (older payloads have neither key, and the hook fills them back in from the
+ * journal).
  */
 function mergeCompletionArtifacts(
   base: readonly WorkflowCompletionArtifact[],
@@ -163,7 +169,10 @@ function WorkflowCompletionWithData({
 }: {
   completion: WorkflowTurnCompletion;
   live: readonly WorkflowRunArtifactSummary[] | undefined;
-  /** 打开请求的工厂；缺席即宿主没给打开能力（门与 `shared.onOpenArtifact` 同一条）。 */
+  /**
+   * Factory for open requests; absent means the host supplied no open capability (the same gate as
+   * `shared.onOpenArtifact`).
+   */
   openArtifactFrom?: (
     artifacts: readonly WorkflowCompletionArtifact[],
   ) => (artifactId: string) => void;
@@ -180,10 +189,10 @@ function WorkflowCompletionWithData({
     () => mergeCompletionArtifacts(completion.artifacts, state.artifacts),
     [completion.artifacts, state.artifacts],
   );
-  // `artifactsTruncated` 说的是**通知载荷**被砍在 8 件，而这里画的清单已经由活投影 /
-  // journal 补齐（产物多的 run 是常态），`+N` 与「还有 N 个」却仍按载荷的旗子写成省略号——用户看到的
-  // 是「还有 … 个」，而数字明明已经知道。清单完整时旗子作废；只有老 CLI（查不到 journal）或还没
-  // 答上来时才仍是省略号，那时数字确实不可知。
+  // `artifactsTruncated` says that the **notification payload** has been chopped at 8 pieces, while the list of drawings here has been made by live projection/
+  // Journal completion (runs with many products are normal), `+N` and "N more" are still written with ellipsis according to the load flag - what the user sees
+  // It's "there's one more", and the number is obviously already known. The flag is disabled when the list is complete; only the old CLI (journal cannot be found) or not yet
+  // When the answer came up, it was still an ellipsis, and the number was indeed unknowable at that time.
   const artifactsTruncated = shared.artifactsTruncated === true && !state.complete;
   const renderPreview = (artifact: WorkflowCompletionArtifact) => (
     <WorkflowArtifactTilePreview
@@ -194,13 +203,13 @@ function WorkflowCompletionWithData({
       theme={theme}
     />
   );
-  // 只有画出来的框挂预览——今天只有交付物行有框；索引行与「还有 N 个」不读字节。
+  // Only the drawn boxes hang in the preview - today only the deliverable row has boxes; the index row and "N more" bytes are not read.
   const previewIds = useMemo(
     () => completionPreviewIds(completionArtifactLayout(artifacts, artifactsTruncated)),
     [artifacts, artifactsTruncated],
   );
-  // 补齐过的清单重造一次回调：载荷上没有的 `sourcePath`、老载荷上没有的 `contentType`
-  // 都从 journal / 活投影补回来，点开的那一下才带得全。
+  // The completed list recreates a callback: `sourcePath` that does not exist in the payload, `contentType` that does not exist in the old payload
+  // They are all added back from the journal/living projection, and they are all available when you click on them.
   const onOpenArtifact = openArtifactFrom?.(artifacts);
   return (
     <WorkflowCompletionCard

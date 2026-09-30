@@ -1,25 +1,33 @@
 import type { WorkflowCausalityGraphData } from "./types.js";
 
 /**
- * 「名字只在运行时才成形」这件事的唯一渲染点。
+ * The only render site for the idea that “a name takes shape only at runtime”.
  *
- * 分析器给的是形状而不是名字：`` agent(`研究员${i + 1}`) `` 折不成 8 个具体名字（那要求把
- * `map` 展开，而 `×N` 存在的意义正是拒绝展开），能拿到的只有模板两端的字面量。投影因此
- * 只搬两个 affix，省略号在**这里**才补上——与匿名兜底文案同一道理（见 lane-name.ts 头部）：
- * 投影是被 memo 的纯函数，文案与字形都该在渲染时成型，投影里只存数据。
+ * The analyzer yields a shape, not a name: `` agent(`researcher${i + 1}`) `` cannot be folded into 8
+ * concrete names (that would require expanding `map`, and the whole point of `×N` is to refuse that
+ * expansion), so the only thing available is the literal at each end of the template. The
+ * projection therefore just carries the two affixes over, and the ellipsis is filled in **here** —
+ * the same reasoning as the anonymous fallback wording (see the header of lane-name.ts): the
+ * projection is a memoized pure function, so both the wording and the glyph should be formed at
+ * render time, and the projection should hold only data.
  *
- * 省略号（而不是 `*` 或 `${…}`）是刻意的：它读起来仍然是一个名字，不引入新的视觉词汇。
+ * The ellipsis (rather than `*` or `${…}`) is deliberate: it still reads as a name, and introduces
+ * no new visual vocabulary.
  */
 const ELLIPSIS = "…";
 
-/** 一条车道 / 一张卡片的名字形状；形状取自协议，不在这里另立一套。 */
+/**
+ * The name shape of one lane / one card; the shape comes from the protocol, and no separate scheme
+ * is established here.
+ */
 export type NamePattern = NonNullable<WorkflowCausalityGraphData["lanes"][number]["namePattern"]>;
 
 /**
- * `{head: "研究员"}` → `研究员…`，`{tail: "-worker"}` → `…-worker`，两端都有 → `a…b`。
+ * `{head: "researcher"}` → `researcher…`, `{tail: "-worker"}` → `…-worker`, both ends present → `a…b`.
  *
- * 两个 affix 都缺席时返回 undefined 而不是孤零零一个 `…`：分析器不会发这种 pattern，但契约
- * 上 `{}` 是能通过 `.strict()` 的，这里不替它兜着就会在画面上留一个没有意义的省略号。
+ * When both affixes are absent, returns undefined rather than a lone `…`: the analyzer never emits
+ * such a pattern, but by contract `{}` does pass `.strict()`, and not covering for it here would
+ * leave a meaningless ellipsis on screen.
  */
 export function formatNamePattern(pattern: NamePattern | undefined): string | undefined {
   if (pattern === undefined) return undefined;

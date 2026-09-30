@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- Electron capture authority、renderer 消息协议与文件清理属于同一个录制事务，拆开会让 abort/close 状态跨模块竞态。 */
+/* eslint-disable max-lines -- the Electron capture authority, the renderer message protocol, and file cleanup are one recording transaction; splitting them lets abort/close state race across modules. */
 import { randomUUID } from "node:crypto";
 import { mkdir, open, rm, writeFile, type FileHandle } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -43,8 +43,8 @@ function deferred<T>(): Deferred<T> {
     resolvePromise = resolve;
     rejectPromise = reject;
   });
-  // 某个阶段提前失败时，后续阶段 deferred 仍会被 reject；预挂 catch 防止未进入该阶段的
-  // Promise 触发 unhandled rejection，真正的 await 仍会收到原始 rejection。
+  // When a certain stage fails early, the deferred in subsequent stages will still be rejected; the pre-hung catch prevents the deferred from not entering the stage.
+  // Promise triggers unhandled rejection, and the real await will still receive the original rejection.
   void promise.catch(() => undefined);
   return {
     promise,
@@ -182,9 +182,9 @@ function recorderHtml(): string {
                   if (!chunkEvent.data || chunkEvent.data.size === 0) return;
                   chunkQueue = chunkQueue.then(async () => {
                     const bytes = await chunkEvent.data.arrayBuffer();
-                    // DOM MessagePort → Electron MessagePortMain 对 ArrayBuffer transfer
-                    // 在部分 Electron 平台会静默丢弃整条消息；让 structured clone 复制分片才能
-                    // 保证 dataavailable 与后续 stopped 都按序抵达 main。
+                    // DOM MessagePort → Electron MessagePortMain to ArrayBuffer transfer
+                    // On some Electron platforms, the entire message will be silently discarded; let structured clone copy the shards to
+                    // Ensure that dataavailable and subsequent stopped arrive at main in order.
                     port.postMessage({ type: "chunk", data: bytes });
                   });
                 });
@@ -251,7 +251,7 @@ function closePort(port: MessagePortMain): void {
   try {
     port.close();
   } catch {
-    // 远端 renderer 已退出时 close 允许幂等失败。
+    // close allows idempotent failure when the remote renderer has exited.
   }
 }
 
@@ -263,13 +263,14 @@ function clearDisplayMediaHandler(recorderSession: Session): void {
   try {
     recorderSession.setDisplayMediaRequestHandler(null);
   } catch {
-    // session 可能已随 renderer 销毁；handler 没有其它调用方。
+    // The session may have been destroyed with the renderer; the handler has no other callers.
   }
 }
 
 /**
- * 使用 Electron 自带 Chromium 捕获指定 IAB WebFrameMain，并把 MediaRecorder 的 WebM 分片
- * 顺序写入主进程临时文件。这里不启动外部进程，也不读取 PATH。
+ * Uses Electron's bundled Chromium to capture the given IAB WebFrameMain and writes the
+ * MediaRecorder's WebM chunks in order into a main-process temp file. No external process is
+ * spawned here, and nothing is read from PATH.
  */
 export async function createElectronBrowserWebmRecorder(
   input: BrowserWebmRecorderFactoryInput,
@@ -391,7 +392,7 @@ export async function createElectronBrowserWebmRecorder(
       try {
         mainPort.postMessage({ type: "cancel" });
       } catch {
-        // renderer/port 已销毁时继续回收 main 资源。
+        // Continue to recycle main resources when renderer/port is destroyed.
       }
     }
     await writeChain.catch(() => undefined);
@@ -472,6 +473,6 @@ export async function createElectronBrowserWebmRecorder(
   return recorder;
 }
 
-// 保持标准 factory 类型出口，调用方不注入诊断时不会产生按分片日志。
+// Keeping the standard factory type exit, no per-shard logs will be generated when the caller does not inject diagnostics.
 export const defaultElectronBrowserWebmRecorder: BrowserWebmRecorderFactory =
   createElectronBrowserWebmRecorder;

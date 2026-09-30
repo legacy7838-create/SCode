@@ -1,6 +1,6 @@
-// 已保存工作流中枢的读缓存。
-// 按 workspaceKey 分片；磁盘仍是唯一权威（不变式 2）——缓存只服务同一页内的重渲染，
-// 变更后一律 `bypass` 刷新（skillStore 的同一条教训：复用 in-flight Promise 会拿到旧扫描）。
+// Saved workflow hub's read cache.
+// Sharded by workspaceKey; disk is still the only authority (invariant 2) - the cache only serves re-renders within the same page,
+// Always `bypass` refresh after changes (same lesson for skillStore: reusing in-flight Promise will get old scans).
 import { create } from "zustand";
 import {
   resolveWorkspaceKey,
@@ -12,24 +12,33 @@ import {
 import type { IZCodeAgentService, ZCodeAgentSavedWorkflowTarget } from "@zcode/services";
 import { logger } from "@/logger.js";
 
-/** 一页里最多拉多少条 run 来算「上次运行」；一个项目的活跃工作流很少超过这个数。 */
+/**
+ * How many runs a single page fetches at most in order to compute the "last run"; a project's
+ * active workflows rarely exceed this number.
+ */
 const SAVED_WORKFLOW_RUNS_PAGE = 50;
 
 /**
- * 声明输出需要：useSavedWorkflowGlobalGroup 的返回类型引用它，tsc -d 要求可命名；
- * knip 看不到这种用法，故标 public。
+ * Needed for the declaration output: the return type of useSavedWorkflowGlobalGroup references it,
+ * and tsc -d requires it to be nameable; knip cannot see this usage, hence it is marked public.
  * @public
  */
 export interface SavedWorkflowWorkspaceState {
   entries: ZCodeSavedWorkflowEntry[];
   invalid: ZCodeSavedWorkflowInvalidEntry[];
   runs: ZCodeSavedWorkflowRun[];
-  /** 扫过的目录（本地绝对路径），全局组据此 watch；未加载或列表未回时为 null。 */
+  /**
+   * The scanned directories (local absolute paths), which the global group watches; null while
+   * nothing is loaded or the listing has not returned.
+   */
   dir: string | null;
   loading: boolean;
   loaded: boolean;
   error: string | null;
-  /** 列表调用的 JSON-RPC 错误码（有则填）；全局组用 -32602 区分「旧 agent 不支持」与其他错误。 */
+  /**
+   * The JSON-RPC error code of the listing call (filled in when there is one); the global group
+   * uses -32602 to tell "an old agent does not support it" apart from other errors.
+   */
   errorCode: number | null;
 }
 
@@ -56,9 +65,10 @@ interface SavedWorkflowStoreState {
 const inFlight = new Map<string, Promise<void>>();
 
 /**
- * 读缓存的分片键：全局档（`scope:"global"` 且不带 workspace）
- * 用固定键 `"global"`——它跨项目、由 services 自选载体，不该与任何项目的 workspaceKey 混淆；
- * 项目档仍按 `resolveWorkspaceKey` 分片。
+ * The shard key for cache reads: the global tier (`scope:"global"` and without a workspace) uses
+ * the fixed key `"global"` — it spans projects and lets services pick their own carrier, so it must
+ * not be confused with any single project's workspaceKey; project tiers are still sharded by
+ * `resolveWorkspaceKey`.
  */
 function savedWorkflowStoreKey(target: ZCodeAgentSavedWorkflowTarget): string {
   if (target.scope === "global" && !target.workspacePath) return "global";
@@ -68,7 +78,10 @@ function savedWorkflowStoreKey(target: ZCodeAgentSavedWorkflowTarget): string {
   });
 }
 
-/** 从抛出的错误里取 JSON-RPC code（ChannelClient 保留 error.code）；取不到回 null。 */
+/**
+ * Pull the JSON-RPC code out of a thrown error (ChannelClient preserves error.code); returns null
+ * when there is none.
+ */
 function extractErrorCode(error: unknown): number | null {
   const code = (error as { code?: unknown } | null)?.code;
   return typeof code === "number" ? code : null;
@@ -78,14 +91,14 @@ async function fetchWorkspace(
   target: ZCodeAgentSavedWorkflowTarget,
   agentService: IZCodeAgentService,
 ): Promise<{ list: ZCodeWorkflowsListResult; runs: ZCodeSavedWorkflowRun[] }> {
-  // 列表与运行历史并行；运行历史失败不拖垮列表（journal 缺席时中枢照常能看、能管）。
+  // The list is parallel to the running history; failure to run the history will not bring down the list (the hub can still read and manage the journal when it is absent).
   const [list, runs] = await Promise.all([
     agentService.listSavedWorkflows(target),
     agentService
       .listSavedWorkflowRuns({ ...target, limit: SAVED_WORKFLOW_RUNS_PAGE })
       .then((result) => result.runs)
       .catch((error: unknown) => {
-        logger.warn("[savedWorkflowStore] 拉取运行历史失败，按无记录处理", {
+        logger.warn("[savedWorkflowStore] failed to fetch run history, treating as no records", {
           error: error instanceof Error ? error.message : String(error),
         });
         return [] as ZCodeSavedWorkflowRun[];
@@ -128,7 +141,7 @@ export const useSavedWorkflowStore = create<SavedWorkflowStoreState>((set) => ({
       })
       .catch((error: unknown) => {
         const message = error instanceof Error ? error.message : String(error);
-        logger.warn("[savedWorkflowStore] 拉取已保存工作流失败", { error: message });
+        logger.warn("[savedWorkflowStore] failed to fetch saved workflows", { error: message });
         set((state) => ({
           byWorkspaceKey: {
             ...state.byWorkspaceKey,

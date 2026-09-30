@@ -11,7 +11,7 @@ export interface BrowserTabShellRecord {
   schemaVersion: 1;
   tabId: string;
   /**
-   * Electron windowId 跨重启无效；仅在当前进程认领后写入内存副本，落盘固定为 null。
+   * Electron windowId is invalid across restarts; it is only written to the memory copy after the current process claims it, and the disk write is fixed to null.
    */
   windowBindingId: null;
   workspaceKey: string;
@@ -155,7 +155,7 @@ export class BrowserTabRecoveryStore {
     });
   }
 
-  /** 等待所有已提交 mutation 完成，供应用正常退出建立持久化屏障。 */
+  /** Wait for all submitted mutations to complete to establish a persistence barrier for the application to exit normally. */
   async whenIdle(): Promise<void> {
     await this.mutationQueue;
   }
@@ -180,11 +180,11 @@ export class BrowserTabRecoveryStore {
         const corruptPath = `${this.filePath}.corrupt-${Date.now()}`;
         try {
           await rename(this.filePath, corruptPath);
-          this.onWarning?.(`browser tab recovery 文件损坏，已隔离到 ${corruptPath}`);
+          this.onWarning?.(`browser tab recovery file is corrupt, quarantined to ${corruptPath}`);
         } catch (renameError) {
           if ((renameError as NodeJS.ErrnoException).code !== "ENOENT") {
             this.onWarning?.(
-              `browser tab recovery 损坏文件隔离失败: ${
+              `failed to quarantine the corrupt browser tab recovery file: ${
                 renameError instanceof Error ? renameError.message : String(renameError)
               }`,
             );
@@ -245,14 +245,14 @@ function prunePageStates(
       serialized: JSON.stringify(record),
     }))
     .filter(({ serialized }) => {
-      // 先把超大新记录放到 LRU 头部、再从尾部逐条删除会让所有正常旧快照
-      // 先被淘汰，最后才删掉超大记录；同时每次 pop 都全量 stringify，放大主进程开销。
+      // First putting the super large new records at the head of the LRU and then deleting them one by one from the tail will cause all normal old snapshots to
+      // They will be eliminated first, and then very large records will be deleted last; at the same time, every pop will be fully stringify, which will amplify the main process overhead.
       return Buffer.byteLength(`[${serialized}]`, "utf8") <= maxTotalBytes;
     })
-    // 单条超限记录不应占用数量预算，否则一个无效新快照仍会挤掉最旧的正常快照。
+    // A single over-limit record should not occupy the quantity budget, otherwise an invalid new snapshot will still crowd out the oldest normal snapshot.
     .slice(0, Math.max(0, maxPageStates));
   const retained: BrowserTabPageStateRecord[] = [];
-  let totalBytes = 2; // JSON 数组的 []。
+  let totalBytes = 2; // [] for JSON array.
   for (const [index, candidate] of candidates.entries()) {
     const nextBytes = Buffer.byteLength(candidate.serialized, "utf8") + (index === 0 ? 0 : 1);
     if (totalBytes + nextBytes > maxTotalBytes) break;

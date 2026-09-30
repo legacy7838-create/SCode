@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- task index 的 v4 帧摄入、snapshot upsert 和 workspace 广播必须共享同一份闭包状态。 */
+/* eslint-disable max-lines -- v4 frame ingestion, snapshot upserts and workspace broadcasts for the task index must share the same closure state. */
 import { repairSubagentTaskIndex } from "#src/zcode-agent/repairSubagentTaskIndex.js";
 import {
   deriveZCodeTaskStatusFromSessionSnapshot,
@@ -49,7 +49,7 @@ import { formatTaskMetaModelSelectionFromSnapshot } from "./zcodeConfigOptions.j
 
 const logger = createServiceLogger("zcode-task-index-syncer");
 
-/** v4 订阅 connectionId 作用域：与 renderer 侧栏共 topic 不同代际（重订阅替换）。 */
+/** Scope of the v4 subscription connectionId: a different generation from the renderer sidebar on the same topic (resubscribe replaces). */
 const TASK_INDEX_SUBSCRIBER_SCOPE = "task-index";
 const MAX_PENDING_TOPIC_FRAMES = 1_024;
 const MAX_PENDING_TOPIC_BYTES = 32 * 1024 * 1024;
@@ -81,27 +81,30 @@ interface WorkspaceBroadcastTarget {
 
 export interface ZCodeTaskIndexTerminalEvent {
   target: ZCodeAgentSessionTarget;
-  /** v4 phase 终态映射：completedSuccess/completedInterrupted → turn.completed；error → turn.failed。 */
+  /** v4 phase terminal-state mapping: completedSuccess/completedInterrupted → turn.completed; error → turn.failed. */
   kind: "turn.completed" | "turn.failed";
 }
 
 export interface ZCodeTaskIndexReadyEvent {
   target: ZCodeAgentSessionTarget;
-  /** v4 phase 终态映射：agent 收口后可接受下一条输入的 ready 边界。 */
+  /** v4 phase terminal-state mapping: the ready boundary after the agent has converged and can accept the next input. */
   reason: "prompt_completed" | "prompt_failed";
 }
 
 export interface ZCodeTaskIndexSyncer {
   /**
-   * 幂等地为指定 workspace 建立 v4 后台摄入订阅（sessions-index + workspace-config），
-   * 把 CLI 权威投影的会话终态/标题/配置目录落到 task index sqlite 与 workspace 广播。
-   * 同一 workspace 多次调用只会建立一次。
+   * Idempotently establishes the v4 background ingestion subscriptions (sessions-index + workspace-config)
+   * for the given workspace, landing the CLI-authoritative projections of session terminal state /
+   * title / config catalog into the task index sqlite and the workspace broadcast.
+   * Repeated calls for the same workspace only ever establish it once.
    */
   ensureWorkspaceSubscription(target: ZCodeAgentWorkspaceTarget): void;
   /**
-   * 兼容入口（旧 shadow 订阅 API 形状）：session 维度的激活信号统一收敛为
-   * workspace 级 v4 订阅。options.includeSnapshot 在 v4 摄入下无对应语义（初始
-   * sessions-index snapshot 只静默补缺失行，不回放终态/广播），保留参数只为不动调用面。
+   * Compatibility entry point (the shape of the old shadow subscription API): the session-level
+   * activation signal is unified into a workspace-level v4 subscription. options.includeSnapshot has
+   * no counterpart under v4 ingestion (the initial sessions-index snapshot only silently fills in
+   * missing rows and does not replay terminal states or broadcasts); the parameter is kept only so
+   * the calling surface stays untouched.
    */
   ensureSessionSubscription(
     target: ZCodeAgentSessionTarget,
@@ -110,10 +113,11 @@ export interface ZCodeTaskIndexSyncer {
     },
   ): void;
   /**
-   * 把一份 session snapshot 同步到 sqlite，并广播 workspace_task_list_changed。
-   * desktop-continuous 路径上，zcodeSessionService 在 createSession/resumeSession/setModel
-   * 之后调用本方法（send/steer/fork/compact/rewind 旧写路径已删，写路径统一走
-   * v4 命令 + sessions-index/workspace 事件），让 sqlite 拿到最新 title/updatedAt 并触发 UI 列表刷新。
+   * Syncs a session snapshot into sqlite and broadcasts workspace_task_list_changed.
+   * On the desktop-continuous path zcodeSessionService calls this after
+   * createSession/resumeSession/setModel (the legacy send/steer/fork/compact/rewind write paths are
+   * gone, and writes now uniformly go through v4 commands plus sessions-index/workspace events), so
+   * sqlite picks up the latest title/updatedAt and the UI list refresh is triggered.
    */
   syncSnapshotAndBroadcast(
     snapshot: ZCodeSessionStateSnapshot,
@@ -123,25 +127,29 @@ export interface ZCodeTaskIndexSyncer {
       moveGroupedTaskToTop?: boolean;
       unreadSignal?: ZCodeWorkspaceTaskListChanged["unreadSignal"];
       /**
-       * 设计修正：必填。切模型（task_model_changed）/快照收敛（task_status_changed）
-       * 这类变更不得落到 task_meta_changed——后者会被 UI 当成归属相关变更
-       * 触发全局 membership 重拉和列表整刷。
+       * Design correction: required. Changes like switching models (task_model_changed) or snapshot
+       * convergence (task_status_changed) must not fall into task_meta_changed — the UI treats the
+       * latter as a membership-related change and triggers a global membership refetch plus a full
+       * list refresh.
        */
       broadcastReason: ZCodeWorkspaceTaskListChanged["reason"];
     },
   ): Promise<ZCodeTaskMeta>;
   /**
-   * 只更新 task index 中的模型记录，不广播历史 snapshot。
-   * 发送前 resume 会关闭 snapshot 广播，避免旧终态覆盖本地 streaming UI，
-   * 但仍需要把 sqlite 的 model 从已删除历史模型更新到本次实际使用的可用模型。
+   * Updates only the model record in the task index and does not broadcast historical snapshots.
+   * The resume before sending disables snapshot broadcasting so an old terminal state does not
+   * overwrite the local streaming UI, but sqlite still needs its model moved from a deleted
+   * historical model to the actually usable model used this time.
    */
   syncTaskModel(target: ZCodeAgentSessionTarget, model: string): Promise<ZCodeTaskMeta | null>;
   /**
-   * 主动触发一次 workspace_task_list_changed 广播。
-   * 给 adapter 用：archive / rename / pin / delete 等 task 元数据变更后仍要广播。
-   * 设计修正：reason 必填。曾经的缺省值（task_meta_changed）让所有不表态的发射点
-   * 静默落入 UI 最重的刷新语义（全局 membership 重拉），是"输入框操作/任务收口
-   * 引发左侧列表整刷"的根因；发射点必须显式声明变更类别。
+   * Explicitly triggers one workspace_task_list_changed broadcast.
+   * For the adapter's use: after task metadata changes such as archive / rename / pin / delete it
+   * must still broadcast. Design correction: reason is required. The former default
+   * (task_meta_changed) made every emitter that expressed no opinion silently fall into the
+   * heaviest UI refresh semantics (a global membership refetch), which was the root cause of
+   * "composer actions / task convergence cause a full refresh of the left-hand list"; every
+   * emitter must declare its change category explicitly.
    */
   emitWorkspaceTaskListChanged(
     target: WorkspaceBroadcastTarget,
@@ -150,24 +158,26 @@ export interface ZCodeTaskIndexSyncer {
     options?: Pick<ZCodeWorkspaceTaskListChanged, "unreadSignal">,
   ): void;
   /**
-   * 获取共享的 workspace emitter，给 adapter 用来 fire 非 task_list_changed 类事件
-   * （如 workspace_config_options_update）。这样 adapter 和 syncer 共用同一 emitter，
-   * 订阅者只需要订阅一次即可收到全部事件。
+   * Gets the shared workspace emitter, for the adapter to fire non-task_list_changed events
+   * (such as workspace_config_options_update). That way adapter and syncer share one emitter and
+   * subscribers only need to subscribe once to receive every event.
    */
   getWorkspaceEmitter(workspace: WorkspaceEventInput): Emitter<ZCodeWorkspaceEvent>;
-  /** 订阅 workspace 维度事件流。adapter.onDynamicWorkspaceEvent 直接转发到这里。 */
+  /** Subscribes to the workspace-dimensional event stream. adapter.onDynamicWorkspaceEvent forwards straight here. */
   onDynamicWorkspaceEvent(workspace: WorkspaceEventInput): Event<ZCodeWorkspaceEvent>;
   /**
-   * 订阅 v4 sessions-index 观察到的会话 phase 终态迁移。
-   * 这不是 UI stream，只给 host runtime command queue 等 services 内部状态收口使用。
+   * Subscribes to session phase terminal-state transitions observed on the v4 sessions-index.
+   * This is not a UI stream; it exists only for services-internal state convergence such as the
+   * host runtime command queue.
    */
   onSessionTerminalEvent: Event<ZCodeTaskIndexTerminalEvent>;
   /**
-   * 订阅会话收口后的 prompt ready 状态（phase 进入 completedSuccess/completedInterrupted/error）。
-   * 手机 host command queue 只能以这个事件作为继续发送下一条的边界。
+   * Subscribes to the prompt ready state after a session converges (phase entering
+   * completedSuccess/completedInterrupted/error). The mobile host command queue can only use this
+   * event as the boundary for sending the next prompt.
    */
   onSessionReadyEvent: Event<ZCodeTaskIndexReadyEvent>;
-  /** 释放所有 v4 订阅和 workspace emitter；不关闭注入的 taskIndexRepo。 */
+  /** Releases every v4 subscription and the workspace emitter; it does not close the injected taskIndexRepo. */
   disposeAll(): void;
 }
 
@@ -176,7 +186,7 @@ interface CreateZCodeTaskIndexSyncerOptions {
   taskIndexRepo: TaskIndexRepo;
 }
 
-/** phase 终态集合（sessions-index 的 conflated 最新态里判定迁移用）。 */
+/** The set of terminal phases (used to decide transitions against the conflated latest state from sessions-index). */
 function isTerminalPhase(phase: SessionPhase): boolean {
   return phase === "completedSuccess" || phase === "completedInterrupted" || phase === "error";
 }
@@ -234,42 +244,42 @@ function buildBaselineMetaFromSummary(
 
 interface WorkspaceIngestState {
   target: ZCodeAgentWorkspaceTarget;
-  /** 当前已 attach 的 Agent runtime generation；null = dormant。 */
+  /** The Agent runtime generation currently attached; null = dormant. */
   runtimeGeneration: number | null;
-  /** sessions-index 订阅代际（帧过滤闸门；null = 订阅建立中）。 */
+  /** The sessions-index subscription generation (the frame filtering gate; null = the subscription is being established). */
   indexSubscriptionId: string | null;
-  /** workspace-config 订阅代际。 */
+  /** The workspace-config subscription generation. */
   configSubscriptionId: string | null;
-  /** 两个 topic 各自换代；单一 topic 恢复不得让 sibling 的迟到 ACK 失效。 */
+  /** The two topics change generation independently; recovering a single topic must not invalidate a sibling's late ACK. */
   indexSubscriptionGeneration: number;
   configSubscriptionGeneration: number;
   indexPending: PendingTopicFrames<SessionsIndexTopicWireCandidate> | null;
   configPending: PendingTopicFrames<WorkspaceConfigTopicWireCandidate> | null;
-  /** 每个 topic 独立记账的已确认水位，不能共用一个 seq/epoch。 */
+  /** Confirmed watermark accounted per topic independently; a single seq/epoch must not be shared. */
   indexLogEpoch: string | null;
   indexSeq: number;
   configLogEpoch: string | null;
   configSeq: number;
-  /** ACK 只证明 admission；首个 logical frame 原子 apply 后才允许把 epoch/seq 当 resume base。 */
+  /** An ACK only proves admission; epoch/seq may only be used as the resume base after the first logical frame is atomically applied. */
   indexHasAppliedBase: boolean;
   configHasAppliedBase: boolean;
   indexRecovery: TopicRecoveryState | null;
   configRecovery: TopicRecoveryState | null;
   indexRecoveryGeneration: number;
   configRecoveryGeneration: number;
-  /** runtime 重启/恢复 RPC 暂态失败后的 topic-local 退避，sibling 继续活着。 */
+  /** Topic-local backoff after a transient runtime restart/recovery RPC failure; the sibling stays alive. */
   indexRetryTimer: ReturnType<typeof setTimeout> | null;
   configRetryTimer: ReturnType<typeof setTimeout> | null;
   indexRetryAttempt: number;
   configRetryAttempt: number;
-  /** 持续故障的 production warn 限频；成功订阅后清空，让下一次新故障立即可见。 */
+  /** Rate limits the production warn under a persistent failure; cleared after a successful subscription so the next new failure is immediately visible. */
   indexLastWarnAt: number | null;
   configLastWarnAt: number | null;
-  /** 会话摘要基线（terminal 迁移/标题变化的 diff 依据）。 */
+  /** The session summary baseline (the diff basis for terminal transitions / title changes). */
   summaries: Map<string, SessionSummary>;
-  /** 首帧（snapshot）静默补缺失行，但不回放历史终态事件或列表广播。 */
+  /** The first frame (snapshot) silently fills in missing rows but does not replay historical terminal events or list broadcasts. */
   seeded: boolean;
-  /** workspace 级 frame emitter 跨 runtime generation 保持稳定，只允许安装一组 listener。 */
+  /** The workspace-level frame emitter stays stable across runtime generations and allows only one installed set of listeners. */
   frameListenersInstalled: boolean;
   disposables: IDisposable[];
   indexAssembler: TopicWireFrameAssembler<SessionsIndexTopicFrame>;
@@ -301,15 +311,15 @@ export function createZCodeTaskIndexSyncer(
   options: CreateZCodeTaskIndexSyncerOptions,
 ): ZCodeTaskIndexSyncer {
   const { agentService, taskIndexRepo } = options;
-  // task index 的事件摄入从旧协议 shadow 订阅（session/subscribe +
-  // session/event + state.updated）整体迁到 v4 帧——sessions-index topic 提供
-  // status(phase)/title/lastActivity 的 workspace 级 conflated 最新态，
-  // workspace-config topic 提供配置目录热更新；正文搜索索引在 phase 终态迁移时
-  // 回源完整 snapshot 收敛（v4 命令路径不再有 op 驱动的 snapshot 同步兜底）。
+  // Event ingestion of task index is from the old protocol shadow subscription (session/subscribe +
+  // session/event + state.updated) is moved to v4 frame as a whole - provided by sessions-index topic
+  // The workspace level conflated latest status of status(phase)/title/lastActivity,
+  // The workspace-config topic provides hot updates of the configuration directory; the text search index is migrated during the final state of the phase.
+  // Complete snapshot convergence back to the source (the v4 command path no longer has op-driven snapshot synchronization).
   const workspaceIngests = new Map<string, WorkspaceIngestState>();
-  // 之前 workspaceEmitters 私有在 adapter 里，syncer 写完 sqlite 没有广播渠道，
-  // UI 永远收不到 workspace_task_list_changed。把 emitter 上提到 syncer，adapter 改为转发，
-  // 让 adapter 路径和 desktop-continuous 路径共用同一份订阅，事件不再分裂。
+  // Previously, workspaceEmitters were privately stored in the adapter, and after the syncer was written, there was no broadcast channel for sqlite.
+  // The UI never receives workspace_task_list_changed. Change the mention of syncer and adapter on emitter to forwarding,
+  // Let the adapter path and desktop-continuous path share the same subscription, and events will no longer be split.
   const workspaceEmitters = new Map<string, Emitter<ZCodeWorkspaceEvent>>();
   const terminalEventEmitter = new Emitter<ZCodeTaskIndexTerminalEvent>();
   const readyEventEmitter = new Emitter<ZCodeTaskIndexReadyEvent>();
@@ -334,10 +344,10 @@ export function createZCodeTaskIndexSyncer(
     error: unknown,
     retryKind: TopicRetryKind,
   ): void => {
-    const message = `task index ${topic} 订阅失败 reason=${reason} workspace=${state.target.workspacePath}`;
+    const message = `task index ${topic} subscription failed reason=${reason} workspace=${state.target.workspacePath}`;
     if (retryKind === "provider-not-ready") {
-      // 新用户尚未配置模型是正常等待态；每个 workspace 的两个 topic 若持续 warn，
-      // 会在用户进行任何操作前先制造日志风暴。debug 在 production 构建中不会落盘。
+      // New users who have not yet configured a model are in a normal waiting state; if the two topics of each workspace continue to warn,
+      // A log storm will be created before the user performs any operations. debug will not be deployed in production builds.
       logger.debug(undefined, message, error);
       return;
     }
@@ -350,7 +360,7 @@ export function createZCodeTaskIndexSyncer(
       logger.warn(undefined, message, error);
       return;
     }
-    // 高频重试细节只用于本地排查，不能和消息流同量级写入生产日志。
+    // High-frequency retry details are only used for local troubleshooting and cannot be written to the production log at the same level as the message flow.
     logger.debug(undefined, message, error);
   };
   const createPendingFrames = <TFrame>(generation: number): PendingTopicFrames<TFrame> => ({
@@ -382,9 +392,9 @@ export function createZCodeTaskIndexSyncer(
       pending.frames.length + 1 > MAX_PENDING_TOPIC_FRAMES ||
       pending.stagedBytes + bytes > MAX_PENDING_TOPIC_BYTES
     ) {
-      // ACK-only 的 initial notification 会在 Promise continuation 前到达。订阅建立前的
-      // 暂存缓冲区超限时，既不能无界积压，也不能丢帧了事；此时尚未取得可证明的 base，
-      // 因此标记需要恢复，待 ACK 到达后仅为该 topic 发起新一代 snapshot 订阅。
+      // The ACK-only initial notification will arrive before the Promise continuation. Before the subscription is created
+      // When the temporary buffer exceeds the limit, it can neither accumulate without bounds nor drop frames; at this time, a provable base has not yet been obtained.
+      // Therefore, the mark needs to be restored, and after the ACK arrives, only a new generation snapshot subscription will be initiated for the topic.
       discardPendingFrames(pending);
       pending.recoveryNeeded = true;
       logger.warn(
@@ -425,7 +435,7 @@ export function createZCodeTaskIndexSyncer(
     } catch (error) {
       logger.warn(
         undefined,
-        `清理 task index sessions-index 订阅失败 workspace=${state.target.workspacePath}`,
+        `failed to clean up the task index sessions-index subscription workspace=${state.target.workspacePath}`,
         error,
       );
     }
@@ -443,7 +453,7 @@ export function createZCodeTaskIndexSyncer(
     } catch (error) {
       logger.warn(
         undefined,
-        `清理 task index workspace-config 订阅失败 workspace=${state.target.workspacePath}`,
+        `failed to clean up the task index workspace-config subscription workspace=${state.target.workspacePath}`,
         error,
       );
     }
@@ -479,7 +489,7 @@ export function createZCodeTaskIndexSyncer(
     reason: ZCodeWorkspaceTaskListChanged["reason"],
     options?: Pick<ZCodeWorkspaceTaskListChanged, "unreadSignal">,
   ): void {
-    // 排查日志（左侧列表随输入框操作刷新）：确认哪些操作在发 task list 广播、reason 是什么。
+    // Check the log (the list on the left is refreshed with the input box operation): Confirm which operations are sending task list broadcasts and what the reason is.
     logger.debug(
       undefined,
       `[list-refresh-trace] emitWorkspaceTaskListChanged reason=${reason} taskId=${target.taskId ?? "-"} workspace=${target.workspacePath} hasMeta=${Boolean(taskMeta)}`,
@@ -507,15 +517,15 @@ export function createZCodeTaskIndexSyncer(
     },
   ): Promise<void> {
     try {
-      // task-index 是被动观察者，只能读取现有 runtime。调用 resumeSession
-      // 会在用户下一轮 prompt 已被 Core 接受后重新 materialize/resume 同一 session，
-      // 形成第二个生命周期 writer；readSession(existing-only) 保留完整 snapshot
-      // 的索引能力，同时不会拉起或修改 runtime。
+      // task-index is a passive observer and can only read the existing runtime. Call resumeSession
+      // The same session will be rematerialized/resume after the user's next prompt has been accepted by Core.
+      // Form a second life cycle writer; readSession(existing-only) retains the complete snapshot
+      // indexing capabilities without pulling up or modifying the runtime.
       const snapshot = await agentService.readSession({
         ...target,
         runtimePolicy: "existing-only",
       });
-      // 回源收敛是状态/正文同步，不涉及 pin/archive/unread 归属（task_status_changed）。
+      // Back-to-origin convergence is status/text synchronization and does not involve pin/archive/unread ownership (task_status_changed).
       await syncSnapshotAndBroadcast(snapshot, {
         ...(options?.unreadSignal ? { unreadSignal: options.unreadSignal } : {}),
         broadcastReason: "task_status_changed",
@@ -524,7 +534,7 @@ export function createZCodeTaskIndexSyncer(
     } catch (error) {
       logger.warn(
         undefined,
-        `回源同步 task index 行失败 reason=${reason} taskId=${target.sessionId}`,
+        `failed to sync the task index row from the source reason=${reason} taskId=${target.sessionId}`,
         error,
       );
     }
@@ -552,7 +562,7 @@ export function createZCodeTaskIndexSyncer(
   function emitTerminalAndReady(target: ZCodeAgentSessionTarget, summary: SessionSummary): void {
     const phase = summary.phase;
     const failed = phase === "error";
-    // 顺序保持旧协议语义：先 turn 终态（收口当前 input），再 prompt ready（放行下一条）。
+    // The order maintains the semantics of the old protocol: first turn the final state (close the current input), then prompt ready (release the next one).
     terminalEventEmitter.fire({
       target,
       kind: failed ? "turn.failed" : "turn.completed",
@@ -563,7 +573,7 @@ export function createZCodeTaskIndexSyncer(
     });
   }
 
-  /** phase 终态迁移 → sqlite status 收敛 + 广播 + 回源正文索引。 */
+  /** Terminal phase transition → sqlite status convergence + broadcast + re-fetch the source text index. */
   function applyTerminalTransition(
     target: ZCodeAgentSessionTarget,
     summary: SessionSummary,
@@ -572,7 +582,7 @@ export function createZCodeTaskIndexSyncer(
     emitTerminalAndReady(target, summary);
     const failed = summary.phase === "error";
     const unreadSignal = resolveTerminalUnreadSignal(summary);
-    logger.debug(undefined, "task 终态未读裁决", {
+    logger.debug(undefined, "task terminal unread verdict", {
       goalStatus: summary.goalStatus ?? null,
       phase: summary.phase,
       taskId: target.sessionId,
@@ -584,19 +594,19 @@ export function createZCodeTaskIndexSyncer(
         workspacePath: target.workspacePath,
         workspaceIdentity: target.workspaceIdentity,
         taskId: target.sessionId,
-        // error 的 lastError 详情不在 sessions-index 摘要里，留给随后的回源 snapshot
-        // 写权威值（patch 不带 lastError 键 = 保留现值）；completed 沿旧语义清空。
+        // The lastError details of error are not in the sessions-index summary and are left for subsequent back-to-origin snapshots.
+        // Write authoritative value (patch without lastError key = retain current value); completed is cleared along the old semantics.
         patch: failed
           ? { status: "error", updatedAt }
           : { status: "completed", lastError: undefined, updatedAt },
       })
       .then((meta) => {
         if (meta) {
-          // 之前只更新 sqlite 不广播，UI 监听 workspace_task_list_changed 收不到通知，
-          // 导致 spinner 不消失、updatedAt 排序不刷新。补一次广播让列表收敛。
-          // 终态收敛是 status 变更，必须用 task_status_changed；
-          // 之前落缺省 task_meta_changed，每次 turn 完成都会全局 bump membership
-          // 版本号，所有列表实例重拉归属，表现为"任务结束左侧列表闪一下"。
+          // Previously, only sqlite was updated without broadcasting. The UI monitored workspace_task_list_changed and could not receive notifications.
+          // As a result, the spinner does not disappear and the updatedAt sorting does not refresh. Add one more broadcast to allow the list to converge.
+          // The final state convergence is a status change, and task_status_changed must be used;
+          // Previously, the default task_meta_changed was set, and membership would be globally bumped every time the turn was completed.
+          // Version number, all list instances are repulsed, and the performance is "the list on the left flashes when the task ends".
           emitWorkspaceTaskListChanged(
             broadcastTargetFrom(target),
             meta,
@@ -604,26 +614,26 @@ export function createZCodeTaskIndexSyncer(
             unreadSignal ? { unreadSignal } : undefined,
           );
         }
-        // 终态读取完整 snapshot：v4 命令路径（createSession/sendText 走 v4/command）
-        // 不经过 zcodeSessionService 的 op 驱动 snapshot 同步，行缺失/正文搜索/lastError
-        // 全靠这里收敛；readSession(existing-only) 只读现有 runtime，不重新恢复 session。
+        // The final state reads the complete snapshot: v4 command path (createSession/sendText goes to v4/command)
+        // Without op driver snapshot synchronization of zcodeSessionService, row missing/text search/lastError
+        // It all depends on convergence here; readSession(existing-only) only reads the existing runtime and does not restore the session.
         void resyncTaskIndexRowFromAgent(target, failed ? "phase.error" : "phase.completed", {
           moveGroupedTaskToTop: options?.moveGroupedTaskToTop,
-          // patch 已广播时不能让随后的 snapshot 回源再次制造完成提醒；
-          // 行缺失时则把同一 signal 交给回源结果，保证提醒既不丢也不重复。
+          // When the patch has been broadcast, subsequent snapshots cannot be returned to the source to create completion reminders again;
+          // When a row is missing, the same signal is given to the source result to ensure that reminders are neither lost nor repeated.
           ...(meta || !unreadSignal ? {} : { unreadSignal }),
         });
       })
       .catch((error) => {
         logger.warn(
           undefined,
-          `同步 v4 phase 终态到 task index 失败 taskId=${target.sessionId}`,
+          `failed to sync the v4 terminal phase to the task index taskId=${target.sessionId}`,
           error,
         );
       });
   }
 
-  /** 标题变化 → sqlite title patch；行缺失回源完整 snapshot（对齐旧 first_input 语义）。 */
+  /** Title change → sqlite title patch; a missing row re-fetches the full snapshot from the source (matching the old first_input semantics). */
   function applyTitleChange(target: ZCodeAgentSessionTarget, title: string): void {
     const updatedAt = Date.now();
     void taskIndexRepo
@@ -635,15 +645,15 @@ export function createZCodeTaskIndexSyncer(
       })
       .then((meta) => {
         if (meta) {
-          // 标题变更（首条消息/自动标题生成）与归属无关且每个任务必发，
-          // 用专属 reason，避免每次首发/收口标题落盘都触发全局 membership 重拉。
+          // Title changes (first message/automatic title generation) are independent of attribution and must be posted for every task,
+          // Use exclusive reason to avoid triggering global membership re-pull every time the first/last title is placed.
           emitWorkspaceTaskListChanged(broadcastTargetFrom(target), meta, "task_title_changed");
         } else {
-          // draft session 不预写占位行；首个标题（旧 first_input）先于任何
-          // snapshot upsert 到达时按完整 snapshot 回源，避免依赖空 session 占位行。
-          // v4 createSession 不经过 zcodeSessionService.createSession；首个标题到达且
-          // task index 尚无行，说明这是新会话首次落库。回源时必须同时写 grouped 顶层最小
-          // sort_order，否则缺序节点会被客户端补到列表末尾。
+          // The draft session does not prewrite placeholder lines; the first header (old first_input) precedes any
+          // When the snapshot upsert arrives, it returns the complete snapshot to the source to avoid relying on empty session placeholder lines.
+          // v4 createSession does not go through zcodeSessionService.createSession; first header arrives and
+          // There is no row in task index yet, indicating that this is the first time a new session has been logged into the database. When returning to the source, you must also write the grouped top level minimum
+          // sort_order, otherwise missing nodes will be added to the end of the list by the client.
           void resyncTaskIndexRowFromAgent(target, "meta.titleUpdated", {
             moveGroupedTaskToTop: true,
           });
@@ -652,13 +662,13 @@ export function createZCodeTaskIndexSyncer(
       .catch((error) => {
         logger.warn(
           undefined,
-          `同步 v4 标题变更到 task index 失败 taskId=${target.sessionId}`,
+          `failed to sync the v4 title change to the task index taskId=${target.sessionId}`,
           error,
         );
       });
   }
 
-  /** 单条 summary 对基线 diff：draft 跳过；terminal 迁移/标题变化各自收敛。 */
+  /** Diffs a single summary against the baseline: drafts are skipped; terminal transitions and title changes each converge on their own. */
   function processSummary(
     state: WorkspaceIngestState,
     previous: SessionSummary | undefined,
@@ -666,15 +676,15 @@ export function createZCodeTaskIndexSyncer(
     _deliveryKind: TopicDeliveryKind,
   ): void {
     state.summaries.set(next.sessionId, next);
-    // draft 裁决：纯内存态、不落盘，也绝不进 task index sqlite。
+    // Draft ruling: Pure memory state, no disk placement, and never entering task index sqlite.
     if (next.phase === "draft") {
       return;
     }
     const target = sessionTargetFrom(state.target, next.sessionId);
     const becameVisibleTask = previous === undefined || previous.phase === "draft";
-    // 终态迁移 = 基线里真实观察到非终态 → 终态。无基线的会话（冷恢复 hydration、
-    // 断档降级后新出现的历史会话）不回放终态；活跃会话必先以 running/prewarming
-    // 进入基线（gateway 每个事件都 fan-out），不会漏掉真实收口。
+    // Final state migration = non-final state actually observed in baseline → final state. Sessions without baseline (cold recovery hydration,
+    // New historical sessions that appear after downgrading) do not play back the final state; active sessions must first be run/prewarming
+    // Enter the baseline (gateway fan-out for each event), and the real closure will not be missed.
     const becameTerminal =
       previous !== undefined && !isTerminalPhase(previous.phase) && isTerminalPhase(next.phase);
     if (becameTerminal) {
@@ -684,9 +694,9 @@ export function createZCodeTaskIndexSyncer(
       return;
     }
     if (becameVisibleTask) {
-      // v4 预热 session 从 draft 提升，或 online delta 首次出现新 session 时，
-      // 不经过 zcodeSessionService.createSession。此处是最早且不依赖标题时序的新任务边界；
-      // 立即回源写入 task 行与 grouped root 最小 sort_order，避免缺序节点落到末尾。
+      // v4 warm-up session is promoted from draft, or when a new session appears for the first time in online delta,
+      // Not going through zcodeSessionService.createSession. Here is the earliest new task boundary that does not depend on title timing;
+      // Immediately write task lines and grouped root minimum sort_order back to the source to prevent out-of-order nodes from falling to the end.
       void resyncTaskIndexRowFromAgent(target, "session.became-visible", {
         moveGroupedTaskToTop: true,
       });
@@ -704,12 +714,12 @@ export function createZCodeTaskIndexSyncer(
   ): Promise<void> {
     const candidates = [...summaries].filter((summary) => summary.phase !== "draft");
     if (candidates.length === 0) return;
-    // 纯 V4 UI 不经过 zcodeSessionService.initializeWorkspace；若把首帧
-    // 当成“已有 sqlite 存量”的静默基线，远端新库就会永远是 0 行。这里只做原子
-    // insert-if-missing，不广播、不回放历史终态，也不覆盖已有产品壳状态；后续打开/
-    // 收口时再由完整 snapshot 补 model、正文搜索等权威字段。
-    // 防灾保护：历史会话可能很多，不能一次创建等量 Promise 挤占 host 事件循环。
-    // 固定小批次写入；失败只汇总一条生产日志，避免逐会话错误再次制造日志风暴。
+    // Pure V4 UI does not go through zcodeSessionService.initializeWorkspace; if the first frame
+    // As a silent baseline of "existing sqlite stock", the remote new library will always have 0 rows. Only atoms are done here
+    // insert-if-missing, does not broadcast, does not play back the historical final state, and does not overwrite the existing product shell state; subsequently open /
+    // When closing, the complete snapshot is used to supplement model, text search and other authoritative fields.
+    // Disaster protection: There may be many historical sessions, and the same number of Promises cannot be created at once to crowd out the host event loop.
+    // Fixed small batch writing; only one production log will be summarized upon failure to avoid session-by-session errors causing log storms again.
     let failedCount = 0;
     let firstError: unknown;
     for (let offset = 0; offset < candidates.length; offset += INITIAL_BASELINE_SEED_BATCH_SIZE) {
@@ -729,7 +739,7 @@ export function createZCodeTaskIndexSyncer(
     if (failedCount > 0) {
       logger.warn(
         undefined,
-        `首次 sessions-index 基线补齐 task index 失败 workspace=${resolveWorkspaceKey(state.target)} failed=${failedCount} total=${candidates.length}`,
+        `initial sessions-index baseline backfill of the task index failed workspace=${resolveWorkspaceKey(state.target)} failed=${failedCount} total=${candidates.length}`,
         firstError,
       );
     }
@@ -889,7 +899,7 @@ export function createZCodeTaskIndexSyncer(
         discardIndexRecovery(state);
         logger.warn(
           undefined,
-          `task index sessions-index resync 失败，改用新鲜订阅 workspace=${state.target.workspacePath}`,
+          `task index sessions-index resync failed, falling back to a fresh subscription workspace=${state.target.workspacePath}`,
           error,
         );
         void subscribeIndexTopic(state, "resync-failed", true);
@@ -950,7 +960,7 @@ export function createZCodeTaskIndexSyncer(
         discardConfigRecovery(state);
         logger.warn(
           undefined,
-          `task index workspace-config resync 失败，改用新鲜订阅 workspace=${state.target.workspacePath}`,
+          `task index workspace-config resync failed, falling back to a fresh subscription workspace=${state.target.workspacePath}`,
           error,
         );
         void subscribeConfigTopic(state, "resync-failed", true);
@@ -962,8 +972,8 @@ export function createZCodeTaskIndexSyncer(
       const recovery = state.indexRecovery;
       if (!recovery) return;
       if (recovery.forceSnapshot) {
-        // 强制 snapshot 仍断档说明当前 same-sub 流已不可证，
-        // 不能继续猜测拼接，改为该 topic 的新代 snapshot 订阅。
+        // If the forced snapshot is still unavailable, it means that the current same-sub stream is no longer verifiable.
+        // You cannot continue to guess the splicing, and instead subscribe to the new generation snapshot of the topic.
         discardIndexRecovery(state);
         void subscribeIndexTopic(state, "force-recovery-gap", true);
       } else {
@@ -1013,8 +1023,8 @@ export function createZCodeTaskIndexSyncer(
         nextSummaries.set(summary.sessionId, summary);
       }
       if (!state.seeded) {
-        // 首帧 = 静默基线：不回放历史终态、不发列表广播；仅原子补齐缺失行，
-        // 防止远端/新安装的空 sqlite 因纯 V4 路径永远没有存量。
+        // First frame = silent baseline: do not play back the historical final state, do not send list broadcasts; only complete missing lines atomically,
+        // Prevent remote/newly installed empty sqlite from being stored in pure V4 paths.
         state.summaries = nextSummaries;
         state.seeded = true;
         void seedMissingRowsFromInitialSnapshot(state, nextSummaries.values());
@@ -1030,14 +1040,14 @@ export function createZCodeTaskIndexSyncer(
         }).catch((error) => {
           logger.warn(
             undefined,
-            `子代理历史列表索引修复失败 workspace=${resolveWorkspaceKey(state.target)}`,
+            `subagent history list index repair failed workspace=${resolveWorkspaceKey(state.target)}`,
             error,
           );
         });
         completeIndexRecoveryFrame(state, deliveryKind);
         return;
       }
-      // 断档降级 snapshot：对基线 diff 后处理，等价于补投丢失的 deltas（conflated 语义）。
+      // Snapshot downgrade: baseline diff post-processing, which is equivalent to re-injecting lost deltas (conflated semantics).
       const previousSummaries = state.summaries;
       state.summaries = new Map();
       for (const summary of nextSummaries.values()) {
@@ -1047,14 +1057,14 @@ export function createZCodeTaskIndexSyncer(
       return;
     }
     if (!state.indexHasAppliedBase) {
-      // fresh task-index subscribe 从不携带 base；initial 整批丢失后任何 delta 都不能
-      // 建立 cold baseline。只有 owned snapshot 可证明完整状态。
+      // fresh task-index subscribe never carries base; any delta cannot be used after the initial batch is lost
+      // Establish a cold baseline. Only owned snapshots can prove complete status.
       handleIndexGap(state, deliveryKind === "recovery" ? "recovery" : "online");
       return;
     }
     if (frame.toSeq <= state.indexSeq) {
-      // 任一完整校验的 recovery 若已被更晚权威 snapshot/online 覆盖，都可确认
-      // delivery 成功；普通重复帧仍静默丢弃。
+      // Any fully verified recovery can be confirmed if it has been overwritten by a later authoritative snapshot/online
+      // The delivery is successful; ordinary duplicate frames are still silently discarded.
       if (deliveryKind === "recovery" && state.indexHasAppliedBase) {
         completeIndexRecoveryFrame(state, deliveryKind);
       }
@@ -1074,8 +1084,8 @@ export function createZCodeTaskIndexSyncer(
         );
         continue;
       }
-      // session.removed：会话删除的 sqlite 收口走 task 删除操作（adapter deleteTask /
-      // v4 deleteSession 命令的 host 侧收尾），这里只维护基线。
+      // session.removed: sqlite closes the session deletion task deletion operation (adapter deleteTask /
+      // The end of the host side of the v4 deleteSession command), only the baseline is maintained here.
       state.summaries.delete(delta.sessionId);
     }
     state.indexSeq = frame.toSeq;
@@ -1129,13 +1139,13 @@ export function createZCodeTaskIndexSyncer(
         ? frame.payload.snapshot.config
         : frame.payload.deltas.at(-1)?.config;
     if (!config || config.configOptions.length === 0) {
-      // 空目录（无 live session 的订阅种子）不下发：下游 useZCodeConfig 收到空
-      // configOptions 会把聊天工具栏的模型目录清掉。
+      // Empty directories (subscription seeds without live sessions) are not delivered: downstream useZCodeConfig receives empty
+      // configOptions will clear the model directory of the chat toolbar.
       completeConfigRecoveryFrame(state, deliveryKind);
       return;
     }
-    // v4 载荷与 ZCodeConfigOption 结构对齐（shared 黄金测试背书），零映射直通，
-    // 下游 workspace_config_options_update 消费面（useZCodeConfig 等）不改。
+    // The v4 payload is aligned with the ZCodeConfigOption structure (shared gold test endorsement), zero mapping passthrough,
+    // The downstream workspace_config_options_update consumer side (useZCodeConfig, etc.) does not change.
     getWorkspaceEmitter({
       workspacePath: state.target.workspacePath,
       workspaceIdentity: state.target.workspaceIdentity,
@@ -1163,8 +1173,8 @@ export function createZCodeTaskIndexSyncer(
         state.indexRecovery.postRecoveryGapPending ||= state.indexRecovery.frameApplied;
         return;
       }
-      // malformed deliveryKind 的 owned fault 不能被降成 online 后卡住已有 flight；
-      // 已在恢复时按 recovery fault 推进升级，否则发起普通 same-sub resync。
+      // The owned fault of malformed deliveryKind cannot be reduced to online and then stuck and already has flight;
+      // Upgrade has been advanced by recovery fault on recovery, otherwise normal same-sub resync is initiated.
       handleIndexGap(state, deliveryKind ?? (state.indexRecovery ? "recovery" : "online"));
     } else {
       if (deliveryKind === "online" && state.configRecovery) {
@@ -1222,7 +1232,7 @@ export function createZCodeTaskIndexSyncer(
     wire: SessionsIndexTopicWireCandidate,
   ): void {
     if (disposed || wire.topic !== indexTopicFor(state)) return;
-    // ownership 必须先于 assembly；foreign sub 不得占用 decoded staging。
+    // ownership must precede assembly; foreign sub must not occupy decoded staging.
     if (state.indexSubscriptionId === null) {
       if (state.indexPending) {
         stagePendingFrame(state, "sessions-index", state.indexPending, wire);
@@ -1295,8 +1305,8 @@ export function createZCodeTaskIndexSyncer(
       workspaceIngests.get(resolveWorkspaceKey(state.target)) !== state;
     if (stale) {
       discardPendingFrames(pending);
-      // runtime 换代可能复用 subscriptionId；迟到旧 ACK 不能
-      // 反向退订已由新代接管的同 id route。
+      // Runtime replacement may reuse subscriptionId; late old ACK cannot
+      // Reverse unsubscribe from the same id route that has been taken over by the new generation.
       if (state.indexSubscriptionId !== result.ack.subscriptionId) {
         await unsubscribeIndex(state, result.ack.subscriptionId);
       }
@@ -1314,8 +1324,8 @@ export function createZCodeTaskIndexSyncer(
     state.indexSubscriptionId = result.ack.subscriptionId;
     state.indexLogEpoch = result.ack.logEpoch;
     state.indexSeq = 0;
-    // subscribe ACK 的 epoch/seq0 只是 admission metadata；initial physical
-    // frame 可能尚未齐片或校验失败。只有 logical snapshot/delta 原子 apply 后才有 base。
+    // epoch/seq0 of subscribe ACK is just admission metadata; initial physical
+    // The frame may not be fragmented yet or the verification may fail. Only logical snapshot/delta atoms have base after apply.
     state.indexHasAppliedBase = false;
     discardIndexRecovery(state);
     state.indexRetryAttempt = 0;
@@ -1499,9 +1509,9 @@ export function createZCodeTaskIndexSyncer(
   function ensureWorkspaceFrameListeners(state: WorkspaceIngestState): void {
     if (!isLiveState(state) || state.frameListenersInstalled) return;
     const workspace = state.target;
-    // dormant state 跳过首次 establish，runtime available 后却直接走
-    // resubscribe；默认 listener 已存在的话，同一 read 内紧随 response 的 initial
-    // frame 无人消费。listener 必须在任一 subscribe 前同步安装，且跨 runtime 换代复用。
+    // dormant state skips the first establishment, but goes directly after runtime available
+    // resubscribe; if the default listener already exists, the initial of response will follow in the same read
+    // The frame is not consumed by anyone. The listener must be installed synchronously before any subscribe and reused across runtime generations.
     state.disposables.push(
       agentService.onDynamicSessionsIndexFrame(workspace)((frame) =>
         handleSessionsIndexWire(state, frame),
@@ -1514,9 +1524,9 @@ export function createZCodeTaskIndexSyncer(
   }
 
   async function establishWorkspaceSubscriptions(state: WorkspaceIngestState): Promise<void> {
-    // 先挂帧监听再发起订阅：stdio 同一 read 会先 resolve response promise、再同步 fire
-    // initial notification，而 await continuation 尚未运行；因此 handler 必须 staging，
-    // 不能把“字节 response 在前”误当成“subscriptionId 已在 JS 状态里生效”。
+    // First hang frame monitoring and then initiate subscription: the same read on stdio will first resolve response promise and then synchronize fire
+    // initial notification, and await continuation has not yet run; therefore the handler must staging,
+    // Don't mistake "byte response first" for "subscriptionId has taken effect in the JS state".
     ensureWorkspaceFrameListeners(state);
     await Promise.all([
       subscribeIndexTopic(state, "initial", false),
@@ -1525,19 +1535,21 @@ export function createZCodeTaskIndexSyncer(
   }
 
   /**
-   * （CLI 重连重订）：agent 进程换代后，CLI 内存里的订阅全部丢失且不会有
-   * gap 帧到达（订阅静默失活），ensureWorkspaceSubscription 的占位早退也不会重订。
-   * 这里按 workspaceKey 重发 subscribe：帧监听挂在 workspace 级持久 emitter 上
-   * （agentService wireClient 换代自动重接），只需刷新 subscriptionId 闸门；
-   * 新 snapshot 帧对已 seeded 基线走既有“断档降级 snapshot” diff 路径收敛。
+   * (CLI reconnect resubscribe): after the agent process generation changes, every subscription held in
+   * the CLI's memory is lost and no gap frame ever arrives (the subscription goes silently dead);
+   * the placeholder early return in ensureWorkspaceSubscription will not resubscribe either. So this
+   * resends subscribe per workspaceKey: the frame listener hangs off the persistent workspace-level
+   * emitter (the agentService wireClient reconnects automatically across generations), so only the
+   * subscriptionId gate needs refreshing; the new snapshot frame converges for an already-seeded
+   * baseline via the existing "gap-degraded snapshot" diff path.
    */
   function resubscribeWorkspaceAfterRuntimeRestart(workspaceKey: string): void {
     if (disposed) return;
     const state = workspaceIngests.get(workspaceKey);
     if (!state) return;
     ensureWorkspaceFrameListeners(state);
-    // 以前两个 topic 共用 Promise.all 代际，一侧暂态失败会
-    // 撤销另一侧已成功的新订阅。现在各自 fresh subscribe + 退避重试。
+    // The previous two topics share the Promise.all generation, and transient failure on one side will
+    // Undo a new subscription that has been successful on the other side. Now each fresh subscribe + backoff retry.
     void subscribeIndexTopic(state, "runtime-restart", false);
     void subscribeConfigTopic(state, "runtime-restart", false);
   }
@@ -1560,8 +1572,8 @@ export function createZCodeTaskIndexSyncer(
     discardIndexRecovery(state);
     discardConfigRecovery(state);
     clearPendingState(state);
-    // runtime 已退出后调用 unsubscribe/retry 会重新进入 getClient。
-    // unavailable 只清本地 ownership；CLI 内订阅已随进程销毁，不再发送清理 RPC。
+    // Calling unsubscribe/retry after the runtime has exited will re-enter getClient.
+    // unavailable only clears local ownership; the subscription in the CLI has been destroyed along with the process, and cleanup RPCs will no longer be sent.
     state.indexSubscriptionId = null;
     state.configSubscriptionId = null;
   }
@@ -1596,7 +1608,7 @@ export function createZCodeTaskIndexSyncer(
     resubscribeWorkspaceAfterRuntimeRestart(event.workspaceKey);
   });
 
-  // 旧测试夹具/host 没有 lifecycle 时保留 restart 兼容；生产只走 available/unavailable。
+  // The old test fixture/host remains restart compatible when there is no lifecycle; production only uses available/unavailable.
   const runtimeRestartedDisposable = hasRuntimeLifecycle
     ? undefined
     : agentService.onAgentRuntimeRestarted?.((event) =>
@@ -1650,10 +1662,10 @@ export function createZCodeTaskIndexSyncer(
       configAssembler: new TopicWireFrameAssembler(workspaceConfigTopicFrameSchema),
       assemblyTimer: null,
     };
-    // 占位先写入 Map，避免订阅建立期间的并发调用重复订阅。
+    // The placeholders are written to the Map first to avoid repeated subscriptions during concurrent calls during subscription establishment.
     workspaceIngests.set(key, state);
-    // lifecycle 可用时，缺 runtime 的 workspace 只保留 dormant 占位；被动 observer
-    // 不得启动 CLI。旧 host 没有 lifecycle 时沿用显式 ensure 的兼容行为。
+    // When lifecycle is available, the workspace lacking runtime only retains the dormant placeholder; passive observer
+    // The CLI must not be started. When the old host does not have a lifecycle, it will continue to use the compatibility behavior of explicit ensure.
     if (!hasRuntimeLifecycle || state.runtimeGeneration !== null) {
       void establishWorkspaceSubscriptions(state);
     }
@@ -1670,29 +1682,29 @@ export function createZCodeTaskIndexSyncer(
     },
   ): Promise<ZCodeTaskMeta> {
     const meta = buildMetaFromSnapshot(snapshot, options);
-    // 旧 child 标签页的显式 resume 仍会同步快照；只读详情不能重新写成主任务。
+    // An explicit resume of the old child tab still synchronizes the snapshot; read-only details cannot be rewritten as the main task.
     if (snapshot.session.sessionKind === "subagent_child") return meta;
-    // 同时把 snapshot.messages 里可见的聊天正文索引下去，
-    // 让 TaskSearchDialog 正文搜索能命中；旧 sqlite 行下次到这里时自然回填。
+    // At the same time, index the chat text visible in snapshot.messages.
+    // Let the TaskSearchDialog text search hit; the old sqlite row will be naturally backfilled the next time it comes here.
     const searchableText = buildSearchableTextFromSnapshot(snapshot);
-    // desktop-continuous 首发若先提交 task row、再补 grouped sort_order，
-    // sessions-index 会在两次写之间把缺序 task 暴露给 Renderer，产生先到底部再回顶部的跳动。
+    // Desktop-continuous first submits task row and then adds grouped sort_order.
+    // sessions-index will expose out-of-order tasks to the Renderer between two writes, causing a jump to the bottom and then back to the top.
     const { meta: persisted, initializedGroupedOrder } = options?.moveGroupedTaskToTop
       ? await taskIndexRepo.syncTaskMetaAtGroupedTop({ meta, searchableText })
       : {
           meta: await taskIndexRepo.syncTaskMeta({ meta, searchableText }),
           initializedGroupedOrder: false,
         };
-    // createSession 刚回来时 snapshot 既没有 title 也没有 user message，
-    // 默认 title 会落成 "New session" 占位符。这种"还没有任何用户内容"的快照不应该广播给 UI，
-    // 否则侧边栏会先闪一下 "New session"，等 sendPrompt 完成后才换成真正的 prompt 文本。
-    // sqlite 行仍然要写，让后续标题更新走 applyAgentPatch 时能找到对应行；那次
-    // 标题触发的广播才是用户首次在列表里看到这个会话的时刻，标题直接就是 prompt 文本，不会闪。
+    // When createSession first comes back, the snapshot has neither title nor user message.
+    // The default title will be the "New session" placeholder. Such snapshots "without any user content yet" should not be broadcast to the UI,
+    // Otherwise, the sidebar will flash "New session" first, and then change to the real prompt text after sendPrompt is completed.
+    // The sqlite row still needs to be written so that the corresponding row can be found when subsequent title updates are performed using applyAgentPatch; that time
+    // The broadcast triggered by the title is the first time the user sees this conversation in the list. The title is directly the prompt text and will not flash.
     if (!hasUserVisibleContent(snapshot)) {
       if (initializedGroupedOrder) {
-        // 预热 session 从 draft 提升时，grouped 顺序会先于首标题落库。
-        // 即使暂时没有可广播的 task meta，也必须通知 renderer 重拉 structure；
-        // 否则 sessions-index 已显示 task、structure 仍缺序，当前进程会把它补到末尾。
+        // When the warm-up session is promoted from draft, the grouped order will be dropped before the first title.
+        // Even if there is no task meta that can be broadcast temporarily, the renderer must be notified to repulse the structure;
+        // Otherwise, sessions-index has shown that task and structure are still out of order, and the current process will add them to the end.
         emitWorkspaceTaskListChanged(
           {
             workspacePath: persisted.workspacePath,
@@ -1712,9 +1724,9 @@ export function createZCodeTaskIndexSyncer(
         taskId: persisted.taskId,
       },
       persisted,
-      // sessions-index 可见帧可能早于首次 grouped sort_order 落库。
-      // 首次初始化必须用 task_created 通知运行中的 grouped structure 缓存失效；
-      // 重复 snapshot 没有新增顺序，仍保留调用方原本的 status/title 语义。
+      // The sessions-index visible frame may be older than the first grouped sort_order drop.
+      // The first initialization must use task_created to notify the running grouped structure cache of invalidation;
+      // There is no new order for repeated snapshots, and the original status/title semantics of the caller are still retained.
       initializedGroupedOrder ? "task_created" : options.broadcastReason,
       options.unreadSignal ? { unreadSignal: options.unreadSignal } : undefined,
     );
@@ -1737,7 +1749,11 @@ export function createZCodeTaskIndexSyncer(
         patch: { model: normalizedModel },
       });
     } catch (error) {
-      logger.warn(undefined, `同步 task 模型到 task index 失败 taskId=${target.sessionId}`, error);
+      logger.warn(
+        undefined,
+        `failed to sync the task model to the task index taskId=${target.sessionId}`,
+        error,
+      );
       return null;
     }
   }
@@ -1769,8 +1785,8 @@ export function createZCodeTaskIndexSyncer(
     getWorkspaceEmitter,
 
     onDynamicWorkspaceEvent(workspace: WorkspaceEventInput) {
-      // 任务列表挂载会为所有 restored workspace 调用本入口。监听事件不代表
-      // 用户使用该 workspace，禁止在这里激活 sessions-index 或启动 Agent。
+      // Task list mounting will call this entry for all restored workspaces. Listening for events does not mean
+      // Users using this workspace are prohibited from activating sessions-index or starting the Agent here.
       return getWorkspaceEmitter(workspace).event;
     },
 
@@ -1797,7 +1813,7 @@ export function createZCodeTaskIndexSyncer(
           try {
             disposable.dispose();
           } catch {
-            // 忽略 dispose 异常，确保所有订阅都尝试释放
+            // Ignore dispose exceptions and ensure all subscriptions are attempted to be released
           }
         }
       }
@@ -1833,12 +1849,12 @@ function buildMetaFromSnapshot(
     createdAt: snapshot.session.createdAt,
     updatedAt: snapshot.session.updatedAt,
     mode: fromZCodeMode(snapshot.session.mode),
-    // 用户显式切模型或历史模型不可用时，session 操作已经带了新的可用模型。
-    // 这类场景要同步覆盖 sqlite 的 task model，否则下次恢复仍会从已删除的历史模型起跳；
-    // 普通历史快照仍走最近消息模型优先，避免被误污染的 settings.current 反向污染索引。
+    // When the user explicitly switches the model or the historical model is unavailable, the session operation has already brought the new available model.
+    // In this type of scenario, the task model of SQLite must be overwritten synchronously, otherwise the next recovery will still start from the deleted historical model;
+    // Ordinary historical snapshots still give priority to the latest message model to avoid reverse contamination of the index by accidentally contaminated settings.current.
     model: modelOverride || formatTaskMetaModelSelectionFromSnapshot(snapshot),
-    // 历史 task 恢复时 snapshot.settings.thoughtLevel 可能仍是同 workspace 草稿态的最新值。
-    // 当恢复入口已经带上 task-local thoughtLevel 时，sqlite 必须写入入口值，避免下次打开继续被污染。
+    // When the historical task is restored, snapshot.settings.thoughtLevel may still be the latest value in the draft state of the same workspace.
+    // When the recovery entry has brought task-local thoughtLevel, SQLite must write the entry value to avoid contamination when it is opened next time.
     thoughtLevel: thoughtLevelOverride || snapshot.settings.thoughtLevel.current,
     provider: ZCODE_AGENT_PROVIDER,
     status: deriveZCodeTaskStatusFromSessionSnapshot(snapshot),
@@ -1848,8 +1864,8 @@ function buildMetaFromSnapshot(
           ...(snapshot.projection.lastError.detail
             ? { detail: snapshot.projection.lastError.detail }
             : {}),
-          // sessions-index terminal resync 与 task service snapshot 必须共享同一份
-          // lastError 归因，否则冷热两条读取路径的错误归因会漂移。
+          // sessions-index terminal resync and task service snapshot must share the same copy
+          // lastError attribution, otherwise the error attribution of the hot and cold read paths will drift.
           ...(snapshot.projection.lastError.attribution
             ? { attribution: snapshot.projection.lastError.attribution }
             : {}),
@@ -1858,8 +1874,8 @@ function buildMetaFromSnapshot(
       : undefined,
   };
   if (Object.prototype.hasOwnProperty.call(snapshot.projection, "target")) {
-    // target 字段缺席表示本次 snapshot 未提供 goal 信息，不能覆盖旧索引；
-    // null 才表示 DB 明确没有 goal，需要清空 task-index 中的目标。
+    // The absence of the target field means that this snapshot does not provide goal information and cannot overwrite the old index;
+    // Null means that the DB clearly does not have a goal, and the goal in task-index needs to be cleared.
     meta.target = snapshot.projection.target
       ? fromZCodeGoal(snapshot.projection.target)
       : snapshot.projection.target;
@@ -1875,9 +1891,9 @@ function deriveTitleFromSnapshot(snapshot: ZCodeSessionStateSnapshot): string {
   });
 }
 
-// createSession 刚返回时 snapshot 既没有真实 title 也没有 user message，
-// 把这种"空白会话"广播出去会让侧边栏先闪一个 "New session" 占位符。
-// 这里判断"是否已有用户可见内容"，没有就只写 sqlite 不广播，等真实 title 到了再广播。
+// When createSession just returns, the snapshot has neither real title nor user message.
+// Broadcasting this "blank session" will cause a "New session" placeholder to flash in the sidebar.
+// Here it is judged "whether there is content visible to the user". If not, just write sqlite without broadcasting, and then broadcast it after the real title arrives.
 function hasUserVisibleContent(snapshot: ZCodeSessionStateSnapshot): boolean {
   const title = snapshot.session.title?.trim() ?? "";
   if (title && !isZCodeGoalContinuationReminderText(title)) {
@@ -1895,14 +1911,14 @@ function hasUserVisibleContent(snapshot: ZCodeSessionStateSnapshot): boolean {
 
 const TASK_SEARCH_TEXT_MAX_CHARS = 200_000;
 
-// 全局会话搜索只索引默认可见的聊天正文，不包含思考过程、tool 调用和 compaction 折叠区。
-// assistant 的 parts 可能既有历史正文又有 latest 正文，这里只取最后一段 text part，
-// 与 UI 默认折叠后展示的范围一致。
+// Global conversation search only indexes the chat text that is visible by default, and does not include thought processes, tool calls, and compaction folding areas.
+// Assistant's parts may have both historical text and latest text. Here, only the last text part is taken.
+// It is consistent with the range displayed after the UI is collapsed by default.
 function buildSearchableTextFromSnapshot(snapshot: ZCodeSessionStateSnapshot): string {
   const parts: string[] = [];
   let total = 0;
-  // /goal 自动续跑会把内部 system-reminder 作为 runtime user turn 持久化；
-  // 这条内容是 model-only 输入，不是用户可见 query，不能写进侧边栏搜索正文。
+  // /goal automatic continuation will persist the internal system-reminder as runtime user turn;
+  // This content is a model-only input, not a user-visible query, and cannot be written into the sidebar search text.
   for (const message of getZCodeUserVisibleMessages(snapshot.messages, {
     target: snapshot.projection.target,
   })) {
@@ -1928,7 +1944,7 @@ function buildSearchableTextFromSnapshot(snapshot: ZCodeSessionStateSnapshot): s
       break;
     }
   }
-  // 关键业务逻辑：上限截断，避免长任务把 tasks-index.sqlite 放大到影响启动和列表查询。
+  // Key business logic: Upper limit truncation to prevent long tasks from enlarging tasks-index.sqlite to affect startup and list queries.
   return parts.join("\n").slice(0, TASK_SEARCH_TEXT_MAX_CHARS);
 }
 

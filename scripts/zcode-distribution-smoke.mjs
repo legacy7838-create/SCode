@@ -1,4 +1,4 @@
-// 在仓库外验证发行包，避免开发机 node_modules 掩盖缺失的 TUI/native/worker 依赖。
+// Verify the release package outside the repository, to avoid dev machine node_modules masking missing TUI/native/worker dependencies.
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
@@ -56,13 +56,13 @@ try {
     }),
   );
   await until(
-    () => /ZCode/.test(screen) && /(?:登录|\/login|输入提示词|Type a prompt)/i.test(screen),
+    () => /ZCode/.test(screen) && /(?:login|\/login|type a prompt|Type a prompt)/i.test(screen),
     "TUI initialized render",
     () => screen,
   );
   assert.equal(terminalExit, undefined, screen);
   assert.doesNotMatch(screen, /Cannot find (?:module|package)|ERR_MODULE_NOT_FOUND/);
-  // 保留真实键盘退出链路；不发送 prompt，不调用模型。
+  // Preserve the real keyboard exit path; do not send prompt, do not call model.
   terminal.write("\u0003");
   await setTimeout(200);
   if (!terminalExit) terminal.write("\u0003");

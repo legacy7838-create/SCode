@@ -29,7 +29,7 @@ function ActiveSessionPluginReferenceIconProvider({
   const catalog = usePluginReferenceCatalog(workspacePath, workspaceIdentity, sessionId, true, {
     dedupeSessionRequest: true,
     preferredRemoteSessionId: remoteSessionId ?? undefined,
-    // Timeline 图标是可选展示；Session 尚未就绪或 remote 暂不可用时安静回退 Cable。
+    // The Timeline icon is optional; the Cable is silently rolled back when the Session is not ready or the remote is temporarily unavailable.
     suppressErrorLog: true,
   });
   const iconByPluginId = useMemo(
@@ -45,11 +45,12 @@ function ActiveSessionPluginReferenceIconProvider({
 }
 
 /**
- * 已发送 Plugin chip 的惰性 Session-authority 图标边界。
+ * The lazy Session-authority icon boundary for already-sent Plugin chips.
  *
- * 把 catalog hook 直接挂在 SessionPane 后，即使 disabled 也会先解析
- * workspace services，导致所有无 Plugin 引用的会话产生额外依赖与请求。拆成子组件后，
- * 只有确实含 plugin:// 用户消息且 Session snapshot 就绪时才挂载数据 hook。
+ * Hanging the catalog hook directly on SessionPane resolves workspace services even while it is
+ * disabled, which makes every session without a Plugin reference take on extra dependencies and
+ * requests. After splitting it into a child component, the data hook mounts only when the
+ * conversation really contains plugin:// user messages and the Session snapshot is ready.
  */
 export function SessionPluginReferenceIconBoundary({
   children,

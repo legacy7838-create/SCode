@@ -40,7 +40,7 @@ import type { IWindowControllerService } from "./window-controller/windowControl
 import type { IOnboardingRecordService } from "./onboarding/onboardingRecord.js";
 import type { IConversationShareService } from "./conversation-share/conversationShare.js";
 
-/** UI 层消费的统一服务接口 */
+/** Unified service interface consumed by the UI layer */
 export interface IServiceAccessor {
   readonly fileService: IFileService;
   readonly mediaPreviewService?: IMediaPreviewService;
@@ -49,37 +49,37 @@ export interface IServiceAccessor {
   readonly systemService: ISystemService;
   readonly terminalService: ITerminalService;
   readonly settingService: ISettingService;
-  /** Onboarding 完成记录（本地持久化）；旧测试 double / 不支持的 host 可不提供。 */
+  /** Onboarding completion record (locally persisted); legacy test doubles / unsupported hosts may omit it. */
   readonly onboardingRecordService?: IOnboardingRecordService;
   readonly credentialService: ICredentialService;
   readonly broadcastService: IBroadcastService;
   readonly zcodeTaskService: IZCodeTaskService;
-  /** 窗口 Host 聚合面；旧 server wire 或测试 double 可暂不提供。 */
+  /** Window Host aggregation surface; legacy server wires or test doubles may omit it for now. */
   readonly windowControllerService?: IWindowControllerService;
   readonly zcodeAgentService: IZCodeAgentService;
   readonly zcodeSessionService: IZCodeSessionService;
-  // CUA 是 opt-in 内测特性：local macOS host 提供，远端 等 host 没有。可选避免连锁必填。
+  // CUA is an opt-in beta feature: provided by local macOS host, not available on remote hosts. Optional to avoid cascading required fields.
   readonly cuaPermissionService?: ICuaPermissionService;
   readonly conversationShareService: IConversationShareService;
   readonly botsService: IBotsService;
   readonly fileWatcherService: IFileWatcherService;
   readonly oauthService: IOAuthService;
-  /** 当前 Environment 的 Provider 配置与设置视图。 */
+  /** Provider configuration and settings view for the current Environment. */
   readonly providerSettingsService: IProviderSettingsService;
-  /** 当前 Environment Registry 发布的唯一模型选择 View。 */
+  /** The single model selection View published by the current Environment Registry. */
   readonly modelSelectionService: IModelSelectionService;
   readonly usageStatsService: IUsageStatsService;
   readonly codingPlanSubscriptionService: ICodingPlanSubscriptionService;
   readonly clientConfigService: IClientConfigService;
   readonly clientScenesService: IClientScenesService;
-  /** 闲时任务管理（独立服务面）。 */
+  /** Off-peak task management (its own service surface). */
   readonly offPeakTaskService: IOffPeakTaskService;
   readonly skillsService: ISkillsService;
   readonly skillSyncService: ISkillSyncService;
   readonly mcpSyncService: IMcpSyncService;
   readonly pluginSyncService: IPluginSyncService;
   readonly pluginsService: IPluginsService;
-  /** 设置页插件管理（UI 不再直触 zcodeAgentService 的 plugins/* 面） */
+  /** Settings-page plugin management (the UI no longer touches the plugins/* surface of zcodeAgentService directly) */
   readonly pluginManagementService: IPluginManagementService;
   readonly subagentsService: ISubagentsService;
   readonly commandsService: ICommandsService;

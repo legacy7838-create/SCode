@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- Controller source 聚合、路由、订阅与生命周期属于同一个 Host 边界。 */
+/* eslint-disable max-lines -- Controller source aggregation, routing, subscriptions, and lifecycle all belong to the same Host boundary. */
 import { Emitter } from "@zcode/rpc";
 import type { ZCodeTaskMeta } from "@zcode/shared";
 import type {
@@ -131,8 +131,9 @@ function liveStatusFromMeta(meta: ZCodeTaskMeta): WindowHostControllerTaskRow["l
 }
 
 /**
- * WindowHostControllerRuntime 是 Local Host 内的聚合权威。它不持久化数据；每次在线查询都从
- * 对应 source 的 tasks-index 重建投影，断连时只冻结最后一次成功的内存快照。
+ * WindowHostControllerRuntime is the aggregate authority inside the Local Host. It persists no
+ * data; every online query rebuilds the projection from the corresponding source's tasks-index,
+ * and when disconnected it only freezes the last successful in-memory snapshot.
  */
 export function createWindowHostControllerRuntime(options: {
   createId: () => string;
@@ -235,7 +236,9 @@ export function createWindowHostControllerRuntime(options: {
     const current = resolveCurrentSource(scope);
     if (!current?.taskService || current.sourceAvailability !== "online") {
       throw new Error(
-        scope.kind === "remote" ? "远程 source 当前离线，禁止列表写操作" : "本地 source 当前不可用",
+        scope.kind === "remote"
+          ? "remote source is currently offline, list write operations are not allowed"
+          : "local source is currently unavailable",
       );
     }
     const service = current.taskService;
@@ -257,9 +260,9 @@ export function createWindowHostControllerRuntime(options: {
       case "delete-archived":
         return service.deleteArchivedTask(base);
       case "delete-archived-batch":
-        // 确认期间远端 session 可能已替换；不能将旧地址的批次写入同 identity 的新 source。
+        // The remote session may have been replaced during confirmation; batches from the old address cannot be written to a new source with the same identity.
         if (sourceKey(current.scope) !== sourceKey(scope)) {
-          throw new Error("归档删除批次的 source 已替换");
+          throw new Error("the source of the archive delete batch was replaced");
         }
         return service.deleteArchivedTasks({
           workspacePath: base.workspacePath,
@@ -280,11 +283,11 @@ export function createWindowHostControllerRuntime(options: {
         break;
       case "open":
       case "resume":
-        // open/resume 的 Controller 职责是验证唯一 source；conversation 随后仍走 scoped facade。
+        // The controller responsibility of open/resume is to verify the only source; conversation then still uses the scoped facade.
         break;
       default: {
         const exhaustive: never = mutation;
-        throw new Error(`未知 Controller mutation: ${String(exhaustive)}`);
+        throw new Error(`unknown Controller mutation: ${String(exhaustive)}`);
       }
     }
   }
@@ -323,8 +326,8 @@ export function createWindowHostControllerRuntime(options: {
             ? { workspaceIdentity: resolved.scope.workspaceIdentity }
             : {}),
         })(() => {
-          // workspace event 可能在列表首轮 refresh 读取途中到达；直接复用
-          // single-flight 会把事件吞掉。先等在途读取结束，再把多个事件合并成下一轮 refresh。
+          // The workspace event may arrive during the first round of refresh reading of the list; it can be reused directly.
+          // single-flight will swallow the event. Wait for the in-flight reading to end, and then merge multiple events into the next round of refresh.
           const inFlight = sourceRefreshFlights.get(key)?.promise;
           void (async () => {
             await inFlight?.catch(() => {});
@@ -344,7 +347,7 @@ export function createWindowHostControllerRuntime(options: {
 
   async function readSourceTaskIndex(resolved: ResolvedWindowHostControllerSource) {
     if (!resolved.taskService || resolved.sourceAvailability !== "online") {
-      throw new Error("Controller source 当前不可读取");
+      throw new Error("Controller source is currently not readable");
     }
     const request = {
       workspacePath: resolved.scope.workspacePath,
@@ -406,14 +409,14 @@ export function createWindowHostControllerRuntime(options: {
     const promise = (async () => {
       const taskIndex = await readSourceTaskIndex(resolved);
       if (sourceRefreshGenerations.get(key) !== generation) {
-        throw new Error("Controller source refresh generation 已失效");
+        throw new Error("Controller source refresh generation is no longer valid");
       }
       const previousScope = pendingReplacementByNextSourceKey.get(key);
       projection.replaceSourceSnapshot({
         scope: resolved.scope,
         ...(previousScope ? { replacesScope: previousScope } : {}),
         taskIndex,
-        // live facts 仅驻 Host 内存；observer 使用 existing-only，列表读取不会启动 Agent。
+        // Live facts only reside in Host memory; the observer uses existing-only, and list reading will not start the Agent.
         sessionsIndex: sourceLiveOverlays.get(key) ?? [],
       });
       if (previousScope) {
@@ -438,15 +441,17 @@ export function createWindowHostControllerRuntime(options: {
     resolved: ResolvedWindowHostControllerSource,
   ): Promise<void> {
     if (!resolved.taskService || resolved.sourceAvailability !== "online") {
-      throw new Error("重连 source 尚未 online，不能替换离线投影");
+      throw new Error(
+        "the reconnected source is not online yet, it cannot replace the offline projection",
+      );
     }
     registerResolvedSource(resolved);
     const previousKey = sourceKey(previousScope);
     const retainedPreviousScope =
       pendingReplacementByNextSourceKey.get(previousKey) ?? previousScope;
     if (sourceKey(retainedPreviousScope) !== previousKey) {
-      // 连续重连都在首个 snapshot 前失败时，可信 rows 仍属于更早的一代 source。
-      // 摘掉中间空 source，把 replacement 链压缩到最后可信 scope，避免成功后遗留孤儿投影。
+      // When consecutive reconnections fail before the first snapshot, the trusted rows still belong to an earlier generation source.
+      // Remove the empty source in the middle and compress the replacement chain to the last trusted scope to avoid leaving orphan projections after success.
       pendingReplacementByNextSourceKey.delete(previousKey);
       forgetRegisteredSource(previousScope);
       projection.removeSource(previousScope);
@@ -478,7 +483,7 @@ export function createWindowHostControllerRuntime(options: {
         try {
           await refreshSource(source);
         } catch (error) {
-          // 一个 remote source 的瞬时读取失败不能清空 local 或其他 remote 的可信投影。
+          // A transient read failure from a remote source cannot clear the local or other remote's trusted projections.
           options.onSourceError?.(source.scope, "refresh", error);
         }
       }),
@@ -541,8 +546,8 @@ export function createWindowHostControllerRuntime(options: {
         selectedSources.add(key);
         const pendingPreviousScope = pendingReplacementByNextSourceKey.get(key);
         if (pendingPreviousScope) {
-          // 新 source 的首个 snapshot 失败时继续展示上一代离线可信投影；只有成功的
-          // replaceSourceSnapshot 才会在一个 delta frame 中移除旧 rows 并加入新 rows。
+          // When the first snapshot of the new source fails, it will continue to display the previous generation offline trusted projection; only the successful one
+          // replaceSourceSnapshot will remove old rows and add new rows in a delta frame.
           selectedSources.add(sourceKey(pendingPreviousScope));
         }
       }
@@ -594,14 +599,14 @@ export function createWindowHostControllerRuntime(options: {
         }
         const result = await projection.mutate(address, { kind: "delete-archived-batch", taskIds });
         if (!result || typeof result === "boolean") {
-          throw new Error("归档删除批次未返回逐项目标结果");
+          throw new Error("the archive delete batch did not return per-item results");
         }
         const resolved = options.resolveSource({
           workspacePath: address.workspacePath,
           workspaceIdentity: address.workspaceIdentity,
         });
         if (resolved) {
-          // 只在整批结束后收敛投影，与 source 的一次事件共享 single-flight；刷新失败不改写已提交结果。
+          // The projection is only converged after the entire batch ends, sharing the single-flight with an event of the source; the submitted result will not be overwritten if the refresh fails.
           await refreshSource(resolved, true).catch((error) =>
             options.onSourceError?.(resolved.scope, "refresh", error),
           );
@@ -615,7 +620,7 @@ export function createWindowHostControllerRuntime(options: {
           workspaceIdentity: address.workspaceIdentity,
         });
         if (resolved) {
-          // 删除已经持久成功，列表重查失败不能改报删除失败；后续事件仍会刷新投影。
+          // The deletion has been persistently successful. If the list fails to be rechecked, the deletion failure cannot be reported; subsequent events will still refresh the projection.
           await refreshSource(resolved, true).catch((error) =>
             options.onSourceError?.(resolved.scope, "refresh", error),
           );
@@ -690,7 +695,7 @@ export function createWindowHostControllerRuntime(options: {
           remoteAttachmentScope.workspacePath !== params.workspacePath ||
           remoteAttachmentScope.workspaceIdentity !== params.workspaceIdentity
         ) {
-          throw new Error("列表 mutation 与 remote attachment scope 不匹配");
+          throw new Error("list mutation does not match the remote attachment scope");
         }
       }
       const resolved = options.resolveSource({
@@ -705,12 +710,12 @@ export function createWindowHostControllerRuntime(options: {
           resolved.scope.workspacePath !== remoteAttachmentScope.workspacePath ||
           resolved.scope.workspaceIdentity !== remoteAttachmentScope.workspaceIdentity)
       ) {
-        throw new Error("列表 mutation 与 remote attachment source 不匹配");
+        throw new Error("list mutation does not match the remote attachment source");
       }
       if (resolved) {
-        // remote attachment 曾直接返回 address，跳过 source refresh；新绑定的
-        // workspace 尚未读取 Controller 列表时没有投影行，导致 unread/archive 等首次写入失败。
-        // 这里只物化已按完整 remoteSessionId + identity 验证的 source，继续保持 fail-closed。
+        // remote attachment used to return address directly, skipping source refresh; newly bound
+        // There are no projection lines when the workspace has not yet read the Controller list, causing unread/archive and other first-time writes to fail.
+        // Here only the source that has been verified by the complete remoteSessionId + identity is materialized and remains fail-closed.
         await refreshSource(resolved);
       }
       const matches = projection
@@ -725,7 +730,7 @@ export function createWindowHostControllerRuntime(options: {
         );
       if (matches.length !== 1) {
         if (matches.length === 0 && params.allowMissingTask && resolved) {
-          // 条件删除允许已被其它客户端删除的目标到 Repo 幂等跳过；source 身份仍须完整验证。
+          // Conditional deletion allows targets that have been deleted by other clients to be skipped idempotently in the Repo; the source identity must still be fully verified.
           return {
             taskId: params.taskId,
             workspacePath: resolved.scope.workspacePath,
@@ -738,7 +743,7 @@ export function createWindowHostControllerRuntime(options: {
           };
         }
         throw new Error(
-          `列表 mutation 无法解析唯一 source，taskId=${params.taskId}, matches=${matches.length}`,
+          `list mutation could not resolve a unique source, taskId=${params.taskId}, matches=${matches.length}`,
         );
       }
       return matches[0]!.address;
@@ -771,8 +776,8 @@ export function createWindowHostControllerRuntime(options: {
       }
       projection.removeSource(scope);
       if (retainedPreviousScope && sourceKey(retainedPreviousScope) !== key) {
-        // 当前 logical session 在成功 resync 前仍借用上一代离线 rows；关闭当前 scope
-        // 等同关闭这份 history scope，必须连同保留投影一起清理。
+        // The current logical session still borrows the previous generation of offline rows before successful resync; close the current scope
+        // It is equivalent to closing this history scope and must be cleaned up together with the retained projection.
         forgetRegisteredSource(retainedPreviousScope);
         projection.removeSource(retainedPreviousScope);
       }

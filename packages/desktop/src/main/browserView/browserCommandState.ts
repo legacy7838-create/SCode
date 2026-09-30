@@ -2,8 +2,9 @@ import type { BrowserPageState } from "@zcode/shared";
 import type { ControlledViewWebContents } from "./browserCommandTypes.js";
 
 /**
- * 导航命令的默认导航预算为 10s。超时/真实 loadURL 错误必须返回失败，
- * 不能吞错后伪造成功；否则模型会在错误页面上继续构造 locator。
+ * The default navigation budget for navigate commands is 10s. A timeout or a real `loadURL`
+ * failure must return a failure result — swallowing the error and faking success would leave the
+ * model building locators on top of an error page.
  */
 export const DEFAULT_NAVIGATE_SETTLE_MS = 10_000;
 
@@ -12,8 +13,8 @@ export class BrowserNavigationTimeoutError extends Error {
 }
 
 /**
- * 浏览器导航白名单：只允许 http/https 与精确的 about:blank。
- * 不能放行任意 about:*。
+ * Browser navigation allowlist: only http/https and the exact `about:blank`.
+ * Arbitrary `about:*` URLs must never be let through.
  */
 export function isAllowedBrowserUrl(rawUrl: string): boolean {
   if (rawUrl === "about:blank") return true;
@@ -38,7 +39,7 @@ export function readState(wc: ControlledViewWebContents): BrowserPageState {
   };
 }
 
-/** loadURL 与超时/取消竞速；只有真实完成才算导航成功。 */
+/** Races `loadURL` against the timeout/cancellation; only real completion counts as a successful navigation. */
 export async function settleNavigation(
   loadPromise: Promise<void>,
   timeoutMs: number,

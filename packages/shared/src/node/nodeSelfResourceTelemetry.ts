@@ -1,9 +1,12 @@
 /**
- * host 与 scheduler 两个 utilityProcess 自采 CPU / 内存的共用换算逻辑
+ * Shared conversion logic for the self-sampled CPU / memory of the two utilityProcesses,
+ * host and scheduler.
  *
- * 只做差分换算：不持有定时器、也不负责发送。host 复用内存诊断日志既有的 60 秒定时器，
- * scheduler 自己起唯一的一个 unref 定时器，两边都把同一次 `process.memoryUsage()` 读数
- * 交给这里换算成一条样本。零外部进程，只用进程内 API。
+ * It only does the differential conversion: it owns no timer and is not responsible for
+ * sending. host reuses the existing 60-second timer of the memory diagnostics log, while
+ * scheduler starts its own single unref timer; both hand the very same
+ * `process.memoryUsage()` reading to here to convert it into one sample. Zero external
+ * processes, only in-process APIs.
  */
 
 import { availableParallelism } from "node:os";
@@ -15,7 +18,7 @@ interface NodeCpuUsageSnapshot {
   system: number;
 }
 
-/** Node 进程自采周期：60 秒，与本地内存诊断日志同节拍。 */
+/** Self-sampling period of a Node process: 60 seconds, on the same beat as the local memory diagnostics log. */
 export const NODE_SELF_RESOURCE_SAMPLE_INTERVAL_MS = 60_000;
 
 export interface NodeSelfResourceSamplerOptions {
@@ -26,8 +29,9 @@ export interface NodeSelfResourceSamplerOptions {
 
 export interface NodeSelfResourceSampler {
   /**
-   * 用调用方刚读到的 `memoryUsage` 换算一条样本。
-   * 基线不可用（首次读数失败、时钟未前进、CPU 计数回退）时返回 null，只丢当前样本。
+   * Converts a sample from the `memoryUsage` the caller just read.
+   * Returns null when no baseline is available (first reading failed, clock did not
+   * advance, CPU counters went backwards) — only the current sample is dropped.
    */
   sample(memoryUsage: NodeJS.MemoryUsage): NodeSelfResourceSample | null;
 }
@@ -37,7 +41,7 @@ interface SamplerBaseline {
   monotonicTimeNs: bigint;
 }
 
-/** CPU 百分比保留 4 位小数，与 CLI 自采样本同口径。 */
+/** The CPU percentage keeps 4 decimal places, matching the calibration of CLI self-sampled figures. */
 function roundResourceMetric(value: number): number {
   return Math.round(value * 10_000) / 10_000;
 }
@@ -60,7 +64,7 @@ export function createNodeSelfResourceSampler(
     }
   };
 
-  // 构造时就建立基线，第一个 60 秒 tick 才能直接产出样本而不是空转一轮。
+  // Establish the baseline at construction time so that the first 60-second tick can directly produce a sample instead of spinning empty for one round.
   let baseline = readBaseline();
 
   return {

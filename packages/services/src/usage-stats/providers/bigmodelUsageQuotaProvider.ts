@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- quota、entitlement 与 monitor 请求共用同一套 provider 鉴权逻辑，拆文件会让 Coding Plan strict key 边界更难追踪。 */
+/* eslint-disable max-lines -- quota, entitlement, and monitor requests share one set of provider auth logic; splitting the file would make the Coding Plan strict key boundary harder to trace. */
 import { z } from "zod";
 import type {
   ApiClient,
@@ -134,8 +134,8 @@ interface BigModelUsageQuotaProviderOptions {
   credentialService?: Pick<ICredentialService, "load">;
   env?: NodeJS.ProcessEnv;
   /**
-   * 官方 Server MCP 的凭证来源。缺省时 entitlement 快照的 mcpQuota 恒为 null，
-   * 既有装配（含单测）无需改动即可保持原行为。
+   * Credential source for the official Server MCP. When omitted, mcpQuota in the entitlement snapshot is
+   * always null, so existing wiring (including unit tests) keeps its original behaviour without changes.
    */
   officialMcpCredentialSource?: OfficialMcpCredentialSource;
 }
@@ -153,9 +153,9 @@ interface ResolvedQuotaAuthorization {
 interface TeamPlanContext {
   organizationId: string;
   projectId: string;
-  // Team Plan 用量查询在 zai/bigmodel 两个 family 上对称存在，
-  // 但复制团队项目 API Key 的 host、OAuth token key、鉴权 header 都按 family 分离。
-  // 这里必须带上 family，下游 resolveTeamPlanProjectApiKey 才能选对 zai/bigmodel 的业务域名和 token。
+  // Team Plan usage queries exist symmetrically on both zai/bigmodel families,
+  // but the host, OAuth token key, and auth header for copying team project API Keys are all separated by family.
+  // The family must be included here so that downstream resolveTeamPlanProjectApiKey can select the correct zai/bigmodel business domain and token.
   family: ProviderFamilyDomain;
 }
 
@@ -165,7 +165,7 @@ interface CodingPlanResetAuthorization {
   teamContext: TeamPlanContext | null;
 }
 
-// 直接复用响应类型，避免本地副本遗漏新 bucket/周期字段。
+// Directly reuse the response type to avoid local copies missing new bucket/period fields.
 type ZaiStartPlanBalance = NonNullable<
   NonNullable<ZaiStartPlanBalanceEnvelope["data"]>["balances"]
 >[number];
@@ -197,8 +197,8 @@ export class BigModelUsageQuotaProvider {
   async getSnapshotForRequest(
     request: UsageEntitlementRequest = {},
   ): Promise<UsageEntitlementSnapshot> {
-    // 设置页只能从 Registry 取得静态 family/mode。动态 planKind 与 Team scope
-    // 必须在服务边界读取当前账号连接；不能要求 UI 从 Effective Config 伪造动态权益事实。
+    // The settings page can only obtain static family/mode from the Registry. Dynamic planKind and Team scope
+    // must read the current account connection at the service boundary; the UI cannot be required to fabricate dynamic entitlement facts from Effective Config.
     const accountAccess = await this.resolveRequestAccountAccess(request.accountAccess);
     const resolvedRequest: UsageEntitlementRequest = {
       ...request,
@@ -215,7 +215,7 @@ export class BigModelUsageQuotaProvider {
     const generatedAt = Date.now();
     const teamContext = accountAccess ? resolveTeamPlanContext(accountAccess) : null;
     const providerId = request.preferredProviderId?.trim() ?? "";
-    // 团队权益不以调用 Key 为前置条件；即使 Key 创建/复制失败也保留已确认的订阅。
+    // Team entitlement does not require the call Key as a prerequisite; even if Key creation/copy fails, the confirmed subscription is retained.
     const teamEntitlement = teamContext
       ? await fetchBigModelSubscriptionSummary({
           apiClient: this.apiClient,
@@ -241,10 +241,14 @@ export class BigModelUsageQuotaProvider {
         allowEnvApiKey: request.allowEnvApiKey,
       });
     } catch (error) {
-      log.warn(undefined, "读取用量凭据失败，保留独立订阅判定", {
-        error: error instanceof Error ? error.message : String(error),
-        preferredProviderId: providerId,
-      });
+      log.warn(
+        undefined,
+        "failed to read usage credentials, keeping the standalone subscription decision",
+        {
+          error: error instanceof Error ? error.message : String(error),
+          preferredProviderId: providerId,
+        },
+      );
     }
     const entitlement =
       teamEntitlement ??
@@ -256,8 +260,8 @@ export class BigModelUsageQuotaProvider {
             timeoutMs: REQUEST_TIMEOUT_MS,
           })
         : { kind: "unknown" as const });
-    // 订阅未知不能发布为成功空快照，否则 hook 会覆盖同身份已确认权益并清除失败退避。
-    // 无凭据的未配置状态仍正常返回；已有查询身份时让统一失败路径保留快照。
+    // Unknown subscriptions cannot be published as successful empty snapshots, otherwise the hook will overwrite the confirmed rights and interests of the same identity and clear the failure backoff.
+    // The unconfigured state without credentials is still returned normally; when there is a query identity, the unified failure path retains the snapshot.
     if (entitlement.kind === "unknown" && (resolved || teamContext)) {
       throw new Error("Coding Plan entitlement refresh failed");
     }
@@ -269,7 +273,7 @@ export class BigModelUsageQuotaProvider {
           this.fetchMcpQuota(resolved).catch(() => null),
         ])
       : [null, null];
-    // quota 失败或 level 存在都不改变权益；额度耗尽也只影响用量显示。
+    // The quota failure or the existence of level will not change the rights; the exhaustion of the quota will only affect the usage display.
     const quotaData = payload && isSuccessfulBigModelEnvelope(payload) ? payload.data : null;
     const limits = normalizeLimits(quotaData?.limits);
     const primaryLimit = pickPrimaryLimit(limits);
@@ -322,8 +326,8 @@ export class BigModelUsageQuotaProvider {
   }
 
   /**
-   * 读取官方 Server MCP 额度。仅 Coding Plan provider 会发起：
-   * 环境变量 key、普通 API Key provider 与 Start Plan 都没有该权益。
+   * Reads the official Server MCP quota. Only a Coding Plan provider issues it: neither the environment
+   * variable key, nor a plain API Key provider, nor Start Plan has this entitlement.
    */
   private async fetchMcpQuota(
     resolved: ResolvedQuotaAuthorization,
@@ -372,14 +376,14 @@ export class BigModelUsageQuotaProvider {
     try {
       const balanceUrl = buildZaiStartPlanBalanceUrl();
       const balanceStartedAt = Date.now();
-      // billing/current 已废弃，balance 会同时返回 plans 与 balances。
-      // Start Plan 快照必须只发起一次 balance 请求，避免冷启动重复请求并继续依赖旧接口。
+      // billing/current is deprecated, balance will return both plans and balances.
+      // The Start Plan snapshot must only initiate a balance request once to avoid repeated requests during cold start and continued reliance on the old interface.
       balancePayload = await fetchZaiStartPlanBalanceEnvelope(
         this.apiClient,
         resolved.authorization,
         invalidateBalanceCache,
       );
-      log.info(undefined, "billing/balance 请求完成", {
+      log.info(undefined, "billing/balance request completed", {
         balanceCount: balancePayload.data?.balances?.length ?? 0,
         balances: summarizeStartPlanBalances(balancePayload.data?.balances),
         code: balancePayload.code ?? null,
@@ -393,14 +397,14 @@ export class BigModelUsageQuotaProvider {
         url: balanceUrl,
       });
     } catch (error) {
-      log.warn(undefined, "billing/balance 请求失败", {
+      log.warn(undefined, "billing/balance request failed", {
         error: error instanceof Error ? error.message : String(error),
         providerId,
         responseHeaders: error instanceof ApiError ? (error.responseHeaders ?? null) : null,
         status: error instanceof ApiError ? error.status : null,
         url: buildZaiStartPlanBalanceUrl(),
       });
-      // 保留 HTTP 429 等错误信息，让调用方退避并保留已确认的权益。
+      // Preserve error messages such as HTTP 429 to allow the caller to back off and retain confirmed rights and interests.
       throw error;
     }
 
@@ -435,7 +439,7 @@ export class BigModelUsageQuotaProvider {
       authenticated: true,
       context: { scope: "personal" },
       provider: resolved.provider,
-      // balance 的服务端时间与本响应的 effective_at 配对，不能用本机时钟覆盖。
+      // The server time of balance is paired with the effective_at of this response and cannot be overridden with the local clock.
       ...(typeof balancePayload.data?.server_time === "number" &&
       Number.isFinite(balancePayload.data.server_time) &&
       balancePayload.data.server_time >= 0
@@ -490,8 +494,8 @@ export class BigModelUsageQuotaProvider {
       allowEnvApiKey: request.allowEnvApiKey,
     });
     if (!resolved) {
-      // 设置页使用统计可被显式收口到 Coding Plan provider。
-      // 严格指定 provider 时不允许回退到普通 API Key、环境变量或本地 session 聚合。
+      // Setting page usage statistics can be explicitly exported to the Coding Plan provider.
+      // Strictly specifying a provider does not allow fallback to normal API keys, environment variables, or local session aggregations.
       throw new Error("no_bigmodel_api_key");
     }
 
@@ -601,8 +605,8 @@ export class BigModelUsageQuotaProvider {
         { acceptedBusinessCodes: [3301] },
       );
     } catch (error) {
-      // 后端在请求过快/发卡锁竞争时直接回 HTTP 429，不带 3301 信封和 next_try_at。
-      // 映射成稳定错误码，客户端据此写兜底冷却，避免 30 秒轮询持续撞限流。
+      // The backend directly responds to HTTP 429 without the 3301 envelope and next_try_at when the request is too fast or the card lock is competed.
+      // It is mapped to a stable error code, and the client writes the code accordingly to cool down to avoid the 30-second polling from continuously hitting the current limit.
       if (error instanceof ApiError && error.status === 429) {
         throw new Error("coding_plan_reset_opportunity_throttled", {
           cause: error,
@@ -614,8 +618,8 @@ export class BigModelUsageQuotaProvider {
     if (!envelope.success) {
       throw new Error("coding_plan_reset_invalid_response");
     }
-    // 3301 的 next_try_at 是服务端限流边界，必须完整透传给客户端；
-    // 丢弃该字段会让 30 秒轮询持续触发资格判断，绕过后端要求的重试间隔。
+    // The next_try_at of 3301 is the server-side current limiting boundary, which must be completely transparently transmitted to the client;
+    // Discarding this field will cause the 30-second poll to continuously trigger eligibility determinations, bypassing the retry interval required by the backend.
     if (envelope.data.code === 3301) {
       const denied = codingPlanResetOpportunityDeniedDataSchema.safeParse(envelope.data.data);
       if (!denied.success) {
@@ -638,7 +642,7 @@ export class BigModelUsageQuotaProvider {
       {
         method: "POST",
         timeoutMs: REQUEST_TIMEOUT_MS,
-        // history/read 使用当前 Coding Plan credential 校验身份，但按用户共享已读游标，不带 target scope。
+        // history/read uses the current Coding Plan credential to verify identity, but shares the read cursor by user without target scope.
         headers: createCodingPlanResetHeaders(authorization, false),
       },
     );
@@ -660,9 +664,9 @@ export class BigModelUsageQuotaProvider {
     if (!zcodeJwt) {
       throw new Error("coding_plan_reset_zcode_jwt_required");
     }
-    // reset 同时支持 Z.ai 与 BigModel Coding Plan。固定读取 oauth:bigmodel:access_token
-    // 会让只登录 Z.ai 的用户在请求发出前失败；业务 JWT 必须跟随当前 provider family
-    // 精确选择，禁止跨 family 回退。Header 仍按后端契约直传且不套 Bearer。
+    // reset supports both Z.ai and BigModel Coding Plan. Fixed reading of oauth:bigmodel:access_token
+    // Users who only log in to Z.ai will fail before the request is sent; the business JWT must follow the current provider family
+    // Precise selection, disallowing cross-family rollback. Header is still passed directly according to the back-end contract and does not cover Bearer.
     const codingPlanJwtKey =
       accountAccess.family === "zai" ? ZAI_OAUTH_ACCESS_TOKEN_KEY : BIGMODEL_OAUTH_ACCESS_TOKEN_KEY;
     const codingPlanJwt = (await this.credentialService?.load(codingPlanJwtKey))?.trim() ?? "";
@@ -686,15 +690,15 @@ export class BigModelUsageQuotaProvider {
       allowEnvApiKey: false,
     });
     if (!resolved) {
-      // Coding Plan 用量现在直接使用对应 Coding Plan provider 的 API Key。
-      // 缺少 key 时不能回退普通 API Key、环境变量、OAuth 或本地 App Usage。
+      // Coding Plan usage now directly uses the API Key of the corresponding Coding Plan provider.
+      // Cannot fallback to normal API Key, environment variables, OAuth or local App Usage when key is missing.
       throw new Error(resolveCodingPlanApiKeyError(request.preferredProviderId));
     }
 
     const usageRange = resolveCodingPlanUsageTimeRange(request);
-    // monitor 请求不能全有全无。quota 保持原有必须成功语义
-    // （传输失败时整体失败，业务失败降级为 quota: null）；activity / detail / health
-    // 是可选数据面，传输失败只清空对应区域并记 warn，任一路故障不能拖垮整张面板。
+    // The monitor request cannot be all-or-nothing. quota maintains the original must-success semantics
+    // (When the transmission fails, the overall failure occurs, and the business failure is downgraded to quota: null); activity/detail/health
+    // It is an optional data plane. If the transmission fails, only the corresponding area will be cleared and a warn will be recorded. Failure of any path cannot bring down the entire panel.
     const [quotaPayload, activityData, modelDetailData, toolDetailData, health7dData] =
       await Promise.all([
         this.fetchQuota(resolved),
@@ -937,9 +941,9 @@ function readCodingPlanResetDiagnosticHeaders(
   return Object.keys(result).length > 0 ? result : undefined;
 }
 
-// 联调对账后缀：envelope 业务错误（如 2007 依赖失败）需要把后端 x-request-id
-// 带进错误 message，RPC 日志和 UI warn 才能与后端日志按请求 id 精确对上。
-// 仅用于日志定位，客户端不做分支；缺失时返回空串保持原 message 契约。
+// Joint debugging and reconciliation suffix: envelope business errors (such as 2007 dependency failure) require the backend x-request-id
+// By bringing in the error message, RPC logs and UI warn can be accurately matched with the backend logs by request id.
+// Only used for log positioning, the client does not branch; if missing, an empty string is returned to maintain the original message contract.
 function readCodingPlanResetErrorDiagnostics(headers: Headers): string {
   const requestId = headers.get("x-request-id")?.trim();
   return requestId ? ` (x-request-id:${requestId})` : "";
@@ -960,8 +964,8 @@ async function readCodingPlanResetApiJson(
     parseError = error;
   }
 
-  // reset 后端在 HTTP 4xx 时仍通过统一 envelope 返回稳定业务 code。
-  // 必须先读取 code，不能把易变的 msg 当成客户端分支依据。
+  // The reset backend still returns stable business code through a unified envelope when HTTP 4xx is used.
+  // The code must be read first, and the volatile msg cannot be used as the client branch basis.
   const envelope = codingPlanResetEnvelopeSchema.safeParse(payload);
   if (envelope.success && envelope.data.code !== 0) {
     if (options.acceptedBusinessCodes?.includes(envelope.data.code)) {
@@ -1064,13 +1068,13 @@ function buildUsageEntitlementContext(
 
 function createBigModelUsageHeaders(resolved: ResolvedQuotaAuthorization): Record<string, string> {
   const headers: Record<string, string> = {
-    // monitor 接口要求 authorization 直接传完整凭据。
-    // 普通用量和 Coding Plan 用量都走 API Key，不能额外加 Bearer 前缀。
+    // The monitor interface requires authorization to pass complete credentials directly.
+    // Both normal usage and Coding Plan usage use API Key, and no additional Bearer prefix can be added.
     authorization: resolved.authorization,
   };
   if (resolved.teamContext) {
-    // Team Plan 的 quota / usage 按组织和项目隔离。
-    // 只用 provider id 会固定读取默认项目，多个团队时余额会和当前选择不一致。
+    // Team Plan quota/usage is segregated by organization and project.
+    // Only using provider id will always read the default project. When there are multiple teams, the balance will be inconsistent with the current selection.
     headers["bigmodel-organization"] = resolved.teamContext.organizationId;
     headers["bigmodel-project"] = resolved.teamContext.projectId;
   }
@@ -1082,8 +1086,8 @@ function buildQuotaLimitUrl(resolved: ResolvedQuotaAuthorization): string {
     return resolved.quotaUrl;
   }
 
-  // BigModel Team Plan 的 quota/limit 后端按 type=2 路由到团队套餐。
-  // 只切换团队项目 key/header 仍会走个人 Coding Plan 分支并返回“当前用户不存在 coding plan”。
+  // BigModel Team Plan's quota/limit backend routes to the team plan by type=2.
+  // Just switching the team project key/header will still take the personal Coding Plan branch and return "The current user does not have a coding plan".
   const url = new URL(resolved.quotaUrl);
   url.searchParams.set("type", "2");
   return url.toString();
@@ -1108,18 +1112,18 @@ function readSuccessfulBigModelMonitorData<TData extends object>(
     return payload.data;
   }
   if (options.allowMissingData === true && hasExplicitBigModelSuccessSignal(payload)) {
-    // BigModel monitor 的 tool-usage 在团队项目无工具调用时会返回
-    // code=200、msg=“操作成功”但省略 data。空用量应显示为空统计，不能中断整个统计页。
+    // BigModel monitor's tool-usage will be returned when no tool is called in the team project
+    // code=200, msg="operation successful" but omit data. Empty usage should be displayed as empty statistics and the entire statistics page cannot be interrupted.
     return emptyData;
   }
   throw new Error(readBigModelEnvelopeMessage(payload) || fallbackMessage);
 }
 
-// credit-usage/activity、usage-detail、model-performance-day 是可选数据面。
-// 传输层失败（HTTP 非 2xx、超时、断网）时只清空对应区域并记 warn，不能让
-// Promise.all 提前 reject 拖垮整张 Coding Plan Usage 面板。HTTP 200 但业务信封失败
-// （如 token expired）仍由 readSuccessfulBigModelMonitorData 抛错：鉴权/后端错误必须
-// 显式暴露给用户，不能伪装成空用量（既有测试已锁定该语义）。
+// credit-usage/activity, usage-detail, and model-performance-day are optional data surfaces.
+// When the transport layer fails (HTTP non-2xx, timeout, network disconnection), only the corresponding area will be cleared and a warn will be recorded. Do not allow
+// Promise.all rejects in advance and brings down the entire Coding Plan Usage panel. HTTP 200 but business envelope failed
+// (such as token expired) still throws an error by readSuccessfulBigModelMonitorData: Authentication/backend error must
+// Explicitly exposed to the user and cannot be disguised as an empty usage (existing tests have locked this semantics).
 async function readBestEffortBigModelMonitorData<TData extends object>(
   request: Promise<{
     code?: number;
@@ -1135,7 +1139,7 @@ async function readBestEffortBigModelMonitorData<TData extends object>(
   try {
     payload = await request;
   } catch (error) {
-    log.warn(undefined, `${fallbackMessage}，该区域降级为空统计`, {
+    log.warn(undefined, `${fallbackMessage}, falling back to empty stats for this section`, {
       error: error instanceof Error ? error.message : String(error),
       status: error instanceof ApiError ? error.status : null,
     });
@@ -1156,8 +1160,8 @@ function hasExplicitBigModelSuccessSignal(payload: { code?: number; success?: bo
 
 function isSuccessfulBigModelEnvelope(payload: { code?: number; success?: boolean }): boolean {
   const code = payload.code;
-  // BigModel monitor/quota 后端存在 code=0 且 msg=“操作成功”的成功响应。
-  // 只按 code=200 判断会把团队用量统计的成功包误抛成错误，导致设置页显示无法读取统计。
+  // There is a successful response with code=0 and msg="operation successful" in the BigModel monitor/quota backend.
+  // Only judging by code=200 will mistakenly throw the successful packet of team usage statistics into an error, causing the settings page to display that the statistics cannot be read.
   return (
     payload.success !== false && (code === undefined || code === null || code === 0 || code === 200)
   );
@@ -1188,12 +1192,12 @@ function buildZaiStartPlanSubscription(
     identityMasked: null,
     details: activePlans.map((plan) => ({
       productId: readNonEmptyString(plan.plan_id) ?? "",
-      productName: readNonEmptyString(plan.name) ?? "编程套餐",
+      productName: readNonEmptyString(plan.name) ?? "Coding Plan",
       purchaseTime: null,
       beginTime: formatUnixSecondsAsIso(plan.starts_at),
       billingCycle: pickZaiStartPlanBillingCycle(plan),
-      // Start Plan 卡片不展示套餐级续期时间：额度桶刷新时间由每个 limit 的
-      // nextResetTime（balance.expires_at）表达，套餐到期由 expireTime（ends_at）表达。
+      // The Start Plan card does not display the package-level renewal time: the quota bucket refresh time is determined by each limit
+      // NextResetTime (balance.expires_at) is expressed, and package expiration is expressed by expireTime (ends_at).
       renewTime: null,
       expireTime: formatUnixSecondsAsIso(plan.ends_at),
       entitlements: (plan.entitlements ?? []).flatMap((entitlement) => {
@@ -1212,10 +1216,12 @@ function buildZaiStartPlanSubscription(
 }
 
 /**
- * tripwire：服务端契约保证 balances 只属于 active plans、每个桶都能按
- * plan_id 归属到套餐卡。出现无归属桶（含缺失 plan_id 的桶）说明契约被破坏——
- * 设置页多卡路径会静默丢弃这些桶，必须在 provider 层显式暴露，避免「额度去哪了」
- * 类问题无迹可查。正常数据下此日志零输出，用 warn 保证生产环境可见。
+ * Tripwire: the server contract guarantees that balances belong only to active plans and that every
+ * bucket can be attributed to a plan card by plan_id. An unattributed bucket (including one with a
+ * missing plan_id) means the contract is broken — the multi-card path in settings would silently drop
+ * these buckets, so they must be surfaced explicitly at the provider layer to keep "where did the
+ * quota go" style problems from leaving no trace. On normal data this log emits nothing; warn is used
+ * so it stays visible in production.
  */
 function warnOnUnattributedStartPlanBuckets(
   plans: ZaiStartPlanPlan[] | undefined,
@@ -1234,11 +1240,15 @@ function warnOnUnattributedStartPlanBuckets(
   if (orphanBuckets.length === 0) {
     return;
   }
-  log.warn(undefined, "billing/balance 返回无法归属到 active 套餐的额度桶", {
-    orphanCount: orphanBuckets.length,
-    orphanPlanIds: orphanBuckets.map((balance) => balance.plan_id ?? null),
-    activePlanIds: [...activePlanIds],
-  });
+  log.warn(
+    undefined,
+    "billing/balance returned quota buckets that cannot be attributed to an active plan",
+    {
+      orphanCount: orphanBuckets.length,
+      orphanPlanIds: orphanBuckets.map((balance) => balance.plan_id ?? null),
+      activePlanIds: [...activePlanIds],
+    },
+  );
 }
 
 function buildZaiStartPlanRemaining(
@@ -1290,13 +1300,13 @@ function normalizeZaiStartPlanBalanceLimits(
     .map((balance) => {
       const total = parseNumber(balance.total_units);
       const used = parseNumber(balance.used_units);
-      // Start Plan 余额卡必须展示后端给出的 remaining_units。
-      // available_units 会再扣除进行中请求的 reserved_units，不能作为“剩余”兜底。
+      // The Start Plan balance card must display the remaining_units given by the backend.
+      // Available_units will deduct the reserved_units of the ongoing request and cannot be used as a "remainder".
       const remaining = parseNumber(balance.remaining_units);
       if (total === null && used === null && remaining === null) {
         return null;
       }
-      // 额度桶的真实重置边界由 balance.expires_at 表达；服务端契约保证每个桶都带该字段。
+      // The real reset boundary of the balance bucket is expressed by balance.expires_at; the server contract ensures that each bucket has this field.
       const nextResetSeconds = parseUnixSeconds(balance.expires_at);
       const capabilityLabels = normalizeZaiStartPlanCapabilities(balance.capabilities);
       const capabilityType = readNonEmptyString(capabilityLabels.join(", "));
@@ -1315,7 +1325,7 @@ function normalizeZaiStartPlanBalanceLimits(
       const periodEnd = parseUnixSeconds(balance.period_end);
 
       return {
-        // 旧映射丢弃 bucket 和周期字段，Renderer 只能用变化的余额去重，导致反复提醒。
+        // The old mapping discards the bucket and period fields, and the Renderer can only use the changing balance to deduplicate, resulting in repeated reminders.
         bucketId: readNonEmptyString(balance.bucket_id) ?? undefined,
         userPlanId: userPlanId ?? undefined,
         periodStart: periodStart === null ? undefined : periodStart * 1000,
@@ -1328,7 +1338,7 @@ function normalizeZaiStartPlanBalanceLimits(
           capabilityType ??
           readNonEmptyString(balance.meter) ??
           "model_usage",
-        // planId 用于设置页按套餐卡片分组额度桶；服务端契约保证每个桶都携带 plan_id。
+        // planId is used to set the page to group quota buckets by package cards; the server contract ensures that each bucket carries plan_id.
         ...(planId ? { planId } : {}),
         unit: total ?? undefined,
         number: total ?? undefined,
@@ -1340,8 +1350,8 @@ function normalizeZaiStartPlanBalanceLimits(
         nextResetTime: nextResetSeconds === null ? undefined : nextResetSeconds * 1000,
         usageDetails: capabilityLabels.map((modelCode) => ({
           modelCode,
-          // 两个 Start Plan 的 Today's balance 接口已经返回面向用户的 show_name。
-          // 继续从 capabilities 推导会把 GLM-5-Turbo 显示成 GLM-5Turbo，并且丢失服务端名称语义。
+          // Both Start Plan's Today's balance interfaces already return user-facing show_name.
+          // Continuing to deduce from capabilities will show GLM-5-Turbo as GLM-5Turbo and lose the server name semantics.
           ...(displayName ? { displayName } : {}),
           usage: used ?? 0,
         })),
@@ -1474,8 +1484,8 @@ function buildUsageMonitorUrl(
   const url = new URL(resolved.quotaUrl);
   url.pathname = url.pathname.replace(/\/quota\/limit$/, `/${endpoint}`);
   if (resolved.teamContext) {
-    // BigModel Team Plan 的 monitor 用量接口和 quota/limit 一样按 type=2 路由。
-    // 只带团队项目 key/header 时仍会落到个人 Coding Plan 分支并返回不存在套餐。
+    // The monitor usage interface of BigModel Team Plan is routed according to type=2 like quota/limit.
+    // When only bringing the team project key/header, it will still fall into the personal Coding Plan branch and return a non-existent plan.
     url.searchParams.set("type", "2");
   }
   url.searchParams.set("startTime", startTime);
@@ -1492,8 +1502,8 @@ function buildCreditUsageMonitorUrl(
 ): string {
   const url = new URL(resolved.quotaUrl);
   url.pathname = url.pathname.replace(/\/usage\/quota\/limit$/, `/credit-usage/${endpoint}`);
-  // Team Plan 的 quota/limit 仍用 type=2，但 credit-usage 使用 type=3；
-  // 继续沿用 type=2 会触发后端“仅企业主账号可查询企业汇总数据”分支。
+  // Team Plan’s quota/limit still uses type=2, but credit-usage uses type=3;
+  // Continuing to use type=2 will trigger the backend "Only the business master account can query the company summary data" branch.
   url.searchParams.set("type", resolved.teamContext ? "3" : "1");
   url.searchParams.set("startTime", startTime);
   url.searchParams.set("endTime", endTime);
@@ -1589,7 +1599,7 @@ function buildBigModelQuotaUrl(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 function buildZaiQuotaUrl(env: NodeJS.ProcessEnv = process.env): string {
-  // ZAI usage/quota 与 business login 共用业务域名。
-  // 测试环境必须请求 配置的 ZAI Business origin，不能把测试 token 发送到生产 api.z.ai。
+  // ZAI usage/quota and business login share the business domain name.
+  // The test environment must request the configured ZAI Business origin and cannot send test tokens to the production api.z.ai.
   return buildRuntimeZaiBusinessUrl(env, "/api/monitor/usage/quota/limit");
 }

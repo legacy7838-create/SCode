@@ -22,7 +22,7 @@ export const providerFamilyConnectionSelectionSettingsSchema = z
   })
   .partial();
 
-/** 用户对一个 Provider Family 的连接选择意图；不包含账号身份或动态凭据。 */
+/** The user's connection-selection intent for one Provider Family; it carries no account identity or dynamic credentials. */
 export type ProviderFamilyConnectionSelection = Readonly<
   z.infer<typeof providerFamilyConnectionSelectionSchema>
 >;

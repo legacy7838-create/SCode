@@ -61,8 +61,8 @@ export const REMOTE_RUNTIME_TOOL_RUNTIME = {
 } as const satisfies Record<RuntimeToolId, RemoteRuntimeToolDescriptor>;
 
 export function getRemoteRuntimeToolsForPlatform(platform: string): ResolvedRemoteRuntimeTool[] {
-  // Linux remote 已切到 native-search 三工具，但 Darwin 仍依赖 legacy rg13。
-  // 部署集合必须按目标平台解析，不能用一个全局版本把两条发布链互相覆盖。
+  // Linux remote has switched to the native-search three tools, but Darwin still relies on legacy rg13.
+  // Deployment sets must be parsed by target platform, and two release chains cannot be overwritten with one global version.
   return (
     Object.entries(REMOTE_RUNTIME_TOOL_RUNTIME) as Array<
       [RuntimeToolId, RemoteRuntimeToolDescriptor]

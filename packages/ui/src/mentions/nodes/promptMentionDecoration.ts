@@ -23,7 +23,7 @@ import {
 const pendingImages = new WeakMap<HTMLElement, HTMLImageElement>();
 
 function cssUrl(url: string): string {
-  // CSS 中相对 URL 会按样式表路径解析；统一按文档 baseURI 解析，和原 img.src 一致。
+  // Relative URLs in CSS will be parsed according to the style sheet path; they will be parsed according to the document baseURI, which is consistent with the original img.src.
   return `url(${JSON.stringify(new URL(url, document.baseURI).href)})`;
 }
 
@@ -44,8 +44,8 @@ function setImage(dom: HTMLElement, url: string, fallback: () => void) {
   dom.style.setProperty("--mention-image", cssUrl(url));
   const image = new Image();
   pendingImages.set(dom, image);
-  // 根因：图标 error 回调过去 replaceChildren，可能在用户选区建立后销毁文字节点。
-  // 图标只更新装饰变量，且旧请求的回调不得覆盖新节点状态。
+  // Root cause: The icon error callback is past replaceChildren, and the text node may be destroyed after the user selection is established.
+  // Icons only update decoration variables, and callbacks from old requests must not overwrite new node state.
   image.onerror = () => {
     if (pendingImages.get(dom) !== image) return;
     pendingImages.delete(dom);

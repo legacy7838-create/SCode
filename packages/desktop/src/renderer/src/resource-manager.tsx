@@ -47,15 +47,15 @@ function applyResourceManagerTheme(): void {
 }
 
 applyResourceManagerTheme();
-// 资源管理器不创建主窗口的 Zustand store，text-ui-* 无法自动获得持久化基准。
-// 首屏前显式应用，运行中再由 storage 事件同步，且不改变 html font-size 或接入业务 Host。
+// Resource Manager does not create a Zustand store for the main window, and text-ui-* cannot automatically obtain a persistence baseline.
+// Explicitly applied before the first screen, and then synchronized by storage events during operation, without changing the html font-size or accessing the business host.
 applyUiFontSizePx(loadUiFontSizePx());
 subscribeToUiFontSizeStorageChanges();
 
 const root = document.getElementById("root");
 if (root) {
   createRoot(root).render(
-    // 语言沿用主窗口写入 localStorage 的偏好；不接 settingService，避免独立窗口再起一份 RPC。
+    // The language follows the preference of the main window to write localStorage; do not connect to settingService to avoid another RPC in the independent window.
     <ZCodeIntlProvider>
       <ResourceManagerApp
         setSamplingActive={window.resourceManager?.setSamplingActive}

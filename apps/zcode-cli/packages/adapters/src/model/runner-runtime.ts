@@ -25,8 +25,8 @@ export interface AiSdkModelRuntime {
 export interface AiSdkModelTextRequest extends ModelTextRequest {
   abortSignal?: AbortSignal;
   traceContext?: TraceContext;
-  // Start Plan 的账号鉴权材料按 attempt 刷新；adapter 内部 retry 也是真实模型请求，
-  // 必须在每个 attempt 发送前给 core/host 一个刷新机会。
+  // Start Plan's account authentication materials are refreshed according to attempt; the adapter's internal retry is also a real model request.
+  // Core/host must be given a chance to refresh before each attempt is sent.
   refreshRuntimeHeadersBeforeAttempt?: (input: {
     accountAccess?: ZCodeProviderAccountAccess;
     attempt: number;
@@ -39,10 +39,10 @@ export interface AiSdkModelTextRequest extends ModelTextRequest {
     headersApplied: boolean;
     requestAuth?: ModelRequestAuth;
   }>;
-  // adapter 测试和开发态常直接使用源文件；这里显式接住 core recovery 透传的 SSE idle timeout 递增序号。
+  // The adapter test and development state often use the source file directly; here, the SSE idle timeout incrementing sequence number transparently transmitted by core recovery is explicitly received.
   streamIdleTimeoutRetryNumber?: number;
-  // 同一源文件加载边界还需显式接住 compact 专用 provider stream 边界，
-  // 避免 contracts 构建产物尚未刷新时 adapter 独立 typecheck 丢失该 runtime-only 字段。
+  // The same source file loading boundary also needs to explicitly catch the compact dedicated provider stream boundary.
+  // Prevent the adapter independent typecheck from losing the runtime-only field when the contracts build artifact has not yet been refreshed.
   preserveProviderStreamBoundaries?: boolean;
 }
 

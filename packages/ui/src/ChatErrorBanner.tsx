@@ -1,8 +1,8 @@
 import { CodingPlanEntryButton } from "@/settings/CodingPlanEntryButton.js";
 /**
- * ChatErrorBanner — 错误提示组件
+ * ChatErrorBanner — error prompt component
  *
- * 显示 ZCode Agent 链路中的错误，带 traceId 方便排查。
+ * Display errors in the ZCode Agent link, with traceId for easy troubleshooting.
  */
 import { useState } from "react";
 import {
@@ -36,7 +36,7 @@ import {
 import type { ZCodeUiError } from "@/lib/zcodeUiError.js";
 
 const HISTORICAL_MODEL_UNAVAILABLE_MESSAGES = [
-  "历史任务使用的模型已不可用",
+  "The model used by the historical task is no longer available",
   "The model used by this historical task is no longer available",
 ];
 
@@ -48,8 +48,8 @@ const LOCALIZED_ERROR_CODES = new Set([
   MEDIA_BUDGET_CURRENT_ATTACHMENT_TOO_LARGE_ERROR_CODE,
   MEDIA_BUDGET_CURRENT_IMAGE_TOO_LARGE_ERROR_CODE,
   MEDIA_BUDGET_CURRENT_VIDEO_TOO_LARGE_ERROR_CODE,
-  // 服务层错误 message 是跨进程兜底，不能作为最终 UI 语言来源。
-  // 历史任务模型不可用要按稳定 code 本地化，避免英文界面显示中文提示。
+  // The service layer error message is a cross-process message and cannot be used as the final UI language source.
+  // If the historical mission model is unavailable, it must be localized according to the stable code to prevent the English interface from displaying Chinese prompts.
   "ZCODE_RUNTIME_MODEL_UNAVAILABLE",
   "ZCODE_BIGMODEL_TEAM_PLAN_MEMBER_REQUIRED",
 ]);
@@ -61,10 +61,10 @@ const MODEL_CONFIG_MISSING_CODES = new Set([
 ]);
 
 function isModelConfigMissingError(error: Pick<ZCodeUiError, "code" | "message">): boolean {
-  // 桌面端发送前 registry 为空时，agent 会退回 CLI config 并抛 Model config is missing。
-  // 真实原因是“当前没有可用模型”，不能把 CLI 配置路径直接暴露给桌面用户。
-  // 这里只按结构化 code 识别，避免 UNKNOWN/SEND_FAILED 等包装错误的可读 message
-  // 碰巧包含同一段文本时被误判，并连带隐藏复制、反馈等诊断入口。
+  // When the registry is empty before sending on the desktop, the agent will return the CLI config and throw Model config is missing.
+  // The real reason is that "there is currently no available model" and the CLI configuration path cannot be directly exposed to desktop users.
+  // Here we only identify based on structured code to avoid readable messages that wrap errors such as UNKNOWN/SEND_FAILED.
+  // If it happens to contain the same text, it will be misjudged, and diagnostic entrances such as copying and feedback will be hidden.
   return Boolean(error.code && MODEL_CONFIG_MISSING_CODES.has(error.code));
 }
 
@@ -95,8 +95,8 @@ export function resolveChatErrorBannerDisplayMessage(
 export function shouldSuppressChatErrorBanner(
   error: Pick<ZCodeUiError, "code" | "message">,
 ): boolean {
-  // 只有历史恢复残留的模型不可用提示才隐藏；当前发送/草稿报错需要展示，
-  // 否则 registry 移除模型后用户会看到“请求没返回”而没有任何可操作反馈。
+  // Only the remaining model unavailability prompts for historical recovery are hidden; current send/draft error reports need to be displayed.
+  // Otherwise, after the registry removes the model, the user will see "The request did not return" without any actionable feedback.
   return Boolean(
     error.code === "ZCODE_RUNTIME_MODEL_UNAVAILABLE" &&
     HISTORICAL_MODEL_UNAVAILABLE_MESSAGES.some((message) => error.message.includes(message)),
@@ -136,8 +136,8 @@ export function ChatErrorBanner({
     openFeedbackSubmit({
       title: localizedErrorMessage.slice(0, 80),
       type: "bug",
-      module: "模型调用报错",
-      severity: "P2-中",
+      module: "Model Call Error",
+      severity: "P2-Medium",
       includeLogs: false,
       description: buildErrorFeedbackDescription({
         message: localizedErrorMessage,
@@ -160,8 +160,8 @@ export function ChatErrorBanner({
     }
 
     try {
-      // 错误横幅之前只能复制 TraceID，开发拿不到完整上下文。
-      // 这里统一复制摘要、TraceID 和详情，方便用户一键转发完整报错信息。
+      // Previously, the error banner could only copy the TraceID, and developers could not get the complete context.
+      // The summary, TraceID and details are uniformly copied here to facilitate users to forward the complete error message with one click.
       await navigator.clipboard.writeText(
         buildErrorCopyText({
           message: localizedErrorMessage,
@@ -247,8 +247,8 @@ export function ChatErrorBanner({
               className={actionButtonClassName}
               data-testid={TID_CHAT_ERROR_DETAILS_BUTTON}
               onClick={() => {
-                // 详情之前内嵌在 banner 里展开，长错误会把消息区直接撑高，聊天滚动也会突然跳动。
-                // 改成 dialog 后，横幅只保留单行摘要，详细内容放到独立浮层里看，结构和交互都更稳定。
+                // The details were previously embedded in the banner and expanded. Long errors would raise the message area directly, and the chat scroll would also jump suddenly.
+                // After changing to dialog, the banner only retains a single-line summary, and the detailed content is placed in an independent floating layer, making the structure and interaction more stable.
                 setDetailsDialogOpen(true);
               }}
             >
@@ -286,8 +286,8 @@ export function ChatErrorBanner({
           </Button>
         ) : null}
 
-        {/* 错误横幅本身就是异常态，不能再经过 Radix Tooltip 的 Popper/Slot 状态链。
-            这里改成普通 Button，避免无可用模型等错误触发横幅时发生 Maximum update depth 循环。 */}
+        {/* The error banner itself is an exception and can no longer pass through the Popper/Slot status chain of Radix Tooltip.
+            Change it here to a normal Button to avoid the Maximum update depth loop that occurs when the banner is triggered by errors such as no available model. */}
         {!modelConfigMissing ? (
           <Button
             type="button"
@@ -296,8 +296,8 @@ export function ChatErrorBanner({
             onClick={() => {
               void handleOpenFeedback();
             }}
-            // ChatErrorBanner 这里之前混用了原生 button，导致按钮体系、焦点态和禁用态都绕开了设计系统。
-            // 统一收口到 Button 组件后，错误横幅里的所有操作按钮才能保持同一套交互和主题表现。
+            // ChatErrorBanner used native buttons mixed here before, causing the button system, focus state and disabled state to bypass the design system.
+            // After being unified into the Button component, all the operation buttons in the error banner can maintain the same set of interactions and theme performance.
             className={cn(actionButtonClassName)}
             aria-label={intl.formatMessage({ id: "chat.error.feedback" })}
             title={error.traceId}

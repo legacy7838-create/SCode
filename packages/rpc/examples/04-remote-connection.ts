@@ -1,27 +1,27 @@
 /**
- * 示例 4: Remote 远程连接 —— 模拟 SSH/WSL/Docker 的完整流程
+ * Example 4: Remote remote connection - simulate the complete process of SSH/WSL
  *
- * 这个示例模拟了 VS Code Remote 的完整架构：
+ * This example simulates the complete architecture of VS Code Remote:
  *
- * [客户端 (本地 VS Code)]
+ * [Client (Local VS Code)]
  *     ↓ authority = "ssh+myserver"
  * [RemoteAuthorityResolver] → { host: "192.168.1.100", port: 8080 }
  *     ↓
- * [RemoteSocketFactory] → 创建 socket 连接
+ * [RemoteSocketFactory] → Create socket connection
  *     ↓
- * [PersistentProtocol] → 加 ACK + 心跳 + 重连
+ * [PersistentProtocol] → Add ACK + heartbeat + reconnect
  *     ↓
  * [IPCClient] → channel.call('readFile', ...)
- *     ↓ (通过 socket 传输)
- * [服务端 (远程机器)]
+ *     ↓ (transmitted via socket)
+ * [Server (remote machine)]
  *     ↓
  * [ChannelServer] → fileService.readFile(...)
- *     ↓ (读取远程文件系统)
- * 返回结果
+ *     ↓ (read remote file system)
+ * Return results
  *
- * 同时演示 URI 转换：
- *   客户端: vscode-remote://ssh+myserver/home/user/file.txt
- *   服务端: file:///home/user/file.txt
+ * Also demonstrates URI conversion:
+ *   Client: vscode-remote://ssh+myserver/home/user/file.txt
+ *   Server: file:///home/user/file.txt
  */
 
 import {
@@ -46,7 +46,7 @@ import {
 } from "../src/index.js";
 
 // ============================================================================
-// 模拟的 Socket 实现（内存中的双向通道）
+// Simulated Socket implementation (bidirectional channel in memory)
 // ============================================================================
 
 class MockSocket implements ISocket {
@@ -69,7 +69,7 @@ class MockSocket implements ISocket {
   }
 
   write(buffer: VSBuffer): void {
-    // 模拟网络延迟
+    // Simulate network latency
     setTimeout(() => {
       this.peer?._onData.fire(buffer);
     }, 1);
@@ -90,20 +90,20 @@ class MockSocket implements ISocket {
 }
 
 // ============================================================================
-// 模拟 SSH Resolver
+// Simulate SSH Resolver
 // ============================================================================
 
 /**
- * SSH Authority Resolver —— 模拟 Remote-SSH 扩展
+ * SSH Authority Resolver - emulates the Remote-SSH extension
  *
- * 在真实场景中，这里会：
- * 1. 解析 SSH config 获取主机地址
- * 2. 建立 SSH 隧道
- * 3. 在远端启动 code-server
- * 4. 返回隧道的本地端口
+ * In a real scenario, this would be:
+ * 1. Parse SSH config to obtain the host address
+ * 2. Establish an SSH tunnel
+ * 3. Start code-server remotely
+ * 4. Return the local port of the tunnel
  */
 class SSHAuthorityResolver implements IRemoteAuthorityResolver {
-  // 模拟的 SSH 主机配置
+  // Simulated SSH host configuration
   private hosts: Record<string, { host: string; port: number }> = {
     "ssh+myserver": { host: "192.168.1.100", port: 8080 },
     "ssh+devbox": { host: "10.0.0.50", port: 8080 },
@@ -126,10 +126,10 @@ class SSHAuthorityResolver implements IRemoteAuthorityResolver {
 }
 
 // ============================================================================
-// 模拟 Socket Factory
+// Emulate Socket Factory
 // ============================================================================
 
-/** 保存"服务端"的 socket 引用，模拟网络连接 */
+/** Save the socket reference of the "server" to simulate a network connection */
 const pendingServerSockets: MockSocket[] = [];
 
 class MockWebSocketFactory implements ISocketFactory<RemoteConnectionType.WebSocket> {
@@ -153,7 +153,7 @@ class MockWebSocketFactory implements ISocketFactory<RemoteConnectionType.WebSoc
 }
 
 // ============================================================================
-// 模拟远端服务
+// Simulating a remote service
 // ============================================================================
 
 interface IRemoteFileService {
@@ -196,14 +196,14 @@ class RemoteFileServiceImpl implements IRemoteFileService {
 }
 
 // ============================================================================
-// 主流程
+// Main process
 // ============================================================================
 
 async function main() {
   console.log("=== Remote connection Demo ===\n");
   const disposables = new DisposableStore();
 
-  // ──────── 1. 设置 Remote 基础设施 ────────
+  // ──────── 1. Set up Remote infrastructure ────────
 
   console.log("[1] Setting up Remote infrastructure...");
 
@@ -213,13 +213,13 @@ async function main() {
   const socketFactory = new RemoteSocketFactoryService();
   socketFactory.register(RemoteConnectionType.WebSocket, new MockWebSocketFactory());
 
-  // ──────── 2. 解析 Remote Authority ────────
+  // ──────── 2. Analyze Remote Authority ────────
 
   console.log('\n[2] Resolving remote authority "ssh+myserver"...');
   const resolved = await resolverService.resolveAuthority("ssh+myserver");
   console.log(`  Result: ${resolved.connectTo}, token: ${resolved.connectionToken}`);
 
-  // ──────── 3. 建立 Socket 连接 ────────
+  // ──────── 3. Establish Socket connection ────────
 
   console.log("\n[3] Establishing socket connection...");
   const clientSocket = await socketFactory.connect(
@@ -228,17 +228,17 @@ async function main() {
     `token=${resolved.connectionToken}`,
   );
 
-  // 获取模拟的服务端 socket
+  // Get the simulated server socket
   const serverSocket = pendingServerSockets.pop()!;
 
-  // ──────── 4. 服务端设置 ────────
+  // ──────── 4. Server settings ────────
 
   console.log("\n[4] Setting up remote server...");
 
-  // 简化：直接用 ChannelServer + ChannelClient（不用 IPCServer/IPCClient 的 ctx 握手）
-  // 在真实场景中，这里会有完整的握手、认证流程
+  // Simplification: Use ChannelServer + ChannelClient directly (without the ctx handshake of IPCServer/IPCClient)
+  // In a real scenario, there will be a complete handshake and authentication process.
 
-  // 创建简单的 protocol（不用 PersistentProtocol 以简化演示）
+  // Create a simple protocol (without using PersistentProtocol to simplify the demonstration)
   const serverOnMsg = new Emitter<VSBuffer>();
   const clientOnMsg = new Emitter<VSBuffer>();
 
@@ -251,7 +251,7 @@ async function main() {
     onMessage: clientOnMsg.event,
   };
 
-  // 服务端注册远程文件系统 channel
+  // The server registers the remote file system channel
   const remoteFileService = new RemoteFileServiceImpl();
   const server = new ChannelServer(serverProtocol, "server");
   server.registerChannel(
@@ -259,7 +259,7 @@ async function main() {
     ProxyChannel.fromService<string>(remoteFileService, disposables),
   );
 
-  // ──────── 5. 客户端使用远程服务 ────────
+  // ──────── 5. Client uses remote service ────────
 
   console.log("\n[5] Client using remote file service...");
 
@@ -270,19 +270,19 @@ async function main() {
     client.getChannel("remoteFilesystem"),
   );
 
-  // 订阅远程文件变更事件
+  // Subscribe to remote file change events
   const sub = remoteFS.onDidChangeFile((e) => {
     console.log(`  [remote event] ${e.type}: ${e.path}`);
   });
 
-  // 读取远程文件
+  // Read remote file
   const mainTs = await remoteFS.readFile("/home/user/project/main.ts");
   console.log(`  readFile → "${mainTs}"`);
 
   const stat = await remoteFS.stat("/home/user/project/package.json");
   console.log(`  stat → size: ${stat.size}, isDirectory: ${stat.isDirectory}`);
 
-  // 写入远程文件
+  // Write to remote file
   await remoteFS.writeFile(
     "/home/user/project/main.ts",
     'console.log("Updated from local VS Code!")',
@@ -291,7 +291,7 @@ async function main() {
   const updated = await remoteFS.readFile("/home/user/project/main.ts");
   console.log(`  readFile after write → "${updated}"`);
 
-  // ──────── 6. URI 转换演示 ────────
+  // ──────── 6. URI conversion demonstration ────────
 
   console.log("\n[6] URI Transformation...");
 
@@ -313,7 +313,7 @@ async function main() {
   console.log(`    ${fileURI.scheme}://${fileURI.path}`);
   console.log(`    → ${clientURI.scheme}://${clientURI.authority}${clientURI.path}`);
 
-  // 清理
+  // clean up
   sub.dispose();
   client.dispose();
   server.dispose();

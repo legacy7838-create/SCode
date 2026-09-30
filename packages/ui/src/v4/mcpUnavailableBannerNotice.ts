@@ -2,16 +2,17 @@ import type { ConversationRow, ToolCallRow } from "@zcode/shared/zcode-protocol-
 import type { OfficialMcpToolErrorCode } from "@zcode/shared";
 
 /**
- * 官方 Server MCP 本次会话内被判定不可用的事实（额度耗尽 / 无 Coding Plan）。
+ * The fact that the official Server MCP was judged unavailable in this session (quota exhausted /
+ * no Coding Plan).
  *
- * 事实来源是 tool row 上的 `display.unavailable`——CLI 侧只对官方 MCP 且 isError 的结果填充，
- * 因此这里不需要再判来源。
+ * The fact comes from `display.unavailable` on the tool row — the CLI side only fills it for
+ * official MCP results that are isError, so there is no need to re-check the source here.
  */
 export interface McpUnavailableNotice {
   code: OfficialMcpToolErrorCode;
   serverName: string;
   toolName: string;
-  /** 去重用：同一次调用只提示一次，换一次新的失败调用会重新提示。 */
+  /** Deduplicated: one call is announced only once, a new failing call announces again. */
   rowId: number;
 }
 
@@ -20,11 +21,13 @@ function readMcpToolCallRow(row: ConversationRow): ToolCallRow | null {
 }
 
 /**
- * 取窗口内最新一条带不可用标识的官方 MCP 工具调用。
+ * Takes the most recent official MCP tool call inside the window that carries the unavailable flag.
  *
- * 取"最新"而不是"第一条"：同一会话里可能先撞额度、后换了连接又撞权益，提示要跟随最近事实。
- * 注意 rows 是窗口视图，滚动很远后旧标识会离开窗口、提示随之消失——刚发生的调用一定在窗口内，
- * 这是可接受的取舍。
+ * Taking the "most recent" rather than the "first": within one session it may first hit the quota
+ * and later, on another connection, hit the entitlement again, so the notice has to follow the most
+ * recent fact. Note that rows is a window view — after scrolling far away the old flag leaves the
+ * window and the notice disappears with it; a call that just happened is always inside the window,
+ * which is an acceptable trade-off.
  */
 export function resolveMcpUnavailableNotice(
   rows: readonly ConversationRow[] | undefined,
@@ -41,7 +44,7 @@ export function resolveMcpUnavailableNotice(
     const toolKey = `${display.serverName}\u0000${display.toolName}`;
     if (seenTools.has(toolKey)) continue;
     seenTools.add(toolKey);
-    // 同一工具的最新成功事实覆盖旧失败；继续查找其它工具仍未被成功覆盖的失败。
+    // Latest success facts for the same tool overwrite old failures; continue looking for failures from other tools that have not yet been successfully covered.
     if (!display.unavailable) continue;
     return {
       code: display.unavailable.code,

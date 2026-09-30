@@ -1,4 +1,4 @@
-/** 仅用于用户反馈的排障材料；不得应用到模型请求或认证载荷。 */
+/** Troubleshooting material used only for user feedback; it must never be applied to model requests or authentication payloads. */
 const REDACTED = "[REDACTED]";
 const sensitiveKey =
   /(?:password|passwd|passphrase|secret|token|apikey|accesskey|privatekey|authorization|cookie|credential)/i;
@@ -14,7 +14,7 @@ function shouldRedactKey(key: string, diagnostic: boolean): boolean {
   return sensitiveKey.test(normalized) || (diagnostic && diagnosticBodyKey.test(normalized));
 }
 
-// 与 JSON 对象共用键名判定；带引号、转义和分隔符的字段不能走另一份精简名单。
+// Key name determination is shared with JSON objects; fields with quotes, escapes, and delimiters cannot go to another reduced list.
 function fieldKeys(text: string): Array<{ key: string; quoted: boolean; end: number }> {
   const fields = [];
   const pattern = /(?:"((?:\\.|[^"\\])*)"|'([^']*)'|([\w.-]+))\s*[:=]\s*/g;
@@ -24,7 +24,7 @@ function fieldKeys(text: string): Array<{ key: string; quoted: boolean; end: num
       try {
         key = JSON.parse(`"${key}"`) as string;
       } catch {
-        // 无法解码时仍按字面键名检查。
+        // When it cannot be decoded, it is still checked according to the literal key name.
       }
     }
     fields.push({ key, quoted: match[3] === undefined, end: match.index + match[0].length });
@@ -34,7 +34,7 @@ function fieldKeys(text: string): Array<{ key: string; quoted: boolean; end: num
 
 function shouldRedactUrlPath(url: URL, diagnostic: boolean): boolean {
   if (diagnostic || url.username || url.password || url.hostname === "hooks.slack.com") return true;
-  // 签名下载的对象路径也可能是凭据；必须在删除 query 前判定。
+  // The object path of the signature download may also be a credential; this must be determined before deleting the query.
   if (
     [...url.searchParams.keys()].some(
       (key) => shouldRedactKey(key, false) || /^(?:.*signature|sig|code)$/i.test(normalizeKey(key)),
@@ -54,7 +54,7 @@ function shouldRedactUrlPath(url: URL, diagnostic: boolean): boolean {
         );
       });
   } catch {
-    // 无法解码的路径不能证明安全，避免编码形式绕过识别。
+    // Undecodable paths are not provably safe from encoding forms that bypass recognition.
     return true;
   }
 }
@@ -75,7 +75,7 @@ function redactValues(text: string, diagnostic: boolean): string {
     .replace(/\b[a-z][a-z0-9+.-]*:\/\/[^\s"'<>\\]+/gi, (raw) => {
       try {
         const url = new URL(raw);
-        // URL 凭据并不只在 userinfo/query 中，webhook 和重置链接常将秘密放在路径里。
+        // URL credentials are not just in userinfo/query, webhooks and reset links often put secrets in the path.
         if (shouldRedactUrlPath(url, diagnostic) && url.pathname && url.pathname !== "/") {
           url.pathname = `/${REDACTED}`;
         }
@@ -98,7 +98,7 @@ function redactValues(text: string, diagnostic: boolean): string {
 function scrubValue(value: unknown, diagnostic: boolean, depth = 0): unknown {
   if (depth > 32) return REDACTED;
   if (typeof value === "string") {
-    // 字符串也可能包含日志前缀或多个 JSON 片段，必须走同一条完整脱敏路径。
+    // The string may also contain a log prefix or multiple JSON fragments, which must follow the same complete desensitization path.
     return redactText(value, diagnostic, depth + 1);
   }
   if (Array.isArray(value)) return value.map((item) => scrubValue(item, diagnostic, depth + 1));
@@ -117,7 +117,7 @@ function redactPlainText(text: string, diagnostic: boolean): string {
   return redactValues(text, diagnostic)
     .split(/\r?\n/)
     .map((line) => {
-      // 非结构化正文的长度和换行边界不可靠；已知敏感字段无法安全解析时舍弃该行。
+      // Length and newline boundaries for unstructured text are unreliable; lines are discarded when sensitive fields are known to be unsafe to parse.
       const unsafe = fieldKeys(line).some(
         ({ key, quoted, end }) =>
           shouldRedactKey(key, diagnostic) &&
@@ -153,9 +153,9 @@ function redactText(text: string, diagnostic: boolean, depth: number): string {
       return JSON.stringify(scrubValue(parsed, diagnostic, depth + 1));
     }
   } catch {
-    // 混合日志继续逐片段处理，不能只清洗可解析的最后一个 JSON。
+    // Mixed logs continue to be processed piece by piece and cannot just clean the last JSON that can be parsed.
   }
-  // 私钥和普通凭据可能跨行或含括号，先按整体清洗，避免片段切分后残留值的后半段。
+  // Private keys and ordinary credentials may span lines or contain parentheses. Clean them as a whole first to avoid the second half of the residual value after segmentation.
   const source = redactValues(text, diagnostic);
   const chunks: string[] = [];
   let cursor = 0;
@@ -172,7 +172,7 @@ function redactText(text: string, diagnostic: boolean, depth: number): string {
       shouldRedactKey(key, diagnostic),
     );
     if (sensitiveValue) {
-      // 普通字段值可能由文本和对象混合组成；不能只删对象而留下同行尾部。
+      // Ordinary field values ​​may be composed of a mixture of text and objects; you cannot just delete the objects and leave the trailing lines.
       const lineEnd = source.indexOf("\n", end);
       end = lineEnd < 0 ? source.length : lineEnd;
     }
@@ -185,7 +185,7 @@ function redactText(text: string, diagnostic: boolean, depth: number): string {
           : JSON.stringify(scrubValue(JSON.parse(fragment), diagnostic, depth + 1)),
       );
     } catch {
-      // 多行或截断对象不能只丢弃键名所在行，否则下一行的值仍会泄露。
+      // Multi-row or truncated objects cannot discard only the row with the key name, otherwise the value of the next row will still be leaked.
       chunks.push(
         sensitiveValue || fieldKeys(fragment).some(({ key }) => shouldRedactKey(key, diagnostic))
           ? REDACTED

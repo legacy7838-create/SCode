@@ -19,8 +19,8 @@ export function getPluginWorkspaceKey(tab: WorkspaceTabState): string {
 }
 
 export function isPluginScopeWorkspaceConnected(tab: WorkspaceTabState): boolean {
-  // 持久化 tab 会保留已经断开的远端项目和已失效的本地目录；Scope 若继续展示，
-  // 用户会选中一个没有可用 service target 的项目。远端必须有当前 session，本地必须仍可用。
+  // The persistent tab will retain the disconnected remote project and the expired local directory; if the Scope continues to be displayed,
+  // The user selects an item for which no service target is available. The remote end must have a current session, and the local end must still be available.
   if (tab.availability === "unavailable-local-directory") {
     return false;
   }
@@ -68,7 +68,7 @@ export function PluginScopeMenu({
     }));
   const selectedWorkspace = scopeWorkspaces.find((workspace) => workspace.key === selectedScopeKey);
   const SelectedWorkspaceIcon = selectedWorkspace?.remote ? Cloud : Folder;
-  // 用户作用域是本机配置范围，不能使用登录账号或设备用户名代替其语义。
+  // The user scope is the local configuration scope, and the login account or device user name cannot be used to replace its semantics.
   const userLabel = intl.formatMessage({ id: "settings.plugin.scope.user" });
 
   return (

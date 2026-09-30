@@ -25,8 +25,8 @@ export function flushMainE2ECoverage(onError?: (error: unknown) => void): boolea
   }
   try {
     mkdirSync(process.env.NODE_V8_COVERAGE, { recursive: true });
-    // Desktop E2E 的 main 最终由外部 SIGKILL 收口，Electron 不会触发
-    // Node 的正常 exit coverage 写盘；必须在强杀前主动 flush。
+    // The main of Desktop E2E is finally closed by external SIGKILL, and Electron will not trigger it.
+    // Node's normal exit coverage writes to disk; it must be actively flushed before killing.
     takeCoverage();
     return true;
   } catch (error) {

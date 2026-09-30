@@ -6,8 +6,8 @@ import {
   shouldWalkSkillDirectoryEntry,
 } from "@zcode/shared";
 
-// 扫描策略来自 @zcode/shared，供桌面端（本包）与 agent 端（@zcode/adapters）共享，
-// 避免两端对“该进入哪些目录”产生分歧。这里转出，保持既有导入路径不变。
+// The scanning strategy comes from @zcode/shared and is shared between the desktop side (this package) and the agent side (@zcode/adapters).
+// Avoid disagreements between the two ends about "which directories to enter." Transfer out here and keep the existing import path unchanged.
 export {
   MAX_SKILL_SCAN_DEPTH,
   SKILL_FILE_NAME,
@@ -16,18 +16,18 @@ export {
 } from "@zcode/shared";
 
 interface WalkSkillMarkdownOptions {
-  /** readdir / stat 失败时回调；不传则静默跳过该目录，调用方按需收集诊断。 */
+  /** Called when readdir / stat fails; when not passed, the directory is silently skipped and the caller collects diagnostics as it needs them. */
   onError?: (path: string, error: unknown) => void;
 }
 
 /**
- * 自根目录起深度优先遍历，产出每个 SKILL.md 的绝对路径。
+ * Walks depth-first from the root directory and yields the absolute path of every SKILL.md.
  *
- * 受 @zcode/shared 的扫描策略约束：
- * - 跳过 node_modules 等内容目录与（除 .system 外的）点目录；
- * - 限制最大深度（MAX_SKILL_SCAN_DEPTH），作为超深目录链的兜底刹车；
- * - 仅对软链接目录按 realpath 去重，避免 Windows junction / 环路造成重复或无限扫描，
- *   普通目录树不会成环，故热路径上不额外 realpath。
+ * Bound by the scanning policy in @zcode/shared:
+ * - it skips content directories such as node_modules and dot-directories (except .system);
+ * - it caps the maximum depth (MAX_SKILL_SCAN_DEPTH) as a backstop brake for absurdly deep directory chains;
+ * - it deduplicates only symlinked directories by realpath, avoiding duplicates or endless scans caused by Windows junctions / cycles, since
+ *   a normal directory tree cannot form a cycle, so the hot path skips the extra realpath.
  *
  */
 export async function* walkSkillMarkdownPaths(
@@ -56,7 +56,7 @@ export async function* walkSkillMarkdownPaths(
     const childDirectories: string[] = [];
     const childSymlinks: string[] = [];
     for (const entry of entries) {
-      // 普通文件或指向文件的软链命名为 SKILL.md 都视为技能定义。
+      // Ordinary files or soft links pointing to files named SKILL.md are considered skill definitions.
       if (entry.name === SKILL_FILE_NAME && !entry.isDirectory()) {
         hasSkillFile = true;
         continue;
@@ -84,7 +84,7 @@ export async function* walkSkillMarkdownPaths(
       stack.push({ dir: childDirectory, depth: depth + 1 });
     }
 
-    // 软链目录：先确认指向目录、再按 realpath 去重，避免 junction / 环路重复或无限扫描。
+    // Soft link directory: first confirm the pointing directory, and then press realpath to remove duplicates to avoid junction/loop duplication or infinite scanning.
     for (const childSymlink of childSymlinks) {
       let targetStat;
       try {

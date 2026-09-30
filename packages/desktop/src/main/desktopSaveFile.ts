@@ -100,8 +100,8 @@ async function fetchPublicRemoteUrl(
       }
       callback(null, address.address, address.family);
     };
-    // DNS 校验结果必须绑定到连接阶段；dispatcher 禁止底层再次解析域名，
-    // 从而关闭“预检查公网、实际连接私网”的 DNS rebinding 窗口。
+    // DNS verification results must be bound to the connection phase; the dispatcher prohibits the bottom layer from resolving the domain name again.
+    // This closes the DNS rebinding window of "Pre-checking the public network and actually connecting to the private network".
     const dispatcher = new Agent({ connect: { lookup: pinnedLookup } });
     let response: Awaited<ReturnType<typeof undiciFetch>>;
     try {
@@ -140,7 +140,7 @@ async function downloadRemoteFile(sourceUrl: URL, destinationPath: string): Prom
   let dispatcher: Agent | null = null;
   const timeout = setTimeout(() => controller.abort(), REMOTE_DOWNLOAD_TIMEOUT_MS);
   try {
-    // renderer 的 CORS 边界不能放大成 main 可访问内网；初始地址和每次重定向都先解析并拒绝非公网地址。
+    // The CORS boundary of the renderer cannot be enlarged to the main accessible intranet; the initial address and each redirection will first resolve and reject non-public network addresses.
     const remoteResponse = await fetchPublicRemoteUrl(sourceUrl, controller.signal);
     dispatcher = remoteResponse.dispatcher;
     const { response } = remoteResponse;
@@ -160,7 +160,7 @@ async function downloadRemoteFile(sourceUrl: URL, destinationPath: string): Prom
       if (done) break;
       receivedBytes += value.byteLength;
       if (receivedBytes > MAX_SAVE_FILE_BYTES) {
-        // 容量限制必须在读取过程中执行；完整缓冲后再校验无法保护 renderer/main 内存。
+        // Capacity limits must be enforced during reads; full buffering and then verifying do not protect renderer/main memory.
         controller.abort();
         throw new SaveFileError("file_too_large");
       }
@@ -219,7 +219,7 @@ export function registerDesktopSaveFileIpcHandler(logger: { warn: (...args: unkn
       } catch (error) {
         const errorCode = error instanceof SaveFileError ? error.code : "write_failed";
         logger.warn(
-          `[save-file] 写入失败 path=${result.filePath} error=${
+          `[save-file] write failed path=${result.filePath} error=${
             error instanceof Error ? error.message : String(error)
           }`,
         );

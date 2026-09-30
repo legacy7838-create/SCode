@@ -1,4 +1,7 @@
-/* oxlint-disable eslint(max-lines) -- UnifiedBrowserView 集中维护稳定 webview 的导航、事件和 guest 生命周期；横向滚动链已下沉独立 hook。 */
+/* oxlint-disable eslint(max-lines) -- UnifiedBrowserView keeps navigation, events and the guest
+ * lifecycle of the stable webview in one place; the horizontal scroll chain has been pushed down
+ * into a separate hook.
+ */
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import type {
   BrowserViewScreenshotSurfacePreparePayload,
@@ -35,17 +38,20 @@ type PendingGuestNavigationCompletion = {
 };
 
 /**
- * UnifiedBrowserView —— 统一浏览器视图（`<webview>` + CDP-on-guest 架构）。
+ * UnifiedBrowserView — the unified browser view (a `<webview>` + CDP-on-guest architecture).
  *
- * 网页像素由 renderer 内的 `<webview>` guest 直接渲染（DOM 内合成，可被 DOM 浮层覆盖，
- * 彻底解决 WebContentsView 原生层遮挡菜单的问题）。human 的导航/前进后退/刷新/元素拾取
- * 直接调用 webview 方法（低延迟、无握手依赖）；chrome 状态由 webview 事件驱动。
+ * Web pixels are rendered directly by the `<webview>` guest inside the renderer (composited in the
+ * DOM, coverable by DOM overlays, which fully solves the problem of the WebContentsView native
+ * layer occluding menus). human navigation / back-forward / reload / element picking call webview
+ * methods directly (low latency, no handshake dependency); chrome state is driven by webview
+ * events.
  *
- * 同时在 did-attach 时把 guest 的 webContentsId 上报给 main（browserViewAttachGuest），
- * 让 main 能给该 guest 挂 CDP（webContents.debugger），供 agent 通过协议控制这个 tab。
+ * At did-attach it also reports the guest's webContentsId to main (browserViewAttachGuest), so main
+ * can attach a CDP (webContents.debugger) to that guest and let the agent drive this tab over the
+ * protocol.
  *
- * chrome 复用 EmbeddedBrowserPaneParts 的 BrowserToolbar；
- * URL 归一化 / 未挂载兜底复用 embeddedBrowserHelpers。
+ * The chrome reuses the BrowserToolbar of EmbeddedBrowserPaneParts; URL normalization and the
+ * not-mounted fallback reuse embeddedBrowserHelpers.
  */
 export function UnifiedBrowserView({
   browserKey,
@@ -72,48 +78,75 @@ export function UnifiedBrowserView({
   initialHumanViewportPreference,
   onHumanViewportPreferenceChange,
 }: {
-  /** 受控视图 key（= tab.id / sessionId，agent 定位该 tab 用）。 */
+  /** The controlled view key (= tab.id / sessionId, used by the agent to locate that tab). */
   browserKey: string;
-  /** 预算恢复时 guest 创建后立即撤销 bootstrap src，首次有效导航由 main 独占。 */
+  /**
+   * When restoring under budget, the bootstrap src is revoked as soon as the guest is created; the
+   * first effective navigation is owned by main alone.
+   */
   isResidencyRestore?: boolean;
-  /** pane 是否可见（激活 + 展开）。隐藏时仅从布局里移除，不卸载 webview，保住网页与历史。 */
+  /**
+   * Whether the pane is visible (active + expanded). While hidden it is only removed from the
+   * layout, not unmounted, which preserves the page and its history.
+   */
   isVisible: boolean;
-  /** tab strip 选中态与 panel 展示态正交；折叠时仍保留 selected。 */
+  /**
+   * The tab strip selection state is orthogonal to the panel display state; selected is kept even
+   * while collapsed.
+   */
   isSelected?: boolean;
-  /** 当前 task 的 tab 用于 main 的 eviction tier。 */
+  /** The tab of the current task, used for main's eviction tier. */
   isCurrentTask?: boolean;
-  /** 挂载时导航到的初始/恢复 URL（human tab 恢复态）。 */
+  /** The initial / restore URL navigated to on mount (the human tab restore state). */
   initialUrl?: string | null;
-  /** tab shell 当前 favicon；随 residency report 持久化。 */
+  /** The current favicon of the tab shell; persisted along with the residency report. */
   faviconUrl?: string | null;
-  /** 外部请求把该 tab 导航到某 URL（{id,url}）；消费后回执 onNavigationRequestHandled。 */
+  /**
+   * An external request asks to navigate that tab to a URL ({id,url}); onNavigationRequestHandled
+   * is the receipt once it has been consumed.
+   */
   navigationRequest?: { id: string; url: string } | null;
-  /** 当前 URL 变化回传（human tab URL 持久化）。 */
+  /** Reports the current URL changing (persisting the human tab URL). */
   onUrlChange?: (url: string) => void;
-  /** 页面标题/favicon 变化回传（驱动 tab 标签）。 */
+  /** Reports page title / favicon changes (driving the tab label). */
   onPageMetadataChange?: (metadata: { title?: string; faviconUrl?: string | null }) => void;
-  /** navigationRequest 消费完回执。 */
+  /** The receipt that the navigationRequest has been consumed. */
   onNavigationRequestHandled?: (requestId: string) => void;
-  /** 元素选择加入聊天所需的工作区路径（human 分支传入；agent 分支可不传）。 */
+  /**
+   * The workspace path needed to add an element selection to chat (passed by the human branch; the
+   * agent branch may omit it).
+   */
   workspacePath?: string;
-  /** 元素选择上下文归属的工作区标识（human 分支传入）。 */
+  /** The workspace identity that owns the element selection context (passed by the human branch). */
   workspaceIdentity?: string;
-  /** browser-use tab 创建时冻结的身份 scope；存在时优先于当前 workspace ambient props。 */
+  /**
+   * The identity scope frozen when a browser-use tab is created; when present it takes priority
+   * over the current workspace ambient props.
+   */
   workspaceKey?: string;
   remoteSessionId?: string;
-  /** tab 创建时冻结的对话归属；不得用 dom-ready 到达时的 active task 回填。 */
+  /**
+   * The conversation ownership frozen when the tab is created; it must not be backfilled from the
+   * active task at dom-ready time.
+   */
   sessionId?: string;
   residencyGeneration?: number;
-  /** 与 tab 鼠标图标共用的 operation deadline；仅 browser-use tab 传入。 */
+  /** The operation deadline shared with the tab mouse indicator; passed only for browser-use tabs. */
   browserUseOperationUntil?: number;
   browserResizeBaselineVersion?: number;
-  /** 截图前临时保持后台 guest 的真实布局；不改变任何 active/focus 语义。 */
+  /**
+   * Temporarily keeps the real layout of a background guest before a screenshot; it does not change
+   * any active/focus semantics.
+   */
   screenshotSurfaceRequest?: BrowserViewScreenshotSurfacePreparePayload | null;
-  /** human 空白 tab 延迟创建 guest；agent/browser-use 必须保持创建期 attach。 */
+  /**
+   * Blank human tabs create their guest lazily; agent/browser-use must keep the attach during the
+   * creation window.
+   */
   deferEmptyGuest?: boolean;
-  /** 仅 human Browser surface 传入；Agent Browser Use 必须保持 undefined。 */
+  /** Passed only by the human Browser surface; Agent Browser Use must keep it undefined. */
   initialHumanViewportPreference?: EmbeddedBrowserViewportPreference;
-  /** 只接收 human UI 主动变更；Agent viewport event 不得调用。 */
+  /** Accepts only changes the human UI makes deliberately; Agent viewport events must not call it. */
   onHumanViewportPreferenceChange?: (
     preference: EmbeddedBrowserViewportPreference,
     source: HumanBrowserViewportPreferenceChangeSource,
@@ -141,7 +174,7 @@ export function UnifiedBrowserView({
       () => target.setZoomFactor(targetZoomFactor),
       undefined,
       (error) => {
-        logger.debug("[browser-use] 跳过未就绪 webview 的 zoom 同步", {
+        logger.debug("[browser-use] skipping zoom sync on unready webview", {
           error: error instanceof Error ? error.message : String(error),
           targetZoomFactor,
         });
@@ -180,20 +213,20 @@ export function UnifiedBrowserView({
     onHumanViewportPreferenceChange,
     sessionId,
   });
-  // MediaRecorder 录到的是 renderer 中实际合成的 WebView surface。若沿用用户的 Fit/50%
-  // 预览，后续 canvas 只能把低分辨率源放大到目标尺寸。录制 lease 因此派生一份 100% surface，
-  // 不修改用户的自由尺寸、缩放选择或持久状态；request 释放后 React 会自然恢复原预览。
+  // What MediaRecorder records is the WebView surface actually synthesized in the renderer. If the user's Fit/50% is used
+  // Preview, subsequent canvas can only enlarge the low-resolution source to the target size. Recording a lease thus derives a 100% surface,
+  // Does not modify the user's free size, zoom selection, or persistent state; React will naturally restore the original preview after the request is released.
   const forceUnscaledSurface = screenshotSurfaceRequest?.surfaceScaleMode === "unscaled";
-  // 普通后台 tab 的 fallback viewport 可能大于窗口；仅传 Fit 不会启用布局，
-  // webview 随准备层缩小后永远无法 ready。截图期间统一派生请求尺寸的 responsive 布局，
-  // release 后恢复用户模式与尺寸，不写偏好，也不重建 guest。
+  // The fallback viewport of a normal background tab may be larger than the window; passing only Fit will not enable the layout.
+  // The webview will never be ready after shrinking with the ready layer. The responsive layout of the requested size is uniformly derived during screenshots,
+  // After release, the user mode and size are restored, preferences are not written, and guest is not rebuilt.
   const effectiveIsResponsiveMode = isResponsiveMode || Boolean(screenshotSurfaceRequest);
   const effectiveViewportSize = screenshotSurfaceRequest?.viewport ?? responsiveViewportSize;
-  // 普通截图只临时改变布局；fallback metrics 的 guest zoom 由 main 管理。
-  // 若把临时 Fit 当作用户模式切换，release 会错误恢复 desktop zoom，破坏后续 CDP 坐标。
+  // Ordinary screenshots only temporarily change the layout; guest zoom of fallback metrics is managed by main.
+  // If the temporary Fit is used as a user mode switch, the release will restore desktop zoom by mistake, destroying subsequent CDP coordinates.
   const shouldNormalizeGuestZoom = isResponsiveMode || forceUnscaledSurface;
-  // 固定 100%/200% 预览不会随截图画布缩小，Windows 高 DPI 的 guest raster
-  // 仍可能被宿主可见范围裁剪。普通截图临时 Fit，释放后恢复用户比例；录制保持 unscaled。
+  // Fixed 100%/200% preview not shrinking with screenshot canvas, Windows high DPI guest raster
+  // May still be clipped by host visibility range. Ordinary screenshots are temporarily fit and the user scale is restored after release; recording remains unscaled.
   const effectiveViewportZoom = forceUnscaledSurface
     ? "100"
     : screenshotSurfaceRequest
@@ -205,31 +238,31 @@ export function UnifiedBrowserView({
     webview,
   });
 
-  // dom-ready 前排队的导航 URL；webview 就绪后统一 loadURL（<webview> 的 src 只在首挂生效）。
+  // The navigation URL queued before dom-ready; the loadURL is unified after the webview is ready (the src of <webview> only takes effect in the first load).
   const pendingUrlRef = useRef<string | null>(null);
   const lastRequestedUrlRef = useRef<string | null>(null);
-  // 已消费的 initialUrl / navigationRequest，避免重复导航。
+  // Consumed initialUrl/navigationRequest to avoid repeated navigation.
   const lastAppliedInitialUrlRef = useRef<string | null>(null);
   const lastHandledNavigationRequestIdRef = useRef<string | null>(null);
   const lastRestorableUrlRef = useRef<string | null>(
     initialUrl && initialUrl !== DEFAULT_BROWSER_URL ? initialUrl : null,
   );
   const guestRecoveryInProgressRef = useRef(false);
-  // 失败 guest 接到外部导航时，回执必须等替代 guest 实际接管 loadURL 后再完成。
+  // When a failed guest receives external navigation, the acknowledgment must wait until the replacement guest actually takes over the loadURL.
   const pendingGuestNavigationCompletionRef = useRef<PendingGuestNavigationCompletion | null>(null);
-  // guestId 上报去重：did-attach 与 dom-ready 会连续触发；只有 guest 或 active 状态变化才重报。
+  // GuestId reporting and deduplication: did-attach and dom-ready will be triggered continuously; only guest or active status changes will be re-reported.
   const lastReportedGuestRef = useRef<{
     active: boolean;
     webContentsId: number;
     scopeFingerprint: string;
   } | null>(null);
   const wasResponsiveModeRef = useRef(false);
-  // guest 销毁归因打点：线上主进程 UAF（EXC_BAD_ACCESS at
-  // 0x10，DevToolsSession 在途通知访问已析构 client）发生前，main 日志只能看到
-  // 「cdp still attached on destroyed guest」，无法区分 webview 节点是被谁卸载的：
-  // residency 挂起换壳 / 父级整树卸载 / shouldMountWebview 条件翻转 / generation 换代。
-  // ref(null) 是 React 卸载 <webview> 节点的第一现场；配合组件卸载打点与挂起壳 ack 日志，
-  // 可把销毁者与时序钉死。仅在 webview 实际存在过后才打，量级与 tab 生命周期一致。
+  // Guest destruction attribution management: online main process UAF (EXC_BAD_ACCESS at
+  // 0x10, DevToolsSession is notified in transit that the access has been destructed (client) before it occurs, the main log can only be seen
+  // "cdp still attached on destroyed guest", it is impossible to distinguish who uninstalled the webview node:
+  // residency suspends shell change/parent tree uninstallation/shouldMountWebview conditional flip/generation replacement.
+  // ref(null) is the first site for React to uninstall the <webview> node; it cooperates with the component uninstallation management and suspends the shell ack log.
+  // Can crucify the destroyer and timing. It will only be called after the webview actually exists, and the magnitude is consistent with the tab life cycle.
   const webviewTeardownProbeRef = useRef({
     browserKey: "",
     generation: 0,
@@ -241,7 +274,7 @@ export function UnifiedBrowserView({
   webviewTeardownProbeRef.current.hasNavigated = hasNavigated;
   const logWebviewTeardown = useCallback((trigger: string) => {
     const probe = webviewTeardownProbeRef.current;
-    logger.info("[browser-use] webview 节点离开 DOM（guest 将被销毁）", {
+    logger.info("[browser-use] webview node left the DOM (guest will be destroyed)", {
       browserKey: probe.browserKey,
       generation: probe.generation,
       guestReported: lastReportedGuestRef.current,
@@ -268,8 +301,8 @@ export function UnifiedBrowserView({
   );
 
   const waitForGuestNavigationTakeover = useCallback((url: string) => {
-    // 同一个 view 同时只保留一个外部导航意图；若未来入口允许并发，新请求明确取代旧请求，
-    // 先结束旧回执，避免被覆盖的 Promise 永久悬空。
+    // The same view only retains one external navigation intent at the same time; if future entries allow concurrency, the new request will explicitly replace the old request.
+    // End the old receipt first to prevent the overwritten Promise from hanging permanently.
     const replacedCompletion = pendingGuestNavigationCompletionRef.current;
     pendingGuestNavigationCompletionRef.current = null;
     replacedCompletion?.resolve();
@@ -280,7 +313,7 @@ export function UnifiedBrowserView({
 
   useEffect(
     () => () => {
-      // view 被关闭时属于明确取消，不能让上层 navigationRequest 永久等待。
+      // When the view is closed, it is explicitly canceled and the upper navigationRequest cannot be left to wait forever.
       completePendingGuestNavigation();
     },
     [completePendingGuestNavigation],
@@ -288,8 +321,8 @@ export function UnifiedBrowserView({
 
   useEffect(
     () => () => {
-      // 组件卸载意味着 <webview> 必然离开 DOM：residency 挂起换壳 / 父级面板关闭 /
-      // 会话切换整树重挂。与 ref-null 打点的时间差可用于区分「换代重建」与「真卸载」。
+      // Uninstalling the component means that <webview> must leave the DOM: Residency suspends shell change / parent panel closes /
+      // Session switch whole tree rehang. The time difference with ref-null can be used to distinguish "replacement and reconstruction" from "true uninstallation".
       if (webviewTeardownProbeRef.current.hadWebview || lastReportedGuestRef.current) {
         webviewTeardownProbeRef.current.hadWebview = false;
         logWebviewTeardown("component-unmount");
@@ -330,24 +363,27 @@ export function UnifiedBrowserView({
       if (!attachRequest) return;
       void attachRequest
         .then((result) => {
-          // 旧 preload 仍可能只返回 undefined；成功 attach 的兼容语义保持不变。
+          // The old preload may still just return undefined; the compatible semantics of a successful attach remain unchanged.
           if (!result || result.ok) {
             synchronizeInitialHumanViewport();
             return;
           }
-          logger.warn("[browser-use] main 拒绝 guest attach，等待按 owner scope 重绑", {
-            browserKey,
-            reason: result.reason,
-            recoveryRequested: result.recoveryRequested,
-          });
-          // main 会重放 BrowserViewReady；清掉去重标记，确保同一个 webContentsId 也能重新上报。
+          logger.warn(
+            "[browser-use] main rejected guest attach, waiting to rebind by owner scope",
+            {
+              browserKey,
+              reason: result.reason,
+              recoveryRequested: result.recoveryRequested,
+            },
+          );
+          // main will replay BrowserViewReady; clear the deduplication mark to ensure that the same webContentsId can be re-reported.
           if (result.recoveryRequested) {
             lastReportedGuestRef.current = null;
             setGuestAttachRetryNonce((current) => current + 1);
           }
         })
         .catch((error) => {
-          logger.debug("[browser-use] 上报 guest webContentsId 失败", {
+          logger.debug("[browser-use] failed to report guest webContentsId", {
             error: error instanceof Error ? error.message : String(error),
           });
         });
@@ -368,7 +404,7 @@ export function UnifiedBrowserView({
 
   const detachBrowserGuestBeforeReplacement = useCallback(async (): Promise<boolean> => {
     const lastReported = lastReportedGuestRef.current;
-    // guest 尚未上报给 main 时就没有 native CDP session，Web 端也不会暴露该桌面能力。
+    // When the guest has not been reported to main, there is no native CDP session, and the web side will not expose the desktop capabilities.
     if (!lastReported || !platform.browserViewDetachGuest) return true;
     try {
       const detached = await platform.browserViewDetachGuest({
@@ -376,18 +412,24 @@ export function UnifiedBrowserView({
         webContentsId: lastReported.webContentsId,
       });
       if (!detached) {
-        logger.warn("[browser-use] main 未确认旧 guest CDP 已断开，取消 webview 重建", {
-          browserKey,
-          webContentsId: lastReported.webContentsId,
-        });
+        logger.warn(
+          "[browser-use] main did not confirm old guest CDP detach, cancelling webview rebuild",
+          {
+            browserKey,
+            webContentsId: lastReported.webContentsId,
+          },
+        );
       }
       return detached;
     } catch (error) {
-      logger.warn("[browser-use] 请求 main 断开旧 guest CDP 失败，取消 webview 重建", {
-        browserKey,
-        error: error instanceof Error ? error.message : String(error),
-        webContentsId: lastReported.webContentsId,
-      });
+      logger.warn(
+        "[browser-use] request to main to detach old guest CDP failed, cancelling webview rebuild",
+        {
+          browserKey,
+          error: error instanceof Error ? error.message : String(error),
+          webContentsId: lastReported.webContentsId,
+        },
+      );
       return false;
     }
   }, [browserKey, platform]);
@@ -397,20 +439,20 @@ export function UnifiedBrowserView({
     isPicking: isWebElementPicking,
     togglePicking: toggleWebElementPicking,
   } = useWebElementPicker({
-    // 传输无关出口：webview 就绪时走 <webview>.executeJavaScript(script, true)；
-    // 尚为 null 时返回 cancelled（合法选择结果），保持 no-op。
+    // Transport-independent exit: go when webview is ready <webview>.executeJavaScript(script, true);
+    // If it is still null, return canceled (a legal selection result) and keep no-op.
     executeJs: (script) =>
       webview ? webview.executeJavaScript(script, true) : Promise.resolve({ status: "cancelled" }),
     workspacePath: workspacePath ?? "",
     workspaceIdentity: workspaceKey ?? workspaceIdentity,
   });
 
-  // ---- 从 webview 同步 chrome 状态（url/前进后退/标题）----
+  // ---- Synchronize chrome status from webview (url/forward/back/title)----
   const syncBrowserState = useCallback((target: ElectronWebviewTag) => {
-    // guest 在 dom-ready 前 / 导航 churn / 重附过程中未 attach，同步方法会抛
-    // "must be attached to the DOM"，统一走 safeWebviewCall 兜底，避免冒泡到 window.onerror。
+    // If the guest is not attached before dom-ready / navigation churn / reattach process, the synchronization method will throw
+    // "Must be attached to the DOM", use safeWebviewCall to avoid bubbling up to window.onerror.
     const onDetached = (error: unknown) => {
-      logger.debug("[browser-use] 跳过未就绪 webview 的状态同步", {
+      logger.debug("[browser-use] skipping state sync on unready webview", {
         error: error instanceof Error ? error.message : String(error),
       });
     };
@@ -432,37 +474,37 @@ export function UnifiedBrowserView({
       title,
     }));
     onPageMetadataChangeRef.current?.({ title: title || undefined });
-    // 页面 url 不可信：仅用于展示与 tab 持久化，不参与任何执行路径。
+    // The page URL is not trustworthy: it is only used for display and tab persistence, and does not participate in any execution path.
     if (currentUrl !== DEFAULT_BROWSER_URL) {
       onUrlChangeRef.current?.(currentUrl);
     }
   }, []);
 
-  // ---- webview 事件接线 + did-attach 上报 guestId ----
+  // ---- webview event wiring + did-attach reporting guestId ----
   useEffect(() => {
     if (!webview) return;
 
     const handleDidAttach = () => {
-      // navigationHistory.restore 只能用于从未加载过页面的新 guest。若等到
-      // dom-ready 才上报，默认 about:blank 已提交，只能退化为 URL 重载；attach 后立即上报，
-      // 让 main 有机会在首次导航提交前恢复完整 Chromium pageState。
+      // navigationHistory.restore can only be used with new guests that have never loaded a page. If you wait
+      // dom-ready is reported. By default, about:blank has been submitted and can only be degraded to URL reloading; it is reported immediately after attaching.
+      // Give main a chance to restore the full Chromium pageState before the first navigation commit.
       if (isResidencyRestore) {
-        // `<webview>` 必须先有 src 才会创建 guest，但保留属性会在 attach 后再次提交
-        // about:blank 并中断 main 的 history restore。guest 已存在后立刻撤销 bootstrap src。
+        // `<webview>` must have src before the guest will be created, but the retained attributes will be submitted again after attaching
+        // about:blank and interrupt main's history restore. Delete the bootstrap src immediately after the guest already exists.
         webview.removeAttribute("src");
       }
       reportBrowserGuest(isSelected);
     };
 
     const handleDomReady = () => {
-      // Electron/Chromium 会把主窗口页面 zoom 继续传播到 guest；仅补偿外层
-      // transform 时，guest innerWidth/DPR 仍会变化。自由尺寸必须把 guest zoom 固定为 1，
-      // 普通模式仍交给 Electron 自然传播，避免主动改写网页 zoom。
+      // Electron/Chromium will continue to propagate the main window page zoom to the guest; only the outer layer will be compensated
+      // When transforming, guest innerWidth/DPR will still change. Free size must have guest zoom fixed to 1,
+      // The normal mode still leaves it to Electron to propagate naturally to avoid actively rewriting the web page zoom.
       if (isResponsiveMode) setGuestZoomFactor(webview, 1);
-      // did-attach 是完整历史恢复的最早时机；dom-ready 保留为 Electron 版本兼容兜底。
+      // did-attach is the earliest opportunity for complete history recovery; dom-ready is reserved for Electron version compatibility.
       reportBrowserGuest(isSelected);
 
-      // <webview> 的 src 属性只在首挂生效，后续导航统一走命令式 loadURL：消费排队 URL。
+      // The src attribute of <webview> only takes effect in the first navigation. Subsequent navigation uses the imperative loadURL: consumption queue URL.
       const pending = pendingUrlRef.current;
       if (pending) {
         const pendingCompletion = pendingGuestNavigationCompletionRef.current;
@@ -481,8 +523,8 @@ export function UnifiedBrowserView({
               }));
             }
           } finally {
-            // 只把外部请求写入 pendingUrl 后就回执是不够的：失败 guest 永远不会消费它。
-            // 替代 guest 到达 dom-ready 并完成一次 loadURL 尝试，才算真正接管该导航意图。
+            // Simply writing the external request to pendingUrl and then acknowledging it is not enough: the failed guest will never consume it.
+            // Only when the guest reaches dom-ready and completes a loadURL attempt can the navigation intention be truly taken over.
             completePendingGuestNavigation(pendingCompletion);
           }
         })();
@@ -518,9 +560,9 @@ export function UnifiedBrowserView({
     };
 
     const handleDidFailLoad = (event: ElectronWebviewDidFailLoadEvent) => {
-      // 忽略子帧失败与 -3(ERR_ABORTED，被后续导航打断)。
+      // Ignore subframe failures with -3 (ERR_ABORTED, interrupted by subsequent navigation).
       if (!event.isMainFrame || event.errorCode === -3) return;
-      logger.warn("[browser-use] 页面加载失败", {
+      logger.warn("[browser-use] page load failed", {
         errorCode: event.errorCode,
         errorDescription: event.errorDescription,
         url: event.validatedURL,
@@ -546,24 +588,27 @@ export function UnifiedBrowserView({
     const handleRenderProcessGone = (event: ElectronWebviewRenderProcessGoneEvent) => {
       const { exitCode, reason } = event.details;
       if (!isRecoverableBrowserGuestExitReason(reason)) {
-        logger.warn("[browser-use] guest renderer 异常退出且不可自动恢复", {
-          browserKey,
-          exitCode,
-          reason,
-        });
+        logger.warn(
+          "[browser-use] guest renderer exited unexpectedly and cannot recover automatically",
+          {
+            browserKey,
+            exitCode,
+            reason,
+          },
+        );
         setBrowserState((prev) => ({
           ...prev,
           errorMessage: intl.formatMessage(
             { id: "browser.loadFailed" },
             { message: `renderer ${reason} (${exitCode})` },
           ),
-          // renderer 退出后需要重建整个 guest，单纯重新导航无法恢复。
-          // guestFailure 让界面优先展示重建入口，而不是普通页面加载错误的重试入口。
+          // After the renderer exits, the entire guest needs to be rebuilt and cannot be restored by simply re-navigating.
+          // guestFailure allows the interface to prioritize the reconstruction entry instead of the retry entry for ordinary page loading errors.
           guestFailure: { exitCode, reason },
           isLoading: false,
           isReady: false,
         }));
-        // 替代 guest 若再次启动失败，已经形成明确失败结果；结束等待，让上层不再永久挂起请求。
+        // If the replacement guest fails to start again, a clear failure result has been formed; the wait is ended, so that the upper layer no longer permanently suspends the request.
         completePendingGuestNavigation();
         return;
       }
@@ -573,12 +618,15 @@ export function UnifiedBrowserView({
       const recoveryUrl = lastRestorableUrlRef.current;
       void cancelWebElementPicking();
 
-      logger.warn("[browser-use] guest renderer 异常退出，原位重建并恢复最近 URL", {
-        browserKey,
-        exitCode,
-        reason,
-        recoveryUrl,
-      });
+      logger.warn(
+        "[browser-use] guest renderer exited unexpectedly, rebuilding in place and restoring last URL",
+        {
+          browserKey,
+          exitCode,
+          reason,
+          recoveryUrl,
+        },
+      );
       void (async () => {
         const detached = await detachBrowserGuestBeforeReplacement();
         if (!detached) {
@@ -612,9 +660,9 @@ export function UnifiedBrowserView({
           isLoading: Boolean(recoveryUrl),
           isReady: false,
         }));
-        // renderer 观察到了 guest 退出，但 main 的 render-process-gone 监听并非
-        // 每次都先到达。必须等待上面的 CDP detach ACK 后再递增 key；否则 React 卸载旧
-        // `<webview>` 会让 Electron DevToolsSession 在在途通知中访问已析构 client。
+        // renderer observed the guest exit, but main's render-process-gone listener was not
+        // Arrive first every time. You must wait for the above CDP detach ACK before incrementing the key; otherwise React will uninstall the old
+        // `<webview>` will cause the Electron DevToolsSession to access the destructed client in an in-flight notification.
         setWebviewGeneration((current) => current + 1);
       })();
     };
@@ -663,7 +711,7 @@ export function UnifiedBrowserView({
     if (shouldNormalizeGuestZoom) {
       setGuestZoomFactor(webview, 1);
     } else if (wasResponsiveMode) {
-      // 只在退出自由尺寸时恢复当前应用 zoom；普通浏览期间继续沿用 Electron 原生传播。
+      // Only restore the current application zoom when exiting free size; continue to use Electron's native propagation during normal browsing.
       setGuestZoomFactor(webview, desktopZoomFactor);
     }
   }, [desktopZoomFactor, shouldNormalizeGuestZoom, setGuestZoomFactor, webview]);
@@ -691,12 +739,12 @@ export function UnifiedBrowserView({
         loading: browserState.isLoading,
         restoreUrl,
         title: browserState.title || null,
-        // favicon 不能只停留在 renderer tab state：residency 上报遗漏后，
-        // 挂起与冷启动恢复得到的 shell 必然退回地球图标。
+        // The favicon cannot just stay in the renderer tab state: after the residency is reported missing,
+        // The shell obtained from suspend and cold boot recovery will inevitably return the earth icon.
         ...(faviconUrl === undefined ? {} : { faviconUrl }),
       })
       .catch((error) => {
-        logger.debug("[browser-use] 上报 tab residency 失败", {
+        logger.debug("[browser-use] failed to report tab residency", {
           error: error instanceof Error ? error.message : String(error),
           tabId: browserKey,
         });
@@ -737,7 +785,7 @@ export function UnifiedBrowserView({
       lastAppliedInitialUrlRef.current = null;
       lastReportedGuestRef.current = null;
 
-      logger.warn("[browser-use] 显式导航触发重建失败的 guest renderer", {
+      logger.warn("[browser-use] rebuilding failed guest renderer on explicit navigation", {
         browserKey,
         recoveryUrl,
         trigger,
@@ -761,7 +809,7 @@ export function UnifiedBrowserView({
     [browserKey, cancelWebElementPicking, detachBrowserGuestBeforeReplacement],
   );
 
-  // ---- 导航（human 直驱 webview.loadURL；未就绪则排队到 dom-ready 消费）----
+  // ----Navigation (human directly drives webview.loadURL; if not ready, queue it to dom-ready for consumption)----
   const openUrl = useCallback(
     async (input: string, source: "toolbar" | "restore" | "request" = "toolbar") => {
       const nextUrl = normalizeBrowserUrl(input);
@@ -769,21 +817,21 @@ export function UnifiedBrowserView({
         setBrowserState((prev) => ({
           ...prev,
           errorMessage: intl.formatMessage({ id: "browser.invalidUrl" }),
-          // 地址非法与上一次的网络失败无关；不清空会让错误态继续挂着旧的证书指引。
+          // The illegal address has nothing to do with the last network failure; not clearing it will cause the error state to continue to hang the old certificate guidance.
           loadErrorCode: null,
         }));
         return;
       }
 
-      // 外部请求若只能排队给尚未就绪的 guest，必须等 dom-ready 真正接管 loadURL 后再回执；
-      // 地址栏/恢复导航没有上游消费确认，不需要等待该生命周期信号。
+      // If external requests can only be queued to guests who are not yet ready, they must wait until dom-ready actually takes over the loadURL before receiving a receipt;
+      // The address bar/resume navigation does not have upstream consumption confirmation and does not need to wait for this life cycle signal.
       const navigationTakenOver =
         source === "request" && (!webview || !browserState.isReady)
           ? waitForGuestNavigationTakeover(nextUrl)
           : null;
 
-      // launch-failed 后 isReady=false，只把地址栏 URL 写进 pendingUrl 不够：
-      // 失效 guest 永远不会再触发 dom-ready，失败态与排队导航都会永久卡住。
+      // After launch-failed isReady=false, just writing the address bar URL into pendingUrl is not enough:
+      // The failed guest will never trigger dom-ready again, and the failed state and queued navigation will be permanently stuck.
       if (browserState.guestFailure && (source === "toolbar" || source === "request")) {
         lastRestorableUrlRef.current = nextUrl;
         onUrlChange?.(nextUrl);
@@ -796,7 +844,7 @@ export function UnifiedBrowserView({
         return;
       }
 
-      // 去重：外部 request 与 restore 可能同拍给出同一 URL，连续 loadURL 会触发 ERR_ABORTED(-3)。
+      // Deduplication: External request and restore may give the same URL at the same time, and consecutive loadURLs will trigger ERR_ABORTED(-3).
       if (
         nextUrl === lastRequestedUrlRef.current &&
         (pendingUrlRef.current === nextUrl || browserState.isLoading)
@@ -845,7 +893,7 @@ export function UnifiedBrowserView({
     ],
   );
 
-  // ---- 挂载时导航到初始/恢复 URL（human tab 恢复态）----
+  // ---- Navigate to the initial/recovery URL when mounting (human tab recovery state)----
   useEffect(() => {
     if (!initialUrl || initialUrl === DEFAULT_BROWSER_URL) return;
     lastRestorableUrlRef.current = initialUrl;
@@ -860,7 +908,7 @@ export function UnifiedBrowserView({
     void openUrl(initialUrl, "restore");
   }, [browserState.currentUrl, initialUrl, openUrl]);
 
-  // ---- 外部导航请求（{id,url}）：导航并回执 ----
+  // ---- External navigation request ({id,url}): Navigation and receipt ----
   useEffect(() => {
     if (!navigationRequest) return;
     if (lastHandledNavigationRequestIdRef.current === navigationRequest.id) return;
@@ -870,7 +918,7 @@ export function UnifiedBrowserView({
     });
   }, [navigationRequest, onNavigationRequestHandled, openUrl]);
 
-  // ---- 工具/导航按钮（isReady 门控 + safeWebviewCall 兜底点击瞬间 detach 竞态）----
+  // ----Tools/Navigation Buttons (isReady gate control + safeWebviewCall click to instantly detach the race)----
   const runWebviewAction = useCallback((action: () => void) => {
     safeWebviewCall(
       () => {
@@ -879,7 +927,7 @@ export function UnifiedBrowserView({
       },
       undefined,
       (error) => {
-        logger.debug("[browser-use] 跳过未就绪 webview 的操作", {
+        logger.debug("[browser-use] skipping action on unready webview", {
           error: error instanceof Error ? error.message : String(error),
         });
       },
@@ -918,7 +966,7 @@ export function UnifiedBrowserView({
     if (!webview || !browserState.isReady) return;
     runWebviewAction(() => {
       const currentUrl = webview.getURL();
-      // 安全边界：系统默认浏览器入口只允许 Web URL 和 file URL，仍禁止 about/data 等内联协议。
+      // Security boundary: The system's default browser entry only allows Web URLs and file URLs, and inline protocols such as about/data are still prohibited.
       if (!isDefaultBrowserOpenableUrl(currentUrl)) return;
       platform.openExternal(currentUrl);
     });
@@ -969,13 +1017,13 @@ export function UnifiedBrowserView({
             faviconUrl: event.favicons[0] ?? null,
           });
         };
-        // favicon 是可能只触发一次的 guest 事件；等 useEffect 才接线时，
-        // 它可能已在 webview ref 提交与 effect 执行之间发出。ref 阶段同步监听可封住该窗口。
+        // favicon is a guest event that may only be triggered once; when useEffect is wired,
+        // It may have been emitted between the webview ref submission and the effect execution. Synchronous listening in the ref stage can seal the window.
         node.addEventListener("page-favicon-updated", listener);
         faviconListenerRef.current = { node, listener };
       } else if (webviewTeardownProbeRef.current.hadWebview) {
-        // generation 换代（受控重建）与父级卸载都会先走到这里；紧随其后若有新节点 ref
-        // 回调则是换代，否则是整树/条件卸载。销毁归因打点见 webviewTeardownProbeRef 注释。
+        // Generation replacement (controlled reconstruction) and parent uninstallation will go here first; if there is a new node ref immediately after
+        // The callback is generation replacement, otherwise it is whole tree/conditional unloading. See the webviewTeardownProbeRef annotation for destruction of attribution management.
         webviewTeardownProbeRef.current.hadWebview = false;
         logWebviewTeardown("ref-null");
       }
@@ -989,15 +1037,15 @@ export function UnifiedBrowserView({
     void rebuildBrowserGuest(lastRestorableUrlRef.current, "manual-retry");
   }, [rebuildBrowserGuest]);
 
-  // 加载失败只是这次导航被拒，guest 本身还活着：重走 openUrl 即可，不必重建 guest。
+  // The loading failure is just that the navigation is rejected this time, and the guest itself is still alive: just re-enter the openUrl without rebuilding the guest.
   const handleRetryLoad = useCallback(() => {
     const retryUrl = lastRestorableUrlRef.current ?? browserState.currentUrl;
     if (!retryUrl) return;
     void openUrl(retryUrl, "toolbar");
   }, [browserState.currentUrl, openUrl]);
 
-  // 把 addressValue 草稿纳入空置态判断后，用户只要开始输入、尚未回车，
-  // 就会提前隐藏空置态并裸露 webview。空置态只由已确认导航与加载/错误状态决定。
+  // After the addressValue draft is included in the vacant state judgment, as long as the user starts typing and has not yet entered,
+  // The vacant state will be hidden in advance and the webview will be exposed. Empty states are determined only by confirmed navigation and loading/error states.
   const isEmptyBrowserState =
     !hasNavigated && !browserState.isLoading && !browserState.errorMessage;
   const shouldMountWebview =
@@ -1011,8 +1059,8 @@ export function UnifiedBrowserView({
     }
   }, [logWebviewTeardown, shouldMountWebview]);
 
-  // inactive 的 display:none 会让 Electron 保留旧 compositor surface，后台截图会按旧表面平铺。
-  // prepare 期间的 flex 只用于合成；外层 inert、pointer-events-none 和 aria-hidden 隔离交互与 a11y。
+  // The display:none of inactive will cause Electron to retain the old compositor surface, and the background screenshot will be tiled according to the old surface.
+  // flex during prepare is only used for compositing; outer inert, pointer-events-none, and aria-hidden isolate interactions with a11y.
   return (
     <div
       aria-hidden={!isVisible}

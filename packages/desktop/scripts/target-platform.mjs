@@ -46,8 +46,8 @@ export function getTargetPlatform() {
     key: `${os}-${arch}`,
     npmOs: os,
     npmCpu: arch,
-    // 部分 Linux optional native 包声明了 libc=glibc。
-    // 跨平台 prepare 时如果只传 --os/--cpu，npm 仍会按宿主机 libc 判定为不匹配，导致补装失败。
+    // Some Linux optional native packages declare libc=glibc.
+    // If only --os/--cpu is passed during cross-platform prepare, npm will still judge it as a mismatch according to the host libc, causing the reinstallation to fail.
     npmLibc: os === "linux" ? "glibc" : undefined,
   };
 }

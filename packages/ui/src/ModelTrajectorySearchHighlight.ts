@@ -67,8 +67,8 @@ export function scrollTrajectorySearchRangeIntoView(
   const containerRect = scrollContainer.getBoundingClientRect();
   if (rangeRect.top >= containerRect.top && rangeRect.bottom <= containerRect.bottom) return false;
 
-  // 不能在 virtualizer 预定位后再用 scrollIntoView 滚动整个祖先链；直接修正轨迹容器
-  // 的 scrollTop，确保一次“下一个”只有最终文本定位这一段可见滚动。
+  // You cannot use scrollIntoView to scroll the entire ancestor chain after prepositioning in the virtualizer; modify the track container directly
+  // The scrollTop ensures that only the final text positioning for this section is visible once "next" is scrolled.
   const rangeCenter = rangeRect.top + rangeRect.height / 2;
   const containerCenter = containerRect.top + containerRect.height / 2;
   scrollContainer.scrollTop += rangeCenter - containerCenter;

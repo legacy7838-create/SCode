@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-/** V4 stable assistant fork 的固定 logical-turn 边界。 */
+/** The fixed logical-turn boundary of a V4 stable assistant fork. */
 export const stableForkTargetSchema = z
   .object({
     productTurnId: z.string().min(1),

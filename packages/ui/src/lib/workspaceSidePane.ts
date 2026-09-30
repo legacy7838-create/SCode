@@ -1,4 +1,7 @@
-/* eslint-disable max-lines -- Side pane tab 状态集中维护 Browser/Git/CodeViewer/Treemapping/Whiteboard 的打开、复用、关闭和排序规则；拆分需要同步迁移现有内存恢复逻辑。 */
+/* eslint-disable max-lines -- Side pane tab state centrally maintains the open, reuse, close, and
+ * ordering rules for Browser/Git/CodeViewer/Treemapping/Whiteboard; splitting it requires migrating
+ * the existing in-memory restore logic in step.
+ */
 import { createUuid, type BrowserTabResidencyState } from "@zcode/shared";
 import { inferMediaPreview, isPptxPreviewPath, type CodeViewerSource } from "@/lib/codeViewer.js";
 import { normalizeCodeViewerSource } from "@/lib/codeViewerSource.js";
@@ -6,14 +9,17 @@ import { normalizeCodeViewerSource } from "@/lib/codeViewerSource.js";
 export interface BrowserSidePaneTab {
   id: string;
   type: "browser";
-  /** 打开 tab 时冻结的对话归属；null 表示草稿态。 */
+  /** Conversation ownership frozen when the tab was opened; null means draft state. */
   ownerTaskId?: string | null;
-  /** 工作区隔离 key（workspaceIdentity || workspacePath）。 */
+  /** Workspace isolation key (workspaceIdentity || workspacePath). */
   workspaceKey?: string | null;
   remoteSessionId?: string | null;
   faviconUrl?: string | null;
   initialUrl?: string | null;
-  /** 由 Agent 控制的页面触发的 popup；不应套用人类浏览器的持久化显示偏好。 */
+  /**
+   * A popup triggered by an Agent-controlled page; the persistent display preferences of a human
+   * browser must not be applied to it.
+   */
   agentOpened?: boolean;
   openedAt?: number;
   title?: string | null;
@@ -72,7 +78,7 @@ export interface ModelTrajectorySidePaneTab {
   ownerTaskId?: string | null;
   workspaceKey?: string | null;
   openedAt?: number;
-  /** 目标 task/session id；model-io 按该 id 匹配。 */
+  /** Target task/session id; model-io matches on that id. */
   taskId: string;
   title?: string | null;
 }
@@ -96,7 +102,7 @@ export interface TerminalSidePaneTab {
   remoteSessionId?: string | null;
 }
 
-/** browser-use 受控浏览器视图（renderer `<webview>` + main CDP）。 */
+/** The browser-use controlled browser view (renderer `<webview>` + main CDP). */
 export interface BrowserUseSidePaneTab {
   id: string;
   type: "browser-use";
@@ -104,7 +110,7 @@ export interface BrowserUseSidePaneTab {
   workspaceKey?: string | null;
   remoteSessionId?: string | null;
   sessionId: string;
-  /** main 分配的 opaque IAB tab identity，也是 webview attach key。 */
+  /** The opaque IAB tab identity assigned by main, which is also the webview attach key. */
   tabId: string;
   browserId?: string;
   browserGeneration?: number;
@@ -113,9 +119,12 @@ export interface BrowserUseSidePaneTab {
   faviconUrl?: string | null;
   residency?: BrowserTabResidencyState;
   residencyGeneration?: number;
-  /** 最近一次 agent browser-use 操作的 UI 指示截止时间。 */
+  /** The UI indication deadline of the most recent agent browser-use operation. */
   browserUseOperationUntil?: number;
-  /** 模型布局命令对应的单调版本；目标 view 据此重建 ResizeObserver 基线。 */
+  /**
+   * The monotonic version of the model layout command; the target view rebuilds its ResizeObserver
+   * baseline from it.
+   */
   browserUseResizeBaselineVersion?: number;
 }
 
@@ -203,27 +212,33 @@ export interface OpenPlanDetailSideTabRequest {
 }
 
 /**
- * workflow run 的详情页 tab。
+ * The detail tab of a workflow run.
  *
- * 身份是 **run**（`runId`），不是发起它的工具调用：一次 CreateWorkflow 只启一个 run，
- * 但 run 才是引擎、journal 与 `cancelBackgroundWork {workId}` 三处共用的键
- * （`workId ≡ taskId ≡ runId`）。`toolCallId` 仍要带上——静态因果图在那条工具调用行的
- * display 里，详情页按它在父会话投影里找图。
+ * The identity is the **run** (`runId`), not the tool call that started it: one CreateWorkflow
+ * starts only one run, but the run is the key shared by the engine, the journal, and
+ * `cancelBackgroundWork {workId}` (`workId ≡ taskId ≡ runId`). `toolCallId` still has to be carried
+ * along — the static causal graph lives in the display of that tool call row, and the detail page
+ * finds the graph by it in the parent session projection.
  *
- * ## 这个 tab 刻意**没有 GC**，别加
+ * ## This tab deliberately has **no GC**; do not add any
  *
- * 看起来很自然的两条回收规则都是错的：
+ * Two reclaim rules that look natural are both wrong:
  *
- * - **run 被 `WORKFLOW_RUNS_LIMITS.maxRuns`（8 条）淘汰时不要关它。** 详情页的事件日志读的是
- *   **journal**，不是 `workflowRuns` 投影。被淘汰的 run 丢的只有实时叠加状态，它的事件日志
- *   仍然**完整**——那恰恰是用户会把这个 tab 留着的场景（回看一次已结束的 run 是怎么跑的）。
- *   自动关掉等于亲手销毁一次已完结 run 的唯一持久视图。淘汰只降级成详情页里那块
- *   「已不在实时跟踪范围内」的空态，措辞也必须诚实：丢的是实时状态，run 本身没有消失。
- * - **父会话 edit / retry 时不要关它。** run 身份不会因为对话被改写而失效，最多是那条工具
- *   调用行不在窗口里了——那同样只降级成"没有图可画"，不是"这个 tab 该消失"。
+ * - **Do not close it when a run is evicted by `WORKFLOW_RUNS_LIMITS.maxRuns` (8 entries).** The
+ *   event log on the detail page reads the **journal**, not the `workflowRuns` projection. An
+ *   evicted run loses only its live overlay state; its event log stays **complete** — which is
+ *   exactly the case where a user keeps this tab around (revisiting how a finished run went).
+ *   Closing it automatically means destroying by hand the only persistent view of a completed run.
+ *   Eviction degrades into nothing more than the “no longer tracked live” empty state inside the
+ *   detail page, and the wording must stay honest: what is lost is the live state, the run itself
+ *   has not disappeared.
+ * - **Do not close it on a parent session edit / retry.** The run identity does not become invalid
+ *   because the conversation was rewritten; at most that tool call row is no longer in the window —
+ *   which likewise degrades into “nothing to draw”, not “this tab should disappear”.
  *
- * 可见性已经按 `parentSessionId` 收窄（同 plan-detail），所以 tab 不会泄漏到别的对话里。
- * `syncSubagentSessionSidePaneTabs` 那套回收只作用于 subagent-session，不要把它扩过来。
+ * Visibility is already narrowed by `parentSessionId` (same as plan-detail), so the tab cannot leak
+ * into another conversation. The reclaiming in `syncSubagentSessionSidePaneTabs` only applies to
+ * subagent-session; do not extend it here.
  */
 export interface WorkflowRunSidePaneTab {
   id: string;
@@ -237,9 +252,15 @@ export interface WorkflowRunSidePaneTab {
   parentSessionId: string;
   toolCallId: string;
   runId: string;
-  /** 打开时冻结的展示名，仅作投影缺席（run 被淘汰 / 冷启动）时的标题兜底。 */
+  /**
+   * Display name frozen at open time, used only as a title fallback when the projection is absent
+   * (run evicted / cold start).
+   */
   workflowName?: string;
-  /** 落点：展开这一站、列出全部、节头滚到顶。缺席即停在原处。 */
+  /**
+   * Landing: expand this stop, list everything, scroll the section header to the top. Absent means
+   * stay where it is.
+   */
   focusPhaseId?: string;
 }
 
@@ -248,25 +269,30 @@ export interface OpenWorkflowRunSideTabRequest {
   toolCallId: string;
   runId: string;
   workflowName?: string;
-  /** 落点：详情页展开这一站、列出全部、滚到节头。缺席即停在原处。 */
+  /**
+   * Landing: on the detail page, expand this stop, list everything, scroll to the section header.
+   * Absent means stay where it is.
+   */
   phaseId?: string;
   /**
-   * 「配置」之后面板跟着工作流走：
-   * 把显示这个 run 的 tab **原地**换成新 run 的 tab——同一个位置、沿用它的名字与归属。没有这样的
-   * tab（已关掉）就什么都不做：面板不会为此重新打开。
+   * After “Configure” is accepted the panel follows the workflow: swap the tab showing that run
+   * **in place** for the new run's tab — same position, keeping its name and ownership. When no
+   * such tab exists (it was closed), do nothing: the panel does not reopen for this.
    */
   replaceRunId?: string;
 }
 
 /**
- * 一条对话的 workflow run 目录 tab。
+ * The workflow run directory tab of one conversation.
  *
- * 身份是**对话**（`parentSessionId`）：一条对话只有一份 run 目录，所以页脚行重复点击幂等地
- * 聚焦同一个 tab——与 `subagent-directory` 同构。
+ * The identity is the **conversation** (`parentSessionId`): a conversation has only one run
+ * directory, so repeated clicks on the footer row idempotently focus the same tab — structurally
+ * identical to `subagent-directory`.
  *
- * 这个 tab 不带任何 run 数据：目录页自己按 `parentSessionId` 读一页 journal（run 目录的
- * 单一信源）。把摘要冻进 tab 会让「重启后打开一个恢复出来的 tab」显示
- * 一份过期名单，而它恰恰就是为重启后那一刻存在的。
+ * This tab carries no run data at all: the directory page reads a page of journal by
+ * `parentSessionId` itself (the single source of truth for the run directory). Freezing a summary
+ * into the tab would make “open a restored tab after a restart” show a stale list, yet that is
+ * exactly the moment this tab exists for.
  */
 export interface WorkflowRunDirectorySidePaneTab {
   id: string;
@@ -285,28 +311,33 @@ export interface OpenWorkflowRunDirectorySideTabRequest {
 }
 
 /**
- * 一个 dwf actor 实例的 transcript tab。
+ * A transcript tab of a dwf actor instance.
  *
- * 身份是 **actor 会话**：一个实例一条真实持久会话，所以 `actorSessionId` 就是 tab 身份。
- * `runId` / `siteId` / `ordinal` 一起带上是为了标题、搜索与排查——它们是 journal 的键，
- * 而会话 id 是 run service 按 `(runId, actorRef)` 铸造出来的，不该被 renderer 反解。
+ * The identity is the **actor session**: an instance has one real durable session, so
+ * `actorSessionId` is the tab identity. `runId` / `siteId` / `ordinal` are carried along for the
+ * title, search, and troubleshooting — they are the keys of the journal, while the session id is
+ * minted by the run service from `(runId, actorRef)` and must not be reverse-resolved by the
+ * renderer.
  *
- * ## 为什么是**独立类型**，不是给 `subagent-session` 加一个变体标记
+ * ## Why a **separate type** instead of a variant flag on `subagent-session`
  *
- * `syncSubagentSessionSidePaneTabs` 会删掉 `childSessionId` 不在 `validChildSessionIds`
- * 里的 subagent tab，而 actor 会话**永远不在**那个集合里（它不是子智能体的子会话）。复用
- * 那个类型等于：父会话的 subagent 投影每更新一次，这个 tab 就被回收一次。修法只能是教那套
- * 回收认识变体标记，也就是同样的工作量，只是把不变式藏进了回收逻辑里。
+ * `syncSubagentSessionSidePaneTabs` deletes subagent tabs whose `childSessionId` is not in
+ * `validChildSessionIds`, and an actor session is **never** in that set (it is not a child session
+ * of a subagent). Reusing that type means: every update of the parent session's subagent projection
+ * reclaims this tab once. The only fix would be to teach that reclaiming about variant flags — the
+ * same amount of work, only with the invariant hidden inside the reclaiming logic.
  *
- * 另外两处也会打架：subagent tab 的可见性按 `rootSessionId` 收窄（actor tab 要按
- * `parentSessionId`，同 workflow-run），而 `lastActiveSubagentTabByRootRef` 按
- * `rootSessionId` 记忆 active tab——actor tab 没有、也不该有一个 root 会话。
+ * Two other places would clash as well: subagent tab visibility is narrowed by `rootSessionId` (an
+ * actor tab narrows by `parentSessionId`, same as workflow-run), and
+ * `lastActiveSubagentTabByRootRef` remembers the active tab per `rootSessionId` — an actor tab has
+ * no root session, nor should it have one.
  *
- * ## GC：同 `workflow-run`，**没有**，别加
+ * ## GC: same as `workflow-run`, **none**; do not add any
  *
- * actor 会话在 run 结束后继续存在（这正是持久化落库换来的durable-audit）。run 被 8-run
- * 上限淘汰、父会话 edit/retry、run 结算——三者都不该关掉一份仍然可读的 transcript。
- * 可见性已按 `parentSessionId` 收窄，所以它也不会泄漏到别的对话里。
+ * An actor session keeps existing after the run ends (that is exactly the durable-audit gained by
+ * persisting it to storage). Being evicted by the 8-run cap, a parent session edit/retry, and run
+ * settlement — none of the three should close a transcript that is still readable. Visibility is
+ * already narrowed by `parentSessionId`, so it cannot leak into another conversation either.
  */
 export interface WorkflowActorSessionSidePaneTab {
   id: string;
@@ -320,22 +351,29 @@ export interface WorkflowActorSessionSidePaneTab {
   parentSessionId: string;
   runId: string;
   /**
-   * actor 会话 id：嵌套只读 SessionPane 读的那条会话。**可缺席**——从一枚还没启动的药丸开的
-   * tab 打开时没有会话；面板按
-   * 槽位在实时投影里找它，找到即自愈。身份不在这里，在 (runId, siteId, ordinal)。
+   * Actor session id: the session read by the nested read-only SessionPane. **May be absent** —
+   * when the tab is opened from a pill that has not started yet there is no session; the panel
+   * looks it up in the live projection by the slot, and finding it heals the state. The identity is
+   * not here, it is in (runId, siteId, ordinal).
    */
   actorSessionId?: string;
-  /** actor 站点 id 与序号：与 runId 一起是 tab 的身份，从不参与命名。 */
+  /**
+   * Actor site id and ordinal: together with runId they are the tab identity, and never take part
+   * in naming.
+   */
   siteId: string;
   ordinal: number;
-  /** 脚本里写下的名字（`agent("reviewer")`）；分析拿不到字面量时缺席，标题走本地化兜底。 */
+  /**
+   * The name written in the script (`agent("reviewer")`); absent when the analysis cannot get the
+   * literal, and the title falls back to a localized string.
+   */
   actorName?: string;
 }
 
 export interface OpenWorkflowActorSessionSideTabRequest {
   parentSessionId: string;
   runId: string;
-  /** 打开时已知的会话 id；未启动的槽位缺席。 */
+  /** Session id already known at open time; absent for a slot that has not started. */
   actorSessionId?: string;
   siteId: string;
   ordinal: number;
@@ -349,16 +387,19 @@ export interface OpenScopedWorkflowActorSessionSideTabRequest extends OpenWorkfl
 }
 
 /**
- * 一个 workflow run 的**脚本 transcript** tab：
- * 脚本里 `files.*` / `git.*` / `world.run` 的每一次调用回放成一张工具卡。
+ * A **script transcript** tab of a workflow run: every call to `files.*` / `git.*` / `world.run` in
+ * the script is replayed as one tool card.
  *
- * 与 actor transcript 同一逻辑层级（都是「run 里某个参与者做过什么」），但工作区没有会话，
- * 所以它是自己的类型而不是 actor tab 的变体：面板不嵌 SessionPane，而是拿两条 journal 查询
- * 自己画卡片。身份是 **(workspace, 父会话, run)**——一个 run 一个 tab，从哪一站点开都是它；
- * `focusPhaseId` 只是落点（滚到那一站的第一张卡），每次打开都重新落。
+ * At the same logical level as an actor transcript (both answer "what a participant of the run
+ * did"), but the workspace has no session, so it is its own type rather than a variant of the actor
+ * tab: the panel does not embed a SessionPane, it runs two journal queries and draws the cards
+ * itself. The identity is **(workspace, parent session, run)** — one tab per run, whichever site it
+ * was opened from; `focusPhaseId` is only the landing spot (scroll to the first card of that stop),
+ * recomputed on every open.
  *
- * GC：同 `workflow-actor-session`，**没有**——journal 行在 run 结束后继续存在，这份回放正是
- * 为事后审计而存在的。可见性按 `parentSessionId` 收窄。
+ * GC: same as `workflow-actor-session`, **none** — journal rows keep existing after the run ends,
+ * and this replay is exactly what exists for post-hoc auditing. Visibility is narrowed by
+ * `parentSessionId`.
  */
 export interface WorkflowWorkspaceSidePaneTab {
   id: string;
@@ -370,12 +411,20 @@ export interface WorkflowWorkspaceSidePaneTab {
   workspaceIdentity?: string;
   remoteSessionId?: string;
   parentSessionId: string;
-  /** 发起该 run 的工具调用 id：静态图（阶段名、步标签）挂在那条行上，与 workflow-run tab 同一条路。 */
+  /**
+   * Id of the tool call that started this run: the static graph (phase names, step labels) hangs
+   * off that row, by the same path as for a workflow-run tab.
+   */
   toolCallId: string;
   runId: string;
-  /** 打开时冻结的展示名，仅作投影缺席时的标题兜底。 */
+  /**
+   * Display name frozen at open time, used only as a title fallback when the projection is absent.
+   */
   workflowName?: string;
-  /** 落点：滚到这一站的第一张卡；还没到的站落到末尾。缺席即停在原处。 */
+  /**
+   * Landing: scroll to the first card of this stop; a stop that has not been reached yet lands at
+   * the end. Absent means stay where it is.
+   */
   focusPhaseId?: string;
 }
 
@@ -394,22 +443,26 @@ export interface OpenScopedWorkflowWorkspaceSideTabRequest extends OpenWorkflowW
 }
 
 /**
- * 一个 dwf **产物**的全尺寸查看 tab。
+ * A full-size view tab of a dwf **artifact**.
  *
- * ⚠ 术语：这里的 artifact 是脚本经 `artifact.*` 发布给用户看的产出（一个文件 / 一段 markdown /
- * 一张 journal 投影出来的看板），**不是**引擎内部 `RunSettlement.artifact` 那个「脚本顶层
- * 返回值」。
+ * ⚠ Terminology: the artifact here is an output the script publishes to the user through
+ * `artifact.*` (a file / a piece of markdown / a dashboard projected from the journal), **not** the
+ * “script top-level return value” that the engine internally calls `RunSettlement.artifact`.
  *
- * 身份是 **(run, 产物 id)**，不含版本：同一个产物反复发布是同一件东西的新版本，再点一次
- * 应当**聚焦已开的 tab 并翻到最新版**，而不是并排开出 v1 / v2 两个 tab。`version` 因此只是
- * 打开时的初始落点（通知 chip / 中枢 chip 都不带版本号，缺席即最新版），头部的版本步进器
- * 才是真正的版本导航。
+ * The identity is **(run, artifact id)**, without a version: republishing the same artifact is a
+ * new version of the same thing, so clicking it again should **focus the already open tab and move
+ * it to the latest version** rather than open v1 / v2 side by side. `version` is therefore only the
+ * initial landing spot at open time (neither the notification chip nor the hub chip carries a
+ * version, so absent means the latest), and the version stepper in the header is the real version
+ * navigation.
  *
- * ## GC：同 `workflow-run`，**没有**，别加
+ * ## GC: same as `workflow-run`, **none**; do not add any
  *
- * 产物的字节在发布时刻就拷进了 store（发布即钉住的约定），所以一个被 8-run 上限
- * 淘汰、甚至整条对话被 edit 重写的 run，它的产物仍然**完整可读**——那正是用户会把这个 tab
- * 留着的场景。可见性已按 `parentSessionId` 收窄，tab 不会泄漏到别的对话里。
+ * The artifact bytes are copied into the store at publish time (publishing pins them by
+ * convention), so an artifact of a run that was evicted by the 8-run cap — or even of a
+ * conversation rewritten end to end by an edit — is still **fully readable**, which is exactly the
+ * case where a user keeps this tab around. Visibility is already narrowed by `parentSessionId`, so
+ * the tab cannot leak into another conversation.
  */
 export interface WorkflowArtifactSidePaneTab {
   id: string;
@@ -422,11 +475,17 @@ export interface WorkflowArtifactSidePaneTab {
   remoteSessionId?: string;
   parentSessionId: string;
   runId: string;
-  /** 产物 id（脚本里的编译期字面量，`[A-Za-z0-9_.-]` ≤ 64）。 */
+  /** Artifact id (a compile-time literal in the script, `[A-Za-z0-9_.-]` ≤ 64). */
   artifactId: string;
-  /** 打开时的初始版本；缺席即最新版。**不进 tab 身份**——见类型上那段注释。 */
+  /**
+   * Initial version at open time; absent means the latest. **Not part of the tab identity** — see
+   * the paragraph on the type.
+   */
   version?: number;
-  /** 打开时冻结的展示名，仅作元数据缺席（冷恢复 / 老 CLI）时的标题兜底。 */
+  /**
+   * Display name frozen at open time, used only as a title fallback when metadata is absent (cold
+   * restore / old CLI).
+   */
   title?: string;
 }
 
@@ -437,13 +496,15 @@ export interface OpenWorkflowArtifactSideTabRequest {
   version?: number;
   title?: string;
   /**
-   * 最新版的 contentType（表面上的摘要带得到就带）。`useAppPanels.handleOpenWorkflowArtifact`
-   * 据它决定 html 产物是直接开浏览器 tab 还是开产物 tab；缺席即一律开产物 tab。
+   * contentType of the latest version (carried whenever the surface summary can obtain it).
+   * `useAppPanels.handleOpenWorkflowArtifact` uses it to decide whether an html artifact opens a
+   * browser tab directly or an artifact tab; absent always opens an artifact tab.
    */
   contentType?: string;
   /**
-   * 工作区相对的原路径。只有已经合并过 journal 的表面（run 侧板）带得到；缺席时由
-   * `handleOpenWorkflowArtifact` 自己查 journal 补齐——摘要刻意不带它（状态帧体积）。
+   * Workspace-relative original path. Only surfaces that have already merged the journal (the run
+   * side pane) can obtain it; when absent, `handleOpenWorkflowArtifact` looks it up in the journal
+   * itself to fill it in — the summary deliberately does not carry it (state frame size).
    */
   sourcePath?: string;
 }
@@ -478,7 +539,10 @@ export interface OpenSelectionSideChatRequest {
   remoteSessionId?: string;
   parentSessionId: string;
   childSessionId: string;
-  /** active child 已确定不存在时，由宿主原子替换对应旧 tab。 */
+  /**
+   * When the active child is known not to exist, the host atomically replaces the corresponding old
+   * tab.
+   */
   replacesChildSessionId?: string;
 }
 
@@ -535,8 +599,9 @@ export type WorkspaceSidePaneTab =
   | WorkflowArtifactSidePaneTab;
 
 /**
- * Browser/browser-use 的页面与 CDP 生命周期依赖 `<webview>` 持续连接 DOM。
- * 面板折叠或切到其它对话时仍必须后台挂载，只有显式关闭 tab 才能销毁页面状态。
+ * The page and CDP lifecycle of Browser/browser-use depends on the `<webview>` staying attached to
+ * the DOM. The panel must stay mounted in the background even when collapsed or switched to another
+ * conversation; only explicitly closing the tab can destroy the page state.
  */
 export function shouldMountSidePaneContent(
   isVisible: boolean,
@@ -568,22 +633,22 @@ export function normalizeWorkspaceSidePaneState(
     return null;
   }
 
-  // Treemapping 当前需要从侧边栏隐藏。旧版本可能已经把 treemapping tab
-  // 写进了 workspace 级 side pane 记忆，这里在状态边界统一过滤，避免恢复后入口继续出现。
+  // Treemapping currently needs to be hidden from the sidebar. Older versions may have changed the treemapping tab
+  // It is written into the workspace-level side pane memory, where unified filtering is performed at the state boundary to prevent the entry from continuing to appear after recovery.
   const filteredTabs = current.tabs.filter((tab) => tab.type !== "treemapping");
   if (filteredTabs.length === 0) {
     return null;
   }
 
-  // 多开引入 `ordinal` 之前创建的辅助对话 tab（HMR/同窗口旧内存状态）没有该
-  // 字段，直接参与 getNextSelectionSideChatOrdinal 会得到 NaN/undefined 并造成标题
-  // 编号冲突。这里在状态边界按 parent 分组回填最小可用编号，保持既有编号不变。
+  // The auxiliary dialogue tab (HMR/old memory state of the same window) created before introducing `ordinal` does not have this
+  // Field, directly participating in getNextSelectionSideChatOrdinal will get NaN/undefined and cause the title
+  // Number conflict. Here, the minimum available number is backfilled by parent grouping at the state boundary, keeping the existing number unchanged.
   let migratedOrdinal = false;
   const tabs = filteredTabs.map((tab, index, allTabs) => {
     if (tab.type !== "selection-side-chat" || Number.isInteger(tab.ordinal)) {
       return tab;
     }
-    // allTabs 中本轮迭代已回填的 tab 被原位替换，天然带整数 ordinal 参与占用判定。
+    // The tabs in allTabs that have been backfilled in this iteration are replaced in situ, and the integer ordinal is naturally involved in the occupancy determination.
     const used = new Set(
       allTabs.flatMap((candidate) =>
         candidate.type === "selection-side-chat" &&
@@ -633,10 +698,10 @@ function createBrowserSidePaneTab(options?: {
     type: "browser",
     ...(options?.ownerTaskId !== undefined ? { ownerTaskId: options.ownerTaskId } : {}),
     ...(options?.workspaceKey !== undefined ? { workspaceKey: options.workspaceKey } : {}),
-    // human tab 过去从不写 remoteSessionId，而 stampSidePaneTabsOwnership 只补
-    // ownerTaskId 未定义的 tab —— 凡是创建时就带 ownerTaskId 的（打开链接/终端 URL/popup/share）
-    // 远程下该字段永久缺失。attach 侧 renderer 会用 workspaceRemoteSessionId 兜底冻结 main 的
-    // owner，close 侧却按 tab 上的空值比对，scope 判失配后 tab 就再也关不掉。创建即冻结。
+    // human tab never writes remoteSessionId in the past, but stampSidePaneTabsOwnership only adds
+    // ownerTaskId undefined tab - all tabs are created with ownerTaskId (open link/terminal URL/popup/share)
+    // This field is permanently missing under remote mode. The attach side renderer will use workspaceRemoteSessionId to freeze the main
+    // The owner and close sides are compared according to the null value on the tab. After the scope is judged to be mismatched, the tab can no longer be closed. Freeze upon creation.
     ...(options?.remoteSessionId ? { remoteSessionId: options.remoteSessionId } : {}),
     faviconUrl: null,
     initialUrl: options?.initialUrl ?? null,
@@ -655,7 +720,7 @@ function createModelTrajectorySidePaneTab(options: {
   title?: string | null;
 }): ModelTrajectorySidePaneTab {
   return {
-    // 同一个 task 复用同一个 tab，避免重复打开多份相同轨迹。
+    // Reuse the same tab for the same task to avoid opening multiple copies of the same track repeatedly.
     id: `model-trajectory:${options.taskId}`,
     type: "model-trajectory",
     openedAt: Date.now(),
@@ -803,7 +868,7 @@ function createWorkflowRunSidePaneTab(
   options: OpenScopedWorkflowRunSideTabRequest & { workspaceKey: string },
 ): WorkflowRunSidePaneTab {
   return {
-    // 结构化 id：同一个 run 在同一个 workspace + 会话下永远是同一个 tab，重复点击幂等。
+    // Structured ID: The same run will always be the same tab in the same workspace + session, and repeated clicks are idempotent.
     id: [
       "workflow-run",
       encodeSidePaneTabIdPart(options.workspaceKey),
@@ -828,7 +893,7 @@ function createWorkflowRunDirectorySidePaneTab(
   options: OpenScopedWorkflowRunDirectorySideTabRequest & { workspaceKey: string },
 ): WorkflowRunDirectorySidePaneTab {
   return {
-    // 结构化 id：一条对话只有一份 run 目录，所以页脚行重复点击幂等地聚焦同一个 tab。
+    // Structured ID: There is only one run directory for a conversation, so repeated clicks on the footer row focus the same tab idempotently.
     id: [
       "workflow-directory",
       encodeSidePaneTabIdPart(options.workspaceKey),
@@ -848,10 +913,10 @@ function createWorkflowActorSessionSidePaneTab(
   options: OpenScopedWorkflowActorSessionSideTabRequest & { workspaceKey: string },
 ): WorkflowActorSessionSidePaneTab {
   return {
-    // 结构化 id：同一个槽位在同一个 workspace + 对话下永远是同一个 tab，重复点击幂等。
-    // 身份是 (runId, siteId@ordinal) 而不是会话 id：tab 可以在会话存在之前就开（未启动的
-    // 药丸），先后从无会话与有会话两端打开必须落到同一个 tab；runId 在 id 里，两个 run 的
-    // 同名实例仍不撞。
+    // Structured ID: The same slot is always the same tab in the same workspace + conversation, and repeated clicks are idempotent.
+    // The identity is (runId, siteId@ordinal) instead of the session id: the tab can be opened before the session exists (uninitiated
+    // pills), they must be opened from both ends without session and session and must fall into the same tab; runId is in id, and the two run
+    // Instances with the same name still do not collide.
     id: [
       "workflow-actor-session",
       encodeSidePaneTabIdPart(options.workspaceKey),
@@ -878,8 +943,8 @@ function createWorkflowWorkspaceSidePaneTab(
   options: OpenScopedWorkflowWorkspaceSideTabRequest & { workspaceKey: string },
 ): WorkflowWorkspaceSidePaneTab {
   return {
-    // 结构化 id：(workspace, 父会话, run)。阶段**不在** id 里——一个 run 一份脚本 transcript，
-    // 从 plan 站点开还是从 verify 站点开都是同一个 tab，只是落点不同。
+    // Structured id: (workspace, parent session, run). The stage is not in the id - one run and one script transcript.
+    // Opening from the plan site or from the verify site is the same tab, but the location is different.
     id: [
       "workflow-workspace",
       encodeSidePaneTabIdPart(options.workspaceKey),
@@ -904,8 +969,8 @@ function createWorkflowArtifactSidePaneTab(
   options: OpenScopedWorkflowArtifactSideTabRequest & { workspaceKey: string },
 ): WorkflowArtifactSidePaneTab {
   return {
-    // 结构化 id：**不含版本**。同一个产物的 v1 与 v2 是同一件东西的两个时刻，再次点击
-    // （通知 chip / 中枢 chip / 侧板卡片）只该聚焦同一个 tab 并翻到新版，不该并排开两个。
+    // Structured id: **without version**. v1 and v2 of the same product are two moments of the same thing, click again
+    // (Notification chip / hub chip / side panel card) You should only focus on the same tab and flip to the new version, not two side by side.
     id: [
       "workflow-artifact",
       encodeSidePaneTabIdPart(options.workspaceKey),
@@ -945,9 +1010,9 @@ function getCodeViewerTabSourceKey(source: CodeViewerSource): string | null {
     ? source.workspaceIdentity.trim()
     : (source.workspacePath ?? "");
   const scopedKeyPrefix = workspaceScope ? `${workspaceScope}:` : "";
-  // 文件树把 PPTX 表示为通用 `file` source，引用反向打开则使用带导航意图的
-  // `pptx` source。旧 key 直接包含 source.type，导致同一 workspace 路径被拆成两个 tab。
-  // source type 只是入口表示，不是文件身份；这里只归一 PPTX，避免扩大其它预览类型的语义。
+  // The file tree represents PPTX as a generic `file` source, and the reference is opened using the navigation intent.
+  // `pptx` source. The old key directly contains source.type, causing the same workspace path to be split into two tabs.
+  // The source type is only the entry representation, not the file identity; only PPTX is normalized here to avoid expanding the semantics of other preview types.
   const resourceType =
     source.type === "pptx" || (source.type === "file" && isPptxPreviewPath(source.path))
       ? "pptx"
@@ -971,9 +1036,9 @@ function getCodeViewerTabSourceKey(source: CodeViewerSource): string | null {
   }
 
   if (source.type === "patch") {
-    // file diff 之前只按 path 复用 tab，导致同一个文件在不同轮次产生的不同 patch
-    // 会互相覆盖，看起来像“diff 面板只能打开一个 tab”。这里把 patch 内容摘要纳入 key，
-    // 让不同 diff 可以并排保留，同时同一份 diff 重复点击仍然复用已有 tab。
+    // File diff used to only press path to reuse tabs, resulting in different patches generated for the same file in different rounds.
+    // will cover each other and look like "the diff panel can only open one tab". Here, the patch content summary is included in the key.
+    // This allows different diffs to be kept side by side, and repeated clicks on the same diff can still reuse existing tabs.
     return `${scopedKeyPrefix}patch:${source.path ?? source.title}:${hashCodeViewerContent(source.patch)}`;
   }
 
@@ -1046,7 +1111,7 @@ export function getActiveSidePaneTab(
   return current.tabs.find((tab) => tab.id === current.activeTabId) ?? null;
 }
 
-/** 把草稿态的 null/undefined 归一，供侧栏按对话隔离。 */
+/** Normalizes the draft-state null/undefined, so the side pane can isolate by conversation. */
 export function sidePaneOwnerKey(taskId: string | null | undefined): string {
   return taskId ?? "__draft__";
 }
@@ -1074,8 +1139,9 @@ function sidePaneTabMatchesWorkspace(
 }
 
 /**
- * 新建 tab 在提交到共享侧栏状态时统一冻结工作区与对话归属。
- * browser-use 自带事件来源归属，因此已打标的 tab 绝不能被当前 UI scope 覆盖。
+ * A newly created tab freezes its workspace and conversation ownership when it is committed to the
+ * shared side pane state. browser-use carries its own event origin, so a tab that is already tagged
+ * must never be overwritten by the current UI scope.
  */
 export function stampSidePaneTabsOwnership(
   state: WorkspaceSidePaneState | null,
@@ -1150,11 +1216,14 @@ function resolveActiveTabForOwner(
 }
 
 /**
- * 对话 scope 切换时同时解析 active tab 与折叠态。
+ * Resolves the active tab and the collapsed state together when the conversation scope switches.
  *
- * 目标对话没有 preferredTabId 时不能沿用上一个对话的 collapsed 状态，也不能简单地
- * 用“有可见 tab 就展开”覆盖状态。否则用户在 A 主动收起后切到 B 再切回 A，仍会被 A 的可见 tab
- * 自动展开。现在由调用方传入当前对话的主动偏好；没有偏好时才沿用默认的“有 tab 展开、无 tab 收起”。
+ * When the target conversation has no preferredTabId, the collapsed state of the previous
+ * conversation must not be carried over, and it must not simply be overwritten with “expand when a
+ * visible tab exists”. Otherwise a user who collapses A, switches to B, and switches back to A
+ * would still be auto-expanded by A's visible tab. The caller now passes the current conversation's
+ * explicit preference; only when there is no preference does the default apply: expand when there
+ * are tabs, collapse when there are none.
  */
 export function resolveSidePaneScopeState(
   state: WorkspaceSidePaneState | null,
@@ -1232,11 +1301,12 @@ export function openBrowserSidePane(
 }
 
 /**
- * 同一 workspace/owner 下认领同一个 URL 的 browser tab。
+ * Claims the browser tab for the same URL under the same workspace/owner.
  *
- * 调用方（`useAppPanels`）需要**先**知道落点 tab 的 id 才能对它发导航请求，所以查找与打开
- * 拆成两步：这里定位，`openOrActivateBrowserSidePaneByUrl` 用同一个判据落点。两处共用它，
- * 不会出现「查的是 A、开的是 B」。
+ * The caller (`useAppPanels`) needs to know the id of the landing tab **first** in order to send it
+ * a navigation request, so lookup and opening are split into two steps: this locates it, and
+ * `openOrActivateBrowserSidePaneByUrl` lands on the same criterion. Both share it, so “looked up A,
+ * opened B” cannot happen.
  */
 export function findBrowserSidePaneTabByUrl(
   current: WorkspaceSidePaneState | null,
@@ -1257,17 +1327,21 @@ export function findBrowserSidePaneTabByUrl(
 }
 
 /**
- * URL 键复用：同一 workspace/session 的同一个 URL 只激活已有 tab。
+ * URL key reuse: the same URL in the same workspace/session only activates an existing tab.
  *
- * 两个用户：share handover 的分享链接，与 html 产物的直开。两者是同一句话——「带我去这个
- * 地址」，而不是「再开一个浏览器」。复用时**不**改 tab 的任何字段（`initialUrl` 就是键），
- * 要让 webview 重新取字节由调用方另发一次导航请求。
+ * Two users: the share link from share handover, and the direct open of an html artifact. Both are
+ * the same sentence — “take me to this address”, not “open another browser”. On reuse **no** field
+ * of the tab is changed (`initialUrl` is the key); to make the webview fetch the bytes again, the
+ * caller sends another navigation request.
  */
 export function openOrActivateBrowserSidePaneByUrl(
   current: WorkspaceSidePaneState | null,
   options: {
     initialUrl: string;
-    /** 新建时用的 tab id；缺席即现生成。命中已有 tab 时忽略。 */
+    /**
+     * Tab id used when creating a new tab; absent means one is generated now. Ignored when an
+     * existing tab is hit.
+     */
     tabId?: string;
     ownerTaskId?: string | null;
     workspaceKey?: string | null;
@@ -1285,7 +1359,7 @@ export function openOrActivateBrowserSidePaneByUrl(
   });
 }
 
-/** 打开或更新一个受控 browser-use tab；ready 重放按 tabId 幂等。 */
+/** Opens or updates a controlled browser-use tab; ready replay is idempotent per tabId. */
 function openBrowserUseSidePane(
   current: WorkspaceSidePaneState | null,
   options: {
@@ -1356,7 +1430,10 @@ interface BrowserUseSidePaneScope {
   ownerTaskId: string | null;
 }
 
-/** ready/show 事件只允许激活其 origin workspace + session，后台事件仅挂载 guest。 */
+/**
+ * ready/show events may only activate within their origin workspace + session; background events
+ * only mount the guest.
+ */
 export function applyBrowserUseSidePaneEvent(
   current: WorkspaceSidePaneState | null,
   options: {
@@ -1382,7 +1459,10 @@ export function applyBrowserUseSidePaneEvent(
   };
 }
 
-/** visibility 只选择 ready 已创建的 shell；迟到事件不得重建已关闭 tab。 */
+/**
+ * visibility only selects a shell that ready has already created; late events must not rebuild a
+ * closed tab.
+ */
 export function applyBrowserUseSidePaneVisibilityEvent(
   current: WorkspaceSidePaneState | null,
   options: {
@@ -1411,9 +1491,9 @@ export function applyBrowserUseSidePaneVisibilityEvent(
         tab.browserGeneration === options.browserGeneration),
   );
   if (!target) {
-    // 旧 visibility 路径复用了 ready 的 open helper。main 已关闭 tab 后，队列中
-    // 迟到的 visible=true 会在 renderer 重建无 main authority 的僵尸 shell，之后点击关闭必然
-    // 失败。visibility 是选择信号，只能命中现存且 scope/generation 完全一致的 shell。
+    // The old visibility path reuses ready's open helper. After main has closed the tab, it is in the queue
+    // The late visible=true will rebuild the zombie shell without main authority in the renderer, and then click to close it.
+    // fail. visibility is a selection signal that can only hit existing shells with exactly the same scope/generation.
     return { state: current, shouldReveal: false, didMatch: false };
   }
 
@@ -1487,9 +1567,9 @@ export function openCodeViewerSidePane(
   source: CodeViewerSource,
   ownerTaskId?: string | null,
 ): WorkspaceSidePaneState {
-  // 同一个文件/图片在消息里被重复点击时，不能把右侧面板整块替换，
-  // 用户刚在别的 pane 里看的内容会直接丢掉。这里按稳定 sourceKey 复用已有 code viewer tab，
-  // 既避免重复开一排同名 tab，也能在再次打开时刷新到最新 source。
+  // When the same file/picture is clicked repeatedly in the message, the entire right panel cannot be replaced.
+  // The content the user just viewed in other panes will be discarded directly. Here, press the stable sourceKey to reuse the existing code viewer tab.
+  // It not only avoids repeatedly opening a row of tabs with the same name, but also refreshes to the latest source when opening it again.
   const nextTab = createCodeViewerSidePaneTab(source);
   if (!current || nextTab.sourceKey === null) {
     return activateSidePaneTab(current, nextTab);
@@ -1509,11 +1589,12 @@ export function openCodeViewerSidePane(
 }
 
 /**
- * 一次性打开一组代码预览 Tab。
+ * Opens a group of code preview tabs in one go.
  *
- * 自动打开生成产物时不能逐张调用 openCodeViewerSidePane：逐张提交会让右侧
- * 面板经历多次中间状态，并且最后一张会意外成为 active。这里复用单文件
- * 的 sourceKey/owner 规则批量收口，最后按调用方指定的顺序激活一张 Tab。
+ * When auto-opening generated artifacts, openCodeViewerSidePane must not be called one at a time:
+ * committing them one by one makes the right panel pass through several intermediate states, and
+ * the last one unexpectedly becomes active. Here the single-file sourceKey/owner rules are reused
+ * to converge in one batch, and finally one tab is activated in the order the caller specified.
  */
 export function openCodeViewerSidePanes(
   current: WorkspaceSidePaneState | null,
@@ -1532,7 +1613,7 @@ export function openCodeViewerSidePanes(
   for (const source of sources) {
     const normalizedSource = normalizeCodeViewerSource(source);
     const sourceKey = getCodeViewerTabSourceKey(normalizedSource);
-    // sourceKey 是 workspace-scoped 的稳定身份；同一批次重复路径只打开一次。
+    // sourceKey is a workspace-scoped stable identity; duplicate paths in the same batch are only opened once.
     if (sourceKey !== null && seenSourceKeys.has(sourceKey)) continue;
     if (sourceKey !== null) seenSourceKeys.add(sourceKey);
 
@@ -1624,8 +1705,8 @@ export function openSubagentSessionSidePane(
           rootSessionId: options.rootSessionId ?? options.parentSessionId,
           parentSessionId: options.parentSessionId,
           subagentType: options.subagentType,
-          // HMR 期间可能复用旧结构的内存 tab；新入口没有 title 时保留已知标题，
-          // 但绝不再回退到旧的 type + ordinal 展示规则。
+          // During HMR, the memory tab of the old structure may be reused; if the new entry does not have a title, the known title will be retained.
+          // But never fall back to the old type + ordinal display rules.
           title: nextTitle || existing.title || "",
         }
       : nextTab,
@@ -1739,17 +1820,19 @@ export function openPlanDetailSidePane(
   const existing = current?.tabs.find(
     (tab): tab is PlanDetailSidePaneTab => tab.type === "plan-detail" && tab.id === nextTab.id,
   );
-  // 同一个 toolCall 只保留一个 tab；再次点击用卡片当前正文刷新 fallback，
-  // 详情组件的实时正文仍以父 conversation projection 为权威。
+  // The same toolCall only retains one tab; click again to refresh the fallback with the current text of the card.
+  // The details component's live text remains authoritative of the parent conversation projection.
   return activateSidePaneTab(current, existing ? { ...existing, ...nextTab } : nextTab);
 }
 
 /**
- * 打开或复用一个 workflow run 详情 tab。
+ * Opens or reuses a workflow run detail tab.
  *
- * 复用规则与 plan-detail 同构（结构化 id 幂等），刻意也**同样没有 GC**：事件日志读的是
- * journal，而 `workflowRuns` 投影只留最近 8 个 run，所以一个被淘汰的 run 仍有完整可读的
- * 事件日志——那正是用户会把这个 tab 留着的场景。投影缺席退化成详情页的空态，不关 tab。
+ * The reuse rule is structurally identical to plan-detail (idempotent on the structured id), and
+ * deliberately there is **no GC** either: the event log reads the journal, while the `workflowRuns`
+ * projection keeps only the most recent 8 runs, so an evicted run still has a complete readable
+ * event log — which is exactly the case where a user keeps this tab around. A missing projection
+ * degrades into the empty state of the detail page; the tab is not closed.
  */
 export function openWorkflowRunSidePane(
   current: WorkspaceSidePaneState | null,
@@ -1760,18 +1843,20 @@ export function openWorkflowRunSidePane(
     (tab): tab is WorkflowRunSidePaneTab => tab.type === "workflow-run" && tab.id === nextTab.id,
   );
   if (existing === undefined) return activateSidePaneTab(current, nextTab);
-  // 落点每次都重算（与脚本 transcript tab 同一条规则）：请求带 phaseId 就落到它，不带就显式删键；
-  // `openedAt` 随每次打开刷新，面板据此在同一站上再点一次也重新滚。
+  // The drop point is recalculated every time (the same rule as the script transcript tab): if the phaseId is requested, it will be dropped to it, if not, the key will be deleted explicitly;
+  // `openedAt` is refreshed every time it is opened, and the panel will be re-rolled accordingly if clicked again on the same site.
   const merged: WorkflowRunSidePaneTab = { ...existing, ...nextTab };
   if (nextTab.focusPhaseId === undefined) delete merged.focusPhaseId;
   return activateSidePaneTab(current, merged);
 }
 
 /**
- * 「配置」被接受后的原地替换：旧 run 的 tab 换成新 run 的 tab，位置、名字、归属照旧；它原来是活动
- * tab 才让新 tab 成为活动 tab。新 run 的 tab 已经开着时，关掉旧的、聚焦已有的那一个（不出两个）。
- * 旧 tab 不在（用户已关掉）即原样返回——替换不是打开；结果里的 run 就是被替换的那一个（就地生效的
- * 修订没有后继）时同理，这个 tab 已经是它了。
+ * In-place replacement after “Configure” is accepted: the old run's tab is replaced by the new
+ * run's tab, with position, name, and ownership unchanged; only if it was the active tab does the
+ * new tab become active. When the new run's tab is already open, close the old one and focus the
+ * existing one (do not end up with two). If the old tab is not there (the user closed it), return
+ * as-is — replacing is not opening; the same holds when the run in the result is the one being
+ * replaced (an in-place revision has no successor): this tab is already it.
  */
 export function replaceWorkflowRunSidePane(
   current: WorkspaceSidePaneState | null,
@@ -1789,9 +1874,9 @@ export function replaceWorkflowRunSidePane(
   );
   const previous = current.tabs[index];
   if (index < 0 || previous?.type !== "workflow-run") return current;
-  // 就地生效的修订（只改并发上限、run 仍在运行）没有后继，
-  // 结果里的 runId 就是被替换的这一个。tab 的 id 只由 runId 铸，所以不挡在这里的话，下面那支
-  // 「新 tab 已经开着」会认出它自己、把这个 tab 关掉，只留一个指向已不存在 tab 的 activeTabId。
+  // Revisions that take effect locally (only the concurrency limit is changed, and run is still running) have no successors.
+  // The runId in the result is the replaced one. The id of the tab is only cast by runId, so if you don't block it here, the one below
+  // "New tab is already open" will recognize itself and close the tab, leaving only an activeTabId pointing to the tab that no longer exists.
   if (nextTab.id === previous.id) return current;
   const wasActive = current.activeTabId === previous.id;
   const existingIndex = findTabIndexById(current.tabs, nextTab.id);
@@ -1812,10 +1897,12 @@ export function replaceWorkflowRunSidePane(
 }
 
 /**
- * 打开或复用一条对话的 run 目录 tab。身份是对话，所以页脚行重复点击只是聚焦。
+ * Opens or reuses the run directory tab of a conversation. The identity is the conversation, so
+ * repeated clicks on the footer row only focus.
  *
- * GC 同样**没有**（与 workflow-run 同一条理由链）：目录页每次挂载自己重读一页 journal，
- * 所以一个被恢复出来的旧 tab 不会显示过期名单，也就没有该回收的东西。
+ * There is likewise **no GC** (the same reasoning chain as workflow-run): the directory page
+ * re-reads a page of journal on every mount, so a restored old tab never shows a stale list, and
+ * therefore there is nothing to reclaim.
  */
 export function openWorkflowRunDirectorySidePane(
   current: WorkspaceSidePaneState | null,
@@ -1830,13 +1917,16 @@ export function openWorkflowRunDirectorySidePane(
 }
 
 /**
- * 打开或复用一个 actor transcript tab。
+ * Opens or reuses an actor transcript tab.
  *
- * 复用规则与 workflow-run 同构（结构化 id 幂等），GC 同样**没有**：actor 会话在 run 结束
- * 之后继续可读，那正是把它落成真实持久会话换来的东西。见类型上那段注释。
+ * The reuse rule is structurally identical to workflow-run (idempotent on the structured id), and
+ * likewise there is **no GC**: the actor session stays readable after the run ends, which is
+ * exactly what persisting it as a real durable session buys. See the paragraph on the type.
  *
- * 合并时新请求里缺席的键不覆盖旧值：先从未启动的药丸开（无会话 id）、后从已启动的药丸再开
- * （带会话 id）补上会话；反过来再开一次不带会话的请求也不会把已知的会话 id 抹掉。
+ * When merging, keys absent from the new request do not overwrite the old values: opening first
+ * from a pill that has not started (no session id) and later from a started pill (with a session
+ * id) fills in the session; conversely, opening once more without a session does not wipe the known
+ * session id.
  */
 export function openWorkflowActorSessionSidePane(
   current: WorkspaceSidePaneState | null,
@@ -1851,11 +1941,13 @@ export function openWorkflowActorSessionSidePane(
 }
 
 /**
- * 打开或复用一个 run 的脚本 transcript tab。
+ * Opens or reuses a run's script transcript tab.
  *
- * 落点**每次都重算**：再点一枚脚本药丸的意思是「带我去那一站」，所以请求带 phaseId 就落到
- * 它，不带就不落（显式删键，同 `openWorkflowArtifactSidePane` 对 version 的处理）。`openedAt`
- * 随每次打开刷新，面板据此在同一站上再点一次也重新滚动。
+ * The landing spot is **recomputed every time**: clicking a script pill again means “take me to
+ * that stop”, so a request carrying phaseId lands there and one without it does not land (the key
+ * is explicitly deleted, same handling of version as in `openWorkflowArtifactSidePane`). `openedAt`
+ * is refreshed on every open, and the panel uses it to scroll again when the same stop is clicked
+ * again.
  */
 export function openWorkflowWorkspaceSidePane(
   current: WorkspaceSidePaneState | null,
@@ -1873,11 +1965,12 @@ export function openWorkflowWorkspaceSidePane(
 }
 
 /**
- * 打开或复用一个产物的全尺寸 tab。
+ * Opens or reuses a full-size tab of an artifact.
  *
- * 复用时**不把旧 tab 的 version 保留下来**：再次点击一枚 chip 的意思是「让我看这个产物」，
- * 而 chip 从不带版本号，所以合并结果里 `version` 缺席即回到最新版。反过来，若请求显式带了
- * 版本（例如将来某处要跳到某一版），那一版才是落点。
+ * On reuse the old tab's version is **not** carried over: clicking a chip again means “show me this
+ * artifact”, and a chip never carries a version, so a `version` absent from the merged result means
+ * back to the latest. Conversely, if the request explicitly carries a version (for example, if some
+ * place later wants to jump to a specific version), that version is the landing spot.
  */
 export function openWorkflowArtifactSidePane(
   current: WorkspaceSidePaneState | null,
@@ -1889,9 +1982,9 @@ export function openWorkflowArtifactSidePane(
       tab.type === "workflow-artifact" && tab.id === nextTab.id,
   );
   if (existing === undefined) return activateSidePaneTab(current, nextTab);
-  // 合并时**丢掉旧 tab 上的 version**：`...nextTab` 里缺席的键不会覆盖旧值，而那正好是
-  // 「chip 不带版本号 ⇒ 回到最新版」这条语义会被悄悄破坏的地方（旧 tab 停在 v1，再点一次
-  // 仍然停在 v1）。显式删键，让缺席真的是缺席。
+  // **Discard the version** on the old tab when merging: missing keys in `...nextTab` will not overwrite the old value, which happens to be
+  // The semantics of "chip does not carry a version number ⇒ return to the latest version" will be quietly destroyed (the old tab stops at v1, click again
+  // Still stuck at v1). Explicitly delete the key so that absence is really absence.
   const merged: WorkflowArtifactSidePaneTab = { ...existing, ...nextTab };
   if (nextTab.version === undefined) delete merged.version;
   return activateSidePaneTab(current, merged);
@@ -1904,7 +1997,7 @@ export function isSidePaneTabVisibleForParent(
   if (tab.type === "browser-use") {
     return tab.sessionId === parentSessionId;
   }
-  // 归属于某条对话（而非 workspace 全局）的 tab 按 parentSessionId 收窄。
+  // Tabs belonging to a conversation (not the workspace global) are narrowed by parentSessionId.
   if (
     tab.type === "selection-side-chat" ||
     tab.type === "plan-detail" ||
@@ -2090,7 +2183,10 @@ export function updateBrowserSidePaneTab(
     : current;
 }
 
-/** 按 workspace/session/browser generation/tab 完整匹配运行态，避免 stale run 串写。 */
+/**
+ * Matches the live state fully by workspace/session/browser generation/tab, so a stale run never
+ * writes across.
+ */
 export function markBrowserUseSidePaneTabOperation(
   current: WorkspaceSidePaneState | null,
   options: {

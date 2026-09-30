@@ -20,14 +20,9 @@ export interface WSLConnectOptions {
   user?: string;
 }
 
-export interface DockerConnectOptions {
-  kind: "docker";
-  container: string;
-}
+export type RemoteTarget = SSHConnectOptions | WSLConnectOptions;
 
-export type RemoteTarget = SSHConnectOptions | WSLConnectOptions | DockerConnectOptions;
-
-/** 删除只应存在于当前连接流程中的 secret，供长期内存状态和跨进程回包使用。 */
+/** Removes secrets that should only exist during the current connection flow, for long-lived in-memory state and cross-process responses. */
 export function stripRemoteTargetSecrets(target: RemoteTarget): RemoteTarget {
   if (target.kind === "ssh") {
     const {

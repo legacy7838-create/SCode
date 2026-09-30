@@ -113,14 +113,14 @@ export async function promoteImmutableReleaseDirectory(options: {
       await rename(options.incomingDir, options.targetDir);
       promoted = true;
     } catch (error) {
-      // 并发发布可能都先看到目标不存在。rename 失败后仅当目标确实已由
-      // 另一发布者创建时才进入校验复用；Windows 的普通 EPERM 不能伪装成命中。
+      // Concurrent releases may first see that the target does not exist. rename fails only if the target has indeed been replaced by
+      // Check multiplexing is entered when another publisher is created; Windows' normal EPERM cannot pretend to be a hit.
       const racedKind = await existingPathKind(options.targetDir);
       if (racedKind !== "directory") throw error;
       await assertExistingReleaseMatches(options.targetDir, integrity);
     }
   } finally {
-    // 复用和失败都不会消费 incoming，必须统一清理，避免每次重试留下完整 release。
+    // Neither reuse nor failure will consume incoming and must be cleaned up uniformly to avoid leaving a complete release every time it is retried.
     if (!promoted) await rm(options.incomingDir, { recursive: true, force: true });
   }
 }

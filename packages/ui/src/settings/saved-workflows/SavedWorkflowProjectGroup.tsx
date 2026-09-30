@@ -40,7 +40,7 @@ import type {
 } from "@/settings/saved-workflows/savedWorkflowContract.js";
 import { selectSavedWorkflowState, useSavedWorkflowStore } from "@/store/savedWorkflowStore.js";
 
-// 组把加载态回报给页的类型定义在 savedWorkflowContract；这里再导出，历史 import 路径不变。
+// The type of the group that returns the loading state to the page is defined in savedWorkflowContract; if it is exported again here, the historical import path remains unchanged.
 export type {
   SavedWorkflowGroupMode,
   SavedWorkflowGroupState,
@@ -48,27 +48,34 @@ export type {
 
 interface SavedWorkflowProjectGroupProps {
   project: AutomationWorkspaceOption;
-  /** 活动 workspace 的组带「当前」小标；只影响标记，不影响任何 target。 */
+  /**
+   * The group of the active workspace carries a "Current" badge; it only affects the marker, not
+   * any target.
+   */
   isCurrent: boolean;
-  /** 页级刷新计数器；变化（非首挂）时本组绕过缓存重拉。 */
+  /**
+   * Page-level refresh counter; when it changes (other than on first mount) this group bypasses the
+   * cache and refetches.
+   */
   refreshSeq: number;
   mode: SavedWorkflowGroupMode;
   onStateChange: (workspaceKey: string, state: SavedWorkflowGroupState) => void;
   onOpenDetail: (name: string) => void;
   onBack: () => void;
-  /** 「运行」= GUI 直接启动：accepted 后切到新会话。 */
+  /** "Run" = launching directly from the GUI: after accepted, switch to the new session. */
   onNavigateToLaunchedRun?: (target: SavedWorkflowLaunchTarget, sessionId: string) => void;
   onCreateViaChat?: (prompt: string, target: SavedWorkflowProjectTarget) => void;
   onOpenWorkflowRun?: (params: SavedWorkflowsOpenRunParams) => void;
-  /** 产物 chip → `workflow-artifact` tab。 */
+  /** Artifact chip → the `workflow-artifact` tab. */
   onOpenWorkflowArtifact?: (params: SavedWorkflowsOpenArtifactParams) => void;
 }
 
 /**
- * 单个项目的工作流组：接过 v1 单项目 section 的全部
- * 职责——用**本项目**的 agent 代理拉列表 / 运行历史、监听本项目目录、运行 / 修订 / 复制 / 删除 /
- * 提升为全局 / 进详情，全部带本项目的 target。组头 = 项目名 + 「当前」小标 + 数量 +
- * 「通过对话创建」。
+ * The workflow group of a single project: it takes over every responsibility of the v1
+ * single-project section — fetching the list / run history through **this project's** agent proxy,
+ * watching this project's directory, and run / revise / duplicate / delete / promote to global /
+ * open details, all carrying this project's target. Group header = project name + "Current" badge +
+ * count + "Create via conversation".
  */
 export function SavedWorkflowProjectGroup({
   project,
@@ -128,7 +135,7 @@ export function SavedWorkflowProjectGroup({
     void refresh();
   }, [refresh]);
 
-  // 页级刷新：refreshSeq 变化（非首挂）时绕过缓存重拉。
+  // Page-level refresh: Bypass cache re-pull when refreshSeq changes (non-first-load).
   const lastRefreshSeq = useRef(refreshSeq);
   useEffect(() => {
     if (lastRefreshSeq.current === refreshSeq) return;
@@ -143,7 +150,7 @@ export function SavedWorkflowProjectGroup({
     refresh,
   });
 
-  // 加载态回报给页；空 = 已加载且没有合法工作流也没有坏文件；count = 合法工作流条数。
+  // Loading status is reported to the page; empty = loaded and there is no legal workflow and no bad files; count = number of legal workflows.
   const empty = state.loaded && state.entries.length === 0 && state.invalid.length === 0;
   const count = state.loaded ? state.entries.length : 0;
   useEffect(() => {
@@ -152,7 +159,7 @@ export function SavedWorkflowProjectGroup({
 
   const lastRuns = useMemo(() => lastRunByWorkflowName(state.runs), [state.runs]);
 
-  // GUI 直接启动器：载体 = 本项目解析出的 agent service；accepted 后切到新会话。
+  // GUI direct launcher: carrier = agent service parsed by this project; switch to a new session after accepted.
   const launcher = useSavedWorkflowLauncher({
     agentService,
     onNavigate: onNavigateToLaunchedRun,
@@ -166,7 +173,7 @@ export function SavedWorkflowProjectGroup({
         args,
       });
       if (result.ok) {
-        // 成功：launcher 已切到新会话，关掉实参窗（无窗路径本就没开窗）。
+        // Success: The launcher has switched to a new session and closed the actual parameter window (the windowless path does not have a window open).
         setLaunchEntry(null);
       }
       return result;
@@ -180,7 +187,7 @@ export function SavedWorkflowProjectGroup({
         setLaunchEntry(entry);
         return;
       }
-      // 无实参项目档：不弹窗，直接启动；失败以 toast 提示（窗外路径）。
+      // Project file without actual parameters: no pop-up window, start directly; failure will prompt toast (path outside the window).
       void launch(entry, {}).then((result) => {
         if (!result.ok) {
           toast(intl.formatMessage({ id: `workflows.hub.launch.error.${result.error.reason}` }));
@@ -204,7 +211,7 @@ export function SavedWorkflowProjectGroup({
         ?.writeText(entry.path)
         .then(() => toast(intl.formatMessage({ id: "workflows.hub.copied" })))
         .catch((error: unknown) => {
-          logger.warn("[SavedWorkflows] 复制路径失败", {
+          logger.warn("[SavedWorkflows] copy path failed", {
             error: error instanceof Error ? error.message : String(error),
           });
         });
@@ -255,9 +262,9 @@ export function SavedWorkflowProjectGroup({
     (entry: ZCodeSavedWorkflowEntry) => void handleDelete(entry),
     [handleDelete],
   );
-  // 「提升为全局」：不搬文件——在本项目开新会话、
-  // 自动发送概括提示，模型经 SaveWorkflow 另存全局档，源文件不动。远程项目不提供（远端
-  // home 不进中枢，提升出来的东西看不见）。
+  // "Promote to global": Do not move files - open a new session in this project,
+  // Automatically send summary prompts, the model is saved as a global file through SaveWorkflow, and the source file remains unchanged. Remote projects do not provide (remote
+  // If home does not enter the center, the upgraded things cannot be seen).
   const isLocalProject = !project.remoteSessionId;
   const promoter = useSavedWorkflowPromote({ agentService, onNavigate: onNavigateToLaunchedRun });
   const handlePromote = useCallback(
@@ -291,7 +298,7 @@ export function SavedWorkflowProjectGroup({
     (entry: ZCodeSavedWorkflowEntry) => onOpenDetail(entry.name),
     [onOpenDetail],
   );
-  // 两个「打开」的门与实参构造与全局档共用（见该 hook 的注释：产物不需要 toolCallId）。
+  // The two "open" gates and argument structures are shared with the global file (see the hook's comments: toolCallId is not required for the product).
   const resolveRunTarget = useCallback(() => projectTarget, [projectTarget]);
   const { handleOpenArtifact, handleOpenRun } = useSavedWorkflowRunOpeners({
     resolveTarget: resolveRunTarget,
@@ -344,7 +351,7 @@ export function SavedWorkflowProjectGroup({
     );
   }
 
-  // 列表态：已加载且既无合法工作流也无坏文件的组不渲染（空组隐藏），但仍已回报状态给页。
+  // List state: Groups that are loaded and have neither legal workflow nor bad files are not rendered (empty groups are hidden), but status is still reported to the page.
   if (empty) return null;
   if (!state.loaded && state.entries.length === 0 && state.invalid.length === 0) return null;
 

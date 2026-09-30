@@ -11,24 +11,29 @@ interface UseWorkspaceFileSearchFilterOptions {
 }
 
 interface WorkspaceFileSearchFilterState {
-  /** 按 query 过滤并映射回的原始 entry 列表（有序）。 */
+  /** The original entry list, filtered by query and mapped back (ordered). */
   items: WorkspaceFileEntry[];
   /**
-   * 当前 query 的过滤是否仍在途（Worker 异步）。调用方在 miss 判定等场景
-   * 应把在途状态视为"结果未知"，避免用短暂的空列表触发误动作。
+   * Whether the filter for the current query is still in flight (the Worker is asynchronous).
+   * Callers in situations such as a miss determination should treat the in-flight state as "result
+   * unknown", so that a momentary empty list does not trigger the wrong action.
    */
   filtering: boolean;
 }
 
 /**
- * 工作区文件搜索过滤的共享入口：候选打分在 Web Worker 执行（降级为主线程同步），
- * 返回映射回的 entry 列表。@ 文件候选与文件树搜索共用同一语义。
+ * The shared entry point for workspace file search filtering: candidate scoring runs in a Web
+ * Worker (falling back to synchronous work on the main thread) and returns the entry list mapped
+ * back. @-file candidates and the file tree search share the same semantics.
  *
- * 时序契约：
- * - entries 变化（索引重建）先清空 items 再异步过滤，旧结果不会泄漏到新索引；
- * - query 变化触发的过期结果由 backend 的 seq 机制丢弃（resolve null）；
- * - 主线程不做全量 Map/候选构建（曾在 37 万 entries 下实测 ~630ms 同步阻塞，
- *   已全部移入 worker），组件卸载 dispose worker。
+ * Timing contract:
+ * - when entries change (index rebuild) the items are cleared first and filtering runs
+ *   asynchronously, so stale results never leak into the new index;
+ * - stale results triggered by a query change are discarded by the backend's seq mechanism (resolve
+ *   null);
+ * - the main thread does no full Map / candidate construction (it was measured at ~630ms of
+ *   synchronous blocking with 370k entries and has been moved entirely into the worker), and the
+ *   worker is disposed on component unmount.
  */
 export function useWorkspaceFileSearchFilterEntries(
   packed: string,
@@ -48,7 +53,7 @@ export function useWorkspaceFileSearchFilterEntries(
     if (!backend) {
       return;
     }
-    // 索引重建：清空旧结果（新索引的过滤尚未发生），再推送全量候选（packed 直透）。
+    // Index reconstruction: clear old results (filtering of the new index has not yet occurred), and then push all candidates (packed through).
     setItems([]);
     backend.setPacked(packed, rootPath);
   }, [backendRef, packed, rootPath]);
@@ -66,7 +71,7 @@ export function useWorkspaceFileSearchFilterEntries(
       }
       setFiltering(false);
       if (result === null) {
-        // 过期结果（索引重建或更新的 filter 之后），保持当前 items 不动。
+        // Expired results (after an index rebuild or updated filter), leaving the current items unchanged.
         return;
       }
       setItems(result);
@@ -74,9 +79,9 @@ export function useWorkspaceFileSearchFilterEntries(
     return () => {
       cancelled = true;
     };
-    // entries 必须在依赖里：索引重建（setEntries）后要重新发起过滤，否则结果
-    // 停留在旧索引的空列表（曾在删除 entryMap 时误删此触发链）。
-    // options 每次渲染都是新对象字面量；按字段展开为依赖避免每帧重过滤。
+    // entries must be in dependencies: filtering must be reinitiated after index reconstruction (setEntries), otherwise the result
+    // Staying at the empty list of the old index (this trigger chain was accidentally deleted when deleting the entryMap).
+    // options are new object literals for each rendering; expanded by fields as dependencies to avoid refiltering every frame.
   }, [backendRef, options.limit, options.requireQuery, packed, query, rootPath]);
 
   useEffect(() => {

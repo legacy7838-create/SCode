@@ -69,9 +69,9 @@ export function Terminal({
       return;
     }
 
-    // 业务逻辑：终端会话按 workspace identity 隔离保存，切换 workspace 时只切换可见 tab，
-    // 不卸载旧 workspace 的 xterm/PTY，避免长时间运行的命令因为 React 生命周期变化被杀掉。
-    // PTY exit 会删除最后一个 session；面板下次重新打开时也通过这里懒创建新终端。
+    // Business logic: Terminal sessions are saved in isolation according to workspace identity. When switching workspaces, only visible tabs are switched.
+    // Do not uninstall the xterm/PTY of the old workspace to avoid long-running commands being killed due to React life cycle changes.
+    // PTY exit will delete the last session; the next time the panel is reopened, a new terminal will be created lazily here.
     setPanelState((current) =>
       ensureWorkspaceTerminalState(current, {
         workspaceKey,
@@ -98,8 +98,8 @@ export function Terminal({
       return;
     }
 
-    // 终端现在会跨 workspace 切换保活，但 workspace tab 被真正关闭后，
-    // 对应的隐藏终端不能继续占着 PTY 进程；这里按仍打开的 workspace key 做回收。
+    // The terminal will now be kept alive across workspace switches, but after the workspace tab is actually closed,
+    // The corresponding hidden terminal cannot continue to occupy the PTY process; here, the workspace key that is still open is used for recycling.
     const retainedWorkspaceKeys = new Set(openWorkspaceKeys);
     retainedWorkspaceKeys.add(workspaceKey);
     setPanelState((current) => {
@@ -191,8 +191,8 @@ export function Terminal({
     (sessionId: string) => {
       const closeAction = getTerminalSessionCloseAction(panelState, sessionId);
       if (closeAction === "close-panel") {
-        // 旧 UI 在只剩一个 tab 时直接隐藏关闭按钮，用户无法从 tab 完成关闭。
-        // 最后一个 tab 的关闭语义是收起整个面板并保活 session，与右上角关闭面板按钮保持一致。
+        // The old UI directly hides the close button when there is only one tab left, and the user cannot complete closing from the tab.
+        // The closing semantics of the last tab are to collapse the entire panel and keep the session alive, which is consistent with the close panel button in the upper right corner.
         logger.info("[Terminal] close terminal panel from last tab", {
           terminalTabId: sessionId,
           workspaceKey,
@@ -231,8 +231,8 @@ export function Terminal({
           return current;
         }
 
-        // 不能只在 xterm 中写“进程已退出”、让 descriptor 留在 tab registry。
-        // PTY exit 是 session 生命周期终点，必须同步删除 tab；只有当前 workspace 的最后一个 tab 才关闭面板。
+        // You can't just write "process exited" in xterm and leave the descriptor in the tab registry.
+        // PTY exit is the end of the session life cycle, and tabs must be deleted simultaneously; only the last tab of the current workspace will close the panel.
         logger.info("[Terminal] auto close exited terminal tab", {
           action: result.action,
           exitCode,
@@ -284,8 +284,8 @@ export function Terminal({
     null;
   const allSessions = Object.values(panelState.sessions);
 
-  // 修复说明：关闭面板只收起 UI，不 dispose tab。真正关闭某个终端由 tab 上的关闭按钮负责，
-  // 这样 workspace/task 切换或面板收起都不会中断正在运行的命令。
+  // Repair instructions: Closing the panel only closes the UI, but does not dispose the tab. The actual closing of a terminal is done by the close button on the tab.
+  // In this way, switching workspace/task or retracting the panel will not interrupt the running command.
   return (
     <section
       data-testid={TID_TERMINAL}

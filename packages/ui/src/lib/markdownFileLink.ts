@@ -8,7 +8,7 @@ interface ParsedMarkdownFileLink {
 }
 
 export interface MarkdownFileLinkResolveOptions {
-  /** 当前 workspace Host 报告的用户 Home；Renderer 不自行读取本机 Home。 */
+  /** The user home reported by the current workspace Host; the Renderer does not read the local home itself. */
   homePath?: string;
 }
 
@@ -152,8 +152,8 @@ export function normalizeWorkspaceRelativeFilePath(relativePath: string): string
     }
     if (segment === "..") {
       if (segments.length === 0) {
-        // 只检查路径是否以 ../ 开头是不够的：嵌套回退会在拼接后逃逸 workspace。
-        // 这里在 Renderer 发起 stat/checkFilesExist 前做跨平台词法归一，根目录下溢时直接拒绝。
+        // Just checking if the path starts with ../ is not enough: nested fallbacks escape the workspace after splicing.
+        // Here, cross-platform lexical normalization is performed before the Renderer initiates stat/checkFilesExist, and it is directly rejected when the root directory underflows.
         return null;
       }
       segments.pop();
@@ -177,8 +177,8 @@ function resolveContainedWorkspaceRelativePath(
 }
 
 export function parseMarkdownFileLinkTarget(href: string): ParsedMarkdownFileLink {
-  // 只在路径归一化阶段解码一次；入口提前 decode 会让 `%2520` 变成 `%20`，
-  // 再由 normalizeMarkdownFilePath 解码成空格，破坏文件名中的字面 percent-escape。
+  // It is only decoded once during the path normalization phase; decoding the entry in advance will make `%2520` become `%20`.
+  // Then normalizeMarkdownFilePath decodes it into spaces, destroying the literal percent-escape in the file name.
   const normalizedHref = stripBalancedAssistantPathQuotes(href).replace(/\\/g, "/");
   const withHashLineMatch = normalizedHref.match(HASH_LINE_SUFFIX_RE);
   if (withHashLineMatch?.groups) {
@@ -228,10 +228,10 @@ export function resolveMarkdownFileLink(
   href: string,
   options: MarkdownFileLinkResolveOptions = {},
 ): ParsedMarkdownFileLink | null {
-  // 聊天消息里的本地文件链接现在既可能是 `./src/app.ts` 这种工作区相对路径，
-  // 也可能是 `/abs/path/app.ts:30` 这种绝对路径 + 行号。
-  // 只看到前导 `/` 就当成 workspace 子路径会让绝对路径被再拼一次 workspace 前缀，
-  // 同时 `:30` 也会混进文件名里。这里先拆掉可选行号，再把“相对路径”和“绝对路径”分开解析。
+  // Local file links in chat messages may now be workspace relative paths such as `./src/app.ts`.
+  // It may also be an absolute path + line number like `/abs/path/app.ts:30`.
+  // If you only see the leading `/`, it will be treated as a workspace sub-path, which will cause the absolute path to be spelled with the workspace prefix again.
+  // At the same time, `:30` will also be mixed into the file name. Here, the optional line numbers are removed first, and then the "relative path" and "absolute path" are parsed separately.
   const parsedTarget = parseMarkdownFileLinkTarget(href);
 
   if (isUnsupportedNamedHomePath(parsedTarget.path)) {
@@ -249,9 +249,9 @@ export function resolveMarkdownFileLink(
   }
 
   if (HARDEN_SAFE_WINDOWS_ABSOLUTE_PATH_RE.test(parsedTarget.path)) {
-    // `/C:/...` 只是在 Windows Markdown 渲染管线中绕过 harden 的内部格式。
-    // 旧 guard 只把盘符 workspace 当成 Windows，遗漏统一路径工具已支持的 UNC。
-    // Windows workspace 既可能是盘符也可能是反斜杠 UNC；以 `/` 开头的 Unix 路径仍须拒绝。
+    // `/C:/...` is just an internal format bypassing harden in the Windows Markdown rendering pipeline.
+    // The old guard only regarded the drive letter workspace as Windows, and missed UNC, which is already supported by the unified path tool.
+    // Windows workspace may be either a drive letter or a backslash UNC; Unix paths starting with `/` must still be rejected.
     if (!workspacePath || workspacePath.startsWith("/") || !isAbsoluteFilePath(workspacePath)) {
       return null;
     }
@@ -290,13 +290,13 @@ export function resolveMarkdownFileLink(
     parsedTarget.path.startsWith("/") &&
     !isLikelyUnixAbsoluteFilePath(parsedTarget.path)
   ) {
-    // 远程 workspace 常见 `/workspace`、`/repo` 这类非系统根目录。
-    // 如果链接已经位于当前 workspace 内，不能再按 Markdown 根相对路径拼接一次。
+    // Non-system root directories such as `/workspace` and `/repo` are common in remote workspaces.
+    // If the link is already located in the current workspace, it cannot be spliced ​​again according to the Markdown root relative path.
     if (isPathInsideWorkspaceRoot(parsedTarget.path, workspacePath)) {
       return parsedTarget;
     }
-    // Streamdown/rehype-harden 会把 `./flappy.html` 规范化成 `/flappy.html`。
-    // 这里的前导 `/` 表示 markdown 根相对链接，不是系统根目录；否则会误去 stat `/flappy.html`。
+    // Streamdown/rehype-harden will normalize `./flappy.html` to `/flappy.html`.
+    // The leading `/` here represents the markdown root relative link, not the system root directory; otherwise, stat `/flappy.html` will be mistakenly retrieved.
     const containedPath = resolveContainedWorkspaceRelativePath(
       workspacePath,
       parsedTarget.path.slice(1),

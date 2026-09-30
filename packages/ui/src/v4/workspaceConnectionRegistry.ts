@@ -1,11 +1,11 @@
-// 按 endpoint + workspaceKey 复用的 conversation 连接注册表（引用计数 + keep-warm）
-// ——分屏多 pane 跨 workspace 的连接层。
-// 同一 endpoint 同一 workspace 的多个 pane 共享一条 transport + 一个 SessionDataLayer
-// （同 session 多 pane 由 layer 内 per-topic refCount 单订阅收口，不触发 CLI
-// (connectionId, topic) 重订阅替换）。与 sessionsIndexRegistry 同构，多两点：
-// - 30s keep-warm：refCount 归零不立即 dispose（防 pane 关/开、布局调整抖动）；
-// - agentService 换代：远程条目保持 layer/transport 身份并单向切换最新 proxy；
-//   本地 __base__ 用新 service 重建条目。
+// Reuse conversation connection registry by endpoint + workspaceKey (reference counting + keep-warm)
+// ——Split-screen multi-pane cross-workspace connection layer.
+// Multiple panes of the same endpoint and the same workspace share a transport + a SessionDataLayer
+// (Same as session multi-pane, it is closed by per-topic refCount single subscription in the layer and does not trigger the CLI.
+// (connectionId, topic) resubscription replacement). Isomorphic to sessionsIndexRegistry, with two more points:
+// - 30s keep-warm: Do not dispose immediately when refCount returns to zero (prevent pane closing/opening, layout adjustment jitter);
+// - AgentService replacement: the remote entry maintains the layer/transport identity and switches to the latest proxy in one direction;
+//   The local __base__ entry is rebuilt with the new service.
 import type { IZCodeAgentService } from "@zcode/services";
 import { createAgentConversationTransport } from "@/v4/agentConversationTransport.js";
 import { remoteAgentServiceGeneration } from "@/lib/remoteAgentServiceGeneration.js";
@@ -14,7 +14,10 @@ import { SessionDataLayer } from "@/v4/sessionDataLayer.js";
 import type { ConversationTransport } from "@/v4/transport.js";
 import { logger } from "@/logger.js";
 
-/** 注册表需要的 agentService 窄面（= conversation transport 的依赖面，便于测试注入）。 */
+/**
+ * The narrow face of agentService that the registry needs (the dependency surface of the
+ * conversation transport, so it is easy to inject in tests).
+ */
 export type WorkspaceConnectionAgentService = Pick<
   IZCodeAgentService,
   | "helloConversationV4"
@@ -47,22 +50,25 @@ export type WorkspaceConnectionAgentService = Pick<
 >;
 
 interface WorkspaceConnectionScope {
-  /** = pane 绑定的 primary workspace（连接路由键）。 */
+  /** = the primary workspace a pane is bound to (the connection routing key). */
   workspacePath: string;
   workspaceIdentity?: string;
-  /** endpoint 维度：remote shard 的 remoteSessionId；缺省 = 本机 __base__。 */
+  /** endpoint dimension: the remoteSessionId of a remote shard; absent = the local __base__. */
   remoteSessionId?: string;
 }
 
-/** pane 持有的连接租约；release 幂等。 */
+/** A connection lease held by a pane; release is idempotent. */
 /**
- * useSavedWorkflowLauncher 的推断返回类型包含 lease，声明生成要求保留可命名的导出。
- * @lintignore
+ * The inferred return type of useSavedWorkflowLauncher includes a lease, and declaration generation
+ * requires a nameable export to be kept. @lintignore
  */
 export interface WorkspaceConnectionLease {
   readonly layer: SessionDataLayer;
   readonly transport: ConversationTransport;
-  /** React commit 后激活本租约携带的远程 service；本地租约为 no-op。 */
+  /**
+   * Activates the remote service carried by this lease after the React commit; for a local lease
+   * this is a no-op.
+   */
   activateRemoteService(): void;
   release(): void;
 }
@@ -76,19 +82,31 @@ interface RegistryEntry {
   layer: SessionDataLayer;
   refCount: number;
   keepWarmTimer: ReturnType<typeof setTimeout> | null;
-  /** 本地 service 换代后被移出注册表的旧条目：末位 lease release 时立即 dispose。 */
+  /**
+   * An old entry removed from the registry after the local service was replaced: disposed as soon
+   * as the last lease is released.
+   */
   stale: boolean;
 }
 
 const registry = new Map<string, RegistryEntry>();
 
-/** 本机 endpoint 的保留键（与 sessionsIndexRegistry / task list shardKey 口径一致）。 */
+/**
+ * The reserved key of the local endpoint (consistent with sessionsIndexRegistry / the task list
+ * shardKey).
+ */
 const LOCAL_WORKSPACE_CONNECTION_ENDPOINT = "__base__";
 
-/** 引用归零后延迟释放窗口（ms）；与 SessionDataLayer keep-warm 同标度。 */
+/**
+ * Delayed release window (ms) after the reference count reaches zero; on the same scale as the
+ * SessionDataLayer keep-warm.
+ */
 const WORKSPACE_CONNECTION_KEEP_WARM_MS = 30_000;
 
-/** 注册表条目键 = endpoint + workspaceKey（同 workspaceKey 不同 endpoint 不共用）。 */
+/**
+ * Registry entry key = endpoint + workspaceKey (the same workspaceKey with a different endpoint
+ * does not share).
+ */
 function buildWorkspaceConnectionKey(scope: WorkspaceConnectionScope): string {
   const workspaceKey = scope.workspaceIdentity?.trim() || scope.workspacePath;
   return `${scope.remoteSessionId ?? LOCAL_WORKSPACE_CONNECTION_ENDPOINT} ${workspaceKey}`;
@@ -115,7 +133,7 @@ function releaseEntry(entry: RegistryEntry): void {
     return;
   }
   if (entry.stale) {
-    // 已被换代移出注册表：没有新消费者会再命中它，立即清场。
+    // It has been replaced and removed from the registry: no new consumers will hit it again, and it will be cleared immediately.
     disposeEntry(entry);
     logger.lifecycle.info("v4 stale workspace connection disposed", {
       event: "v4.workspace_connection.stale_disposed",
@@ -126,7 +144,7 @@ function releaseEntry(entry: RegistryEntry): void {
     });
     return;
   }
-  // 关 pane ≠ 停 session：延迟退订，防布局抖动期间反复建连/退订。
+  // Close pane ≠ Stop session: delay unsubscription and prevent repeated connection establishment/unsubscription during layout jitter.
   entry.keepWarmTimer = setTimeout(() => {
     if (registry.get(entry.key) === entry) {
       registry.delete(entry.key);
@@ -151,10 +169,11 @@ function releaseEntry(entry: RegistryEntry): void {
 }
 
 /**
- * 取/建某 endpoint+workspace 的共享 conversation 连接，refCount++。
- * agentService 由调用方（V4PaneConversationProvider 经 useWorkspaceServicesResolution）解析；
- * 调用方只在 local-ready / remote-ready 时进入本层。remote-waiting 不会拿断连代理
- * 创建 registry entry，同时仍禁止回落 base services 或为 pane 另起独立 runtime。
+ * Gets or creates the shared conversation connection for an endpoint+workspace, refCount++. The
+ * agentService is resolved by the caller (V4PaneConversationProvider via
+ * useWorkspaceServicesResolution); the caller only enters this layer when local-ready /
+ * remote-ready. remote-waiting does not create a registry entry with a disconnected proxy, and it
+ * is still forbidden to fall back to base services or to spin up a separate runtime for the pane.
  */
 export function acquireWorkspaceConnection(
   scope: WorkspaceConnectionScope,
@@ -186,8 +205,8 @@ export function acquireWorkspaceConnection(
     });
   } else {
     if (existing) {
-      // 本地 __base__ service 换代：旧条目失效移出；
-      // 无人持有则立即清场，有人持有则由其末位 release 清场。
+      // Local __base__ service replacement: old entries are invalid and removed;
+      // If no one holds it, it will be cleared immediately. If someone holds it, it will be cleared by its last release.
       registry.delete(key);
       existing.stale = true;
       if (existing.refCount <= 0) {
@@ -240,11 +259,11 @@ export function acquireWorkspaceConnection(
       ) {
         return;
       }
-      // acquire 会在 React render 中执行；若此处同步 replace，会经
-      // runtimeRestart listener 更新外部 store 并发起 RPC。租约只捕获候选 service，
-      // 由 Provider 在 commit 阶段显式激活，同时保持 generation 单向切换。
+      // acquire will be executed in React render; if replace is synchronized here, it will go through
+      // runtimeRestart listener updates external stores and initiates RPCs. The lease only captures candidate services,
+      // Explicitly activated by the Provider during the commit phase while maintaining one-way generation switching.
       if (!entry.replaceableTransport) {
-        throw new Error("远程 conversation registry 条目缺少可换代 transport");
+        throw new Error("remote conversation registry entry is missing a replaceable transport");
       }
       entry.agentService = agentService;
       entry.agentServiceGeneration = incomingServiceGeneration;

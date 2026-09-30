@@ -49,8 +49,8 @@ export function RemoteConnectionConnectingStep({
       return;
     }
 
-    // 日志持续追加会推高 scrollHeight，无条件写 scrollTop 会把向上查看历史日志的用户拉回底部。
-    // 这里只在用户原本贴底时继续跟随最新日志。
+    // Continuous appending of logs will push up the scrollHeight, and writing scrollTop unconditionally will pull users who view historical logs upwards back to the bottom.
+    // Here we only continue to follow the latest log when the user originally posted the bottom.
     if (
       scrollRemoteConnectionLogsToLatestIfFollowing(container, shouldFollowLatestLogRef.current)
     ) {
@@ -59,15 +59,20 @@ export function RemoteConnectionConnectingStep({
   }, [logs.length, latestLogId, latestLogTimestamp]);
 
   const handleOpenFeedback = async () => {
-    // 远程连接失败时用户看到的是连接日志现场。
-    // 反馈入口只预填脱敏后的错误摘要，附件由用户主动选择。
+    // When the remote connection fails, the user sees the connection log scene.
+    // The feedback portal is only pre-filled with desensitized error summaries, and attachments are actively selected by the user.
     openFeedbackSubmit({
       title:
         errorMessage.slice(0, 80) ||
         intl.formatMessage({ id: "feedback.submit.template.section.remoteConnectFailed" }),
       type: "bug",
-      module: kind === "ssh" ? "SSH连接失败" : kind === "wsl" ? "WSL连接失败" : "Agent任务执行失败",
-      severity: "P2-中",
+      module:
+        kind === "ssh"
+          ? "SSH Connection Failure"
+          : kind === "wsl"
+            ? "WSL Connection Failure"
+            : "Agent Task Execution Failure",
+      severity: "P2-Medium",
       includeLogs: false,
       description: buildRemoteConnectionFeedbackDescription(errorMessage, logs, (id, values) =>
         intl.formatMessage({ id }, values),

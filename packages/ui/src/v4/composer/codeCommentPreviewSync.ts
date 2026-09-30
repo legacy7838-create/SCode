@@ -31,9 +31,9 @@ export function removeCodeCommentPreview(
         payload,
       }),
     ).catch((error: unknown) => {
-      logger.warn(`[v4-composer] code comment preview 广播失败: ${String(error)}`);
+      logger.warn(`[v4-composer] code comment preview broadcast failed: ${String(error)}`);
     });
   } catch (error) {
-    logger.warn(`[v4-composer] code comment preview 广播失败: ${String(error)}`);
+    logger.warn(`[v4-composer] code comment preview broadcast failed: ${String(error)}`);
   }
 }

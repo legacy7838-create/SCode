@@ -5,7 +5,7 @@ import { pendingCommandRegistry } from "@/v4/pendingCommandRegistry.js";
 
 type SendCommand = (envelope: CommandEnvelope) => Promise<CommandAck>;
 
-/** AskUserQuestion 弹窗和侧栏胶囊共用同一条幂等暂停命令。 */
+/** The AskUserQuestion dialog and the sidebar pill share the same idempotent pause command. */
 export async function sendInteractionAutoResolutionSnooze(params: {
   sessionId: string;
   interactionId: string;
@@ -25,7 +25,7 @@ export async function sendInteractionAutoResolutionSnooze(params: {
     if (ack.status === "accepted" || ack.status === "duplicate" || ack.status === "noop") {
       return true;
     }
-    logger.warn("[v4-interaction] 暂停自动结束被拒绝", {
+    logger.warn("[v4-interaction] auto-resolution snooze rejected", {
       interactionId: params.interactionId,
       source: params.source,
       status: ack.status,
@@ -33,7 +33,7 @@ export async function sendInteractionAutoResolutionSnooze(params: {
     });
     return false;
   } catch (error) {
-    logger.error("[v4-interaction] 暂停自动结束失败", {
+    logger.error("[v4-interaction] auto-resolution snooze failed", {
       interactionId: params.interactionId,
       source: params.source,
       error,

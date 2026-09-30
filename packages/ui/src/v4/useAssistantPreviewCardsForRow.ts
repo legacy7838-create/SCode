@@ -87,12 +87,12 @@ export function useAssistantPreviewCardsForAssistantTextRow({
 
   useEffect(() => {
     if (!needsFileChanges || !fetchFileChanges || !target) return;
-    // rewind 后 header 的 reverted 状态是权威投影；无需等待详情 RPC，立即抑制 md/html。
+    // The reverted status of the header after rewind is the authoritative projection; no need to wait for the details RPC, suppress md/html immediately.
     if (fileChangesState === "reverted") return;
 
     let disposed = false;
-    // V4 fileChanges 只接受 turnHeader；assistantText 仅用于正文和卡片锚点。
-    // 先用空门控同步投影 Office/PDF；只有确实出现 md/html 时才读取本轮明细。
+    // V4 fileChanges only accepts turnHeader; assistantText is only used for body and card anchors.
+    // First use empty gate to synchronously project Office/PDF; only read the current round of details when md/html does appear.
     void fetchFileChanges(target, {
       cachePolicy: "terminal",
       fileChangesState,
@@ -106,10 +106,13 @@ export function useAssistantPreviewCardsForAssistantTextRow({
       },
       (error: unknown) => {
         if (disposed) return;
-        logger.warn("[AssistantPreviewCards] 读取本轮文件变更失败，已抑制 Markdown/HTML 卡片", {
-          error: error instanceof Error ? error.message : String(error),
-          rowId: target.rowId,
-        });
+        logger.warn(
+          "[AssistantPreviewCards] failed to read file changes for this turn, suppressing Markdown/HTML cards",
+          {
+            error: error instanceof Error ? error.message : String(error),
+            rowId: target.rowId,
+          },
+        );
         setLoadedChangedPaths({ key: requestKey, paths: [] });
       },
     );

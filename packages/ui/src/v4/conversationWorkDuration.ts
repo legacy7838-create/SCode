@@ -5,14 +5,17 @@ function formatDurationUnit(
   value: number,
   messageId: string,
   intl: IntlInstance,
-  locale: Locale,
+  _locale: Locale,
 ): string {
   const unit = intl.formatMessage({ id: messageId });
-  // 中文时长单位需要空格；英文单位本身已带缩写，不额外插入空格。
-  return `${value}${locale === "zh-CN" ? " " : ""}${unit}`;
+  // Chinese duration units require spaces; English units are already abbreviated and no additional spaces are inserted.
+  return `${value}${unit}`;
 }
 
-/** Desktop 与 Share 共用的工作时长文案，避免同一轮在两个 surface 显示不同单位。 */
+/**
+ * Work duration copy shared by Desktop and Share, so the same turn does not show different units on
+ * the two surfaces.
+ */
 export function formatConversationWorkDuration(
   durationMs: number | undefined,
   intl: IntlInstance,

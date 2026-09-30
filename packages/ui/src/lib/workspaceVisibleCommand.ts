@@ -8,9 +8,9 @@ export function runWorkspaceVisibleCommand({
   run: () => void;
 }) {
   if (!isWorkspaceVisible) {
-    // 设置页只是覆盖 workspace，底层 App 仍会响应 quickpick/快捷键。
-    // 如果直接执行侧边栏、终端、文件搜索等 workspace 命令，状态会在被覆盖的底层变化，用户看起来像命令没生效。
-    // 这里先切回工作区再执行命令，让用户立即看到命令结果。
+    // The settings page just covers the workspace, and the underlying App will still respond to quickpick/shortcut keys.
+    // If you directly execute workspace commands such as sidebar, terminal, file search, etc., the status will change on the underlying layer that is covered, and it will appear to the user that the command has not taken effect.
+    // Here, switch back to the workspace and then execute the command, so that the user can see the command results immediately.
     onReturnToWorkspace?.();
   }
 

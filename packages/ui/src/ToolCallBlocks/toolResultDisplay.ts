@@ -82,9 +82,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * 工作流 display kind → 解析函数的查表（新增 kind 只改这一处）。每个条目用 shared 侧的
- * strict schema safeParse，输出类型即各自 schema 的推断类型——成员输出不是 ToolResultDisplay
- * 的 union 成员时这里直接编译失败，而不是靠运行时兜住。
+ * Workflow display kind → Lookup table of parsing function (new kind only changes this part). Use the shared side of each entry
+ * strict schema safeParse, the output type is the inferred type of the respective schema - member output is not ToolResultDisplay
+ * The union member here directly fails to compile, rather than relying on the runtime to catch it.
  */
 const WORKFLOW_DISPLAY_PARSERS_BY_KIND: Record<
   string,
@@ -253,9 +253,9 @@ function parseDisplay(value: unknown): ToolResultDisplay | undefined {
     };
   }
 
-  // 工作流工具的 display kind（观察五件套 + ResumeWorkflowRun 恢复卡）：按 kind 查表后用
-  // shared 的 strict schema 解析，保证 UI 消费侧与协议侧字段表永远同步——手写第二套结构
-  // 校验是漂移温床。
+  // Display kind of workflow tool (observation five-piece set + ResumeWorkflowRun recovery card): press kind to look up the table and use
+  // Shared's strict schema analysis ensures that the UI consumer side and protocol side field tables are always synchronized - the second set of handwritten structures
+  // Calibration is a breeding ground for drift.
   if (typeof value.kind === "string") {
     const parseWorkflowDisplayByKind = WORKFLOW_DISPLAY_PARSERS_BY_KIND[value.kind];
     if (parseWorkflowDisplayByKind !== undefined) {

@@ -1,14 +1,17 @@
 /**
- * Computer Use Helper 权限状态的进程内共享缓存。
+ * In-process shared cache of the Computer Use Helper permission state.
  *
- * 为什么需要它：权限状态有两个消费方——设置页「电脑控制」分区与输入框常驻入口按钮。
- * 二者过去各自持有一份 useCuaPermissionStatus 实例，各自轮询、各自维护 sticky 探针快照，
- * 结果是同一台机器的同一份 TCC 授权在两处可能显示成不同状态，且请求量翻倍。
- * 这里把「上次结果 + in-flight 去重 + sticky 探针」收敛成按 workspace 分槽的单一真相。
+ * Why it is needed: permission state has two consumers — the "Computer Use" section of the settings
+ * page and the always-present entry button in the composer. Each used to hold its own
+ * useCuaPermissionStatus instance, polling separately and maintaining its own sticky probe
+ * snapshot, so the same TCC grant on the same machine could render as different states in the two
+ * places while doubling the request volume. This collapses "last result + in-flight dedupe + sticky
+ * probe" into a single source of truth slotted per workspace.
  *
- * 刷新是事件驱动而非定时轮询（进入页面 / 应用重获焦点 / 显式 refresh），
- * 由 useCuaPermissionStatus 触发。缓存跨组件卸载保留：重新进入设置页时先渲染上次的授权状态，
- * 不再从 null 闪一下「未知」再跳到已授权。
+ * Refresh is event-driven rather than a timed poll (entering the page / the app regaining focus /
+ * an explicit refresh), triggered by useCuaPermissionStatus. The cache survives component unmounts:
+ * re-entering the settings page first renders the last known grant state instead of flashing
+ * "unknown" from null and then jumping to granted.
  */
 import { isCuaPermissionStatusAvailable } from "@zcode/services";
 import type {
@@ -24,30 +27,38 @@ import {
 } from "./cuaPermissionStatusCache.js";
 
 interface CuaPermissionStatusSnapshot {
-  /** 上次成功查询的结果；null = 该 workspace 尚未拿到过任何状态。 */
+  /**
+   * Result of the last successful query; null = no state has been obtained for this workspace yet.
+   */
   status: CuaPermissionStatusResult | null;
   /**
-   * status 是否可用于决策。查询进行中或最近一次查询失败时为 false——
-   * 展示可以继续沿用 lastKnown，但「打开系统设置」这类动作必须等新结果。
+   * Whether status may be used for decisions. False while a query is in flight or when the most
+   * recent query failed — display may keep using lastKnown, but actions like "Open System Settings"
+   * must wait for a new result.
    */
   fresh: boolean;
   /**
-   * 是否已有可展示的确定内容。冷启动缓存命中即成立，拿到过真实结果后只升不降。
+   * Whether there is settled content to display. It holds as soon as the cold-start cache is hit,
+   * and after a real result has been obtained it only goes up, never down.
    *
-   * 与 fresh 的分工：fresh 表达「当前值是否刚确认」，每次查询开始都会落回 false；
-   * 展示若跟着它走，授权按钮就会在「打开系统设置」与「验证中…」之间反复切换、
-   * 按钮宽度随之跳变。settled 专供展示，避免这种抖动。
+   * Division of labour with fresh: fresh expresses "was the current value just confirmed" and falls
+   * back to false at the start of every query; if the display followed it, the grant button would
+   * flip back and forth between "Open System Settings" and "Verifying…" and its width would jump
+   * around. settled exists purely for display, to avoid that jitter.
    */
   settled: boolean;
 }
 
 /**
- * 未命中槽位时返回的快照。useSyncExternalStore 要求 getSnapshot 的返回值引用稳定，
- * 每次新建对象会触发无限重渲染，因此惰性构造一次后复用。
+ * Snapshot returned when no slot is hit. useSyncExternalStore requires getSnapshot to return a
+ * reference-stable value, and allocating a new object every time would cause an infinite render
+ * loop, so it is built lazily once and then reused.
  *
- * 首值取自跨进程缓存：进程内槽位重启即空，若首帧仍是 null，设置页两行权限会先渲染出
- * 授权按钮、随首次查询返回再整体消失（行高塌陷）。TCC 授权属于 Helper bundle 而非
- * workspace，所以这份缓存对任何 workspace 都是当前最佳猜测；「尚未确认」由 fresh=false 表达。
+ * The first value comes from the cross-process cache: the in-process slot is empty after a restart,
+ * so if the first frame were still null the two permission rows in the settings page would first
+ * render the grant button and then disappear wholesale once the first query returns (collapsing the
+ * row height). The TCC grant belongs to the Helper bundle rather than to a workspace, so this cache
+ * is the best current guess for any workspace; "not confirmed yet" is expressed by fresh=false.
  */
 let initialSnapshotCache: CuaPermissionStatusSnapshot | null = null;
 
@@ -62,20 +73,28 @@ function initialSnapshot(): CuaPermissionStatusSnapshot {
 interface Slot {
   snapshot: CuaPermissionStatusSnapshot;
   inFlight: boolean;
-  /** 查询进行中又来了新的刷新请求：合并成一次补查，而不是并发发起。 */
+  /**
+   * A new refresh request arrives while a query is in flight: coalesce it into one follow-up query
+   * instead of issuing them concurrently.
+   */
   rerunRequested: boolean;
-  /** 主动截图是显式用户意图，只做 OR 合并；消费后立即复位，同一轮最多执行一次。 */
+  /**
+   * An active screen capture is explicit user intent, so it is only OR-merged; it resets
+   * immediately once consumed and runs at most once per round.
+   */
   pendingFunctionalProbe: boolean;
-  /** 瞬态不可用的退避重试计时器；稳态下恒为 undefined。 */
+  /** Backoff retry timer for transient unavailability; always undefined in steady state. */
   retryTimer: ReturnType<typeof setTimeout> | undefined;
-  /** 已用掉的重试次数，索引 TRANSIENT_RETRY_DELAYS_MS。 */
+  /** Number of retries already consumed; indexes TRANSIENT_RETRY_DELAYS_MS. */
   retryAttempt: number;
   /**
-   * 已就绪快照：一旦观察到 fully-ready（TCC 双项 granted + 两个功能探针都 ok），
-   * 后续只读刷新里只要 TCC 双项仍 granted，就沿用已确认 ok 的探针结果。
-   * 只读查询本来就不会跑截图探针（上游 shouldRunCuaScreenCaptureProbe 要求显式
-   * includeFunctionalProbes），若如实下推 false 会把之前实测到的就绪结论抹掉。
-   * 真实降级（TCC 被吊销 / Helper 不可用）走 else 分支清 sticky，如实发布。
+   * Ready snapshot: once fully-ready has been observed (both TCC entries granted + both functional
+   * probes ok), later read-only refreshes keep the already-confirmed ok probe results as long as
+   * both TCC entries are still granted. A read-only query never runs the screen capture probe in
+   * the first place (upstream shouldRunCuaScreenCaptureProbe requires an explicit
+   * includeFunctionalProbes), so pushing false down faithfully would erase the readiness conclusion
+   * measured earlier. A genuine degradation (TCC revoked / Helper unavailable) takes the else
+   * branch, clears the sticky value, and is published faithfully.
    */
   stickyReady: CuaPermissionStatus | null;
 }
@@ -84,8 +103,9 @@ const slots = new Map<string, Slot>();
 const listeners = new Set<() => void>();
 
 /**
- * 与设置页 helperContextKey 同构：权限归属于 (workspace 路径, workspace identity)。
- * 用 NUL 分隔，避免路径里的空格让不同 workspace 撞进同一槽位。
+ * Mirrors the settings page helperContextKey: the permission belongs to the (workspace path,
+ * workspace identity) pair. NUL is used as the separator so that spaces in a path cannot push two
+ * different workspaces into the same slot.
  */
 export function cuaPermissionStatusKey(workspacePath: string, workspaceIdentity?: string): string {
   return [workspacePath, workspaceIdentity?.trim() ?? ""].join("\u0000");
@@ -136,14 +156,17 @@ function publish(slot: Slot, snapshot: CuaPermissionStatusSnapshot): void {
 }
 
 /**
- * 展示态就绪：TCC 双项 granted。设置页权限行与输入框入口按钮共用这一口径，
- * 保证同一份授权在两处显示一致。
+ * Display-state readiness: both TCC entries granted. The settings page permission rows and the
+ * composer entry button share this definition, so the same grant renders consistently in both
+ * places.
  *
- * 为什么展示态不看功能探针：只读刷新按上游约定永不运行截图探针
- * （shouldRunCuaScreenCaptureProbe 要求显式 includeFunctionalProbes，主动抓屏必须是
- * 用户意图），screenCaptureProbeOk 因而恒为 false，拿它判展示等于把已授权用户恒判成
- * 待授权。真实不可用（TCC 记了授权但 WindowServer 未放行像素等）由工具调用的普通
- * MCP error 暴露给模型，Renderer 不靠常驻查询或错误文本猜权限。
+ * Why display state ignores the functional probes: by the upstream contract a read-only refresh
+ * never runs the screen capture probe (shouldRunCuaScreenCaptureProbe requires an explicit
+ * includeFunctionalProbes — an active screen capture must be user intent), so screenCaptureProbeOk
+ * is always false, and judging the display by it would permanently classify granted users as still
+ * pending. Genuine unavailability (TCC records a grant but WindowServer refuses the pixels, and so
+ * on) is surfaced to the model as an ordinary MCP error from the tool call; the Renderer never
+ * guesses permissions from a resident query or from error text.
  */
 export function isCuaPermissionTccGranted(result: CuaPermissionStatusResult | null): boolean {
   return (
@@ -155,9 +178,10 @@ export function isCuaPermissionTccGranted(result: CuaPermissionStatusResult | nu
 }
 
 /**
- * runtime 端到端就绪：TCC 双项 granted **且**两个功能探针实测通过。
- * 只有刚做完一次显式主动探针（授权返回 / Helper 重启后验证）才可能成立，
- * 因此仅用于下方 sticky 快照的记录条件，不作为展示口径。
+ * End-to-end runtime readiness: both TCC entries granted **and** both functional probes verified to
+ * pass. This can only hold right after an explicit active probe (returning from the grant dialog /
+ * verifying after a Helper restart), so it is used solely as the condition for recording the sticky
+ * snapshot below, not as the display definition.
  */
 function isFunctionallyReady(result: CuaPermissionStatusResult | null): boolean {
   return (
@@ -170,7 +194,7 @@ function isFunctionallyReady(result: CuaPermissionStatusResult | null): boolean 
   );
 }
 
-/** 应用 sticky 探针，返回真正对外发布的结果。 */
+/** Applies the sticky probes and returns the result that is actually published. */
 function withStickyProbes(
   slot: Slot,
   result: CuaPermissionStatusResult,
@@ -199,25 +223,29 @@ function withStickyProbes(
 }
 
 /**
- * 瞬态不可用的退避重试间隔（毫秒）。
+ * Backoff retry interval (milliseconds) for transient unavailability.
  *
- * 为什么需要它：main 侧 getStatus 在 Helper host 尚未 running 时如实返回 unavailable
- * （见 packages/services/src/node.ts）。Helper 冷启动 / 插件刚启用后的 recreate 都会
- * 落进这个窗口——本机实测从 installed 到 ready 约 3 秒。事件驱动刷新只在挂载 / 焦点 /
- * 显式 refresh 时采样，若把这种样本当终态，输入框入口会红点 +「错误」且不可点击，
- * 用户停在应用内没有任何自愈路径。旧的轮询实现靠下一轮采样兜住，这里用有界退避替代：
- * 累计约 7 秒足够覆盖冷启动窗口，用尽后如实报错，稳态下不产生任何计时器。
+ * Why it is needed: on the main side getStatus faithfully returns unavailable while the Helper host
+ * is not yet running (see packages/services/src/node.ts). A cold Helper start / the recreate right
+ * after enabling the plugin both land in this window — measured locally at about 3 seconds from
+ * installed to ready. Event-driven refresh only samples on mount / focus / an explicit refresh, so
+ * treating such a sample as a final state would put a red dot plus "Error" on the composer entry
+ * and leave it unclickable, and a user who stays inside the app has no self-healing path. The old
+ * polling implementation relied on the next sample to cover this; bounded backoff replaces it:
+ * roughly 7 seconds accumulated is enough to cover the cold-start window, after which the error is
+ * reported faithfully, and in steady state no timer is created at all.
  */
 const TRANSIENT_RETRY_DELAYS_MS = [1000, 2000, 4000];
 
 /**
- * 安排一次退避重试；额度用尽返回 false，由调用方如实发布结果。
- * 重试不带 options：主动截图探针是显式用户意图，不该被自动重试放大。
+ * Schedules one backoff retry; returns false when the allowance is exhausted, and the caller
+ * publishes the result faithfully. The retry carries no options: an active screen capture probe is
+ * explicit user intent and must not be amplified by an automatic retry.
  */
 function scheduleTransientRetry(slot: Slot, params: FetchCuaPermissionStatusParams): boolean {
   const delay = TRANSIENT_RETRY_DELAYS_MS[slot.retryAttempt];
   if (delay === undefined) {
-    // 复位，让下一次真实事件（focus / refresh / 重新挂载）重新获得完整重试额度。
+    // Reset to allow the next real event (focus / refresh / remount) to regain the full retry quota.
     slot.retryAttempt = 0;
     return false;
   }
@@ -237,19 +265,23 @@ interface FetchCuaPermissionStatusParams {
   workspaceIdentity?: string;
   options?: CuaPermissionStatusQueryOptions;
   /**
-   * "refresh"（默认）= 外部状态可能刚变（焦点返回、Helper 重启、插件开关），进行中的查询
-   * 可能读的是旧世界，必须补一次；
-   * "ensure" = 只要求「有一份新鲜结果」（组件挂载），已有查询在飞时直接搭车，
-   * 否则设置页与输入框入口先后挂载会各自排队，白白多打一次 host RPC；
-   * "retry" = store 自己排的退避重试，**不重置重试计数**——否则每次重试都拿回满额度，
-   * 有界退避会退化成固定间隔的无限轮询。
+   * "refresh" (the default) = external state may have just changed (focus returned, Helper
+   * restarted, plugin toggled), so a query already in flight may be reading the old world and one
+   * more must be run; "ensure" = only requires "a fresh result exists" (component mount); when a
+   * query is already in flight it rides along, otherwise the settings page and the composer entry
+   * mounting one after the other would each queue up and waste one extra host RPC; "retry" = a
+   * backoff retry scheduled by the store itself, which does **not reset the retry counter** —
+   * otherwise every retry would get a full allowance back and the bounded backoff would degenerate
+   * into unbounded polling at a fixed interval.
    */
   mode?: "refresh" | "ensure" | "retry";
 }
 
 /**
- * 拉一次权限状态并写入共享缓存。同一 workspace 的并发调用会被合并：进行中时至多记一个补查，
- * 避免原生授权 prompt / 系统设置来回切换连续产生 focus 时把 AX + 截图探针叠成一串。
+ * Fetches the permission state once and writes it into the shared cache. Concurrent calls for the
+ * same workspace are coalesced: while one is in flight at most one follow-up query is recorded, so
+ * that repeatedly switching between the native grant prompt and System Settings (each generating
+ * focus) does not stack up a series of AX + screen capture probes.
  */
 export function fetchCuaPermissionStatus(params: FetchCuaPermissionStatusParams): void {
   const { service, workspacePath, workspaceIdentity, options, mode = "refresh" } = params;
@@ -260,8 +292,8 @@ export function fetchCuaPermissionStatus(params: FetchCuaPermissionStatusParams)
     if (mode === "refresh") slot.rerunRequested = true;
     return;
   }
-  // 真实事件（挂载 / focus / 显式 refresh）接管采样：取消排队中的退避重试，并把额度归零。
-  // retry 自身不走这里——否则每次重试都拿回满额度，有界退避会变成无限轮询。
+  // Real events (mount/focus/explicit refresh) take over sampling: cancel the queued backoff retry and reset the quota to zero.
+  // retry itself does not go here - otherwise the full quota will be returned every time it is retried, and the bounded backoff will become an infinite poll.
   if (mode !== "retry") {
     clearTransientRetry(slot);
     slot.retryAttempt = 0;
@@ -269,7 +301,7 @@ export function fetchCuaPermissionStatus(params: FetchCuaPermissionStatusParams)
   slot.inFlight = true;
   const includeFunctionalProbes = slot.pendingFunctionalProbe;
   slot.pendingFunctionalProbe = false;
-  // 查询期间旧结果不可用于决策：用户可能刚在系统设置里改过授权，或 Helper 正在换代。
+  // Old results are not available for decision-making during the query: the user may have just changed the authorization in the system settings, or the Helper is being updated.
   publish(slot, { status: slot.snapshot.status, fresh: false, settled: slot.snapshot.settled });
 
   let completed: CuaPermissionStatusResult | null = null;
@@ -279,26 +311,26 @@ export function fetchCuaPermissionStatus(params: FetchCuaPermissionStatusParams)
       completed = result;
     })
     .catch(() => {
-      // 保留 lastKnown 展示；由下方的退避重试收敛。
+      // Keep lastKnown displayed; retry convergence with backoff below.
     })
     .finally(() => {
       slot.inFlight = false;
       if (slot.rerunRequested) {
-        // 刷新发生在查询过程中：旧结果可能来自重启前的 Helper，不发布，只补一次新查询。
+        // Refresh occurs during the query process: the old results may come from the Helper before restarting, and are not published. Only a new query is added.
         slot.rerunRequested = false;
         fetchCuaPermissionStatus({ service, workspacePath, workspaceIdentity });
         return;
       }
-      // 查询失败 / Helper 尚未 running 都是环境瞬态，不是授权终态。还有重试额度时保留上一状态
-      // （fresh=false 表示未确认），让退避重试去收敛。
+      // Query failure/Helper is not running yet are environmental transient states, not the final authorization state. Keep the previous status when there is still a retry quota
+      // (fresh=false means unconfirmed), allowing backoff and retry to converge.
       //
-      // 额度用尽后两个分支的归宿不同，这里如实说明：
-      // - 结果是 unavailable（Helper 确实起不来）→ 落到下方如实发布，UI 显示错误态；
-      // - 查询 reject（RPC 通道故障）→ 落到 `if (!completed)`，只保留 lastKnown + fresh=false，
-      //   **不产生错误终态**。冷启动且无缓存时入口会停在 starting、设置页停在「验证中」，
-      //   直到下一次真实事件（focus / 重新挂载 / 显式 refresh）重新采样。这是刻意的：通道故障
-      //   说明「我们不知道权限状态」，而不是「权限有问题」，把它渲染成红色错误会误导用户去
-      //   重新授权。代价是这种故障下没有可见的错误提示，仅在 RPC 持续失败时出现。
+      // After the quota is exhausted, the fate of the two branches is different. Here is a truthful explanation:
+      // - The result is unavailable (Helper really cannot get up) → Drop it to the bottom and publish it as it is, and the UI will display an error state;
+      // - Query reject (RPC channel failure) → fall to `if (!completed)`, only keep lastKnown + fresh=false,
+      //   **Does not produce an error final state**. When cold starting and there is no cache, the entrance will stop at starting and the settings page will stop at "Verifying".
+      //   Resampling until the next real event (focus / remount / explicit refresh). This is deliberate: channel failure
+      //   Explain "We don't know the permission status" instead of "There is a permission problem". Rendering it as a red error will mislead the user.
+      //   Reauthorize. The trade-off is that there is no visible error message for this failure, it only appears when RPC continues to fail.
       const transient = !completed || !isCuaPermissionStatusAvailable(completed);
       if (transient && scheduleTransientRetry(slot, params)) {
         publish(slot, {
@@ -309,7 +341,7 @@ export function fetchCuaPermissionStatus(params: FetchCuaPermissionStatusParams)
         return;
       }
       if (!completed) {
-        // reject 且重试额度已用尽：保留 lastKnown + fresh=false，等下一次真实事件（见上）。
+        // reject and the retry quota has been exhausted: keep lastKnown + fresh=false and wait for the next real event (see above).
         publish(slot, {
           status: slot.snapshot.status,
           fresh: false,
@@ -320,8 +352,8 @@ export function fetchCuaPermissionStatus(params: FetchCuaPermissionStatusParams)
       slot.retryAttempt = 0;
       const published = withStickyProbes(slot, completed);
       publish(slot, { status: published, fresh: true, settled: true });
-      // 供下次冷启动首屏使用。unavailable 由 persist 内部忽略：Helper 没起来是环境态，
-      // 记住它只会让下次冷启动的首屏错得更久。
+      // For use on the first screen of the next cold start. unavailable is ignored internally by persist: Helper is in environment state when it is not started.
+      // Keeping this in mind will only make your next cold start above the fold longer.
       persistCuaPermissionStatus(published);
     });
 }

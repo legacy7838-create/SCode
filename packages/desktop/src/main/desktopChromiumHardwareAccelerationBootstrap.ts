@@ -47,8 +47,8 @@ export function applyEarlyChromiumHardwareAccelerationBootstrap(
       ? readBootstrapChromiumHardwareAccelerationEnabledFromDisk()
       : extractBootstrapChromiumHardwareAccelerationEnabled(rawSettings);
   if (!enabled) {
-    // Electron 只能在 app ready 前关闭 Chromium 硬件加速。
-    // 因此设置页保存后必须在下一次 main 进程最早期读取并应用，不能等到 whenReady。
+    // Electron can only turn off Chromium hardware acceleration before the app is ready.
+    // Therefore, after the setting page is saved, it must be read and applied at the earliest stage of the next main process, and cannot wait until whenReady.
     app.disableHardwareAcceleration();
   }
   return enabled;

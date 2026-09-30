@@ -12,7 +12,7 @@ import type { V4Method } from "@zcode/shared/zcode-protocol-v4";
 import type { z } from "zod";
 import type { ZCodeProtocolTransport } from "./zcodeProtocolTransport.js";
 
-/** 客户端可发的方法名：旧 zcodeProtocolMethods + v4/*（并存，收敛为 v4）。 */
+/** Method names that can be sent by the client: old zcodeProtocolMethods + v4/* (coexist, converge to v4). */
 type ZCodeProtocolClientMethod = ZCodeProtocolMethod | V4Method;
 
 interface ZCodeProtocolClientOptions {
@@ -38,7 +38,7 @@ interface PendingRequest<T> {
 }
 
 interface ZCodeProtocolClientRequestOptions {
-  /** 观测不得参与 runtime 健康判定或业务空闲续期；默认保持业务请求语义。 */
+  /** Observations must not participate in runtime health determination or business idle renewal; business request semantics are maintained by default. */
   lifecycle?: "operation" | "observation";
   signal?: AbortSignal;
   trace?: ZCodeProtocolTrace;
@@ -75,7 +75,7 @@ export class ZCodeProtocolClient implements IDisposable {
   private readonly notificationEmitter = new Emitter<ZCodeProtocolNotification>();
   private readonly requestEmitter = new Emitter<ZCodeProtocolRequest>();
   private readonly requestTimeoutEmitter = new Emitter<ZCodeProtocolRequestTimeoutEvent>();
-  // 业务请求归零时触发；观测完成不能给被观察进程续命。
+  // Triggered when the business request returns to zero; the observed process cannot be renewed after the observation is completed.
   private readonly pendingDrainedEmitter = new Emitter<void>();
   private readonly closeEmitter = new Emitter<void>();
   private readonly disposables: IDisposable[] = [];
@@ -84,10 +84,10 @@ export class ZCodeProtocolClient implements IDisposable {
   private readonly requestTimeoutMs: number;
 
   /**
-   * client 是否已 dispose（进程被回收/transport 关闭后为 true）。
-   * 调用方（如 getClient 复用 active entry）必须在复用前检查此标记，
-   * 避免对一个已被 processManager 回收但尚未触发 onClose 的 client 发请求，
-   * 否则会立即抛 "ZCode Protocol client is disposed"。
+   * Whether the client has been disposed (true after the process is recycled/transport is closed).
+   * The caller (such as getClient reusing the active entry) must check this tag before reusing it.
+   * Avoid making requests to a client that has been recycled by processManager but has not yet triggered onClose.
+   * Otherwise, "ZCode Protocol client is disposed" will be thrown immediately.
    */
   get isDisposed(): boolean {
     return this.disposed;
@@ -99,7 +99,7 @@ export class ZCodeProtocolClient implements IDisposable {
   readonly onPendingRequestsDrained = this.pendingDrainedEmitter.event;
   readonly onClose = this.closeEmitter.event;
 
-  /** 当前尚未收到响应的请求数。 */
+  /** The number of requests that have not yet received a response. */
   get pendingRequestCount(): number {
     return this.pending.size;
   }
@@ -138,7 +138,7 @@ export class ZCodeProtocolClient implements IDisposable {
     options?: ZCodeProtocolClientRequestOptions,
   ): Promise<T> {
     this.assertNotDisposed();
-    // 不先创建请求/启动 watchdog；只在真实 COMMIT 后进入原有协议请求生命周期。
+    // Do not create a request/start watchdog first; only enter the original protocol request life cycle after the real COMMIT.
     if (this.storageStartup.isWaiting) await this.storageStartup.wait(options?.signal);
     this.assertNotDisposed();
     options?.signal?.throwIfAborted();
@@ -153,10 +153,10 @@ export class ZCodeProtocolClient implements IDisposable {
         pending?.cleanupAbort?.();
         this.deletePending(requestKey);
         const error = new ZCodeProtocolRequestTimeoutError(method, id, requestTimeoutMs);
-        // 子进程仍存活但协议 event loop 已无响应时，只让单次 request 超时是不够的：
-        // process manager 仍复用这个 stale client，导致后续 plugins/list 等请求连续卡在超时窗口。
-        // 超时事件把“连接已不可信”的事实上抛给 owner，由 owner 负责淘汰进程。
-        // 资源查询的短超时只表示本轮无数据，不能被升级成整个 Agent 的故障回收。
+        // When the child process is still alive but the protocol event loop is unresponsive, it is not enough to time out a single request:
+        // The process manager still reuses this stale client, causing subsequent plugins/list and other requests to be continuously stuck in the timeout window.
+        // The timeout event throws the fact that "the connection is no longer trustworthy" to the owner, who is responsible for eliminating the process.
+        // The short timeout of resource query only means that there is no data in this round and cannot be upgraded to the fault recovery of the entire Agent.
         if (!observation) {
           this.requestTimeoutEmitter.fire({ method, requestId: id, timeoutMs: requestTimeoutMs });
         }
@@ -195,8 +195,8 @@ export class ZCodeProtocolClient implements IDisposable {
       }
     });
 
-    // 已在发送前取消的请求不能继续写入 transport；否则服务端会执行一个客户端已经
-    // 放弃、也无法接收响应的模型任务。
+    // A request that has been canceled before being sent cannot continue to be written to the transport; otherwise the server will execute a request that the client has already
+    // The model task was abandoned and could not receive a response.
     if (!this.pending.has(requestKey)) {
       return resultPromise;
     }
@@ -302,8 +302,8 @@ export class ZCodeProtocolClient implements IDisposable {
         message.method === "startup/storageState" &&
         this.storageStartup.accept((message as ZCodeProtocolNotification).params)
       ) {
-        // 自定义/旧部署命令无法事先声明能力；首个请求可能已发出。只有首次合法启动帧
-        // 能暂停这些计时器，ready 后恢复；该进程的终态不能被后续通知重新续期。
+        // Custom/legacy deployment commands cannot declare capabilities in advance; the first request may have already been made. Only the first legal start frame
+        // These timers can be suspended and resumed after ready; the final state of the process cannot be renewed by subsequent notifications.
         for (const pending of this.pending.values()) {
           clearTimeout(pending.timeout);
           if (this.storageStartup.snapshot?.phase === "ready") pending.resumeTimeout();

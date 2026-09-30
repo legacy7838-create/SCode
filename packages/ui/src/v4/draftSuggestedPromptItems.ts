@@ -15,11 +15,11 @@ export type DraftSuggestedPromptAction =
 
 export interface DraftSuggestedPromptItem {
   id: string;
-  /** Lucide canonical 名称，只来自 ClientSceneItem.img；不使用 imgs。 */
+  /** Lucide canonical name, only from ClientSceneItem.img; imgs are not used. */
   iconName?: string;
-  /** 官方推荐项的市场图标。 */
+  /** Market icon for official recommendations. */
   iconUrl?: string;
-  /** 复用插件市场图标的展示样式，不代表绑定插件。 */
+  /** Reusing the display style of the plug-in market icon does not mean binding the plug-in. */
   iconStyle?: "plugin";
   label: DraftSuggestedPromptLocalizedText;
   prompt: DraftSuggestedPromptLocalizedText;

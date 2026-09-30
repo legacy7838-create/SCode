@@ -88,7 +88,7 @@ export const QueueItemIndicator = ({
       )}
       {...props}
     >
-      {/* 原来只靠圆点颜色区分状态，计划里“进行中”和“未开始”很难一眼看出来；改成图标后再让进行中旋转，状态识别更直接。*/}
+      {/* Originally, only the color of the dots was used to distinguish the status. It was difficult to see "in progress" and "not started" in the plan at a glance; after changing it to an icon and allowing the progress to rotate, the status identification was more direct.*/}
       <IndicatorIcon
         className={cn("size-4", resolvedStatus === "in_progress" ? "animate-spin" : undefined)}
       />

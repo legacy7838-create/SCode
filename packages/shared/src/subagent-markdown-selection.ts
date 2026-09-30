@@ -7,7 +7,7 @@ import { parseModelPickerValue, type ModelSelection } from "./model-selection.js
 
 const INHERIT_NAMES = new Set(["inherit", "main", "sonnet", "opus", "haiku"]);
 
-/** Markdown 的正式字段始终为字符串 model + thoughtLevel；不解释中间态字段。 */
+/** The formal Markdown fields are always the string model + thoughtLevel; intermediate-state fields are not interpreted. */
 export function parseSubagentMarkdownSelection(
   frontmatter: Record<string, unknown>,
 ): ModelSelection | undefined {
@@ -31,7 +31,7 @@ export function parseSubagentMarkdownSelection(
   return reasoningLevel ? { ...selection, options: { reasoningLevel } } : selection;
 }
 
-/** 普通 ID 保持可读；分隔符或 custom: 前缀会与解析格式冲突，须用既有编码无损保存。 */
+/** Ordinary ids stay readable; a separator or a custom: prefix would collide with the parse format, so they must be stored losslessly using the existing encoding. */
 export function formatSubagentMarkdownModel(selection: ModelSelection): string {
   return selection.providerId.startsWith("custom:") ||
     selection.providerId.includes("/") ||
@@ -46,7 +46,7 @@ function migrateModelValue(value: string): string {
     if (!decoded?.modelName || !decoded.providerId.startsWith("builtin:")) return value;
     const providerId = migrateLegacyModelProviderId(decoded.providerId);
     if (!providerId || providerId === decoded.providerId) return value;
-    // 未改名的模型保留编码原文（包括 %24 和 %2F），不把模型名再当 Picker 解析。
+    // The model that has not been renamed retains the original encoding (including %24 and %2F), and the model name is no longer parsed as a Picker.
     const modelId = migrateLegacyOfficialGlmModelId(decoded.providerId, decoded.modelName);
     const body = value.slice("custom:".length);
     const separator = body.startsWith("builtin:")
@@ -62,7 +62,7 @@ function migrateModelValue(value: string): string {
   if (!oldProvider.startsWith("builtin:")) return value;
   const providerId = migrateLegacyModelProviderId(oldProvider);
   const modelId = value.slice(separator + 1);
-  // 旧 Picker 的 $ 后是档位，不是型号；仅普通编码拆开，custom 编码的 $ 仍属于型号。
+  // The $ after the old Picker is the gear, not the model; only the ordinary encoding is separated, and the $ in the custom encoding still belongs to the model.
   const reasoningIndex = modelId.indexOf("$");
   const name = reasoningIndex < 0 ? modelId : modelId.slice(0, reasoningIndex);
   const suffix = reasoningIndex < 0 ? "" : modelId.slice(reasoningIndex);
@@ -71,7 +71,7 @@ function migrateModelValue(value: string): string {
     : value;
 }
 
-/** 只替换 frontmatter 单行 model 的 Provider 值，不重建 YAML、正文或无关格式。 */
+/** Only the Provider value of the single-line model field in the frontmatter is replaced; the YAML, the body and unrelated formatting are never rebuilt. */
 export function migrateSubagentMarkdownProvider(content: string): string {
   const frontmatter = /^(?:\uFEFF)?---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/u.exec(
     content,

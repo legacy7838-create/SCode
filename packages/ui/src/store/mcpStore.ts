@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- MCP store 集中维护配置加载、持久化、状态刷新与运行时状态合并，拆分会增加跨状态同步复杂度。 */
+/* eslint-disable max-lines -- MCP store centrally maintains configuration loading, persistence, state refresh, and runtime state merging. Splitting will increase the complexity of cross-state synchronization. */
 /**
  * MCP (Model Context Protocol) UI State Store
  */
@@ -152,8 +152,8 @@ export const useMcpStore = create<McpStoreState>((set, get) => {
   ): McpDirectoryService | null {
     const effectiveWorkspaceIdentity = workspaceIdentity ?? get().currentWorkspaceIdentity;
     if (!effectiveWorkspaceIdentity?.trim()) {
-      // 本地 workspace 仍要走 desktop platform 路径，才能执行旧 common MCP
-      // 到用户级 ZCode Agent MCP 的迁移；目录服务只用于远端 workspace 覆盖路由。
+      // The local workspace still needs to take the desktop platform path to execute the old common MCP
+      // Migration to user-level ZCode Agent MCP; directory service is only used for remote workspace overlay routing.
       return null;
     }
     return directoryService ?? mcpDirectoryService;
@@ -200,7 +200,7 @@ export const useMcpStore = create<McpStoreState>((set, get) => {
         config,
       };
     } else {
-      // 添加新的服务器记录
+      // Add new server record
       const scope: McpScope = projectPath ? "workspace" : "user";
       nativeServers.push({
         source,
@@ -251,8 +251,8 @@ export const useMcpStore = create<McpStoreState>((set, get) => {
 
     loadConfig: () => {
       const config = loadPersistedConfig();
-      // MCP 启停状态已经迁移到 ~/.zcode/cli/config.json，不能再读取旧 localStorage，
-      // 否则旧的本地开关会覆盖新的 ZCode Agent 配置来源。
+      // The MCP start and stop status has been migrated to ~/.zcode/cli/config.json, and the old localStorage can no longer be read.
+      // Otherwise the old local switches will overwrite the new ZCode Agent configuration source.
       const enabledStates: Record<string, boolean> = {};
       const deletedPreload = new Set<string>(safeReadJson<string[]>(MCP_DELETED_PRELOAD_KEY, []));
       const servers = buildServerList(config, [], enabledStates, deletedPreload, []);
@@ -286,12 +286,12 @@ export const useMcpStore = create<McpStoreState>((set, get) => {
       const latestWorkspaceIdentity = get().currentWorkspaceIdentity;
       const latestWorkspaceKey = latestWorkspaceIdentity?.trim() || latestWorkspacePath || "";
       if (latestWorkspaceKey !== requestWorkspaceKey) {
-        // 该调用等待上一轮 load 时已从 B 切到 C；B 调用持有的 remote
-        // directoryService 不得继续读取 C，交给 C 自己发起的 ensure/load 调用处理。
+        // This call has switched from B to C when waiting for the last round of load; B calls the remote held by
+        // DirectoryService must not continue to read C and leave it to the ensure/load call initiated by C itself.
         return false;
       }
-      // 等待上一 workspace load 期间可能再次切换；目录服务必须按等待后的
-      // 最新 identity 重新选择，不能拿 B 的 remote service 去读取 C 的路径。
+      // It is possible to switch again while waiting for the previous workspace load; the directory service must be
+      // After re-selecting the latest identity, B's remote service cannot be used to read the path of C.
       const activeDirectoryService = resolveMcpDirectoryService(
         directoryService,
         latestWorkspaceIdentity,
@@ -322,17 +322,17 @@ export const useMcpStore = create<McpStoreState>((set, get) => {
           const currentWorkspaceKey =
             currentState.currentWorkspaceIdentity?.trim() || currentState.currentProjectPath;
           if (currentWorkspaceKey !== latestWorkspaceKey) {
-            // workspace A 的异步目录读取可能晚于切换到 B 才返回；
-            // 旧结果包含 env/header/OAuth secret，不能写回共享 store 后被 B 的 Agent 消费。
+            // Asynchronous directory reads from workspace A may return later than switching to B;
+            // The old result contains env/header/OAuth secret and cannot be written back to the shared store and consumed by B's Agent.
             return false;
           }
           set(commitState({ nativeServers: servers }));
           return true;
         } catch (e) {
-          // 读取失败不是“配置为空”；调用方必须保持 workspace not-ready，
-          // 否则会显式下发空 mcpServers 并触发 replace，断开仍在运行的 MCP。
-          // remote session attachment 绑定前只能拿到断连代理；这是初始化时序，不是
-          // MCP 配置读取失败。只过滤该精确错误码，避免吞掉真实的目录或 RPC 故障。
+          // Read failure is not "Configuration is empty"; the caller must keep the workspace not-ready,
+          // Otherwise, empty mcpServers will be explicitly delivered and replace will be triggered, disconnecting the still running MCP.
+          // The remote session attachment can only get the disconnection agent before binding; this is the initialization sequence, not
+          // MCP configuration read failed. Filter only the exact error code to avoid swallowing real directory or RPC failures.
           if (!isRemoteWorkspaceDisconnectedError(e)) {
             logger.warn("[mcpStore] loadMcpFromUserDirectory failed", String(e));
           }
@@ -378,8 +378,8 @@ export const useMcpStore = create<McpStoreState>((set, get) => {
     addScopedMcpServer: async (source, name, config, projectPath) => {
       invalidateStatusListRequests();
       const targetSource: CliMcpSource = source === "mcp" ? "zcodeagentmcp" : source;
-      // 设置页保存后会马上触发 agent 侧 mcp/list 重连。
-      // 先等配置落盘，再更新本地 store，避免 agent 读到旧 timeoutMs 后展示旧健康状态。
+      // After the settings page is saved, the agent-side mcp/list reconnection will be triggered immediately.
+      // Wait for the configuration to be downloaded first, and then update the local store to prevent the agent from displaying the old health status after reading the old timeoutMs.
       await persistScopedChange(targetSource, {
         action: "upsert",
         source: targetSource,
@@ -392,7 +392,7 @@ export const useMcpStore = create<McpStoreState>((set, get) => {
     updateScopedMcpServer: async (source, name, config, projectPath) => {
       invalidateStatusListRequests();
       const targetSource: CliMcpSource = source === "mcp" ? "zcodeagentmcp" : source;
-      // 本地状态变化会驱动健康状态刷新，必须在磁盘配置更新后发生。
+      // Local state changes drive health state refreshes, which must occur after disk configuration updates.
       await persistScopedChange(targetSource, {
         action: "upsert",
         source: targetSource,
@@ -435,8 +435,8 @@ export const useMcpStore = create<McpStoreState>((set, get) => {
       invalidateStatusListRequests();
       const targetServer = get().servers.find((server) => server.id === id);
       if (targetServer && targetServer.source !== "mcp") {
-        // 开关变化会触发 agent 侧 mcp/list 读取磁盘配置做真实连接。
-        // 必须先等 enable 状态落盘，再更新本地列表驱动刷新，否则 agent 会读到旧开关。
+        // The switch change will trigger the agent side mcp/list to read the disk configuration and make a real connection.
+        // You must wait for the enable status to be written to the disk before updating the local list driver refresh, otherwise the agent will read the old switch.
         await persistCliMcpToUserDirectory(
           mcpPlatformService,
           {
@@ -489,12 +489,12 @@ export const useMcpStore = create<McpStoreState>((set, get) => {
       statusListEpochs[mode] += 1;
       const requestEpoch = statusListEpochs[mode];
       if (mode === "status") {
-        // OAuth 1s status-only 轮询只读取 runtime snapshot；不能反复清空
-        // authorization/toolCount 或把用户同时编辑的其他 MCP 投影成 connecting。
+        // OAuth 1s status-only polling only reads the runtime snapshot; it cannot be cleared repeatedly
+        // authorization/toolCount or project other MCPs edited by the user into connecting.
         return requestEpoch;
       }
-      // agent 侧 mcp/list 会等待所有 MCP 连接完成才返回；如果插件 MCP 还在 30s 超时中，
-      // 修改 timeoutMs 后本地列表会长时间停在 unknown，看起来像没有立即重新检查。
+      // The agent side mcp/list will wait for all MCP connections to be completed before returning; if the plug-in MCP is still in the 30s timeout,
+      // After modifying timeoutMs, the local list will stop at unknown for a long time, and it seems that it is not rechecked immediately.
       set((state) => ({
         servers: state.servers.map((server) => {
           const enabled = state.enabledStates[server.id] ?? server.enabled;
@@ -521,8 +521,8 @@ export const useMcpStore = create<McpStoreState>((set, get) => {
 
     markServerStatusListRefreshFailed: (error, requestEpoch, mode = "connect") => {
       if (requestEpoch !== statusListEpochs[mode] || mode === "status") {
-        // OAuth 轮询是只读的 best-effort status 请求；临时失败不能清空已有
-        // authorization snapshot，也不能把同一列表中仍在连接的 MCP 批量标红。
+        // OAuth polling is a read-only best-effort status request; temporary failure cannot clear existing
+        // authorization snapshot, and cannot mark MCPs still connected in the same list red in batches.
         return;
       }
       set((state) => ({
@@ -555,8 +555,8 @@ export const useMcpStore = create<McpStoreState>((set, get) => {
         return {
           statusSnapshots: nextStatusSnapshots,
           servers: mergeMcpServerStatusSnapshots(state.servers, nextStatusSnapshots, {
-            // OAuth 轮询的 status-only 响应可能只包含 pending 子集。
-            // 缺失项不能按全量 mcp/list 处理，否则会把其他 MCP 误标为 agent 未返回。
+            // A status-only response from an OAuth poll may only contain the pending subset.
+            // Missing items cannot be processed as the full mcp/list, otherwise other MCPs will be mistakenly marked as agent and not returned.
             markMissingConnectingAsError: mode !== "status",
           }),
         };
@@ -595,8 +595,8 @@ export const useMcpStore = create<McpStoreState>((set, get) => {
         ),
       });
       if (isConfigLoaded && workspaceChanged) {
-        // 切换到远程 workspace 后配置加载是异步的；等待期间必须先清空 A 的
-        // user-level MCP，不能把其 env/header/OAuth clientSecret 暂存为 B 的可发送配置。
+        // After switching to the remote workspace, the configuration loading is asynchronous; during the waiting period, A must be cleared first
+        // User-level MCP cannot temporarily store its env/header/OAuth clientSecret as B's sendable configuration.
         void get().loadMcpFromUserDirectory(directoryService, normalizedWorkspaceIdentity);
       }
     },

@@ -28,22 +28,23 @@ interface TelemetryErrorAttribution {
 const RATE_LIMIT_MESSAGE_PATTERN =
   /error[_ -]?rate[_ -]?limited|rate[_ -]?limit|too many requests|request higher limits|throttl/iu;
 const BALANCE_MESSAGE_PATTERN =
-  /insufficient\s+(?:balance|funds|credit)|balance\s+(?:is\s+)?(?:insufficient|too\s+low)|余额不足|余额不够/iu;
-const PLAN_EXPIRED_MESSAGE_PATTERN = /(?:coding|subscription|套餐|plan).{0,24}(?:expired|到期)/iu;
+  /insufficient\s+(?:balance|funds|credit)|balance\s+(?:is\s+)?(?:insufficient|too\s+low)|Insufficient balance|Insufficient balance/iu;
+const PLAN_EXPIRED_MESSAGE_PATTERN =
+  /(?:coding|subscription|Package|plan).{0,24}(?:expired|Expired)/iu;
 const CONTEXT_MESSAGE_PATTERN =
-  /context.{0,32}(?:length|window|exceed|limit)|prompt.{0,24}too long|上下文.{0,16}(?:超|限制)/iu;
+  /context.{0,32}(?:length|window|exceed|limit)|prompt.{0,24}too long|Context.{0,16}(?:exceed|limit)/iu;
 const AUTH_MESSAGE_PATTERN =
-  /unauthori[sz]ed|authentication|invalid\s+(?:api\s+)?key|access\s+denied|鉴权|认证失败/iu;
+  /unauthori[sz]ed|authentication|invalid\s+(?:api\s+)?key|access\s+denied|Authentication|Authentication failed/iu;
 const NETWORK_MESSAGE_PATTERN =
-  /network|connection|econn(?:reset|refused)|enotfound|tls|proxy|网络|连接失败/iu;
-const TIMEOUT_MESSAGE_PATTERN = /timeout|timed out|超时/iu;
-const OVERLOAD_MESSAGE_PATTERN = /overload|overloaded|server busy|服务繁忙|过载/iu;
+  /network|connection|econn(?:reset|refused)|enotfound|tls|proxy|network|connection failed/iu;
+const TIMEOUT_MESSAGE_PATTERN = /timeout|timed out|timeout/iu;
+const OVERLOAD_MESSAGE_PATTERN = /overload|overloaded|server busy|service busy|overload/iu;
 const INVALID_REQUEST_MESSAGE_PATTERN =
-  /invalid\s+(?:request|argument|parameter)|bad request|参数错误|请求参数/iu;
+  /invalid\s+(?:request|argument|parameter)|bad request|Parameter error|Request parameter/iu;
 const EMPTY_MODEL_RESPONSE_MESSAGE_PATTERN =
-  /model\s+(?:returned|returning)\s+no\s+content|模型未返回任何内容/iu;
+  /model\s+(?:returned|returning)\s+no\s+content|The model did not return any content/iu;
 const PROVIDER_REJECTED_MESSAGE_PATTERN =
-  /provider\s+rejected|method\s+not\s+allowed|param(?:eter)?\s+incorrect|参数非法|unsupported\s+parameter/iu;
+  /provider\s+rejected|method\s+not\s+allowed|param(?:eter)?\s+incorrect|Illegal parameter|unsupported\s+parameter/iu;
 const PROVIDER_SERVER_ERROR_MESSAGE_PATTERN =
   /provider\s+returned\s+(?:a\s+)?server\s+error|internal\s+server\s+error/iu;
 const PROVIDER_RATE_LIMIT_MESSAGE_PATTERN =
@@ -178,8 +179,8 @@ export function resolveTelemetryAttribution(params: {
   error: ZCodeUiError;
   displayMessage: string;
 }): TelemetryErrorAttribution {
-  // 修复原因：adapter 的 unknown 可能是保守的产品运行时分类，不能代表 ARMS 缺少上游证据；
-  // 这里仅在 telemetry 边界按 provider code/status/可见文案补全低基数归因，不改变重试或 UI 行为。
+  // Reason for fix: The unknown of the adapter may be a conservative product runtime classification and cannot represent the lack of upstream evidence for ARMS;
+  // This only completes low-cardinality attribution at the telemetry boundary by provider code/status/visible copy, without changing retry or UI behavior.
   const explicitSource = params.error.attribution?.source;
   const providerId = params.error.attribution?.providerId?.trim();
   const trustedProviderBusinessCode = providerId
@@ -211,8 +212,8 @@ export function resolveTelemetryAttribution(params: {
       ? resolveStableTransportCodeAttribution(transportErrorCode)
       : undefined;
   if (stableTransportAttribution) {
-    // Bug 原因：旧 runner 只按 response boundary 写入 provider source，但 EPIPE 等稳定 socket
-    // code 是更强的传输证据；只纠正空/unknown reason，绝不覆盖已有明确结构化归因。
+    // Bug reason: The old runner only writes to the provider source according to the response boundary, but stable sockets such as EPIPE
+    // code is stronger transmission evidence; it only corrects empty/unknown reasons and never overwrites explicit structured attributions.
     return stableTransportAttribution;
   }
   const genericProviderAttribution =
@@ -221,15 +222,15 @@ export function resolveTelemetryAttribution(params: {
       ? resolveGenericProviderCodeAttribution(params.error.attribution?.providerErrorCode)
       : undefined;
   if (genericProviderAttribution) {
-    // Bug 原因：custom provider 的稳定语义 code 已经是低基数证据，旧逻辑只认识 BAD_REQUEST，
-    // 导致 server/network/invalid 等明确失败统一沉入 unknown；这里只消费 allowlist code。
+    // Reason for the bug: The stable semantic code of the custom provider is already a low-cardinality evidence, and the old logic only recognizes BAD_REQUEST.
+    // As a result, clear failures such as server/network/invalid will sink into unknown; only allowlist code is consumed here.
     return genericProviderAttribution;
   }
   if (structuredReason && structuredReason !== UNKNOWN_FAILURE_REASON) {
     const unambiguousSource = resolveSourceFromReason(structuredReason);
     if (unambiguousSource === "network" || unambiguousSource === "runtime") {
-      // Bug 原因：response boundary 只能证明调用已进入 provider 链路，不能覆盖 network/runtime
-      // reason 自身携带的更窄边界；否则 EPIPE 和本地 provider 配置错误会被写进 provider 桶。
+      // Reason for the bug: response boundary can only prove that the call has entered the provider link and cannot cover network/runtime
+      // reason itself carries a narrower boundary; otherwise EPIPE and local provider configuration errors will be written into the provider bucket.
       return { errorSource: unambiguousSource, failureReason: structuredReason };
     }
     if (
@@ -238,13 +239,13 @@ export function resolveTelemetryAttribution(params: {
       params.error.attribution?.retryable === false &&
       trustedProviderReason === "quota_exhausted"
     ) {
-      // Bug 原因：adapter 的 reason 同时承担运行时失败分类，终态套餐额度码因此统一落成
-      // rate_limited；telemetry 只对可信 builtin + 非重试事实规范为业务根因 quota_exhausted。
+      // Bug reason: The reason of the adapter is also responsible for the runtime failure classification, so the final package quota code is unified.
+      // rate_limited; telemetry only for trusted builtin + non-retry fact specification for business root cause quota_exhausted.
       return { errorSource: "provider", failureReason: "quota_exhausted" };
     }
-    // Bug 原因：旧实现先归一化 reason，再把所有非空 reason 统一反推成 provider，
-    // 会把 proxy_error/provider_not_configured 等已知事实归错桶。source 必须使用同一份证据解析；
-    // invalid_request/rate_limited 等歧义 reason 缺少上游证据时保持空值。
+    // Reason for the bug: The old implementation normalizes reason first, and then deduces all non-empty reasons into providers.
+    // Known facts such as proxy_error/provider_not_configured will be placed in the wrong bucket. source must be parsed using the same piece of evidence;
+    // Ambiguous reason such as invalid_request/rate_limited remains empty when upstream evidence is missing.
     return resolve(
       structuredReason,
       resolveSourceFromReason(structuredReason) || resolveSourceFromAdditionalEvidence(params),
@@ -256,8 +257,8 @@ export function resolveTelemetryAttribution(params: {
     !explicitSource &&
     isLocalModelValidationMessage(params.error.message)
   ) {
-    // Bug 原因：旧 transcript 的请求前 capability / option 校验只有稳定 code/message，
-    // 没有经过 runner 写入 attribution；仅匹配 ZCode 自身生成的精确文案，避免误收 provider 400。
+    // Reason for the bug: The capability/option verification before requesting the old transcript only has stable code/message.
+    // There is no attribution written by the runner; only the exact copy generated by ZCode itself is matched to avoid receiving provider 400 by mistake.
     return { errorSource: "runtime", failureReason: "invalid_request" };
   }
 
@@ -267,9 +268,9 @@ export function resolveTelemetryAttribution(params: {
   );
   const legacyProviderReason = resolveKnownProviderCodeFailureReason(legacyProviderCode);
   if (legacyProviderReason) {
-    // Bug 原因：旧 transcript 只持久化了 AiSdkModelAdapterError 的三段式官方错误文案；
-    // 严格 envelope + allowlist code 足以恢复低基数事实，但 1234 表示网络失败，不能把
-    // provider envelope 的载体来源误当成失败边界，否则会产生 provider/network_error。
+    // Bug reason: The old transcript only persists the three-part official error text of AiSdkModelAdapterError;
+    // Strict envelope + allowlist code is enough to recover low cardinality facts, but 1234 indicates network failure and cannot be
+    // The carrier source of the provider envelope is mistaken for a failure boundary, otherwise a provider/network_error will be generated.
     return {
       errorSource: resolveSourceFromReason(legacyProviderReason) || "provider",
       failureReason: legacyProviderReason,
@@ -281,9 +282,9 @@ export function resolveTelemetryAttribution(params: {
     return resolve(stableAttribution.reason, stableAttribution.source);
   }
 
-  // 修复原因：130x/300x 等业务码是 BigModel/Z.AI 的 provider 局部词表，不能把自定义
-  // provider 的同名 code 误归因为套餐到期或配额耗尽；缺少 provider 身份时也只能退回
-  // HTTP 状态码/受控文案证据，避免把通用 error.code 当成全局业务码。
+  // Reason for repair: Business codes such as 130x/300x are the provider partial vocabulary of BigModel/Z.AI and cannot be customized
+  // The provider's code with the same name is mistakenly attributed to package expiration or quota exhaustion; it can only be returned when the provider identity is missing.
+  // HTTP status code/controlled copy evidence to avoid treating general error.code as a global business code.
   if (trustedProviderReason) {
     return resolve(trustedProviderReason, "provider");
   }
@@ -336,8 +337,8 @@ export function resolveTelemetryAttribution(params: {
       explicitSource === undefined ||
       explicitSource === "provider")
   ) {
-    // Bug 原因：受控文案是最低优先级证据；若在 trusted provider code、legacy envelope 或
-    // HTTP status 之前返回，弱文案会覆盖 401/1308 等更可靠的结构化事实。
+    // Bug reason: Controlled copy is the lowest priority evidence; if it is in trusted provider code, legacy envelope or
+    // Returned before HTTP status, weak copy will override more reliable structured facts such as 401/1308.
     return controlledMessageAttribution;
   }
 

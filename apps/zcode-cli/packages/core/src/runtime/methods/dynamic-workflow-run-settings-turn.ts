@@ -1,6 +1,6 @@
-// GUI 配置变更的会话记录。
-// 将设置轮排入运行时队列，记录两项设置的 from/to，并区分修订产生新 run 与并发调整就地生效。
-// 变更决策和副作用顺序由 dynamic-workflow-run-settings.ts 负责。
+// Session logging of GUI configuration changes.
+// Enqueue the settings wheel into the runtime queue, record the from/to of the two settings, and distinguish between revisions that generate new runs and concurrent adjustments that take effect in place.
+// Change decisions and side effect ordering are taken care of by dynamic-workflow-run-settings.ts.
 
 import type { TraceContext, WorkflowSettingsAmendMeta } from "@zcode/contracts";
 import type { DynamicWorkflowRunSnapshot } from "@zcode/contracts";
@@ -9,15 +9,17 @@ import { createRuntimeCommandId } from "../command-queue.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import type { boundWorkflowLaunchMeta } from "@zcode/contracts";
 
-/** 本 run 的两项设置的归一形：缺席即默认（会话模型 / 本机上限）。 */
+/** The normalized form of this run's two settings: absent means the default (session model / machine ceiling). */
 export interface RunSettings {
   subagentModel?: string;
   maxConcurrency?: number;
 }
 
 /**
- * 设置轮不在命令处理里直接落：主代理可能正在一轮里，user 消息插不进去。排进运行时队列，空闲时
- * 立即跑、忙时等当前轮结束；与通知同优先级，因而先于新 run 的任何通知。
+ * The settings turn is not landed directly in the command handler: the main agent may be
+ * mid-turn and a user message cannot be inserted. It is queued on the runtime queue, runs
+ * immediately when idle and waits for the current turn to end when busy; it shares priority
+ * with notifications, so it precedes any notification of a new run.
  */
 export function enqueueSettingsTurn(
   this: AgentRuntimeInternal,
@@ -47,12 +49,16 @@ export function fromTo<T>(from: T | undefined, to: T | undefined): { from?: T; t
 }
 
 /**
- * 设置轮的模型面规范句（英文，不本地化——它进 provider transcript）。只说改过的设置；两个 `null`
- * 各有一句话。末句劝阻模型再动这个 run：它已经在跑，进展以通知回来。
+ * The canonical model-facing sentence of the settings turn (English, not localized — it goes
+ * into the provider transcript). It mentions only the settings that changed; each of the two
+ * `null`s has a sentence of its own. The last sentence discourages the model from touching
+ * this run again: it is already running and its progress comes back as a notification.
  *
- * 两种结局在这里分岔，判据就是 `amend.predecessorRunId` 在不在场（缺席即就地生效，与元数据同
- * 一条读法）：修订出了一个新 run，就地调并发则还是同一个 run——照修订那句话写下去，模型会去找
- * 一个根本不存在的 run B。
+ * The two outcomes diverge here, and the criterion is exactly whether
+ * `amend.predecessorRunId` is present (absent means it took effect in place, read the same
+ * way as the metadata): an amendment produced a new run, whereas changing concurrency in
+ * place is still the same run — written as an amendment sentence, the model would go looking
+ * for a run B that does not exist at all.
  */
 export function buildSettingsMessageText(input: {
   name?: string;
@@ -81,8 +87,9 @@ export function buildSettingsMessageText(input: {
 }
 
 /**
- * 「改了什么」的分句。就地生效那一条要把主语说全（「at most n of **its subagents**」）：那条路上
- * 没有模型分句在前，一句「at most n of them」就没有了指代对象。
+ * The "what changed" clause. The in-place one has to spell out its subject ("at most n of
+ * **its subagents**"): on that path no model clause precedes it, so "at most n of them" would
+ * have no antecedent.
  */
 function settingsChangeClauses(amend: WorkflowSettingsAmendMeta, inPlace: boolean): string[] {
   const changes: string[] = [];
@@ -108,8 +115,10 @@ function settingsChangeClauses(amend: WorkflowSettingsAmendMeta, inPlace: boolea
 }
 
 /**
- * 快照上的两项设置。两者都「无则缺席」：没指定过模型 = 会话模型，界不低于天花板 = 没有自己的界，
- * 所以缺席就是默认，与 {@link RunSettings} 同一个读法。
+ * The two settings on the snapshot. Both are "absent when there is none": a model that was
+ * never specified means the session model, and a bound that is not below the ceiling means
+ * there is no bound of its own, so absent *is* the default — read exactly like
+ * {@link RunSettings}.
  */
 export function runSettingsOfSnapshot(snapshot: DynamicWorkflowRunSnapshot): RunSettings {
   return {

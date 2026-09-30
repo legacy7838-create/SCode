@@ -1,4 +1,6 @@
-/* eslint-disable max-lines -- 命令管理面板集中维护列表、表单和外部导入入口，拆分会增加跨状态跳转成本 */
+/* eslint-disable max-lines -- The command management panel centrally maintains the list, the form,
+ * and the external import entry point; splitting it would add the cost of jumping across state
+ */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
@@ -68,9 +70,9 @@ export function CommandsSection({
   const currentWorkspaceTab = workspaceTabs.find(
     (tab) => getPluginWorkspaceKey(tab) === currentWorkspaceKey,
   );
-  // 列表按 Scope target 收到 workspacePath，但命令与插件服务仍取自当前
-  // ServiceProvider，会把 B 的路径发往 A 的 remote host。两者统一走 target 解析结果，
-  // 并在连接就绪前暂停 RPC，不回退到当前激活 workspace 的 service。
+  // The list receives the workspacePath by Scope target, but the command and plug-in services are still taken from the current
+  // ServiceProvider will send B's path to A's remote host. Both of them use the target parsing results.
+  // And pause RPC before the connection is ready, without falling back to the service of the currently active workspace.
   const listServiceResolution = useWorkspaceServicesResolution(
     currentWorkspaceTab?.workspacePath ?? workspacePath,
     currentWorkspaceTab?.remoteSessionId,
@@ -121,7 +123,7 @@ export function CommandsSection({
       workspaceTabs,
     });
     if (recovery === "keep") return;
-    // 目标 Workspace 关闭后不能继续向失效路径写入；新建回退 User，编辑直接退出。
+    // After the target Workspace is closed, it cannot continue to write to the invalid path; create a new fallback User, and exit directly after editing.
     if (recovery === "close-editor") {
       setEditingCommand(null);
       setShowForm(false);
@@ -301,10 +303,10 @@ export function CommandsSection({
     [onFormScopeKeyChange],
   );
 
-  // pluginManagementStore 是全局单例，Plugins tab 的 PluginList 与本页在
-  // effectiveCommandScopeKey ≠ selectedScopeKey 时会用不同 target 交替初始化它。
-  // PluginList 已用 storeKey!==targetKey 自保护，这里复用同一模式，避免插件贡献的
-  // 命令分组短暂取自别的 target 的插件投影。
+  // pluginManagementStore is a global singleton, and the PluginList of the Plugins tab is the same as this page.
+  // When effectiveCommandScopeKey ≠ selectedScopeKey, it will be initialized alternately with different targets.
+  // PluginList has been self-protected with storeKey!==targetKey. The same pattern is reused here to avoid plug-in contributions.
+  // Command grouping is temporarily taken from the plugin projection of another target.
   const pluginStoreMatchesTarget =
     (pluginStoreWorkspaceIdentity?.trim() || pluginStoreWorkspacePath || "") ===
       currentWorkspaceKey && pluginConfigScope === scopeFilter;

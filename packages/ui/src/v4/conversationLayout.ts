@@ -16,7 +16,7 @@ export function getConversationContentWidthClassName(params: {
 }): string {
   if (params.centeredEmptyLayout) return CONVERSATION_DRAFT_CONTENT_WIDTH_CLASS_NAME;
 
-  // 宽布局统一使用 1280px，避免面板状态变化时触发不同断点造成内容列跳变。
+  // Use 1280px uniformly for wide layouts to avoid triggering different breakpoints when the panel state changes, causing content columns to jump.
   return params.statusPanelLayout === "none"
     ? CONVERSATION_CONTENT_WITHOUT_STATUS_PANEL_WIDTH_CLASS_NAME
     : CONVERSATION_CONTENT_WITH_STATUS_PANEL_WIDTH_CLASS_NAME;
@@ -25,8 +25,8 @@ export function getConversationContentWidthClassName(params: {
 export function resolveConversationStatusPanelVariant(params: {
   variantOverride: ConversationStatusPanelResolvedVariant | null;
 }): ConversationStatusPanelResolvedVariant {
-  // 自动模式必须保留到 DOM，由 conversation container query 裁决实际形态；
-  // React 不再通过 ResizeObserver 把容器宽度翻译成业务状态。
+  // Automatic mode must be retained in the DOM, and the conversation container query determines the actual form;
+  // React no longer translates container width into business state through ResizeObserver.
   return params.variantOverride ?? "auto";
 }
 
@@ -40,6 +40,6 @@ export function shouldUseConversationStatusPanelInlineLayout(params: {
 export function getConversationStatusPanelOffsetClassName(
   layout: "none" | "auto" | "inline",
 ): string | undefined {
-  // 状态面板和会话宽布局统一在 1280px 启用，保证面板状态切换不改变响应分水岭。
+  // The status panel and session width layout are unified at 1280px to ensure that panel status switching does not change the response watershed.
   return layout === "none" ? undefined : CONVERSATION_STATUS_PANEL_WIDE_OFFSET_CLASS_NAME;
 }

@@ -1,7 +1,10 @@
 import type { V4ComposerDraft } from "@/v4/composer/composerDraftStore.js";
 import type { SessionConfigState } from "@zcode/shared/zcode-protocol-v4";
 
-/** 只消费明确审批事实；重复快照不能把用户后来改回的权限再刷成 yolo。 */
+/**
+ * Only explicit approval facts are consumed; a repeated snapshot must not re-apply yolo to a
+ * permission the user later changed back.
+ */
 export function applyComposerPermissionGrant(
   draft: V4ComposerDraft,
   grant: SessionConfigState["permissionGrant"],

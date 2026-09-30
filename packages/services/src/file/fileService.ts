@@ -142,7 +142,7 @@ class FileExistenceCache {
       return undefined;
     }
 
-    // Map 保留插入顺序；命中后重新插入，让真正活跃的路径位于 LRU 队尾。
+    // Map preserves insertion order; reinserts after hits so that the truly active path is at the end of the LRU queue.
     this.entries.delete(path);
     this.entries.set(path, cached);
     return cached.exists;
@@ -150,8 +150,8 @@ class FileExistenceCache {
 
   set(path: string, exists: boolean): void {
     const now = Date.now();
-    // 旧缓存只在同一路径再次读取时判断 TTL，不同路径的过期项会永久留在 Host 内存中。
-    // 每次写入先清理全部过期项，再用固定容量兜住持续生成不同候选路径的长生命周期场景。
+    // The old cache only determines the TTL when the same path is read again, and expired items from different paths will remain in the Host memory permanently.
+    // For each write, all expired items are first cleared, and then fixed capacity is used to cover long life cycle scenarios where different candidate paths are continuously generated.
     for (const [cachedPath, cached] of this.entries) {
       if (cached.expiresAt <= now) {
         this.entries.delete(cachedPath);
@@ -186,8 +186,8 @@ async function resolveReaddirEntryType(
   }
   try {
     const targetStat = await stat(entryPath);
-    // Node 的 Dirent 对软链接目录只返回 isSymbolicLink，不会返回 isDirectory。
-    // 目录选择器只展示 directory 类型，远程 SSH 选目录时因此看不到指向目录的软链接；这里跟随目标重新分类。
+    // Node's Dirent only returns isSymbolicLink for soft link directories, but does not return isDirectory.
+    // The directory selector only displays the directory type. Therefore, you cannot see the soft link pointing to the directory when selecting the directory through remote SSH; here it is reclassified following the target.
     return targetStat.isDirectory() ? "directory" : "file";
   } catch {
     return "file";
@@ -199,12 +199,12 @@ export interface CreateFileServiceOptions {
 }
 
 /**
- * listWorkspaceFiles 的 Host 侧短 TTL 缓存：
- * 37 万文件 workspace 的全仓扫描即使并发化也要数秒，同一 workspace 的
- * 反复打开（@ 面板关闭即清理的 renderer 语义、Command Center、文件树）
- * 不应每次都重扫。服务内按 workspaceIdentity（缺省为 rootPath）隔离，
- * 校验 rootPath + .zcodeignore 的 mtime/size 指纹；规则编辑后缓存失效，
- * 保持"编辑规则后下次使用生效"的契约。
+ * Host side short TTL caching of listWorkspaceFiles:
+ * A full warehouse scan of a 370,000-file workspace will take several seconds even if it is done concurrently.
+ * Open repeatedly (@ renderer semantics, Command Center, file tree that is cleaned when the panel is closed)
+ * You should not rescan every time. The service is isolated by workspaceIdentity (default is rootPath).
+ * Verify the mtime/size fingerprint of rootPath + .zcodeignore; the cache will be invalid after editing the rules.
+ * Maintain the contract of "editing the rules will take effect the next time they are used".
  */
 const WORKSPACE_FILE_LIST_CACHE_TTL_MS = 60_000;
 const WORKSPACE_FILE_LIST_SCAN_CONCURRENCY = 8;
@@ -230,7 +230,7 @@ export function createFileService(options: CreateFileServiceOptions = {}): IFile
     options.workspaceFileSearchFilter ?? defaultWorkspaceFileSearchFilter;
   const workspaceIgnoreLogger = createServiceLogger("workspace-file-ignore");
   const fileExistenceCache = new FileExistenceCache();
-  // 索引归服务实例；不同 Host/注入过滤器不能通过模块全局缓存复用同路径结果。
+  // The index belongs to the service instance; different hosts/injection filters cannot reuse the same path results through the module global cache.
   const workspaceFileListCache = new Map<string, WorkspaceFileIndex>();
   const pendingFileExistenceChecks = new Map<string, Promise<boolean>>();
 
@@ -249,8 +249,8 @@ export function createFileService(options: CreateFileServiceOptions = {}): IFile
       .then((fileStat) => fileStat.isFile())
       .catch(() => false)
       .then((exists) => {
-        // 正负结果都缓存：assistant 自然语言经常重复提到同一缺失路径，避免远程 Host
-        // 在一分钟内为同一候选重复发起 SSH stat。
+        // Both positive and negative results are cached: assistant natural language often mentions the same missing path repeatedly to avoid remote hosts
+        // Repeatedly initiate SSH stat for the same candidate within one minute.
         fileExistenceCache.set(path, exists);
         return exists;
       })
@@ -261,7 +261,7 @@ export function createFileService(options: CreateFileServiceOptions = {}): IFile
     return check;
   };
 
-  // 全量扫描 + 打包（带 60s TTL / .zcodeignore 指纹缓存）。分块 RPC 共享同一份 packed。
+  // Full scan + packaging (with 60s TTL / .zcodeignore fingerprint cache). Chunked RPCs share the same packed.
   const workspaceFileListScanning = new Map<
     string,
     { signature: string; promise: Promise<WorkspaceFileIndex> }
@@ -279,7 +279,7 @@ export function createFileService(options: CreateFileServiceOptions = {}): IFile
         workspaceFileListCache.delete(key);
     }
     const inFlight = workspaceFileListScanning.get(workspaceKey);
-    // 刷新中的同作用域查询等待新索引，不能先命中旧缓存而遗漏刚创建的文件。
+    // The same scope query in the refresh is waiting for the new index and cannot hit the old cache first and miss the newly created file.
     if (!refresh && inFlight?.signature === cacheSignature) return inFlight.promise;
     const cached = workspaceFileListCache.get(workspaceKey);
     if (!refresh && cached?.signature === cacheSignature) {
@@ -290,9 +290,9 @@ export function createFileService(options: CreateFileServiceOptions = {}): IFile
     const scanning = (async () => {
       const entries: WorkspaceFileEntry[] = [];
       const pendingDirectories: string[] = [rootPath];
-      // 单线程串行 DFS 一次只 await 一个 readdir，
-      // 37 万文件的 Windows workspace 实测 21.8s；改为共享目录队列的受限并发遍历，
-      // 结果仍按既有规则排序，遍历顺序不影响语义。
+      // Single-threaded serial DFS only awaits one readdir at a time,
+      // The Windows workspace with 370,000 files measured 21.8s; changed to limited concurrent traversal of the shared directory queue,
+      // The results are still sorted according to the existing rules, and the traversal order does not affect the semantics.
       const traverseWorker = async (): Promise<void> => {
         for (;;) {
           const currentPath = pendingDirectories.pop();
@@ -350,7 +350,7 @@ export function createFileService(options: CreateFileServiceOptions = {}): IFile
     workspaceFileListScanning.set(workspaceKey, { signature: cacheSignature, promise: scanning });
     try {
       const index = await scanning;
-      // 显式刷新/规则变化可替换在途扫描，旧扫描完成时只服务旧请求，不覆盖新索引。
+      // Explicit refresh/rule changes can replace in-flight scans. When the old scan is completed, only old requests will be served and new indexes will not be overwritten.
       if (workspaceFileListScanning.get(workspaceKey)?.promise === scanning) {
         workspaceFileListCache.delete(workspaceKey);
         workspaceFileListCache.set(workspaceKey, index);
@@ -373,8 +373,8 @@ export function createFileService(options: CreateFileServiceOptions = {}): IFile
       const visibleEntries = await Promise.all(
         entries
           .filter((e) => {
-            // 修复：workspace 文件树需要展示 .gitignore/.env/.github 等项目文件，
-            // 但目录选择器等旧调用仍应默认隐藏 dotfiles，避免突然增加噪音。
+            // Fix: The workspace file tree needs to display project files such as .gitignore/.env/.github.
+            // But old calls like directory selectors should still hide dotfiles by default to avoid a sudden increase in noise.
             return params.includeHidden === true || !e.name.startsWith(".");
           })
           .map(async (e) => {
@@ -394,14 +394,14 @@ export function createFileService(options: CreateFileServiceOptions = {}): IFile
     },
     async stat(params: { path: string }) {
       const fileStat = await stat(params.path);
-      // markdown 链接点击时需要区分文件和目录。
-      // 之前统一当文件打开，目录会落到 CodeViewer 里读文件失败；这里把判断收口到服务层，
-      // UI 只根据结构化结果分流到预览或临时文件树。
+      // Markdown links need to distinguish between files and directories when clicked.
+      // Previously, when a file was opened, the directory would fall into CodeViewer and failed to read the file; here, the judgment is closed to the service layer.
+      // The UI simply offloads to the preview or temporary file tree based on structured results.
       const isDirectory = fileStat.isDirectory();
       return {
         path: params.path,
         type: isDirectory ? ("directory" as const) : ("file" as const),
-        // 目录的 size 无意义，只对文件返回，供预览层决定二进制文件的加载策略
+        // The size of the directory is meaningless and is only returned for files for the preview layer to determine the loading strategy of binary files.
         ...(isDirectory ? {} : { size: fileStat.size, mtimeMs: fileStat.mtimeMs }),
       };
     },
@@ -414,7 +414,7 @@ export function createFileService(options: CreateFileServiceOptions = {}): IFile
         );
       }
 
-      // 调用方已按正文逆序选出候选；Promise.all 保持输入顺序，并把单批并发硬限制在 15。
+      // The caller has selected candidates in reverse text order; Promise.all maintains input order and hard limits single-batch concurrency to 15.
       return Promise.all(
         params.paths.map(async (path) => ({
           path,
@@ -423,8 +423,8 @@ export function createFileService(options: CreateFileServiceOptions = {}): IFile
       );
     },
     async resolvePath(params: { path: string }): Promise<string> {
-      // 远程 workspace 可能通过符号链接别名输入（/dev vs /home/dev）。
-      // 这里统一走 realpath，供上层做稳定身份计算，避免同目录被识别成两个 workspace。
+      // The remote workspace may be entered via a symbolic link alias (/dev vs /home/dev).
+      // Realpath is used here uniformly for the upper layer to perform stable identity calculations to prevent the same directory from being recognized as two workspaces.
       return realpath(params.path);
     },
     async createDefaultWorkspace(): Promise<{ path: string }> {
@@ -470,8 +470,8 @@ export function createFileService(options: CreateFileServiceOptions = {}): IFile
       if (!workspaceStat.isDirectory()) {
         throw new Error(`Workspace path is not a directory: ${workspacePath}`);
       }
-      // Start from scratch 必须通过 service 层创建空目录，UI 只提交名称。
-      // 这里仅确保目录存在，不初始化 git、不写模板文件；mkdir recursive 让已存在目录幂等成功。
+      // Start from scratch must create an empty directory through the service layer, and the UI only submits the name.
+      // This only ensures that the directory exists, without initializing git or writing template files; mkdir recursive makes the existing directory idempotent and succeeds.
       return { path: workspacePath };
     },
     async readTextFile(params: {
@@ -504,8 +504,8 @@ export function createFileService(options: CreateFileServiceOptions = {}): IFile
         const { bytesRead } = await handle.read(buffer, 0, readLength, offset);
         const chunk = buffer.subarray(0, bytesRead);
         const isBinary = isProbablyBinary(chunk);
-        // 性能说明：文本读取始终受 256KB 硬上限约束，调用方可据 truncated 决定是否展示，
-        // 避免大文件或远程文件一次性 readFile 把 utility process 和 renderer 一起拖慢。
+        // Performance Note: Text reading is always subject to the 256KB hard limit, and the caller can decide whether to display it based on truncated.
+        // Avoid a one-time readFile for large or remote files that slows down both the utility process and the renderer.
         return {
           path: params.path,
           content: isBinary ? "" : chunk.toString("utf-8"),
@@ -538,9 +538,9 @@ export function createFileService(options: CreateFileServiceOptions = {}): IFile
       try {
         const buffer = Buffer.allocUnsafe(readLength);
         const { bytesRead } = await handle.read(buffer, 0, readLength, offset);
-        // 返回顶层 Uint8Array：RPC 序列化只有顶层二进制走原始字节通道，
-        // 包成对象字段会退化成 JSON+base64，大文件分段加载的体积收益就没了。
-        // 这里拷贝成独立 buffer，避免 allocUnsafe 共享池的无关字节被一起克隆出去。
+        // Returning the top-level Uint8Array: RPC serialization only takes the raw byte channel for the top-level binary,
+        // Wrapping it into object fields will degenerate into JSON+base64, and the volume gain of loading large files in sections will be lost.
+        // This is copied into an independent buffer to prevent irrelevant bytes from the allocUnsafe shared pool from being cloned together.
         return new Uint8Array(buffer.subarray(0, bytesRead));
       } finally {
         await handle.close();
@@ -555,7 +555,7 @@ export function createFileService(options: CreateFileServiceOptions = {}): IFile
       if (fileStat.size > maxBytes) {
         throw new Error(`File is too large to preview: ${params.path}`);
       }
-      // 媒体预览继续通过 service 抽象兼容 desktop / web / remote，而不是在 UI 层直接碰文件系统。
+      // Media preview continues to be compatible with desktop/web/remote through service abstraction instead of directly touching the file system at the UI layer.
       const content = await readFile(params.path);
       return {
         path: params.path,
@@ -576,9 +576,9 @@ export function createFileService(options: CreateFileServiceOptions = {}): IFile
       if (fileStat.size > maxBytes) {
         throw new Error(`File is too large to preview: ${params.path}`);
       }
-      // Office 解析器需要完整的 ZIP / OLE 字节，不能复用文本分块读取。
-      // 这里在 service 层先做 25 MB 硬上限，再以 base64 跨 RPC 返回，
-      // 保持 desktop、Web 和远程 workspace 使用同一文件读取边界。
+      // Office parsers require full ZIP/OLE bytes and cannot reuse text chunked reads.
+      // Here, a hard upper limit of 25 MB is first set at the service layer, and then returned across RPC in base64.
+      // Keep desktop, web, and remote workspaces using the same file read boundaries.
       const content = await readFile(params.path);
       return {
         path: params.path,

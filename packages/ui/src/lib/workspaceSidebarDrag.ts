@@ -1,8 +1,8 @@
 import type { WorkspaceTabState } from "@/store/tabStore.js";
 import type { SortingStrategy } from "@dnd-kit/sortable";
 
-// 项目行展开时可能高达数百像素，但拖拽视觉只保留 h-8 项目头。
-// 兄弟让位必须固定按完全收起后的 32px 计算，不能沿用 dnd-kit 缓存的展开高度。
+// Item rows can be as high as hundreds of pixels when expanded, but the drag visual only retains the h-8 item header.
+// The sibling giving way must be calculated based on the fully collapsed 32px, and the expanded height of the dnd-kit cache cannot be used.
 const WORKSPACE_DRAG_COLLAPSED_ROW_HEIGHT = 32;
 
 function resolveWorkspaceDragSiblingDisplacement(params: {

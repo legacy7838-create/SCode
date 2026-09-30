@@ -100,8 +100,8 @@ export async function importChromeBrowserData(options: {
         options.chromeExecutableDiscovery ?? (() => resolveChromeExecutablePath({ platform }))
       )()) ?? undefined;
     if (!detectedChromeExecutablePath) {
-      // 过去会先扫描默认 Profile，导致“Chrome 未安装”被误报为 Profile 缺失，
-      // 也无法识别注册在非默认目录的浏览器。先完成可执行文件发现，失败时不访问源数据。
+      // In the past, the default Profile was scanned first, causing "Chrome not installed" to be mistakenly reported as a missing Profile.
+      // Browsers registered in non-default directories will also not be recognized. Executable discovery is completed first, and source data is not accessed on failure.
       return emptyImportResult("chrome_executable_not_found");
     }
   }
@@ -129,7 +129,7 @@ export async function importChromeBrowserData(options: {
   const issues = new Set<ChromeBrowserDataImportError>();
 
   try {
-    options.logger.info("[browser-data] 开始导入 Chrome 浏览器数据", {
+    options.logger.info("[browser-data] starting Chrome browser data import", {
       browser: discovered?.source.browser ?? "explicit-profile",
       profile: discovered?.source.profileDirectory ?? "explicit-profile",
     });
@@ -150,7 +150,7 @@ export async function importChromeBrowserData(options: {
     for (const issue of cookieImport.issues) issues.add(issue);
 
     const localStorageImporter = options.localStorageImporter ?? importChromeLocalStorage;
-    options.logger.info("[browser-data] 开始导入 Chrome LocalStorage");
+    options.logger.info("[browser-data] starting Chrome LocalStorage import");
     result.localStorage = await localStorageImporter({
       profilePath,
       targetSession: targetSession as Electron.Session,
@@ -177,7 +177,7 @@ export async function importChromeBrowserData(options: {
       result.error ??= result.localStorage.error ?? "chrome_browser_data_import_unavailable";
     }
     if (issues.size > 0) result.issues = [...issues];
-    options.logger.info("[browser-data] Chrome 数据导入完成", {
+    options.logger.info("[browser-data] Chrome data import completed", {
       importedCount: result.cookies.imported,
       skippedCount: result.cookies.skipped,
       failedCount: result.cookies.failed,
@@ -189,16 +189,18 @@ export async function importChromeBrowserData(options: {
     return result;
   } catch (error) {
     if (error instanceof ChromeCookieAccessDeniedError) {
-      // macOS 用户拒绝钥匙串授权后，导入必须作为一个整体停止，不能再进入
-      // LocalStorage 阶段；返回稳定错误码给 renderer 展示明确提示。
-      options.logger.warn("[browser-data] Chrome 数据导入已取消：macOS 钥匙串授权被拒绝");
+      // After a macOS user denies keychain authorization, the import must stop as a whole and cannot be entered again
+      // LocalStorage stage; returns a stable error code to the renderer to display a clear prompt.
+      options.logger.warn(
+        "[browser-data] Chrome data import cancelled: macOS keychain authorization was denied",
+      );
       return {
         ...result,
         error: "chrome_cookie_access_denied",
       };
     }
-    // 只记录错误类型/错误码，不记录 Cookie、LocalStorage 值或绝对 Profile 路径。
-    options.logger.warn("[browser-data] Chrome 数据导入失败", toSafeBrowserDataError(error));
+    // Only error types/error codes are logged, cookies, LocalStorage values ​​or absolute Profile paths are not logged.
+    options.logger.warn("[browser-data] Chrome data import failed", toSafeBrowserDataError(error));
     return {
       ...result,
       ...(issues.size > 0 ? { issues: [...issues] } : {}),
@@ -219,13 +221,17 @@ export async function clearEmbeddedBrowserData(options: {
     if (options.mode === "all") {
       await targetSession.clearStorageData();
     } else {
-      // 普通缓存清理不能删除承载登录态的 LocalStorage/IndexedDB。
+      // Ordinary cache cleaning cannot delete LocalStorage/IndexedDB that hosts login status.
       await targetSession.clearStorageData({ storages: CACHE_STORAGE_TYPES });
     }
-    options.logger.info("[browser-data] 内置浏览器数据清理完成", { mode: options.mode });
+    options.logger.info("[browser-data] embedded browser data cleanup completed", {
+      mode: options.mode,
+    });
     return { success: true };
   } catch {
-    options.logger.warn("[browser-data] 内置浏览器数据清理失败", { mode: options.mode });
+    options.logger.warn("[browser-data] embedded browser data cleanup failed", {
+      mode: options.mode,
+    });
     return { success: false, error: "embedded_browser_clear_failed" };
   }
 }

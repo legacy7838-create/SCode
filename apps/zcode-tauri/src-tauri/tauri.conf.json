@@ -1,0 +1,45 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "ZCode",
+  "version": "3.14.3",
+  "identifier": "dev.zcode.app",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:5199",
+    "beforeDevCommand": "pnpm --filter @zcode/tauri dev:web",
+    "beforeBuildCommand": "pnpm --filter @zcode/tauri build:web"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost data: blob: https:; media-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; font-src 'self' data: https:; connect-src 'self' ipc: http://ipc.localhost http://localhost:* ws://localhost:* wss://localhost:* https: wss:",
+      "capabilities": ["default"]
+    },
+    "trayIcon": {
+      "id": "zcode-tray",
+      "iconPath": "icons/32x32.png",
+      "tooltip": "ZCode",
+      "menuOnLeftClick": false
+    }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["zcode"]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["deb", "appimage", "rpm"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/256x256.png",
+      "icons/icon.png"
+    ],
+    "category": "Development",
+    "shortDescription": "ZCode Desktop App",
+    "longDescription": "ZCode Desktop App (Tauri port)"
+  }
+}

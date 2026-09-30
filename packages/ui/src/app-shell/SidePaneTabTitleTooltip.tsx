@@ -17,7 +17,7 @@ export function SidePaneTabTitleTooltip({
 
   useEffect(() => {
     if (isDragging) {
-      // 拖拽开始后清掉已打开状态，避免拖拽结束时在旧 tab 上恢复 tooltip。
+      // Clear the open status after dragging starts to avoid restoring the tooltip on the old tab when dragging ends.
       setIsOpen(false);
     }
   }, [isDragging]);
@@ -27,7 +27,7 @@ export function SidePaneTabTitleTooltip({
       <ControlHintTooltip
         title={title}
         side="bottom"
-        // ControlHintTooltip 默认给普通按钮加 shrink-0；side tab 必须保留等宽收缩能力。
+        // ControlHintTooltip adds shrink-0 to ordinary buttons by default; side tabs must retain the ability to shrink with equal width.
         triggerClassName="shrink"
         open={isOpen && !isDragging}
         onOpenChange={(open) => setIsOpen(isDragging ? false : open)}

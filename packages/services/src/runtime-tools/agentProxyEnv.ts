@@ -5,17 +5,17 @@ import {
   ZCODE_WORKSPACE_IDENTITY_ENV,
 } from "@zcode/shared";
 
-// 把设置页的 HTTP 代理、No Proxy 和自定义 CA 翻译成 agent 子进程的环境变量补丁。
-// agent 是子进程，继承宿主 process.env；这里在 spawn 时把代理与证书注入进去，所以「下次启动 agent」生效。
+// Translate the HTTP proxy, No Proxy and custom CA on the settings page into environment variable patches for the agent sub-process.
+// Agent is a child process and inherits the host process.env; here, the agent and certificate are injected when spawning, so "start the agent next time" will take effect.
 //
-// 代理：设置大写标准三件套保证设置页优先于继承来的同名 shell 变量（model registry 按 HTTPS_PROXY →
-// HTTP_PROXY → … 先匹配大写）；额外设 ZCODE_HTTP_PROXY 让 Bash 工具子进程经 subprocess-env 拿到最高优先级。
+// Proxy: Set the uppercase standard three-piece set to ensure that the settings page takes precedence over inherited shell variables of the same name (model registry by HTTPS_PROXY →
+// HTTP_PROXY → ... matches uppercase first); additionally set ZCODE_HTTP_PROXY to allow the Bash tool subprocess to get the highest priority via subprocess-env.
 //
-// No Proxy：只接受设置页显式填写的绕过规则。额外设 ZCODE_NO_PROXY 让 provider/http adapter
-// 能在不读取用户 shell NO_PROXY 的前提下复用同一套规则。
+// No Proxy: Only bypass rules explicitly filled in on the settings page are accepted. Additional setting ZCODE_NO_PROXY allows provider/http adapter
+// The same set of rules can be reused without reading the user shell NO_PROXY.
 //
-// 自定义证书：只接受设置页显式填写的 PEM 路径。注入 NODE_EXTRA_CA_CERTS 让 agent（含模型 provider 请求）
-// 在 Node 启动时信任它，同时用 ZCODE_AGENT_CA_CERT 给 adapter 和工具子进程补齐跨运行时 CA 变量。
+// Custom certificate: Only accept PEM paths explicitly filled in on the settings page. Inject NODE_EXTRA_CA_CERTS to let the agent (including model provider request)
+// Trust Node when it starts, and use ZCODE_AGENT_CA_CERT to complete the cross-runtime CA variables for adapter and tool subprocesses.
 
 const PROXY_ENV_KEYS = [
   "HTTP_PROXY",
@@ -43,8 +43,8 @@ function buildAgentCaCertEnv(caCertPath: string | undefined): Record<string, str
     return {};
   }
   return {
-    // NODE_EXTRA_CA_CERTS 必须在 Node 进程启动前存在；ZCODE_AGENT_CA_CERT 则给运行时配置、
-    // provider fetch 和工具子进程使用，避免清洗标准 CA 环境后丢失 app 显式注入的证书路径。
+    // NODE_EXTRA_CA_CERTS must exist before the Node process is started; ZCODE_AGENT_CA_CERT is configured for runtime.
+    // Provider fetch and tool sub-processes are used to avoid losing the certificate path explicitly injected by the app after cleaning the standard CA environment.
     NODE_EXTRA_CA_CERTS: trimmed,
     [ZCODE_AGENT_CA_CERT_ENV_KEY]: trimmed,
   };
@@ -63,8 +63,9 @@ function buildAgentNoProxyEnv(noProxy: string | undefined): Record<string, strin
 }
 
 /**
- * spawn agent 时一次性解析的运行时 env 补丁：代理 + No Proxy + 自定义 CA。
- * 这些值都只来自 AppSettings 显式配置；用户 shell 里的标准代理/证书变量已经在上游清洗。
+ * The runtime env patch resolved once when spawning an agent: proxy + No Proxy + custom CA.
+ * All of these values come only from explicit AppSettings configuration; the standard
+ * proxy/certificate variables in the user's shell have already been sanitized upstream.
  */
 export function buildAgentRuntimeEnv(input: {
   httpProxy: string | undefined;
@@ -80,25 +81,32 @@ export function buildAgentRuntimeEnv(input: {
 }
 
 /**
- * 把 host 已解析出的**权威 ZCode API origin** 下发给 agent 子进程。
+ * Hands the **authoritative ZCode API origin** already resolved by the host down to the agent child process.
  *
- * 两侧的官方 MCP 信任判定共用 `@zcode/shared` 的同一份实现，但**输入**
- * 曾经分叉——host 用 `resolveRuntimeZCodeEndpointOrigin(env, { overrideOrigin: settings
- * .zcodeEndpointOrigin })`，agent 只有 `resolveRuntimeZCodeEndpointOrigin(env)`，而 settings
- * 覆盖值从不下发给子进程。在 `ZCODE_ENV=test` 且用户在设置页配了自定义端点时，两侧算出的
- * origin 必然不同，任一 origin 的官方 MCP 都会被其中一侧 fail closed 拒绝，日志表现却酷似
- * 插件 url 配错。单源实现救不了分叉的输入，因此必须把输入也统一。
+ * Both sides share the same implementation from `@zcode/shared` for the official MCP trust
+ * decision, but the **inputs** used to diverge: the host used
+ * `resolveRuntimeZCodeEndpointOrigin(env, { overrideOrigin: settings
+ * .zcodeEndpointOrigin })` while the agent only had `resolveRuntimeZCodeEndpointOrigin(env)`,
+ * and the settings override was never handed down to the child process. With `ZCODE_ENV=test`
+ * and a custom endpoint configured in the settings page, the origins computed on the two sides
+ * are necessarily different, so the official MCP of either origin is rejected fail-closed by one
+ * of them — yet the logs look exactly like a mistyped plugin url. A single-source implementation
+ * cannot rescue diverged inputs, so the inputs must be unified too.
  *
- * 为什么注入 `ZCODE_BASE_URL` 而不是只给信任判定加参数：agent 侧有 4 处调用
- * `resolveRuntimeZCodeEndpointOrigin`（信任判定、provider 路由来源头、model-config、
- * auth-login），它们都读同一个 env，一处注入即可全部对齐；只修信任判定会把另外 3 处的分叉留下。
+ * Why inject `ZCODE_BASE_URL` instead of just adding a parameter to the trust decision: the agent
+ * side has 4 call sites for `resolveRuntimeZCodeEndpointOrigin` (trust decision, provider routing
+ * source header, model-config, auth-login); they all read the same env, so injecting in one place
+ * aligns all of them, while fixing only the trust decision would leave the other 3 diverged.
  *
- * 幂等性：传入的是 host **已解析完成**的最终值。agent 继承 host 的 process.env，其 env 派生
- * 结果本就等于 host 的 env 派生结果，再叠加 override 就是这里的值；production 下 host 忽略
- * override，注入值等于 env 派生值，行为不变。
+ * Idempotence: what is passed in is the host's **already resolved** final value. The agent inherits
+ * the host's process.env, so its env-derived result already equals the host's env-derived result,
+ * and layering the override on top yields exactly this value; in production the host ignores the
+ * override, so the injected value equals the env-derived value and behavior is unchanged.
  *
- * 时效性：与代理/CA 同语义——spawn 时读取，「下次启动 agent」生效。会话中途改设置时 host 立即
- * 更新、agent 仍是旧值，直到 agent 重启才重新对齐；期间两侧不一致只会 fail closed，不构成放行。
+ * Timeliness: same semantics as the proxy/CA, i.e. read at spawn time so it takes effect on the
+ * "next agent start". When settings change mid-session the host updates immediately while the
+ * agent still holds the old value until it restarts and realigns; the inconsistency during that
+ * window only ever fails closed, it never grants access.
  */
 export function buildAgentEndpointOriginEnv(
   endpointOrigin: string | undefined,
@@ -107,12 +115,12 @@ export function buildAgentEndpointOriginEnv(
   if (!trimmed) {
     return {};
   }
-  // ZCODE_BASE_URL 是 resolveRuntimeZCodeEndpointOrigin 读取 envBaseOrigin 的最高优先级键，
-  // 因此能同时压过继承来的 ZCODE_ENDPOINT_ORIGIN。
+  // ZCODE_BASE_URL is the highest priority key for resolveRuntimeZCodeEndpointOrigin to read envBaseOrigin,
+  // Therefore, it can also override the inherited ZCODE_ENDPOINT_ORIGIN.
   return { ZCODE_BASE_URL: trimmed };
 }
 
-/** 把 Host 已知的 remote workspace identity 注入对应 Agent；本地 workspace 保持 path fallback。 */
+/** Injects the remote workspace identity the Host already knows into the corresponding Agent; a local workspace keeps the path fallback. */
 export function buildAgentWorkspaceIdentityEnv(
   workspaceIdentity: string | undefined,
 ): Record<string, string> {
@@ -125,7 +133,7 @@ function normalizeProxyValue(value: string | undefined): string | undefined {
   if (!trimmed) {
     return undefined;
   }
-  // 已带 scheme（http://、socks5:// 等）原样保留；裸 host:port 补 http://。
+  // The schemes (http://, socks5://, etc.) are retained as they are; the bare host:port is supplemented with http://.
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) {
     return trimmed;
   }

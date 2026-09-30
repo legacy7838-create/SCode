@@ -1,4 +1,4 @@
-/* oxlint-disable eslint(max-lines) -- Provider 与 Access Config 的 Overlay/序列化必须集中维护同一联合类型；待契约稳定后再按配置族拆文件。 */
+/* oxlint-disable eslint(max-lines) -- Provider and Access Config overlays/serialization must keep the same union type maintained in one place; the file gets split by config family once the contract settles. */
 import { ConfigOverlay, type ConfigValidationIssue } from "../config-overlay.js";
 import type { z } from "zod";
 import {
@@ -115,7 +115,7 @@ export type ProviderAccessConfig = ApiKeyAccessConfig | ZhipuAccountAccessConfig
 
 export type ProviderAccessConfigObject = Readonly<z.infer<typeof providerAccessDataSchema>>;
 
-/** 手动 Key 的编辑/保存共用能力判断，不把套餐 Key 误写成普通 API Key。 */
+/** Shared capability check for editing/saving a manual Key, so a plan Key is never written out as a plain API Key. */
 export function isApiKeyAccess<T extends { readonly type: string }>(
   access: T | null | undefined,
 ): access is Extract<T, { readonly type: ApiKeyAccessConfigObject["type"] }> {
@@ -150,7 +150,7 @@ export class ProviderApiConfig extends ConfigOverlay<ProviderApiConfig> {
   }
 
   validateComplete(path: readonly string[] = []): readonly ConfigValidationIssue[] {
-    // 旧检查只判断 type 非空，不可信 JS 值可绕过枚举；准入与保存共用 schema。
+    // The old check only determines that type is not empty, and untrusted JS values ​​can bypass enumeration; admission and saving share the same schema.
     return validateConfigSchema(completeProviderApiDataSchema, this.toJSON(), path);
   }
 
@@ -230,7 +230,7 @@ export class ProviderConfig extends ConfigOverlay<ProviderConfig> {
     });
   }
 
-  /** 普通 Provider 字段保存不拥有成员变更；成员只能由明确的领域操作更新。 */
+  /** Saving ordinary Provider fields does not own membership changes; members can only be updated by explicit domain operations. */
   withModelMembershipFrom(source: ProviderConfig | undefined): ProviderConfig {
     return new ProviderConfig({
       group: this.group,
@@ -245,7 +245,7 @@ export class ProviderConfig extends ConfigOverlay<ProviderConfig> {
   }
 
   validateComplete(path: readonly string[] = []): readonly ConfigValidationIssue[] {
-    // 不再用字段存在性代替值域验证，也不把展示/成员等可选字段变成执行必填项。
+    // Field presence is no longer used instead of domain validation, and optional fields such as display/membership are no longer required for execution.
     return validateConfigSchema(completeProviderConfigDataSchema, this.toJSON(), path);
   }
 
@@ -272,7 +272,7 @@ export type ProviderTemplateInput = Omit<ProviderTemplateObject, "config"> & {
 
 export type ProviderTemplateObject = Readonly<z.infer<typeof providerTemplateDataSchema>>;
 
-/** Template 是元数据与 Provider Overlay 的领域壳，本身不是 Provider。 */
+/** A Template is the domain shell around metadata and the Provider Overlay; it is not itself a Provider. */
 export class ProviderTemplate {
   readonly templateId: ProviderTemplateId;
   readonly templateNameMap: ProviderTemplateNameMap;
@@ -306,7 +306,7 @@ export function resolveProviderTemplateName(
   );
 }
 
-/** Built-in Template 与真实 Provider 使用不同身份空间；Template 永不进入 Registry。 */
+/** Built-in Templates and real Providers live in different identity spaces; a Template never enters the Registry. */
 export class ProviderTemplateMap extends ConfigOverlay<ProviderTemplateMap> {
   readonly #values: ReadonlyMap<ProviderTemplateId, ProviderTemplate>;
 
@@ -314,7 +314,7 @@ export class ProviderTemplateMap extends ConfigOverlay<ProviderTemplateMap> {
     super();
     const values = new Map<ProviderTemplateId, ProviderTemplate>();
     for (const [templateId, template] of entries) {
-      if (values.has(templateId)) throw new Error(`重复 Provider Template key: ${templateId}`);
+      if (values.has(templateId)) throw new Error(`Duplicate Provider Template key: ${templateId}`);
       values.set(templateId, template);
     }
     this.#values = values;
@@ -369,7 +369,7 @@ function freezeModelIds(
   return Object.freeze(
     modelIds.map((modelId) => {
       const normalized = modelId.trim();
-      if (!normalized) throw new Error("Model ID 不能为空");
+      if (!normalized) throw new Error("Model ID must not be empty");
       return normalized;
     }),
   );
@@ -379,7 +379,7 @@ export type ProviderConfigRule = Readonly<
   Omit<ProviderConfigRuleData, "config"> & { config: ProviderConfig }
 >;
 
-/** 索引只保存完整规则；get/entries 是内容投影，改成员时不能丢掉外层身份和名称。 */
+/** The index only stores complete rules; get/entries are content projections, so changing members must not drop the outer identity and name. */
 export class ProviderConfigMap extends ConfigOverlay<ProviderConfigMap> {
   readonly #values: ReadonlyMap<ProviderId, ProviderConfigRule>;
 
@@ -388,7 +388,8 @@ export class ProviderConfigMap extends ConfigOverlay<ProviderConfigMap> {
     const values = new Map<ProviderId, ProviderConfigRule>();
     for (const entry of entries) {
       const rule = "providerId" in entry ? entry : { providerId: entry[0], config: entry[1] };
-      if (values.has(rule.providerId)) throw new Error(`重复 Provider key: ${rule.providerId}`);
+      if (values.has(rule.providerId))
+        throw new Error(`Duplicate Provider key: ${rule.providerId}`);
       values.set(rule.providerId, Object.freeze({ ...rule }));
     }
     this.#values = values;

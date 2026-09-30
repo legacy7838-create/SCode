@@ -38,9 +38,9 @@ function normalizeMarkdownDestination(destination: string): string {
     return destination;
   }
 
-  // Streamdown/rehype-harden 会把 `foo/bar.ts` 这种裸路径当成自定义协议 `foo:`，
-  // 结果用户消息里的文件引用会被渲染成 `[blocked]`。这里统一补成 `./foo/bar.ts`，
-  // 让它明确成为相对路径链接，既保留 Markdown 语义，也能通过安全校验正常展示。
+  // Streamdown/rehype-harden will treat bare paths like `foo/bar.ts` as custom protocol `foo:`,
+  // As a result, file references in user messages will be rendered as `[blocked]`. `./foo/bar.ts` is uniformly added here.
+  // Make it a clear relative path link, which not only retains Markdown semantics, but can also be displayed normally through security verification.
   return `./${destination}`;
 }
 
@@ -85,8 +85,8 @@ export function buildSessionMentionMarkdown(sessionId: string, label?: string): 
   return `[${escapeMarkdownLabel(`#${trimmedLabel}`)}](#${escapeMarkdownDestination(sessionId)})`;
 }
 
-// Plugin 引用的 canonical 持久化载体：
-// `[@Label](plugin://stable-id)`。身份只在 destination；label 仅用于展示。
+// Canonical persistence vector referenced by Plugin:
+// `[@Label](plugin://stable-id)`. The identity is only at the destination; the label is for display only.
 export function buildPluginMentionMarkdown(label: string, pluginId: string): string {
   return `[${escapeMarkdownLabel(`@${label}`)}](plugin://${escapeMarkdownDestination(pluginId)})`;
 }
@@ -112,8 +112,9 @@ function parsePluginStableId(destination: string): string | undefined {
 }
 
 /**
- * 将技能 slug（如 code-review）格式化为聊天气泡中的可读标题（Code Review）。
- * 已是包含空格的短语时原样返回，避免破坏用户自定义展示名。
+ * Formats a skill slug (such as code-review) into a readable title for chat bubbles (Code Review).
+ * A phrase that already contains spaces is returned as-is, so user-defined display names are not
+ * broken.
  */
 export function formatSkillMentionDisplayLabel(label: string): string {
   const t = label.trim();
@@ -190,10 +191,10 @@ export function parseMentionMarkdown(content: string): MentionTextPart[] {
     if (/^#sess_[a-zA-Z0-9._-]+$/.test(destination)) {
       parts.push({ type: "session", label: label.startsWith("#") ? label.slice(1) : label });
     } else if (destination.startsWith("plugin://")) {
-      // Plugin 引用链接绝不能落入 file 分支或被当外链处理；
-      // 发送后曾只保留 label，消息层失去 stable ID，只能固定显示兜底图标。
-      // 这里原样保留合法 destination 身份供 UI 与 Session catalog 关联；非法目标仍保持
-      // display-only，不做 label 猜测、percent decode 或 canonical 改写。
+      // Plugin reference links must not fall into the file branch or be treated as external links;
+      // After sending, only the label was retained, the message layer lost the stable ID, and only the bottom icon was permanently displayed.
+      // Here, the legal destination identity is retained as is for the UI to associate with the Session catalog; illegal destinations remain
+      // Display-only, no label guessing, percent decoding or canonical rewriting.
       const pluginId = parsePluginStableId(destination);
       parts.push({
         type: "plugin",
@@ -203,8 +204,8 @@ export function parseMentionMarkdown(content: string): MentionTextPart[] {
     } else if (label.startsWith("$")) {
       parts.push({ type: "skill", label: label.slice(1) });
     } else if (isDirectoryMentionDestination(destination)) {
-      // 目录 mention 之前只按普通 file 还原，消息回显层拿不到 folder 语义，
-      // 于是文件夹候选在气泡里会继续显示成普通文件图标。这里根据链接目标是否以斜杠结尾恢复目录类型。
+      // Before, the directory mention could only be restored as a normal file, and the message echo layer could not get the folder semantics.
+      // Therefore, the folder candidates will continue to display as ordinary file icons in the bubble. Here the directory type is restored based on whether the link target ends with a slash.
       parts.push({ type: "directory", label: label.startsWith("@") ? label.slice(1) : label });
     } else {
       parts.push({ type: "file", label: label.startsWith("@") ? label.slice(1) : label });

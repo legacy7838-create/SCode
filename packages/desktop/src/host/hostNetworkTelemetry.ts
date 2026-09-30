@@ -23,15 +23,15 @@ function flushHostNetworkTelemetryBatch(): void {
       observations,
     });
   } catch {
-    // 遥测批次失败不应影响 host 主流程
+    // Telemetry batch failure should not affect the host main process
   }
 }
 
 export function registerHostNetworkTelemetry(
   parentPort: HostNetworkTelemetryParentPort | null | undefined,
 ): void {
-  // 修复原因：desktop host 是 Electron utility process，通信端口在 process.parentPort；
-  // node:worker_threads.parentPort 在这里为 null，会导致 LLM/RPC 网络遥测批次无法发回 main。
+  // Reason for repair: desktop host is Electron utility process, and the communication port is process.parentPort;
+  // node:worker_threads.parentPort is null here, which will cause the LLM/RPC network telemetry batch to fail to be sent back to main.
   activeParentPort = parentPort ?? null;
   setNetworkTelemetrySink((observation) => {
     pending.push(observation);

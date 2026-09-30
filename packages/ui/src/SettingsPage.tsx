@@ -12,7 +12,6 @@ import type {
   AppSettings,
   IntegratedTerminalShellOption,
   IntegratedTerminalShellSelection,
-  Locale,
   UsageEntitlementSnapshot,
   UserInfo,
   ZCodeInteractionBehavior,
@@ -100,7 +99,6 @@ import { resolveModelProviderConnectivityWorkspacePath } from "@/lib/modelProvid
 import {
   createSettingsPageConfig,
   GeneralSectionContent,
-  GeneralSectionHeader,
   resolveSettingsSectionForPlatform,
 } from "./settingsPageHelpers.js";
 import { AppearanceSectionContent } from "./settingsCodePreview.js";
@@ -221,8 +219,8 @@ function hasActiveCodingPlanSnapshot(
     snapshot?.provider?.id === providerId &&
     snapshot.unavailableReason !== "no_plan" &&
     (Boolean(snapshot.subscription?.details.length) ||
-      // quota 暂时失败时服务仍能确认当前 provider，但旧过滤条件会把
-      // Coding Plan tab 当成未开通套餐删除。只有明确 no_plan 才应隐藏入口。
+      // When quota temporarily fails, the service can still confirm the current provider, but the old filter conditions will
+      // Coding Plan tab will be deleted as unsubscribed plan. Entrances should only be hidden if no_plan is specified.
       snapshot.unavailableReason === "unavailable")
   );
 }
@@ -294,7 +292,7 @@ export function SettingsPage({
   onLogout?: () => void;
   user?: UserInfo | null;
 }) {
-  const { intl, localePreference, setLocalePreference } = useZCodeIntl();
+  const { intl } = useZCodeIntl();
   const { settingsSectionGroups, settingsSections } = useMemo(
     () =>
       createSettingsPageConfig({
@@ -313,8 +311,8 @@ export function SettingsPage({
       initialSection,
       settingsSections,
     );
-    // 设置页首次挂载时也要写入当前落点。否则用户直接打开再退出，
-    // 下一次仍可能因为没有偏好记录而回到旧默认入口。
+    // The current landing point must also be written when the settings page is mounted for the first time. Otherwise, the user will directly open and then exit.
+    // You may still fall back to the old default entry next time because there is no preference record.
     writeLastSettingsSectionPreference(visibleInitialSection);
     return visibleInitialSection;
   });
@@ -327,8 +325,8 @@ export function SettingsPage({
   );
   const [settingsSectionNavigationVersion, setSettingsSectionNavigationVersion] = useState(0);
   useEffect(() => {
-    // React Strict Mode 会双执行 state initializer；来源和 scopeKey 都在挂载完成后再清理，
-    // Marketplace 只返回 User 已安装视图；Workspace 仍通过设置页自身的配置层切换进入。
+    // React Strict Mode will double-execute the state initializer; the source and scopeKey will be cleaned after the mounting is completed.
+    // Marketplace only returns the User installed view; Workspace is still entered through the configuration layer switch of the settings page itself.
     clearPendingSettingsPluginOrigin();
     clearPendingSettingsPluginScopeKey();
   }, []);
@@ -398,8 +396,8 @@ export function SettingsPage({
       providerId: BUILTIN_MODEL_PROVIDER_IDS.zaiIndividualCodingPlan,
       providerFingerprint: usageZaiProviderFingerprint,
     }),
-    // 个人 Usage source 依赖 entitlement snapshot；冷启动无缓存时若不先探测，
-    // source 不会渲染，子面板也无法触发 access 刷新。共享 freshness window 继续负责限频。
+    // Personal Usage source depends on entitlement snapshot; if there is no cache in cold start, if it is not detected first,
+    // The source will not render, and the subpanel cannot trigger access refresh. Shared freshness window continues to be responsible for frequency limiting.
     refreshOnMount: true,
   });
   const usageBigmodelEntitlement = useUsageEntitlement({
@@ -419,10 +417,10 @@ export function SettingsPage({
     }),
     refreshOnMount: true,
   });
-  // 原只拉 bigmodel family 的企业 pricing，zai team plan 在使用统计页
-  // 永远拿不到 team project 上下文；后续又误用 Individual Provider 的权益作为 Team
-  // 商品门禁，导致仅有 Team Plan 的账号仍然没有 Usage 来源。企业商品只依赖对应的
-  // Team Account Provider，个人额度继续依赖 Individual Provider，避免两个产品身份串线。
+  // Originally, only bigmodel family enterprise pricing was included, and zai team plan is on the usage statistics page.
+  // The team project context can never be obtained; later, the rights of the Individual Provider are misused as Team
+  // Product access control means that accounts with only Team Plan still have no Usage source. Enterprise products only rely on the corresponding
+  // Team Account Provider, personal quota continues to rely on Individual Provider to avoid the identity of the two products being cross-linked.
   const usageBigmodelEnterpriseProducts = useEnterpriseCodingPlanProducts({
     enabled: !usageProviderSettingsLoading && Boolean(usageBigmodelTeamProviderFingerprint),
     authenticated: true,
@@ -558,10 +556,10 @@ export function SettingsPage({
     setUsageActiveTab(tab);
   }, []);
   /*
-   * 使用统计是账号级 sources，不再绑定当前 workspace 连接方式。
-   * 旧入口只会写入 "codingPlan" 意图；等 sources 加载后需要落到真实来源。
-   * 剩余额度「更多」等入口会先写入来源偏好（当前 coding plan 类型/团队项目），
-   * 解析时优先选中该来源，缺失或已不可用时回退第一份真实来源。
+   * Usage statistics are account-level sources and are no longer bound to the current workspace connection method.
+   * The old entry will only write the "codingPlan" intent; it needs to fall to the real source after sources are loaded.
+   * Entries such as the remaining balance "More" will first write the source preference (current coding plan type/team project),
+   * This source will be selected first when parsing, and will fall back to the first true source if it is missing or unavailable.
    */
   useEffect(() => {
     if (usageActiveTab !== "codingPlan" || !usageCodingPlanSources[0]) {
@@ -615,15 +613,15 @@ export function SettingsPage({
     setActiveSettingsSection("modelProvider");
   }, [setActiveSettingsSection]);
   const handleOpenUsageSettings = useCallback(() => {
-    // 设置页 sidebar footer 里的齿轮/返回按钮复用 onBack，
-    // 但头像菜单的“使用统计”应该停留在设置页并切到 Usage，不能跟着返回工作区。
+    // The gear/back button in the sidebar footer of the settings page reuses onBack.
+    // However, the "Usage Statistics" of the avatar menu should stay on the settings page and switch to Usage, and cannot return to the workspace.
     setActiveSettingsSection("usage");
   }, [setActiveSettingsSection]);
   const activeWorkspacePath = useTabStore((state) => state.activeWorkspacePath);
   const tabs = useTabStore((state) => state.tabs);
   const workspaceTabs = useMemo(() => tabs.filter(isWorkspaceTab), [tabs]);
-  // Settings 打开后 activeTab 会变成 settings，本地反查 activeTab 读 identity 会稳定丢失。
-  // 这里改为读取 tabStore 维护的“最近激活 workspace identity”，让插件管理继续命中正确远端。
+  // After Settings is opened, activeTab will become settings. Local reverse check of activeTab and read identity will be stable and lost.
+  // Here, the "recently activated workspace identity" maintained by tabStore is read instead, so that plug-in management can continue to hit the correct remote end.
   const activeWorkspaceIdentity = useTabStore(
     (state) => state.activeWorkspaceIdentity ?? undefined,
   );
@@ -666,8 +664,8 @@ export function SettingsPage({
   const { settings: sharedSettings, update: updateSharedSettings } = useSettings();
   const memoryWorkspaceDisplayNames = useMemo(() => {
     const names = new Set<string>();
-    // Memory Scope 的项目顺序以 settings.json recentProjects 为准；打开中的
-    // Workspace 只补充尚未持久化的项目，不能抢占最近项目排序。
+    // The project order of Memory Scope is based on settings.json recentProjects; the open
+    // Workspace only replenishes projects that have not yet been persisted and cannot preempt the sorting of recent projects.
     for (const path of sharedSettings?.recentProjects ?? []) {
       const name = getPathLeaf(path).trim();
       if (name) names.add(name);
@@ -727,9 +725,9 @@ export function SettingsPage({
       return;
     }
 
-    // 剩余额度入口会先写入 Coding Plan tab 意图，再打开设置页。
-    // 如果首帧 provider/entitlement 仍在加载就立刻回退，会让“更多”看起来只打开了 App Usage。
-    // 这里等数据确认没有套餐后再回退，避免空入口误导用户。
+    // The remaining quota entry will first write the Coding Plan tab intention, and then open the settings page.
+    // If the first frame provider/entitlement is still loading, rewind immediately, which will make "More" appear to only have App Usage turned on.
+    // Here, wait for the data to confirm that there is no package before going back to avoid empty entries from misleading users.
     setUsageActiveTab("app");
   }, [
     checkingUsageCodingPlanTab,
@@ -742,11 +740,11 @@ export function SettingsPage({
   useEffect(
     () =>
       addPendingSettingsSectionListener((section, detail) => {
-        // SettingsPage 已打开时再次从 quickpick 点“个性化/MCP”等设置入口，
-        // 页面不会重新挂载，之前写入的 pending section 无人消费，看起来像点击没反应。
-        // 这里订阅同窗口跳转意图，立即切换当前设置分区。
+        // When the SettingsPage is open, click "Personalization/MCP" and other settings entrances from quickpick again.
+        // The page will not be remounted, and no one has consumed the previously written pending section. It looks like there is no response when clicking.
+        // Subscribe here to jump to the same window intention and immediately switch the current setting partition.
         setActiveSettingsSection(section, activeSection);
-        // 设置入口是一级路由边界。即使仍落在同一 section，也必须销毁旧的 New/Edit/Detail 子状态。
+        // Set the entry to be a first-level routing boundary. The old New/Edit/Detail substate must be destroyed even if it still falls in the same section.
         setSettingsSectionNavigationVersion((version) => version + 1);
         if (section === "usage" && detail?.usageTab) {
           setUsageActiveTab(detail.usageTab);
@@ -797,8 +795,8 @@ export function SettingsPage({
         setZCodeInteractionBehavior(settings.zcodeInteractionBehavior ?? "queue");
       })
       .catch(() => {});
-    // 这里配置的是本地全局设置。远端 workspace 激活时 useServices()
-    // 可能已经被替换为远端 host，不能用远端 shell 枚举结果写入本机设置。
+    // What is configured here are local and global settings. useServices() when remote workspace is activated
+    // It may have been replaced by the remote host, and the remote shell enumeration results cannot be used to write local settings.
     localHostServices.systemService
       .info()
       .then((info) => {
@@ -931,11 +929,11 @@ export function SettingsPage({
         trigger: "switch",
         operation: async () => {
           await updateSharedSettings({ memoryEnabled: enabled });
-          // 手动修改反向回写 record，换号同步不会复活旧值；失败不阻塞开关。
+          // Manually modify the reverse writeback record, and the number change synchronization will not revive the old value; failure will not block the switch.
           await onboardingRecordService
             ?.updateRecordPreferences({ memoryEnabled: enabled })
             .catch((cause: unknown) => {
-              console.warn("[settings] 回写引导记录失败", String(cause));
+              console.warn("[settings] failed to write back onboarding record", String(cause));
             });
         },
         completed: {
@@ -955,7 +953,7 @@ export function SettingsPage({
         trigger: "button",
         operation: () =>
           services.settingService.update({
-            // Bugfix: RPC 会丢弃 undefined；清空代理必须传空串，由服务层删除旧字段。
+            // Bugfix: RPC will discard undefined; the clearing agent must pass an empty string, and the service layer will delete the old fields.
             httpProxy: normalizedProxy,
           }),
         completed: {
@@ -982,7 +980,7 @@ export function SettingsPage({
         trigger: "button",
         operation: () =>
           services.settingService.update({
-            // Bugfix: 清空 No Proxy 必须传空串，否则旧绕过规则会继续影响下次启动。
+            // Bugfix: You must pass an empty string when clearing No Proxy, otherwise the old bypass rules will continue to affect the next startup.
             httpProxyNoProxy: normalizedNoProxy,
           }),
         completed: { resultSource: "setting_service", configured: normalizedNoProxy.length > 0 },
@@ -1001,7 +999,7 @@ export function SettingsPage({
         trigger: "button",
         operation: () =>
           services.settingService.update({
-            // Bugfix: 清空自定义 CA 必须传空串，否则旧 NODE_EXTRA_CA_CERTS 路径会残留。
+            // Bugfix: When clearing a custom CA, an empty string must be passed, otherwise the old NODE_EXTRA_CA_CERTS path will remain.
             httpProxyCaCertPath: normalizedCaCertPath,
           }),
         completed: {
@@ -1025,7 +1023,7 @@ export function SettingsPage({
         completed: { resultSource: "setting_service", requiresRestart: true },
         failureStage: "data_directory_update",
       });
-      // Bugfix: 迁移失败时不能先把本地状态改成失败路径，否则设置页会误显示为已切换。
+      // Bugfix: When migration fails, you cannot change the local status to the failed path first, otherwise the settings page will mistakenly display as switched.
       setDataBaseDir(dir);
     },
     [services.settingService],
@@ -1076,7 +1074,7 @@ export function SettingsPage({
     },
     [services.settingService, platform],
   );
-  // keep-awake：走 useSettings 统一写盘 + syncAppSettings，和 Automations/创建页入口共享同一状态源。
+  // keep-awake: Use useSettings to write unified disk + syncAppSettings, and share the same status source with Automations/create page entry.
   const handleKeepAwakeWhileRunningChange = useCallback(
     async (enabled: boolean) => {
       await runSettingsActionAsync({
@@ -1130,7 +1128,7 @@ export function SettingsPage({
         },
       });
       setEmbeddedBrowserAllowInsecureCertificates(enabled);
-      // 证书策略在 main 启动时装到 Session 上，改完必须重启才会换掉 verifyProc。
+      // The certificate policy is installed on the Session when main is started. After modification, verifyProc must be replaced only after restarting.
       toast(
         intl.formatMessage({
           id: "settings.embeddedBrowserAllowInsecureCertificatesSavedHint",
@@ -1264,28 +1262,6 @@ export function SettingsPage({
     },
     [updateSharedSettings],
   );
-  const handleFooterLocaleChange = useCallback(
-    (value: string) => {
-      if (value === "system") {
-        runUserAction({
-          input: { featureId: "settings.locale", action: "change_locale", trigger: "select" },
-          operation: () => setLocalePreference("system"),
-          completed: { resultSource: "local_commit", valueAfter: "system" },
-          failureStage: "local_commit",
-        });
-        return;
-      }
-      if (value === "zh-CN" || value === "en-US") {
-        runUserAction({
-          input: { featureId: "settings.locale", action: "change_locale", trigger: "select" },
-          operation: () => setLocalePreference(value as Locale),
-          completed: { resultSource: "local_commit", valueAfter: value },
-          failureStage: "local_commit",
-        });
-      }
-    },
-    [setLocalePreference],
-  );
   const handleFooterThemeChange = useCallback(
     (value: string) => {
       if (
@@ -1334,8 +1310,8 @@ export function SettingsPage({
     [setCodePreviewSettings],
   );
   const activeSectionMeta = settingsSections.find((section) => section.id === activeSection);
-  // 灰度裁决异步到达：sections 列表可能在挂载后变化（如 computerUse 区被灰度移除）。
-  // 若用户正停留在被移除的 section，回落到第一个可见区，避免整页 return null。
+  // Grayscale verdict arrives asynchronously: the sections list may change after mounting (e.g. computerUse section is removed by Grayscale).
+  // If the user is staying in the removed section, fall back to the first visible area to avoid returning null on the entire page.
   useEffect(() => {
     setActiveSection((current) => resolveSettingsSectionForPlatform(current, settingsSections));
   }, [settingsSections]);
@@ -1370,17 +1346,17 @@ export function SettingsPage({
         <div
           data-testid={TID_SETTINGS_PAGE}
           data-active-section={activeSection}
-          // 隐式 auto 行会按 Memory viewer 的内容高度撑出窗口，随后被 DesktopWindowFrame 裁切且没有滚动条。
-          // 固定为单个 minmax(0, 1fr) 行，让普通设置页和内部滚动 viewer 都以窗口剩余高度为边界。
+          // The implicit auto line will stretch the window by the content height of the Memory viewer, and then be cropped by the DesktopWindowFrame without scroll bars.
+          // Fixed to a single minmax(0, 1fr) line so that both the normal settings page and the internal scrolling viewer are bounded by the remaining height of the window.
           className="relative grid h-screen min-h-full w-full grid-cols-[68px_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] lg:grid-cols-[268px_minmax(0,1fr)]"
         >
           {isWindowsDesktop ? <WindowsTopLeftLogo /> : null}
 
           {usesInlineWindowControls ? (
             <div className="absolute right-1 top-1 z-30 mt-px mr-px flex h-12 items-center gap-0.5 px-2 pointer-events-auto [app-region:no-drag]">
-              {/* Windows/Linux 设置页仍保留旧 caption 下箭头，与主界面和 macOS 的帮助入口不一致。
-                  统一复用问号帮助按钮，并让它在普通 flex 流中紧邻自绘窗控。
-                  Settings 的独立标题层还需计入 4px 外层留白和 1px 边框，才能与 Workspace 控制组对齐。 */}
+              {/* The Windows/Linux settings page still retains the old caption down arrow, which is inconsistent with the main interface and macOS help entry.
+                  Reuse the question mark help button uniformly and place it next to the self-drawn window control in the normal flex flow.
+                  The separate title layer for Settings also needs to account for 4px of outer space and 1px of border to align with the Workspace control group. */}
               <WorkspaceHelpMenuButton isDesktop={Boolean(isDesktop)} />
               <DesktopWindowControls />
             </div>
@@ -1532,8 +1508,6 @@ export function SettingsPage({
               <div className="max-lg:hidden">
                 <WorkspaceSidebarFooter
                   theme={theme}
-                  localeMenuValue={localePreference}
-                  onLocaleChange={handleFooterLocaleChange}
                   onThemeChange={handleFooterThemeChange}
                   onSettingsButtonClick={onBack}
                   onUsageClick={handleOpenUsageSettings}
@@ -1542,8 +1516,8 @@ export function SettingsPage({
                   onLogout={onLogout}
                   settingsButtonMode="back"
                   user={user}
-                  // 头像菜单是 WorkspaceSidebarFooter 的共享菜单，Settings 场景不能丢失桌面平台能力。
-                  // 之前这里没透传 isDesktop，导致同一个头像菜单在设置页缺少界面缩放入口。
+                  // The avatar menu is the shared menu of WorkspaceSidebarFooter, and the Settings scene cannot lose the desktop platform capabilities.
+                  // Before, isDesktop was not transparently transmitted here, resulting in the same avatar menu missing the interface zoom entry on the settings page.
                   isDesktop={isDesktop}
                 />
               </div>
@@ -1554,7 +1528,7 @@ export function SettingsPage({
             data-settings-content-frame="true"
             className={cn(
               "flex min-h-0 flex-col",
-              // 桌面平台统一复用主工作区的面板 inset；左侧仍与导航相接，顶部由独立拖拽留白承接。
+              // The desktop platform uniformly reuses the panel inset of the main workspace; the left side is still connected to the navigation, and the top is taken over by an independent drag and drop blank.
               isDesktop ? "p-1 pl-0 pt-0" : "p-0",
             )}
           >
@@ -1566,14 +1540,14 @@ export function SettingsPage({
               data-settings-panel-frame="true"
               className={cn(
                 "relative flex flex-col min-h-0 h-full border border-border bg-background",
-                // Windows 设置页已有 4px 外层留白，不再承担系统窗口外沿；圆角与主工作区统一为 5px。
+                // The Windows settings page already has a 4px outer space, which no longer bears the outer edge of the system window; the rounded corners and the main workspace are unified to 5px.
                 isWindowsDesktop ? "rounded-[5px]" : "rounded-xl",
               )}
             >
               {!usesInlineWindowControls ? (
                 <div
                   className={cn(
-                    // Settings 使用和 new task 一致的问号定位：在内容面板内定位，外层让出自绘窗口按钮区，内层保持 top-2.5/right-2.5。
+                    // Settings uses the same question mark positioning as new task: positioning in the content panel, the outer layer gives way to the self-drawing window button area, and the inner layer remains top-2.5/right-2.5.
                     "absolute top-0 z-50 h-10 w-10 pointer-events-auto [app-region:no-drag]",
                     "right-0",
                   )}
@@ -1593,15 +1567,15 @@ export function SettingsPage({
                 <div className="flex min-h-0 flex-1 flex-col">
                   <div className="flex h-12 shrink-0">
                     <div
-                      // Settings 窄布局会像左侧导航一样在 max-lg 收成 icon rail。
-                      // 此时外层已经提供 max-lg:h-16 的顶部拖拽/避让区，内层 h-10 再保留会把内容额外压低。
-                      // Electron 的 drag 区不能和右上角帮助/窗口按钮命中区域重叠；
-                      // 这里把右侧按钮区域从拖拽条里让出来，避免真实鼠标点击被标题栏拖拽吞掉。
-                      // Windows/Linux 设置页共同避开右上角菜单与内联窗控组。
+                      // The Settings narrow layout will harvest icon rail in max-lg like the left navigation.
+                      // At this time, the outer layer has provided a top drag/avoidance area of ​​max-lg:h-16, and retaining h-10 in the inner layer will push the content further down.
+                      // Electron's drag area cannot overlap with the help/window button hit area in the upper right corner;
+                      // Here, the right button area is removed from the drag bar to prevent the real mouse click from being swallowed by the title bar drag.
+                      // Windows/Linux settings pages jointly avoid the upper right corner menu and inline window control group.
 
                       className={cn(
                         "min-w-0 flex-1 [app-region:drag]",
-                        // 四个 28px 按钮、组内 2px 间距和左右 8px padding，共 134px。
+                        // Four 28px buttons, 2px spacing within the group, and 8px padding left and right, for a total of 134px.
                         usesInlineWindowControls ? "mr-[134px]" : "mr-12",
                       )}
                     >
@@ -1646,14 +1620,10 @@ export function SettingsPage({
                             ) : null}
                           </div>
                         </div>
-                        {activeSection === "general" ? (
-                          <GeneralSectionHeader localePreference={localePreference} />
-                        ) : null}
                       </div>
                       <div className="space-y-8">
                         {activeSection === "general" ? (
                           <GeneralSectionContent
-                            localePreference={localePreference}
                             interfaceMode={interfaceMode}
                             setInterfaceMode={setInterfaceMode}
                             isDesktop={isDesktop}
@@ -1679,7 +1649,6 @@ export function SettingsPage({
                             httpProxyCaCertPath={httpProxyCaCertPath}
                             defaultHomeDir={defaultHomeDir}
                             showIntegratedTerminalShell={hostPlatform === "win32"}
-                            setLocalePreference={handleFooterLocaleChange}
                             setNotificationEnabled={(enabled) =>
                               runUserAction({
                                 input: {
@@ -1808,7 +1777,7 @@ export function SettingsPage({
                           <ShortcutSettingsSection isDesktop={Boolean(isDesktop)} />
                         ) : activeSection === "modelProvider" ? (
                           <ServiceProvider services={localHostServices}>
-                            {/* 模型配置属于本机全局事实源；激活远端 workspace 时也不能注入远端 Host。 */}
+                            {/* The model configuration belongs to the local global source of truth; it cannot be injected into the remote Host when activating the remote workspace. */}
                             <ModelProviderSection
                               workspacePath={activeWorkspacePath ?? captionWorkspacePath ?? ""}
                               connectivityWorkspacePath={
@@ -1823,7 +1792,7 @@ export function SettingsPage({
                           </ServiceProvider>
                         ) : activeSection === "memory" ? (
                           <ServiceProvider services={localHostServices}>
-                            {/* Memory catalog 始终使用本地 Host，避免远程 workspace 误读本机数据。 */}
+                            {/* Memory catalog always uses the local host to prevent the remote workspace from misreading local data. */}
                             <MemorySettingsSection
                               memoryEnabled={memoryEnabled}
                               memoryService={localHostServices.memoryService}
@@ -1845,7 +1814,7 @@ export function SettingsPage({
                             showMarketplaceBreadcrumb={pluginNavigationOrigin === "plugin-store"}
                             onCreateTask={onCreateTask}
                             onOpenPluginStore={(_returnScopeKey, intent) => {
-                              // 添加市场与浏览插件都先离开设置层，再显示商店。
+                              // To add market and browsing plug-ins, leave the settings layer first and then display the store.
                               requestPluginStoreOpen({ returnScopeKey: "user", intent });
                               onBack?.();
                             }}
@@ -1858,7 +1827,7 @@ export function SettingsPage({
                             workspaceIdentity={activeWorkspaceIdentity}
                             onCreateTask={onCreateTask}
                             onOpenPluginStore={(_returnScopeKey, intent) => {
-                              // 添加市场与浏览插件都先离开设置层，再显示商店。
+                              // To add market and browsing plug-ins, leave the settings layer first and then display the store.
                               requestPluginStoreOpen({ returnScopeKey: "user", intent });
                               onBack?.();
                             }}
@@ -1871,7 +1840,7 @@ export function SettingsPage({
                             workspaceIdentity={activeWorkspaceIdentity}
                             onCreateTask={onCreateTask}
                             onOpenPluginStore={(_returnScopeKey, intent) => {
-                              // 添加市场与浏览插件都先离开设置层，再显示商店。
+                              // To add market and browsing plug-ins, leave the settings layer first and then display the store.
                               requestPluginStoreOpen({ returnScopeKey: "user", intent });
                               onBack?.();
                             }}
@@ -1908,7 +1877,7 @@ export function SettingsPage({
                             workspaceIdentity={activeWorkspaceIdentity}
                             onCreateTask={onCreateTask}
                             onOpenPluginStore={(_returnScopeKey, intent) => {
-                              // 添加市场与浏览插件都先离开设置层，再显示商店。
+                              // To add market and browsing plug-ins, leave the settings layer first and then display the store.
                               requestPluginStoreOpen({ returnScopeKey: "user", intent });
                               onBack?.();
                             }}

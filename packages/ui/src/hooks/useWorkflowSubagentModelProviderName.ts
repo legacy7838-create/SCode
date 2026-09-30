@@ -3,13 +3,14 @@ import type { ZCodeConfigOption } from "@zcode/shared";
 import { selectWorkspaceZCodeState, useZCodeSessionStore } from "@/store/zcodeSessionStore.js";
 
 /**
- * 子代理模型的 provider 名从哪儿来：会话的模型清单
- * （workspace configOptions 里 category === "model" 的那一项）已经带着
- * `modelProviderId` / `modelProviderName`，不必为一行字再开第二份 provider 目录。
+ * Where the provider name of a subagent model comes from: the session's model list (the entry in
+ * the workspace configOptions with category === "model") already carries `modelProviderId` /
+ * `modelProviderName`, so there is no need to open a second provider catalog just for one line of
+ * text.
  *
- * 只给**名字**，不给 id：`modelProviderName` 在没有 providerLabel 时会退回 providerId 本身
- * （见 zcodeSessionSettingsToConfigOptions），那种「名字」在这里就当作没有——屏幕上绝不出现
- * providerId（团队套餐的它是一个 UUID）。
+ * It yields a **name** only, never an id: when there is no providerLabel, `modelProviderName` falls
+ * back to the providerId itself (see zcodeSessionSettingsToConfigOptions), and such a "name" counts
+ * as no name here — a providerId must never appear on screen (on team plans it is a UUID).
  */
 function workflowSubagentProviderNameLookup(
   configOptions: readonly ZCodeConfigOption[] | null | undefined,
@@ -33,8 +34,9 @@ function workflowSubagentProviderNameLookup(
 }
 
 /**
- * 上面那张表的 hook 形态。workspacePath 缺席（宿主给不出作用域）即没有查找函数——
- * 此时拼名规则退回裸 modelId，这是刻意的兜底，不是缺陷。
+ * The hook form of the table above. When workspacePath is absent (the host cannot provide a scope)
+ * there is no lookup function — the name-composition rule then falls back to the bare modelId,
+ * which is a deliberate fallback, not a defect.
  */
 export function useWorkflowSubagentModelProviderName(
   workspacePath: string | undefined,

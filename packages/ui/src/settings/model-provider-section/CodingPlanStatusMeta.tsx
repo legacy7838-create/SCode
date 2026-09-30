@@ -107,7 +107,7 @@ export function StartPlanStatusMeta({
     const effectiveAt = Date.parse(pendingTime);
     const remainingMs = effectiveAt - Date.now();
     if (!Number.isFinite(effectiveAt) || remainingMs < 0) return;
-    // setTimeout 存在约 24.8 天上限；长排期分段唤醒，到点后再切换刷新按钮。
+    // There is an upper limit of about 24.8 days for setTimeout; wake up in stages for a long period of time, and then switch the refresh button after the point is reached.
     const timeout = window.setTimeout(
       () => setCurrentTime(Date.now()),
       Math.min(remainingMs + 1, 2_147_483_647),
@@ -138,8 +138,8 @@ export function StartPlanStatusMeta({
         },
       )
     : null;
-  // 产品语义：待生效时展示排期；到点但额度桶尚未同步时提供就地刷新；
-  // 对应额度桶出现后只保留过期日期。免费套餐无管理页，升级入口在卡片右侧。
+  // Product semantics: Display the schedule when it is ready to take effect; provide local refresh when the quota bucket is not synchronized yet;
+  // After the corresponding quota bucket appears, only the expiration date is retained. The free package has no management page, and the upgrade entrance is on the right side of the card.
   return (
     <span className="flex flex-wrap items-center gap-1.5 text-ui-base text-foreground-subtle">
       {pendingEffectiveTimeLabel ? (
@@ -148,8 +148,8 @@ export function StartPlanStatusMeta({
       <CodingPlanMetaSeparator visible={Boolean(pendingEffectiveTimeLabel && expireTimeLabel)} />
       {statusState === "refreshable" && onRefresh ? (
         <>
-          {/* 排期权益到点后服务端才创建额度桶，本地仍可能展示旧模型。
-              就地刷新只在尚未拿到额度桶时出现；立即生效和已同步成功的套餐不显示。 */}
+          {/* The server will only create the quota bucket after the scheduled rights are reached, and the old model may still be displayed locally.
+              In-place refresh only appears when the quota bucket has not been obtained; packages that are effective immediately and have been successfully synchronized are not displayed. */}
           <Button
             type="button"
             variant="outline"
@@ -172,7 +172,7 @@ export function StartPlanStatusMeta({
       ) : null}
       {expireTimeLabel ? (
         <>
-          {/* Start Plan 不展示 renew 时间，状态卡片只保留过期日期，避免把免费额度刷新时间误读成套餐续费。*/}
+          {/* Start Plan does not display the renew time, and the status card only retains the expiration date to avoid misinterpreting the free quota refresh time as package renewal. */}
           <span className="whitespace-nowrap">{expireTimeLabel}</span>
         </>
       ) : null}
@@ -200,7 +200,7 @@ function resolveStartPlanStatusMetaState({
   }
   if (
     !hasQuota &&
-    // effective_at=0 会投影为 Unix Epoch，是立即生效哨兵值，不属于排期权益。
+    // effective_at=0 will be projected as Unix Epoch, which is an immediate sentinel value and does not belong to scheduling rights.
     effectiveTimes.some((milliseconds) => milliseconds > 0 && milliseconds <= now)
   ) {
     return "refreshable";
@@ -314,8 +314,8 @@ function formatCodingPlanSubscriptionDate(value: string, locale: string): string
     ...(isCurrentYear ? {} : { year: "numeric" }),
     month: "short",
     day: "numeric",
-    // 订阅接口返回的是日期语义，按本地时区格式化 ISO 零点会让美国时区显示成前一天。
-    // 同一年隐藏年份时也要按 UTC 判断，否则临界时区会把“今年”误判成去年/明年。
+    // The subscription interface returns date semantics. Formatting ISO zero according to the local time zone will cause the US time zone to be displayed as the previous day.
+    // When hiding the year in the same year, it must also be judged according to UTC, otherwise the critical time zone will misjudge "this year" as last year/next year.
     timeZone: "UTC",
   }).format(date);
 }
@@ -327,8 +327,8 @@ export function formatStartPlanExpireDate(value: string, locale: string, now = D
   }
 
   const isCurrentYear = date.getFullYear() === new Date(now).getFullYear();
-  // Start Plan 过去只展示到期日，同一天内无法判断额度具体何时失效。
-  // 过期时间按客户端本地时区补齐小时分钟，并继续仅在跨年时展示年份。
+  // Start Plan used to only display the expiration date, and it was impossible to determine when the quota would expire on the same day.
+  // The expiration time is padded with hours and minutes in the client's local time zone, and continues to display the year only on new years.
   return new Intl.DateTimeFormat(locale, {
     ...(isCurrentYear ? {} : { year: "numeric" }),
     month: "short",

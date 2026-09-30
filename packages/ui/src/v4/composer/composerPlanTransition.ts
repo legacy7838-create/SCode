@@ -1,7 +1,10 @@
 import type { V4ComposerDraft } from "@/v4/composer/composerDraftStore.js";
 import type { SessionConfigState } from "@zcode/shared/zcode-protocol-v4";
 
-/** 新工具结果直接设置标记；仅去重已处理结果，不保护期间的手动改选。 */
+/**
+ * A new tool result sets the flag directly; only already-processed results are deduplicated, and a
+ * manual re-selection during that window is not protected.
+ */
 export function applyComposerPlanTransition(
   draft: V4ComposerDraft,
   transition: SessionConfigState["planTransition"],

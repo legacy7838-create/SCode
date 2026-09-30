@@ -75,8 +75,8 @@ function acquireSupervisor(
 ): SupervisorLease {
   const logicalScopeKey = logicalAttachmentScopeKey(scope);
   const key = attachmentScopeKey(scope, services.zcodeAgentService);
-  // service generation 换代时，零引用旧 supervisor 立即销毁；仍被 pane 使用的旧代标 stale，
-  // 等末位 lease 释放再清理。不能让旧/新 generation 同时长期订阅同一 workspace。
+  // When the service generation changes, the old supervisor with zero references is destroyed immediately; the old supervisor that is still used by pane, stale,
+  // Wait for the last lease to be released before cleaning up. You cannot have the old/new generation subscribed to the same workspace for a long time at the same time.
   for (const [candidateKey, candidate] of supervisorRegistry) {
     if (candidate.logicalScopeKey !== logicalScopeKey || candidateKey === key) {
       continue;
@@ -115,8 +115,8 @@ function acquireSupervisor(
       if (entry.stale || entry.workspaceDetached) {
         disposeSupervisorEntry(entry);
       }
-      // ref=0 的当前 generation 仍保留 live subscription。关闭 pane 不能等价于
-      // workspace detach，否则超过 SessionDataLayer 30s keep-warm 的后台 terminal 会丢。
+      // The current generation with ref=0 still retains the live subscription. Closing a pane is not equivalent to
+      // workspace detach, otherwise the background terminal that exceeds SessionDataLayer 30s keep-warm will be lost.
     },
   };
 }
@@ -130,7 +130,10 @@ function disposeSupervisorEntry(entry: SupervisorRegistryEntry): void {
   entry.supervisor.dispose();
 }
 
-/** 窗口/测试销毁边界；生产 page 生命周期结束时不保留 orphan subscription。 */
+/**
+ * Window/test teardown boundary; no orphan subscription is kept when a production page's lifecycle
+ * ends.
+ */
 export function disposeConversationTelemetrySupervisors(): void {
   for (const entry of supervisorRegistry.values()) {
     disposeSupervisorEntry(entry);
@@ -139,8 +142,10 @@ export function disposeConversationTelemetrySupervisors(): void {
 }
 
 /**
- * Root tab 事实源裁决 workspace detach。切 task/切 tab 不会移除 scope；真正关闭最后一个
- * workspace tab 才标记 detached，零引用立即销毁，有存量 pane 则等其 release 后销毁。
+ * The root tab is the source of truth that adjudicates workspace detachment. Switching tasks/tabs
+ * does not remove the scope; only actually closing the last workspace tab marks it detached, which
+ * destroys it immediately at zero references, or waits for its release to destroy it when panes
+ * still exist.
  */
 export function reconcileConversationTelemetryWorkspaceScopes(
   scopes: readonly ConversationTelemetryAttachmentScope[],
@@ -174,8 +179,8 @@ const ConversationTelemetryAttachmentContext =
   createContext<ConversationTelemetryAttachmentValue | null>(null);
 
 /**
- * 窗口 workspace/service attachment：生命周期高于 pane 和 SessionDataLayer keep-warm。
- * Web/mobile 不创建 supervisor，也不安装 reporter/subscription。
+ * Window workspace/service attachment: its lifetime is above that of the pane and the
+ * SessionDataLayer keep-warm. Web/mobile create no supervisor and install no reporter/subscription.
  */
 export function ConversationTelemetryWorkspaceAttachment({
   enabled,
@@ -203,8 +208,8 @@ export function ConversationTelemetryWorkspaceAttachment({
   const lease = useMemo(() => {
     const agentService = services.zcodeAgentService as object | null | undefined;
     if (!enabled || !platform || !agentService) return null;
-    // Bug 根因：Root 的隔离渲染和远端 service 准备阶段可能尚无 PlatformProvider 或 agent service。
-    // telemetry 是旁路能力，不能因依赖未就绪阻断 workspace 主界面；依赖齐备后再按 generation 建 lease。
+    // Root cause of the bug: Root's isolated rendering and remote service preparation stages may not yet have a PlatformProvider or agent service.
+    // Telemetry is a bypass capability, and the workspace main interface cannot be blocked because dependencies are not ready; press generation to create a lease after all dependencies are ready.
     return acquireSupervisor(scope, services, platform);
   }, [enabled, platform, scope, services]);
   const supervisor = lease?.entry.supervisor ?? null;
@@ -228,7 +233,10 @@ export function ConversationTelemetryWorkspaceAttachment({
   );
 }
 
-/** pane 使用自己的 ready service/scope 覆盖 context；Web 根 attachment 为 null 时保持 no-op。 */
+/**
+ * A pane overrides the context with its own ready service/scope; it stays a no-op when the Web root
+ * attachment is null.
+ */
 export function ConversationTelemetryPaneAttachment({
   services,
   scope,

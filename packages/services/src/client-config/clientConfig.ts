@@ -5,7 +5,7 @@ import {
 } from "@zcode/shared";
 import { createServiceDescriptor } from "../descriptors.js";
 
-/** 窗口级公开配置读取。业务模块只消费自己的字段，不拥有第二份请求缓存。 */
+/** Window-level public config reads. Business modules only consume their own fields and do not own a second request cache. */
 export interface IClientConfigService {
   getSnapshot(options?: ClientConfigReadOptions): Promise<ClientConfigSnapshot>;
 }

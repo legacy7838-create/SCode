@@ -6,7 +6,7 @@ export const DEFAULT_ZAI_OAUTH_ORIGIN = "https://chat.z.ai";
 export const DEFAULT_ZAI_BUSINESS_BASE_URL = "https://api.z.ai";
 export const DEFAULT_ZAI_OAUTH_CLIENT_ID = "client_P8X5CMWmlaRO9gyO-KSqtg";
 
-// 构建仅注入公开链接；Node 调用方仍可显式传 env，避免读取另一进程的配置。
+// The build only injects public links; Node callers can still pass env explicitly to avoid reading another process's configuration.
 declare const __ZCODE_ENDPOINT_ENV__: Record<string, string | undefined> | undefined;
 export function pickProductEndpointEnv(
   env: Record<string, string | undefined>,
@@ -135,7 +135,7 @@ export function resolveZCodeEndpointOrigin(options?: {
 export function resolveRuntimeZCodeEnv(
   env: RuntimeZCodeEndpointEnv = readProductEndpointEnv(),
 ): ZCodeEnv {
-  // 产品身份仅用于既有展示与安装标识，不参与地址解析。
+  // Product identity is only used for existing display and installation identification and does not participate in address resolution.
   return env.ZCODE_ENV?.trim().toLowerCase() === "test" ? "test" : "production";
 }
 
@@ -184,7 +184,7 @@ export function buildBigModelApiUrl(
 export function buildBigModelCodingPlanPersonalManageUrl(
   env: RuntimeBigModelApiEnv = readProductEndpointEnv(),
 ): string {
-  // 管理页与业务 API 共用显式 origin，避免把已登录账号带到另一个部署。
+  // The management page and business API share an explicit origin to avoid taking logged-in accounts to another deployment.
   return buildBigModelApiUrl(env, "/coding-plan/personal/overview");
 }
 

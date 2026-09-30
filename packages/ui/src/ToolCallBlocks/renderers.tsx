@@ -37,7 +37,8 @@ export function renderDiffCount(
           role="text"
           title={`+${changeStat.added}`}
         >
-          +{/* 性能修复：投影已按秒给出真实统计，数字只做一次短翻页，不再逐行 rAF 追赶。 */}
+          +
+          {/* Performance Fix: Projection now gives real statistics per second, numbers only do a short page flip, no more line-by-line rAF catch-up. */}
           <FlipMetricValue
             value={String(changeStat.added)}
             animateInitial={options?.animateInitial}
@@ -119,8 +120,8 @@ export function renderFilePath(path: string | null | undefined, basePath?: strin
 
   return (
     <span className="min-w-0 truncate text-foreground-subtlest @max-[360px]/conversation:hidden">
-      {/* 窄会话流里父目录会与文件名争抢空间，Read/Edit 最终只剩动作标签和省略号。
-          小容器隐藏次要路径，让文件名继续承担主识别信息。 */}
+      {/* In a narrow session stream, the parent directory competes with the file name for space, and Read/Edit ends up with only action tags and ellipses.
+          The small container hides the secondary path, allowing the file name to continue to bear the primary identifying information. */}
       {getFileDisplayPath(path, basePath)}
     </span>
   );

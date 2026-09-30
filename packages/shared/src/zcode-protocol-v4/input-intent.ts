@@ -1,5 +1,5 @@
-// CLI admission 后的自包含输入事实。
-// queue / guide / runtime / transcript 只能携带同一个 intent，不允许各层重建字段。
+// Self-contained input facts after CLI admission.
+// queue/guide/runtime/transcript can only carry the same intent and does not allow fields to be reconstructed at each layer.
 import { z } from "zod";
 import { timestampSchema } from "./core.js";
 import { attachmentRefSchema } from "./attachment-ref.js";
@@ -41,11 +41,11 @@ export const conversationInputIntentSchema = z
     sourceCommandId: z.string().min(1),
     queueItemId: z.string().min(1),
     clientId: z.string().min(1),
-    // compact 是可排队的维护意图；消费时走 compact lifecycle，不投影为 user row。
+    // Compact is a maintenance intent that can be queued; when consuming, it goes through compact lifecycle and is not projected as user row.
     kind: z.enum(["sendText", "sendGoalCommand", "compact"]),
     text: z.string(),
     attachments: z.array(attachmentRefSchema).default([]),
-    // optional 只服务旧 snapshot hydration；新 admission 必须填入完整 Submission。
+    // Optional only serves old snapshot hydration; new admission must fill in complete Submission.
     modelSelection: modelSelectionSchema.optional(),
     mode: submissionModeSchema.optional(),
     planEnabled: z.boolean().optional(),

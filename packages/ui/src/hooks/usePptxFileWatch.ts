@@ -85,7 +85,7 @@ export function usePptxFileWatch({
           if (!shouldReloadPptxPreviewForWatchEvent(event, filePath)) {
             return;
           }
-          logger.debug("[PptxFileWatch] 源文件发生变化，刷新已打开预览", {
+          logger.debug("[PptxFileWatch] source file changed, refreshing the open preview", {
             path: filePath,
             changedPath: event.changedPath,
           });
@@ -109,8 +109,8 @@ export function usePptxFileWatch({
         if (cancelled) {
           return;
         }
-        // 文件监听只负责自动刷新；注册失败时仍允许首次读取和手动重新打开文件。
-        logger.warn("[PptxFileWatch] 监听 PPTX 所在目录失败", {
+        // File watching only drives automatic refresh; when registration fails, the initial read and manual file reopening are still allowed.
+        logger.warn("[PptxFileWatch] failed to watch the pptx directory", {
           path: filePath,
           directoryPath,
           error: error instanceof Error ? error.message : String(error),
@@ -127,7 +127,7 @@ export function usePptxFileWatch({
       subscription?.dispose();
       if (watcherId) {
         void fileWatcherService.unwatch({ id: watcherId }).catch((error: unknown) => {
-          logger.warn("[PptxFileWatch] 停止监听 PPTX 所在目录失败", {
+          logger.warn("[PptxFileWatch] failed to stop watching the pptx directory", {
             path: filePath,
             error: error instanceof Error ? error.message : String(error),
           });
@@ -136,8 +136,8 @@ export function usePptxFileWatch({
     };
   }, [filePath, fileWatcherService]);
 
-  // 远程重连或 Host 替换会在 source path 不变时切换 workspace service。
-  // ready 必须属于当前 watcher service，不能在 effect 清理前复用旧 service 的订阅状态。
+  // Remote reconnection or a Host replacement swaps the workspace service while the source path stays the same.
+  // `ready` must belong to the current watcher service and must not reuse the old service's subscription state before the effect cleans up.
   return snapshot.filePath === filePath && snapshot.fileWatcherService === fileWatcherService
     ? {
         ready: snapshot.ready,

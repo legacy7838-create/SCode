@@ -64,7 +64,7 @@ export interface IProviderSettingsService {
     modelId: ModelId,
     enabled: boolean,
   ): Promise<ProviderSettingsView>;
-  /** 测试已经保存并进入目标 Environment Registry 的正式 Model。 */
+  /** The test has been saved and entered into the official Model of the target Environment Registry. */
   testModelConnectivity(
     input: ProviderSettingsConnectivityRequest,
   ): Promise<ModelConnectivityResult>;
@@ -168,11 +168,13 @@ export function createProviderSettingsService(
     testModelConnectivity: async (input) => {
       await ensureReady();
       if (!testConnectivity) {
-        throw new Error("当前 Environment 未装配模型连通性测试能力");
+        throw new Error(
+          "The current Environment has no model connectivity test capability wired up",
+        );
       }
       await facade.waitForProviderOperations(input.providerId);
-      // 禁用对象仍存在于配置视图，但不进入执行 Registry；不能把未发布误报成配置丢失。
-      // 只消费操作完成后的公共资格，不另查 Key、权益，也不替代目标 Environment 最终校验。
+      // Disabled objects still exist in the configuration view, but do not enter the execution Registry; unreleased objects cannot be falsely reported as configuration loss.
+      // Only the public qualifications after the operation are completed are consumed. Keys and rights are not checked separately, nor does it replace the final verification of the target Environment.
       const provider = facade
         .getView()
         .providers.find((item) => item.providerId === input.providerId);
@@ -220,9 +222,9 @@ export function createModelSelectionService(
   const listeners = new Set<(view: ModelSelectionView) => void>();
   const getView = async (input?: ModelSelectionViewInput): Promise<ModelSelectionView> => {
     await ensureReady();
-    if (disposed) throw new Error("ModelSelectionService 已 dispose");
+    if (disposed) throw new Error("ModelSelectionService has been disposed");
     const configuredDefault = await configuredDefaultSource?.read();
-    if (disposed) throw new Error("ModelSelectionService 已 dispose");
+    if (disposed) throw new Error("ModelSelectionService has been disposed");
     const base = facade.getView(configuredDefault);
     if (revision < base.revision) revision = base.revision;
     return facade.getView(configuredDefault, revision, input);
@@ -236,11 +238,11 @@ export function createModelSelectionService(
         for (const listener of listeners) listener(view);
       },
       (error: unknown) => {
-        // Registry 事件触发的异步 View 重建没有 owner；Host dispose 后它仍会继续
-        // 读取已释放的配置仓库，并形成未处理 rejection。dispose 是明确的取消边界；仅在服务
-        // 仍存活时记录真实读取失败。
+        // Asynchronous View reconstruction triggered by Registry events has no owner; it will continue after Host dispose
+        // Read the released configuration warehouse and form an unhandled rejection. dispose is an explicit cancellation boundary; only when serving
+        // Log real read failures while still alive.
         if (disposed) return;
-        log.warn(undefined, `ModelSelection View 刷新失败: ${String(error)}`);
+        log.warn(undefined, `ModelSelection View refresh failed: ${String(error)}`);
       },
     );
   };

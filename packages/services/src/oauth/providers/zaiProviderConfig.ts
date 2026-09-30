@@ -17,12 +17,12 @@ const ZAI_OAUTH_PROVIDER_CONFIG: Omit<OAuthProviderRuntimeConfig, "appSecret"> =
   displayName: "Z.ai",
   enabled: true,
   order: 1,
-  // ZAI 当前 OAuth 授权入口使用 /api/oauth 前缀，继续走 /auth/oauth 会打开旧入口。
+  // ZAI's current OAuth authorization entrance uses the /api/oauth prefix. If you continue to use /auth/oauth, the old entrance will be opened.
   authorizeUrl: "https://chat.z.ai/api/oauth/authorize",
   tokenUrl: "https://zcode.z.ai/api/v1/oauth/token",
   userinfoUrl: "https://chat.z.ai/api/oauth/userinfo",
   businessLoginUrl: "https://api.z.ai/api/auth/z/login",
-  // 生产 client_id 不是 secret，但保留 fallback 可以避免未配置 env 的旧构建直接无法登录。
+  // The production client_id is not a secret, but keeping the fallback prevents old builds without env configured from being unable to log in directly.
   appId: "client_P8X5CMWmlaRO9gyO-KSqtg",
   redirectUri: "zcode://oauth/callback",
 };
@@ -41,7 +41,7 @@ export function createZaiProviderRuntimeConfig(env: NodeJS.ProcessEnv): OAuthPro
       readEnv(env, "ZAI_BUSINESS_LOGIN_URL") ??
       buildRuntimeZaiBusinessUrl(env, "/api/auth/z/login"),
     appId:
-      // client_id 是公开 OAuth app 标识，按环境覆盖，避免测试/生产 OAuth 应用混用。
+      // client_id is the public OAuth app identifier, which is covered by the environment to avoid mixed use of test/production OAuth applications.
       resolveZaiOAuthClientId(env),
     redirectUri: buildDesktopOAuthRedirectUriFromEnv(env),
   };

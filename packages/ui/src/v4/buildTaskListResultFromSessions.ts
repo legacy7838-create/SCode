@@ -1,5 +1,5 @@
-// 左侧列表投影：tasks-index 决定持久行集合与 membership，sessions-index 只补实时 activity/detail。
-// 这里保持纯函数，供 Project/Timeline/Pinned/Archived/Grouped 共用同一字段权威。
+// Left list projection: tasks-index determines the persistent row set and membership, and sessions-index only supplements real-time activity/detail.
+// Keep the pure function here for Project/Timeline/Pinned/Archived/Grouped to share the same field authority.
 import type { ZCodeTaskMeta } from "@zcode/shared";
 import { matchesTaskListMembershipKind } from "@zcode/shared/zcode-protocol-v4";
 import { buildTaskEntityKey } from "@/lib/taskQueryCache.js";
@@ -10,33 +10,46 @@ type TaskListKind = "pinned" | "archived" | "timeline" | "active";
 type TaskListSortBy = "created" | "updated";
 
 interface BuildTaskListParams {
-  /** tasks-index active/pinned/archived 三个持久分区的 task 行并集。 */
+  /**
+   * The union of task rows across the three persistent partitions of tasks-index:
+   * active/pinned/archived.
+   */
   taskIndexItems: ZCodeTaskMeta[];
-  /** sessions-index 派生的会话 activity/detail；只覆盖命中的持久行。 */
+  /**
+   * Session activity/detail derived from sessions-index; only the persistent rows it matches are
+   * overwritten.
+   */
   sessions: ZCodeTaskMeta[];
   kind: TaskListKind;
-  /** 服务端权威 pin/archive id 集（tasks-index.sqlite 持久化）。 */
+  /** The server-authoritative pin/archive id set (persisted in tasks-index.sqlite). */
   pinnedIds: ReadonlySet<string>;
   archivedIds: ReadonlySet<string>;
-  /** tasks-index 持久删除 tombstone；命中后不属于任何列表 kind。 */
+  /** tasks-index persistent-delete tombstone; once matched it belongs to no list kind. */
   deletedIds?: ReadonlySet<string>;
   search?: string;
   sortBy: TaskListSortBy;
-  /** 折叠上限；undefined = 全量（expanded）。 */
+  /** The collapse limit; undefined = the full set (expanded). */
   limit?: number;
   /**
-   * taskId → unreadAt（tasks-index 组织态，与 pin/archive 同源平行拉取）。
-   * sessions-index schema 冻结不携带 unread，这里在列表构建时 join 进 meta。
+   * taskId → unreadAt (organizational state from tasks-index, fetched in parallel from the same
+   * source as pin/archive). The sessions-index schema is frozen and does not carry unread, so it is
+   * joined into meta here while the list is built.
    */
   unreadAtByTaskId?: ReadonlyMap<string, number>;
-  /** taskId → terminal status（tasks-index 历史终态；只补冷启动 stored summary）。 */
+  /**
+   * taskId → terminal status (historical terminal state from tasks-index; only fills in cold-start
+   * stored summaries).
+   */
   terminalStatusByTaskId?: ReadonlyMap<
     string,
     Extract<ZCodeTaskMeta["status"], "completed" | "error">
   >;
-  /** taskId → 旧 task-index 手动标题；只覆盖 titleOverridden!==true 的 session meta。 */
+  /**
+   * taskId → manual title from the legacy task-index; only overwrites session meta where
+   * titleOverridden!==true.
+   */
   titleOverrideByTaskId?: ReadonlyMap<string, string>;
-  /** taskId -> cronAutomationId（tasks-index 元数据；SessionSummary 不携带）。 */
+  /** taskId -> cronAutomationId (tasks-index metadata; not carried by SessionSummary). */
   cronAutomationIdByTaskId?: ReadonlyMap<string, string>;
 }
 
@@ -62,20 +75,21 @@ function mergeTaskIndexRowWithSession(
     ...taskIndexTask,
     title: sessionTitleWins ? sessionTask.title : taskIndexTask.title,
     titleOverridden,
-    // session activity 是创建/活动时间与终态的实时权威；task row 只在 summary 缺失时兜底。
+    // Session activity is the real-time authoritative of creation/activity time and final state; task row only provides information when summary is missing.
     createdAt: sessionTask.createdAt || taskIndexTask.createdAt,
     updatedAt: (activity?.lastActivityAt ?? sessionTask.updatedAt) || taskIndexTask.updatedAt,
     status: sessionTask.status ?? taskIndexTask.status,
     forkedFromTaskId: sessionTask.forkedFromTaskId ?? taskIndexTask.forkedFromTaskId,
-    // pending interaction 属于当前 session 投影；summary 已到达但字段为空时必须清掉旧持久值。
+    // The pending interaction belongs to the current session projection; when the summary has arrived but the field is empty, the old persistent value must be cleared.
     pendingInteraction: sessionTask.pendingInteraction,
   };
   return activity ? attachTaskListRowActivity(merged, activity) : merged;
 }
 
 /**
- * 以 tasks-index 行为左表做字段级 join。summary 缺失时保留原 task 引用；session-only 冷摘要
- * 不会进入持久列表，新建短窗口由既有 optimistic/live overlay 负责。
+ * A field-level join with tasks-index rows as the left table. When the summary is missing, the
+ * original task reference is kept; session-only cold summaries do not enter the persistent list —
+ * the existing optimistic/live overlay takes care of newly created short windows.
  */
 export function mergeTaskIndexRowsWithSessions(params: {
   taskIndexItems: ZCodeTaskMeta[];
@@ -90,7 +104,10 @@ export function mergeTaskIndexRowsWithSessions(params: {
   });
 }
 
-/** unreadAt join：map 已加载时以 tasks-index 为准，未加载时不动原 meta，避免首帧闪烁。 */
+/**
+ * The unreadAt join: once the map is loaded tasks-index wins; while it is unloaded the original
+ * meta is left untouched, so the first frame does not flicker.
+ */
 export function joinTaskListUnreadAt(
   tasks: ZCodeTaskMeta[],
   unreadAtByTaskId: ReadonlyMap<string, number> | undefined,
@@ -134,9 +151,9 @@ function joinTaskListMembershipMeta(
     const shouldUpdateUnread =
       unreadAtByTaskId !== undefined &&
       (unreadAt !== task.unreadAt || (unreadAt === undefined && task.unreadAt !== undefined));
-    // v4 冷启动 stored summaries 可能还没 activity sidecar，只能从
-    // tasks-index 补历史 terminal status；一旦 sessions-index 已投影 activity，所有实时终态
-    // 都归它所有，不能再被旧 tasks-index 的 error/completed 反向覆盖。
+    // v4 cold start stored summaries may not have activity sidecar, and can only be started from
+    // tasks-index complements the historical terminal status; once sessions-index has projected activity, all real-time terminal status
+    // are owned by it and can no longer be overwritten by the error/completed reverse of the old tasks-index.
     const shouldUpdateStatus =
       activity === null &&
       terminalStatus !== undefined &&
@@ -159,14 +176,17 @@ function joinTaskListMembershipMeta(
       ...(shouldUpdateUnread ? { unreadAt } : {}),
       ...(shouldUpdateStatus ? { status: terminalStatus } : {}),
       ...(shouldUpdateTitle ? { title: titleOverride, titleOverridden: true } : {}),
-      // sessions-index 的冻结 summary 不含 cron 身份；必须从 tasks-index join 回来，
-      // 否则数据库已标记为定时任务，侧栏传给 React 的 meta 仍无法通过 isCronTask。
+      // The frozen summary of sessions-index does not contain cron identity; it must be returned from tasks-index join.
+      // Otherwise, the database has been marked as a scheduled task, and the meta passed to React from the sidebar still cannot pass isCronTask.
       ...(shouldUpdateCronAutomationId ? { cronAutomationId } : {}),
     };
   });
 }
 
-/** 客户端过滤/排序/分页，产出与旧 listTaskList 同形的 { items, total }。 */
+/**
+ * Client-side filtering/sorting/paging, producing a { items, total } shaped like the old
+ * listTaskList.
+ */
 export function buildTaskListResult(params: BuildTaskListParams): BuildTaskListResult {
   const query = params.search?.trim().toLocaleLowerCase() ?? "";
   const rows = mergeTaskIndexRowsWithSessions({
@@ -180,8 +200,8 @@ export function buildTaskListResult(params: BuildTaskListParams): BuildTaskListR
     cronAutomationIdByTaskId: params.cronAutomationIdByTaskId,
   });
   const filtered = tasks.filter((task) => {
-    // CLI session store 不会随归档列表“永久删除”一起物理清理；若不先应用
-    // deleted 负向 membership，冷启动 sessions-index 会把它当成非 archived 普通任务复活。
+    // The CLI session store will not be physically cleaned with the archive list "permanently deleted"; if not applied first
+    // deleted negative membership, cold start sessions-index will revive it as a non-archived ordinary task.
     if (params.deletedIds?.has(task.taskId)) return false;
     const pinned = params.pinnedIds.has(task.taskId);
     const archived = params.archivedIds.has(task.taskId);

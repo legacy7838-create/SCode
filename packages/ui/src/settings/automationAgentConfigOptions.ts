@@ -8,13 +8,16 @@ import {
 import { decodeCustomModelValue, encodeCustomModelValue } from "@/lib/zcodeCustomModelValue.js";
 import { resolveV4ModelTriggerLabel } from "@/v4/composer/modelTriggerDisplay.js";
 
-// 定时任务表单必须是纯本地草稿，不能借用 workspace 默认配置写接口来获取选项；
-// 否则仅打开或取消编辑也会改掉当前项目和 draft session 的运行配置。
+// The scheduled task form must be a purely local draft and cannot use the workspace default configuration writing interface to obtain options;
+// Otherwise just opening or canceling editing will also change the running configuration of the current project and draft session.
 
-/** 权限模式默认值：Ask before changes。 */
+/** Default permission mode: Ask before changes. */
 export const AUTOMATION_DEFAULT_MODE = "build";
 
-/** 新建任务必须把目标 Host 的 preferredSelection 固化为具体模型，而不是保存虚拟“默认模型”。 */
+/**
+ * Creating a task must pin the target Host's preferredSelection to a concrete model instead of
+ * storing a virtual “default model”.
+ */
 export function resolveAutomationPreferredModelValue(
   view: Pick<ModelSelectionView, "preferredSelection">,
 ): string | null {
@@ -80,9 +83,9 @@ export function resolveAutomationModelItem(
     );
     if (providerMatches.length === 1) return providerMatches[0] ?? null;
   }
-  // 历史 automation 可能只保存纯模型名；同名模型跨 provider 时不能猜测来源。
-  // workspace runtime 也可能返回 zcode-openai-compatible/model 这类包装值，provider 对不上时
-  // 只有模型名全局唯一才允许回填菜单项，避免默认模型丢失对应的 think 元数据。
+  // Historical automation may only save pure model names; the source cannot be guessed when a model with the same name crosses providers.
+  // The workspace runtime may also return packaging values ​​such as zcode-openai-compatible/model when the provider cannot match it.
+  // Only model names that are globally unique are allowed to backfill menu items to prevent the default model from losing corresponding think metadata.
   return modelMatches.length === 1 ? (modelMatches[0] ?? null) : null;
 }
 
@@ -96,7 +99,7 @@ export function resolveAutomationModelTriggerLabel(params: {
   if (!selectedItem) {
     const decodedModel = decodeCustomModelValue(params.modelValue);
     if (decodedModel?.modelName) {
-      // 仅展示层保留历史模型名；模型不回填到当前候选列表，也不改变保存或派发逻辑。
+      // Only the presentation layer retains historical model names; models are not backfilled to the current candidate list, and save or dispatch logic is not changed.
       return decodedModel.modelName;
     }
 
@@ -112,9 +115,9 @@ export function resolveAutomationModelTriggerLabel(params: {
     params.modelSelectionView?.providers.find((provider) => provider.providerId === providerId)
       ?.providerName ?? undefined;
 
-  // Automations 曾自行截断 provider/model 协议值，只显示最后一级模型名，
-  // 导致同一模型在会话侧和定时任务侧身份文案不一致。这里直接复用会话侧规则，
-  // 同时保留内置 family 与失效值的统一裁剪语义。
+  // Automations once truncated the provider/model protocol value by itself and only displayed the last-level model name.
+  // As a result, the identity copy of the same model is inconsistent on the session side and the scheduled task side. The session side rules are directly reused here.
+  // While retaining the unified pruning semantics of built-in family and invalid values.
   return resolveV4ModelTriggerLabel({
     modelGroups: params.modelGroups,
     normalizedValue: selectedItem.value,
@@ -131,7 +134,7 @@ export function buildAutomationThoughtLevelOption(
   const options = runtimeOption?.options ?? [];
   if (options.length === 0) return null;
   const validCurrentValue = options.some((option) => option.value === currentValue);
-  // 原因：候选刷新不是用户选择，不能把失效档位改成默认/最高档并保存。
+  // Reason: The candidate refresh is not a user choice, and the invalid gear cannot be changed to the default/highest gear and saved.
   const resolvedValue = validCurrentValue ? currentValue : "";
 
   return {

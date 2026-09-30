@@ -100,8 +100,8 @@ export function useSessionSubagents(options: {
       const requestedCount = Math.max(PAGE_SIZE, loadedEndedCountRef.current);
       let response = await requestPage(Math.min(requestedCount, MAX_PAGE_SIZE));
       const previous = stateRef.current;
-      // 新完成项会插入 ended 顶部。多取同样数量的旧项，避免刷新时把用户已经
-      // 加载到目录底部的项目挤出当前内存页；浏览器滚动锚点可继续保持可见行。
+      // Newly finished items are inserted at the top of ended. Fetch the same number of older items so a refresh
+      // does not push items the user already loaded at the catalog bottom out of the current in-memory page; the browser scroll anchor can keep visible rows in place.
       const targetCount = resolveEndedSubagentRefreshTargetCount({
         loadedItemCount: previous.ended.items.length,
         nextTotal: response.ended.total,
@@ -131,7 +131,7 @@ export function useSessionSubagents(options: {
     } catch (error) {
       if (requestVersion !== requestVersionRef.current) return;
       const message = error instanceof Error ? error.message : String(error);
-      logger.warn("[subagent-directory] 读取子智能体目录失败", {
+      logger.warn("[subagent-directory] failed to read the subagent directory", {
         error: message,
         sessionId: options.sessionId,
         workspaceKey: options.workspaceIdentity?.trim() || options.workspacePath,

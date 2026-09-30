@@ -2,39 +2,41 @@ import ts from "typescript";
 import { FACADE_FILE_NAME } from "./dts.js";
 
 /**
- * world-read 注册表：
- * **(facade 容器, 成员) → op** 的唯一真源。一张表，三个消费方——`analysis/sites.ts` 的站点收集、
- * `analysis/facade-misuse.ts` 的 facade-siting 诊断、`lowering/lower.ts` 的改写——所以加一个
- * world-read 原语就是**加一行**，消费方一行不改。
+ * The world-read registry:
+ * the single source of truth for **(facade container, member) -> op**. One table, three consumers — the site collection in
+ * `analysis/sites.ts`, the facade-siting diagnostics in `analysis/facade-misuse.ts`, and the rewrite in
+ * `lowering/lower.ts` — so adding a world-read primitive means **adding one line**, and not a single
+ * consumer line changes.
  *
  * ————————————————————————————————————————————————————————————————
- * 为什么键上必须带**声明容器**，而不能只用成员名
+ * Why the key must carry the **declaring container** and cannot use the bare member name
  * ————————————————————————————————————————————————————————————————
- * `git.log` 与顶层 `log()` 撞名。裸名字集合只有两种下场：给每一条进度消息都铸出一个
- * world-read 站点，或者把 `git.log` 的站点整个丢掉——而没有站点的 facade 调用就没有 journal
- * 键，正是 facade-siting 规则存在的意义所要防的那种不可靠。facade 身份在别处早就是
- * **按声明判定**的（misuse pass 解析 callee 的 symbol，而非它的拼写），所以这里只是把同一条
- * 规则一致地用上，而不是新增规则。
+ * `git.log` collides in name with the top-level `log()`. A bare name set has only two possible outcomes: mint a
+ * world-read site for every single progress message, or drop `git.log`'s site entirely — and a facade call without a site has
+ * no journal key, which is exactly the kind of unreliability the facade-siting rule exists to prevent. Facade
+ * identity has long been **decided by declaration** elsewhere (the misuse pass resolves the callee's symbol, not its
+ * spelling), so this is only applying that one same rule consistently, not introducing a new one.
  *
- * op 联合类型由表**推导**（见 {@link WorldReadOp}）：新增一行即扩张 Boundary A 的 op 词汇表，
- * 不必再改一处类型声明——那是第二份真相的常见起点。
+ * The op union type is **derived** from the table (see {@link WorldReadOp}): adding one row widens Boundary A's op
+ * vocabulary, with no need to touch a type declaration as well — that is the usual starting point of a
+ * second source of truth.
  */
 
-/** 注册表一行：facade 容器上的一个成员，映射到 Boundary A 的一个 op。 */
+/** One registry row: a member on a facade container, mapped to one op of Boundary A. */
 interface WorldReadRow {
-  /** 声明该成员的 facade 容器名（`declare const files: {...}` 的 `files`）。 */
+  /** The name of the facade container that declares that member (the `files` of `declare const files: {...}`). */
   readonly container: string;
-  /** 容器上的成员名（`files.glob` 的 `glob`）。 */
+  /** The member name on the container (the `glob` of `files.glob`). */
   readonly member: string;
-  /** Boundary A 的 op 名。与成员名**不必**相同：`git.log` → `"git-log"`。 */
+  /** The op name of Boundary A. It need **not** equal the member name: `git.log` -> `"git-log"`. */
   readonly op: string;
 }
 
 /**
- * world-read 注册表。加原语=加一行。
+ * The world-read registry. Adding a primitive = adding one line.
  *
- * `git.log` 那一行是这张表存在的理由：它的成员名与顶层 `log()` 撞名，而这里的键带容器，
- * 所以两者从不相遇（见本模块顶部）。
+ * The `git.log` row is the reason this table exists: its member name collides with the top-level `log()`, and here the
+ * key carries the container, so the two never meet (see the top of this module).
  */
 export const WORLD_READ_REGISTRY = [
   { container: "files", member: "glob", op: "glob" },
@@ -44,45 +46,47 @@ export const WORLD_READ_REGISTRY = [
   { container: "git", member: "diff", op: "git-diff" },
   { container: "git", member: "status", op: "git-status" },
   { container: "git", member: "log", op: "git-log" },
-  // world.run：journal 化命令执行。同一张表、同一套
-  // 机制——「读」与「效应」的差别在授权面（编译期字面量 cmd + 确认窗）与 journal 的
-  // 节点种类（world-run），不在站点身份。
+  // world.run: journal-based command execution. The same table, the same set
+  // Mechanism - The difference between "read" and "effect" lies in the authorization aspect (compile-time literal cmd + confirmation window) and journal
+  // Node type (world-run), not site identity.
   { container: "world", member: "run", op: "run" },
 ] as const satisfies readonly WorldReadRow[];
 
 /**
- * 世界读取操作（只读、可 journal）。从注册表推导，故加一行即扩张 op 词汇表。
- * Boundary A 的 `worldRead(siteId, op, args)` 与 journal 的 `inputHash({op, args})` 都用它。
+ * A world read operation (read-only, journalable). Derived from the registry, so adding one line widens the op
+ * vocabulary. Both Boundary A's `worldRead(siteId, op, args)` and the journal's `inputHash({op, args})` use it.
  */
 export type WorldReadOp = (typeof WORLD_READ_REGISTRY)[number]["op"];
 
 /**
- * 产物注册表：容器 `artifact` 的六个成员
- * → Boundary A 的六个 op。与 world-read 注册表**同形但分表**，这是刻意的：
+ * The artifact registry: the six members of the `artifact` container
+ * -> the six ops of Boundary A. **Same shape as the world-read registry but a separate table**, deliberately:
  *
- * world-read 那张表的每一行最终都落到 `driver.executeWorldRead`，语义是「读」；产物的两族
- * 一个是写 store 的效应（`publishArtifact`）、一个根本不过 driver（`declareArtifact`）。把它们
- * 混进同一张表，misuse / lowering / 引擎三处的 world-read 分支就都要背上一个「除非它其实是
- * 产物」的分叉——而那三处正是加原语时最该零改动的地方。
+ * Every row of the world-read table eventually lands in `driver.executeWorldRead` and means "read", while the two families of
+ * artifacts are one an effect that writes the store (`publishArtifact`) and one that never goes through the driver at
+ * all (`declareArtifact`). Mixing them into one table would make the world-read branch in each of the three places —
+ * misuse, lowering, engine — carry an "unless it is actually an artifact" fork, and those
+ * three are exactly the places that most ought to change by zero lines when a primitive is added.
  *
- * ⚠ 术语：这里的 artifact 是**用户面产物**，不是引擎内部的顶层返回值。
+ * ⚠ Terminology: the artifact here is a **user-facing artifact**, not the engine's internal top-level return value.
  */
 export interface ArtifactRow {
-  /** 声明该成员的 facade 容器名（恒为 `artifact`）。 */
+  /** The name of the facade container that declares that member (always `artifact`). */
   readonly container: "artifact";
-  /** 容器上的成员名。 */
+  /** The member name on the container. */
   readonly member: string;
-  /** Boundary A 的 op 名（与成员名相同——产物成员没有 `git.log` 那样的撞名史）。 */
+  /** The op name of Boundary A (identical to the member name — artifact members have no name-collision history like `git.log`). */
   readonly op: string;
   /**
-   * 成员族。`content` 是效应（async、经 driver、可拒绝），`preset` 是声明（同步 void、
-   * 不经 driver）。族别决定 lowering 改写成 `publishArtifact` 还是 `declareArtifact`，
-   * 也决定超限走节点拒绝还是 failRun，所以它必须和 op 住在同一行里，而不是在三处各判一次。
+   * The member family. `content` is an effect (async, through the driver, rejectable), `preset` is a declaration
+   * (synchronous void, not through the driver). The family decides whether lowering rewrites to
+   * `publishArtifact` or to `declareArtifact`, and also decides whether exceeding the limit produces a node
+   * rejection or a failRun, so it has to live in the same row as the op instead of being decided three times over.
    */
   readonly family: "content" | "preset";
 }
 
-/** 产物注册表。加一个产物种类 = 加一行。 */
+/** The artifact registry. Adding one artifact kind = adding one line. */
 export const ARTIFACT_REGISTRY = [
   { container: "artifact", member: "file", op: "file", family: "content" },
   { container: "artifact", member: "markdown", op: "markdown", family: "content" },
@@ -92,27 +96,27 @@ export const ARTIFACT_REGISTRY = [
   { container: "artifact", member: "board", op: "board", family: "preset" },
 ] as const satisfies readonly ArtifactRow[];
 
-/** 全部产物 op（六个成员）。由注册表推导，故加一行即扩张词汇表。 */
+/** All artifact ops (the six members). Derived from the registry, so adding one line widens the vocabulary. */
 export type ArtifactOp = (typeof ARTIFACT_REGISTRY)[number]["op"];
 
-/** 内容成员的 op（效应：async、经 driver、返回 `ArtifactRef`）。 */
+/** The op of a content member (an effect: async, through the driver, returning an `ArtifactRef`). */
 export type ArtifactContentOp = Extract<
   (typeof ARTIFACT_REGISTRY)[number],
   { family: "content" }
 >["op"];
 
-/** 预置成员的 op（声明：同步 void、不经 driver）。 */
+/** The op of a preset member (a declaration: synchronous void, not through the driver). */
 export type ArtifactPresetOp = Extract<
   (typeof ARTIFACT_REGISTRY)[number],
   { family: "preset" }
 >["op"];
 
 /**
- * 注册表查询：(容器, 成员) → 产物行。非产物成员返回 undefined。
+ * Registry lookup: (container, member) -> the artifact row. A non-artifact member returns undefined.
  *
- * 返回**表元素的字面量类型**（而不是宽化的 {@link ArtifactRow}）：`op` 与 `family` 的联合
- * 类型全由这张表推导，宽化一次就等于把它们退回成 `string`，站点表与 lowering 也就跟着
- * 失去分派依据。
+ * It returns the **literal type of the table element** (rather than the widened {@link ArtifactRow}): the unions of `op` and
+ * `family` are derived entirely from this table, and widening them once reduces them back to `string`, after which the
+ * site table and the lowering lose their dispatch basis too.
  */
 function artifactRow(
   container: string | undefined,
@@ -122,7 +126,7 @@ function artifactRow(
   return ARTIFACT_REGISTRY.find((row) => row.container === container && row.member === member);
 }
 
-/** 某 facade symbol 解析到的产物行（按声明容器判定），非产物成员则 undefined。 */
+/** The artifact row a certain facade symbol resolves to (decided by the declaring container); undefined for a non-artifact member. */
 export function artifactRowOfSymbol(
   symbol: ts.Symbol | undefined,
 ): (typeof ARTIFACT_REGISTRY)[number] | undefined {
@@ -131,41 +135,43 @@ export function artifactRowOfSymbol(
   return artifactRow(member.container, member.member);
 }
 
-/** 某产物 op 属于哪一族。op 由注册表推导，故这里必然命中。 */
+/** Which family a certain artifact op belongs to. The op is derived from the registry, so a lookup here always hits. */
 export function artifactFamilyOf(op: ArtifactOp): "content" | "preset" {
   const row = ARTIFACT_REGISTRY.find((candidate) => candidate.op === op);
   if (row === undefined) throw new Error(`unknown artifact op: ${op}`);
   return row.family;
 }
 
-/** 该 op 是否为预置成员（声明族）。引擎与分析器都据它分派两条完全不同的路径。 */
+/** Whether that op is a preset member (the declaration family). Both the engine and the analyzers dispatch two completely different paths by it. */
 export function isArtifactPresetOp(op: string): op is ArtifactPresetOp {
   return ARTIFACT_REGISTRY.some((row) => row.op === op && row.family === "preset");
 }
 
 /**
- * `ask` 所在的容器：不是 world-read，但同为**产生站点**的 facade 成员，故 facade-siting
- * 规则同样约束它（只允许直接调用）。放在这里是为了让"哪些成员产生站点"只有一份清单。
+ * The container `ask` lives in: not a world-read, but equally a facade member that **produces a site**, so the facade-siting
+ * rule constrains it too (direct calls only). It is placed here so that there is a single list of
+ * "which members produce sites".
  */
 const ASK_MEMBER = { container: "Agent", member: "ask" } as const;
 
-/** 顶层 facade 函数中产生站点的那些（无容器）。`log` 不产生站点，故不在此。 */
+/** The top-level facade functions that produce sites (no container). `log` produces no site, so it is not here. */
 const SITE_PRODUCING_FUNCTIONS = ["agent", "report"] as const;
 
 /**
- * 顶层产生站点的 facade 函数名。`sites.ts` 的裸 callee 分支按它分派，所以"哪个顶层函数
- * 产生站点"这件事只有这一份清单。
+ * The names of the top-level site-producing facade functions. The bare-callee branch of `sites.ts` dispatches by
+ * them, so "which top-level function produces a site" is answered by this one list only.
  *
- * `report` 在这里、`log` 不在，两者的差别不是严重程度而是**有没有 journal 键**：
- * report 有一行 `dwf_node`（按 site × ordinal 去重 replay），所以 facade-siting 规则
- * （只许直接调用）必须约束它——一次没有站点的 report 调用就是一条没有键的 journal 记录。
- * `log` 没有站点，也就没有什么可被 aliasing 破坏。
+ * `report` is here and `log` is not; the difference is not one of severity but of **whether there is a journal key**:
+ * report has a `dwf_node` row (replayed deduplicated by site x ordinal), so the facade-siting rule
+ * (direct calls only) has to constrain it — a report call without a site is a journal record without a key.
+ * `log` has no site, and therefore nothing that aliasing could break.
  */
 type SiteProducingFunction = (typeof SITE_PRODUCING_FUNCTIONS)[number];
 
 /**
- * 某 facade symbol 解析到的产生站点的**顶层函数**（按声明判定：容器必须缺席）。
- * 非 facade symbol、facade 容器成员、以及 `log` 之类不产生站点的顶层函数都返回 undefined。
+ * The site-producing **top-level function** a certain facade symbol resolves to (decided by declaration: the container
+ * must be absent). A non-facade symbol, a member of a facade container, and a top-level function that
+ * produces no site such as `log` all return undefined.
  */
 export function siteProducingFunctionOfSymbol(
   symbol: ts.Symbol | undefined,
@@ -176,24 +182,25 @@ export function siteProducingFunctionOfSymbol(
 }
 
 /**
- * 顶层 facade 函数中**展示用的标记**：有 facade 身份，但不产生站点。目前只有 `phase`。
+ * The **display-only marker** among the top-level facade functions: it has facade identity but produces no site. Today only `phase` is one.
  *
- * 为什么它不在 {@link SITE_PRODUCING_FUNCTIONS} 里，而是自成一列：那份清单回答的是
- * 「哪个顶层函数产生站点」，而 `phase` 没有站点 id、没有 journal 行、没有 host 调用——
- * lowering 直接把它抹成 `void 0`。把它混进产生站点的清单会让 facade-misuse 的 pass 2（"产生站点却没被 site
- * 掉的直接调用"）拒绝每一次合法的 `phase("gate")`。
+ * Why it is not inside {@link SITE_PRODUCING_FUNCTIONS} and instead stands in a column of its own: that list answers
+ * "which top-level function produces a site", while `phase` has no site id, no journal row and no host call —
+ * lowering simply erases it into `void 0`. Mixing it into the site-producing list would make facade-misuse's
+ * pass 2 ("a direct call that produces a site but was never sited") reject every legitimate `phase("gate")`.
  *
- * 它仍然是 facade 函数声明，所以别名逃逸（`const p = phase`）照旧被 facade-misuse 的
- * pass 1 拒绝——lowering 因此可以放心按节点身份抹除。
+ * It is still a facade function declaration, so an alias escape (`const p = phase`) is rejected by facade-misuse's
+ * pass 1 as before — which lets lowering erase it confidently by node identity.
  */
 const MARKER_FUNCTIONS = ["phase"] as const;
 
-/** 顶层展示标记 facade 函数名。由 {@link MARKER_FUNCTIONS} 推导，加一个标记即加一行。 */
+/** The names of the top-level display-marker facade functions. Derived from {@link MARKER_FUNCTIONS}; adding one marker is adding one line. */
 type MarkerFunction = (typeof MARKER_FUNCTIONS)[number];
 
 /**
- * 某 facade symbol 解析到的**展示标记**顶层函数（按声明判定：容器必须缺席），
- * 非标记则 undefined。与 {@link siteProducingFunctionOfSymbol} 同形、刻意不同表。
+ * The **display marker** top-level function a certain facade symbol resolves to (decided by declaration: the container
+ * must be absent); undefined when it is not a marker. Shaped like {@link siteProducingFunctionOfSymbol} and deliberately
+ * a different table.
  */
 export function markerFunctionOfSymbol(symbol: ts.Symbol | undefined): MarkerFunction | undefined {
   const member = facadeMemberOf(symbol);
@@ -202,13 +209,15 @@ export function markerFunctionOfSymbol(symbol: ts.Symbol | undefined): MarkerFun
 }
 
 /**
- * 全部产生站点的 facade 成员名（world-read 成员 + `ask`）。**裸名字**清单，只可用于
- * "先按名字取候选、再按声明验身份"的两段式判定——不可单独作为身份依据（见本模块顶部）。
+ * The names of all site-producing facade members (the world-read members plus `ask`). A **bare name** list, usable only
+ * for the two-stage decision "take candidates by name first, then verify identity by declaration" — never on its own as an
+ * identity basis (see the top of this module).
  *
- * `git.log` 落地后这个集合里**含有 `"log"`**，而顶层 `log()` 不产生站点。这不是矛盾，
- * 而是这份清单为什么只能当候选键的证明：身份必须由 (容器, 成员) 或声明解析给出，
- * 名字本身答不了。唯一还被依赖的性质是**没有两个 facade 容器声明同名成员**——
- * 集合不带容器，重名会让由它反查出的那个名字变得二义（facade-misuse 的诊断文案会引它）。
+ * Once `git.log` landed, this set **contains `"log"`**, while the top-level `log()` produces no site. That is not a
+ * contradiction but the proof of why this list can only serve as a candidate key: identity has to come from (container, member)
+ * or from resolving the declaration; the name itself cannot answer. The only property still relied upon is
+ * **that no two facade containers declare a member of the same name** — the set carries no container, and a
+ * duplicate name would make the name looked up through it ambiguous (the facade-misuse diagnostic text quotes it).
  */
 export const SITE_MEMBER_NAMES: ReadonlySet<string> = new Set<string>([
   ASK_MEMBER.member,
@@ -217,8 +226,8 @@ export const SITE_MEMBER_NAMES: ReadonlySet<string> = new Set<string>([
 ]);
 
 /**
- * 注册表查询：(容器, 成员) → op。容器为 undefined（顶层函数）时永不命中——world-read
- * 一律挂在 facade 容器对象上。
+ * Registry lookup: (container, member) -> op. It never hits when the container is undefined (a top-level function) — a
+ * world-read always hangs on a facade container object.
  */
 function worldReadOp(container: string | undefined, member: string): WorldReadOp | undefined {
   if (container === undefined) return undefined;
@@ -227,11 +236,11 @@ function worldReadOp(container: string | undefined, member: string): WorldReadOp
 }
 
 /**
- * (容器, 成员) 是否为产生站点的 facade 调用（world-read、产物、`Agent.ask`、或顶层
- * `agent`/`report`）。
+ * Whether (container, member) is a site-producing facade call (a world-read, an artifact, `Agent.ask`, or the top-level
+ * `agent`/`report`).
  *
- * 产物成员在这里，与 `report` 同一条理由：它们有 journal 键（`artifact#N` × ordinal），
- * 而一次没有站点的发布就是一行没有键的 journal 记录——那正是 facade-siting 规则要防的。
+ * The artifact members are in here for the same reason as `report`: they have journal keys (`artifact#N` x ordinal),
+ * and a publish without a site is a journal row without a key — exactly what the facade-siting rule prevents.
  */
 export function isSiteProducing(container: string | undefined, member: string): boolean {
   if (container === undefined) return SITE_PRODUCING_FUNCTIONS.some((name) => name === member);
@@ -241,13 +250,14 @@ export function isSiteProducing(container: string | undefined, member: string): 
 }
 
 /**
- * 一个 facade 声明所属的**容器名**：`declare const files: { glob(...) }` 的 `glob` → `"files"`，
- * `declare interface Agent { ask(...) }` 的 `ask` → `"Agent"`，顶层 `declare function agent()` →
- * undefined（无容器）。
+ * The **container name** a facade declaration belongs to: the `glob` of `declare const files: { glob(...) }` -> `"files"`, the
+ * `ask` of `declare interface Agent { ask(...) }` -> `"Agent"`, a top-level `declare function agent()` ->
+ * undefined (no container).
  *
- * 实现：成员的声明是类型字面量/接口体里的一个 method/property signature，据此向上走到
- * VariableDeclaration（const 容器）或 InterfaceDeclaration / TypeAliasDeclaration（命名类型容器）
- * 取其名字。只认落在 facade `.d.ts` 里的声明——脚本自定义的同名成员一律 undefined。
+ * Implementation: a member's declaration is a method/property signature inside a type literal or an interface body, and from
+ * there one walks up to the VariableDeclaration (a const container) or the InterfaceDeclaration / TypeAliasDeclaration (a
+ * named type container) to take its name. Only declarations landing inside the facade `.d.ts` count — a same-named member the
+ * script defines itself is always undefined.
  */
 export function facadeContainerOf(declaration: ts.Node | undefined): string | undefined {
   if (declaration === undefined) return undefined;
@@ -263,8 +273,9 @@ export function facadeContainerOf(declaration: ts.Node | undefined): string | un
 }
 
 /**
- * 一个 facade symbol 的 (容器, 成员) 身份。symbol 的任一声明落在 facade `.d.ts` 内即算命中；
- * 容器由该声明向上解析（顶层 facade 函数无容器）。非 facade symbol → undefined。
+ * The (container, member) identity of a facade symbol. A hit is any declaration of the symbol landing inside the facade
+ * `.d.ts`; the container is resolved by walking up from that declaration (a top-level facade function has no
+ * container). A non-facade symbol -> undefined.
  */
 function facadeMemberOf(
   symbol: ts.Symbol | undefined,
@@ -276,7 +287,7 @@ function facadeMemberOf(
   return { container: facadeContainerOf(declaration), member: symbol.name };
 }
 
-/** 某 facade symbol 解析到的 world-read op（按声明容器判定），非 world-read 则 undefined。 */
+/** The world-read op a certain facade symbol resolves to (decided by the declaring container); undefined when it is not a world-read. */
 export function worldReadOpOfSymbol(symbol: ts.Symbol | undefined): WorldReadOp | undefined {
   const member = facadeMemberOf(symbol);
   if (member === undefined) return undefined;

@@ -1,8 +1,8 @@
 import type { ZCodeTaskRuntimeStatus } from "@zcode/shared";
 
 export function isChatTaskRunning(taskStatus: ZCodeTaskRuntimeStatus) {
-  // ChatView 之前用 displayedStatus 和最后一条消息角色去猜“是否正在思考”，
-  // task 明明还处在 creating/restoring/streaming 时，只要消息列表暂时没跟上，shimmer 就会提前消失。
-  // 这里直接对齐 task 运行态判断，和顶部 Task StatusBadge 保持同一组“运行中”状态。
+  // ChatView previously used displayedStatus and the last message role to guess "whether you are thinking".
+  // When the task is obviously still in creating/restoring/streaming, as long as the message list does not keep up, the shimmer will disappear early.
+  // This directly aligns the task running status judgment and maintains the same set of "running" status as the top Task StatusBadge.
   return taskStatus === "creating" || taskStatus === "restoring" || taskStatus === "streaming";
 }

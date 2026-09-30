@@ -10,7 +10,7 @@ export interface EnvInfo {
   shell: string;
   osVersion: string;
   nodeVersion: string;
-  // 执行模型不是环境事实；只能由当前 model step 的 Model 在 Prompt 渲染时提供。
+  // The execution model is not an environmental fact; it can only be provided by the current model step's Model when Prompt is rendered.
   isGitRepository?: boolean;
   gitBranch?: string;
   gitMainBranch?: string;

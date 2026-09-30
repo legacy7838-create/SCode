@@ -41,8 +41,10 @@ const LOCAL_MEDIA_AUTHORIZATION_TTL_MS = 30 * 60 * 1000;
 const LOCAL_MEDIA_AUTHORIZATION_MAX_ENTRIES = 256;
 
 /**
- * Main 只登记 Host 已经通过 workspace/session/message/attachment 校验的精确文件。
- * 旧协议直接信任 renderer URL 中的绝对 path，导致任何 renderer 脚本都能读取任意文件。
+ * Main only registers the exact files that Host has already validated through
+ * workspace/session/message/attachment.
+ * The old protocol trusted the absolute path straight out of the renderer URL, which let any
+ * renderer script read any file.
  */
 export function createLocalMediaPreviewPathRegistry(
   dependencies: {
@@ -59,7 +61,7 @@ export function createLocalMediaPreviewPathRegistry(
     string,
     { canonicalPath: string; expiresAt: number; lastUsedAt: number }
   >();
-  // 永久 Set 会无界增长，且路径被替换为 symlink 后仍继续获得 file loader 权限。
+  // The permanent Set will grow unbounded, and will continue to obtain file loader permissions after the path is replaced with a symlink.
   const isAbsolutePath = dependencies.isAbsolutePath ?? isAbsolute;
   const realpath = dependencies.realpath ?? fsRealpath;
   const realpathSync = dependencies.realpathSync ?? fsRealpathSync;
@@ -130,9 +132,10 @@ export function createLocalMediaPreviewPathRegistry(
 }
 
 /**
- * Electron 要求 privileged scheme 在 app ready 前注册。
- * 缺少 standard 时 Chromium 不会按标准 URL 处理文件尾读取，导致 moov 位于 mdat
- * 之后的 MP4 被误判为不可解码；standard 与 stream 共同保留本地视频的元数据读取和 seek。
+ * Electron requires privileged schemes to be registered before the app is ready.
+ * Without `standard`, Chromium does not read from the end of the file as a standard URL would, so
+ * MP4s whose `moov` atom sits after `mdat` are misjudged as undecodable; `standard` together with
+ * `stream` is what preserves metadata reads and seeking for local video.
  */
 export function registerLocalMediaPreviewScheme(protocol: LocalMediaPreviewSchemeRegistrar): void {
   protocol.registerSchemesAsPrivileged([
@@ -148,9 +151,9 @@ export function installLocalMediaPreviewProtocol(
   options: { isPathAuthorized: (path: string) => boolean },
 ): void {
   if (installedProtocols.has(protocol)) return;
-  // protocol.handle(Response) 在 Electron 41 中无法为本地音视频提供稳定的
-  // seekable range，手工返回 Range 还会被媒体栈判为不可播放。复用原生 file loader，
-  // 让 Chromium 处理 Range，同时仍只把校验后的音视频绝对路径交给 loader。
+  // protocol.handle(Response) cannot provide stable performance for local audio and video in Electron 41
+  // seekable range, manually returning the Range will be judged as unplayable by the media stack. Reuse native file loader,
+  // Let Chromium handle the Range while still only passing the verified absolute paths of audio and video to the loader.
   const registered = protocol.registerFileProtocol(
     LOCAL_MEDIA_PREVIEW_SCHEME,
     (request, callback) => {

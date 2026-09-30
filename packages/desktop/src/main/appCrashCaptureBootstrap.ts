@@ -1,6 +1,6 @@
 import { logger } from "./logger.js";
 import { initializeCrashCapture, type CrashCapturePaths } from "./desktopCrashCapture.js";
 
-// 须在 appARMSBootstrap 之前完成：先由 desktopEarlyDataBaseDirBootstrap 注入 dataBaseDir，再配置 crashDumps。
-// remoteCrashReporterEnabled=true 表示 ARMS 已接管远端 crash 上报，不再启动仅本地的 crashReporter。
+// Must be completed before appARMSBootstrap: first inject dataBaseDir by desktopEarlyDataBaseDirBootstrap, and then configure crashDumps.
+// remoteCrashReporterEnabled=true means ARMS has taken over remote crash reporting and will no longer start the local-only crashReporter.
 export const crashCapturePaths: CrashCapturePaths = initializeCrashCapture(logger, true);

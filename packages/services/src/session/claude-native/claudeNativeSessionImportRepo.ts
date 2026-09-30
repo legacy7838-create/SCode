@@ -60,8 +60,8 @@ class ClaudeNativeSessionImportRepo {
       homes.add(dataBaseDir);
     }
 
-    // 关键业务逻辑：扫描 Claude Code 原生历史目录 ~/.claude/projects，不是 zcode 自己的数据目录。
-    // 当 ZCODE_DATA_BASE_DIR 把 .zcode 放到别处时，原生 .claude 往往仍在真实用户 HOME 下。
+    // Key business logic: Scan Claude Code’s native history directory ~/.claude/projects, not zcode’s own data directory.
+    // When ZCODE_DATA_BASE_DIR puts .zcode elsewhere, the native .claude is often still under the real user HOME.
     return [...homes].map((homePath) => join(homePath, ".claude", "projects"));
   }
 
@@ -120,7 +120,7 @@ class ClaudeNativeSessionImportRepo {
     const marker = `${sep}projects${sep}`;
     const markerIndex = sourcePath.lastIndexOf(marker);
     if (markerIndex < 0) {
-      throw new Error(`[claude-native] Claude 原生 session 路径非法: ${sourcePath}`);
+      throw new Error(`[claude-native] invalid Claude native session path: ${sourcePath}`);
     }
     return sourcePath.slice(markerIndex + marker.length);
   }
@@ -166,8 +166,8 @@ class ClaudeNativeSessionImportRepo {
         if (!headInfo.workspacePath) {
           continue;
         }
-        // Claude 会把临时执行面放到 ~/.claude/worktrees 下。
-        // 引导数据导入只应展示真实用户 workspace，避免把这些短生命周期 worktree 当成可迁移项目。
+        // Claude will place the temporary execution surface under ~/.claude/worktrees.
+        // Boot data import should only display real user workspaces to avoid treating these short-lived worktrees as migrable projects.
         if (isClaudeWorktreeWorkspacePath(headInfo.workspacePath)) {
           continue;
         }
@@ -188,7 +188,7 @@ class ClaudeNativeSessionImportRepo {
           ...(headInfo.previewTitle ? { previewTitle: headInfo.previewTitle } : {}),
         });
       } catch (error) {
-        logger.warn(undefined, `扫描 Claude 原生 session 失败 path=${filePath}`, error);
+        logger.warn(undefined, `failed to scan Claude native session path=${filePath}`, error);
       }
     }
 
@@ -200,7 +200,7 @@ class ClaudeNativeSessionImportRepo {
 
     logger.info(
       undefined,
-      `Claude 原生 session 扫描完成 workspaceFilter=${params.workspacePath ?? "all"} fileCount=${sessionFiles.length} candidateCount=${limited.length}`,
+      `Claude native session scan completed workspaceFilter=${params.workspacePath ?? "all"} fileCount=${sessionFiles.length} candidateCount=${limited.length}`,
     );
 
     return limited;
@@ -230,7 +230,7 @@ class ClaudeNativeSessionImportRepo {
         if (!headInfo.workspacePath) {
           continue;
         }
-        // 直接按 sessionId 导入也必须复用扫描边界，防止 UI 过滤后仍能导入临时 worktree。
+        // Importing directly by sessionId must also reuse the scan boundary to prevent the temporary worktree from still being imported after UI filtering.
         if (isClaudeWorktreeWorkspacePath(headInfo.workspacePath)) {
           return null;
         }
@@ -253,7 +253,7 @@ class ClaudeNativeSessionImportRepo {
       } catch (error) {
         logger.warn(
           undefined,
-          `查找 Claude 原生 session 失败 sessionId=${params.sessionId}`,
+          `failed to find Claude native session sessionId=${params.sessionId}`,
           error,
         );
       }
@@ -267,8 +267,8 @@ class ClaudeNativeSessionImportRepo {
     workspaceIdentity?: string;
     sourcePath: string;
   }): Promise<{ outputPath: string; createdOutputPaths: string[] }> {
-    // 导入副本沿用历史目录布局 ~/.zcode/v2/agent-config/claude/{workspaceHash}/projects；
-    // 这是 Claude 历史导入的存储位置，与 agent runtime provider（glm）无关。
+    // The imported copy follows the historical directory layout ~/.zcode/v2/agent-config/claude/{workspaceHash}/projects;
+    // This is where Claude's history imports are stored, independent of the agent runtime provider (glm).
     const relativeProjectsPath = this.getRelativeProjectsPath(params.sourcePath);
     const outputPath = join(
       getAppConfigDir(),

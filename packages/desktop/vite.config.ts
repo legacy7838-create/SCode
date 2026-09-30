@@ -38,9 +38,9 @@ function resolveInstalledPackageRoot(packageName: string): string {
 }
 
 export const desktopRendererDependencyAliases = {
-  // pnpm hoisted/package-local 布局会随安装配置变化；硬编码 node_modules 子路径
-  // 会让 Rolldown 依赖优化把 react/jsx-runtime 等入口解析到不存在的位置。
-  // 通过 Node 解析真实安装根目录，既保留单 React runtime，又兼容不同 node-linker。
+  // pnpm hoisted/package-local layout changes with installation configuration; hardcoded node_modules subpath
+  // This will cause Rolldown to rely on optimization to parse entries such as react/jsx-runtime to non-existent locations.
+  // Parse the real installation root directory through Node, which not only retains a single React runtime, but is also compatible with different node-linkers.
   react: resolveInstalledPackageRoot("react"),
   "react-dom": resolveInstalledPackageRoot("react-dom"),
   "lucide-react": resolveInstalledPackageRoot("lucide-react"),
@@ -85,9 +85,9 @@ function createE2EUIRendererCoveragePlugin(repoRoot: string): Plugin {
         return null;
       }
 
-      // post-transform 插桩依赖 Vite/React/esbuild 的合并 sourcemap，
-      // 会把生成后的 JS 覆盖点反投影到 import、interface 等 TS 源码行上。
-      // 这里先对原始 TS/TSX AST 插桩，再交给 Vite 编译，保证 coverage map 只包含真实运行时代码。
+      // post-transform instrumentation relies on the merged sourcemap of Vite/React/esbuild,
+      // The generated JS coverage points will be back-projected onto TS source code lines such as import and interface.
+      // Here, the original TS/TSX AST is instrumented first and then handed over to Vite for compilation to ensure that the coverage map only contains real runtime code.
       const code = instrumenter.instrumentSync(sourceCode, normalizedFilename);
       baselineCoverage[normalizedFilename] = JSON.parse(
         JSON.stringify(instrumenter.lastFileCoverage()),
@@ -98,8 +98,8 @@ function createE2EUIRendererCoveragePlugin(repoRoot: string): Plugin {
       };
     },
     closeBundle() {
-      // 只读取页面 __coverage__ 会让从未加载的 lazy chunk 消失，分母被缩小。
-      // coverage build 将完整 renderer graph 的零命中 map 留给 suite reporter 合并。
+      // Just reading the page __coverage__ will make the never-loaded lazy chunks disappear, and the denominator is shrunk.
+      // coverage build leaves the zero-hit map of the complete renderer graph to the suite reporter for merging.
       mkdirSync(dirname(baselinePath), { recursive: true });
       writeFileSync(baselinePath, `${JSON.stringify(baselineCoverage, null, 2)}\n`, "utf-8");
     },
@@ -141,11 +141,11 @@ function stripViteRequestQuery(id: string) {
 }
 
 export default defineConfig(({ mode }) => {
-  // `.env*` 只提供链接常量；当前产品环境由启动脚本或 CI 注入 ZCODE_ENV。
+  // `.env*` only provide link constants; the current production environment is injected with ZCODE_ENV by the startup script or CI.
   const env = { ...loadEnv(mode, "../..", ""), ...process.env };
   const repoRoot = resolve(__dirname, "../..");
   const zcodeEnv = resolveZCodeEnv(env.ZCODE_ENV);
-  // 安装包身份与后端环境分轴；renderer 用它决定是否展示更新入口。
+  // The identity of the installation package is separate from the backend environment; the renderer uses it to decide whether to display the update entry.
   const zcodeProductFlavor = resolveDesktopProductFlavor({
     ...process.env,
     ...env,
@@ -173,15 +173,15 @@ export default defineConfig(({ mode }) => {
     plugins,
     resolve: {
       alias: {
-        // 修复 UI 组件库中的 @ 别名解析失败。
-        // 问题原因：desktop 会直接打包 packages/ui 的源码，但当前 Vite 配置不知道 @ 应该指向 packages/ui/src，
-        // 导致 spinner、alert 等组件里的内部导入在构建时全部失效。
-        // 这里在消费端补齐别名，比逐个改组件导入更稳，也能和 web 端保持一致。
+        // Fix @ alias resolution failure in UI component library.
+        // Cause of the problem: Desktop will directly package the source code of packages/ui, but the current Vite configuration does not know that @ should point to packages/ui/src.
+        // As a result, all internal imports in components such as spinner and alert will fail during construction.
+        // Completing the alias here on the consumer side is more stable than importing components one by one, and can also be consistent with the web side.
         "@": resolve(__dirname, "../ui/src"),
         ...desktopRendererDependencyAliases,
-        // Recharts 通过 d3-shape 读取 d3-path 的 Path 导出；hoisted node_modules
-        // 里可能残留 d3-shape/node_modules/d3-path@1.x，Vite 预构建会优先命中旧包并报 Missing export。
-        // 这里把 d3-path 固定到根部 3.x 入口，确保桌面端依赖优化和运行时解析一致。
+        // Recharts reads the Path export of d3-path through d3-shape; hoisted node_modules
+        // There may be d3-shape/node_modules/d3-path@1.x left in it. Vite pre-build will hit the old package first and report Missing export.
+        // Here, d3-path is fixed to the root 3.x entry to ensure that desktop dependency optimization and runtime resolution are consistent.
         "d3-path": resolve(__dirname, "../../node_modules/d3-path/src/index.js"),
       },
       dedupe: ["react", "react-dom", "lucide-react"],
@@ -196,35 +196,35 @@ export default defineConfig(({ mode }) => {
       __ZCODE_PRODUCT_FLAVOR__: JSON.stringify(zcodeProductFlavor),
       __ZCODE_LOCAL_DEVELOPMENT_RUNTIME__: JSON.stringify(mode !== "production"),
       "import.meta.env.VITE_ZCODE_BASE_URL": JSON.stringify(zcodeEndpointOrigin),
-      // 兼容旧 renderer 读取名；新代码统一读 VITE_ZCODE_BASE_URL。
+      // Compatible with old renderer reading names; new codes uniformly read VITE_ZCODE_BASE_URL.
       "import.meta.env.VITE_ZCODE_ENDPOINT_ORIGIN": JSON.stringify(zcodeEndpointOrigin),
       "import.meta.env.VITE_CODING_PLAN_WEBVIEW_ORIGIN": JSON.stringify(codingPlanWebviewOrigin),
       "import.meta.env.VITE_REWARDS_WEBVIEW_ORIGIN": JSON.stringify(
         env.VITE_REWARDS_WEBVIEW_ORIGIN ?? process.env.VITE_REWARDS_WEBVIEW_ORIGIN ?? "",
       ),
-      // E2E store bridge 只能由 WDIO 专用变量打开，避免把 ZCODE_ENV=test 产品环境误当成测试运行态。
+      // The E2E store bridge can only be opened by the WDIO special variable to avoid mistaking the ZCODE_ENV=test product environment for the test running state.
       "import.meta.env.VITE_ZCODE_E2E_STORE_BRIDGE": JSON.stringify(
         e2eStoreBridgeEnabled ? "1" : "",
       ),
     },
-    // Electron 用 file:// 协议加载页面，资源路径必须是相对路径，否则会 ERR_FILE_NOT_FOUND
+    // Electron uses the file:// protocol to load pages. The resource path must be a relative path, otherwise ERR_FILE_NOT_FOUND will occur.
     base: "./",
     worker: {
       rollupOptions: {
-        // @pierre/diffs 的 worker 入口依赖 import 后注册 message 监听。
-        // 它的 package sideEffects 漏声明会让生产 worker 子构建被摇成 0B；
-        // 只关闭 worker 构建的摇树，避免影响主包。
+        // The worker entry of @pierre/diffs relies on importing and then registering the message listener.
+        // Its missing package sideEffects declaration will cause the production worker sub-build to be shaken to 0B;
+        // Only turn off tree shaking built by workers to avoid affecting the main package.
         treeshake: false,
       },
     },
     build: {
       outDir: "../../out/renderer",
       emptyOutDir: true,
-      // 生产包若直接暴露 sourceMappingURL，攻击者可在客户端侧还原业务源码。
-      // 生产使用 hidden sourcemap：本地/发布流程保留 .map，不在产物里暴露映射入口。
+      // If the production package directly exposes the sourceMappingURL, the attacker can restore the business source code on the client side.
+      // Use hidden sourcemap in production: the local/release process retains .map and does not expose the mapping entry in the product.
       sourcemap: mode === "production" ? "hidden" : true,
       rollupOptions: {
-        // 多入口：主窗口 + 进程监控 + CUA 权限拖拽浮窗
+        // Multiple entrances: main window + process monitoring + CUA permission drag-and-drop floating window
         input: {
           index: resolve(__dirname, "src/renderer/index.html"),
           "resource-manager": resolve(__dirname, "src/renderer/resource-manager.html"),

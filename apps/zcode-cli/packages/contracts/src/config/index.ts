@@ -57,7 +57,7 @@ export const ConfigKey = {
   SkillsMetadataBudget: "skills.metadataBudget",
   SkillsRoots: "skills.roots",
 
-  // Skill / Command 可用性覆盖（按 SKILL.md / 命令 .md 的绝对路径过滤）
+  // Skill/Command availability override (filtered by absolute path to SKILL.md/command.md)
   SkillOverrides: "skill",
   CommandOverrides: "command",
 
@@ -186,11 +186,11 @@ export interface ConfigSource {
 }
 
 // ============================================================
-// Skill / Command 可用性覆盖
+// Skill/Command Availability Override
 // ============================================================
 
-// 按绝对路径覆盖单个 skill / 命令是否可用。未列出的条目默认可用，
-// 只有显式 enable:false 才会在发现阶段被过滤掉。
+// Overriding whether a single skill/command by absolute path is available. Entries not listed are available by default,
+// Only explicit enable:false will be filtered out during the discovery phase.
 export interface SkillCommandOverride {
   enable?: boolean;
 }
@@ -240,9 +240,9 @@ export interface RuntimeConfig {
     roots: string[];
     [skillPath: string]: boolean | number | string[] | { enable?: boolean };
   };
-  // key 为 SKILL.md 绝对路径，value.enable=false 表示禁用该 skill
+  // key is the absolute path of SKILL.md, value.enable=false means disabling the skill
   skillOverrides: Record<string, SkillCommandOverride>;
-  // key 为命令 .md 绝对路径，value.enable=false 表示禁用该命令
+  // key is the absolute path of the command .md, value.enable=false means disabling the command
   commandOverrides: Record<string, SkillCommandOverride>;
   logging: {
     level: "debug" | "info" | "warn" | "error";
@@ -276,8 +276,8 @@ export interface RuntimeConfigPatch {
   ui?: Partial<RuntimeConfig["ui"]>;
 }
 
-export type SupportedLocale = "en-US" | "zh-CN";
-export type UiLocale = SupportedLocale | "auto";
+export type SupportedLocale = "en-US";
+export type UiLocale = "en-US";
 export type UiThemeMode = "dark" | "light";
 export type UiThemePreference = UiThemeMode | "auto";
 

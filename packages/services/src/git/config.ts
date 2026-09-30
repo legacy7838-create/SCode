@@ -2,18 +2,15 @@ import { join } from "node:path";
 
 export const DEFAULT_GIT_DISCOVERY_TIMEOUT_MS = 3_000;
 export const DEFAULT_GIT_COMMAND_TIMEOUT_MS = 15_000;
-// `git push` 可能会被仓库的 pre-push hook 阻塞较长时间（例如执行 `pnpm test`）。
-// 继续沿用普通 Git 命令的 15s 超时会把显式 push 误判成失败，因此单独放宽 push 超时。
+// `git push` may be blocked by the repository's pre-push hook for a long time (such as executing `pnpm test`).
+// Continuing to use the 15s timeout of ordinary Git commands will misjudge explicit push as failure, so the push timeout is relaxed separately.
 export const DEFAULT_GIT_PUSH_TIMEOUT_MS = 10 * 60_000;
 export const DEFAULT_GIT_DIFF_TIMEOUT_MS = 20_000;
 export const DEFAULT_GIT_OUTPUT_BYTES = 512 * 1024;
-// pre-push hook 可能会输出完整测试日志；继续沿用普通 Git 命令的 512KB 上限，
-// 会在真正 push 完成前因为日志过多被截断终止。这里仅给 push 单独放宽输出配额。
+// The pre-push hook may output the complete test log; continue to use the 512KB upper limit of ordinary Git commands.
+// It will be truncated and terminated before the actual push is completed because there are too many logs. Here only the output quota is relaxed for push alone.
 export const DEFAULT_GIT_PUSH_OUTPUT_BYTES = 8 * 1024 * 1024;
 export const DEFAULT_GIT_DIFF_BYTES = 1024 * 1024;
-export const GIT_UNTRACKED_STAT_MAX_BYTES = 1024 * 1024;
-export const GIT_UNTRACKED_STAT_CHUNK_BYTES = 64 * 1024;
-export const GIT_UNTRACKED_STAT_CONCURRENCY = 4;
 
 const WINDOWS_GIT_BINARY_CANDIDATES = [
   join(
@@ -64,9 +61,9 @@ export function getGitCommandEnv(): NodeJS.ProcessEnv {
     ...process.env,
   };
 
-  // pre-push hook 会向子进程注入当前仓库的 GIT_DIR/GIT_WORK_TREE 等 local env。
-  // 如果这里原样透传，Git 服务命令会“串仓”到 hook 所在仓库，临时仓库/远端仓库操作都会被污染。
-  // 统一先清理 local env，再叠加 ZCode 约束变量，保证命令只依赖显式 cwd。
+  // The pre-push hook will inject local env such as GIT_DIR/GIT_WORK_TREE of the current warehouse into the child process.
+  // If the Git service command is passed through as it is, the Git service command will be "transmitted" to the warehouse where the hook is located, and the temporary warehouse/remote warehouse operations will be contaminated.
+  // Uniformly clear the local env first, and then superimpose the ZCode constraint variable to ensure that the command only relies on explicit cwd.
   for (const variableName of GIT_LOCAL_ENV_VARS) {
     delete env[variableName];
   }

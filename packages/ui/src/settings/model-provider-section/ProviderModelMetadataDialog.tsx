@@ -95,8 +95,8 @@ export function ProviderModelMetadataDialog({
   const editModelLabel = intl.formatMessage({
     id: "settings.modelProvider.editModel",
   });
-  // 新增模型时模型 ID 为空，如果沿用编辑态的上下文窗口自动聚焦，会让用户先落到默认数值字段。
-  // 编辑态仍保留上下文窗口自动聚焦和选中，方便直接修改已有模型配置。
+  // When adding a model, the model ID is empty. If the automatic focus of the context window in the editing state is used, the user will first fall to the default value field.
+  // The editing state still retains the automatic focus and selection of the context window, which facilitates direct modification of existing model configurations.
   const shouldFocusModelIdInput = mode === "add";
   const shouldFocusContextWindowInput = mode === "edit";
   const addModelConfigResolutionPending = smart && modelConfigResolutionPending;
@@ -105,8 +105,8 @@ export function ProviderModelMetadataDialog({
     if (event.key !== "Enter") {
       return;
     }
-    // 输入法候选确认也会发出 Enter。某些 Electron/macOS 版本的
-    // nativeEvent.isComposing 会过早恢复 false，因此同时保留本地 composition 状态。
+    // Input method candidate confirmation also issues Enter. Some Electron/macOS versions
+    // nativeEvent.isComposing will revert to false prematurely, thus preserving the native composition state.
     if (
       isImeComposingKeyEvent({
         compositionActive: compositionActiveRef.current,
@@ -142,7 +142,7 @@ export function ProviderModelMetadataDialog({
         </DialogTrigger>
       ) : null}
       <DialogContent
-        // overflow-hidden 仍允许聚焦触发外层滚动；语言换行后曾滚走标题。仅正文滚动，外框只裁切。
+        // overflow-hidden still allows focus to trigger outer scrolling; the title once scrolled away after language wrapping. Only the text is scrolled, and the outer frame is only cropped.
         className="max-h-[min(48rem,calc(100vh-4rem))] max-w-2xl grid-rows-[auto_minmax(0,1fr)_auto_auto] overflow-clip"
         data-no-model-drag="true"
       >
@@ -166,7 +166,7 @@ export function ProviderModelMetadataDialog({
             onChange={(useRecommendedConfigValue) => onDraftChange({ useRecommendedConfigValue })}
           />
         </DialogHeader>
-        {/* 保存期间锁定正文交互，不改变原有滚动容器；页脚单独显示提交状态。 */}
+        {/* During saving, the text interaction is locked and the original scroll container is not changed; the footer displays the submission status separately. */}
         <div
           inert={saving}
           className="min-h-0 min-w-0 -mr-3 space-y-4 overflow-y-auto pr-4"

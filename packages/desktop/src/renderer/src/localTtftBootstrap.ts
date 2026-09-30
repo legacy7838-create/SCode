@@ -1,7 +1,7 @@
 import type { IPlatformService, LocalTtftRecord } from "@zcode/shared";
 import { LocalTtftObserver, setLocalTtftObserver } from "@zcode/ui";
 
-/** 单窗口批量出口；关闭采集只影响新输入，已启用的发送保留原决定。 */
+/** Single-window batch egress; turning collection off only affects new input, while sends that already enabled keep their original decision. */
 export function initializeDesktopLocalTtft(platform: IPlatformService): () => void {
   if (!platform.reportLocalTtftBatch || !platform.getRendererActionTraceConfig) return () => {};
   const rendererInstanceId = crypto.randomUUID();

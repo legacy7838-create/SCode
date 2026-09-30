@@ -1,19 +1,19 @@
 /**
- * Node dist 下载源的唯一解析点（本包内）。
+ * The single resolution point for the Node dist download source (within this package).
  *
- * 与 `.gitlab/ci/00-workflow.yml` 的 `ZCODE_NODE_DIST_MIRROR` CI 变量、
- * `scripts/prepare-prebuilds.mjs` 的 `nodeDistBase()`、
- * `scripts/cua-helper-sea-base.mjs` 的 `DEFAULT_MIRROR` 是同一个约定和同一个默认值。
- * 四处必须保持一致——CI 变量会覆盖
- * 代码默认值，两者一旦不同，改代码默认值在 CI 里就等于没改。
+ * Same convention and same default as the `ZCODE_NODE_DIST_MIRROR` CI variable in
+ * `.gitlab/ci/00-workflow.yml`, the `nodeDistBase()` in `scripts/prepare-prebuilds.mjs`,
+ * and the `DEFAULT_MIRROR` in `scripts/cua-helper-sea-base.mjs`.
+ * All four must stay in sync — the CI variable overrides
+ * the code default, so once the two diverge, changing the code default is a no-op in CI.
  *
- * `stageCli.ts` 与 `scripts/prepare-prebuilds.mjs` 都硬编码
- * `https://nodejs.org/dist`，而 macOS CI runner 连不上它（`UND_ERR_CONNECT_TIMEOUT`，10s）。
- * prepare-prebuilds 和 stage:remote-assets 任务
- * 都栽在这条路上；平时靠"缓存命中就不联网"侥幸绕过。
+ * Both `stageCli.ts` and `scripts/prepare-prebuilds.mjs` hardcode
+ * `https://nodejs.org/dist`, which the macOS CI runner cannot reach (`UND_ERR_CONNECT_TIMEOUT`, 10s).
+ * The prepare-prebuilds and stage:remote-assets jobs
+ * have both tripped over this; in practice they dodge it thanks to "a cache hit means no network access".
  *
- * 单独成模块而不是留在 stageCli.ts：后者末尾是顶层 `await main()`，import 即执行，
- * 无法在测试里引用。
+ * Its own module rather than staying in stageCli.ts: the latter ends with a top-level `await main()`,
+ * which executes on import and so cannot be referenced from tests.
  */
 export const DEFAULT_NODE_DIST_BASE = "https://cdn.npmmirror.com/binaries/node";
 

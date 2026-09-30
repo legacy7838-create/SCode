@@ -1,5 +1,5 @@
-// 通用状态圆点：tone 映射颜色，spinning 用旋转 loader。复用于设置页多处状态指示
-// (McpServerList 的连接态、Computer Use 的权限 / Helper 运行态)，统一圆点样式与配色，避免各处重写。
+// Common status dots: tone maps color, spinning uses rotation loader. Reused in multiple status indicators on the settings page
+// (Connection state of McpServerList, Computer Use permission/Helper running state), unify the dot style and color to avoid rewriting everywhere.
 import { CircleIcon, Loader2Icon } from "lucide-react";
 
 export type StatusDotTone = "green" | "amber" | "red" | "muted" | "subtle";

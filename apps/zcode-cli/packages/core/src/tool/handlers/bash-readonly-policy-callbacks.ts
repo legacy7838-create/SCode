@@ -312,43 +312,5 @@ export function ghCommandIsDangerous(_commandText: string, args: readonly string
   return false;
 }
 
-const DOCKER_DANGEROUS_GLOBAL_FLAGS = [
-  "-H",
-  "-c",
-  "--config",
-  "--context",
-  "--host",
-  "--tlscacert",
-  "--tlscert",
-  "--tlskey",
-];
-const DOCKER_DANGEROUS_SHORT_FLAGS = new Set(
-  DOCKER_DANGEROUS_GLOBAL_FLAGS.filter((flag) => flag.length === 2).map((flag) => flag[1]),
-);
-
-export function dockerCommandIsDangerous(_commandText: string, args: readonly string[]): boolean {
-  return hasDangerousDockerOption(args);
-}
-
-export function hasDangerousDockerOption(args: readonly string[]): boolean {
-  return args.some((arg) => {
-    if (
-      DOCKER_DANGEROUS_GLOBAL_FLAGS.some(
-        (flag) =>
-          arg === flag ||
-          arg.startsWith(`${flag}=`) ||
-          (flag.length === 2 && arg.length > 2 && arg.startsWith(flag)),
-      )
-    )
-      return true;
-    const shortFlags = arg.match(/^-([A-Za-z]+)/)?.[1];
-    if (shortFlags !== undefined && shortFlags.length >= 2) {
-      for (const flag of shortFlags) {
-        if (DOCKER_DANGEROUS_SHORT_FLAGS.has(flag)) return true;
-      }
-    }
-    return false;
-  });
-}
 
 export * from "./bash-readonly-policy-git-callbacks.js";

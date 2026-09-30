@@ -20,7 +20,10 @@ type FormatMessage = (
   values?: Record<string, string | number>,
 ) => string;
 
-/** providerId → 会话模型清单里的 provider 名；查不到即缺席（见 useWorkflowSubagentModelProviderName）。 */
+/**
+ * providerId → the provider name from the session model catalog; a miss means absent (see
+ * useWorkflowSubagentModelProviderName).
+ */
 type ProviderNameLookup = ((providerId: string) => string | undefined) | undefined;
 
 interface ListModelsEntryView {
@@ -111,10 +114,12 @@ function readResultRecord(value: unknown): ListModelsResult | null {
 }
 
 /**
- * 结果读取顺序与 list-saved-workflows 同一条：**display 通道优先**（`list_models` kind——
- * v4 wire 上 output.text 是 formatModelContent 的 `<models>` 投影，下面的 JSON 探针对它永不
- * 命中，正是今天掉进 raw 兜底卡的根因）；legacy JSON 探针兜老会话与非 v4 宿主。一个都读不
- * 出来就回 null——「这台机器没有模型」与「读不懂这次结果」必须可分辨。
+ * The result read order is the one list-saved-workflows uses: **the display channel comes first**
+ * (the `list_models` kind — on the v4 wire output.text is the `<models>` projection of
+ * formatModelContent, so the JSON probe below can never hit it, which is exactly the root cause of
+ * landing in the raw fallback card today); the legacy JSON probe covers old sessions and non-v4
+ * hosts. If neither can read anything, return null — "this machine has no models" and "this result
+ * cannot be read" must stay distinguishable.
  */
 function readListModelsResult(
   toolCall: ToolCallBlockRenderContext["toolCallNode"]["toolCall"],
@@ -148,10 +153,11 @@ function readListModelsResult(
 }
 
 /**
- * 组名 = provider 的**名字**，与模型菜单同一条规则（subagent-model-label.ts 的同款纪律）：
- * 内置家族取家族名；否则取载荷里的 providerLabel；否则取会话模型清单里的名字；都没有就用
- * 「模型供应商」这个词本身。**永远不回 providerId**——团队套餐的它是一个 UUID，摆上屏幕
- * 等于让用户先跳过 36 个字符才看见模型名。
+ * Group name = the provider's **name**, by the same rule as the model menu (the same discipline as
+ * subagent-model-label.ts): a built-in family uses the family name; otherwise the providerLabel
+ * from the payload; otherwise the name from the session model catalog; with none of those, the word
+ * "Model provider" itself. **Never fall back to providerId** — on a team plan it is a UUID, and
+ * putting that on screen means making the user skip 36 characters before they see a model name.
  */
 function listModelsGroupName(
   providerId: string,
@@ -167,7 +173,7 @@ function listModelsGroupName(
   if (label !== undefined && label.length > 0 && label !== providerId) {
     return label;
   }
-  // 会话清单查不到时会退回 providerId 本身（zcodeSessionSettingsToConfigOptions），当作没查到。
+  // When the session list cannot be found, the providerId itself (zcodeSessionSettingsToConfigOptions) will be returned and treated as not found.
   const resolved = providerName?.(providerId)?.trim();
   if (resolved !== undefined && resolved.length > 0 && resolved !== providerId) {
     return resolved;
@@ -176,8 +182,9 @@ function listModelsGroupName(
 }
 
 /**
- * 上下文窗口的读法：千位以下原样，百万以下取整到 K，再往上到 M 且只在有小数时留一位
- * （`1M` / `1.5M`）。这一列是给人扫一眼比大小的，不是给人核对精确 token 数的。
+ * How the context window is read: below a thousand, verbatim; below a million, rounded to K; above
+ * that, to M and keeping one decimal only when there is one (`1M` / `1.5M`). This column is for
+ * glancing at relative sizes, not for checking an exact token count.
  */
 function formatContextWindow(contextWindow: number): string {
   if (contextWindow < 1_000) {
@@ -191,14 +198,16 @@ function formatContextWindow(contextWindow: number): string {
 }
 
 function levelWord(level: string, formatMessage: FormatMessage): string {
-  // 档位词与思考控件同一张表；表里没有的值原样显示（provider 自定义的档位名）。
+  // The gear words are in the same table as the thinking control; values ​​not in the table are displayed as they are (provider's customized gear name).
   const labelId = thoughtLevelLabelId(level);
   return labelId === undefined ? level : formatMessage({ id: labelId });
 }
 
 /**
- * 行的 tooltip：第一行是思考强度档位（没有档位就说没有），换行后是规范 id。规范 id 是给
- * 机器回填 `subagent_model` 用的，它只该住在这里（subagent-model-label.ts 的同款分工）。
+ * The row tooltip: the first line is the reasoning-effort level (say so when there is none), and
+ * after the line break the canonical id. The canonical id exists so a machine can back-fill
+ * `subagent_model`, and it belongs only here (the same division of labour as
+ * subagent-model-label.ts).
  */
 function listModelsRowTooltip(model: ListModelsEntryView, formatMessage: FormatMessage): string {
   let levelsLine: string;
@@ -224,7 +233,10 @@ interface ListModelsGroup {
   models: ListModelsEntryView[];
 }
 
-/** 按 providerId 分组，保持首次出现的顺序——目录的顺序是宿主注册表的顺序，卡不重排。 */
+/**
+ * Group by providerId, keeping first-appearance order — the catalog's order is the host registry's
+ * order, and the card does not re-sort.
+ */
 function groupModelsByProvider(models: ListModelsEntryView[]): ListModelsGroup[] {
   const groups: ListModelsGroup[] = [];
   const byProviderId = new Map<string, ListModelsGroup>();
@@ -241,14 +253,16 @@ function groupModelsByProvider(models: ListModelsEntryView[]): ListModelsGroup[]
 }
 
 /**
- * ListModels 的聊天卡。
+ * The chat card for ListModels.
  *
- * 为什么值得一个专用 renderer：这个工具名不在 shared 的已知工具表里，通用路径是
- * `FallbackToolCallBlock`，它会把模型面的 `<models>` 文本原样摊开——那段文本每行都以
- * providerId 开头（可能是 UUID 等长标识），「当前」藏在行尾方括号里。
+ * Why it deserves a dedicated renderer: this tool name is not in shared's known-tool table, so the
+ * generic path is `FallbackToolCallBlock`, which lays the model-facing `<models>` text out verbatim
+ * — every line of that text starts with a providerId (possibly a UUID or an equally opaque id), and
+ * "current" is hidden in brackets at the end of the line.
  *
- * 卡只回答三件事：有哪些、来自哪里、哪个是当前。每行的档位表与规范 id 归 tooltip；
- * providerId 一个字符都不上屏。
+ * The card answers only three things: what is there, where it comes from, which one is current. The
+ * level list and the canonical id of each row belong to the tooltip; not a single character of
+ * providerId reaches the screen.
  */
 export function ListModelsToolCallBlock(context: ToolCallBlockRenderContext) {
   const { intl } = useZCodeIntl();
@@ -267,7 +281,7 @@ export function ListModelsToolCallBlock(context: ToolCallBlockRenderContext) {
   const truncatedLabel = intl.formatMessage({ id: "chat.toolCall.workflow.models.truncated" });
 
   const modelCount = result?.models.length ?? 0;
-  // 轻量 intl 没有 ICU 复数，单复数各用独立 message key（同 workflow.list.count 的先例）。
+  // Lightweight intl does not have ICU plural, and singular and plural numbers use separate message keys (same as the precedent of workflow.list.count).
   const countLabel = intl.formatMessage(
     {
       id:
@@ -283,7 +297,7 @@ export function ListModelsToolCallBlock(context: ToolCallBlockRenderContext) {
     [result],
   );
 
-  // ToolLayout 是 memo 组件：内联 JSX prop 每次渲染都是新引用，会让记忆化失效。
+  // ToolLayout is a memo component: inline JSX props are new references every time they are rendered, which will invalidate memoization.
   const primaryText = useMemo(
     () => (
       <span className="truncate text-foreground-subtlest">
@@ -356,9 +370,9 @@ export function ListModelsToolCallBlock(context: ToolCallBlockRenderContext) {
     );
   }, [currentLabel, groups, intl.formatMessage, providerName, result, truncatedLabel]);
 
-  // 失败态**不**退回兜底卡：那张卡会摊开错误 JSON，而这里真正要说的是「这个会话读不到模型
-  // 目录」。它与「一个模型也没有」是两回事，卡上既不画列表也不说那句空话（同
-  // model_catalog_unavailable 在模型通道上的分辨）。
+  // Failure does not return the card: that card will spread out the error JSON, and what is really being said here is "This session cannot read the model."
+  // Directory". It is different from "not a single model". The card neither draws a list nor says that empty phrase (same as
+  // model_catalog_unavailable resolution on the model channel).
   if (result === null && toolCall.status === "failed") {
     return (
       <>
@@ -370,7 +384,7 @@ export function ListModelsToolCallBlock(context: ToolCallBlockRenderContext) {
           forceOpen={false}
           kindLabel={context.kindLabelOverride ?? kindLabel}
           sourceLabel={context.sourceLabel}
-          // 失败时摘要行只有种类词与状态词：计数与那句「没有配置模型」在这里都是谎话。
+          // When failed, the summary line only has category words and status words: the count and the sentence "no configuration model" are both lies here.
           primaryText={null}
           statusLabel={context.statusLabel}
           statusTooltip={context.errorText}
@@ -390,12 +404,12 @@ export function ListModelsToolCallBlock(context: ToolCallBlockRenderContext) {
     );
   }
 
-  // 读不出结构化结果（老会话、降级路径）就交回通用卡，而不是画一张空目录。
+  // If you cannot read the structured results (old sessions, downgrade paths), return the general card instead of drawing an empty directory.
   if (result === null) {
     return <FallbackToolCallBlock {...context} iconOverride={LIST_MODELS_TOOL_ICON} />;
   }
 
-  // 一个模型也没有时摘要行就是那句话，没有可展开的内容——空卡体比没有卡体更难读。
+  // When there is no model, the summary line is just that sentence, with no expandable content - an empty card body is harder to read than no card body.
   const hasDetails = modelCount > 0;
 
   return (

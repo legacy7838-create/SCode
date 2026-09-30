@@ -104,9 +104,9 @@ function readReadMetadataFromRaw(raw: unknown): {
   }
 
   if (directPath) {
-    // 有些模型只在 rawInput 里给 filePath，但会在 rawOutput/content 里补充目录类型。
-    // 之前这里一旦先读到 rawInput.filePath 就会提前返回成 file，导致目录卡片图标错误。
-    // 现在改成“类型优先看显式输出，路径再回退 rawInput”，只在确实没有输出标签时才用 input 兜底。
+    // Some models only provide filePath in rawInput, but will supplement the directory type in rawOutput/content.
+    // Previously, once rawInput.filePath was read here, it would be returned to file in advance, resulting in an incorrect directory card icon.
+    // Now change it to "Type takes precedence over explicit output, then fall back to rawInput for path", and only use input as a cover-up when there is indeed no output tag.
     return {
       path: directPath,
       entryType: normalizeReadEntryType(directType),
@@ -182,9 +182,9 @@ export function buildReadSummary(
           ? `${cwd}/${relativePath}`
           : (relativePath ?? fileName ?? "read");
 
-      // read 卡片之前只兼容 parsed_cmd 结构。
-      // 其他模型常把路径放在 rawInput/filePath 或 rawOutput 的 <path> 标签里，
-      // 导致 UI 只能退回 kind/title。这里保留结构化优先，再补原始输出兜底。
+      // The read card was previously only compatible with the parsed_cmd structure.
+      // Other models often put the path in the <path> tag of rawInput/filePath or rawOutput.
+      // As a result, the UI can only return kind/title. The structured priority is retained here, and the original output is supplemented.
       return createReadSummary(absolutePath, {
         fileName,
         entryType: "file",
@@ -194,9 +194,9 @@ export function buildReadSummary(
 
   const directInputMetadata = readReadMetadataFromValue(input);
   if (directInputMetadata.path) {
-    // 一些 provider 的 read/update 事件直接把文件路径放在 input.file_path，
-    // 不会补 parsed_cmd，也不一定把相同字段镜像到 raw.rawInput.filePath。
-    // 之前 summary 构建会直接漏掉这类 read 卡片，导致 primary/secondary 都退回标题。
+    // Some providers' read/update events directly put the file path in input.file_path.
+    // Parsed_cmd is not patched, and the same fields are not necessarily mirrored to raw.rawInput.filePath.
+    // Previously, summary construction would directly miss this type of read card, causing both primary and secondary to return titles.
     return createReadSummary(directInputMetadata.path, {
       entryType: directInputMetadata.entryType,
     });

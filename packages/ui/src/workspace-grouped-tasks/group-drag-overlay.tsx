@@ -16,8 +16,8 @@ function GroupDragOverlay({
   style?: CSSProperties;
 }) {
   const { intl } = useZCodeIntl();
-  // cron 在存储层使用 `cron` 占位名；拖拽浮层曾绕过普通 header 的本地化逻辑，
-  // 导致拖动时从“定时任务”闪回内部值。三种 header 统一走同一个标题格式化入口。
+  // cron uses the `cron` placeholder name in the storage layer; dragging the floating layer has bypassed the localization logic of ordinary headers.
+  // Causes internal values to flash back from the "Cron Task" when dragging. The three headers use the same header formatting entry.
   const displayTitle = getTaskGroupDisplayTitle(node.group, {
     cron: intl.formatMessage({ id: "taskGroup.cronGroupName" }),
     offPeak: intl.formatMessage({ id: "offPeak.sidebar.groupTitle" }),

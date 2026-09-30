@@ -1,11 +1,11 @@
 // ============================================================
-// AgentRuntime-backed WorkflowDriver：共享类型
+// AgentRuntime-backed WorkflowDriver: Shared Type
 // ============================================================
-// workflow-driver.ts 顶到 oxlint max-lines 上限（400 行），把 driver 的依赖包
-// （AgentRuntimeWorkflowDriverDeps）、runtime 工厂签名（ActorRuntimeFactory）与每个 actor 会话的
-// 运行态（SessionState）拆到本文件，供 workflow-driver.ts / workflow-driver-escalation.ts /
-// workflow-driver-helpers.ts 三处共用；公开面（ActorRuntimeFactory）仍从 workflow-driver.ts 导出。
-// 这里只有类型，零运行时代码。
+// workflow-driver.ts reaches the upper limit of oxlint max-lines (400 lines), and adds the driver’s dependency package
+// (AgentRuntimeWorkflowDriverDeps), runtime factory signature (ActorRuntimeFactory) and each actor session
+// The running state (SessionState) is split into this file for workflow-driver.ts / workflow-driver-escalation.ts /
+// workflow-driver-helpers.ts is shared among three places; the public side (ActorRuntimeFactory) is still exported from workflow-driver.ts.
+// There are only types, zero runtime code.
 
 import type {
   ExecutionPort,
@@ -36,7 +36,7 @@ import type { ActorSessionQuiescence } from "./workflow-driver-quiescence.js";
 import type { WorkflowEscalationRegistry } from "./workflow-escalation-registry.js";
 import type { WorkflowRunSeatGate } from "./workflow-seat-gate.js";
 
-/** 一个可外部结算的 promise。 */
+/** An externally settleable promise. */
 export interface Deferred<T> {
   promise: Promise<T>;
   resolve: (value: T) => void;
@@ -44,16 +44,16 @@ export interface Deferred<T> {
 }
 
 /**
- * actor runtime 工厂：给定会话 id / actor / persona / 会话级 submit 端口，产出一个已装配好的
- * child AgentRuntime。注入 submitPort 即为该会话注册 submit_result 工具（core 的注册门以端口存在为准）。
+ * Actor runtime factory: given a session id / actor / persona / session-level submit port, it produces a fully assembled child AgentRuntime.
+ * Injecting a submitPort registers the submit_result tool for that session (core's registration gate keys off the port's presence).
  *
- * 把「如何构造 runtime」抽成注入点：生产侧包装 createScriptWorkflowAgentRuntime（携真实 model adapter
- * 与全套 deps）；测试侧用最小 deps bag + 脚本化 model adapter。driver 本体只管生命周期与桥接。
+ * Extracting "how to build a runtime" as an injection point: production wraps createScriptWorkflowAgentRuntime (carrying the real
+ * model adapter and the full set of deps); tests use a minimal deps bag plus a scripted model adapter. The driver body itself
+ * only handles lifetime and bridging.
  *
- * 允许返回 Promise：生产侧要在返回前把 actor 会话落库并建 task link，而
- * `session_task_link.child_session_id` 对 `session(id)` 有 FK，因此「建会话行」必须先于「建 link」。
- * 引擎的 ensureSession 会 await createActorSession，所以 await 在此处天然安全——第一次 ask
- * 派发前，会话已完成持久化。
+ * Returning a Promise is allowed: production has to persist the actor session and create the task link before returning, and `session_task_link.child_session_id`
+ * has an FK to `session(id)`, so "create the session row" must come before "create the link". The engine's ensureSession awaits
+ * createActorSession, so awaiting here is naturally safe — by the first ask's dispatch, the session is already persisted.
  */
 export type ActorRuntimeFactory = (input: {
   sessionId: SessionId;
@@ -61,132 +61,132 @@ export type ActorRuntimeFactory = (input: {
   persona: PersonaSpec;
   submitPort: WorkflowSubmitPort;
   /**
-   * 该 actor 的 submit profile。工厂据此决定注册哪一种 submit_result：`untyped` → **不注入** submitPort（core 的
-   * 注册门是端口在场，于是没有工具）；`mono` → 注入端口 + `workflowSubmitSchema`（typed 声明）；
-   * `generic` → 只注入端口（今天的通用声明）。driver 从 deps.actorSubmitProfiles 按 actor 站点查得，
-   * 缺席即 generic。
+   * This actor's submit profile. The factory decides which submit_result to register from it: `untyped` → **do not** inject a submitPort
+   * (core's registration gate is the port's presence, so there is no tool); `mono` → inject the port + `workflowSubmitSchema` (a typed
+   * declaration); `generic` → inject only the port (today's generic declaration). The driver looks it up by actor site from
+   * deps.actorSubmitProfiles; absent means generic.
    */
   submitProfile: ActorSubmitProfile;
   /**
-   * 会话级升级端口。注入方式与 submitPort 完全同构：
-   * 端口在场即为该会话注册 `escalate` 工具（core 的注册门以端口存在为准），**恒注入、不做
-   * opt-in**——最可能撞上未预见之墙的 actor 恰是作者没标记的那一个。
+   * Session-level escalation port. Its injection is exactly isomorphic to submitPort: the port's presence registers the
+   * `escalate` tool for that session (core's registration gate keys off the port's presence), and it is **always injected, never
+   * opt-in** — the actor most likely to hit an unforeseen wall is precisely the one the author did not mark.
    */
   escalatePort: WorkflowEscalatePort;
   /**
-   * amend-resume 的会话种子，仅当本 actor 消费了 ≥1 条导入 ask 条目时在场。
+   * Session seed for amend-resume, present only when this actor consumed at least one imported ask entry.
    *
-   * 工厂只需要它的一件事：`resolvedModel` 是**前驱解析出的模型 pin**，要像 journal 里的 pin 一样
-   * 压过档位重解析（转录接续下静默换模型，正是 pin 要防的身份突变）。转录复制本身不归工厂——那是 driver 在工厂返回**之后**做的事（会话行要先存在，
-   * `message.session_id` 对 `session(id)` 有 FK）。
+   * The factory needs exactly one thing from it: `resolvedModel` is the **model pin resolved by the predecessor**, and it must
+   * override tier re-resolution just like a pin in the journal does (silently swapping models under a transcript continuation is
+   * exactly the identity mutation the pin exists to prevent). Copying the transcript itself is not the factory's job — that is what the driver does **after** the factory returns (the session row has to exist first, `message.session_id` has an FK to `session(id)`).
    */
   seed?: ActorSessionSeed;
   /**
-   * 该 actor runtime 的模型请求准入端口：
-   * 只在 driver 拿到治理器端口时在场；工厂把它放进 runtime deps 的 `modelRequestAdmission`，
-   * runner 每次模型请求尝试先经它过闸门。缺席即该 runtime 不受闸门约束。
+   * Model-request admission port for this actor's runtime: present only when the driver has a governor port;
+   * the factory places it in the runtime deps as `modelRequestAdmission`, and the runner passes through it before
+   * every model request attempt. Absent means that runtime is not gated.
    */
   modelRequestAdmission?: ModelRequestAdmission;
 }) => AgentRuntime | Promise<AgentRuntime>;
 
-/** 构造 AgentRuntime-backed driver 所需的依赖（journal 与 emit 由调用方/harness 提供并持有）。 */
+/** The dependencies needed to construct an AgentRuntime-backed driver (journal and emit are provided and owned by the caller / harness). */
 export interface AgentRuntimeWorkflowDriverDeps {
   journal: JournalStorePort;
   emit: (event: RunEvent) => void;
-  /** world-read（files.glob / files.read / files.grep）落到的文件系统端口。 */
+  /** The filesystem port that world-read (files.glob / files.read / files.grep) lands on. */
   fileSystemPort: FileSystemPort;
   /**
-   * git.* world-read 落到的子进程执行端口（cwd = 工作区根）。
+   * The subprocess execution port that `git.*` world-reads land on (cwd = the workspace root).
    *
-   * **必填而非可选**：可选会给出一条静默降级的运行路径——`git.*` 在生产里能用、在某个忘了
-   * 接线的装配里静默变成"不是 git 仓库"，而那两种失败在脚本里长得一模一样。宁可让接线错误
-   * 在编译期出现（这也是本包对 fileSystemPort 的既有做法）。
+   * **Required rather than optional**: optional would open up a silently degraded runtime path — `git.*` works in production but
+   * quietly becomes "not a git repository" in some assembly where nobody remembered to wire it, and those two failures look
+   * exactly the same inside a script. Better to let the wiring error show up at compile time (this is also what the package already does for fileSystemPort).
    */
   executionPort: ExecutionPort;
   /**
-   * 升级问答的停驻注册表。driver 在这里登记停驻中的问题，
-   * run service 的 `resolveQuestion` 经同一张表把答案送回来。
+   * The parking registry for escalation questions. The driver registers parked questions here, and the run service's `resolveQuestion`
+   * feeds answers back through the same table.
    *
-   * **必填而非可选**，理由同上面的 executionPort：可选会给出一条静默降级的运行路径——没有表
-   * 时 `escalate` 要么永久悬挂（最坏），要么静默退化成「这个能力不存在」，而那与「作者没给
-   * actor 升级权」在模型眼里长得一模一样。宁可让接线错误在编译期出现。
+   * **Required rather than optional**, for the same reason as executionPort above: optional would open up a silently degraded runtime
+   * path — without the table, `escalate` either hangs forever (the worst case) or silently degrades into "this capability does not
+   * exist", which looks exactly like "the author gave this actor no escalation rights" in the model's eyes. Better to let the wiring error show up at compile time.
    */
   escalationRegistry: WorkflowEscalationRegistry;
-  /** world-read 与产物发布共用的路径解析基准目录（workspace 根）。 */
+  /** The base directory for path resolution shared by world-read and artifact publishing (the workspace root). */
   cwd: string;
   /**
-   * 用户面产物（`artifact.file` / `artifact.markdown`）的
-   * 字节落点。⚠ 这里的 artifact 是**交付给用户看的产出**，不是引擎内部那个 artifact
-   * （`RunSettlement.artifact` 的顶层返回值，那是给模型看的）。
+   * Where the bytes of user-facing artifacts (`artifact.file` / `artifact.markdown`) land. ⚠ The artifact here is the
+   * **output delivered to the user**, not the engine-internal artifact (the top-level return value of `RunSettlement.artifact`,
+   * which is for the model's eyes).
    *
-   * **可选**，与 `actorTranscriptStore` 同款论证：不带 store 的装配（纯 replay、fake driver、
-   * 最小 stub）本来就没有地方放字节。缺席**不是静默降级**——内容成员以命名的
-   * `ArtifactStoreUnavailable` 拒绝该节点（脚本可 catch、节点以 failed 落 journal），而不是
-   * 退回写工作区，也不是发布一个空产物。预置成员（chart/table/…）不受影响：它们是声明，
-   * 根本不经 driver。
+   * **Optional**, by the same argument as `actorTranscriptStore`: an assembly without a store (pure replay, fake driver,
+   * minimal stub) has nowhere to put the bytes in the first place. Absence is **not a silent degradation** — a content
+   * member rejects the node with a named `ArtifactStoreUnavailable` (the script can catch it, the node lands in the
+   * journal as failed), instead of falling back to writing the workspace, and instead of publishing an empty
+   * artifact. Preseeded members (chart/table/…) are unaffected: they are declarations and never go through the driver.
    */
   artifactStore?: ToolArtifactStorePort;
   /**
-   * 本 run 的父会话 id，**只有产物发布用它**：store 的写入按会话作用域记账
-   * （`zcode-artifact://<session>/<id>`），这个作用域就是父会话。
+   * The parent session id of this run, used **only** by artifact publishing: the store accounts for writes per session
+   * scope (`zcode-artifact://<session>/<id>`), and that scope is the parent session.
    *
-   * 与 `artifactStore` 成对出现（生产装配由 run service 同时给出，两者都来自同一个 app
-   * 会话）；只给一半时发布同样以 `ArtifactStoreUnavailable` 大声失败，见
-   * {@link ArtifactPublishDeps}。actor 会话 id 不走这个字段——那是 mintActorSessionId 铸的。
+   * It appears together with `artifactStore` (the production assembly supplies both from the run service, both from
+   * the same app session); when only half is given, publishing fails loudly with `ArtifactStoreUnavailable` as well, see
+   * {@link ArtifactPublishDeps}. Actor session ids do not go through this field — those are minted by mintActorSessionId.
    */
   parentSessionId?: SessionId;
   /**
-   * world.run 的已批准命令集（编译期字面量收集）。
-   * 结构性地落进 {@link WorldReadDeps}：缺席即 world.run 全拒绝（fail-closed）。
+   * The approved command set for world.run (collected as compile-time literals). Structurally lands in
+   * {@link WorldReadDeps}: absent means world.run denies everything (fail-closed).
    */
   declaredRunCommands?: ReadonlySet<string>;
   /**
-   * 每个 actor 站点的 submit profile，编译期由 `deriveActorSubmitProfiles` 算出（run 提交路径的
-   * compileOnce）。可选：缺席 = 每个 actor 都 generic（历史行为），不算 profile 的装配
-   * （snippet、fake driver、既有测试）因此一字不改。
+   * The submit profile for each actor site, computed at compile time by `deriveActorSubmitProfiles` (the
+   * compileOnce of the run submission path). Optional: absent = every actor is generic (legacy behavior), so
+   * assemblies that are not about profiles (snippets, fake driver, existing tests) stay untouched.
    */
   actorSubmitProfiles?: ReadonlyMap<string, ActorSubmitProfile>;
   runtimeFactory: ActorRuntimeFactory;
   /**
-   * 进程级并发治理器的窄端口。在场时
-   * driver 给每个 actor runtime 一个 `ModelRequestAdmission`（经 runtimeFactory 入参下传到 runtime
-   * deps）：runner 的**每次模型请求尝试**先过闸门；并订阅本 run 的 cap 变化扇出成
-   * `concurrency-changed`。缺席即 actor 不受闸门约束（fake / 纯 replay 装配零改动）。引擎侧对此无感
-   * （v1 的 `acquireSlot` 已删）。
+   * The narrow port for the process-wide concurrency governor. When present the driver gives each actor
+   * runtime a `ModelRequestAdmission` (handed down through the runtimeFactory argument into the runtime deps):
+   * **every** model request attempt from the runner passes the gate first; and it subscribes to cap changes
+   * for this run and fans them out as `concurrency-changed`. Absent means actors are not gated (fake / pure-replay
+   * assemblies need zero changes). The engine side is unaware of this (v1's `acquireSlot` was removed).
    */
   concurrency?: WorkflowConcurrencyPort;
   /**
-   * 本 run 的座位闸门：本 run
-   * **自己**的并发上界中途被改低时，超出的子代理在下一个 turn step 前停住。在场时 driver 做两件
-   * 事——把每个 actor 的准入端口包进闸门，以及把 ask 的起止喂给它（startAsk 与引擎的
-   * `node-settled`，见 workflow-driver.ts）。
+   * The seat gate for this run: when this run's **own** concurrency bound is lowered mid-flight, the excess subagents stop before
+   * the next turn step. When present the driver does two things — wrap each actor's admission port with the gate, and feed the start
+   * and end of asks to it (startAsk and the engine's `node-settled`, see workflow-driver.ts).
    *
-   * 可选：缺席即这个 run 的上界从不中途变动（如不支持动态并发调整的 snippet 装配），准入端口与
-   * 从前逐字相同。**在场也不改变从未被改低过的 run 的行为**：上界之上的请求原地通过，闸门不发
-   * 任何事件、不持任何票。
+   * Optional: absent means this run's bound never changes mid-flight (e.g. a snippet assembly without dynamic concurrency
+   * adjustment), and the admission port is exactly as it was before. **Being present also does not change the behavior of a run
+   * whose bound was never lowered**: requests above the bound pass straight through, the gate emits no events and holds no
+   * tickets.
    */
   seatGate?: WorkflowRunSeatGate;
   /**
-   * actor 会话的转录存取面（生产是 session store 本身）。两个用途共用它，且**必须**是同一个：
-   * ask 边界记账的计数，与种子截断的复制（见 workflow-actor-transcript.ts 的模块说明）。
+   * The transcript read/write surface for actor sessions (production is the session store itself). Two purposes share it, and they **must**
+   * be the same one: the counts for ask boundary accounting and the copy for seed truncation (see the module notes in workflow-actor-transcript.ts).
    *
-   * 可选，因为不带会话存储的装配（纯 replay 测试、最小 stub runtime）本来就没有转录可数：
-   * 缺席时边界记账整体缺席，代价是**该 run 不能再作为修订的前驱**（service 侧的「无 marker
-   * 前驱整体拒绝」门会挡下来），而不是一条错误的边界。带种子的会话创建则在缺席时大声失败——
-   * 引擎已经据导入事实认定要接转录，此时没有存取面就是接线错误。
+   * Optional, because an assembly without session storage (pure replay tests, minimal stub runtime) has no transcripts to count in the first
+   * place: when absent, boundary accounting is absent as a whole, at the cost that **this run can no longer act as the predecessor of
+   * an amend** (the service-side gate that "rejects any predecessor without a marker" will stop it), rather than a wrong boundary. Creating
+   * a session with a seed, on the other hand, fails loudly when it is absent — the engine has already decided from the import fact that a transcript must be continued, so having no read/write surface then is a wiring error.
    */
   actorTranscriptStore?: ActorTranscriptStore;
   logger?: Logger;
   /**
-   * 本 run 的 id。actor 会话 id 以它为作用域——不含 runId 的方案会让并发两个 run 的同
-   * site×ordinal actor 撞成同一个会话 id（`createSessionId("wf-actor-" + refToString(actor))`
-   * 就是这个 bug）。缺省 "run" 只为不破坏既有测试装配。
+   * The id of this run. Actor session ids are scoped by it — a scheme without runId would make the same site×ordinal actor of two
+   * concurrent runs collide into the same session id (`createSessionId("wf-actor-" + refToString(actor))` is exactly that bug). The
+   * default "run" exists only so that existing test assemblies are not broken.
    */
   runId?: string;
   /**
-   * 时钟与定时器：run 级 stall 时钟、瞬态失败的退避
-   * 重驱与会话静默的有界等待都用它。支持注入时钟；`stallAfterMs` 缺省 20 分钟；
-   * `quiesceMs` 缺省 {@link AMEND_TRANSCRIPT_QUIESCE_MS}；`random` 供退避抖动。
+   * Clock and timers: the run-level stall clock, the re-drive of transient failures after a backoff, and the bounded wait for
+   * session quiescence all use it. Injectable clocks are supported; `stallAfterMs` defaults to 20 minutes; `quiesceMs` defaults
+   * to {@link AMEND_TRANSCRIPT_QUIESCE_MS}; `random` supplies backoff jitter.
    */
   clock?: WorkflowClock & {
     stallAfterMs?: number;
@@ -194,77 +194,77 @@ export interface AgentRuntimeWorkflowDriverDeps {
     random?: () => number;
   };
   /**
-   * 交出本 driver 的**会话静默探针**（workflow-driver-quiescence.ts）。构造时恰好调一次，
-   * 调用方把探针挂到自己那条 run 的注册表条目上——amend 接续在飞 ask 之前要问它。
+   * Hands out this driver's **session quiescence probe** (workflow-driver-quiescence.ts). Called exactly once at construction, and the
+   * caller attaches the probe to its own run's registry entry — amend continuation asks it before the in-flight ask proceeds.
    *
-   * 走回调而不是让 `createAgentRuntimeWorkflowDriver` 返回一个二元组：driver 实例由**引擎**
-   * 在 `makeDriver(sink)` 时才造出来，装配方拿不到那个返回值。缺席即调用方不关心静默
-   * （如直接使用 harness 的路径）。
+   * A callback is used rather than having `createAgentRuntimeWorkflowDriver` return a tuple: the driver instance is only created by the
+   * **engine** at `makeDriver(sink)`, and the assembly side cannot get hold of that return value. Absent means the caller does not
+   * care about quiescence (e.g. a path that uses the harness directly).
    */
   onQuiescenceProbe?: (probe: ActorSessionQuiescence) => void;
 }
 
 /**
- * 每个 actor 会话的运行态。per-actor FIFO（引擎保证）→ 每会话至多一个在飞 ask，因此
- * currentInstance / pendingSubmit / accepted / cancelled 都是「当前实例」语义，无需按 instance 细分。
+ * The runtime state of an actor session. per-actor FIFO (guaranteed by the engine) → at most one in-flight ask per session, so
+ * currentInstance / pendingSubmit / accepted / cancelled are all "current instance" semantics and need no per-instance refinement.
  */
 export interface SessionState {
   readonly ref: SessionRef;
-  /** 与 `ref.id` 同值，只是保留了品牌类型（转录存取面按 SessionId 取数）。 */
+  /** The same value as `ref.id`, only the branded type is preserved (the transcript read/write surface fetches by SessionId). */
   readonly sessionId: SessionId;
   readonly runtime: AgentRuntime;
   /**
-   * 该会话实际注册的 submit_result 形态。创建时取自静态 profile；**唯一**会变的路径是运行时守卫
-   * （workflow-driver.ts 的 ensureSubmitProfileFits）：mono 声明与实际 ask 的 schema 不符时降级成
-   * generic，此后不再升回。
+   * The shape of submit_result actually registered for this session. Taken from the static profile at creation; the **only**
+   * path that ever changes it is the runtime guard (ensureSubmitProfileFits in workflow-driver.ts): when the mono declaration does
+   * not fit the actual ask's schema, it downgrades to generic and is never upgraded back.
    */
   submitProfile: ActorSubmitProfile;
-  /** 当前在飞 ask 的实例；startAsk 设置。 */
+  /** The instance of the currently in-flight ask; set by startAsk. */
   currentInstance?: InstanceRef;
-  /** 当前 ask 是否 typed（untyped 不走 submit 桥接）。 */
+  /** Whether the current ask is typed (untyped does not go through the submit bridge). */
   currentTyped: boolean;
-  /** submit_result handler 阻塞其上的裁决 deferred；至多一个（单前实例）。 */
+  /** The adjudication deferred that the submit_result handler blocks on; at most one (a single prior instance). */
   pendingSubmit?: Deferred<ContractsSubmitVerdict>;
   /**
-   * 停驻中的升级问答，键 = qid。与 pendingSubmit 不同**必须是多个**：一轮里模型可以并行发出
-   * 几个 escalate 工具调用，每个都是一次独立的问答（上限由 escalationsUsed 管）。
+   * The escalation questions currently parked, keyed by qid. Unlike pendingSubmit, this **must** be multiple: within one turn the model
+   * can issue several escalate tool calls in parallel, each an independent question (the ceiling is governed by escalationsUsed).
    */
   readonly pendingEscalations: Map<string, Deferred<string>>;
   /**
-   * 本次 ask 已用掉的升级次数（含被上限短路掉的那几次不计——见 makeEscalatePort）。
-   * per-ask 计数，startAsk 归零；nudge 轮**不归零**（nudge 仍在同一个 ask 里）。
+   * The escalations used up by this ask (the ones short-circuited by the ceiling do not count — see makeEscalatePort). A per-ask
+   * count, zeroed by startAsk; nudge rounds do **not** zero it (a nudge is still inside the same ask).
    */
   escalationsUsed: number;
-  /** 当前 ask 的 turn 取消控制器；startAsk 每 ask 重建。 */
+  /** The turn cancellation controller for the current ask; rebuilt by startAsk for every ask. */
   abortController?: AbortController;
-  /** 当前 ask 已被引擎 accept：其 turn resolve 时不再上报 askTurnEnded（已由引擎结算）。 */
+  /** The current ask has been accepted by the engine: askTurnEnded is no longer reported when its turn resolves (the engine already settled it). */
   accepted: boolean;
-  /** 当前 ask 被引擎主动取消：turn reject 不上报 askFailed（引擎已结算 failed/cancelled）。 */
+  /** The current ask was cancelled by the engine: askFailed is not reported on turn reject (the engine has already settled failed/cancelled). */
   cancelled: boolean;
   /**
-   * 本会话上已发起的 turn 轮次。用途只有一个：分辨 `askTurnEnded` 之后引擎是否**又起了一轮**
-   * （nudge 走的正是这条路），从而判断这次 ask 的交换是不是真的结束了——边界记账要的是整段
-   * 交换的末尾，不是任意一个 turn 的末尾。
+   * The turn rounds started on this session. It has exactly one use: to tell whether the engine **started another round** after
+   * `askTurnEnded` (that is the path a nudge takes), and thereby whether this ask's exchange really ended — boundary accounting wants
+   * the end of the whole exchange, not the end of an arbitrary turn.
    */
   turnGeneration: number;
   /**
-   * 当前在飞 turn 的收尾链（executeTurn 连同 onTurnResolved / onTurnRejected）。只有一个读者：
-   * dispose 要等它落地再关 runtime——accept 路径的 askStats 在 settle 之后才到（turn 在 submit
-   * 之后才 resolve），同步关会与这条尾巴竞争。
+   * The teardown chain of the currently in-flight turn (executeTurn together with onTurnResolved / onTurnRejected). It has one
+   * reader: dispose has to let it land before closing the runtime — on the accept path the askStats arrive only after settle (the turn
+   * resolves only after the submit), so closing synchronously would race this tail.
    */
   turn?: Promise<void>;
   /**
-   * 该 actor 的模型活动面：准入端口 + 会话事件观察（waiting / executing 徽标的来源）。
+   * The model activity surface of this actor: the admission port plus session event observation (the source of the waiting / executing badges).
    */
   modelActivity: ActorModelActivity;
-  /** 本会话的 actor 身份（ProviderStop 明细点名触发停止的子代理）。 */
+  /** The actor identity of this session (ProviderStop details name the subagent that triggered the stop). */
   readonly actor: ActorRef;
   readonly actorName: string | undefined;
   /**
-   * 当前 ask 里 driver 侧瞬态重驱的次数：runner 放过来的瞬态失败（流恢复耗尽等）不结算节点，按退避曲线再起一轮。
-   * startAsk 归零。
+   * The number of driver-side transient re-drives in the current ask: a transient failure let through by the runner (stream recovery
+   * exhausted, etc.) does not settle the node and starts another round on the backoff curve. startAsk zeroes it.
    */
   transientAttempts: number;
-  /** 退避等待中的重驱闹钟；cancelAsk / dispose 撤掉。 */
+  /** The re-drive alarm while waiting out a backoff; cancelAsk / dispose clears it. */
   cancelRedrive?: () => void;
 }

@@ -12,13 +12,13 @@ interface MarkdownNode {
   url?: string;
 }
 
-// 盘符绝对路径与 UNC。只有命中它们才回原文切片，普通 URL 完全不进本插件的改写面。
-// UNC 这里只要求单个前导反斜杠：源码里的 `\\host` 中 `\\` 自身就是一次标点转义，
-// 解析后只剩一个反斜杠，要求两个反而会把真正需要还原的 UNC 全部漏掉。
+// Absolute drive letter path and UNC. Only when they are hit will the original text slice be returned, and ordinary URLs will not enter the rewriting surface of this plug-in at all.
+// UNC only requires a single leading backslash here: `\\` in `\\host` in the source code itself is a punctuation escape,
+// After parsing, there is only one backslash left. Requiring two will miss all the UNCs that really need to be restored.
 const windowsDestinationPattern = /^(?:[a-zA-Z]:[\\/]|\\)/u;
 
-// CommonMark：链接目标里的 `\X` 只在 X 是 ASCII 标点时才产出 X，其余原样保留。
-// 四段区间依次是 !-/、:-@、[-`、{-~，合起来正好是全部 ASCII 标点。
+// CommonMark: `\X` in the link target only produces X if X is ASCII punctuation, and leaves the rest intact.
+// The four intervals are !-/, :-@, [-`, {-~, which together are exactly all ASCII punctuation marks.
 const punctuationEscapePattern = /\\([!-/:-@[-`{-~])/gu;
 
 function unescapeCommonMarkPunctuation(raw: string): string {
@@ -26,13 +26,13 @@ function unescapeCommonMarkPunctuation(raw: string): string {
 }
 
 /**
- * 按节点形态切出 destination 原文。
+ * Cut out the original text of destination according to the node shape.
  *
- * - 行内 `link` / `image`：`[label](dest)` / `![alt](dest)`，取收尾 `)` 之前的片段。
- *   Windows 路径不含 `](`，所以在门禁之内取最后一个分隔符是安全的；这样 label/alt
- *   内部的方括号也不会把切片带偏。
- * - `definition`：`[ref]: dest`，取 `]:` 之后的片段。引用式链接的 URL 由 definition
- *   提供，同一个转义丢失在这里同样成立，必须一起还原。
+ * - Inline `link` / `image`: `[label](dest)` / `![alt](dest)`, take the fragment before the closing `)`.
+ *   Windows paths do not contain `](`, so it is safe to take the last delimiter within the gate; this way label/alt
+ *   Internal square brackets also don't bias the slice.
+ * - `definition`: `[ref]: dest`, take the fragment after `]:`. The URL of the reference link is defined by
+ *   Provided, the same escape loss is also true here and must be restored together.
  */
 function extractRawDestination(node: MarkdownNode, slice: string): string | null {
   if (node.type === "definition") {
@@ -46,21 +46,21 @@ function extractRawDestination(node: MarkdownNode, slice: string): string | null
 }
 
 /**
- * 从 VFile 原文里取回该节点未被反转义的 destination 原文。
+ * Retrieve the unescaped destination text of the node from the VFile text.
  *
- * `[x](C:\Users\developer\.zcode\a.png)` 在 remark-parse 阶段就会把 `\.`
- * 当成标点转义吃掉（`\U` `\z` `\w` 这些因为后面不是标点而幸存），mdast 拿到的
- * 是 `C:\Users\developer.zcode\a.png`。丢失发生在解析期，rehype 阶段的既有改写插件
- * 看到的已经是丢失后的字符串，无从还原——所以必须在 remark 阶段做。
+ * `[x](C:\Users\developer\.zcode\a.png)` will convert `\.` during the remark-parse stage
+ * Eat it as punctuation escape (`\U` `\z` `\w` these survive because they are not followed by punctuation), obtained by mdast
+ * is `C:\Users\developer.zcode\a.png`. The loss occurs in the parsing phase and the existing rewritten plug-in in the rehype phase.
+ * What you see is the lost string, which cannot be restored - so it must be done in the remark stage.
  *
- * 只有「原文按 CommonMark 规则反转义后恰好等于 node.url」才认为切片正确且还原
- * 无歧义；否则宁可保持现状，不写入可能错误的路径。
+ * Only if "the original text is exactly equal to node.url after being de-escaped according to CommonMark rules" will the slice be considered correct and restored.
+ * Unambiguous; otherwise prefer to keep the status quo and not write a potentially wrong path.
  */
 function recoverRawDestination(node: MarkdownNode, source: string): string | null {
   const url = node.url;
   if (typeof url !== "string" || !windowsDestinationPattern.test(url)) return null;
-  // 带 title 的链接需要解析引号语法才能定位 destination 结尾，切错就会把引号算进
-  // 路径；本场景不出现，直接放弃还原。
+  // The link with title needs to parse the quotation mark syntax to locate the end of destination. If you cut it wrong, the quotation marks will be included.
+  // Path; if this scene does not appear, just give up restoring.
   if (node.title !== null && node.title !== undefined) return null;
 
   const start = node.position?.start?.offset;
@@ -68,7 +68,7 @@ function recoverRawDestination(node: MarkdownNode, source: string): string | nul
   if (typeof start !== "number" || typeof end !== "number" || end <= start) return null;
 
   const raw = extractRawDestination(node, source.slice(start, end));
-  // 尖括号形式的转义规则与裸形式不同，同样按不还原处理。
+  // The angle bracket form has different escaping rules than the bare form, and is also treated as non-reduction.
   if (raw === null || !raw || raw.startsWith("<") || raw === url) return null;
   if (unescapeCommonMarkPunctuation(raw) !== url) return null;
 

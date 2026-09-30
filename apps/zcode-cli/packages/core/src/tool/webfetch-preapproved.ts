@@ -68,7 +68,6 @@ const PREAPPROVED_HOSTS = new Set([
   "docs.aws.amazon.com",
   "cloud.google.com",
   "kubernetes.io",
-  "www.docker.com",
   "www.terraform.io",
   "www.ansible.com",
   "docs.stripe.com",

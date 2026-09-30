@@ -1,42 +1,42 @@
 // ============================================================
-// Dynamic Workflow Run Service（DynamicWorkflowRunPort 的生产实现）
+// Dynamic Workflow Run Service (production implementation of DynamicWorkflowRunPort)
 // ============================================================
-// 本服务负责：
-// 编译一次 → 注册 AbortController → 启动引擎（fire-and-forget，执行体在
-// dynamic-workflow-run-launch.ts）→ 把 run 的观察面（快照 / 等待 / 取消 / 恢复 / 枚举 /
-// 事件分页）经窄端口交出去。
+// This service is responsible for:
+// Compile once → register AbortController → start the engine (fire-and-forget, the execution body is
+// dynamic-workflow-run-launch.ts) → Put the observation surface of run (snapshot/wait/cancel/restore/enumerate/
+// Event paging) is handed over through the narrow port.
 //
-// 七条不变式，违反任何一条都会以「离成因很远」的方式表现，所以写在文件头：
+// There are seven invariants. Violation of any one of them will be expressed in a way that is "far away from the cause", so it is written in the file header:
 //
-//   1. **引擎独占 createRun**。本服务绝不预插 dwf_run 行。预先存在的行会把引擎构造函数翻进
-//      resume 分支（engine.ts）：节点计数按已完结记录重算、预算从记录恢复、状态被
-//      updateRunStatus 覆写。一个全新的 run 走 resume 分支不报错，只会静默从一份空 journal
-//      「恢复」。resume 恰恰反过来**依赖**这条机制：它对既有 runId 重新 launch，让引擎命中
-//      已存在的行。两个入口方向相反，绝不共用门。
-//   2. **编译恰好一次**。一个 ts.Program 同时喂站点表、schema 合成与 lowering；scriptHash 由
-//      本服务算（harness 刻意不算——它若哈希「自己看到的文本」，lowered 路径落库的就是
-//      lowered 函数体的哈希，resume 校验的比对对象就静默错了）。
-//   3. **没有 journal 就不构造本服务**。durability 是 run 的前提：一个静默丢失持久化的 run
-//      比没有 run 更糟（resume 无据、详情页无源、取消后无记录）。narrowing 失败时
-//      {@link createDynamicWorkflowRunService} 的调用方拿到 undefined，CreateWorkflow 因此
-//      回到占位诊断路径——这是一个可见的降级，而不是一个坏掉的功能。
-//   4. **构造时收敛本会话的孤儿 run，且只收敛本会话的**。见 {@link reconcileOrphanRuns}：
-//      死进程留下的 `running` 行只有在这一刻才可判定，而「本会话」是唯一安全的作用域。
-//      收敛写成 `stopped(interrupted)`（携 `Interrupted` 失败编码），与其余 stopped 同为可恢复。
-//   5. **resume 先替换注册表条目，再启动**。`waitForTask` 对不在注册表里的 runId 直接回
-//      journal 快照——条目晚一步，重臂的通知 watcher 会立刻对着旧的终态行结算。
-//   6. **每次启动都在启动的同一同步片登记为常驻阻塞工作**。引擎是父会话 App 的闭包，不进
-//      runtime task registry；常驻池因此只看见「registry 已退休」而把带着在飞引擎的
-//      App 按 idle 关掉（10 分钟），resume 又起了第二个引擎。登记点只有一个——
-//      {@link trackSettlement}，submit / amend / resume 共用它——计数在 launch 的同一同步片
-//      增加、在结算的 finally 释放。
-//   7. **close 停下自己拥有的每一个 run，而那一笔由引擎自己写**。App 关闭时本服务以
-//      `"interrupted"` abort 每个在飞条目并**等它们结算**（不是超时、不是轮询），harness 把
-//      这个原因归一成 `engine.stop("interrupted", Interrupted)`，于是行经引擎正常的 finishRun
-//      尾巴落成可 resume 的 `stopped(interrupted)`。service 绝不自己写终态行：绕过引擎写，就会
-//      造出 dwf_run 的第二个写入者（同不变式 1 的论证），且 journal 里不会有对应的 run-settled。
-//      关闭之后 submit / amend / resume 直接抛——常驻池的关闭闸门本就挡住了命令，走到这里是
-//      接线错误，不该让 contracts 的拒绝枚举为它变宽（同不变式 1 的论证）。
+//   1. **Engine exclusive createRun**. This service never pre-inserts dwf_run lines. The pre-existing line will flip the engine constructor into
+//      resume branch (engine.ts): node count is recalculated based on completed records, budget is restored from records, status is
+//      updateRunStatus Override. A brand new run will not report an error when taking the resume branch, but will only silently start from an empty journal.
+//      "recover". resume, in turn, relies on this mechanism: it relaunches the existing runId, allowing the engine to hit
+//      Already existing row. The two entrances are in opposite directions and never share a door.
+//   2. **Compile exactly once**. A ts.Program feeds site tables, schema synthesis and lowering at the same time; scriptHash is provided by
+//      This service does not count (harness intentionally does not count - if it hashes "the text it sees", the lowered path will be stored in the library)
+//      The hash of lowered function body, the comparison object of resume verification is silently wrong).
+//   3. **This service will not be constructed without a journal**. Durability is a prerequisite for run: a run that silently loses persistence
+//      Worse than no run (resume has no evidence, details page has no source, and there is no record after cancellation). When narrowing fails
+//      The caller of {@link createDynamicWorkflowRunService} gets undefined, so CreateWorkflow
+//      Back to the placeholder diagnostic path - this is a visible degradation, not a broken feature.
+//   4. **Converge the orphan run of this session when constructing, and only converge the ** of this session. See {@link reconcileOrphanRuns}:
+//      The `running` line left by the dead process can only be determined at this moment, and "this session" is the only safe scope.
+//      Convergence is written as `stopped(interrupted)` (with `Interrupted` failure code), which is recoverable like other stops.
+//   5. **resume first replaces the registry entries and then starts**. `waitForTask` returns directly to the runId that is not in the registry
+//      Journal snapshot - the entry is one step later, and the heavy-arm notification watcher will immediately settle against the old final state.
+//   6. **Register as a resident blocking job in the same sync slice that is started every time**. The engine is a closure of the parent session App and does not enter
+//      runtime task registry; the resident pool therefore only sees "registry retired" and replaces the ones with the flying engine
+//      The App is closed by pressing idle (10 minutes), and resume starts the second engine. There is only one registration point——
+//      {@link trackSettlement}, shared by submit / amend / resume - counting in the same sync slice of launch
+//      Added, finally released at settlement.
+//   7. **close stops every run it owns, and that transaction is written by the engine itself**. When the App is closed, the service will be
+//      `"interrupted"` abort each in-flight entry and wait for them to settle (not timeout, not polling), harness
+//      This reason is normalized to `engine.stop("interrupted", Interrupted)`, so the normal finishRun of the engine is executed
+//      The tail is completed as `stopped(interrupted)` which can be resumed. service never writes its own final line: bypassing the engine and writing it, it will
+//      Create a second writer of dwf_run (same argument as invariant 1), and there will be no corresponding run-settled in the journal.
+//      After closing, submit / amend / resume is thrown directly - the closing gate of the resident pool has blocked the command, and here is
+//      Wrong wiring, contracts' rejection enum should not be allowed to widen for it (same argument as invariant 1).
 
 import type { DwfRunSessionListItem } from "@zcode/adapters/storage";
 import type {
@@ -127,11 +127,11 @@ import {
   type WorkflowEscalationRegistry,
 } from "./workflow-escalation-registry.js";
 
-/** listRunsForSession 的默认/上限条数（枚举面有界，绝不无界扫库）。 */
+/** Default/limit count for listRunsForSession (the enumeration surface is bounded, it never scans the store without limit). */
 const DEFAULT_LIST_RUNS_LIMIT = 16;
 const MAX_LIST_RUNS_LIMIT = 64;
 
-/** actor runtime 工厂的输入。runId 在内，因为会话 id 与 task link 都要 run 作用域。 */
+/** Input to the actor runtime factory. runId is inside it because both the session id and the task link are run-scoped. */
 export interface DynamicWorkflowActorRuntimeInput {
   runId: string;
   sessionId: SessionId;
@@ -139,123 +139,123 @@ export interface DynamicWorkflowActorRuntimeInput {
   persona: PersonaSpec;
   submitPort: WorkflowSubmitPort;
   /**
-   * 该 actor 的 submit profile：`untyped` 不注入
-   * submitPort（无工具），`mono` 注入端口 + typed 声明，`generic` 只注入端口。工厂是这条映射的
-   * 唯一落点（与子代理工具面的固定 disallowlist 同一处 seam）。
+   * This actor's submit profile: `untyped` injects no
+   * submitPort (no tool), `mono` injects the port plus a typed declaration, `generic` injects only the port. The factory is the single
+   * landing point of this mapping (the same seam as the fixed disallowlist on the subagent tool surface).
    */
   submitProfile: ActorSubmitProfile;
   /**
-   * 会话级升级端口：注入即为该 actor 会话注册 `escalate`
-   * 工具，与 submitPort 完全同构。**恒在场**，不做 opt-in——最可能撞上未预见之墙的 actor
-   * 恰是作者没标记的那一个。
+   * The session-level escalation port: injecting it registers the `escalate`
+   * tool for that actor's session, structurally identical to submitPort. **Always present**, never opt-in -- the actor most likely to
+   * hit an unforeseen wall is exactly the one the author did not mark.
    */
   escalatePort: WorkflowEscalatePort;
   /**
-   * 这个 actor 上一次解析出的模型（journal 里的 `resolvedModel`，`providerId/modelId`），
-   * 只有 resume 会带上它。没有 {@link DynamicWorkflowActorRuntimeInput.runSubagentModel} 时工厂
-   * 必须优先于父会话模型采用它：见 `workflow-actor-model.ts` 里 pin 的理由（persona 冻结不变式
-   * 的持久化那一半）。
+   * The model this actor resolved to last time (the `resolvedModel` in the journal, `providerId/modelId`),
+   * and only a resume carries it. When there is no {@link DynamicWorkflowActorRuntimeInput.runSubagentModel}, the factory
+   * must adopt it ahead of the parent session model: see the reasoning behind the pin in `workflow-actor-model.ts` (the persistence
+   * half of the persona freeze invariant).
    */
   pinnedModel?: string;
   /**
-   * 本 run 自己的子代理模型（`CreateWorkflow` / `AmendWorkflow` 的 `subagent_model`，从
-   * journal 的 `run-launched` 事件解析回来）。整条选择，含 reasoning 档位。
+   * This run's own subagent model (the `subagent_model` of `CreateWorkflow` / `AmendWorkflow`, parsed back
+   * from the journal's `run-launched` event). The whole choice, reasoning tier included.
    *
-   * 优先级**最高**，在 {@link DynamicWorkflowActorRuntimeInput.pinnedModel} 与父会话模型之上
-   * （workflow-actor-model.ts 的 `workflowActorModelPolicy`）：这一条是用户对这一次 run 的显式
-   * 表态，pin 只守没有它时的隐式缺省。只管子代理、不动主代理。缺席即跑在 pin 或会话模型上。
+   * It has the **highest** priority, above {@link DynamicWorkflowActorRuntimeInput.pinnedModel} and the parent session model
+   * (`workflowActorModelPolicy` in workflow-actor-model.ts): this one is the user's explicit
+   * statement about this particular run, while the pin only guards the implicit default when it is absent. It governs subagents only and never the main agent. Absent means the run executes on the pin or the session model.
    */
   runSubagentModel?: ModelSelection;
   /**
-   * 该 actor runtime 的模型请求准入端口：
-   * driver 在治理器端口在场时给出；工厂原样放进 runtime deps。缺席即不受闸门约束。
+   * The model request admission port of this actor runtime:
+   * the driver supplies it when the governor port is present; the factory puts it into the runtime deps as is. Absent means no gate constraint applies.
    */
   modelRequestAdmission?: ModelRequestAdmission;
 }
 
 export interface DynamicWorkflowRunServiceDeps {
-  /** durable journal（dwf_* 表）。缺失即不构造本服务，见文件头不变式 3。 */
+  /** The durable journal (the dwf_* tables). Without it this service is not constructed; see invariant 3 in the file header. */
   journal: JournalStorePort;
   /**
-   * 发起锚点的解析：给出 submit 那一刻父 runtime 活动轮的
-   * inputId；`trace.turnId` 与活动轮不一致或没有活动轮时回 `undefined`（submit 侧兜底铸值）。
-   * 缺席即宿主没有「当前轮」概念（CLI、测试装配）。
+   * Resolution of the launch anchor: yields the inputId of the parent runtime's active turn at the
+   * moment of submit; it gives back `undefined` when `trace.turnId` disagrees with the active turn or there is no active turn (the submit side mints a fallback value).
+   * Absent means the host has no concept of a "current turn" (CLI, test wiring).
    */
   resolveLaunchInputId?: (trace: TraceContext) => string | undefined;
   /**
-   * 本服务实例的父会话 id（= 本 app 的会话，见 create-app.ts）。
+   * The parent session id of this service instance (= this app's session, see create-app.ts).
    *
-   * 它是**孤儿收敛与枚举的作用域**，所以不是可选项：缺席只剩两条路——全局清扫（会把同进程
-   * 兄弟会话正在飞的 run 标死，两者共用同一个 sqlite、各有各的内存注册表）或干脆不收敛
-   * （就是那个「run 永远停在 running」的 bug）。宁可让接线错误在编译期出现。
+   * It is the **scope for orphan convergence and enumeration**, so it is not optional: without it only two paths remain -- a global sweep (which would mark an in-flight run of a
+   * sibling session in the same process as dead, since both share the same sqlite and each keeps its own in-memory registry) or no convergence at all
+   * (which is exactly the "run stays in running forever" bug). Better to let a wiring mistake surface at compile time.
    */
   parentSessionId: string;
-  /** world-read（files.glob / files.read / files.grep）落到的文件系统端口。 */
+  /** The filesystem port that world-read (files.glob / files.read / files.grep) lands on. */
   fileSystemPort: FileSystemPort;
-  /** git.* world-read 落到的子进程执行端口（cwd = run 的工作区）。 */
+  /** The subprocess execution port that git.* world-read lands on (cwd = the run's workspace). */
   executionPort: ExecutionPort;
   /**
-   * 用户面产物（`artifact.file` / `artifact.markdown`）的字节落点，原样转交 driver。⚠ 这里的 artifact 指**交付给用户看的
-   * 产出**，不是引擎内部那个顶层返回值。
+   * The byte landing spot for user-facing artifacts (`artifact.file` / `artifact.markdown`), handed to the driver as is. ⚠ Here artifact means the **output delivered
+   * to the user**, not the top-level return value inside the engine.
    *
-   * **可选**：不带 store 的装配（测试、最小 stub）照旧能跑 run，只是内容成员会以命名的
-   * `ArtifactStoreUnavailable` 拒绝——一条脚本可 catch 的失败，不是静默降级。会话作用域
-   * 用的是本服务的 {@link DynamicWorkflowRunServiceDeps.parentSessionId}（= 本 app 的会话，
-   * 也就是父会话）。
+   * **Optional**: an assembly without a store (tests, a minimal stub) can still run a run as before, only content members will reject with a named
+   * `ArtifactStoreUnavailable` -- a failure a script can catch, not a silent degradation. The session scope
+   * is this service's own {@link DynamicWorkflowRunServiceDeps.parentSessionId} (= this app's session,
+   * that is, the parent session).
    */
   artifactStore?: ToolArtifactStorePort;
-  /** 造一个 actor 的 child AgentRuntime（生产包装 createScriptWorkflowAgentRuntime）。 */
+  /** Builds a child AgentRuntime for an actor (production wraps createScriptWorkflowAgentRuntime). */
   createActorRuntime: (input: DynamicWorkflowActorRuntimeInput) => AgentRuntime;
-  /** actor 会话的 task link 落库面；缺席则跳过建 link（会话本身仍落库）。 */
+  /** The persistence surface for an actor session's task link; when absent, link creation is skipped (the session itself is still persisted). */
   taskLinkStore?: DynamicWorkflowTaskLinkStore;
   /**
-   * actor 会话的转录存取面（生产就是 session store 本身）。driver 用它做两件事：ask 边界记账的
-   * 计数，与 amend-resume 分歧 actor 的转录截断复制。
+   * The transcript access surface of an actor session (in production the session store itself). The driver uses it for two things: the counting behind
+   * ask boundary accounting, and the truncated copy of a divergent actor's transcript on amend-resume.
    *
-   * 缺席时边界记账整体缺席——run 照常跑完，只是**不能再作为修订的前驱**（service 的
-   * 「无 marker 前驱整体拒绝」门会挡下来）。可选而非必填，是因为不带会话存储的装配里本来就没有
-   * 转录可数；带种子的会话创建在缺席时由 driver 大声失败。
+   * When absent, boundary accounting is absent as a whole -- the run still finishes, it just **can no longer serve as the predecessor of a revision** (the service's
+   * "reject outright when there is no marker predecessor" gate will stop it). It is optional rather than required because an assembly without session storage has no transcript
+   * to count in the first place; seeded session creation fails loudly from the driver when it is absent.
    */
   actorTranscriptStore?: ActorTranscriptStore;
   /**
-   * 引擎事件钩子：交出的是**已经准备好的会话事件载荷**（有界 payload + journal sequence +
-   * 两个派生字段），调用方只负责把它追加到父会话（create-app 接 runtime 的 record 方法）。
+   * The engine event hook: what it hands over is an **already prepared session event payload** (a bounded payload + the journal sequence +
+   * two derived fields), and the caller is only responsible for appending it to the parent session (create-app wires the runtime's record method).
    *
-   * 为什么由本服务准备而不是让调用方拼：sequence 与 spentTokens 都只能从 journal 读，
-   * 而 journal 是本服务的依赖；actor 会话 id 只能由铸造它的那个函数算。把这三件事推给
-   * 调用方，等于把三个契约复制到一个没有 journal 的层里。
+   * Why this service prepares it instead of letting the caller assemble it: the sequence and spentTokens can only be read from the journal,
+   * and the journal is a dependency of this service; the actor session id can only be computed by the function that minted it. Pushing these three things onto
+   * the caller amounts to copying three contracts into a layer that has no journal.
    *
-   * 第二个参数是**路由**信息，刻意与载荷分开：`parentSessionId` 决定事件该落到哪个会话，
-   * 但它不属于载荷本身（事件已经在那个会话里了，再存一份是冗余）。调用方据它做身份闸门，
-   * 见 {@link createDynamicWorkflowRunProgressSink}。
+   * The second argument is **routing** information, deliberately kept apart from the payload: `parentSessionId` decides which session the event should land in,
+   * but it is not part of the payload itself (the event is already in that session, storing another copy is redundant). Callers use it for the identity gate,
+   * see {@link createDynamicWorkflowRunProgressSink}.
    */
   onRunEvent?: (
     progress: DynamicWorkflowRunProgressPayload,
     routing: { parentSessionId?: string },
   ) => void;
   logger?: Logger;
-  /** 注入并发度探测，供 caps 默认值测试固定双核（地板必须是 1）。 */
+  /** Injected concurrency probe, so the caps default tests can pin a dual-core machine (the floor must be 1). */
   availableParallelism?: () => number;
   /**
-   * 进程级并发治理器的窄端口。原样转交 driver：
-   * 有效并发 = min(本 run 的 caps.maxConcurrency, 该 provider key 的共享 live cap)。缺席即只有
-   * per-run 上界（测试装配、无治理器的宿主）。
+   * The narrow port of the process-level concurrency governor. Handed to the driver as is:
+   * effective concurrency = min(this run's caps.maxConcurrency, the shared live cap of that provider key). Absent means only
+   * the per-run upper bound applies (test wiring, hosts without a governor).
    */
   concurrency?: WorkflowConcurrencyPort;
   /**
-   * 把一次启动登记为父 runtime 的**常驻阻塞工作**。
+   * Registers one launch as the parent runtime's **resident blocking work**.
    *
-   * 引擎活在会话 App 的闭包里、不进 runtime task registry，而常驻池当时
-   * 只读 registry——一个仍在跑的 run 被读成 idle，App 被关闭，resume 起了第二个引擎。登记走
-   * runtime 唯一的那个口（`trackResidencyBlockingWork`），常驻池因此不必再对 sidecar 做猜测。
+   * The engine lives in the session App's closure and never enters the runtime task registry, while the resident pool back then
+   * only read the registry -- a still-running run was read as idle, the App got closed, and resume started a second engine. Registration goes
+   * through the runtime's single entry point (`trackResidencyBlockingWork`), so the resident pool no longer has to guess about the sidecar.
    *
-   * 缺席即宿主没有常驻概念（CLI 一次性执行、测试装配）：run 照常跑完，只是不挡关闭。
+   * Absent means the host has no residency concept (one-shot CLI execution, test wiring): the run finishes as usual, it just does not block shutdown.
    */
   registerResidencyBlockingWork?: (work: Promise<unknown>) => void;
   /**
-   * driver 的时钟与定时器：run 级
-   * stall 时钟与瞬态失败的退避重驱都读它。**只为测试注入**（故障矩阵把 2s→60s 的重驱曲线与
-   * 20 分钟的 stall 窗缩到毫秒级）；生产装配永不设置，缺席即 driver 用真时间。
+   * The driver's clock and timers: both the run-level
+   * stall clock and the backoff re-drive of transient failures read it. **Injected for tests only** (the failure matrix shrinks the 2s->60s re-drive curve and the
+   * 20-minute stall window down to milliseconds); production wiring never sets it, and when absent the driver uses real time.
    */
   driverClock?: AgentRuntimeWorkflowDriverDeps["clock"];
 }
@@ -268,73 +268,73 @@ export {
 } from "./dynamic-workflow-run-journal.js";
 
 /**
- * 本服务的完整面：{@link DynamicWorkflowRunPort}（引擎 / 工具层用）加两条**会话级**生命周期
- * 读面。后者的唯一消费者是宿主的 provider registry 安全边界：
- * 子代理共用父会话的 live adapter，一个在飞的 run 就是父会话的一段 active Loop——
- * registry replace 必须等它结算。
+ * The full surface of this service: {@link DynamicWorkflowRunPort} (used by the engine / tool layer) plus two **session-level** lifecycle
+ * read surfaces. The sole consumer of the latter is the host's provider registry safety boundary:
+ * subagents share the parent session's live adapter, and an in-flight run is a stretch of active Loop in the parent session --
+ * a registry replace has to wait for it to settle.
  */
 interface DynamicWorkflowRunService extends DynamicWorkflowRunPort {
-  /** 此刻仍未结算的 run 数（registry 里 `terminal === undefined` 的条目）。 */
+  /** The number of runs that have still not settled at this moment (entries in the registry with `terminal === undefined`). */
   countLiveRuns(): number;
   /**
-   * 订阅结算：每个 run 进终态（completed / errored / stopped，含 launch 前失败）后恰好通知
-   * 一次，簿记已经完成（计数已经扣掉它）。返回退订函数。监听器抛错只记日志，不影响结算。
+   * Subscribe to settlement: each run notifies exactly once after it reaches a terminal state (completed / errored / stopped, including a pre-launch failure),
+   * with the bookkeeping already done (the count has already been decremented by it). Returns the unsubscribe function. A listener that throws is only logged and does not affect settlement.
    */
   subscribeRunSettled(listener: (notice: DynamicWorkflowRunSettledNotice) => void): () => void;
   /**
-   * 停下本服务拥有的每一个在飞 run 并等它们结算（文件头不变式 7）。**不在 contracts 的
-   * {@link DynamicWorkflowRunPort} 上**：它是宿主 App 的生命周期动作，不是引擎与工具层的能力。
-   * 幂等——第二次调用返回同一个 promise，不再 abort 任何东西。
+   * Stops every in-flight run this service owns and waits for them to settle (invariant 7 in the file header). **Not on the contracts'
+   * {@link DynamicWorkflowRunPort}**: it is a lifecycle action of the host App, not a capability of the engine and tool layer.
+   * Idempotent -- a second call returns the same promise and aborts nothing further.
    */
   close(): Promise<void>;
 }
 
 /**
- * 造 workflow run 服务。返回 {@link DynamicWorkflowRunService}：端口实现 + 两条会话级的
- * 生命周期读面（在飞 run 计数、结算订阅），后者不进 contracts 的窄端口——它们服务的是
- * 宿主的 registry 安全边界，不是引擎与工具层。
+ * Builds the workflow run service. Returns {@link DynamicWorkflowRunService}: the port implementation plus the two session-level
+ * lifecycle read surfaces (the in-flight run count, the settlement subscription), and the latter stay off the narrow contracts port -- they serve
+ * the host's registry safety boundary, not the engine and tool layer.
  */
 export function createDynamicWorkflowRunService(
   deps: DynamicWorkflowRunServiceDeps,
 ): DynamicWorkflowRunService {
   const runs = new Map<string, RunRegistryEntry>();
   /**
-   * 升级问答的停驻表。**一张，跨本服务名下所有在飞 run**：
-   * qid 全局唯一正是为此——`resolveQuestion` 只收一个不透明 token，多 run 并发时让模型自己配对
-   * `(runId, qid)` 是错配的温床。纯内存，与停驻的 deferred 同命（进程亡故即清空，靠 resume
-   * 后 actor 重新提问自愈；持久化一张 pending 表只会说谎）。
+   * The resident table of escalation questions. **One table, spanning every in-flight run under this service**:
+   * a globally unique qid is exactly for this -- `resolveQuestion` takes a single opaque token, and with several runs in flight letting the model pair
+   * `(runId, qid)` up by itself is a breeding ground for mismatches. Purely in memory, sharing the fate of the resident deferred (cleared the moment the process dies, self-healing
+   * because the actor asks again after resume; persisting a pending table would only tell lies).
    */
   const escalations: WorkflowEscalationRegistry = createWorkflowEscalationRegistry();
 
-  // 构造即收敛：本实例名下此刻零个在飞 run，所以本会话的非终态行都是死进程的遗物。
-  // 见文件头不变式 4 与 {@link reconcileOrphanRuns}。
+  // Structure means convergence: Nothing under this instance is running at the moment, so the non-terminal lines of this session are the relics of the dead process.
+  // See header invariant 4 with {@link reconcileOrphanRuns}.
   reconcileOrphanRuns(deps);
 
   /**
-   * 本进程的并发天花板。
-   * 与进程级治理器的桶天花板同一份实现：run 上界与桶天花板永远对得上。
+   * The concurrency ceiling of this process.
+   * The very same implementation as the governor's per-bucket ceiling at process level: the run upper bound and the bucket ceiling always line up.
    *
-   * 本服务里它有四个读者，全部经这一个函数：新 run 的 caps 起点、端口上的
-   * {@link DynamicWorkflowRunPort.concurrencyCeiling}（工具层据它钳制与判断「值不值得一提」）、
-   * 两条读面的 `maxConcurrency` 判据，以及 `run-started` 载荷上的派生字段。
+   * It has four readers inside this service, all of them going through this one function: the caps starting point of a new run, the
+   * {@link DynamicWorkflowRunPort.concurrencyCeiling} on the port (the tool layer clamps against it and decides whether a "value is not worth reporting"),
+   * the `maxConcurrency` criterion of the two read surfaces, and the derived field on the `run-started` payload.
    */
   const concurrencyCeiling = (): number =>
     resolveWorkflowConcurrencyCeiling(deps.availableParallelism);
 
-  // caps 只含并发上界，无墙钟超时；取消是唯一的停止手段。
-  // 上界**起于天花板**，只能被请求压低、永不抬高——
-  // 缺席即天花板，给了就钳到 [1, 天花板]。
+  // caps only contains the concurrency upper bound and no wall clock timeout; cancellation is the only means of stopping.
+  // The upper bound **starts from the ceiling** and can only be lowered by requests and never raised——
+  // Absence is the ceiling, and if it is given, it reaches [1, ceiling].
   const caps = (requested?: number): Caps => {
     return { maxConcurrency: clampRunConcurrency(requested, concurrencyCeiling()) };
   };
 
-  // 内省面按能力探测接上（那四条查询不在引擎端口上）。缺席时下面两个**可选成员整个不实现**：
-  // 消费方的 `typeof port.listRuns === "function"` 探测因此为假，工具层把它归一成
-  // 「本会话没有这个能力」的业务失败——而不是一个静默的空列表。
+  // The introspection interface is connected according to the capability detection (those four queries are not on the engine port). In their absence, the following two optional members are not implemented at all:
+  // The consumer's `typeof port.listRuns === "function"` detection is therefore false and the tool layer normalizes it to
+  // The business failure of "this session does not have this capability" - rather than a silent empty list.
   const introspection = supportsRunIntrospection(deps.journal) ? deps.journal : undefined;
 
-  // 生命周期簿记（结算 / 关闭 / 关闭闸门 / 外来终态行留痕；文件头不变式 6、7）的实现体在
-  // dynamic-workflow-run-lifecycle.ts：它们只借用这里的注册表与 journal，经窄依赖递过去。
+  // The implementation of life cycle bookkeeping (settlement/closing/closing the gate/external final state lines leaving traces; file header invariants 6 and 7) is in
+  // dynamic-workflow-run-lifecycle.ts: They only borrow the registry and journal here and pass them through narrow dependencies.
   const {
     countLiveRuns,
     subscribeRunSettled,
@@ -352,8 +352,8 @@ export function createDynamicWorkflowRunService(
     runs,
   });
 
-  // 两条入口（submit / resume）的实现体在 dynamic-workflow-run-submit.ts：它们只借用这里的
-  // 注册表、停驻表、caps 与结算簿记，经 ctx 显式递过去，本文件不再复制那两段。
+  // The implementation of the two entries (submit / resume) is in dynamic-workflow-run-submit.ts: they only borrow from here
+  // The registry, docking table, caps and settlement bookkeeping are passed explicitly through ctx, and those two paragraphs will not be copied in this document.
   const entryContext: DynamicWorkflowRunEntryContext = {
     deps,
     runs,
@@ -367,8 +367,8 @@ export function createDynamicWorkflowRunService(
     subscribeRunSettled,
     close,
 
-    // 三条入口的关闭门。`async` 只为把这个接线错误变成 rejection 而不是同步抛；门与随后的
-    // 委托之间没有 await，所以不变式 6 的「登记与 launch 同一同步片」不受影响。
+    // Closed door with three entrances. `async` just turns this wiring error into a rejection rather than a synchronous throw; the gate is related to the subsequent
+    // There is no await between delegates, so the "register and launch the same synchronization slice" of invariant 6 is not affected.
     async submit(
       request: DynamicWorkflowRunSubmitRequest,
     ): Promise<DynamicWorkflowRunSubmitResult> {
@@ -382,18 +382,18 @@ export function createDynamicWorkflowRunService(
     },
 
     /**
-     * 本进程的并发天花板（端口契约见 {@link DynamicWorkflowRunPort.concurrencyCeiling}）。
-     * 与 caps 的起点是**同一个** {@link concurrencyCeiling}：工具层钳出来的值必须与端口随后
-     * 落库的值相等，否则确认窗显示的就不是将要生效的那个数。
+     * The concurrency ceiling of this process (for the port contract see {@link DynamicWorkflowRunPort.concurrencyCeiling}).
+     * It is the **same** {@link concurrencyCeiling} as the starting point of the caps: the value the tool layer clamps must equal the value the port then
+     * persists, otherwise the confirmation window would not be showing the number that is about to take effect.
      */
     concurrencyCeiling,
 
     /**
-     * 就地改一个在飞 run 自己的并发上界（端口契约见
-     * {@link DynamicWorkflowRunPort.retuneConcurrency}；实现体在 dynamic-workflow-run-retune.ts）。
+     * Changes one in-flight run's own concurrency upper bound in place (for the port contract see
+     * {@link DynamicWorkflowRunPort.retuneConcurrency}; the implementation lives in dynamic-workflow-run-retune.ts).
      *
-     * 刻意**不过关闭门**：三条启动入口要 `assertOpen` 是因为它们会起引擎，而这一条什么都不起——
-     * 关闭中的 service 里每个条目都在结算，存活判定自己会把它报成 `not_live`。
+     * Deliberately **does not pass the shutdown gate**: the three launch entry points need `assertOpen` because they start an engine, whereas this one starts nothing --
+     * in a shutting-down service every entry is settling, and the liveness check reports it as `not_live` all by itself.
      */
     async retuneConcurrency(
       request: DynamicWorkflowRunRetuneRequest,
@@ -408,8 +408,8 @@ export function createDynamicWorkflowRunService(
 
     async listRunsForSession(limit?: number): Promise<DynamicWorkflowRunSessionSummary[]> {
       if (!supportsRunEnumeration(deps.journal)) {
-        // 无枚举查询（如内存 journal）：空列表是诚实答案——内存 journal 里的 run 本就
-        // 不会活过进程，重启后的发现面没有可还原的东西。
+        // No enumeration query (such as memory journal): the empty list is the honest answer - run in the memory journal is
+        // The process will not survive, and there will be nothing to restore after restarting.
         return [];
       }
       const capped = Math.max(1, Math.min(limit ?? DEFAULT_LIST_RUNS_LIMIT, MAX_LIST_RUNS_LIMIT));
@@ -424,8 +424,8 @@ export function createDynamicWorkflowRunService(
         });
         return [];
       }
-      // 活条目一并交给摘要：会话枚举面与快照 / 列表 / 详情共用同一条优先级（规则三），
-      // 否则这一面会独自显示一个被外来写入标死的 run。
+      // Live entries are also handed over to the summary: session enumeration and snapshot/list/details share the same priority (rule three),
+      // Otherwise, this side will display a run marked by external writes.
       return rows.map((row) => toSessionSummary(row, runs.get(row.runId)));
     },
 
@@ -435,7 +435,7 @@ export function createDynamicWorkflowRunService(
       if (!supportsRunEnumeration(deps.journal)) return [];
       let rows: DwfRunSessionListItem[];
       try {
-        // 上界与投影的淘汰同一个常量：冷态 = 一个长寿进程此刻会持有的状态。
+        // The upper bound is the same constant as the projection elimination: cold state = the state that a long-lived process would hold at this moment.
         rows = deps.journal.listRunsByParentSession(
           deps.parentSessionId,
           WORKFLOW_RUNS_LIMITS.maxRuns,
@@ -449,12 +449,12 @@ export function createDynamicWorkflowRunService(
         return [];
       }
       const payloads: DynamicWorkflowRunProgressPayload[] = [];
-      // 枚举面最近更新在前；回放要最旧优先，reducer 的淘汰才与 live 时的到达顺序同形。
+      // The latest update of the enumeration surface is first; the oldest is prioritized for playback, and the elimination of reducers is the same as the arrival order during live.
       for (const row of [...rows].reverse()) {
-        // 调用方内存里已有事件的 run（本进程跑过）与注册表在飞的 run 都不回放：
-        // 它们的事件全在内存 store 里，再喂一遍只会让 run-started 把相位打回起点。
+        // Runs that already have events in the caller's memory (ran by this process) and runs that are in the registry will not be played back:
+        // Their events are all in the memory store, and feeding them again will only cause run-started to return the phase to the starting point.
         if (input.excludeRunIds.has(row.runId) || runs.has(row.runId)) continue;
-        // 天花板与 live 侧同源：冷回放的 `run-started` 载荷必须与 live 那一条逐字节相等。
+        // The ceiling has the same source as the live side: the `run-started` payload of cold playback must be equal to the live one byte by byte.
         payloads.push(...replayRunProgress(row, deps.journal, concurrencyCeiling()));
       }
       return payloads;
@@ -472,10 +472,10 @@ export function createDynamicWorkflowRunService(
     },
 
     /**
-     * run 存档的脚本（端口契约见 {@link DynamicWorkflowRunPort.getScript}）。注册表条目在前：
-     * submit → createRun 的间隙里 journal 还没有行，条目上的就是同一份字节。journal 那一份也是
-     * resume 的哈希校验读的字节，所以 `AmendWorkflow` 的沿用、`script_unchanged` 预检与 resume
-     * 对「这个 run 在跑什么」不会有两个答案。
+     * The script archived for the run (for the port contract see {@link DynamicWorkflowRunPort.getScript}). The registry entry comes first:
+     * in the gap between submit and createRun the journal has no row yet, so what is on the entry is those very same bytes. The journal copy is also the bytes
+     * that resume's hash check reads, so `AmendWorkflow` carrying over, the `script_unchanged` pre-check and resume
+     * can never give two answers to "what is this run running".
      */
     async getScript(runId: string): Promise<string | undefined> {
       return runs.get(runId)?.scriptText ?? deps.journal.getRun(runId)?.scriptText;
@@ -486,7 +486,7 @@ export function createDynamicWorkflowRunService(
       options?: { signal?: AbortSignal },
     ): Promise<DynamicWorkflowRunSnapshot | undefined> {
       const entry = runs.get(taskId);
-      // 不在注册表里：可能是本进程之前的 run（journal 有记录）或全然未知。两种都不可等待。
+      // Not in the registry: It may be a previous run of this process (recorded in the journal) or completely unknown. Neither can wait.
       if (entry === undefined) {
         return snapshotOf(
           taskId,
@@ -497,7 +497,7 @@ export function createDynamicWorkflowRunService(
         );
       }
       if (entry.terminal === undefined) await settleOrAbort(entry.settlement, options?.signal);
-      // 停驻项在**等待之后**重新投影：等待期间问题可能已被作答或随取消撤下。
+      // Parked items are reprojected after **waiting**: the question may have been answered or removed during the waiting period.
       return snapshotOf(
         taskId,
         runs,
@@ -508,13 +508,13 @@ export function createDynamicWorkflowRunService(
     },
 
     /**
-     * 回答一个 actor 升级上来的阻塞问题。查表 → driver 结算 → `escalate` 的工具结果变成这段
-     * 答案，actor 的轮次就地继续。**run 状态全程不动**：升级是 ask 内部的一次慢工具调用，
-     * 不是 run 生命周期事件（按设计 escalate 不终结/冻结 run）。
+     * Answers a blocking question that an actor escalated up. Table lookup -> driver settlement -> the tool result of `escalate` becomes this
+     * answer, and the actor's turn continues in place. **The run state never moves** throughout: an escalation is one slow tool call inside an ask,
+     * not a run lifecycle event (by design escalate neither terminates nor freezes the run).
      *
-     * 三类结构化拒绝的判别与文案都在注册表里（它才知道一个 qid 是从没存在过、已被回答，
-     * 还是随 ask 一起撤下了）。本方法刻意不加二次判断——两处各判一次，同一个 qid 迟早会在
-     * 两个层上得到不同的解释。
+     * The discrimination and the wording of the three structured refusals both live in the registry (only it knows whether a qid never existed, has already been answered,
+     * or was withdrawn along with its ask). This method deliberately adds no second check -- judging once in each of the two places would sooner or later make the same qid
+     * get two different readings on the two layers.
      */
     async resolveQuestion(
       qid: string,
@@ -528,13 +528,13 @@ export function createDynamicWorkflowRunService(
       initiator: DynamicWorkflowRunCancelInitiator = "user",
     ): Promise<boolean> {
       const entry = runs.get(runId);
-      // 未知 run（或已结算）没有可中止的东西。返回 false 让上层归一成结构化的 not_found，
-      // 而不是报告一次没发生的取消。
+      // Unknown run (or settled) has nothing to abort. Return false to normalize the upper layer into structured not_found,
+      // Instead of reporting a cancellation that didn't happen.
       if (entry === undefined || entry.terminal !== undefined) return false;
-      // abort 是 harness 里唯一的「真停止」：中止在飞 ask、kill 子进程，引擎经 stop(initiator)
-      // 结算 stopped（已完结 journal 条目保留 → 可 resume）。abort 的 reason 就是 initiator——
-      // harness 读 `signal.reason` 决定 stopped(user) 还是 stopped(model)，从此原因落库，
-      // 不再只活在后台任务注册表里。
+      // abort is the only "true stop" in the harness: abort the flying ask, kill child process, the engine passes stop(initiator)
+      // Settlement stopped (completed journal entries retained → can be resumed). The reason for abort is the initiator——
+      // The harness reads `signal.reason` to decide whether it is stopped(user) or stopped(model). From then on, the reason is stored in the database.
+      // No longer just live in the background task registry.
       entry.controller.abort(initiator);
       return true;
     },
@@ -551,25 +551,25 @@ export function createDynamicWorkflowRunService(
     },
 
     /**
-     * 本 run 的用户面产物清单。UI 冷恢复与中枢详情的
-     * durable 读法：`workflowRuns.artifacts` 投影是 memory-only，重启后为空，而版本历史的
-     * 持久家一直是 journal 的 `kind = "artifact"` 行。
+     * The inventory of user-facing artifacts of this run. The durable way for UI cold recovery and the hub detail view
+     * to read it: the `workflowRuns.artifacts` projection is memory-only and empty after a restart, while the persistent home of version history has always been
+     * the journal's `kind = "artifact"` rows.
      *
-     * 归并规则整段复用 {@link artifactsOf}——终态快照（`getTask`）与本方法必须给出**同一份**
-     * 清单，两处各归并一份迟早会在「失败行算不算一版」这种地方分叉。
+     * The merge rules reuse {@link artifactsOf} wholesale -- the terminal snapshot (`getTask`) and this method have to give the **same**
+     * inventory, and merging one each in the two places would eventually diverge on things like "does a failed row count as a version".
      *
-     * ⚠ 术语：这里的 artifact 是脚本发布给用户看的产出，不是端口上的 `output`（脚本顶层
-     * 返回值，引擎内部也叫 artifact）。
+     * ⚠ Terminology: here artifact is the output the script publishes for the user to see, not the `output` on the port (the script's top-level
+     * return value, which the engine also calls an artifact).
      *
-     * 未知 runId 与「本 journal 没有产物读面」都回 `undefined`：对调用方是同一个业务事实。
+     * An unknown runId and "this journal has no artifact read surface" both return `undefined`: to the caller these are the same business fact.
      */
     async listArtifacts(runId: string): Promise<readonly DynamicWorkflowRunArtifact[] | undefined> {
       return artifactsOf(runId, deps.journal).artifacts;
     },
 
     /**
-     * 喂给某个预置产物的 `report` 条目，按 journal sequence 升序分页（看板的取数面）。
-     * 越界 cursor 得到空页而不是错误——翻到尾巴是正常的翻页结局。
+     * The `report` entries feeding a given seeded artifact, paginated in ascending journal sequence (the board's fetch surface).
+     * An out-of-range cursor gets an empty page rather than an error -- running off the end is a normal paging outcome.
      */
     async listArtifactItems(
       runId: string,
@@ -583,12 +583,12 @@ export function createDynamicWorkflowRunService(
     },
 
     /**
-     * 读某个产物版本的字节。授权链（run 属于本会话 ∧ journal 有该版本的 completed 行 ⇒ 取
-     * 行上的 uri）整段在 {@link readWorkflowArtifactBytes}，那里画了链路图。
+     * Reads the bytes of one artifact version. The whole authorization chain (the run belongs to this session AND the journal has a completed row for that version => take the
+     * uri on the row) lives in {@link readWorkflowArtifactBytes}, which diagrams the chain.
      *
-     * `parentSessionId` 用**本服务的**那一个（= 本 app 的会话），刻意不收参数：服务实例本就
-     * 按父会话构造，让调用方传任意会话等于开一个跨会话读洞——与 `listRunsForSession` 同一条
-     * 论证，只是那边是枚举、这边是字节。
+     * `parentSessionId` uses **this service's own** value (= this app's session), deliberately without a parameter: a service instance is constructed
+     * per parent session anyway, so letting the caller pass an arbitrary session would open a cross-session read hole -- the same
+     * argument as for `listRunsForSession`, except that one enumerates while this one reads bytes.
      */
     async readArtifact(
       runId: string,
@@ -608,9 +608,9 @@ export function createDynamicWorkflowRunService(
     },
 
     /**
-     * 工作区 transcript 的清单与正文。授权链
-     * 与 readArtifact 同一条（run 属于本会话），两条都走——清单上的 args 已经是路径与命令行。
-     * 整段在 dynamic-workflow-run-workspace.ts。
+     * The inventory and bodies of the workspace transcripts. The authorization chain
+     * is the same one as for readArtifact (the run belongs to this session), and both run -- the args on the inventory are already paths and command lines.
+     * The whole thing lives in dynamic-workflow-run-workspace.ts.
      */
     async listWorkspaceNodes(
       runId: string,

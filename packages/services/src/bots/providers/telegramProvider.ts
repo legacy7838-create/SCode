@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- Telegram provider 集中处理 Bot API 文本、按钮、媒体解析和附件下载。 */
+/* eslint-disable max-lines -- The Telegram provider centralizes Bot API text, button, media parsing, and attachment downloads. */
 import type {
   BotInboundAttachment,
   BotConfig,
@@ -266,8 +266,8 @@ function buildSelectionCallbackData(selection: SelectionPrompt, optionId: string
   if (selection.action === "model.set") {
     return `zc:cmd:/model model ${index + 1}`;
   }
-  // Telegram callback_data 最多 64 字节，workspace/task id 可能是远程 identity 或长路径。
-  // 这里只回传当前列表序号，后续命令解析复用已有的数字选项解析，避免长 id 被 Telegram 拒收。
+  // Telegram callback_data is up to 64 bytes, workspace/task id may be remote identity or long path.
+  // Only the current list serial number is returned here, and subsequent command parsing reuses the existing numeric option parsing to prevent long IDs from being rejected by Telegram.
   return `zc:${selection.action.replace(".set", "")}:${index + 1}`;
 }
 
@@ -275,7 +275,7 @@ function buildSelectionReplyMarkup(selection: SelectionPrompt): { inline_keyboar
   const cancelRows = selection.showCancel === false
     ? []
     : [
-        // Bugfix: Telegram 原生按钮以前没有取消入口，用户只能手敲 0 才能退出 pending selection。
+        // Bugfix: Telegram's native button did not have a cancel entry before, and the user could only exit the pending selection by pressing 0.
         [{ text: selection.cancelLabel ?? "Cancel", callback_data: "zc:cancel" }],
       ];
   return {
@@ -375,8 +375,8 @@ export function createTelegramBotProvider(
       }
 
       const defaultCommands = buildTelegramCommands(bot);
-      // Bugfix: Telegram 菜单不会自动从我们支持的 slash commands 推导。
-      // 这里只同步默认英文菜单；中文命令由 parser 支持，避免 Telegram 客户端菜单显示中英混杂。
+      // Bugfix: Telegram menu does not automatically derive from our supported slash commands.
+      // Only the default English menu is synchronized here; Chinese commands are supported by parser to prevent the Telegram client menu from displaying mixed Chinese and English.
       await fetchBotProvider(`https://api.telegram.org/bot${token}/setMyCommands`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -393,8 +393,8 @@ export function createTelegramBotProvider(
       const replyMarkup = selection ? buildSelectionReplyMarkup(selection) : undefined;
       const chunks = splitTelegramText(message.text);
       for (const [index, text] of chunks.entries()) {
-        // Bugfix: 长 Plan 会被拆成多条消息，审批提示位于最后一条。
-        // 按钮必须跟随最终决策上下文，不能挂在尚未发送完整正文的第一条上。
+        // Bugfix: A long Plan will be split into multiple messages, and the approval prompt will be in the last one.
+        // The button must follow the final decision context and cannot hang on the first one before the full body is sent.
         const shouldAttachReplyMarkup = index === chunks.length - 1 && replyMarkup;
         const response = await fetchBotProvider(`https://api.telegram.org/bot${token}/sendMessage`, {
           method: "POST",
@@ -407,8 +407,8 @@ export function createTelegramBotProvider(
           }),
         });
         if (!response.ok) {
-          // Bugfix: Telegram Markdown 对未闭合的 `_*[]()` 很敏感，模型输出偶尔会被拒收。
-          // 解析失败时退回纯文本重发，既优先支持 Markdown，也保证消息不会丢。
+          // Bugfix: Telegram Markdown is sensitive to unclosed `_*[]()`, and model output will occasionally be rejected.
+          // When parsing fails, plain text is returned and resent, which not only supports Markdown first, but also ensures that the message will not be lost.
           await fetchBotProvider(`https://api.telegram.org/bot${token}/sendMessage`, {
             method: "POST",
             headers: { "content-type": "application/json" },
@@ -509,7 +509,7 @@ export function createTelegramBotProvider(
         };
       } catch (error) {
         if ((error as { name?: unknown })?.name === "AbortError") {
-          // Bugfix: Telegram 文件接口卡住时要快速失败，避免 bot 回调一直没有可见结果。
+          // Bugfix: When the Telegram file interface is stuck, it must fail quickly to avoid bot callbacks that have no visible results.
           throw new Error("Telegram file download timed out.");
         }
         throw error;

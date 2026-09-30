@@ -17,14 +17,27 @@ const buildReadyMarkers = [
 const waitLogIntervalMs = 3_000;
 const require = createRequire(import.meta.url);
 
+// Fail fast when the desktop manifest version drifts from the root release version:
+// dev Electron reads packages/desktop/package.json via app.getVersion(), and
+// electron-updater throws on anything that is not valid semver.
+const desktopPackage = JSON.parse(await readFile(resolve(root, "package.json"), "utf8"));
+const rootPackage = JSON.parse(
+  await readFile(resolve(import.meta.dirname, "../../../package.json"), "utf8"),
+);
+if (!desktopPackage.version || desktopPackage.version !== rootPackage.version) {
+  throw new Error(
+    `Desktop package version "${desktopPackage.version ?? "<missing>"}" does not match root package version "${rootPackage.version}". Sync packages/desktop/package.json with the root package.json.`,
+  );
+}
+
 function resolveLocalElectronBinary() {
   const electronPackageJsonPath = require.resolve("electron/package.json");
   const electronPackageRoot = resolve(electronPackageJsonPath, "..");
 
-  // Windows 下这里之前直接 spawn("electron")，完全依赖 PATH 里恰好能找到本地 bin。
-  // 在 pnpm + PowerShell 场景里，子进程经常只拿到 node 可执行而拿不到 electron 命令，
-  // 导致 dev 脚本卡在 ENOENT，只能手动拆成三个终端绕过。
-  // 这里显式解析当前项目安装的 Electron 二进制，避免跨 shell / 跨平台时 PATH 语义不一致。
+  // Before launching Windows, directly spawn("electron"), completely relying on PATH to find the local bin.
+  // In the pnpm + PowerShell scenario, the child process often only gets the node executable but not the electron command.
+  // As a result, the dev script is stuck at ENOENT and can only be bypassed by manually splitting it into three terminals.
+  // Here, the Electron binary installed by the current project is explicitly parsed to avoid inconsistent PATH semantics across shells/cross-platforms.
   if (process.platform === "win32") {
     return resolve(electronPackageRoot, "dist", "electron.exe");
   }
@@ -57,9 +70,9 @@ function probeHttpUrl(url) {
 
 // Wait for both Vite dev server and main bundle to be ready
 async function waitForReady() {
-  // desktop 的 tsup 实际是 main/host/preload 三个独立 watch 构建。
-  // 之前任意一个构建成功就可能放行，Electron 会在其余产物还未稳定时启动，读到半完成的 ESM/CJS 文件。
-  // 现在必须等待三个构建各自写入 ready 标记，再额外确认 main bundle 已产出。
+  // Desktop's tsup is actually three independent watch builds of main/host/preload.
+  // If any previous build is successful, it may be released. Electron will start when other products are not stable and read the half-completed ESM/CJS files.
+  // Now you have to wait for each of the three builds to write the ready mark, and then additionally confirm that the main bundle has been produced.
   let lastBuildWaitLogAt = 0;
   while (true) {
     const missingMarkers = buildReadyMarkers
@@ -71,8 +84,8 @@ async function waitForReady() {
     }
     const now = Date.now();
     if (now - lastBuildWaitLogAt >= waitLogIntervalMs) {
-      // dev 启动卡在等待阶段时，终端最后一行常停在 tsup watch 日志，开发者无法判断缺哪个条件。
-      // 这里定期打印等待状态，让 marker 或 main bundle 缺失能直接从日志定位。
+      // When the dev startup is stuck in the waiting stage, the last line of the terminal often stops in the tsup watch log, and the developer cannot determine which condition is missing.
+      // The wait status is printed regularly here, so that missing markers or main bundles can be located directly from the log.
       console.log(
         `[dev] Waiting for build artifacts... missingMarkers=${
           missingMarkers.join(",") || "none"
@@ -84,8 +97,8 @@ async function waitForReady() {
   }
 
   // Wait for Vite dev server
-  // Vite 在不同本机 DNS/IPv6 配置下可能只监听 localhost/::1 或 127.0.0.1 其中之一。
-  // 这里轮询多个 loopback 地址，避免 dev 脚本和 Vite 实际监听地址不一致导致 Electron 永远不启动。
+  // Vite may only listen to one of localhost/::1 or 127.0.0.1 under different native DNS/IPv6 configurations.
+  // Multiple loopback addresses are polled here to avoid inconsistency between the dev script and the actual listening address of Vite, causing Electron to never start.
   const viteUrls = ["http://localhost:5174", "http://127.0.0.1:5174", "http://[::1]:5174"];
   let lastViteWaitLogAt = 0;
   while (true) {
@@ -113,9 +126,9 @@ const electronBinary = resolveLocalElectronBinary();
 let electronCommand = existsSync(electronBinary) ? electronBinary : "electron";
 
 if (process.platform === "darwin" && existsSync(electronBinary)) {
-  // macOS 命令行启动的 raw Electron 没有 CFBundleURLTypes，LaunchServices 会把
-  // zcode:// 交给一个没有项目入口的 Electron 默认壳。给本地启动副本补齐产品
-  // Info.plist 后，线上 Share 页面无需感知 Dev，仍可把链接投递给已运行的 Dev 实例。
+  // Raw Electron launched from the macOS command line does not have CFBundleURLTypes, and LaunchServices will
+  // zcode:// is given to an Electron default shell with no project entry. Supplement the local boot copy with products
+  // Info.plist, the online Share page does not need to be aware of Dev and can still deliver links to running Dev instances.
   const electronPackageJsonPath = require.resolve("electron/package.json");
   const electronPackage = JSON.parse(await readFile(electronPackageJsonPath, "utf8"));
   const electronAppPath = resolve(electronBinary, "../../..");
@@ -183,9 +196,9 @@ function shutdownFromSignal(signal) {
 
   shuttingDown = true;
   console.log(`[dev] Received ${signal}, stopping Electron...`);
-  // concurrently 收到 Ctrl+C 后只会结束 node scripts/dev.mjs 这层包装进程，
-  // Electron 在 macOS 上不会可靠响应 SIGINT/SIGTERM，之前会被 orphan 到 ppid=1 继续占用端口和日志。
-  // 这里把 Electron 放进独立进程组并由 dev 脚本统一回收，超时后强制清掉整棵开发进程树。
+  // Concurrently will only end the packaging process of node scripts/dev.mjs after receiving Ctrl+C.
+  // Electron will not respond reliably to SIGINT/SIGTERM on macOS, and was previously orphaned to ppid=1 to continue occupying ports and logs.
+  // Here, Electron is put into an independent process group and recycled uniformly by the dev script. After timeout, the entire development process tree is forced to be cleared.
   signalElectronTree("SIGTERM");
   forceKillTimer = setTimeout(forceKillElectronTree, 1_500);
   hardExitTimer = setTimeout(() => process.exit(0), 5_000);

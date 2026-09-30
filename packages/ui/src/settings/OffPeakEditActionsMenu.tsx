@@ -1,6 +1,9 @@
-/* 闲时任务编辑页顶栏动作菜单：Save 右侧「⋯」→ 按状态给 暂停/继续 + 删除。
-   与列表卡片菜单同义，供编辑页内直接操作；queued→暂停、paused→继续，终态只留删除。
-   样式与定时任务编辑页顶栏菜单同源。 */
+/*
+   Top-bar action menu of the off-peak task edit page: the "⋯" to the right of Save → Pause/Resume +
+   Delete depending on status. Same semantics as the list card menu, for acting directly inside the
+   edit page; queued→Pause, paused→Resume, terminal states keep only Delete. The styling comes from
+   the same source as the scheduled task edit page's top-bar menu.
+   */
 import { TID_OFFPEAK_CARD_MENU, type ZCodeOffPeakTask } from "@zcode/shared";
 import {
   DropdownMenu,

@@ -1,15 +1,15 @@
-/* oxlint-disable eslint(max-lines) -- re-home 产物：task realtime 运行时 schema 集中迁移，类型与校验就近。 */
-// re-home 迁移产物（为删除旧协议树铺路）。
-// 本文件承载 task realtime 传输面中仍被存活栈（validation.ts 外部 relay payload 校验）
-// 消费的运行时 zod schema 与 resolveWorkspaceKey。
-// task-realtime.ts 保留旧协议兼容接口；本文件集中定义对应的运行时 schema。
+/* oxlint-disable eslint(max-lines) -- re-home artifact: the task realtime runtime schemas were centralized in one migration, with types and validation kept close together. */
+// re-home migration artifact (paving the way for deleting the old protocol tree).
+// This file carries the task realtime stack that is still alive in the transmission plane (validation.ts external relay payload verification)
+// Consume runtime zod schema with resolveWorkspaceKey.
+// task-realtime.ts retains the old protocol compatible interface; this file centrally defines the corresponding runtime schema.
 
 import { z } from "zod";
 import type { ZCodeTaskMigrationSource, ZCodeTaskMode } from "./zcode-task-types-core.js";
 import { zcodeAgentProviderSchema } from "./zcode-agent-policy.js";
 import { zcodePermissionResponseSchema } from "./zcode-protocol-legacy-types.js";
-// merge 冲突解决：两侧分别在相邻行新增独立 import（本分支 hook trust review
-// 决策 schema、staging telemetry error attribution schema），二者无语义交集，均保留。
+// Merge conflict resolution: Add independent imports on adjacent lines on both sides (this branch hook trust review
+// Decision schema, staging telemetry error attribution schema), there is no semantic intersection between the two, and both are retained.
 import { workspaceHookReviewDecisionSchema } from "./zcode-protocol-v4/workspace-hook-review.js";
 import { errorAttributionSchema } from "./zcode-protocol-v4/snapshot.js";
 
@@ -52,8 +52,8 @@ const taskMetaRealtimeSchema = z.object({
   workspaceIdentity: nonEmptyString.optional(),
   createdAt: z.number().int().nonnegative(),
   updatedAt: z.number().int().nonnegative(),
-  // realtime deliver 的运行时 schema 之前把 mode 放宽成 string，
-  // schema 推导类型因此无法回到 ZCodeTaskMeta，host typecheck 也就无法覆盖这条链路。
+  // The runtime schema of realtime deliver previously relaxed mode to string.
+  // The schema deduced type therefore cannot go back to ZCodeTaskMeta, and host typecheck cannot cover this link.
   mode: z.enum(zcodeTaskModeRealtimeValues),
   model: z.string().optional(),
   runtimeEpoch: z.number().int().nonnegative().optional(),
@@ -68,8 +68,8 @@ const taskMetaRealtimeSchema = z.object({
       message: z.string().min(1),
       traceId: nonEmptyString.optional(),
       taskId: nonEmptyString.optional(),
-      // 旧 realtime schema 会静默剥离 lastError.attribution，导致手机 replayable
-      // task meta 与桌面 snapshot 的归因不一致；这里沿用共享 schema 保持 wire 约束一致。
+      // The old realtime schema will silently strip lastError.attribution, making the phone replayable
+      // The attribution of task meta and desktop snapshot is inconsistent; the shared schema is used here to keep the wire constraints consistent.
       attribution: errorAttributionSchema.optional(),
     })
     .optional(),
@@ -87,9 +87,9 @@ export const taskRealtimeReasonSchema = z.enum([
   "assistant_message_saved",
   "task_status_changed",
   "task_meta_changed",
-  // 切模型等纯配置变更独立成 reason，避免被当成归属相关 meta 变更触发列表整刷。
+  // Pure configuration changes such as cutting models are independent reasons to avoid being regarded as attribution-related meta changes to trigger list flushing.
   "task_model_changed",
-  // 标题更新（首条消息/自动标题）与归属无关且高频，独立 reason 避免全局 membership 重拉。
+  // Title updates (first message/automatic title) are independent of ownership and high frequency, independent reason to avoid global membership re-pull.
   "task_title_changed",
   "task_pinned",
   "task_unpinned",
@@ -178,7 +178,7 @@ const zcodePromptAttachmentSchema = z.discriminatedUnion("kind", [
       localPath: z.string().optional(),
     })
     .strict(),
-  // 附件类型新增 video 后，replayable schema 未同步，手机远控会拒绝合法附件。
+  // After adding video as the attachment type, the replayable schema is not synchronized, and the mobile phone remote control will reject legal attachments.
   z
     .object({
       kind: z.literal("video"),

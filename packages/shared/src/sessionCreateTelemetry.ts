@@ -3,7 +3,7 @@ import { z } from "zod";
 export type SessionCreateSource = "group" | "project" | "session";
 export type SessionCreateClientKind = "desktop" | "mobile" | "web";
 
-/** 手机转发只开放本事件；公共用户/设备身份仍由桌面 TelemetryCore 注入。 */
+/** Mobile forwarding only opens this event; the common user/device identity is still injected by the desktop TelemetryCore. */
 export const sessionCreateTelemetrySchema = z
   .object({
     elementName: z.literal("session_create"),
@@ -23,7 +23,7 @@ export const sessionCreateTelemetrySchema = z
         create_source: z.enum(["group", "project", "session"]),
         client_kind: z.literal("mobile"),
         workspace_kind: z.enum(["local", "remote"]),
-        remote_kind: z.enum(["", "ssh", "wsl", "docker", "server"]),
+        remote_kind: z.enum(["", "ssh", "wsl", "server"]),
       })
       .strict(),
   })
@@ -31,7 +31,7 @@ export const sessionCreateTelemetrySchema = z
 
 export type MobileSessionCreateTelemetry = z.infer<typeof sessionCreateTelemetrySchema>;
 
-/** 自动化由执行 Host 报告；手机不得冒充无人值守派发来源。 */
+/** Automation is reported by the executing Host; mobile must not masquerade as an unattended dispatch source. */
 export const automationSessionCreateTelemetrySchema = sessionCreateTelemetrySchema.extend({
   eventExtraDetail: sessionCreateTelemetrySchema.shape.eventExtraDetail.extend({
     create_source: z.enum(["automation_idle", "automation_scheduled"]),

@@ -1,4 +1,4 @@
-/** 资源指标聚合（纯函数，便于单测） */
+/** Resource metric aggregation (pure functions, easy to unit-test) */
 
 export interface AggregateStats {
   mean: number;

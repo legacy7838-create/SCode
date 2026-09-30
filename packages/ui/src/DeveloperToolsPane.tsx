@@ -1,4 +1,6 @@
-/* oxlint-disable eslint(max-lines) -- 开发者工具面板集中展示 token 表和网络 headers，后续继续扩展时再按区块拆分。 */
+/* oxlint-disable eslint(max-lines) -- The developer tools panel shows the token table and network
+ * headers in one place; split it by section later, as it keeps growing.
+ */
 import { ActivityIcon, BugIcon, NetworkIcon } from "lucide-react";
 import type { SessionDebugNetworkEntry } from "@zcode/shared";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
@@ -97,7 +99,8 @@ export function DeveloperToolsPane({
   taskId,
   enabled = true,
 }: DeveloperToolsPaneProps) {
-  const { intl, locale } = useZCodeIntl();
+  const { intl } = useZCodeIntl();
+  const locale = "en-US";
   const debugState = useSessionDebug({ workspacePath, workspaceIdentity, taskId, enabled });
   const networkEntries = [...debugState.networkEntries].reverse();
 

@@ -1,8 +1,8 @@
 /**
- * Chromium 体系（main / renderer / gpu / utility）的资源样本来源。
+ * Resource sample source for the Chromium family (main / renderer / gpu / utility).
  *
- * 每 10 秒读一次 `app.getAppMetrics()`，按角色聚合后喂给窗口聚合器。
- * main 进程零外部进程，这里只有进程内 API。
+ * Reads `app.getAppMetrics()` every 10 seconds, aggregates by role and feeds the window aggregator.
+ * The main process has zero external processes, so only in-process APIs are used here.
  */
 
 import { app, type ProcessMetric } from "electron";
@@ -26,7 +26,7 @@ function toNormalizedSample(
     cpuPercent: normalizeElectronCpuToMachinePercent(metric.cpu.percentCPUUsage, {
       logicalCpuCount,
     }),
-    // getAppMetrics 的 memory.workingSetSize 单位为 KB。
+    // The memory.workingSetSize unit of getAppMetrics is KB.
     rssKb: metric.memory.workingSetSize ?? 0,
     creationTime: metric.creationTime,
   };
@@ -43,13 +43,13 @@ export const chromiumProcessResourceSampleSource: ProcessResourceSampleSource = 
       now: context.now,
     });
 
-    // ChromiumRoleAggregate 就是 ProcessRoleSample 的 Chromium 子集（无 heap / mcpId / hardware），
-    // 逐字段搬运只会让两处字段名漂移时静默出错。
+    // ChromiumRoleAggregate is the Chromium subset of ProcessRoleSample (without heap / mcpId / hardware),
+    // Moving field by field will only cause silent errors when the two field names drift.
     for (const aggregate of aggregates) {
       context.addRoleSample(aggregate);
     }
-    // 设备级事件的应用总量要的是本 tick 的精确合计；采样抛错时这一行不会执行，
-    // 该 tick 就没有设备样本，绝不拿旧读数充当当前事实。
+    // The total application amount of device-level events requires the exact total of this tick; this line will not be executed when a sampling error is thrown.
+    // There are no device samples for this tick, and old readings are never used as current facts.
     context.addAppProcessTotals(sumChromiumRoleAggregates(aggregates));
   },
 };

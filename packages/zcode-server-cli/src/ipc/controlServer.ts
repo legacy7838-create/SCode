@@ -38,9 +38,9 @@ export async function createControlServer(
     });
   });
   await chmod(endpoint, 0o600).catch(() => undefined);
-  // server.close() 只会停止新连接，仍然会等待已有连接自然结束。
-  // 控制 socket 属于生命周期收口的一部分，必须主动收集并销毁，避免同 UID 的挂起客户端
-  // 永久占住 close 回调，进而让 Supervisor 的 lock 和 lifecycle operation 一直不释放。
+  // server.close() will only stop new connections and will still wait for existing connections to end naturally.
+  // Control sockets are part of the life cycle closure and must be actively collected and destroyed to avoid hanging clients with the same UID.
+  // Permanently occupy the close callback, thereby preventing the Supervisor's lock and lifecycle operation from being released.
   let closePromise: Promise<void> | undefined;
   return {
     server,
@@ -51,9 +51,9 @@ export async function createControlServer(
           server.close(() => resolve());
         });
         for (const socket of sockets) socket.destroy();
-        // 只等待 server.close() 的自然回调会让半帧或失联客户端把
-        // stop/restart/uninstall 永久 pending。销毁活动连接后仍保留有界兜底，保证 endpoint
-        // 和上层 data-root lock 最终可以收口。
+        // Just waiting for the natural callback of server.close() will allow the half-frame or disconnected client to
+        // stop/restart/uninstall is permanently pending. After destroying the active connection, the bounded bottom is still retained to ensure the endpoint
+        // And the upper data-root lock can finally be closed.
         await Promise.race([
           serverClosed,
           new Promise<void>((resolve) => {
@@ -70,9 +70,9 @@ export async function createControlServer(
 
 function handleSocket(socket: Socket, handler: ControlHandler): void {
   const decoder = new JsonLineDecoder();
-  // 客户端超时会主动 destroy socket，迟到的 response write 可能异步发出
-  // EPIPE/ECONNRESET。socket 的 error 若无人消费会升级成未处理事件并退出 Supervisor；
-  // 控制客户端断开属于正常的 best-effort 回写失败，不能影响 Supervisor 生命周期。
+  // The client will actively destroy the socket when it times out, and the late response write may be issued asynchronously.
+  // EPIPE/ECONNRESET. If no one consumes the socket error, it will be upgraded to an unhandled event and the Supervisor will exit;
+  // Controlling client disconnection is a normal best-effort writeback failure and cannot affect the Supervisor life cycle.
   socket.on("error", () => {
     socket.destroy();
   });

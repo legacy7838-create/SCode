@@ -1,4 +1,4 @@
-/** `perf_process_window` 的属性投影（纯函数，属性 key 与白名单一一对应）。 */
+/** Attribute projection for `perf_process_window` (a pure function whose attribute keys map one-to-one onto the allowlist). */
 
 import type { ArmsRumEnv } from "@zcode/shared";
 import { PROCESS_RESOURCE_EVENT_NAMES } from "@zcode/shared";
@@ -13,11 +13,11 @@ export interface ProcessResourceReportContext {
   deviceMid: string;
   appVersion: string;
   armsEnv: ArmsRumEnv;
-  /** 桌面机硬件；样本自带 hardware 时（远端 CLI / MCP）覆盖这里的默认值。 */
+  /** Desktop machine hardware; samples that carry their own hardware (remote CLI / MCP) override this default. */
   desktopHardware: ProcessResourceHardware;
 }
 
-/** ARMS 的 `platform` 维度只有这三个取值，看板按它分组。 */
+/** The `platform` dimension of ARMS only has these three values, and the Kanban boards are grouped according to it. */
 type ProcessResourceOsCategory = "macos" | "windows" | "linux";
 
 export function normalizeOsCategory(platform: NodeJS.Platform): ProcessResourceOsCategory {
@@ -32,14 +32,14 @@ export function normalizeOsCategory(platform: NodeJS.Platform): ProcessResourceO
 }
 
 /**
- * 属性顺序与事件契约一致；值为 undefined 的属性不会进入最终 payload，
- * 因此 gpu / renderer_guest / chromium_other 天然是 18 个属性。
+ * Attribute order matches the event contract; attributes whose value is undefined never reach the
+ * final payload, so gpu / renderer_guest / chromium_other naturally carry 18 attributes.
  */
 export function buildProcessWindowEventProperties(
   report: ProcessRoleWindowReport,
   context: ProcessResourceReportContext,
 ): Record<string, string | number | undefined> {
-  // 逐字段覆盖：远端 CLI 只带 platform / arch / 核数时，total_memory_gb 仍取桌面机的值。
+  // Field-by-field coverage: When the remote CLI only supports platform / arch / core number, total_memory_gb still takes the value of the desktop.
   const hardware = { ...context.desktopHardware, ...report.hardware };
   return {
     platform: normalizeOsCategory(hardware.platform),

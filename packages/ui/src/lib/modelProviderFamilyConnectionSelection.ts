@@ -9,7 +9,10 @@ import { hasActiveUsageEntitlementSnapshot } from "@/lib/codingPlanProvider.js";
 
 export type ModelProviderFamilyConnectionSelection = ProviderFamilyConnectionSelection;
 
-/** 把当前 Family 连接意图映射为对应的 Built-in Account Provider 身份。 */
+/**
+ * Maps the current Family connection intent onto the corresponding Built-in Account Provider
+ * identity.
+ */
 export function resolveModelProviderFamilyConnectionProviderId(params: {
   providerFamilyDomain: ProviderFamilyDomain;
   selection: ProviderFamilyConnectionSelection;
@@ -61,9 +64,15 @@ export function resolveAutomaticModelProviderFamilyConnectionSelection(params: {
   codingPlanEntitlement: UsageEntitlementSnapshot | null;
   startPlanEntitlement: UsageEntitlementSnapshot | null;
   teamProducts?: readonly EnterpriseCodingPlanPricingProduct[];
-  /** 首次登录可落到购买入口；修复已有连接时只能选确认可用的套餐。 */
+  /**
+   * First-time sign-in can land on the purchase entry point; when repairing an existing connection
+   * only plans confirmed to be usable can be selected.
+   */
   allowPurchaseEntry?: boolean;
-  /** 当前 Account View 的统一判定优先于旧余额快照，尤其区分待生效与可用。 */
+  /**
+   * The current Account View's unified verdict takes precedence over the legacy balance snapshot,
+   * and in particular distinguishes pending from usable.
+   */
   codingPlanAvailable?: boolean;
   startPlanAvailable?: boolean;
 }): ModelProviderFamilyConnectionSelection | null {
@@ -81,17 +90,17 @@ export function resolveAutomaticModelProviderFamilyConnectionSelection(params: {
     };
   }
 
-  // 原守卫 familySpec.id === "bigmodel" 使 zai 即使有订阅团队也无法识别。
-  // 去掉守卫后，两类 Provider Family 统一读取结构化团队选择。
+  // Original guard familySpec.id === "bigmodel" makes zai unrecognizable even with subscribed teams.
+  // After removing the guard, both types of Provider Family read structured team selection uniformly.
   const teamSelection = resolveFirstSubscribedTeamPlanConnectionWithContext({
     teamProducts: params.teamProducts ?? [],
   });
   if (teamSelection) return teamSelection;
 
   if (params.allowPurchaseEntry === false) return null;
-  // OAuth 登录后的输入框连接方式必须始终保持 OAuth 语义。
-  // 即使当前账号没有 Start、个人 Coding 或团队 Coding，也应落到个人 Coding 入口，
-  // 由后续购买/不可用态承接，而不是自动切到 API Key。
+  // The input box connection method after OAuth login must always maintain OAuth semantics.
+  // Even if the current account does not have Start, personal Coding or team Coding, it should still fall into the personal Coding entrance.
+  // It will be taken over by the subsequent purchase/unavailable status instead of automatically switching to the API Key.
   return {
     kind: "individual-coding-plan",
   };

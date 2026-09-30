@@ -2,14 +2,7 @@ import type { BrowserWindow, MessageBoxReturnValue } from "electron";
 import { existsSync, readFileSync } from "node:fs";
 import { arch, hostname, platform, release, type, version as osVersion } from "node:os";
 import { join } from "node:path";
-import {
-  DEFAULT_LOCALE,
-  type Locale,
-  ZCODE_BUILD_TIME,
-  ZCODE_COMMIT,
-  ZCODE_ENV,
-  ZCODE_VERSION,
-} from "@zcode/shared";
+import { ZCODE_BUILD_TIME, ZCODE_COMMIT, ZCODE_ENV, ZCODE_VERSION } from "@zcode/shared";
 import { createCustomAboutDialogHtml } from "./aboutWindow.js";
 
 interface DesktopBuildMetadata {
@@ -53,34 +46,16 @@ interface AboutSnapshotOptions {
 }
 
 const ABOUT_APPLICATION_NAME = "ZCode Desktop App";
-// 自定义 About 内容本体是 256x280；原生窗口如果同尺寸会让内容贴满透明窗口边界。
-// 这里给 BrowserWindow 额外留出背景呼吸空间，避免正式 About 看起来比 demo 更局促。
+// The custom About content body is 256x280; if the native window is the same size, the content will fill the transparent window border.
+// This gives the BrowserWindow additional background breathing space to prevent the formal About from looking more cramped than the demo.
 const ABOUT_WINDOW_WIDTH = 256;
 const ABOUT_WINDOW_HEIGHT = 312;
-const ABOUT_MESSAGES: Record<
-  Locale,
-  {
-    aboutTitle: string;
-    versionLabel: string;
-    okButtonLabel: string;
-    optimizedForAppleSilicon: string;
-    copyright: (year: number) => string;
-  }
-> = {
-  "zh-CN": {
-    aboutTitle: "关于 ZCode",
-    versionLabel: "版本",
-    okButtonLabel: "确定",
-    optimizedForAppleSilicon: "已针对 Apple Silicon 优化。",
-    copyright: (year) => `版权所有 © ${year} ZCode。`,
-  },
-  "en-US": {
-    aboutTitle: "About ZCode",
-    versionLabel: "version",
-    okButtonLabel: "OK",
-    optimizedForAppleSilicon: "Optimized for Apple Silicon.",
-    copyright: (year) => `Copyright © ${year} ZCode.`,
-  },
+const ABOUT_MESSAGES = {
+  aboutTitle: "About ZCode",
+  versionLabel: "version",
+  okButtonLabel: "OK",
+  optimizedForAppleSilicon: "Optimized for Apple Silicon.",
+  copyright: (year: number) => `Copyright © ${year} ZCode.`,
 };
 
 function normalizeValue(value: string | undefined | null): string {
@@ -95,10 +70,6 @@ function normalizeValue(value: string | undefined | null): string {
 function normalizePackageVersion(version: string | undefined): string {
   const normalized = normalizeValue(version);
   return normalized === "unknown" ? normalized : normalized.replace(/^[^\d]*/, "") || normalized;
-}
-
-function getAboutMessages(locale: Locale): (typeof ABOUT_MESSAGES)[Locale] {
-  return ABOUT_MESSAGES[locale] ?? ABOUT_MESSAGES[DEFAULT_LOCALE];
 }
 
 function readJsonFile<T>(filePath: string): T | null {
@@ -120,9 +91,9 @@ function resolveBuildMetadataPath(): string {
 export function readBuildMetadata(
   filePath = resolveBuildMetadataPath(),
 ): DesktopBuildMetadata | null {
-  // 之前 About 直接读取编译时注入的常量，commit/time 只能代表 tsup 那一刻。
-  // 问题原因：构建和打包是分步执行的，安装包里的 about 需要的是“最终产物”的统一元数据，而不是某个编译子步骤的快照。
-  // 这里优先读打包前生成的 build-meta.json；只有缺文件时才回退到编译时常量。
+  // Previously, About directly read the constants injected during compilation, and commit/time could only represent the moment of tsup.
+  // Cause of the problem: Building and packaging are performed in steps. About in the installation package requires unified metadata of the "final product" rather than a snapshot of a certain compilation sub-step.
+  // Here, the build-meta.json generated before packaging is read first; only when the file is missing, it falls back to the compile-time constants.
   return readJsonFile<DesktopBuildMetadata>(filePath);
 }
 
@@ -190,19 +161,11 @@ export function formatAboutDetail(snapshot: AboutSnapshot): string {
   ].join("\n");
 }
 
-function formatAboutCopyright(
-  year = new Date().getFullYear(),
-  locale: Locale = DEFAULT_LOCALE,
-): string {
-  return getAboutMessages(locale).copyright(year);
-}
-
 function formatAboutOptimizationLine(
   snapshot: Pick<AboutSnapshot, "osPlatform" | "osArch">,
-  locale: Locale = DEFAULT_LOCALE,
 ): string {
   if (snapshot.osPlatform === "darwin" && snapshot.osArch === "arm64") {
-    return getAboutMessages(locale).optimizedForAppleSilicon;
+    return ABOUT_MESSAGES.optimizedForAppleSilicon;
   }
 
   return "";
@@ -216,17 +179,15 @@ function resolveAboutIconPath(isPackaged: boolean): string {
 
 export async function showAboutDialog(
   parentWindow?: BrowserWindow,
-  locale: Locale = DEFAULT_LOCALE,
 ): Promise<MessageBoxReturnValue> {
   const { app, BrowserWindow } = await import("electron");
   const snapshot = createAboutSnapshot({
     appVersion: app.getVersion(),
     buildMetadata: readBuildMetadata(),
   });
-  const aboutMessages = getAboutMessages(locale);
-  // 之前只有 macOS 使用自绘 About，Windows/Linux 仍走原生 message box。
-  // 问题原因：各平台原生消息框的排版、图标和按钮样式差异很大，无法复用 macOS 参考样式。
-  // 这里统一使用自绘 modal，保证 About 的品牌展示和多语言文案在三端一致。
+  // Previously, only macOS used self-drawn About, while Windows/Linux still used the native message box.
+  // Cause of the problem: The layout, icon, and button styles of the native message boxes on each platform are very different, and the macOS reference style cannot be reused.
+  // Self-drawn modal is used uniformly here to ensure that About’s brand display and multi-language copywriting are consistent on three ends.
   const iconPath = resolveAboutIconPath(app.isPackaged);
   const aboutWindow = new BrowserWindow({
     width: ABOUT_WINDOW_WIDTH,
@@ -240,7 +201,7 @@ export async function showAboutDialog(
     maximizable: false,
     fullscreenable: false,
     show: false,
-    title: aboutMessages.aboutTitle,
+    title: ABOUT_MESSAGES.aboutTitle,
     icon: existsSync(iconPath) ? iconPath : undefined,
     webPreferences: {
       contextIsolation: true,
@@ -257,10 +218,10 @@ export async function showAboutDialog(
       createCustomAboutDialogHtml({
         applicationName: ABOUT_APPLICATION_NAME,
         appVersion: snapshot.appVersion,
-        copyright: formatAboutCopyright(undefined, locale),
-        optimizationLine: formatAboutOptimizationLine(snapshot, locale),
-        versionLabel: aboutMessages.versionLabel,
-        okButtonLabel: aboutMessages.okButtonLabel,
+        copyright: ABOUT_MESSAGES.copyright(new Date().getFullYear()),
+        optimizationLine: formatAboutOptimizationLine(snapshot),
+        versionLabel: ABOUT_MESSAGES.versionLabel,
+        okButtonLabel: ABOUT_MESSAGES.okButtonLabel,
       }),
     )}`,
   );

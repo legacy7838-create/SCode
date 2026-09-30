@@ -15,7 +15,7 @@ import type {
 } from "./account-provider-state.js";
 
 export type AccountProviderConnectionResult = {
-  /** 账号/组织身份变化后禁止沿用旧快照；仅用于本轮解析，不进入配置。 */
+  /** Reusing a previous snapshot is forbidden once the account/organization identity changes; used only for this round of resolution and never stored in config. */
   readonly resetPrevious?: boolean;
   readonly current?: boolean;
   readonly connectionKey?: string;
@@ -29,7 +29,7 @@ export type AccountProviderConnectionResult = {
   | {
       readonly providerId: ProviderId;
       readonly status: "unavailable" | "unknown";
-      /** 仅在 status === "unavailable" 时携带；unknown 表示本轮无法判定原因。 */
+      /** Only carried when status === "unavailable"; unknown means that the cause cannot be determined in this round. */
       readonly unavailableReason?: AccountProviderUnavailableReason;
     }
 );
@@ -64,9 +64,9 @@ export function createAccountProviderConfigResolver(
         ? undefined
         : input.previousStates?.[connection.providerId];
       const access = providers.get(connection.providerId)?.access;
-      // unknown 仅保留上次展示事实；current 始终来自本轮选择，不能复活旧连接。
-      // 原因字段与 availability 同规则：unknown 沿用上一轮，避免一次网络抖动把
-      // "明确无权益"降级成原因未知。
+      // unknown only retains the last displayed fact; current is always selected from this round and cannot resurrect old connections.
+      // The reason field has the same rules as availability: unknown is used from the previous round to avoid a network jitter.
+      // "Clearly no rights" downgraded to unknown reason.
       const unavailableReason =
         connection.status === "unknown" && previous
           ? previous.unavailableReason
@@ -88,7 +88,7 @@ export function createAccountProviderConfigResolver(
   };
 }
 
-/** 把账号连接结果转换为 Registry 使用的第三层 Account Provider Config。 */
+/** Converts account connection results into the third-layer Account Provider Config used by the Registry. */
 export function resolveAccountProviderConfigs(
   input: ResolveAccountProviderConfigsInput,
 ): ProviderConfigMap {
@@ -108,7 +108,7 @@ export function resolveAccountProviderConfigs(
         resolved.push([
           providerId,
           new ProviderConfig({
-            // 明确空模型是本轮权威结果，不能保留已经失效的旧白名单。
+            // It is clear that the empty model is the authoritative result of this round, and the old whitelist that has expired cannot be retained.
             access: new ZhipuAccountAccessConfig({ entitled: connection.status === "available" }),
             builtinModelIds: models,
           }),
@@ -151,14 +151,18 @@ function indexConnections(
   const result = new Map<ProviderId, AccountProviderConnectionResult>();
   for (const connection of connections) {
     if (result.has(connection.providerId)) {
-      throw new Error(`重复 Account Provider 连接结果: ${connection.providerId}`);
+      throw new Error(`Duplicate Account Provider connection result: ${connection.providerId}`);
     }
     const configured = configuredProviders.get(connection.providerId);
     if (!configured) {
-      throw new Error(`Account 连接指向未配置 Provider: ${connection.providerId}`);
+      throw new Error(
+        `Account connection points to unconfigured Provider: ${connection.providerId}`,
+      );
     }
     if (!isAccountConstrainedProvider(configured)) {
-      throw new Error(`Account 连接指向非 Account Provider: ${connection.providerId}`);
+      throw new Error(
+        `Account connection points to non-Account Provider: ${connection.providerId}`,
+      );
     }
     result.set(connection.providerId, connection);
   }

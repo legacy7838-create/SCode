@@ -79,7 +79,7 @@ export const windowHostControllerTaskActivitySchema = z
     lastActivityAt: z.number().finite().nonnegative(),
     hasBackgroundWork: z.boolean(),
     pendingInteractions: pendingInteractionSummarySchema.optional(),
-    // 侧栏工作流运行行；无 run 时缺席。
+    // Sidebar workflow run line; absent without run.
     workflowActivity: sessionWorkflowActivitySchema.optional(),
   })
   .strict();
@@ -121,7 +121,7 @@ export type WindowHostControllerTaskRow = z.infer<typeof windowHostControllerTas
 
 export type TaskListMembershipKind = "pinned" | "archived" | "timeline" | "active";
 
-/** Host 查询和各 Renderer 投影共用的 task list membership 判定。 */
+/** Task list membership check shared by Host queries and every Renderer projection. */
 export function matchesTaskListMembershipKind(
   membership: Pick<WindowHostControllerTaskRow["membership"], "pinned" | "archived">,
   kind: TaskListMembershipKind,

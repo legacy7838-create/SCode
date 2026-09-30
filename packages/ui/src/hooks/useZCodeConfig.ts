@@ -1,8 +1,9 @@
 /**
- * ZCode Agent ConfigOptions 便捷 hooks
+ * ZCode Agent ConfigOptions convenience hooks
  *
- * 仅保留 V4ComposerToolbar 依赖的模型目录读取 hook；配置写路径统一走
- * v4 命令（switchModelConfig 等），本文件不含写路径 hooks。
+ * Only the model catalog read hook that V4ComposerToolbar depends on is kept; the config write path
+ * goes through v4 commands (switchModelConfig and the rest), so this file contains no write-path
+ * hooks.
  */
 import { useShallow } from "zustand/react/shallow";
 import { resolveTaskRestorePreloadConfigOptions } from "@/lib/taskModelRecovery.js";
@@ -30,7 +31,10 @@ function useActiveWorkspaceIdentity(workspacePath: string): string | undefined {
   });
 }
 
-/** 获取 toolbar 当前作用域的 configOptions：active task 读 task 快照，草稿态读 workspace 默认配置。 */
+/**
+ * Fetches the configOptions for the toolbar's current scope: the task snapshot for an active task,
+ * the workspace default config in draft state.
+ */
 export function useToolbarConfigOptions(
   workspacePath: string,
   taskId: string | null,

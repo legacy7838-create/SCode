@@ -34,9 +34,9 @@ export function isAutomationCreateLimitError(error: unknown): error is Automatio
 }
 
 export interface AutomationCreateContext {
-  /** 当前工具调用所在 runtime 的模型，由执行器注入，不来自模型输入。 */
+  /** The model of the runtime where the current tool is called is injected by the executor and does not come from model input. */
   model?: string;
-  /** 当前工具调用所在 session；会话内 cron 后续触发复用该 session。 */
+  /** The session in which the current tool is called; subsequent cron triggers within the session will reuse the session. */
   sessionId?: string;
 }
 

@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 微信 iLink provider 集中处理轮询、文本/媒体解析、发送和 typing 协议。 */
+/* eslint-disable max-lines -- The WeChat iLink provider centrally handles polling, text/media parsing, sending and the typing protocol. */
 import { Buffer } from "node:buffer";
 import { createDecipheriv, randomInt, randomUUID } from "node:crypto";
 import type {
@@ -84,13 +84,13 @@ function decryptWeixinCdnMedia(data: Uint8Array, aesKey: string): Uint8Array {
   if (!key) {
     throw new Error("Weixin attachment AES key is invalid.");
   }
-  // 微信 iLink CDN 返回 AES-128-ECB + PKCS7 padding 的密文字节；直接保存会得到不可识别的 data 文件。
+  // WeChat iLink CDN returns the ciphertext bytes of AES-128-ECB + PKCS7 padding; saving directly will result in an unrecognizable data file.
   const decipher = createDecipheriv(WEIXIN_CDN_AES_ALGORITHM, key, null);
   return Buffer.concat([decipher.update(data), decipher.final()]);
 }
 
 function getWeixinApiBaseUrl(): string {
-  // 微信 iLink 是内置通道地址，不应复用 webhookUrl，否则旧配置会把出站 Webhook 当成微信 API。
+  // WeChat iLink is a built-in channel address and webhookUrl should not be reused, otherwise the old configuration will treat outbound webhook as WeChat API.
   return DEFAULT_WEIXIN_ILINK_BASE_URL.replace(/\/+$/u, "");
 }
 
@@ -224,14 +224,14 @@ function readWeixinAttachmentItem(item: unknown, index: number): BotInboundAttac
     readNumberOrString(mediaSource, "id") ||
     readNumberOrString(mediaSource, "encrypt_query_param") ||
     readNumberOrString(mediaSource, "encryptQueryParam") ||
-    // 微信图片消息的 image_item 只返回 media 字段，没有 file_id/md5；这里将 media 作为后续下载和去重的资源标识。
+    // The image_item of the WeChat picture message only returns the media field, without file_id/md5; here, media is used as the resource identifier for subsequent downloading and deduplication.
     readNumberOrString(mediaSource, "media") ||
     readNumberOrString(mediaSource, "md5");
   const downloadUrl =
     readString(mediaSource, "url") ||
     readString(mediaSource, "download_url") ||
     readString(mediaSource, "downloadUrl") ||
-    // 微信 image_item.media 内的 full_url 是实际图片下载地址，旧逻辑只读 url/download_url 会把纯图片消息丢掉。
+    // The full_url in WeChat image_item.media is the actual image download address. The old logical read-only url/download_url will discard the pure image message.
     readString(mediaSource, "full_url") ||
     readString(mediaSource, "fullUrl");
   const dataBase64 =
@@ -257,7 +257,7 @@ function readWeixinAttachmentItem(item: unknown, index: number): BotInboundAttac
     readNumber(mediaSource, "sizeBytes") ??
     readNumber(mediaSource, "file_size") ??
     readNumber(mediaSource, "len") ??
-    // image_item 没有通用 size 字段，mid_size 是实际图片资源大小，thumb_size 只用于缩略图预览。
+    // image_item has no general size field, mid_size is the actual image resource size, and thumb_size is only used for thumbnail preview.
     readNumber(mediaSource, "mid_size");
   const aesKey =
     readString(mediaSource, "aes_key") ||
@@ -480,8 +480,8 @@ function buildWeixinClientId(): string {
 }
 
 function buildWeixinText(message: BotOutboundMessage): string {
-  // Bugfix: 微信 iLink 纯文本在不同客户端上对 LF 的处理不完全一致。
-  // 发送前统一成 CRLF，把业务层的多行回复表达为文本硬换行，避免 /status 这类状态行被折叠。
+  // Bugfix: WeChat iLink plain text does not handle LF completely consistently on different clients.
+  // Unify it into CRLF before sending, and express the multi-line reply of the business layer as text hard line wrapping to avoid status lines such as /status from being folded.
   return message.text.replace(/\r\n|\r|\n/g, "\r\n");
 }
 
@@ -608,8 +608,8 @@ export function createWeixinBotProvider(deps: WeixinProviderDeps): BotProviderAd
     },
 
     async send(bot, message) {
-      // Bugfix: 微信 iLink 发送协议必须走 /ilink/bot/sendmessage，并把文本放进 msg.item_list。
-      // 之前把 openclaw-weixin 当成本地 gateway 依赖，会导致 ZCode 不能独立完成微信接入。
+      // Bugfix: The WeChat iLink sending protocol must go to /ilink/bot/sendmessage and put the text into msg.item_list.
+      // Previously, openclaw-weixin was regarded as a local gateway dependency, which would cause ZCode to be unable to complete WeChat access independently.
       await requestWeixinJson(bot, deps, "/sendmessage", {
         msg: {
           from_user_id: bot.providerUserId ?? "",

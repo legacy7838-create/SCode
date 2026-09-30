@@ -151,8 +151,8 @@ function formatHandshakeFailure(
   }
   const stdout = diagnostics.stdout.trim();
   if (stdout.length > 0) {
-    // 远端 server 在 hello 前退出时，真正原因只存在 stdout/stderr。
-    // 如果错误只保留“握手关闭”，SSH 启动失败会在 host/main 日志中被压成无上下文的 {}。
+    // When the remote server exits before hello, the real reason only exists in stdout/stderr.
+    // If the error only remains "handshake closed", SSH startup failures will be suppressed as contextless {} in the host/main log.
     parts.push(`stdout: ${JSON.stringify(stdout)}`);
   }
   return parts.length === 1 ? message : `${message} (${parts.slice(1).join("; ")})`;

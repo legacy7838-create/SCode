@@ -29,9 +29,9 @@ export function ConfirmDialogHost() {
 
   const displayedRequestRef = useRef(pendingRequest);
   if (pendingRequest) {
-    // Promise 结算后 store 会立刻清空 pendingRequest，但 Radix 关闭动画还会保留一帧内容层。
-    // 如果这里直接读取 pendingRequest，退场动画期间标题/描述会先变空，只剩“确认 / 取消”按钮闪一下。
-    // 因此关闭完成前继续沿用最后一次可见内容，只让 open 状态控制弹窗退场。
+    // After the Promise is settled, the store will clear the pendingRequest immediately, but the Radix closing animation will still retain one frame of the content layer.
+    // If the pendingRequest is read directly here, the title/description will first become empty during the exit animation, leaving only the "Confirm/Cancel" button flashing.
+    // Therefore, the last visible content will continue to be used before closing, and only the open state control pop-up window will exit.
     displayedRequestRef.current = pendingRequest;
   }
   const displayedRequest = pendingRequest ?? displayedRequestRef.current;
@@ -48,8 +48,8 @@ export function ConfirmDialogHost() {
 
   const handleOpenChange = useCallback(
     (nextOpen: boolean) => {
-      // Radix 在点击遮罩或按 Esc 时只会回调 onOpenChange(false)。
-      // 如果这里不主动把 Promise 结算为 false，调用侧会一直悬挂，后续删除操作也会被卡住。
+      // Radix only calls back onOpenChange(false) when the mask is clicked or Esc is pressed.
+      // If you do not actively resolve the Promise to false here, the calling side will always hang, and subsequent deletion operations will also be stuck.
       if (!nextOpen) {
         settleChoice("dismiss");
       }
@@ -71,15 +71,15 @@ export function ConfirmDialogHost() {
         return;
       }
 
-      // 带复选框的选择对话框保留焦点按钮的键盘语义，避免“不了”按 Enter 变成切换。
+      // Selection dialogs with checkboxes retain the keyboard semantics of the focus button, preventing "unable" pressing Enter from turning into a toggle.
       if (
         displayedRequest?.checkbox &&
         event.target instanceof HTMLElement &&
         event.target.closest("button,input")
       )
         return;
-      // 二次确认场景下如果不接 Enter，键盘用户会只能切到按钮再触发，
-      // 体验和桌面端的确认弹窗不一致。这里在弹窗打开时统一兜住 Enter，保持可预期的确认手势。
+      // If you do not answer Enter in the secondary confirmation scenario, keyboard users will have to switch to the button and then trigger it.
+      // The experience is inconsistent with the confirmation pop-up window on the desktop. Here, hold Enter when the pop-up window opens to maintain a predictable confirmation gesture.
       event.preventDefault();
       event.stopPropagation();
       settleConfirmation(true);
@@ -101,8 +101,8 @@ export function ConfirmDialogHost() {
         }
         className={cn(
           "gap-5 rounded-2xl border-none bg-popover/98 p-5 ring-border shadow-2xl",
-          // 仅依赖共享弹框的响应式 max-width 时，不同入口所在 viewport 会让
-          // 同一删除确认框看起来尺寸不一致。定时任务删除按设计固定同一 presentation。
+          // When relying only on the responsive max-width of the shared pop-up box, the viewports of different entrances will
+          // The same delete confirmation box looks inconsistent in size. Scheduled task deletion fixes the same presentation by design.
           isAutomationConfirmation ? AUTOMATION_CONFIRM_DIALOG_CONTENT_CLASS : "sm:max-w-md",
           displayedRequest?.compact && "top-[44%] min-h-[161px] gap-4 sm:max-w-[400px]",
         )}
@@ -126,7 +126,7 @@ export function ConfirmDialogHost() {
           className={cn(
             "gap-2 sm:justify-end",
             displayedRequest?.checkbox && "flex-row flex-wrap items-center",
-            // Automation 弹窗的最小高度会拉伸 Grid footer 行，按钮停在行顶导致视觉底距超过 20px。
+            // The minimum height of the Automation pop-up window will stretch the Grid footer row, and the button will stop at the top of the row, causing the visual bottom margin to exceed 20px.
             isAutomationConfirmation && "mt-auto",
           )}
         >
@@ -165,7 +165,7 @@ export function ConfirmDialogHost() {
             <Button
               type="button"
               autoFocus
-              // 普通确认沿用主按钮；仅显式声明 destructive 的不可恢复动作使用危险色。
+              // Ordinary confirmations use the main button; only non-recoverable actions that explicitly declare destructive use danger colors.
               variant={displayedRequest?.confirmVariant ?? "default"}
               size={"lg"}
               data-testid={TID_CONFIRM_DIALOG_CONFIRM}

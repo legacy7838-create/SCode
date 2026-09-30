@@ -35,10 +35,13 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { isAmendWorkflowToolCall } from "@/lib/workflowToolNames.js";
 
 /**
- * saved 来源徽标：这次运行的脚本来自项目里的一个文件，而不是模型现写的一段。
+ * saved source badge: the script for this run comes from a file in the project, not from a passage
+ * the model just wrote.
  *
- * 刻意只有一行加一张实参表，并且放在时间线**上方**：图仍是决策主体，来源与实参是「跑的是哪一份、带什么参数」这条
- * 前置事实，读完它才轮到图。徽标不表达任何信任——不变式 1：保存不产生信任。
+ * Deliberately only one line plus a table of actual arguments, and placed **above** the timeline:
+ * the graph is still the subject of the decision, while the source and the arguments are the prior
+ * fact of "which copy is running, with what parameters" — once that is read, only then does the
+ * graph come. The badge expresses no trust at all — invariant 1: saving confers no trust.
  */
 function WorkflowSavedSourceBadge({ saved }: { saved: WorkflowSavedSource }) {
   const { intl } = useZCodeIntl();
@@ -100,46 +103,53 @@ function WorkflowSavedSourceBadge({ saved }: { saved: WorkflowSavedSource }) {
 }
 
 /**
- * CreateWorkflow / AmendWorkflow 的运行确认块：表头（问句 +
- * 名字，右侧只有 `N phases`——没有「compiled」灯，也不再数子代理与步）+ lineage（只有修订有）+ 并发上限
- * （只有用户提过才有）+ saved 徽标 + **时间线** + 折叠脚本。Deny / Refine / Run 仍由 PermissionDialog 给。
+ * Run confirmation block for CreateWorkflow / AmendWorkflow: header (question + name, with only `N
+ * phases` on the right — no "compiled" lamp, and no more counting of subagents and steps) + lineage
+ * (only for amendments) + concurrency cap (only when the user mentioned it) + saved badge +
+ * **timeline** + collapsible script. Deny / Refine / Run are still supplied by PermissionDialog.
  *
- * 修订的确认窗只在前驱是**别的会话**的 run（或用户亲手停过的 run）时出现：问句换成「调整此工作流？」，lineage 行说要改哪个 run、它是否还在跑。
+ * The amendment confirmation window appears only when the predecessor is a run from **another
+ * session** (or a run the user stopped by hand): the question becomes "Adjust this workflow?", and
+ * the lineage line says which run is being changed and whether it is still running.
  *
- * 权限块通常禁止折叠（见 PermissionDialog getPermissionBlockInteraction 的注释）；时间线和名称
- * 是决策关键内容且不可折叠，脚本是审计细节层。
+ * Permission blocks are normally non-collapsible (see the comment on PermissionDialog
+ * getPermissionBlockInteraction); the timeline and the name are decision-critical content and stay
+ * non-collapsible, while the script is the audit-detail layer.
  */
 export function WorkflowPermissionBlock({
   request,
   workspacePath,
 }: {
   request: ZCodePermissionRequest;
-  /** 会话模型清单的作用域（PermissionDialog 给）：只用来把 provider id 换成 provider 名。 */
+  /**
+   * Scope of the session model list (supplied by PermissionDialog): used only to turn a provider id
+   * into a provider name.
+   */
   workspacePath?: string;
 }) {
   const { intl } = useZCodeIntl();
 
-  // v4 ask 的 raw 就是工具入参（product-projection 的 detail: payload.input），
-  // 与聊天卡片共用 create-workflow.tsx 的读取规则，避免两处对同一入参各自解析。
+  // The raw of v4 ask is the tool input parameter (detail: payload.input of product-projection).
+  // Share the read rules of create-workflow.tsx with the chat card to prevent the two places from parsing the same input parameters separately.
   const scriptText = readWorkflowScript(request.raw);
   const workflowName = readWorkflowName(request.raw);
   const saved = readWorkflowSaved(request.raw);
-  // 修订按工具名判（kind / title 是 v4 ask 挂上的工具名）；lineage 只对修订成立。
+  // Revisions are judged by tool name (kind/title is the tool name attached to v4 ask); lineage is only true for revisions.
   const amend = isAmendWorkflowToolCall(request);
   const amendTarget = amend ? readWorkflowAmendTarget(request.raw) : undefined;
   const predecessor = amend ? readWorkflowAmendPredecessor(request.raw) : undefined;
-  // 这次修订沿用前驱的脚本：
-  // 入参里的脚本是 CLI 回填的那一份——图与折叠照常画将要跑的脚本，lineage 行多说一句「脚本不变」。
+  // This revision follows the predecessor’s script:
+  // The script entered in the parameter is the one backfilled by the CLI - the graph and folding draw the script to be run as usual, and the lineage line says "the script remains unchanged".
   const scriptInherited = amend && readWorkflowAmendScriptInherited(request.raw);
-  // 并发上限：Create 与 Amend 同一个
-  // 入参字段，所以不按工具名分叉——批准的是「以这个上限跑」，两种窗都要把它说出来。入参到这里
-  // 已经过 resolveInput 的 clamp，所以窗上这个数就是会生效的那一条界。
+  // Concurrency upper limit: Create and Amend are the same
+  // Enter the parameter field, so it is not forked by the tool name - what is approved is "run with this upper limit", and it must be stated in both windows. Enter here
+  // The clamp of resolveInput has been passed, so the number on the window is the boundary that will take effect.
   const maxConcurrency = readWorkflowMaxConcurrency(request.raw);
-  // 子代理模型：与并发上限同族的一条「用户自己提的条件」，
-  // 而且比它更该说出口——批准的是「让这些子代理跑在另一个模型上」。入参到这里已被 resolveInput
-  // 解析成规范串，所以窗上这个 id 就是真会被用上的那个。主代理不受影响，文案因此只说子代理。
+  // Sub-agent model: a "condition proposed by the user" in the same family as the concurrency upper limit,
+  // And it should be said more clearly than it should be - the approval is "let these subagents run on another model". The input parameters here have been resolvedInput
+  // It is parsed into a canonical string, so the id on the window is the one that will actually be used. The main agent is not affected, so the copywriting only talks about the sub-agents.
   const subagentModel = readWorkflowSubagentModel(request.raw);
-  // 规范串只进 tooltip：屏幕上说模型名（必要时加思考强度），拼名规则与模型菜单同一条。
+  // The specification string is only entered into the tooltip: the model name is stated on the screen (add thinking intensity if necessary), and the naming rules are the same as those in the model menu.
   const subagentModelProviderName = useWorkflowSubagentModelProviderName(workspacePath);
   const describedSubagentModel = useMemo(
     () =>
@@ -154,7 +164,7 @@ export function WorkflowPermissionBlock({
     [intl, subagentModel, subagentModelProviderName],
   );
 
-  // 空图（脚本里一次 ask / files.* 都没有）不值得一条空轨道；和聊天卡片同一判定。
+  // Empty images (not even a single ask / files.* call in the script) are not worth an empty track; the same rule as chat cards.
   const display = request.display?.kind === "create_workflow" ? request.display : null;
   const causalityGraph =
     display?.causalityGraph !== undefined && display.causalityGraph.steps.length > 0
@@ -167,11 +177,11 @@ export function WorkflowPermissionBlock({
     [causalityGraph],
   );
 
-  // 有图时脚本默认收起；零 step 脚本没有图可看，代码就是唯一内容，默认展开。
+  // The script is collapsed by default when there is a picture; there is no picture to see in the zero-step script, and the code is the only content, which is expanded by default.
   const [scriptOpen, setScriptOpen] = useState(!hasGraph);
 
-  // PermissionDialog 会跨请求复用同一组件实例（只按 requestId 重置内部状态），
-  // 换请求后必须回到默认折叠态，否则上一次的展开会泄漏到下一个工作流。
+  // PermissionDialog will reuse the same component instance across requests (resetting internal state only by requestId),
+  // After changing the request, you must return to the default collapsed state, otherwise the last expansion will leak to the next workflow.
   useEffect(() => {
     setScriptOpen(!hasGraph);
   }, [hasGraph, request.requestId]);
@@ -195,8 +205,10 @@ export function WorkflowPermissionBlock({
 
   return (
     <div className="space-y-3" data-workflow-permission-block="true">
-      {/* 问句在最上：弹窗通用标题「需要权限」紧贴其上，两句连读才是完整的决策提问；
-          名字随后，作为它下方那条时间线的标题。 */}
+      {/* The question goes on top: the dialog's generic title "Permission required" sits right
+          above it, and reading the two together forms the complete decision question; the name
+          follows, serving as the title of the timeline below it.
+          */}
       <WorkflowCardHeader
         detail={detail}
         expanded
@@ -204,8 +216,11 @@ export function WorkflowPermissionBlock({
         name={workflowName ?? fallbackName}
       />
 
-      {/* lineage 行（修订才有）：紧贴名称行，与它一同构成「这次要改的是什么」的抬头；前驱还在跑时
-          多说一句「将被停止」——用户批准的不只是一段新脚本，还有停掉一个正在跑的 run。 */}
+      {/* The lineage line (amendments only): sits right against the name line and, together with it,
+          forms the heading for "what is being changed this time"; when the predecessor is still
+          running it adds "will be stopped" — what the user approves is not just a new script but
+          also stopping a run that is in flight.
+          */}
       {amendTarget === undefined ? null : (
         <div
           className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5"
@@ -233,8 +248,11 @@ export function WorkflowPermissionBlock({
         </div>
       )}
 
-      {/* 并发上限：模型只在用户开口要求时才写这个字段，所以它在场就是**用户自己提的条件**——
-          与 lineage 行同族的一句次要事实，紧随其后、排在来源徽标之前。缺席即不留位置。 */}
+      {/* Concurrency cap: the model only writes this field when the user explicitly asks for it, so its
+          presence is itself **a condition the user stated themselves** — a secondary fact of the
+          same family as the lineage line, following right after it and placed before the source
+          badge. When absent, no space is left for it.
+          */}
       {maxConcurrency === undefined ? null : (
         <p
           className="min-w-0 text-ui-xs text-foreground-subtlest"
@@ -247,8 +265,11 @@ export function WorkflowPermissionBlock({
         </p>
       )}
 
-      {/* 子代理模型：与并发上限同族，紧跟其后——两行都是「用户给这次 run 定下的条件」，
-          而这一条更该说出口：批准的是让这些子代理跑在另一个模型上。主代理不受影响。 */}
+      {/* Subagent model: same family as the concurrency cap, right behind it — both lines are
+          "conditions the user set for this run", and this one deserves to be said out loud: what is
+          being approved is letting those subagents run on another model. The main agent is
+          unaffected.
+          */}
       {describedSubagentModel === undefined ? null : (
         <p
           className="min-w-0 text-ui-xs text-foreground-subtlest"
@@ -283,7 +304,7 @@ export function WorkflowPermissionBlock({
             <span className="min-w-0 truncate">{scriptToggleLabel}</span>
           </CollapsibleTrigger>
           <CollapsibleContent className="pt-1.5">
-            {/* 限高可滚动：长脚本不再把确认窗撑高。 */}
+            {/* Height-capped and scrollable: a long script no longer stretches the confirmation window taller. */}
             <div className="max-h-72 overflow-auto" data-testid="workflow-script-scroll">
               <CodeBlock
                 code={scriptText}

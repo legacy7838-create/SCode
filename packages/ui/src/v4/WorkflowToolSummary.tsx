@@ -14,12 +14,12 @@ export function WorkflowToolSummary({
   toolCallId: string;
   summary: WorkflowRunCardSummary;
   onOpen?: () => void;
-  /** AmendWorkflow 发起行：种类词换成「工作流已调整」。 */
+  /** AmendWorkflow initiating line: Change the category word to "Workflow has been adjusted". */
   amend?: boolean;
 }) {
   const { intl } = useZCodeIntl();
-  // ToolLayout 是 memo 组件：primaryText 若是内联 JSX，每次渲染都会打破 memo（reactStableReferences 测试会拦下）。
-  // 计数只说子代理；宿主没给子代理数时那一段留空，只剩 ↗。
+  // ToolLayout is a memo component: primaryText If JSX is inlined, memo will be broken every time it is rendered (reactStableReferences test will block it).
+  // Counting only counts subagents; when the host does not count subagents, leave that section blank, leaving only ↗.
   const agents = summary.agents;
   const primaryText = useMemo(
     () => (

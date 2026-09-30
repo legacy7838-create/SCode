@@ -1,21 +1,21 @@
 // ============================================================
-// Workflow 升级问答的停驻注册表（driver 与 run service 之间的唯一连线）
+// Workflow upgrade Q&A docking registry (the only connection between the driver and run service)
 // ============================================================
-// actor 的 `escalate` 停驻在 driver 里（它持有 ask 轮次
-// 上下文），而作答入口 `resolveQuestion` 在 run service 上（它是端口的持有者）——两者之间需要
-// 一张按 qid 查的表。本文件就是那张表，且只是那张表：无 I/O、无持久化、无引擎知识。
+// The actor's `escalate` resides in the driver (it holds the ask turn
+// context), and the answer entry `resolveQuestion` is on the run service (which is the holder of the port) - there is a need between the two
+// A table looked up by qid. This file is that table, and only that table: no I/O, no persistence, no engine knowledge.
 //
-// 为什么不把 driver 实例交给 service：driver 由 `makeDriver(sink)` 在 `runWorkflowScript`
-// **内部**构造，service 从来看不到它。传一张表进去，比为了拿到实例而在 launch 里加一个捕获
-// 钩子要少一处时序（表在 launch 之前就存在，注册与查询天然同生命周期）。
+// Why not give the driver instance to the service: driver by `makeDriver(sink)` in `runWorkflowScript`
+// **Internal** construct, service never sees it. Passing a table in is better than adding a capture in launch in order to get the instance.
+// The hook needs one less timing (the table exists before launch, and registration and query naturally have the same life cycle).
 //
-// **纯内存，与停驻的 deferred 同命**。刻意不持久化：进程亡故后 deferred 已死，一张持久化的
-// pending 表只会说谎（它会让主代理去回答一个再也没有人在等的问题）。自愈靠 resume——那个
-// ask 会 live 重跑，actor 重新提问并得到一个新 qid，而陈旧 id 拿到结构化拒绝。
+// **Pure memory, same fate as parked deferred**. Deliberately not persistent: after the process dies, the deferred dies and a persistent
+// The pending table just lies (it leaves the master agent to answer a question that no one is waiting for anymore). Self-healing relies on resume—that
+// ask will live re-run, the actor will re-ask and get a new qid, and the stale id will get a structured rejection.
 //
-// 作用域是**每个 run service 实例一张**（≈ 每个 app 会话），而不是模块级单例：跨会话共享一张
-// 表等于开一个跨会话的应答洞，与本仓既有的「枚举面只看本会话」同一条纪律。一张表跨本服务名下
-// **所有在飞 run**，这正是 qid 必须全局唯一的原因。
+// The scope is **one per run service instance** (≈ each app session), not a module-level singleton: one is shared across sessions
+// The table is equivalent to opening a cross-session response hole, which is the same as the existing "enumeration side only looks at this session" rule in this warehouse. One table is under the name of this service
+// **All on the fly**, this is exactly why qid must be globally unique.
 
 import type {
   DynamicWorkflowResolveQuestionResult,
@@ -23,46 +23,47 @@ import type {
 } from "@zcode/contracts";
 
 /**
- * 已退场 qid 的记忆条数。**有界**：一个长跑的会话可以问答任意多次，无界的历史表就是一处
- * 静默增长的内存。被逐出之后 `resolveQuestion` 只会把它归到 `unknown_question`——那是诚实的
- * 退化（「我不知道这个 id」），而不是一个错误的答案。
+ * How many retired qids are remembered. **Bounded**: a long-running session can ask and answer arbitrarily many
+ * times, and an unbounded history table is a place where memory grows silently. Once an entry is evicted
+ * `resolveQuestion` only buckets it under `unknown_question` — an honest degradation ("I do not know this id"), not
+ * a wrong answer.
  */
 const RETIRED_HISTORY_LIMIT = 256;
 
-/** 一次停驻登记所需的事实（driver 提供；qid 已由 driver 铸好）。 */
+/** The facts one parking registration needs (supplied by the driver; the qid has already been minted by the driver). */
 export interface ParkedQuestionInput {
   qid: string;
   runId: string;
-  /** 提问的 actor，`refToString` 形态（如 `actor#1@1`）。 */
+  /** The actor that asked, in `refToString` form (e.g. `actor#1@1`). */
   actor: string;
-  /** actor 的有效名（`agent("poet")` 的 `"poet"`）；匿名 actor 缺席，不合成兜底标签。 */
+  /** The actor's effective name (the `"poet"` of `agent("poet")`); absent for anonymous actors, with no synthesized fallback label. */
   actorName?: string;
   question: string;
   context?: string;
   askedAt: number;
 }
 
-/** 一个 qid 退场的原因：决定后来的 resolve 收到哪一条结构化拒绝。 */
+/** Why a qid retired: it decides which structured rejection a later resolve receives. */
 type RetiredReason = "resolved" | "withdrawn";
 
 export interface WorkflowEscalationRegistry {
   /**
-   * 登记一个停驻中的问题。`settle` 由 driver 提供，收到答案时解开那个 deferred。
+   * Registers a parked question. `settle` is supplied by the driver and unwraps that deferred when the answer arrives.
    *
-   * 调用方必须先用 {@link isTaken} 保证 qid 未被占用（driver 的铸造循环做这件事）——
-   * 重复登记会静默覆盖前一个停驻项，那正是错配答案的成因。
+   * The caller must first use {@link isTaken} to guarantee the qid is unclaimed (the driver's minting loop does this) —
+   * registering twice silently overwrites the previous parked item, which is exactly what causes answers to be mismatched.
    */
   park(entry: ParkedQuestionInput, settle: (answer: string) => void): void;
-  /** qid 是否已被占用（停驻中或已退场）。driver 铸造 qid 时据它保证全局唯一。 */
+  /** Whether a qid is already claimed (parked or retired). The driver relies on it to guarantee global uniqueness when minting a qid. */
   isTaken(qid: string): boolean;
   /**
-   * 撤下一个停驻项而**不作答**：ask 被取消 / turn 失败时由 driver 调用（deferred 那一侧
-   * 由 driver 自己拒绝）。之后对该 qid 的 resolve 得到 `run_not_in_flight`。
+   * Withdraws a parked item **without answering it**: the driver calls this when an ask is cancelled or a turn fails
+   * (the driver rejects the deferred side itself). A later resolve on that qid gets `run_not_in_flight`.
    */
   withdraw(qid: string): void;
-  /** 结算一个停驻项。三类结构化拒绝各自陈述现状与下一步。 */
+  /** Settles a parked item. The three kinds of structured rejection each state the current situation and the next step. */
   resolve(qid: string, answer: string): DynamicWorkflowResolveQuestionResult;
-  /** 某个 run 上此刻停驻的问题，按提问顺序。快照 `pendingQuestions` 的投影源。 */
+  /** The questions parked on a run at this moment, in asking order. The projection source for the `pendingQuestions` snapshot. */
   pendingFor(runId: string): DynamicWorkflowRunPendingQuestion[];
 }
 
@@ -71,7 +72,7 @@ interface ParkedQuestion extends ParkedQuestionInput {
 }
 
 export function createWorkflowEscalationRegistry(): WorkflowEscalationRegistry {
-  // Map 的插入序即提问序（pendingFor 直接依赖它，不另存序号）。
+  // The insertion order of Map is the query order (pendingFor directly relies on it and does not save the sequence number separately).
   const parked = new Map<string, ParkedQuestion>();
   const retired = new Map<string, RetiredReason>();
 
@@ -79,7 +80,7 @@ export function createWorkflowEscalationRegistry(): WorkflowEscalationRegistry {
     parked.delete(qid);
     retired.set(qid, reason);
     while (retired.size > RETIRED_HISTORY_LIMIT) {
-      // Map 的迭代序是插入序，所以第一个键就是最老的那条。
+      // The iteration order of Map is insertion order, so the first key is the oldest one.
       const oldest = retired.keys().next();
       if (oldest.done === true) break;
       retired.delete(oldest.value);
@@ -96,8 +97,8 @@ export function createWorkflowEscalationRegistry(): WorkflowEscalationRegistry {
     },
 
     withdraw(qid) {
-      // 只对停驻中的项有意义：已 resolved 的 qid 不该被降级成 `run_not_in_flight`
-      // （那会把「答案已送达」改写成「没人在等」，对主代理是两个不同的事实）。
+      // Only meaningful for docked items: resolved qid should not be downgraded to `run_not_in_flight`
+      // (That would rewrite "the answer has been delivered" to "no one is waiting", which are two different facts for the main agent).
       if (!parked.has(qid)) return;
       retire(qid, "withdrawn");
     },
@@ -137,8 +138,8 @@ export function createWorkflowEscalationRegistry(): WorkflowEscalationRegistry {
         };
       }
       retire(qid, "resolved");
-      // settle 在退场之后调用：它会同步解开 actor 那一侧的 deferred，而那条链上的任何再入
-      // （例如同一轮里紧接着又一次 escalate）都必须看到一张已经不含本 qid 的表。
+      // settle is called after exit: it will synchronously unwind the deferred on that side of the actor, and any re-entry on that chain will
+      // (For example, if there is another escalate in the same round), you must see a table that does not contain this qid.
       entry.settle(answer);
       return { ok: true, qid };
     },

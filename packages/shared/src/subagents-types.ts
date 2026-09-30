@@ -13,7 +13,7 @@ export type BuiltInSubagentModelSelectionOverrides = Partial<
 
 export type PluginSubagentModelSelectionOverrides = Readonly<Record<string, ModelSelection>>;
 
-/** 正式 reader 只接受结构化覆盖，不在读取时解释旧双 map 或重新匹配 Provider。 */
+/** The real reader only accepts structured overrides; it does not interpret the legacy dual map on read or re-match the Provider. */
 export function parsePluginSubagentModelSelectionOverrides(
   value: unknown,
 ): PluginSubagentModelSelectionOverrides {
@@ -87,7 +87,7 @@ export interface AgentsListResult {
   diagnostics?: AgentDiagnostic[];
 }
 
-/** Agent 配置，用于创建/更新 agent */
+/** Agent configuration, used to create/update an agent */
 export interface SubAgentConfig {
   name: string;
   description: string;
@@ -104,7 +104,7 @@ export interface SubAgentConfig {
   mcpServers?: unknown[];
 }
 
-/** Agent 创建参数 */
+/** Agent creation parameters */
 export interface AgentCreateParams {
   config: SubAgentConfig;
   provider: ZCodeProvider;
@@ -113,7 +113,7 @@ export interface AgentCreateParams {
   workspaceIdentity?: string;
 }
 
-/** Agent 更新参数 */
+/** Agent update parameters */
 export interface AgentUpdateParams {
   agentId: string;
   config: SubAgentConfig;
@@ -124,7 +124,7 @@ export interface AgentUpdateParams {
   workspaceIdentity?: string;
 }
 
-/** Agent 删除参数 */
+/** Agent deletion parameters */
 export interface AgentDeleteParams {
   agentId: string;
   filePath: string;
@@ -141,9 +141,11 @@ export interface PluginSubagentModelOverrideParams {
 }
 
 /**
- * 插件 subagent 的稳定 id：`plugin:<pluginId>:<裸名小写>`。
- * pluginId 为 `<name>@<marketplace>`，不含版本，插件升级后 id 不变，覆盖随之保留。
- * services 与 CLI bootstrap 都用它做 agents-state.json 的键，必须共用一处实现。
+ * Stable id of a plugin subagent: `plugin:<pluginId>:<bare name lowercased>`.
+ * pluginId is `<name>@<marketplace>` and carries no version, so the id survives a plugin upgrade
+ * and the override is preserved along with it.
+ * Both services and the CLI bootstrap use it as the key in agents-state.json, so they must share
+ * one implementation.
  */
 export function createPluginAgentStateId(pluginId: string, agentName: string): string {
   return `plugin:${pluginId}:${agentName.trim().toLowerCase()}`;

@@ -1,43 +1,43 @@
 // ============================================================
-// 工作区 transcript 的协议词汇表
+// Protocol glossary for workspace transcript
 // ============================================================
-// 一个 run 的 `files.*` / `git.*` / `world.run` 调用，在侧板上以工具卡片的形式回放。
-// 权威在 journal 的 `dwf_node` 行（`kind ∈ {world-read, world-run}`）：`input_json`
-// （迁移 0030）给出 op 与实参，`result_json` 给出正文。
+// A run `files.*` / `git.*` / `world.run` call, played back as a tool card on the side panel.
+// The authority is in the journal's `dwf_node` line (`kind ∈ {world-read, world-run}`): `input_json`
+// (Migration 0030) gives op with arguments, and `result_json` gives the body.
 //
-// 两条 v4 查询，照用户面产物的 ①/③ 拆法：
-//   Workspace  轻行清单（op / args / 状态 / 摘要 / 时刻），**不带正文**；
-//              活投影的 `lastEventSequence` 抬升时重查
-//   NodeResult 一个节点的正文，按 maxBytes 保形有界化；展开时才取，按 tab 缓存
+// Two v4 queries, according to the ①/③ disassembly method of user interface products:
+//   Workspace light line list (op/args/status/summary/time), **without body**;
+//              Live projection's `lastEventSequence` rechecked on raise
+//   NodeResult The text of a node, conformally bounded by maxBytes; fetched when expanded, cached by tab
 //
-// 分层：正文永远不进清单；清单上的「多大 / 退出码 / 几条」由存储层用 SQLite 的 JSON 函数
-// 在库内算出。与 workflowRunEvents 同族：只读、无状态、超时重发安全，刻意不是 v4 command，
-// 不带 atSeq / atLogEpoch（读的是 journal，没有陈旧可防）。新方法天然偏斜安全。
+// Layering: The text is never entered into the list; the "how big/exit code/how many items" on the list are determined by the storage layer using SQLite's JSON function
+// Calculated in the library. Same family as workflowRunEvents: read-only, stateless, timeout retransmission safe, deliberately not v4 command,
+// Without atSeq / atLogEpoch (the journal is read, there is no staleness to prevent). New method naturally biases safety.
 
 import { z } from "zod";
 
-/** 工作区 transcript 的展示上界。数字即契约。 */
+/** Display upper bounds for the workspace transcript. The numbers are the contract. */
 export const WORKFLOW_WORKSPACE_LIMITS = {
-  /** 一次清单最多多少行；超界由网关截尾并置 `truncated`。 */
+  /** How many rows one listing holds at most; when over the bound the gateway trims the tail and sets `truncated`. */
   maxNodes: 2000,
-  /** `op` 名的长度（`git-changed-files` 是最长的那个）。 */
+  /** Length of an `op` name (`git-changed-files` is the longest one). */
   maxOpLength: 32,
-  /** 实参个数（引擎侧截断后 ≤ 8；未截断的原值按 facade 签名 ≤ 3）。 */
+  /** Number of arguments (≤ 8 after the engine side truncates; the untruncated original is ≤ 3 by the facade signature). */
   maxArgs: 16,
-  /** 失败信息的展示长度；超长由宿主切尾。 */
+  /** Display length of a failure message; the host trims the tail when it is longer. */
   maxErrorMessageLength: 2000,
-  /** 正文一次最多读回多少字节（截断而不是拒绝——这是审计面，不是脚本的取数面）。 */
+  /** How many bytes of a result body can be read back at once (truncated rather than refused — this is the audit surface, not the script's data-fetching surface). */
   resultMaxBytes: 32 * 1024,
 } as const;
 
 export const workflowRunWorkspaceNodeKindSchema = z.enum(["world-read", "world-run"]);
 export type WorkflowRunWorkspaceNodeKind = z.infer<typeof workflowRunWorkspaceNodeKindSchema>;
 
-/** journal 行的状态（`NodeRecordStatus` 的线上镜像）。 */
+/** The status of a journal row (the wire mirror of `NodeRecordStatus`). */
 export const workflowRunWorkspaceNodeStatusSchema = z.enum(["running", "completed", "failed"]);
 export type WorkflowRunWorkspaceNodeStatus = z.infer<typeof workflowRunWorkspaceNodeStatusSchema>;
 
-/** 结构化失败：journal `error_json` 的 code + message（其余字段不出协议）。 */
+/** Structured failure: the code + message of the journal's `error_json` (the remaining fields do not leave the protocol). */
 export const workflowRunWorkspaceNodeErrorSchema = z
   .object({
     code: z.string().min(1).max(64),
@@ -47,9 +47,10 @@ export const workflowRunWorkspaceNodeErrorSchema = z
 export type WorkflowRunWorkspaceNodeError = z.infer<typeof workflowRunWorkspaceNodeErrorSchema>;
 
 /**
- * 清单上一行的摘要：不解正文就能报的几个数。哪个在场取决于 op——数组正文（glob / grep /
- * changedFiles）有 `resultCount`，`world.run` 有 `exitCode` 与两路输出的字节数，字符串正文
- * 只有 `resultBytes`。
+ * The summary of one listing row: a few numbers reportable without decoding the body. Which ones
+ * are present depends on the op — an array body (glob / grep / changedFiles) has `resultCount`,
+ * `world.run` has `exitCode` plus the byte counts of both outputs, and a string body has only
+ * `resultBytes`.
  */
 export const workflowRunWorkspaceNodeSummarySchema = z
   .object({
@@ -63,8 +64,9 @@ export const workflowRunWorkspaceNodeSummarySchema = z
 export type WorkflowRunWorkspaceNodeSummary = z.infer<typeof workflowRunWorkspaceNodeSummarySchema>;
 
 /**
- * 工作区 transcript 的一行。`op` / `args` 来自 `input_json`，升级前的历史行两者缺席
- * （UI 退回静态图上的步标签）；`inputTruncated` 表示 args 是逐项字符串预览而不是原值。
+ * One line of the workspace transcript. `op` / `args` come from `input_json`; historical rows
+ * from before the upgrade have neither (the UI falls back to the step label on the static
+ * diagram); `inputTruncated` means args is a per-item string preview rather than the real values.
  */
 export const workflowRunWorkspaceNodeSchema = z
   .object({
@@ -77,14 +79,14 @@ export const workflowRunWorkspaceNodeSchema = z
     status: workflowRunWorkspaceNodeStatusSchema,
     error: workflowRunWorkspaceNodeErrorSchema.optional(),
     summary: workflowRunWorkspaceNodeSummarySchema.optional(),
-    /** journal 行的建立 / 最近更新时刻（epoch 毫秒）；二者之差就是这一步的耗时。 */
+    /** The creation / most recent update moment of the journal row (epoch milliseconds); the difference between the two is how long this step took. */
     createdAt: z.number().int().nonnegative(),
     updatedAt: z.number().int().nonnegative(),
   })
   .strict();
 export type WorkflowRunWorkspaceNode = z.infer<typeof workflowRunWorkspaceNodeSchema>;
 
-// ── v4 query ①：workflowRunWorkspace（轻行清单）──
+// ── v4 query ①: workflowRunWorkspace (light line list)──
 export const v4ConversationWorkflowRunWorkspaceParamsSchema = z
   .object({
     sessionId: z.string().min(1),
@@ -97,9 +99,9 @@ export type V4ConversationWorkflowRunWorkspaceParams = z.infer<
 
 export const v4ConversationWorkflowRunWorkspaceResultSchema = z
   .object({
-    /** 按落库先后（journal 行 id 升序 = 引擎准入顺序）。 */
+    /** In insertion order (ascending journal row id = the engine's admission order). */
     nodes: z.array(workflowRunWorkspaceNodeSchema).max(WORKFLOW_WORKSPACE_LIMITS.maxNodes),
-    /** 清单超过 maxNodes 被截尾。 */
+    /** The listing was trimmed because it exceeded maxNodes. */
     truncated: z.boolean().optional(),
   })
   .strict();
@@ -107,17 +109,17 @@ export type V4ConversationWorkflowRunWorkspaceResult = z.infer<
   typeof v4ConversationWorkflowRunWorkspaceResultSchema
 >;
 
-// ── v4 query ②：workflowRunNodeResult（一个节点的正文）──
-// 授权在 CLI 侧（端口实现）：sessionId 必须是该 run 的 parentSessionId，否则与「无此节点」
-// 同一个答案。正文按 maxBytes **保形**有界化：字符串切尾、数组去尾、run 的 stdout / stderr
-// 各自切尾——一张卡片要的是「跑了什么、前几百行是什么」，不是脚本那种全有或全无。
+// ── v4 query ②: workflowRunNodeResult (the text of a node)──
+// Authorization is on the CLI side (port implementation): sessionId must be the parentSessionId of the run, otherwise it will be the same as "no such node"
+// Same answer. The text is bounded according to maxBytes **Conformal**: string trimming, array tailing, and stdout/stderr of run
+// Cut off the ends of each one - what a card wants is "what ran and what were the first few hundred lines", not all or nothing like a script.
 export const v4ConversationWorkflowRunNodeResultParamsSchema = z
   .object({
     sessionId: z.string().min(1),
     runId: z.string().min(1),
     siteId: z.string().min(1).max(64),
     ordinal: z.number().int().nonnegative(),
-    /** 缺省与上限都是 resultMaxBytes；网关钳制。 */
+    /** Both the default and the ceiling are resultMaxBytes; the gateway clamps. */
     maxBytes: z.number().int().positive().max(WORKFLOW_WORKSPACE_LIMITS.resultMaxBytes).optional(),
   })
   .strict();
@@ -128,11 +130,11 @@ export type V4ConversationWorkflowRunNodeResultParams = z.infer<
 export const v4ConversationWorkflowRunNodeResultResultSchema = z
   .object({
     status: workflowRunWorkspaceNodeStatusSchema,
-    /** 有界化后的正文；running 行与 failed 行缺席。 */
+    /** The body after bounding; absent for running rows and failed rows. */
     result: z.unknown().optional(),
     error: workflowRunWorkspaceNodeErrorSchema.optional(),
     truncated: z.boolean(),
-    /** 截断前的序列化字节数。 */
+    /** Serialized byte count before truncation. */
     totalBytes: z.number().int().nonnegative(),
   })
   .strict();

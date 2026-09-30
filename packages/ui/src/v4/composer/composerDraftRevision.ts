@@ -1,6 +1,6 @@
-// 推荐 Prompt 的延迟可信解析需要知道用户是否在等待期间编辑了 Composer。
-// revision 只存在 renderer 内存中，不进入草稿持久化、协议或远程同步；workspace identity
-// 使用与 Zustand 草稿相同的 workspaceKey，避免本地路径和远程身份串写。
+// Delayed trusted parsing of recommended prompts requires knowing whether the user edited Composer while waiting.
+// revision only exists in renderer memory and does not enter draft persistence, protocol or remote synchronization; workspace identity
+// Use the same workspaceKey as the Zustand draft to avoid local path and remote identity string writing.
 const revisionByWorkspaceKey = new Map<string, number>();
 
 function getWorkspaceKey(workspacePath: string, workspaceIdentity?: string): string {

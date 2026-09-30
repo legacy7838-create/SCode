@@ -24,23 +24,26 @@ function isTaskListMembershipWorkspaceEvent<
 }
 
 /**
- * 侧栏以 tasks-index 行和 pin/archive/unread 归属为准，sessions-index 只补 detail，
- * 由 membershipVersion 驱动重拉。unread（setTaskUnread）与 rename 等走 task_meta_changed，
- * sessions-index 不携带 unread，故 task_meta_changed 也纳入归属重拉信号（低频）。
- * task_created 会增加 tasks-index 的正向行集合，必须在 task row/grouped order 提交后换代读取；
- * 不能只依赖 sessions-index detail 或旧的 query-cache 增量插入。
- * task_model_changed（切模型）与归属无关，显式排除——之前它混在 task_meta_changed
- * 里，切一次模型会全局 bump membershipVersion，所有列表实例连带重拉归属。
+ * The sidebar treats tasks-index rows and pin/archive/unread membership as authoritative, while
+ * sessions-index only fills in detail, and re-fetches are driven by membershipVersion. unread
+ * (setTaskUnread) and rename go through task_meta_changed, and sessions-index carries no unread, so
+ * task_meta_changed is also counted as a membership re-fetch signal (low frequency). task_created
+ * grows the forward row set of tasks-index and must be read from the new generation only after the
+ * task row/grouped order has been committed; it cannot rely on sessions-index detail or incremental
+ * insertion into the old query-cache alone. task_model_changed (model switch) is unrelated to
+ * membership and is explicitly excluded — it used to be mixed into task_meta_changed, where
+ * switching the model once bumped membershipVersion globally and dragged every list instance into a
+ * membership re-fetch.
  */
 export function shouldRefetchTaskListMembershipForWorkspaceEvent(
   event: Pick<ZCodeWorkspaceTaskListChanged, "reason">,
 ): boolean {
-  // delete 后 sessions-index 仍可能继续发布保留在 CLI store 的 session；
-  // task_deleted 必须换代 deleted tombstone join，不能只做一次 query cache 移除。
+  // After deletion, sessions-index may still continue to publish sessions retained in the CLI store;
+  // task_deleted must be replaced by deleted tombstone join, and query cache removal cannot be performed only once.
   return (
     isTaskListMembershipWorkspaceEvent(event) ||
-    // 侧栏改为 tasks-index row 权威后，task_created 不再只是 session meta 事件。
-    // 若不换代 membership/task-row Promise，新行虽已落 SQLite，Project 仍会持续显示旧集合。
+    // After the sidebar is changed to tasks-index row authority, task_created is no longer just a session meta event.
+    // If the membership/task-row Promise is not replaced, the Project will continue to display the old collection even though the new row has been dropped into SQLite.
     event.reason === "task_created" ||
     event.reason === "task_meta_changed" ||
     event.reason === "task_deleted"

@@ -6,16 +6,16 @@ import { createServiceLogger, type ServiceLogger } from "#src/logger/serviceLogg
 import type { IFileWatcherService } from "./fileWatcher.js";
 import { registerMemoryDiagnosticsProvider } from "#src/memoryDiagnostics.js";
 
-/** 防抖时间（ms）——批量文件变更（如 git checkout）时避免频繁刷新 */
+/** Anti-shake time (ms) - avoid frequent refreshes when batch file changes (such as git checkout) */
 const DEBOUNCE_MS = 150;
 
 interface WatcherInstance {
   path: string;
   watcher: FSWatcher;
   changeEmitter: Emitter<FileWatchEvent>;
-  /** 防抖定时器 */
+  /** Anti-shake timer */
   debounceTimer: ReturnType<typeof setTimeout> | null;
-  /** 同一防抖窗口只含一个明确路径时才透传，避免过滤掉同批次里的目标文件事件 */
+  /** The same anti-shake window only contains a clear path and is transparently transmitted to avoid filtering out target file events in the same batch. */
   pendingChangedPaths: Set<string>;
   hasUnknownChangedPath: boolean;
 }
@@ -37,8 +37,8 @@ export function createFileWatcherService(options?: {
   const log = options?.logger ?? createServiceLogger("file-watcher");
   const watchers = new Map<string, WatcherInstance>();
   let nextId = 0;
-  // 内存诊断计数器：客户端断连不回收 watcher 时
-  // 这里会只增不减。
+  // Memory diagnostic counter: when the client is disconnected and does not recycle the watcher
+  // It will only increase, not decrease.
   const memoryDiagnostics = registerMemoryDiagnosticsProvider("fileWatcher", () => ({
     open: watchers.size,
   }));
@@ -60,7 +60,7 @@ export function createFileWatcherService(options?: {
 
       let fsWatcher: FSWatcher;
       try {
-        // 默认非递归监视单个目录；Git 状态这类工作区级信号会显式打开 recursive。
+        // The default is to watch a single directory non-recursively; workspace-level signals such as Git status explicitly turn recursive on.
         fsWatcher = watch(params.path, { recursive }, (_eventType, fileName) => {
           const instance = watchers.get(id);
           if (!instance) return;
@@ -72,7 +72,7 @@ export function createFileWatcherService(options?: {
             instance.hasUnknownChangedPath = true;
           }
 
-          // 防抖：连续变更只触发一次刷新
+          // Anti-shake: Continuous changes only trigger one refresh
           if (instance.debounceTimer) clearTimeout(instance.debounceTimer);
           instance.debounceTimer = setTimeout(() => {
             instance.debounceTimer = null;
@@ -91,14 +91,14 @@ export function createFileWatcherService(options?: {
       } catch (error) {
         changeEmitter.dispose();
         const message = error instanceof Error ? error.message : String(error);
-        throw new Error(`无法监视目录 '${params.path}': ${message}`);
+        throw new Error(`cannot watch directory '${params.path}': ${message}`);
       }
 
-      // 监视目录被删除/重命名时，发送最终事件并清理
+      // Watch when a directory is deleted/renamed, send a final event and clean up
       fsWatcher.on("error", (error) => {
         const instance = watchers.get(id);
         if (instance) {
-          log.warn(undefined, "文件监听器异常，清理 watcher", {
+          log.warn(undefined, "file watcher error, cleaning up watcher", {
             id,
             path: instance.path,
             error: error instanceof Error ? error.message : String(error),
@@ -135,10 +135,10 @@ export function createFileWatcherService(options?: {
     onDynamicChange(id: string): RpcEvent<FileWatchEvent> {
       const watcher = watchers.get(id);
       if (!watcher) {
-        // watch() 成功返回后，renderer 订阅 onDynamicChange 前，底层 fs.watch
-        // 仍可能因目录删除/重命名/平台 watcher 错误触发 cleanup。stale watcher id
-        // 是可恢复状态，不能 throw 到 RPC 事件订阅链路导致 host 进程退出。
-        log.warn(undefined, "忽略已失效的文件监听订阅", { id });
+        // After watch() returns successfully, before the renderer subscribes to onDynamicChange, the underlying fs.watch
+        // Cleanup may still be triggered by directory deletion/rename/platform watcher errors. stale watcher id
+        // It is a recoverable state and cannot be thrown to the RPC event subscription link to cause the host process to exit.
+        log.warn(undefined, "ignoring stale file watch subscription", { id });
         return Event.None;
       }
       return watcher.changeEmitter.event;

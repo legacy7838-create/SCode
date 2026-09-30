@@ -1,4 +1,4 @@
-/** MCP 每个上报窗口只交一份合计；瞬时读数不进入会话、队列或持久化。 */
+/** MCP contributes a single total per reporting window; instantaneous readings never enter a session, a queue, or persistence. */
 import {
   zcodeMcpResourceSamplesSchema,
   ZCODE_MCP_RESOURCE_SAMPLE_INTERVAL_MS,
@@ -50,10 +50,10 @@ export function ingestMcpResourceSamples(
       sample.mcpId,
     ]);
     const previous = latest.get(key);
-    // 同一个 CLI 的同一份样本可能经多个远端连接转发；乱序/重复都不能二次计数。
+    // The same sample of the same CLI may be forwarded through multiple remote connections; out-of-order/duplication cannot be counted twice.
     if (previous && previous.sample.sampledAt >= sample.sampledAt) continue;
     if (!previous && latest.size >= MAX_MCP_INSTANCE_SAMPLES) {
-      logger.debug("[resource] MCP 实例样本已达上限，丢弃新样本");
+      logger.debug("[resource] the MCP instance sample limit was reached, dropping the new sample");
       continue;
     }
     latest.set(key, { sample, runtimeSurface, environmentKey, receivedAt, delivered: false });
@@ -115,7 +115,7 @@ export const mcpProcessResourceSampleSource: ProcessResourceSampleSource = {
   id: "mcp",
   sample(context) {
     purgeExpired(context.now);
-    // 外部总量按 MCP 分组覆盖；沿用真实读数到达时刻，10 秒 tick 不能刷新其有效期。
+    // The external total is covered by MCP grouping; the actual reading arrival time is used, and the 10-second tick cannot refresh its validity period.
     for (const [key, group] of groupSamples()) {
       recordExternalAppResourceSample({
         sourceKey: `mcp:${key}`,
@@ -134,7 +134,7 @@ export const mcpProcessResourceSampleSource: ProcessResourceSampleSource = {
     for (const group of groupSamples().values()) {
       if (!group.fresh) continue;
       if (reported >= MAX_MCP_GROUPS_PER_WINDOW) {
-        logger.debug("[resource] MCP 每窗口最多 32 个分组，丢弃超额样本");
+        logger.debug("[resource] at most 32 MCP groups per window, dropping excess samples");
         continue;
       }
       context.addRoleSample(group.role);

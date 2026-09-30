@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- Feishu provider 集中承载鉴权、消息解析、卡片发送和 reaction typing 适配，后续按能力拆分。 */
+/* eslint-disable max-lines -- The Feishu provider centrally carries auth, message parsing, card sending and reaction typing adaptation; it will be split by capability later. */
 import type {
   BotInboundAttachment,
   BotConfig,
@@ -23,15 +23,15 @@ interface FeishuProviderDeps {
 
 export interface FeishuWebSocketClient {
   close(): void;
-  /** SDK 自动重连耗尽后的终态。 */
+  /** Terminal state after the SDK's automatic reconnect attempts are exhausted. */
   terminated: Promise<void>;
 }
 
 const FEISHU_APP_ID_PATTERN = /^cli_[0-9a-fA-F]{16}$/;
 const FEISHU_WEBSOCKET_START_TIMEOUT_MS = 20_000;
 const FEISHU_WEBSOCKET_READY_POLL_MS = 100;
-// 修复原因：飞书 Card JSON 2.0 最多允许 200 个组件或元素。预留 20 个元素给
-// 状态行和服务端计数差异，避免长任务在更新阶段被 11310 拒绝后整轮熔断。
+// Reason for fix: Feishu Card JSON 2.0 allows up to 200 components or elements. Reserve 20 elements for
+// The difference between the status line and the server count prevents long tasks from being shut down in the entire round after being rejected by 11310 during the update phase.
 export const FEISHU_STREAMING_CARD_TAGGED_ELEMENT_BUDGET = 180;
 const WEBSOCKET_OPEN_READY_STATE = 1;
 
@@ -330,8 +330,8 @@ function buildFeishuElicitationAnswerElements(
     elicitation.status === "completed" || elicitation.status === "cancelled";
   const elements: Array<Record<string, unknown>> = [];
   elicitation.questions.forEach((question, index) => {
-    // 修复原因：当前题的多选值只是尚未提交的草稿。如果也放进上方历史区，
-    // 同一问题会同时显示为“已回答”和“待回答”。进行中只累积此前已提交的题目。
+    // Reason for fix: The multi-select value of the current question is only a draft that has not yet been submitted. If you also put it into the history area above,
+    // The same question will appear as "Answered" and "To be answered" at the same time. In progress, only questions that have been submitted before will be accumulated.
     if (!isCompleted && index >= elicitation.currentQuestionIndex) {
       return;
     }
@@ -368,8 +368,8 @@ function buildFeishuElicitationCardPayload(message: BotOutboundMessage): Record<
   const planApprovalContent = readPlanApprovalContent(message);
   const elements: Array<Record<string, unknown>> = [];
   if (isCompleted && planApprovalContent) {
-    // 修复原因：Plan 交互完成后保留卡片时，旧终态分支只渲染审批答案，导致计划正文消失。
-    // 只读终态仍需保留完整计划，用户才能在聊天历史中回看自己批准或取消的内容。
+    // Reason for repair: When the card is retained after the Plan interaction is completed, the old final state branch only renders the approval answer, causing the plan text to disappear.
+    // The read-only final state still requires the complete plan to be retained so that users can review the content they approved or canceled in the chat history.
     elements.push({
       tag: "markdown",
       content: formatFeishuCardMarkdownContent(planApprovalContent),
@@ -391,8 +391,8 @@ function buildFeishuElicitationCardPayload(message: BotOutboundMessage): Record<
         ),
       });
     }
-    // 修复原因：ExitPlanMode 不是普通问答。计划正文若只留在流式消息中，审批卡会失去上下文；
-    // 因此计划审批使用专属正文，而 AskUserQuestion 继续沿用通用“提问”结构。
+    // Reason for fix: ExitPlanMode is not a normal Q&A. If the plan text remains only in the streaming message, the approval card will lose context;
+    // So plan approvals use their own body, while AskUserQuestion continues to use the general "ask" structure.
     const contentParts = planApprovalContent
       ? [planApprovalContent]
       : [
@@ -664,8 +664,8 @@ function readFeishuAttachment(
 
 function readFeishuTextMessage(botId: string, payload: Record<string, unknown>): BotInboundMessage | null {
   const provider = readFeishuPayloadProvider(payload);
-  // Bugfix: 飞书 node-sdk 的 WebSocket EventDispatcher 在不同事件/版本下可能把 event 字段摊平到顶层。
-  // 之前只读 payload.event.message，长连接确实收到消息时也会解析成 0 条 inbound。
+  // Bugfix: Feishu node-sdk's WebSocket EventDispatcher may flatten the event field to the top level under different events/versions.
+  // Previously, only payload.event.message was readable. When a long connection did receive a message, it would also be parsed into 0 inbound messages.
   const event = isRecord(payload.event) ? payload.event : payload;
   const message = isRecord(event?.message) ? event.message : null;
   const sender = isRecord(event?.sender) ? event.sender : null;
@@ -673,8 +673,8 @@ function readFeishuTextMessage(botId: string, payload: Record<string, unknown>):
   const content = parseJsonRecord(message?.content);
   const msgType = readString(message, "message_type") || readString(message, "msg_type");
   const attachment = readFeishuAttachment(msgType, content);
-  // Bugfix: 飞书客户端里看起来像普通文字的富文本/带链接消息会以 message_type=post 推送。
-  // 之前只读 content.text，post 消息被解析成空文本并直接丢弃，所以用户侧表现为“发了普通消息但 app 没反应”。
+  // Bugfix: Rich text/link messages that look like ordinary text in the Feishu client will be pushed with message_type=post.
+  // Previously, only content.text was read, and the post message was parsed into empty text and discarded directly, so the user side behaved like "a normal message was sent but the app did not respond."
   const rawText =
     readString(content, "text") ||
     readFeishuPostText(content) ||
@@ -756,8 +756,8 @@ function readFeishuCardAction(botId: string, payload: Record<string, unknown>): 
   if (!command || !openId) {
     return null;
   }
-  // Bugfix: 飞书卡片回调的 context.open_chat_id 在私聊按钮里也可能存在。
-  // 之前用 chatId 是否存在判断群聊，会把私聊里的卡片按钮误拒成“只支持私聊”。
+  // Bugfix: The context.open_chat_id of Feishu card callback may also exist in the private chat button.
+  // Previously, when using the chatId to determine whether a group chat existed, the card button in the private chat would be mistakenly rejected as "only supports private chat".
   const chatType = readFeishuChatType(contextChatType);
   return {
     botId,
@@ -780,8 +780,8 @@ function readFeishuCardUpdateToken(payload: unknown): string {
   const event = readFeishuCallbackEvent(payload);
   const action = isRecord(event.action) ? event.action : null;
   const context = isRecord(event.context) ? event.context : null;
-  // Bugfix: Card JSON 2.0 回调的更新 token 不总在旧版 action.token 上。
-  // 新版按钮由 behaviors.callback 触发时，飞书/Lark 可能把 token 放在事件或 context 上；漏读会让 card/update 静默跳过，按钮留在原卡片里。
+  // Bugfix: Card JSON 2.0 callback's updated token is not always on the old action.token.
+  // When the new version of the button is triggered by behaviors.callback, Feishu/Lark may put the token on the event or context; missing the read will cause card/update to be silently skipped and the button to remain in the original card.
   return (
     readString(event, "token") ||
     readString(event, "card_update_token") ||
@@ -852,8 +852,8 @@ function formatFeishuCardMarkdownContent(text: string): string {
       if (!line.text || !line.hardBreak || index >= lines.length - 1 || !lines[index + 1]?.text) {
         return line.text;
       }
-      // Bugfix: Card JSON 2.0 的 markdown 按标准 Markdown 处理单换行，会把 /status 多行文本折成一行。
-      // 飞书通道内把普通单换行转成 hard break，保留业务层给其他 bot 使用的原始文本。
+      // Bugfix: Card JSON 2.0's markdown processes single line breaks according to standard Markdown, and will fold /status multi-line text into one line.
+      // In the Feishu channel, ordinary single line breaks are converted into hard breaks, and the original text used by other bots is retained in the business layer.
       return `${line.text}  `;
     })
     .join("\n");
@@ -872,8 +872,8 @@ function buildFeishuButtonElement(params: {
       content: params.text,
     },
     type: params.type,
-    // Bugfix: Card JSON 2.0 不再支持旧版 action/actions 容器。
-    // 按钮必须直接作为 body.elements 组件，并通过 behaviors.callback 回传业务值，否则飞书会返回 HTTP 400。
+    // Bugfix: Card JSON 2.0 no longer supports the legacy action/actions container.
+    // The button must be directly used as the body.elements component and return the business value through behaviors.callback, otherwise Feishu will return HTTP 400.
     behaviors: [
       {
         type: "callback",
@@ -914,7 +914,7 @@ function buildFeishuInteractiveCardPayload(
                 selection.cancelLabel ??
                 formatBotMessage(message.locale, "selectionCancelOption"),
               type: "default",
-              // Bugfix: 飞书走结构化选项卡，不应复用微信纯文本菜单的 0 取消语义。
+              // Bugfix: Feishu's structured tab should not reuse the 0 cancellation semantics of WeChat's plain text menu.
               command: "/cancel",
               originalText: message.text,
             }),
@@ -929,8 +929,8 @@ function buildFeishuInteractiveCardPayload(
 }
 
 function formatFeishuStreamingStatus(state: BotStreamingReplyCardState): string {
-  // Bugfix: 流式卡片状态行由 provider 生成，必须读取 BotService 传入的 locale，
-  // 否则中文环境里会固定显示 Running/Completed。
+  // Bugfix: The streaming card status line is generated by the provider and must read the locale passed by the BotService.
+  // Otherwise, Running/Completed will be permanently displayed in the Chinese environment.
   const locale = state.locale;
   const status = state.status;
   if (status === "completed") {
@@ -954,10 +954,10 @@ function buildFeishuStreamingToolPanel(
   }
   return {
     tag: "collapsible_panel",
-    // Bugfix: 流式卡片运行中需要让用户看到当前工具摘要；任务终态后再自动收起，减少最终消息占用空间。
+    // Bugfix: Users need to be able to see a summary of the current tool when the streaming card is running; it will be automatically folded after the task is completed to reduce the space occupied by the final message.
     expanded: options.expanded,
-    // Bugfix: Tool summaries 之前只是裸 collapsible panel，和正文没有清晰视觉边界。
-    // 飞书 Card JSON 2.0 的折叠面板本身支持背景与边框，这里把它作为 <tools> 容器承载 header/content。
+    // Bugfix: Tool summaries were previously just bare collapsible panels, with no clear visual boundary between them and the main text.
+    // The folding panel of Feishu Card JSON 2.0 supports background and borders. Here, it is used as a <tools> container to host header/content.
     background_color: "grey-50",
     border: {
       color: "grey",
@@ -1059,7 +1059,7 @@ export function splitFeishuStreamingCardStates(
   let current: BotStreamingReplyCardState["blocks"] = [];
   for (const block of state.blocks) {
     const candidate = [...current, block];
-    // 始终为状态行预留预算，使 running/completed 切换不会改变既有分段边界。
+    // Always budget for status lines so that running/completed switches do not change existing segment boundaries.
     const candidateState = { ...state, blocks: candidate, status: "running" as const };
     if (
       current.length > 0 &&
@@ -1148,8 +1148,8 @@ function createFeishuMessageError(
       : null,
     receiveIdType ? `receive_id_type=${receiveIdType}` : null,
   ].filter((detail): detail is string => Boolean(detail));
-  // 修复原因：飞书的 HTTP 400 会在响应体中携带业务错误码、原因和排查 log_id。
-  // 旧实现先按 HTTP 状态抛错，导致这些已解析的信息永久丢失，无法区分权限、限流和卡片错误。
+  // Reason for fix: Feishu's HTTP 400 will carry business error code, reason and troubleshooting log_id in the response body.
+  // The old implementation first throws errors based on HTTP status, causing the parsed information to be permanently lost and unable to distinguish between permissions, current limits, and card errors.
   return new Error(
     `Feishu ${operation} failed: HTTP ${status}${details.length > 0 ? `, ${details.join(", ")}` : ""}`,
   );
@@ -1179,7 +1179,7 @@ async function sendFeishuInteractiveCard(
     },
   );
   const payload = response.payload ?? {};
-  // HTTP 成功也可能携带业务拒绝，必须保留错误码和请求 ID。
+  // HTTP success may also carry business rejection, and the error code and request ID must be retained.
   if (!response.ok || payload.code !== 0) {
     throw createFeishuMessageError(
       "send interactive message",
@@ -1215,7 +1215,7 @@ async function updateFeishuInteractiveMessage(
     },
   );
   const payload = response.payload ?? {};
-  // HTTP 成功也可能携带业务拒绝，必须保留错误码和请求 ID。
+  // HTTP success may also carry business rejection, and the error code and request ID must be retained.
   if (!response.ok || payload.code !== 0) {
     throw createFeishuMessageError(
       "update streaming card",
@@ -1303,7 +1303,7 @@ async function readFeishuAppDisplayName(bot: BotConfig, deps: FeishuProviderDeps
     appIdError = error;
   }
   try {
-    // Bugfix: 飞书 / Lark 扫码创建后 app_id 路径可能因为权限或同步延迟暂不可读；me 路径更适合读取当前应用名称。
+    // Bugfix: After Feishu/Lark scan code creation, the app_id path may be temporarily unreadable due to permissions or synchronization delays; the me path is more suitable for reading the current application name.
     return await fetchFeishuAppDisplayName(bot, token, "me");
   } catch (error) {
     throw appIdError ?? error;
@@ -1360,8 +1360,8 @@ async function readFeishuUserDisplayName(
     throw new Error(payload.msg || `Feishu get user info failed user=${trimmedUserId}.`);
   }
   const name = resolveFeishuUserDisplayName(payload);
-  // Bugfix: 飞书消息事件只稳定携带 sender_id，不携带发送者名称。
-  // 这里缓存通讯录查询结果，避免同一个用户连续发消息时每条都请求 contact API。
+  // Bugfix: Feishu message events only stably carry sender_id and do not carry sender name.
+  // The address book query results are cached here to avoid requesting the contact API for each message sent continuously by the same user.
   userDisplayNameCache.set(cacheKey, {
     name,
     expiresAt: Date.now() + 10 * 60_000,
@@ -1462,8 +1462,8 @@ export function createFeishuWebSocketEventHandlers(params: {
     "im.message.receive_v1": async (payload: unknown) => {
       await onPayload({ botId: bot.id, zcodeProvider: bot.provider, ...(isRecord(payload) ? payload : { payload }) });
     },
-    // Bugfix: 我们用 Typing reaction 模拟输入中状态，飞书会把自己创建的 reaction 再推回长连接。
-    // 业务不需要处理这个事件，但不注册 handler 时 SDK 会持续打印 warn 干扰排查。
+    // Bugfix: We use Typing reaction to simulate the input state, and Feishu will push the reaction it created back to the long connection.
+    // The business does not need to handle this event, but when the handler is not registered, the SDK will continue to print warn to interfere with troubleshooting.
     "im.message.reaction.created_v1": async () => undefined,
     "card.action.trigger": async (payload: unknown) => {
       const callbackPayload = {
@@ -1472,9 +1472,9 @@ export function createFeishuWebSocketEventHandlers(params: {
         zcodeFeishuSynchronousCardAction: true,
         ...(isRecord(payload) ? payload : { payload }),
       };
-      // 修复原因：飞书点击后的同步响应才是客户端可靠采用的卡片状态。传输层不能再从
-      // zcodeCardText 拼简化卡，也不能返回 undefined 后依赖旁路 PATCH；它必须消费业务层
-      // 已推进完成的完整 outbound，并用同一份 elicitation 状态生成下一题卡片。
+      // Reason for repair: The synchronous response after Feishu clicks is the card status that the client can reliably adopt. The transport layer can no longer be accessed from
+      // zcodeCardText spells the simplified card and cannot rely on bypass PATCH after returning undefined; it must consume the business layer
+      // The complete outbound has been advanced and the next question card is generated using the same elicitation state.
       const message = await onPayload(callbackPayload);
       if (!message) {
         return undefined;
@@ -1510,9 +1510,9 @@ export async function startFeishuBotWebSocket(params: {
   if (signal?.aborted) {
     throw new Error("Feishu WebSocket startup aborted.");
   }
-  // SDK 全量源码会常驻 Host；只有实际启动长连接才加载，卡片和 HTTP 路径不承担这份开销。
+  // The full source code of the SDK will be resident on the Host; it will only be loaded when the long connection is actually started. Cards and HTTP paths do not bear this overhead.
   const Lark = await import("@larksuiteoapi/node-sdk");
-  // 加载期间 channel 可能已停用，迟到的模块不能重新创建连接。
+  // The channel may be deactivated during loading and late arriving modules cannot re-create the connection.
   if (signal?.aborted) {
     throw new Error("Feishu WebSocket startup aborted.");
   }
@@ -1564,8 +1564,8 @@ export async function startFeishuBotWebSocket(params: {
       domain: getFeishuDomainProvider(bot) === "lark" ? Lark.Domain.Lark : Lark.Domain.Feishu,
       loggerLevel: Lark.LoggerLevel.info,
     });
-    // 修复原因：当前飞书 SDK 不支持 onReady 回调，start() 也会在连接完成前返回。
-    // 必须观察 SDK 持有的真实 WebSocket，避免连接已经 OPEN 后仍触发 20 秒超时并被主动关闭。
+    // Reason for fix: The current Feishu SDK does not support the onReady callback, and start() will also return before the connection is completed.
+    // It is necessary to observe the real WebSocket held by the SDK to avoid triggering a 20-second timeout and being actively closed after the connection has been OPEN.
     connectionPoll = setInterval(() => {
       const sdkClient = wsClient as unknown as {
         isConnecting?: boolean;
@@ -1613,7 +1613,7 @@ export async function startFeishuBotWebSocket(params: {
       handleAbort();
       return;
     }
-    // 飞书不需要公网回调地址；这里由本机主动建立长连接接收事件，适配家用网络/NAT 环境。
+    // Feishu does not require a public network callback address; here, the local machine actively establishes a long connection to receive events, adapting to the home network/NAT environment.
     void wsClient.start({ eventDispatcher }).catch((error: unknown) => {
       if (!startupSettled) {
         fail(error);
@@ -1636,7 +1636,7 @@ export function createFeishuBotProvider(deps: FeishuProviderDeps): BotProviderAd
       if (!signal?.aborted) deps.onDeliveryResult?.(bot, undefined);
       return result;
     } catch (error) {
-      // 主动取消不代表飞书拒绝投递，也不能覆盖已有诊断；任务超时仍由 watcher 处理。
+      // Active cancellation does not mean Feishu refuses delivery, nor does it overwrite existing diagnoses; task timeouts are still handled by the watcher.
       if (!signal?.aborted)
         deps.onDeliveryResult?.(bot, error instanceof Error ? error.message : String(error));
       throw error;
@@ -1665,8 +1665,8 @@ export function createFeishuBotProvider(deps: FeishuProviderDeps): BotProviderAd
     },
 
     async resolveName(bot) {
-      // Bugfix: Feishu 创建向导以前只能使用手填/默认名称，容易和真实机器人名称不一致。
-      // 飞书机器人能力挂在自建应用上，这里读取应用信息中的名称作为 bot 展示名。
+      // Bugfix: The Feishu creation wizard could only use hand-filled/default names before, which could easily be inconsistent with the real robot name.
+      // Feishu robot capabilities are linked to self-built applications. Here, the name in the application information is read as the bot display name.
       return readFeishuAppDisplayName(bot, deps);
     },
 
@@ -1692,8 +1692,8 @@ export function createFeishuBotProvider(deps: FeishuProviderDeps): BotProviderAd
         return;
       }
       for (const text of splitFeishuText(message.text)) {
-        // Bugfix: Feishu 普通文本消息会把 Markdown 原样展示，和 Telegram 的 Markdown 回复不一致。
-        // 改用交互卡片的 markdown 元素承载普通回复，选择消息也继续复用同一套卡片结构。
+        // Bugfix: Feishu's normal text message will display Markdown as it is, which is inconsistent with Telegram's Markdown reply.
+        // Instead, use the markdown element of the interactive card to carry ordinary replies, and continue to reuse the same card structure for selected messages.
         await sendCard(
           bot,
           token,
@@ -1779,8 +1779,8 @@ export function createFeishuBotProvider(deps: FeishuProviderDeps): BotProviderAd
       if (!target.providerMessageId) {
         return;
       }
-      // Bugfix: 飞书/Lark 普通命令不会进入长任务 stream，之前只实现 startTyping/stopTyping，
-      // 所以 /状态、/项目 等命令没有任何处理中反馈。这里只加 Typing reaction，删除由 BotService 在同步回复发送完成后显式收口。
+      // Bugfix: Feishu/Lark normal commands will not enter the long task stream. Previously, only startTyping/stopTyping was implemented.
+      // Therefore, /status, /project and other commands do not have any processing feedback. Only Typing reaction is added here, and deletion is explicitly closed by BotService after the synchronization reply is sent.
       await addFeishuTypingReaction(bot, deps, target.providerMessageId);
     },
 
@@ -1788,8 +1788,8 @@ export function createFeishuBotProvider(deps: FeishuProviderDeps): BotProviderAd
       if (!target.providerMessageId) {
         return;
       }
-      // Bugfix: 飞书没有原生 typing 状态，只能用 Typing reaction 模拟。
-      // reaction 不会自动消失，所以必须记录 reaction_id，任务结束或进入权限等待时再删除。
+      // Bugfix: Feishu does not have native typing status and can only be simulated using typing reaction.
+      // Reaction will not disappear automatically, so the reaction_id must be recorded and deleted when the task is completed or the permission is entered.
       await addFeishuTypingReaction(bot, deps, target.providerMessageId);
     },
 
@@ -1808,11 +1808,11 @@ export function createFeishuBotProvider(deps: FeishuProviderDeps): BotProviderAd
       if (!token || !cardUpdateToken || (!text?.trim() && !message?.elicitation)) {
         return;
       }
-      // Bugfix: 飞书卡片按钮点击后不会像 Telegram inline keyboard 一样自动消失。
-      // 使用回调携带的 card update token 更新原卡片为处理结果，避免旧选项继续留在聊天里被重复点击。
-      // 非共享卡片延时更新还需要带 open_ids，否则飞书会返回 300090，旧卡片会继续留在会话里。
-      // Bugfix: 用户选择后应保留原问题文案并移除按钮；仅依赖 WebSocket 回调 return 的卡片更新不稳定。
-      // 因此即使按钮 value 里带了原文，也必须继续调用 card/update，只是更新文案优先使用原文。
+      // Bugfix: Feishu card button will not disappear automatically like Telegram inline keyboard after clicking.
+      // Use the card update token carried by the callback to update the original card as the processing result to prevent old options from remaining in the chat and being clicked repeatedly.
+      // Delayed update of non-shared cards also requires open_ids, otherwise Feishu will return 300090 and the old cards will continue to remain in the session.
+      // Bugfix: The original question text should be retained and the button should be removed after the user selects it; card updates that only rely on WebSocket callback return are unstable.
+      // Therefore, even if the button value contains the original text, card/update must continue to be called, but the updated copy will give priority to the original text.
       const response = await fetchBotProviderJson<FeishuSendMessageResponse>(`${getFeishuBaseUrl(bot)}/open-apis/interactive/v1/card/update`, {
         method: "POST",
         headers: {
@@ -1822,19 +1822,19 @@ export function createFeishuBotProvider(deps: FeishuProviderDeps): BotProviderAd
         signal,
         body: JSON.stringify({
           token: cardUpdateToken,
-          // Bugfix: Card JSON 2.0 根节点不接受 open_ids；把 open_ids 塞进 card 会触发
-          // “unknown property: open_ids” 并导致按钮点击后原卡片无法移除选项。
+          // Bugfix: Card JSON 2.0 root node does not accept open_ids; inserting open_ids into card will trigger
+          // "unknown property: open_ids" and causes the original card to be unable to remove options after the button is clicked.
           ...(openIds.length > 0 ? { open_ids: openIds } : {}),
-          // 修复原因：新建下一题再撤回旧卡会在飞书会话中显示明显的撤回痕迹。
-          // callback token 是本次点击对应的权威原地更新能力，问答推进和终态都复用同一张卡。
+          // Reason for fix: Creating a new question and then withdrawing the old card will show obvious traces of withdrawal in the Feishu session.
+          // The callback token is the authoritative in-situ update capability corresponding to this click. The same card is reused for both question and answer advancement and final state.
           card: message?.elicitation
             ? buildFeishuElicitationCardPayload(message)
             : buildFeishuInteractiveCardPayload({
                 botId: bot.id,
                 provider: bot.provider,
                 providerUserId: "",
-                // Bugfix: 飞书按钮点击后业务结果会另发一条消息；原卡片只需要移除选项按钮。
-                // 之前把原卡片改成结果文案，飞书侧会出现额外状态变化，也不符合用户对“选项消失”的预期。
+                // Bugfix: After clicking the Feishu button, the business result will send another message; the original card only needs to remove the option button.
+                // Previously, when the original card was changed to the result copy, additional status changes would appear on the Feishu side, which was not in line with the user's expectation of "options disappearing".
                 text: originalText?.trim() || (text ?? ""),
               }),
         }),
@@ -1878,7 +1878,7 @@ export function createFeishuBotProvider(deps: FeishuProviderDeps): BotProviderAd
         };
       } catch (error) {
         if ((error as { name?: unknown })?.name === "AbortError") {
-          // Bugfix: 飞书资源接口偶发长时间不返回，必须让 bot 回调在可预期时间内给用户失败提示。
+          // Bugfix: The Feishu resource interface occasionally does not return for a long time. The bot callback must be used to give the user a failure prompt within a predictable time.
           throw new Error("Feishu attachment download timed out.");
         }
         throw error;

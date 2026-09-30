@@ -7,15 +7,17 @@ interface ConversationShareContextReference {
 }
 
 /**
- * 从会话 snapshot 里取出仍可 attach 的 share handover context。
+ * Extracts the share handover context that is still attachable from the session snapshot.
  *
- * 刻意只吃 snapshot（不接受独立参数）：这条线断过一次——composer 原本读一个平行的
- * sharedContextImport prop，而 SessionPane 从没传，于是首条消息永远不带 sharedContextRefs，
- * CLI 侧 pending→reserved→attached 一步都走不了，模型拿不到分享内容（顶部只读块却照常显示，
- * 所以肉眼看不出来）。snapshot 是 composer 必然拿到的东西，从它推导就不可能再漏接。
+ * Deliberately reads only the snapshot (no separate parameter): this line broke once — the composer
+ * used to read a parallel `sharedContextImport` prop that SessionPane never passed, so the first
+ * message never carried sharedContextRefs, the CLI could not move through pending→reserved→attached
+ * at all, and the model got no shared content (the read-only block at the top still rendered, so it
+ * was invisible to the eye). The snapshot is something the composer necessarily has, so deriving
+ * from it makes a missed attach impossible.
  *
- * legacy 形状（只有 title、没有 contextId）返回 null：没有 contextId 就无法构造
- * sharedContextRefs，attach 也就无从谈起。
+ * The legacy shape (title only, no contextId) returns null: without a contextId there is no way to
+ * build sharedContextRefs, so an attach is out of the question.
  */
 export function resolveAttachableShareContext(
   sharedContextImport:
@@ -43,11 +45,13 @@ function isReference(value: unknown): value is ConversationShareContextReference
 }
 
 /**
- * 从可见正文里剥掉历史消息可能带的 share URL 尾块。
+ * Strips the trailing share URL block that historical messages may carry out of the visible body.
  *
- * 这个块已经不再产出：它纯粹是 renderer 自产自销（CLI/shared 里没有任何消费者），唯一作用
- * 是驱动一个已被裁掉的 chip，代价却是把 share URL 塞进发给模型的正文。写入端已删除，这里
- * 只保留读取端，避免「接线修复到 chip 删除」之间发出的消息把裸 markup 当正文显示出来。
+ * That block is no longer produced: it was purely self-produced and self-consumed by the renderer
+ * (there is no consumer anywhere in CLI/shared), its only job was to drive a chip that has since
+ * been cut, and the price was stuffing a share URL into the body sent to the model. The writing
+ * side is deleted and only the reading side is kept here, so that messages sent between the wiring
+ * fix and the chip removal do not display raw markup as body text.
  */
 export function parseConversationShareContext(text: string): {
   visibleContent: string;

@@ -193,12 +193,12 @@ function ScreenshotThumb({
 export function readScreenshotDraft(file: File): Promise<ScreenshotAttachmentDraft> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onerror = () => reject(new Error("截图读取失败"));
+    reader.onerror = () => reject(new Error("Failed to read screenshot"));
     reader.onload = () => {
       const result = typeof reader.result === "string" ? reader.result : "";
       const commaIndex = result.indexOf(",");
       if (commaIndex < 0) {
-        reject(new Error("截图数据格式不正确"));
+        reject(new Error("Invalid screenshot data format"));
         return;
       }
       resolve({

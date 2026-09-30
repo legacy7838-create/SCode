@@ -28,11 +28,11 @@ export const ZCODE_KNOWN_TOOL_NAMES = [
   "Task",
   "Skill",
   "CreateWorkflow",
-  // 修订入口：登记进 workflow family 让确认窗
-  // 按 family 选中运行确认块；工具行侧则按名先分流（resolveRenderer.ts），family 兜底不会吞掉它。
+  // Revision entrance: Register into the workflow family and let the confirmation window
+  // Select the run confirmation block by family; on the tool line side, divert (resolveRenderer.ts) by name first, and family will not swallow it.
   "AmendWorkflow",
-  // wire 名就是 snake_case 的 submit_result（仓库里唯一一个），下划线必须字面在场：
-  // 未登记时 UI identity 退回 unknown，动态工作流 actor 的提交会落到 raw fallback renderer。
+  // The wire name is snake_case's submit_result (the only one in the warehouse), and the underscore must be present literally:
+  // When not registered, the UI identity returns to unknown, and the submission of dynamic workflow actors will fall to the raw fallback renderer.
   "submit_result",
 ] as const;
 
@@ -73,13 +73,13 @@ const TOOL_FAMILY_BY_NAME: Record<ZCodeKnownToolName, ZCodeToolFamily> = {
   SendMessage: "message",
   RespondToCoordinator: "message",
   TaskOutput: "task-control",
-  // TaskStop 未登记时 UI identity 会退回 unknown，最终落到 raw fallback renderer。
+  // When TaskStop is not registered, the UI identity will return to unknown and eventually fall to the raw fallback renderer.
   TaskStop: "task-control",
   js: "node-repl",
   js_reset: "node-repl",
   js_add_node_module_dir: "node-repl",
-  // node_repl 由 MCP 暴露，进入 UI 的工具名因此带 MCP 前缀。
-  // 若这里只登记旧 built-in 名称，专用 REPL renderer 会退回 unknown fallback。
+  // node_repl is exposed by MCP, and the tool name entering the UI is therefore prefixed with MCP.
+  // If only the old built-in name is registered here, the dedicated REPL renderer will fallback to unknown fallback.
   mcp__node_repl__js: "node-repl",
   mcp__node_repl__js_reset: "node-repl",
   mcp__node_repl__js_add_node_module_dir: "node-repl",

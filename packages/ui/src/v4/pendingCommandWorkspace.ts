@@ -27,8 +27,8 @@ function resolvePendingCommandWorkspaceKey(entry: WorkspaceScopedPendingCommand)
   if (entry.replay.kind !== "input" || entry.replay.type !== "createSession") {
     return null;
   }
-  // 兼容升级前已落盘的 createSession 恢复线索：协议 payload 的 workspaceId
-  // 本身就是发起端 workspaceKey，不能因缺少新 clientContext 而跨 workspace 展示。
+  // Compatible with the createSession recovery clue that has been placed before the upgrade: the workspaceId of the protocol payload
+  // It is the initiating workspaceKey and cannot be displayed across workspaces due to the lack of a new clientContext.
   const workspaceId = entry.replay.payload?.workspaceId;
   return typeof workspaceId === "string" && workspaceId.trim() ? workspaceId.trim() : null;
 }

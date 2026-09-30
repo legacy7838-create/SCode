@@ -1,4 +1,6 @@
-/* oxlint-disable eslint(max-lines) -- Browser Plugin、Chrome 数据导入与清理共享同一平台状态机，拆分会扩大 pending/失败回收边界。 */
+/* oxlint-disable eslint(max-lines) -- The Browser Plugin, Chrome data import, and cleanup share one
+ * platform state machine; splitting them would widen the pending/failure recovery boundary.
+ */
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { LoaderCircle } from "lucide-react";
 import type { ChromeBrowserDataImportResult } from "@zcode/shared";
@@ -193,7 +195,7 @@ export function BrowserSettingsSection({
       });
     } catch (error) {
       trace.fail({ failureStage: "browser_data_import" });
-      logger.error("[browser-settings] 导入 Chrome 数据失败", {
+      logger.error("[browser-settings] import chrome data failed", {
         error: error instanceof Error ? error.message : String(error),
       });
       toast(intl.formatMessage({ id: "settings.browser.import.failed" }));
@@ -225,7 +227,7 @@ export function BrowserSettingsSection({
         );
       } catch (error) {
         trace.fail({ failureStage: "browser_data_clear" });
-        logger.error("[browser-settings] 清理内置浏览器数据失败", {
+        logger.error("[browser-settings] clear embedded browser data failed", {
           error: error instanceof Error ? error.message : String(error),
           mode,
         });
@@ -267,9 +269,13 @@ export function BrowserSettingsSection({
               ) : undefined
             }
           />
-          {/* 导入登录状态是“开启内置浏览器控制”之后的配套动作，与开关同卡片表达先后关系；
-              清除类破坏性操作仍留在“浏览器数据”分组。
-              Windows App-Bound 导入链路暂未开放，先隐藏入口但保留底层实现和清理能力。*/}
+          {/*
+              Importing login state is a follow-up action after "Enable built-in browser control",
+              sharing a card with the switch to express the ordering; destructive clear-type
+              operations still stay in the "Browser data" group. The Windows App-Bound import path
+              is not open yet, so the entry point is hidden for now while the underlying
+              implementation and the cleanup ability are kept.
+              */}
           {!isWindowsDesktop ? (
             <SettingsRow
               label={intl.formatMessage({ id: "settings.browser.import.title" })}
@@ -298,7 +304,7 @@ export function BrowserSettingsSection({
         </SettingsGroupCard>
       </section>
 
-      {/* 证书策略只在桌面端有内置浏览器时可配；改动由 main 在启动时装到 Session，需重启生效。 */}
+      {/* Certificate policy is configurable only when the desktop has a built-in browser; changes are installed into the Session by main at startup and take effect after a restart. */}
       {isDesktop ? (
         <section className="space-y-3">
           <div className="text-ui-base font-medium text-foreground-subtle">

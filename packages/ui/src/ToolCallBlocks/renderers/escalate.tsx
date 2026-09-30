@@ -9,10 +9,16 @@ const ESCALATE_TOOL_ICON = (
   <MessageCircleQuestion className="size-4 shrink-0 text-foreground-subtle" />
 );
 
-/** 折叠头部的单行概要上限：概要只是「大概问了什么」，整段问题在展开后的 body 里。 */
+/**
+ * Cap on the single-line summary in the collapsed header: the summary is only a rough sense of
+ * “what was asked”; the full question lives in the expanded body.
+ */
 const INLINE_PREVIEW_MAX_LENGTH = 160;
 
-/** 读时把 input 归一成对象：字符串先试**一次**宽容 `JSON.parse`（照 submit-result 的读侧惯例）。 */
+/**
+ * Normalize input into an object when reading: for a string, first try one lenient `JSON.parse`
+ * (following the read-side convention of submit-result).
+ */
 function toRecord(value: unknown): Record<string, unknown> | undefined {
   if (typeof value === "object" && value !== null && !Array.isArray(value)) {
     return value as Record<string, unknown>;
@@ -34,7 +40,10 @@ function readText(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }
 
-/** 折叠头部的单行概要：换行折叠成空格，超长截断。 */
+/**
+ * Single-line summary in the collapsed header: newlines collapse to spaces, and overlong text is
+ * truncated.
+ */
 function toInlinePreview(value: string | undefined): string | undefined {
   if (value === undefined) return undefined;
   const collapsed = value.replace(/\s+/gu, " ").trim();
@@ -45,16 +54,20 @@ function toInlinePreview(value: string | undefined): string | undefined {
 }
 
 /**
- * escalate 工具卡。子代理把一个**真阻塞**问题升级给
- * 主代理，并停驻在这次调用里等答案；主代理侧板挂的嵌套只读 SessionPane 走同一条 ToolCallBlocks
- * 管线，所以这张卡两个面共用。
+ * The escalate tool card. A sub-agent escalates a **genuinely blocking** question to the main agent
+ * and parks inside this call waiting for an answer; the nested read-only SessionPane docked in the
+ * main agent's side pane goes through the same ToolCallBlocks pipeline, so both surfaces share this
+ * card.
  *
- * 折叠行：kindLabel（asking/asked）+ 问题单行概要。展开：问题（+ context 若在场）+ 答案区。
+ * Collapsed row: kindLabel (asking/asked) + a single-line summary of the question. Expanded: the
+ * question (+ context when present) + the answer area.
  *
- * 关键：预算已尽的驳回**是一次普通工具结果**（不是 error tool_result，见 handler 注释），所以
- * 卡片绝不因 output 文本内容把它渲染成失败——只有 `status==="failed"`（接线故障之类）才走失败
- * 样式。停驻（running）时答案还没到，in-progress 标签就是全部信息；这张卡可能停很久，running
- * 态要显得平静、不像坏了。
+ * Key point: a rejection because the budget is exhausted **is an ordinary tool result** (not an
+ * error tool_result, see the handler comment), so the card must never render it as a failure based
+ * on the output text content—only `status==="failed"` (wiring failures and the like) gets the
+ * failure styling. While parked (running) the answer has not arrived yet, so the in-progress label
+ * is all the information there is; this card may park for a long time, so the running state must
+ * look calm rather than broken.
  */
 export function EscalateToolCallBlock(context: ToolCallBlockRenderContext) {
   const { intl } = useZCodeIntl();
@@ -64,13 +77,13 @@ export function EscalateToolCallBlock(context: ToolCallBlockRenderContext) {
   const questionContext = readText(input?.context);
 
   const isFailed = toolCall.status === "failed";
-  // 停驻中：still running / pending / in_progress 且未失败——答案尚未回来。
+  // Pending: still running / pending / in_progress and not failing - the answer has not come back yet.
   const isAsking =
     !isFailed &&
     (context.isRunning || toolCall.status === "pending" || toolCall.status === "in_progress");
 
-  // 答案文本 = 模型面内容：answered 时是主代理的答案原文，refused 时是端口写好的文案。
-  // 两支都是普通结果（handler 的 formatModelContent 只返回 message），只按 output 读。
+  // Answer text = model content: when answered, it is the original answer text of the main agent; when refused, it is the copy written by the port.
+  // Both are ordinary results (handler's formatModelContent only returns message), and can only be read by output.
   const answerText = isAsking ? undefined : readText(toolCall.output);
 
   const kindLabel = intl.formatMessage({
@@ -91,8 +104,8 @@ export function EscalateToolCallBlock(context: ToolCallBlockRenderContext) {
     [inlinePreview, toolCall.title, fallbackName],
   );
 
-  // 展开门：只要有问题、context 或答案任一段可展开的内容。首帧 input 可能还是 `{}`，那时
-  // 不给空面板一个展开入口（照 submit-result 的流式门）。
+  // Expand door: As long as there is a question, context or answer, any content can be expanded. The input in the first frame may still be `{}`. At that time
+  // Do not give an empty panel an expansion entry (follow the flow gate of submit-result).
   const hasDetails =
     question !== undefined || questionContext !== undefined || answerText !== undefined;
 

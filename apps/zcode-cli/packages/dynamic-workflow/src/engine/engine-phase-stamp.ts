@@ -1,29 +1,32 @@
 /**
- * 实例出生阶段的读取与标记。
- * 两类读取共用 `instancePhases`（实例 `siteId@ordinal` → 出生时的阶段名）：
- * 为事件补充阶段，以及为 `ProviderStop` 明细补充阶段。
- * 表由引擎拥有并在实例创建时写入；本模块只读取。
+ * Reading and stamping an instance's birth phase.
+ * Both kinds of read share `instancePhases` (instance `siteId@ordinal` -> the phase name at birth):
+ * filling in the phase for events, and filling in the phase for `ProviderStop` details.
+ * The table is owned by the engine and written when an instance is created; this module only reads it.
  */
 
 import type { RunEvent } from "./types.js";
 import { refToString, WorkflowError } from "./types.js";
 
-/** 实例键（`siteId@ordinal`）→ 它出生时的阶段名。引擎的 `instancePhases` 的只读视图。 */
+/** Instance key (`siteId@ordinal`) -> the phase name it was born in. A read-only view of the engine's `instancePhases`. */
 export type InstancePhases = ReadonlyMap<string, string>;
 
 /**
- * 给**出生事件**补上出生阶段：actor 的 `actor-created` 按 actor 查表，节点的 `node-queued`
- * 按 instance 查表，命中缓存的 `node-settled { cached: true }` 同样按 instance——命中的节点
- * 没有 queued，那条 settle 就是它的出生事件。其余事件**原样返回**：调度器的其余发射点零改动，
- * reducer 沿用 `actorSiteId` 的先例向前携带。
+ * Fills in the birth phase for **birth events**: an actor's `actor-created` looks the table up by actor, a node's
+ * `node-queued` by instance, and a cache-hit `node-settled { cached: true }` likewise by instance — a cache-hit
+ * node has no queued, so that settle is its birth event. Every other event is **returned as-is**: the
+ * scheduler's remaining emission sites are untouched, and the reducer carries forward following the
+ * `actorSiteId` precedent.
  *
- * ask 的 `node-dispatched` 是唯一的例外，它重复自己的出生事实（types.ts 的同名事件），于是
- * 两个阶段名在这里一并补上：`phaseName` 按 instance、`actorPhaseName` 按它的 actor，两次都查
- * 同一张出生表，所以与该实例的 `node-queued`、该 actor 的 `actor-created` 逐字相同。带 `actor`
- * 才补——world-read 的派发不带子代理，保持裸的。
+ * The `node-dispatched` of an ask is the one exception: it repeats its own birth fact (the same-named event in types.ts), so
+ * both phase names are filled in here as well: `phaseName` by instance and `actorPhaseName` by its actor, both
+ * lookups hitting the same birth table, so they are verbatim identical to that instance's `node-queued` and that
+ * actor's `actor-created`. It is only filled in when an `actor` is present — a world-read dispatch carries
+ * no subagent and stays bare.
  *
- * 它不是「发出这条事件时的当前阶段」：node-queued 可能被 hold 规则推迟到下一个标记之后才发出，
- * 而出生时刻在上一个阶段；派发更是可能卡在并发上界后面，等到脚本已走过好几个标记。
+ * It is not "the current phase at the moment this event is emitted": a node-queued may be deferred by a hold rule until after the next
+ * marker, while the birth moment lies in the previous phase; a dispatch can even get stuck behind the
+ * concurrency ceiling until the script has walked through several markers.
  */
 export function stampBirthPhase(event: RunEvent, instancePhases: InstancePhases): RunEvent {
   if (event.type === "actor-created") {
@@ -52,9 +55,9 @@ export function stampBirthPhase(event: RunEvent, instancePhases: InstancePhases)
 }
 
 /**
- * 给 `ProviderStop` 补上触发停止的子代理的**出生阶段**：driver 只知道 actor ref，阶段只有引擎知道（与事件流上 `phaseName`
- * 的同一张表）。没有 providerStop、没有 subagent、已带阶段、或该 ref 出生在任何 `phase()`
- * 标记之前 → 原样返回。
+ * Fills in the **birth phase** of the subagent that triggered a `ProviderStop`: the driver only knows the actor ref, and only
+ * the engine knows the phase (the same table that supplies `phaseName` on the event stream). No providerStop, no
+ * subagent, a phase already present, or that ref having been born before any `phase()` marker -> returned as-is.
  */
 export function enrichProviderStopPhase(
   error: WorkflowError,

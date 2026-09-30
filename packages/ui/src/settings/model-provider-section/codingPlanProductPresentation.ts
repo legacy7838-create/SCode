@@ -36,8 +36,8 @@ export type CodingPlanProductDisplay = CodingPlanProductPreviewPayment & {
 };
 
 const CODING_PLAN_CURRENCY_LABELS_ZH: Record<CodingPlanPriceCurrency, string> = {
-  CNY: "人民币",
-  USD: "美元",
+  CNY: "Chinese Yuan",
+  USD: "US Dollar",
 };
 
 export function pickProductPrice(product: CodingPlanProductPreviewPayment): number | null {
@@ -68,8 +68,8 @@ export function formatCodingPlanAmount(
       : "CN¥";
   const formatted = `${currencyPrefix}${formattedAmount}`;
 
-  // 套餐页需要同时展示中英文和跨币种价格；依赖 Intl currency 会在不同 locale 下输出
-  // 不一致的 ISO code/符号组合，因此这里按产品文案规范固定符号和中文币种名。
+  // The package page needs to display Chinese, English and cross-currency prices at the same time; depending on Intl currency, it will be output in different locales.
+  // Inconsistent ISO code/symbol combination, so the symbol and Chinese currency name are fixed according to the product copy specification.
   return isChineseLocale
     ? `${formatted} ${CODING_PLAN_CURRENCY_LABELS_ZH[resolvedCurrency]}`
     : formatted;

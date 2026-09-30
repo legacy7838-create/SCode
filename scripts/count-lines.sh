@@ -1,5 +1,5 @@
 #!/bin/bash
-# 扫描项目中超过 400 行的 .ts 文件（排除 node_modules、dist、rpc、bundled-resources）
+# Scan .ts files in the project with more than 400 lines (excluding node_modules, dist, rpc, bundled-resources)
 
 find . -name "*.ts" \
   -not -path "*/node_modules/*" \

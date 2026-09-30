@@ -5,8 +5,8 @@ export function createOAuthCallbackHandler(callback: OAuthCallback, notifyHandle
     try {
       await callback(url);
     } catch {
-      // preload 只负责桥接 OAuth 回调与主进程握手，不能把 renderer 回调异常继续外抛成未处理 rejection。
-      // 业务错误由 renderer 自己展示；这里无论成功失败都必须保证 handled 回执发回 main。
+      // preload is only responsible for bridging the OAuth callback and handshaking with the main process, and cannot continue to throw renderer callback exceptions as unhandled rejections.
+      // Business errors are displayed by the renderer itself; regardless of success or failure, a handled receipt must be sent back to main.
     } finally {
       notifyHandled();
     }

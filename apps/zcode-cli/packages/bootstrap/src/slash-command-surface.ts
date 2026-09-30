@@ -1,9 +1,10 @@
 import { BUILTIN_ZCODE_SLASH_COMMAND_HELP_ENTRIES, type ZCodeSlashCommand } from "@zcode/shared";
 
 /**
- * App `/` 面板与加号菜单按本顺序展示（UI 不维护排序白名单）。`workflow` 紧随 `goal`：两者都是
- * 「开启一段工作」的入口；它受动态工作流开关约束，
- * 由 zcode-protocol/slash-commands.ts 在装配时剔除。
+ * The App `/` panel and the plus menu render in this order (the UI keeps no ordering
+ * allowlist). `workflow` follows `goal` right behind: both are "start a stretch of work"
+ * entry points; it is gated by the dynamic workflow switch and is removed at assembly time by
+ * zcode-protocol/slash-commands.ts.
  */
 export const APP_PROTOCOL_VISIBLE_BUILTIN_SLASH_COMMAND_NAMES = [
   "goal",
@@ -12,7 +13,7 @@ export const APP_PROTOCOL_VISIBLE_BUILTIN_SLASH_COMMAND_NAMES = [
   "init",
 ] as const;
 
-/** 仅供 App Composer 使用的命令，不扩展 CLI TUI/help surface。 */
+/** Commands used only by the App Composer; they do not extend the CLI TUI/help surface. */
 export const APP_PROTOCOL_APP_ONLY_BUILTIN_SLASH_COMMANDS = [
   {
     description: "Switch to Plan mode and optionally send a task.",

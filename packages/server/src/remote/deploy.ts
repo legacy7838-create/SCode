@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- 远端部署入口集中编排 server/node/agent/tool 资源，拆分需单独整理边界。 */
+/* eslint-disable max-lines -- the remote deploy entry point centrally orchestrates the server/node/agent/tool resources, and splitting it would require working out the boundaries separately. */
 import { join } from "node:path";
 import {
   ZCODE_VERSION,
@@ -60,29 +60,29 @@ const SERVER_BUNDLE_COMPONENT_ID = "server-bundle";
 export type DeployLockMode = "remote" | "caller-serialized";
 
 export interface DeployOptions {
-  /** 取消当前远端连接初始化与其拥有的上传。 */
+  /** Cancels the current remote connection initialization and the uploads it owns. */
   signal?: AbortSignal;
-  /** 开发态本地“伪 CDN”目录，运行时从这里读取 remote 资源 */
+  /** Dev-mode local "fake CDN" directory the remote resources are read from at runtime */
   mockCdnDir?: string;
-  /** 生产态 remote 资源 CDN 基址 */
+  /** Production-mode remote resource CDN base URL */
   remoteCdnBaseUrl?: string;
-  /** 生产态 remote 资源 CDN 基址候选，按顺序回退 */
+  /** Production-mode remote resource CDN base URL candidates, tried in order as fallbacks */
   remoteCdnBaseUrls?: string[];
-  /** 生产态 remote 资源缓存目录 */
+  /** Production-mode remote resource cache directory */
   remoteCacheDir?: string;
-  /** 单个 manifest CDN 候选请求的超时时间，默认 10 秒。 */
+  /** Timeout for a single manifest CDN candidate request, 10 seconds by default. */
   manifestRequestTimeoutMs?: number;
-  /** Desktop Host 注入的远程资源 HTTP(S) 出口；standalone 未注入时保持直连。 */
+  /** HTTP(S) egress for remote resources injected by the Desktop Host; standalone stays on a direct connection when none is injected. */
   remoteAssetNetwork?: RemoteAssetNetworkPort;
   /** Force deploy even if versions match */
   force?: boolean;
-  /** 等待远端 install-root deploy lock 的总 deadline，默认 120 秒。 */
+  /** Total deadline for waiting on the remote install-root deploy lock, 120 seconds by default. */
   deployLockAcquireTimeoutMs?: number;
-  /** 部署串行化边界；默认由远端 install-root lock 保证。 */
+  /** Deploy serialization boundary; guaranteed by the remote install-root lock by default. */
   deployLockMode?: DeployLockMode;
   /** SSH-only remote asset install strategy. */
   assetInstallMode?: RemoteAssetInstallMode;
-  /** 只在选中资源包范围内做远端部署检查、下载和上传。 */
+  /** Performs the remote deploy check, download, and upload only within the scope of the selected resource packages. */
   resourcePackages?: RemoteResourcePackageSelection;
 }
 
@@ -140,9 +140,9 @@ export async function deployServer(
   };
   let localManifestRefPromise: Promise<RemoteAssetManifestRef | null> | null = null;
   const getLocalManifestRef = (): Promise<RemoteAssetManifestRef | null> => {
-    // deploy lock 可能等待较久；在获锁前就启动 fresh manifest
-    // 会让等待者用旧 SHA 覆盖新 owner 的部署。改为锁内首次需要时才固定，
-    // 后续 GLM 身份判断与 release materialize 仍复用同一份快照。
+    // deploy lock may wait for a long time; start fresh manifest before acquiring the lock
+    // Will have the waiter overwrite the new owner's deployment with the old SHA. Instead, the lock is fixed only when needed for the first time.
+    // Subsequent GLM identity judgment and release materialize still reuse the same snapshot.
     localManifestRefPromise ??= resolveFreshAssetManifestRef();
     return localManifestRefPromise;
   };
@@ -162,8 +162,8 @@ export async function deployServer(
       componentIds,
     );
     if (missingMockPaths.length > 0 && hasRemoteAssetCdnFallback(options)) {
-      // mock manifest 存在不等于该 component 的文件完整。
-      // 回退 CDN 时，SHA 跳过判断与 release materialize 必须共用同一份 CDN 快照。
+      // The existence of the mock manifest does not equal the completeness of the component's files.
+      // When rolling back to CDN, SHA skip judgment and release materialize must share the same CDN snapshot.
       return resolveFreshCdnManifestRef();
     }
     return getLocalManifestRef();
@@ -235,9 +235,9 @@ export async function deployServer(
       }
     }
 
-    // 开发态 mock-cdn 的 manifest 由 LocalUploadAssetInstaller 读取；
-    // 之前部署决策只走 CDN resolver，mock-cdn 分支拿不到 expectedVersion，
-    // 导致主 server 需要刷新时反复把已匹配的 node-runtime 全量上传。
+    // The manifest of development mock-cdn is read by LocalUploadAssetInstaller;
+    // Previously, only the CDN resolver was used for deployment decisions, and the mock-cdn branch could not get the expectedVersion.
+    // As a result, the main server repeatedly uploads all the matched node-runtime when it needs to be refreshed.
     return getComponentVersion(componentId);
   };
 
@@ -262,8 +262,8 @@ export async function deployServer(
       (serverDeployDecision.shouldDeploy && serverDeployDecision.appVersionChanged === true);
 
     if (shouldForceRefreshContentAddressedAssets) {
-      // server 会先于 GLM 更新；若后续步骤失败，下次连接时 server 版本
-      // 已经匹配。必须持久化升级强刷状态，让重试继续绕过同 SHA cache，直到 GLM 成功覆盖 marker。
+      // The server will be updated before GLM; if subsequent steps fail, the server version will be updated the next time you connect.
+      // Already matched. The strong flush state must be persisted to allow retries to continue bypassing the same SHA cache until GLM successfully overwrites the marker.
       await markRemoteAssetComponentRefreshPending(backend, {
         componentId: "glm",
         platformArch,
@@ -274,8 +274,8 @@ export async function deployServer(
     // Check if deploy is needed
     if (!serverDeployDecision.shouldDeploy) {
       log("skipped — remote version matches");
-      // 主 server 版本相同只证明 node/zcode-server.cjs 可启动，不代表随包工具仍存在。
-      // glm 内容跟随 app/server 版本刷新；但 wrapper/bundle 被清理或开发态 bundle 变化时仍要按实体检查修复。
+      // The same version of the main server only proves that node/zcode-server.cjs can be started, but does not mean that the packaged tools still exist.
+      // The glm content is refreshed according to the app/server version; however, when the wrapper/bundle is cleaned or the development bundle changes, it still needs to be checked and repaired according to the entity.
       if (shouldDeployResourcePackage("node-pty")) {
         await deployNodePtyPrebuilds(
           backend,
@@ -337,13 +337,13 @@ export async function deployServer(
       componentId: SERVER_BUNDLE_COMPONENT_ID,
       sourceRelativePath: "server/zcode-server.cjs",
       remotePath: `${REMOTE_BASE}/zcode-server.cjs`,
-      // App 版本变化是新的发布边界，不能只凭历史 cache 的 `.ready`
-      // 判断 server-bundle 可复用；与 GLM 一致，必须重新下载并校验当前 manifest 制品。
+      // App version changes are a new release boundary, and you cannot rely solely on the `.ready` of the historical cache.
+      // The server-bundle is judged to be reusable; consistent with GLM, the current manifest artifact must be re-downloaded and verified.
       forceRefresh: shouldForceRefreshContentAddressedAssets,
     });
     if (expectedServerBundleSha256) {
-      // App/version 相同不代表 server-bundle 制品相同。安装成功后才写
-      // manifest SHA marker，避免失败重试把旧 server 误判成当前制品。
+      // The same App/version does not mean that the server-bundle products are the same. Write after successful installation
+      // manifest SHA marker to prevent failed retries from misjudging the old server as the current product.
       await writeRemoteAssetComponentMeta(backend, {
         id: SERVER_BUNDLE_COMPONENT_ID,
         sha256: expectedServerBundleSha256,
@@ -370,7 +370,7 @@ export async function deployServer(
 
     log("all uploads complete");
 
-    // 部署 ZCode Agent runtime 到远程，历史资源包选择已在入口统一忽略。
+    // Deploy ZCode Agent runtime to the remote location, and historical resource package selections have been uniformly ignored at the entrance.
     await deployZCodeAgentRuntime(
       backend,
       env,
@@ -378,9 +378,9 @@ export async function deployServer(
         ...assetDeployOptions,
         platformArch,
         installer,
-        // 旧版 App 会覆盖 agents/glm，却不会同步新版引入的 GLM SHA marker。
-        // App 版本变化后该 marker 可能与实际 bundle 不一致，必须绕过 marker 与远端 cache，
-        // 按当前 App 的 manifest 重新下载并部署；同 App 版本内仍按 SHA 精确判断。
+        // The old version of the App will overwrite agents/glm, but will not synchronize the GLM SHA marker introduced in the new version.
+        // After the App version changes, the marker may be inconsistent with the actual bundle, and the marker and remote cache must be bypassed.
+        // Re-download and deploy according to the manifest of the current App; within the same App version, it is still judged accurately according to SHA.
         force: shouldForceRefreshContentAddressedAssets,
         selectedResourcePackageIds,
       },
@@ -416,9 +416,9 @@ export async function deployServer(
   };
 
   if (options?.deployLockMode === "caller-serialized") {
-    // 桌面 SSH 已由窗口级 shared Host readiness 保证同一 target 只有一个部署事务；
-    // 若仍创建 remote lock-holder，会为无额外互斥收益的路径长期占用 SSH channel。
-    // 该模式必须由已具备 single-flight 的调用方显式注入，WSL/Docker 和其他调用继续默认远端锁。
+    // Desktop SSH has been guaranteed by window-level shared Host readiness to have only one deployment transaction for the same target;
+    // If the remote lock-holder is still created, the SSH channel will be occupied for a long time for a path without additional mutual exclusion benefits.
+    // This mode must be explicitly injected by callers that already have single-flight, WSL and other calls continue to default to the remote lock.
     return deployUsingCurrentRemoteState();
   }
 
@@ -436,8 +436,8 @@ export async function deployServer(
   });
   let deployOutcome: { ok: true; value: boolean } | { ok: false; error: unknown };
   try {
-    // 进程内 WSL single-flight 无法覆盖不同 Desktop/build/backend。
-    // 获得远端 install-root lock 后必须重新检查，等待者不能按过期判断重复覆盖部署目录。
+    // In-process WSL single-flight cannot cover different Desktop/build/backends.
+    // After obtaining the remote install-root lock, you must recheck it. Waiters cannot repeatedly overwrite the deployment directory based on expiration judgment.
     deployOutcome = {
       ok: true,
       value: await deployUsingCurrentRemoteState(),
@@ -454,8 +454,8 @@ export async function deployServer(
     releaseOutcome = { ok: false, error };
   }
   if (!deployOutcome.ok && !releaseOutcome.ok) {
-    // finally 内直接抛 release 错误会覆盖真正的部署失败，排障只能看到次生症状。
-    // AggregateError 同时保留 deploy 与 release 两条因果链，且 release deadline 保证这里有界返回。
+    // Throwing a release error directly in finally will cover the real deployment failure, and only secondary symptoms will be visible when troubleshooting.
+    // AggregateError retains both deploy and release causal chains, and the release deadline guarantees bounded returns here.
     throw new AggregateError(
       [deployOutcome.error, releaseOutcome.error],
       "remote deployment and deploy-lock release both failed",
@@ -646,10 +646,10 @@ async function resolveReleaseDir(
       return mockReleaseDir;
     }
 
-    // WSL/SSH 开发态可能只有版本目录，但缺当前远端平台的具体组件
-    // （例如 Windows 侧 mock-cdn 只有 linux-arm64，却连接 linux-x64 WSL）。
-    // 直接返回 mock 目录会在上传阶段报 local remote asset not found；
-    // 有 CDN/cache 时应按组件回退到完整缓存，没有回退源时保留原错误指向缺失文件。
+    // The WSL/SSH development state may only have a version directory, but lack the specific components of the current remote platform.
+    // (For example, the Windows side mock-cdn only has linux-arm64, but connects to linux-x64 WSL).
+    // Returning directly to the mock directory will report local remote asset not found during the upload phase;
+    // When there is a CDN/cache, fallback to the complete cache by component, and when there is no fallback source, keep the original error pointing to the missing file.
     loggers.logWarn(
       `[remote-assets] mock-cdn incomplete for ${platformArch}; missing=${missingMockPaths.join(", ")}`,
     );
@@ -662,8 +662,8 @@ async function resolveReleaseDir(
     );
   }
 
-  // 生产态不再打包 remote 资源，必须先从 CDN 下载到本地 cache。
-  // 这里统一把“拿 releaseDir”的逻辑收口，避免后续各资源分支继续散落占位判断。
+  // Remote resources are no longer packaged in the production state and must be downloaded from the CDN to the local cache first.
+  // Here, the logic of "get releaseDir" is unified to prevent subsequent resource branches from continuing to scatter placeholder judgments.
   return ensureRemoteReleaseDirFromCdn(
     {
       remoteCdnBaseUrl: options?.remoteCdnBaseUrl,

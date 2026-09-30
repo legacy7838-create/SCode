@@ -1,6 +1,6 @@
-// 由各 bundler 通过 define 注入，避免运行时 JSON import 的跨 bundler 兼容问题。
-// 非构建环境（如 e2e 测试的 mocha）下 define 不存在，
-// 用 typeof 检查 + fallback 避免 ReferenceError。
+// Injected by each bundler through define to avoid cross-bundler compatibility issues of JSON import at runtime.
+// define does not exist in non-build environments (such as mocha for e2e testing).
+// Use typeof checking + fallback to avoid ReferenceError.
 declare const __ZCODE_VERSION__: string;
 declare const __ZCODE_COMMIT__: string;
 declare const __ZCODE_BUILD_TIME__: string;

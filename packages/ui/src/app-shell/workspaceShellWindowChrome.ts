@@ -18,8 +18,8 @@ export function resolveWorkspaceShellPanelRadiusPx({
   macOSMajorVersion,
 }: WorkspaceShellPlatformRadiusOptions): number {
   if (isWindowsDesktop) return 5;
-  // 忽略 macOS 版本会让 Sequoia 的内层 12px 圆角与原生窗口小圆角不协调。
-  // 保留 4px 外层留白，旧系统和未知版本用 6px，明确识别 Tahoe 26+ 才用 12px。
+  // Ignoring the macOS version will make Sequoia's inner 12px rounded corners inconsistent with the native window's small rounded corners.
+  // Keep 4px as outer space, use 6px for old systems and unknown versions, and use 12px only to clearly identify Tahoe 26+.
   if (isMacDesktop) return (macOSMajorVersion ?? 0) >= 26 ? 12 : 6;
   return 12;
 }
@@ -37,7 +37,7 @@ export function resolveWorkspaceShellWindowChromeClass({
   macOSMajorVersion,
   supportsNativeRoundedCorners,
 }: WorkspaceShellWindowChromeOptions): string {
-  // Linux 与设置页一致使用 xl；面板已有独立留白，不承担系统窗口外沿。
+  // Linux uses xl consistently with the settings page; the panel has an independent blank space and does not bear the outer edge of the system window.
   if (isLinuxDesktop) return "rounded-xl border border-border";
   if (!isWindowsDesktop) {
     const radius = resolveWorkspaceShellPanelRadiusPx({ isMacDesktop, macOSMajorVersion });
@@ -45,19 +45,19 @@ export function resolveWorkspaceShellWindowChromeClass({
   }
 
   if (supportsNativeRoundedCorners === null) {
-    // bridge 不可用或首次查询尚未完成时，不能把“未知”直接解释成 Windows 10。
-    // 保持改动前样式，避免 Win11 在失败路径永久退化为直角外观。
+    // "Unknown" cannot be interpreted directly as Windows 10 when the bridge is unavailable or the first query has not yet completed.
+    // Maintain the pre-change style to prevent Win11 from permanently degenerating into a right-angled appearance on the failed path.
     return "rounded-[5px] border border-border";
   }
 
   if (!supportsNativeRoundedCorners) {
-    // 仅按 Windows 平台统一绘制右侧圆角，会在不支持原生圆角的 Windows 10
-    // 上伪造一层窗口外形。只收直右侧外角，不能顺带删除面板原有的三条弱边框。
+    // Only drawing the right rounded corners uniformly according to the Windows platform will cause problems in Windows 10 which does not support native rounded corners.
+    // Forge a layer of window appearance. Only the right outer corner is straightened, and the three original weak borders of the panel cannot be deleted.
     return "rounded-l-[5px] border border-border";
   }
 
-  // 旧最大化规则把面板当成系统窗口外沿，清除了圆角和三条边框。
-  // 面板现有独立的 4px 留白，最大化时也必须保持完整圆角与边框。
-  // Windows 外沿内缩 4px 后，12px 圆角会形成过厚的弧形留白；布局面板统一使用 5px。
+  // The old maximization rules treated the panel as the outer edge of the system window, eliminating rounded corners and three borders.
+  // The panel now has an independent 4px white space, and the complete rounded corners and borders must be maintained when maximized.
+  // After the outer edge of Windows is reduced by 4px, the 12px rounded corners will form an excessively thick arc-shaped blank space; the layout panel uses 5px uniformly.
   return "rounded-[5px] border border-border";
 }

@@ -2,10 +2,11 @@ import type { IFileService } from "@zcode/services";
 import { WORKSPACE_FILE_ENTRIES_CHUNK_SIZE } from "@zcode/shared/workspaceFileEntriesCodec";
 
 /**
- * 分块拉取 workspace 文件索引的列式 packed 字符串。
- * 单条 RPC 大消息（65MB）在 renderer 接收端的分帧重组是 4.6-6.3s 主线程长任务，
- * 输入会冻结；分块（~4MB/块）+ 块间 setTimeout(0) 让出事件循环后，主线程每次
- * 只处理一小块（~50ms），键入事件始终能插队。整体耗时不变，但 UI 永不冻结。
+ * Fetches the columnar packed strings of the workspace file index in chunks. Reassembling one large
+ * RPC message (65MB) frame by frame at the renderer receiver is a 4.6-6.3s main-thread long task
+ * that freezes input; with chunking (~4MB per chunk) plus a setTimeout(0) between chunks to yield
+ * the event loop, the main thread handles only a small chunk at a time (~50ms), so key events can
+ * always cut in. The total elapsed time is unchanged, but the UI never freezes.
  */
 export async function fetchWorkspaceFileEntriesPacked(
   fileService: Pick<IFileService, "listWorkspaceFilesLength" | "listWorkspaceFilesRange">,
@@ -20,7 +21,7 @@ export async function fetchWorkspaceFileEntriesPacked(
       length: WORKSPACE_FILE_ENTRIES_CHUNK_SIZE,
     });
     packed += chunk;
-    // 块间让出：处理下一块前先放行排队的输入/渲染任务。
+    // Yield between blocks: Release queued input/rendering tasks before processing the next block.
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
   }
   return packed;

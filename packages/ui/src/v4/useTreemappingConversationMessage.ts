@@ -1,11 +1,11 @@
-// TreemappingPane 的数据源是 v4 conversation 投影 rows。
-// Treemapping 只消费「一轮 assistant 输出的 toolCalls + 是否仍在流式」，这里把
-// snapshot rows 里最后一个 assistant 轮的 ToolCallRow 适配回旧 TaskChatMessage 形态，
-// 复用 treemappingActivity 的既有解析规则，不复活 zcodeChatMessages。
+// The data source of the TreemappingPane is v4 conversation projection rows.
+// Treemapping only consumes "one round of toolCalls output by assistant + whether it is still streaming", here
+// The ToolCallRow of the last assistant wheel in the snapshot rows is adapted back to the old TaskChatMessage form.
+// Reuse the existing parsing rules of treemappingActivity and do not revive zcodeChatMessages.
 //
-// TreemappingPane 挂在 side pane（V4ConversationProvider 之外），因此自持一条
-// SessionDataLayer；pane 当前默认从侧边栏隐藏（workspaceSidePane sanitize 过滤
-// treemapping tab），该订阅只在 pane 真实挂载时才会建立。
+// TreemappingPane hangs on the side pane (outside V4ConversationProvider), so it has its own
+// SessionDataLayer; pane is currently hidden from the sidebar by default (workspaceSidePane sanitize filter
+// treemapping tab), this subscription will only be established when the pane is actually mounted.
 import { useEffect, useMemo, useState } from "react";
 import type { ConversationRow, ToolCallRow } from "@zcode/shared/zcode-protocol-v4";
 import type { TaskChatMessage } from "@/lib/taskChatMessageTypes.js";
@@ -22,7 +22,10 @@ const ASSISTANT_TURN_ROW_KINDS = new Set<ConversationRow["kind"]>([
   "subagent",
 ]);
 
-/** 从 rows 窗口选出最后一个 assistant 轮，并适配为旧 TaskChatMessage 形态。 */
+/**
+ * Picks the last assistant turn out of the rows window and adapts it to the legacy TaskChatMessage
+ * shape.
+ */
 function buildTreemappingMessageFromRows(rows: readonly ConversationRow[]): TaskChatMessage | null {
   let lastAssistantTurnId: string | null = null;
   for (let index = rows.length - 1; index >= 0; index -= 1) {
@@ -55,8 +58,9 @@ function buildTreemappingMessageFromRows(rows: readonly ConversationRow[]): Task
 }
 
 /**
- * 订阅指定 session 的 v4 conversation 投影，返回 Treemapping 需要的合成 assistant 消息。
- * sessionId 为空时不订阅，返回 null。
+ * Subscribes to the v4 conversation projection of the given session and returns the synthetic
+ * assistant message that Treemapping needs. It does not subscribe when sessionId is empty, and
+ * returns null.
  */
 export function useTreemappingConversationMessage(params: {
   sessionId: string | null;

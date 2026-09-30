@@ -18,8 +18,8 @@ export function createConfigCliOverrides(options: ZCodeAppOptions): RuntimeConfi
     permission.allowedTools = [...options.runtimeConfig.toolAllowlist];
   }
   if (options.runtimeConfig?.toolDisallowlist) {
-    // headless CLI 的 denylist 同时投影到 permission config，让执行期权限
-    // 路径与 provider-visible 工具面共享同一份禁用清单。
+    // The denylist of headless CLI is also projected to permission config, allowing execution permissions
+    // Paths share the same disable list as the provider-visible tool surface.
     permission.disallowedTools = [...options.runtimeConfig.toolDisallowlist];
   }
   if (Object.keys(permission).length > 0) {
@@ -61,8 +61,9 @@ export function resolveEffectiveLocale(
   requestedLocale: UiLocale,
   options: ZCodeAppOptions,
 ): SupportedLocale {
-  const detectedLocale = requestedLocale === "auto" ? detectAppLocale(options) : undefined;
-  return resolveLocale(requestedLocale, detectedLocale);
+  // English is the only locale, so detection can no longer change the outcome;
+  // resolveLocale still takes the detected hint for its "auto" fallback.
+  return resolveLocale(requestedLocale, detectAppLocale(options));
 }
 
 function detectAppLocale(options: ZCodeAppOptions): SupportedLocale | undefined {

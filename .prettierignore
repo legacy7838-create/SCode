@@ -1,9 +1,9 @@
-# oxfmt 默认读取 .gitignore 与 .prettierignore（见 oxfmt --help 的 --ignore-path 说明）。
-# apps/zcode-cli 自带 oxfmt（更高版本）与 format/format:check 脚本；根仓的 oxfmt
-# 不应跨目录改写其文件，否则两边格式化器会互相打架。
+# oxfmt reads .gitignore and .prettierignore by default (see the --ignore-path note in oxfmt --help).
+# apps/zcode-cli ships its own oxfmt (a newer version) plus format/format:check scripts; the root repo's oxfmt
+# must not rewrite its files across directories, or the two formatters will fight each other.
 apps/zcode-cli/
 
-# 这两个 fixture 是 dynamic-workflow 子包的图测试输入，刻意使用 for await 的非法 TS 语法，
-# oxfmt 解析会报错；只排除这两个文件，其余 graphs fixture 仍参与格式检查。
+# These two fixtures are graph-test inputs for the dynamic-workflow subpackage and deliberately use the invalid for await TS syntax,
+# so oxfmt fails to parse them; only these two files are excluded - the other graphs fixtures still take part in format checks.
 apps/zcode-cli/packages/dynamic-workflow/tests/graphs/control-flow-for-await.ts
 apps/zcode-cli/packages/dynamic-workflow/tests/graphs/async-promise-for-await-of.ts

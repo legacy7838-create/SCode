@@ -12,9 +12,9 @@ export async function initializeHostApiNetworkTransportOwner<T>(params: {
   try {
     return await params.establishOwner();
   } catch (initializationError) {
-    // transport 在 ServiceCollection 接管前就会被启动预热请求使用；初始化中途抛错时，
-    // 全局 activeServices 尚未赋值，进程级清理无法找到它。这里从创建点守住临时所有权，并用
-    // deadline 避免 dispatcher 关闭卡住原始初始化错误的 fatal 收口。
+    // The transport will be used by the preheating request before the ServiceCollection takes over; when an error occurs during initialization,
+    // The global activeServices has not been assigned a value and process-level cleanup cannot find it. Here we hold temporary ownership from the point of creation and use
+    // deadline avoids dispatcher closing fatal closures that get stuck on original initialization errors.
     await runHostShutdownPhases(
       [
         {

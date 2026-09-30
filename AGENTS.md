@@ -1,82 +1,82 @@
-## 核心原则
+## Core Principles
 
-- 新增或修改行为前，先更新对应 spec；目录不存在时按需创建。先明确产品规则、状态所有者、接口和验收场景，再实现代码。
-- 以当前检出的源码、`package.json` 和架构策略为准。说明中只保留当前仓库提供的功能、命令和文件；删除功能时同步清理指令和技能中的引用。
-- 定位问题时，未明确要求修改代码就先调查原因。结合源码、日志和运行时证据，区分已确认原因与待验证假设。
-- 保留与任务无关的本地改动，不自行恢复已移除的模块或内部依赖。
+- Before adding or modifying behavior, update the corresponding spec first; create directories as needed. Define product rules, state owners, interfaces, and acceptance scenarios before implementing code.
+- Base work on the currently checked-out source code, `package.json`, and architecture policy. Only retain features, commands, and files provided by the current repository in documentation; when removing features, clean up references in instructions and skills accordingly.
+- When diagnosing issues, investigate the root cause first unless code changes are explicitly requested. Use source code, logs, and runtime evidence to distinguish confirmed causes from hypotheses to be verified.
+- Preserve local changes unrelated to the task; do not restore removed modules or internal dependencies on your own.
 
-## 命令与仓库结构
+## Commands and Repository Structure
 
-开工前运行 `node scripts/check-workspace-freshness.mjs` 检查基线。Node 版本以 `mise.toml` 为准。
+Run `node scripts/check-workspace-freshness.mjs` before starting work to check the baseline. Node version is governed by `mise.toml`.
 
-以下命令从仓库根目录执行：
+The following commands are run from the repository root:
 
-| 用途             | 命令                                      |
-| ---------------- | ----------------------------------------- |
-| 类型检查         | `pnpm typecheck`                          |
-| Lint             | `pnpm lint` / `pnpm lint:fix`             |
-| 格式检查         | `pnpm fmt:check`                          |
-| 桌面开发         | `pnpm dev:desktop`                        |
-| Web 开发         | `pnpm dev:web`                            |
-| 提交前检查       | `pnpm verify:pre-push`（Lint 与架构检查） |
-| 架构检查         | `pnpm architecture:check --changed`       |
-| 模块阅读包       | `pnpm architecture:context <module-id>`   |
-| 未使用依赖与导出 | `pnpm knip`                               |
-| 导出引用查询     | `pnpm dep:refs --list-exports <file>`     |
+| Purpose               | Command                                              |
+| --------------------- | ---------------------------------------------------- |
+| Type checking         | `pnpm typecheck`                                     |
+| Lint                  | `pnpm lint` / `pnpm lint:fix`                        |
+| Format checking       | `pnpm fmt:check`                                     |
+| Desktop development   | `pnpm dev:desktop`                                   |
+| Web development       | `pnpm dev:web`                                       |
+| Pre-commit check      | `pnpm verify:pre-push` (Lint and architecture check) |
+| Architecture check    | `pnpm architecture:check --changed`                  |
+| Module reading pack   | `pnpm architecture:context <module-id>`              |
+| Unused deps & exports | `pnpm knip`                                          |
+| Export ref query      | `pnpm dep:refs --list-exports <file>`                |
 
-测试入口以目标包当前的 `package.json` 和实际测试文件为准，不假定存在统一的单测或 E2E 命令。
+Test entry points are based on the target package's current `package.json` and actual test files; do not assume a unified unit test or E2E command exists.
 
-- `packages/desktop`：Electron main、host、renderer。
-- `packages/web`、`packages/server`：Web 客户端与服务端。
-- `packages/ui`：共享 React 组件、hooks 与 Zustand store。
-- `packages/services`：业务服务；`packages/rpc`：RPC 框架。
-- `packages/shared`：共享协议与类型；`packages/client`：Agent 客户端 SDK。
-- `apps/zcode-cli`：Agent CLI 与运行时。
-- `CONTEXT.md`：插件商店领域词汇；修改相关 UI 前阅读。
-- `DESIGN.md`：UI 设计规范；修改 UI 前阅读。
+- `packages/desktop`: Electron main, host, renderer.
+- `packages/web`, `packages/server`: Web client and server.
+- `packages/ui`: Shared React components, hooks, and Zustand store.
+- `packages/services`: Business services; `packages/rpc`: RPC framework.
+- `packages/shared`: Shared protocol and types; `packages/client`: Agent client SDK.
+- `apps/zcode-cli`: Agent CLI and runtime.
+- `CONTEXT.md`: Plugin store domain vocabulary; read before modifying related UI.
+- `DESIGN.md`: UI design specification; read before modifying UI.
 
-## 实现与验证
+## Implementation and Verification
 
-- 代码改动使用 `.agents/skills/architecture-governance/SKILL.md`，先运行架构检查，再读取目标模块的受控上下文。
-- 避免重复状态和多条写入路径。明确唯一所有者、接口、依赖方向、事件顺序与幂等边界，不能用超时掩盖同步问题。
-- 有行为改动时先补充对应测试；交互改动需要 E2E 场景。检查测试与实现是否一致，并实际执行可用的验证。未执行或环境受限时如实说明。
-- 修复 bug 时用中文注释说明原因和修复依据。发现设计缺陷时先与用户对齐，不不断增加兜底分支。
-- 涉及状态、时序、远端或异步同步的方案，用图展示所有者及事件顺序。
-- 必须执行 `pnpm typecheck` 和 `pnpm lint`，报告真实结果，不将已有失败写成通过。
-- 使用异步文件和网络 IO；跨包导入使用公开入口，遵守现有路径别名。
-- 禁止 UI 直接调用 Repo、Service 引用 Runtime 具体实现、跨域导入实现细节及循环依赖。
+- Code changes use `.agents/skills/architecture-governance/SKILL.md`; run the architecture check first, then read the target module's controlled context.
+- Avoid duplicate state and multiple write paths. Define the sole owner, interfaces, dependency direction, event ordering, and idempotency boundaries; do not mask synchronization issues with timeouts.
+- When behavior changes, add corresponding tests first; interaction changes require E2E scenarios. Check that tests match implementation, and actually run available verifications. Report honestly when not executed or when environment is constrained.
+- When fixing bugs, add Chinese comments explaining the reason and fix rationale. When design flaws are discovered, align with users first; do not keep adding fallback branches.
+- For solutions involving state, timing, remote, or asynchronous synchronization, use diagrams to show owners and event ordering.
+- Must run `pnpm typecheck` and `pnpm lint`; report actual results, do not report existing failures as passing.
+- Use async file and network IO; cross-package imports use public entry points, respecting existing path aliases.
+- UI must not directly call Repo, Service referencing Runtime concrete implementations, cross-domain importing implementation details, or circular dependencies.
 
-## UI 与平台边界
+## UI and Platform Boundaries
 
-- 遵守 `DESIGN.md`，复用已有组件，兼顾桌面与手机 Web 的布局、交互、主题和国际化。
-- 组件通过 `packages/ui/src/hooks/` 访问服务；平台操作通过 `IPlatformService`（`packages/shared/src/platform.ts`），不直接调用 `window.zcode`。
-- 通过依赖注入处理 Desktop、Web、本地和远程环境的差异，并兼顾 Windows、macOS 和 Linux。
-- Zustand 状态位于 `packages/ui/src/store/`。广播同步的主题、语言等字段需要防止回环；UI 局部状态不应被误当作服务端事实。
-- hooks 中含 JSX 的文件使用 `.tsx`。
+- Follow `DESIGN.md`, reuse existing components, and account for both desktop and mobile web layout, interaction, theming, and internationalization.
+- Components access services through `packages/ui/src/hooks/`; platform operations go through `IPlatformService` (`packages/shared/src/platform.ts`), not by calling `window.zcode` directly.
+- Handle differences between Desktop, Web, local, and remote environments through dependency injection, accounting for Windows, macOS, and Linux.
+- Zustand state is located in `packages/ui/src/store/`. Broadcast-synced fields like theme and language need loop prevention; UI local state should not be mistaken for server-side facts.
+- Hooks containing JSX use `.tsx` extension.
 
-## 进程、协议与远程控制
+## Process, Protocol, and Remote Control
 
-- Desktop app 通过 stdio 与 Agent 通信。协议改动同步更新 `packages/shared/src/zcode-protocol/index.ts`，提供严格类型与运行时校验。
-- Main 负责窗口、原生操作、进程调度和消息转发，不承载 task/session 业务状态。
-- 每个窗口使用一个 window-scoped Local Host；本地 workspace 共享该 Host。远程 workspace 由窗口内的连接注册表管理，不另建 Desktop Remote Host。
-- 手机远控连接桌面已有 Host attachment，复用会话运行时；不为手机另起 Agent、Local Host 或远程会话。
-- Desktop 的 `desktop-continuous` 实时链路与手机的 `web-remote-replayable` 恢复链路必须明确区分。修改 stream、snapshot、queue 或重连时，同时验证两种语义。
-- 外部 relay 与 Main 只做鉴权、配对、心跳、转发及 attachment 调度，不保存任务队列、快照等业务状态。
-- 已接受的 busy/running 输入由 CLI/runtime `CommandInbox` 串行 admission；Renderer 只保留未提交草稿与 pending optimistic overlay，Host owner/lease 负责路由。
-- 保留 owner/lease、跨 Host 路由和 stale run 防护，不能仅根据单一路径删除边界判断。
+- The Desktop app communicates with the Agent via stdio. Protocol changes must synchronously update `packages/shared/src/zcode-protocol/index.ts`, providing strict types and runtime validation.
+- Main is responsible for windows, native operations, process scheduling, and message forwarding; it does not carry task/session business state.
+- Each window uses one window-scoped Local Host; the local workspace shares that Host. Remote workspaces are managed by the connection registry within the window, without creating a separate Desktop Remote Host.
+- Mobile remote control connects to the existing Host attachment on the desktop, reusing the session runtime; do not start a separate Agent, Local Host, or remote session for mobile.
+- The Desktop `desktop-continuous` real-time link and the mobile `web-remote-replayable` recovery link must be clearly distinguished. When modifying stream, snapshot, queue, or reconnection, verify both semantics simultaneously.
+- External relay and Main only handle authentication, pairing, heartbeat, forwarding, and attachment scheduling; they do not persist task queues, snapshots, or other business state.
+- Accepted busy/running input is serially admitted by the CLI/runtime `CommandInbox`; the Renderer only keeps unsubmitted drafts and pending optimistic overlays, with Host owner/lease responsible for routing.
+- Preserve owner/lease, cross-Host routing, and stale run protection; do not remove boundary checks based on a single path.
 
 ## Workspace Identity
 
-- `workspaceIdentity` 用于身份隔离，`workspacePath` 用于文件操作、命令 cwd、Git 和路径展示。
-- 身份 key 统一为 `workspaceIdentity?.trim() || workspacePath`，适用于去重、绑定、缓存、队列、持久化和请求关联。
-- 远程链路贯穿传递 `workspaceIdentity` 与 `remoteSessionId`，不得仅按路径匹配。
-- 新接口保留本地路径 fallback；远程 identity 复用现有构造和解析工具，不在业务代码中手写格式。
+- `workspaceIdentity` is used for identity isolation; `workspacePath` is used for file operations, command cwd, Git, and path display.
+- The identity key is uniformly `workspaceIdentity?.trim() || workspacePath`, applicable to deduplication, binding, caching, queuing, persistence, and request association.
+- Remote links must pass `workspaceIdentity` and `remoteSessionId` end-to-end; do not match by path alone.
+- New interfaces retain the local path fallback; remote identity reuses existing construction and parsing tools; do not hand-write formats in business code.
 
-## 日志
+## Logging
 
-- UI 使用 `packages/ui/src/logger.ts`，不直接使用 `console.log` 或 `window.zcode?.log`。
-- Agent/session/runtime 相关服务日志使用 `createServiceLogger(scope)`（`packages/services/src/logger/serviceLogger.ts`）。
-- `debug` 用于协议原始数据、流式 chunk 和逐条工具更新等高频诊断，生产环境不落盘。
-- `info` 用于进程和会话生命周期、权限结果、一次性初始化等生产可用事件。
-- `warn` 用于可恢复异常；`error` 用于崩溃、握手失败、鉴权丢失等不可恢复错误。
-- 不在日志、示例或提交中写入凭据、真实用户数据和内部服务地址。
+- UI uses `packages/ui/src/logger.ts`, not `console.log` or `window.zcode?.log` directly.
+- Agent/session/runtime related service logs use `createServiceLogger(scope)` (`packages/services/src/logger/serviceLogger.ts`).
+- `debug` is for high-frequency diagnostics such as protocol raw data, streaming chunks, and per-tool updates; not persisted in production.
+- `info` is for production-available events such as process and session lifecycle, permission results, and one-time initialization.
+- `warn` is for recoverable exceptions; `error` is for unrecoverable failures such as crashes, handshake failures, and authentication loss.
+- Do not write credentials, real user data, or internal service addresses in logs, examples, or commits.

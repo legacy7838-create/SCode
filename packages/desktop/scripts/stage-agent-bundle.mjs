@@ -1,13 +1,13 @@
-// Agent bundle 的暂存动作：把 apps/zcode-cli/packages/cli/dist/zcode.cjs 放进
-// bundled-agents/<平台>/glm，并写 meta。
+// Agent bundle temporary storage action: put apps/zcode-cli/packages/cli/dist/zcode.cjs into
+// bundled-agents/<platform>/glm, and write meta.
 //
-// dev 与打包**必须**用同一份暂存实现。
-// 只有打包链（prepare-agent-node-bundle.mjs）会暂存是不够的，dev 链
-// （scripts/build-desktop-agent-cli.mjs）不会；而 dev 未打包时的 agent 二进制由
-// desktopRuntimeEnv.ts 的 resolveBundledZCodeAgentBinaryPath() 解析，候选**只有**
-// bundled-agents/，没有 cli/dist/。于是 dev 一直跑着上一次打包时留下的那份 ——
-// 实测陈旧 3 天，任何 agent CLI 侧改动在 dev 里静默不生效，排查时会把「改动没生效」
-// 误判成「代码没起作用」。两边共用这一份，dev 与打包不可能再各自漂移。
+// dev and packaging must be implemented using the same temporary cache.
+// It is not enough that only the packaging chain (prepare-agent-node-bundle.mjs) will be temporarily stored. The dev chain
+// (scripts/build-desktop-agent-cli.mjs) will not; and the agent binary when dev is not packaged is
+// resolveBundledZCodeAgentBinaryPath() resolution of desktopRuntimeEnv.ts, the candidates are only **
+// bundled-agents/, no cli/dist/. So dev keeps running the share left in the last package——
+// The actual measurement is 3 days old. Any changes on the agent CLI side will not take effect silently in dev. During troubleshooting, "changes have not taken effect" will be displayed.
+// Misjudged as "the code does not work". Both sides share this share, and dev and packaging can no longer drift separately.
 import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -24,9 +24,9 @@ export function resolveAgentBundlePaths({ repoRoot, platformKey }) {
 }
 
 /**
- * 干净重建 glm 目录再拷贝。清空是刻意的：electron-builder 整目录拷贝
- * bundled-agents/<平台>/glm → resources/glm，本地工作树里上一次构建残留的原生二进制
- * （zcode-agent / zcode-acp 等）和旧 meta 会被一并打进安装包（CI 干净检出不会有，本地会）。
+ * Cleanly rebuild the glm directory and then copy it. The clearing is intentional: electron-builder copies the entire directory
+ * bundled-agents/<platform>/glm → resources/glm, the remaining native binary from the last build in the local working tree
+ * (zcode-agent / zcode-acp, etc.) and the old meta will be included in the installation package (the CI clean checkout will not have it, but the local one will).
  */
 export function stageAgentBundle({ repoRoot, platformKey, log = console.log }) {
   const { cliBundlePath, glmDir, stagedBundlePath, stagedMetaPath } = resolveAgentBundlePaths({
@@ -34,7 +34,9 @@ export function stageAgentBundle({ repoRoot, platformKey, log = console.log }) {
     platformKey,
   });
   if (!existsSync(cliBundlePath)) {
-    throw new Error(`[stage:agent-bundle] agent bundle 源产物不存在：${cliBundlePath}`);
+    throw new Error(
+      `[stage:agent-bundle] agent bundle source product does not exist: ${cliBundlePath}`,
+    );
   }
   rmSync(glmDir, { recursive: true, force: true });
   mkdirSync(glmDir, { recursive: true });

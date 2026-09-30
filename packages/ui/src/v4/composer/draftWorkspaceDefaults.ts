@@ -1,9 +1,12 @@
-// 工具条只展示 Composer 的下一次提交选择；Session 不是存活编辑器的补值来源。
+// The toolbar only displays Composer's next commit selection; Session is not a source of complement for surviving editors.
 import type { ZCodeConfigOption } from "@zcode/shared";
 import type { ModelSelectionView } from "@zcode/services";
 import type { SessionConfigState } from "@zcode/shared/zcode-protocol-v4";
 import { resolveModelThoughtOption } from "@/lib/modelThoughtOption.js";
-/** 只将结构化选择投影给现有展示控件；不能借旧 Snapshot 或平铺别名填满空选择。 */
+/**
+ * Projects only the structured selection onto the existing display controls; an empty selection
+ * must not be padded out with a stale Snapshot or a flattened alias.
+ */
 export function resolveDraftDisplayedConfig(
   composer: Partial<SessionConfigState>,
 ): SessionConfigState | null {
@@ -42,7 +45,7 @@ export function resolveDraftThoughtCurrentValue(params: {
     return explicitThought;
   }
 
-  // 展示层曾借目录默认值/首项填补空值，让未绑定的旧会话看起来已选好档位。
-  // 当前值只认选择结果；新建/主动选模的补全由 Selection 入口负责，恢复空值必须保留。
+  // The presentation layer used the directory default value/first item to fill in the empty values, making the unbound old session appear to have selected the file.
+  // The current value only recognizes the selection result; the completion of new/active mode selection is the responsibility of the Selection entry, and the restored null value must be retained.
   return "";
 }

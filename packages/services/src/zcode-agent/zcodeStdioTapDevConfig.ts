@@ -57,7 +57,7 @@ export function setZCodeStdioTapDevEnabled(enabled: boolean): ZCodeStdioTapDevSt
     statePath,
     `${JSON.stringify(
       {
-        // 开发态 stdio 抓包是高频原始协议帧，只能通过显式开关写旁路文件，避免误进生产日志。
+        // The development stdio packet capture is a high-frequency original protocol frame, and the bypass file can only be written through an explicit switch to avoid accidentally entering the production log.
         enabled: visible && enabled,
         updatedAt: new Date().toISOString(),
       },

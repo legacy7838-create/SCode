@@ -2,12 +2,14 @@ import type { WorkflowRunState } from "@zcode/shared/zcode-protocol-v4";
 import type { StepRunStatus } from "@/components/workflow-graph/types.js";
 
 /**
- * 状态灯的全部形与色。消费方自带尺寸与
- * `rounded-full`；这里只给形状差异（脉冲 / 实点 / 晕圈 / 空环）与颜色。时间线的站灯、侧栏
- * 清单、run 目录、任务列表共用——一个特性只有一套「运行中」的画法。
+ * Every shape and color of the status lamp. Consumers bring their own size and `rounded-full`; this
+ * only supplies the shape differences (pulse / solid dot / halo / empty ring) and the colors. The
+ * timeline station lamps, the sidebar list, the run directory and the task list share them — a
+ * feature has exactly one way of drawing "running".
  *
- * running 用 warning（活动色）而不是 primary：primary 跨主题反色（亮色下近黑），读作「强调」
- * 而非「在动」；活动色让给真正在动的东西（灯、行进虚线、转圈）。
+ * running uses warning (the activity color) rather than primary: primary inverts across themes
+ * (nearly black in light mode), so it reads as "emphasis" rather than "in motion"; the activity
+ * color is left to things that are genuinely moving (lamps, marching dashes, spinners).
  */
 export const STATUS_DOT: Record<StepRunStatus, string> = {
   done: "bg-success",
@@ -17,9 +19,11 @@ export const STATUS_DOT: Record<StepRunStatus, string> = {
 };
 
 /**
- * 编译反馈行的空环灯。形状与「compiled」、
- * 待启动的站同为空环：什么都没跑。颜色只说注意力是否还悬着——`open` 是该谱系最新的一稿（循环还在、
- * 或模型停在这里），`settled` 是后面已有更新的一稿。绝不用 destructive：这个特性里红色只属于出错的 run。
+ * The empty-ring lamp for compile feedback rows. The shape is the same empty ring as "compiled" and
+ * as a station that is about to start: nothing ran. The color only says whether attention is still
+ * pending — `open` is the newest draft of that lineage (the loop is still going, or the model
+ * stopped here), `settled` is a draft that a later one has superseded. Never destructive: in this
+ * feature red belongs only to errored runs.
  */
 export const DRAFT_FEEDBACK_DOT = {
   open: "border-[1.5px] border-warning bg-transparent",
@@ -27,10 +31,10 @@ export const DRAFT_FEEDBACK_DOT = {
 } as const;
 
 /**
- * run **整体**状态的视觉词汇表（五值），从四值 `STATUS_DOT` 派生
- * （终态 = completed / errored / stopped）。
- * `stopped` 走中性色而不是 destructive：停下（用户取消、进程亡故、模型侧错误）是可恢复的
- * 状态，不是脚本故障；只有 `errored` 才是 destructive。
+ * Visual vocabulary for the run's **overall** state (five values), derived from the four-value
+ * `STATUS_DOT` (terminal states = completed / errored / stopped). `stopped` takes a neutral color
+ * rather than destructive: stopping (user cancellation, the process dying, a model-side error) is a
+ * recoverable state, not a script failure; only `errored` is destructive.
  */
 export const RUN_STATUS_DOT: Record<WorkflowRunState["status"], string> = {
   pending: STATUS_DOT.pending,
@@ -40,7 +44,10 @@ export const RUN_STATUS_DOT: Record<WorkflowRunState["status"], string> = {
   stopped: STATUS_DOT.pending,
 };
 
-/** 状态词的语义色。与状态点同一套判断，只是换成文字通道（状态永远有词，不只靠颜色）。 */
+/**
+ * Semantic color of the status word. The same decisions as the status dot, only carried by the text
+ * channel (a state always has a word, never color alone).
+ */
 export const RUN_STATUS_TEXT: Record<WorkflowRunState["status"], string> = {
   pending: "text-foreground-subtle",
   running: "text-warning",
@@ -50,16 +57,18 @@ export const RUN_STATUS_TEXT: Record<WorkflowRunState["status"], string> = {
 };
 
 /**
- * `stopped` 的原因词（复用取消态的呈现 + 一行原因）。读侧对象可能是投影 run、发现查询摘要或工具卡 display——三者的 schema 由不同的
- * 协议层各自演进，所以这里按结构读一个可选键，而不是绑死某一个类型。
+ * The reason word for `stopped` (reuses the cancelled presentation plus one line of reason). The
+ * object being read may be a projected run, a discovery query summary, or a tool card display — the
+ * three schemas evolve independently in different protocol layers, so this reads one optional key
+ * structurally rather than binding to any single type.
  */
 export const WORKFLOW_RUN_STOP_REASONS = [
   "user",
   "model",
   "provider",
   "interrupted",
-  // 被一次 AmendWorkflow 停下并替代：
-  // 灯仍是 stopped 的中性空环，差别在词与那条指向后继的链接。
+  // Stopped and replaced by an AmendWorkflow:
+  // The light is still the neutral empty ring of stopped, the difference lies in the word and the link that points to the successor.
   "superseded",
 ] as const;
 export type WorkflowRunStopReason = (typeof WORKFLOW_RUN_STOP_REASONS)[number];
@@ -76,12 +85,15 @@ export function readWorkflowRunStopReason(run: {
     : undefined;
 }
 
-/** 原因词的 i18n key（`chat.toolCall.workflow.run.stopReason.*`）。 */
+/** i18n key of the reason word (`chat.toolCall.workflow.run.stopReason.*`). */
 export function workflowRunStopReasonMessageId(reason: WorkflowRunStopReason): string {
   return `chat.toolCall.workflow.run.stopReason.${reason}`;
 }
 
-/** run 是否被一次修订停下并替代：卡与详情页据此换种类词、藏 Resume 位、画指向后继的链接。 */
+/**
+ * Whether the run was stopped and superseded by a revision: the card and the details page use this
+ * to switch the kind word, hide the Resume slot, and draw a link to the successor.
+ */
 export function isWorkflowRunSuperseded(run: { status?: string; stopReason?: unknown }): boolean {
   return readWorkflowRunStopReason(run) === "superseded";
 }

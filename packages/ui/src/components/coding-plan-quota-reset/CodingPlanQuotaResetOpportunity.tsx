@@ -39,8 +39,8 @@ export function CodingPlanQuotaResetOpportunity({
   const [uncontrolledDialogOpen, setUncontrolledDialogOpen] = useState(false);
   const resolvedDialogOpen = dialogOpen ?? uncontrolledDialogOpen;
   const setDialogOpen = onDialogOpenChange ?? setUncontrolledDialogOpen;
-  // 弹框在 dialog 分支内常驻挂载，机会数从多降到单/零都不会提前卸载成功动画中的 Dialog；
-  // 这里只决定文案与倒计时形态：多机会显示「获得 N 次」，单机会保留原文案 + 倒计时。
+  // The pop-up box is permanently mounted in the dialog branch, and the Dialog in the successful animation will not be unloaded in advance when the number of opportunities drops from many to single/zero;
+  // Only the copywriting and countdown form are decided here: multiple opportunities will display "Get N times", and single opportunity will retain the original copywriting + countdown.
   const hasMultipleOpportunities = count > 1;
 
   useEffect(() => {
@@ -62,11 +62,11 @@ export function CodingPlanQuotaResetOpportunity({
     { id: "codingPlan.quotaReset.expiresIn" },
     { time: formatCodingPlanQuotaResetCountdown(remainingSeconds, intl.formatMessage) },
   );
-  // 多机会入口复用了不带参数的固定文案，用户无法直接确认当前可用次数。
-  // 这里让可见文案与 aria-label 共用同一个动态结果，避免视觉和无障碍名称再次不一致。
+  // The multi-opportunity entrance reuses fixed copy without parameters, and users cannot directly confirm the current available times.
+  // Here, the visible copy and aria-label share the same dynamic result to avoid another inconsistency between visual and accessibility names.
   const openDialogLabel = intl.formatMessage({ id: "codingPlan.quotaReset.openDialog" }, { count });
   const label = hasMultipleOpportunities ? openDialogLabel : opportunityLabel;
-  // 弹框存活期间徽标不收起：单机会在弹框打开后过期时，入口不能从按钮位置塌缩。
+  // The logo does not collapse while the pop-up frame is alive: When the stand-alone opportunity expires after the pop-up frame is opened, the entrance cannot collapse from the button position.
   const effectiveVisible =
     visible && (hasMultipleOpportunities || resolvedDialogOpen || remainingSeconds > 0);
   const commonClassName = [
@@ -89,7 +89,7 @@ export function CodingPlanQuotaResetOpportunity({
   );
 
   if (dialog) {
-    // 单机会同样可以点开重置弹框；文案与倒计时保持单机会形态，仅交互升级为按钮。
+    // You can also click on the reset pop-up box for a single opportunity; the copy and countdown remain in the form of a single opportunity, and can only be upgraded to buttons for interaction.
     const button = (
       <button
         type="button"

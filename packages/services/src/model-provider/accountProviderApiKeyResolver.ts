@@ -17,7 +17,7 @@ export function pickOrgAndProject(customerInfo: RemoteCustomerInfo): {
   const personalOrganizations = (customerInfo.organizations ?? [])
     .map((organization) => ({
       organization,
-      // Team Plan 项目会和个人项目一起返回；个人 Key 只能从非团队项目解析。
+      // Team Plan projects are returned along with personal projects; personal keys can only be resolved from non-team projects.
       projects: (organization.projects ?? []).filter(
         (project) => String(project.projectType ?? "").trim() !== "2",
       ),
@@ -72,7 +72,7 @@ export class AccountProviderApiKeyResolver {
       }
 
       if (provider === ZAI_PROVIDER_ID) {
-        // 必须 await，才能由当前 catch 将复制明文 Key 失败收敛为无可用凭据。
+        // Must await so that failure to copy the plaintext Key can be resolved by the current catch to no available credentials.
         return await this.resolveZaiApiKey(accessToken);
       }
     } catch {
@@ -83,7 +83,7 @@ export class AccountProviderApiKeyResolver {
   }
 
   private async resolveZaiApiKey(oauthAccessToken: string): Promise<string | null> {
-    // Provider Connection 已把 Z.AI access token 持久化为业务 token。
+    // Provider Connection has persisted the Z.AI access token into a business token.
     return this.resolveBizApiKey(ZAI_API_HOST, `Bearer ${oauthAccessToken}`, {
       requireSecretKey: true,
     });
@@ -143,7 +143,7 @@ export class AccountProviderApiKeyResolver {
 
     const secretKey = secretData?.secretKey?.trim() ?? "";
     if (!secretKey) {
-      // Z.AI 请求必须使用 copy 接口返回的 secretKey，裸 apiKey 不能用于模型鉴权。
+      // Z.AI requests must use the secretKey returned by the copy interface, and bare apiKey cannot be used for model authentication.
       return options?.requireSecretKey ? null : apiKey;
     }
 

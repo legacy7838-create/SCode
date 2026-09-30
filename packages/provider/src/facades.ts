@@ -1,4 +1,4 @@
-/* oxlint-disable eslint(max-lines) -- Settings/Selection Facade 共享同一套 Registry 投影与写入边界。 */
+/* oxlint-disable eslint(max-lines) -- the Settings/Selection Facades share one set of Registry projections and write boundaries. */
 import type { ConfigValidationIssue } from "./config-overlay.js";
 import type { ProviderModelMembership } from "./config-service.js";
 import type {
@@ -99,7 +99,7 @@ export interface ProviderSettingsMutationTarget {
     membership?: ProviderModelMembership,
   ): Promise<unknown>;
   refresh(reason: string): Promise<ProviderRegistryServiceSnapshot>;
-  /** 主动重读上游事实后再刷新 Registry。 */
+  /** Re-reads the upstream facts on purpose before refreshing the Registry. */
   refreshSources?(reason: string): Promise<ProviderRegistryServiceSnapshot>;
 }
 
@@ -153,7 +153,7 @@ export interface ProviderSettingsProviderView extends Pick<
   readonly enabled: boolean;
   readonly accountState?: import("./account-provider-state.js").AccountProviderState;
   readonly providerId: ProviderId;
-  /** 当前 Effective Config 是否已经进入 Registry，可用于模型选择和创建。 */
+  /** Whether the current Effective Config has entered the Registry and can be used for model selection and creation. */
   readonly executable: boolean;
   readonly effectiveBuiltinConfig?: ProviderConfigObject;
   readonly personalConfig?: ProviderConfigObject;
@@ -276,7 +276,7 @@ export class ProviderSettingsFacade {
         input.modelId,
       );
     }
-    // 此入口预览智能配置草稿；固定模式不请求推荐，重新开启时不能沿用旧固定标记。
+    // This portal previews the smart configuration draft; fixed mode does not require recommendations, and old fixed tags cannot be used when reopened.
     personalRules = personalRules.setExact(input.providerId, input.modelId, personalConfig, true);
     const config = ModelConfigRules.composeEffective(
       snapshot.config.zcodeBuiltinModelRules,
@@ -436,9 +436,9 @@ export class ProviderSettingsFacade {
     const provider = snapshot.resolution.resolvedProviders.find(
       (item) => item.providerId === providerId,
     );
-    if (!provider) throw new Error(`Provider 不存在: ${providerId}`);
-    // 配置成员与可执行模型不是同一名单：禁用、无权益和不完整模型仍可编辑。
-    // Account 的空/替换名单也必须原样使用，不能再与静态 Built-in 取并集。
+    if (!provider) throw new Error(`Provider does not exist: ${providerId}`);
+    // Configuration members are not in the same list as the executable model: disabled, uninterested, and incomplete models are still editable.
+    // Account's empty/replacement list must also be used as-is and can no longer be combined with the static Built-in.
     return Object.freeze({
       providerId,
       inheritedModelIds: Object.freeze(
@@ -456,7 +456,7 @@ export class ProviderSettingsFacade {
     reason: string,
     operation: (target: ProviderSettingsMutationTarget) => Promise<unknown>,
   ): Promise<ProviderSettingsView> {
-    if (!this.#mutations) throw new Error("ProviderSettingsFacade 未配置写入目标");
+    if (!this.#mutations) throw new Error("ProviderSettingsFacade has no write target configured");
     await operation(this.#mutations);
     await this.#mutations.refresh(`settings:${reason}`);
     return this.getView();
@@ -488,7 +488,7 @@ export class ProviderSettingsFacade {
     reason: string,
     operation: (target: ProviderSettingsMutationTarget) => Promise<TResult>,
   ): Promise<{ readonly result: TResult; readonly view: ProviderSettingsView }> {
-    if (!this.#mutations) throw new Error("ProviderSettingsFacade 未配置写入目标");
+    if (!this.#mutations) throw new Error("ProviderSettingsFacade has no write target configured");
     const result = await operation(this.#mutations);
     await this.#mutations.refresh(`settings:${reason}`);
     return { result, view: this.getView() };
@@ -521,14 +521,14 @@ export class ModelSelectionFacade {
     revision?: number,
     input?: ModelSelectionViewInput,
   ): ModelSelectionView {
-    // 账号事实与候选从同一已应用快照读取；不把最新 Settings 配给旧 Registry。
+    // Account facts and candidates are read from the same applied snapshot; the latest Settings are not assigned to the old Registry.
     const snapshot = input ? requireSnapshot(this.#source) : this.#source.getSnapshot();
     const registry = snapshot?.registry ?? this.#source.getView();
     const resolveLegacyReasoningLevel =
       snapshot && this.#resolveLegacyReasoningLevel
         ? (selection: ModelSelection) => this.#resolveLegacyReasoningLevel!(snapshot, selection)
         : undefined;
-    // 默认偏好只归一化档位，不借此改写账号身份或保存配置。
+    // The default preference only normalizes the gears and does not use this to rewrite the account identity or save the configuration.
     const normalizedDefault =
       configuredDefault && resolveLegacyReasoningLevel
         ? (resolveEffectiveModelSelection({
@@ -567,7 +567,7 @@ export class ModelSelectionFacade {
   }
 }
 
-/** 把一个已进入 Registry 的 Provider 投影为标准模型选择候选。调用方负责产品作用域。 */
+/** Projects a Provider that has already entered the Registry as a standard model selection candidate. The caller owns the product scoping. */
 export function projectModelSelectionProviderView(
   provider: ProviderRegistryView["providers"][number],
 ): ModelSelectionProviderView {
@@ -589,7 +589,7 @@ export function projectModelSelectionProviderView(
 
 function requireSnapshot(source: ProviderRegistryFacadeSource): ProviderRegistryServiceSnapshot {
   const snapshot = source.getSnapshot();
-  if (!snapshot) throw new Error("ProviderRegistryService 尚未 start()");
+  if (!snapshot) throw new Error("ProviderRegistryService has not started() yet");
   return snapshot;
 }
 
@@ -598,7 +598,7 @@ function requireEffectiveProvider(
   providerId: ProviderId,
 ): ProviderConfigRule {
   const provider = snapshot.resolution.effectiveProviders.getRule(providerId);
-  if (!provider) throw new Error(`Provider 不存在: ${providerId}`);
+  if (!provider) throw new Error(`Provider does not exist: ${providerId}`);
   return provider;
 }
 

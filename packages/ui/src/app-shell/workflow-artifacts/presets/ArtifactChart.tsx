@@ -1,14 +1,18 @@
 /**
- * `chart` 预置渲染器的**入口**：懒加载 + 局部故障隔离，本模块自己不碰 recharts。
+ * The **entry point** of the `chart` preset renderer: lazy loading plus local fault isolation —
+ * this module never touches recharts itself.
  *
- * 为什么必须懒：recharts 在模块初始化阶段会触发 decimal.js-light 的 LN10 校验，在 Electron
- * Linux 容器里会阻断整个 renderer 启动（`AppUsagePanel.tsx` 里记着的那次修复；spec 的
- * 「预置渲染器」行也把 `lazy()` 写成硬要求）。所以：
- * - 绘图体在 `ArtifactChartView.tsx`，只经 `lazy()` 的动态 import 抵达；
- * - 这个文件与 `index.ts` 的静态依赖里没有 recharts，谁 import 它们都不会把图表打进首屏。
+ * Why it must be lazy: at module-init time recharts triggers decimal.js-light's LN10 validation,
+ * which blocks the entire renderer startup inside the Electron Linux container (that fix is
+ * recorded in `AppUsagePanel.tsx`; the spec's "preset renderer" line also makes `lazy()` a hard
+ * requirement). Hence:
+ * - the drawing body lives in `ArtifactChartView.tsx` and is only ever reached through a `lazy()`
+ *   dynamic import;
+ * - recharts is not among this file's or `index.ts`'s static dependencies, so whoever imports them
+ *   never pulls the chart code into the first screen.
  *
- * 调用方也可以绕过这层，自己 `lazy(() => import(".../ArtifactChartView.js"))` 并接管
- * Suspense / 错误边界——本文件只是那套接法的默认封装。
+ * Callers may also bypass this layer, do their own `lazy(() => import(".../ArtifactChartView.js"))`
+ * and own the Suspense / error boundary — this file is just the default wrapper for that wiring.
  */
 
 import { lazy, Suspense } from "react";
@@ -22,7 +26,10 @@ const ArtifactChartView = lazy(
   () => import("@/app-shell/workflow-artifacts/presets/ArtifactChartView.js"),
 );
 
-/** 加载中的占位：只占位不说话——一句「加载中」在 200ms 的懒加载里只会闪一下。 */
+/**
+ * Placeholder while loading: it only holds space and stays quiet — a "Loading" line would just
+ * flash for an instant in a 200ms lazy load.
+ */
 function ChartSkeleton({ compact }: { compact: boolean }) {
   return (
     <div
@@ -50,7 +57,7 @@ export function ArtifactChart({
   className?: string;
 }) {
   return (
-    // 图表崩了只塌这一块，run 侧板的其余部分照常——产物区是交付面，不该是单点故障。
+    // When the chart collapses, only this part collapses, and the rest of the run side panel remains as usual - the product area is the delivery surface and should not be a single point of failure.
     <ScopedErrorBoundary
       resetKeys={[spec, compact]}
       scope="workflow-artifact-chart"

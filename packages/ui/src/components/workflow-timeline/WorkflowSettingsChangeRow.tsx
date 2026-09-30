@@ -1,9 +1,9 @@
 // ============================================================
-// 设置轮的那一行
+// The line that sets the wheel
 // ============================================================
-// 「配置」的一次修改在转写里留下一个控制轮：没有用户气泡，它的呈现是新 run 的卡，卡上方这一行说
-// 改了什么——工具行的单行样式：滑杆图标、「已调整设置」、每项改动一段、时刻，以 `·` 相隔。
-// 它是记录，不是控件。
+// A change to "Configuration" left a control wheel in the transcript: there is no user bubble, its rendering is the card of the new run, and the line above the card says
+// What has been changed - the single-line style of the toolbar: slider icon, "Adjusted settings", a period and time for each change, separated by `·`.
+// It's a record, not a control.
 
 import { Fragment } from "react";
 import { SlidersHorizontalIcon } from "lucide-react";
@@ -17,9 +17,9 @@ export function WorkflowSettingsChangeRow({
   providerName,
 }: {
   amend: WorkflowSettingsAmendMeta;
-  /** 设置轮的时刻；缺席即不写。 */
+  /** Sets the moment of the wheel; absence means no writing. */
   at?: number;
-  /** providerId → provider 名（与卡上的模型段同一个查找）；缺席退回裸 modelId。 */
+  /** providerId → providerName (same lookup as the model segment on the card); absent returns bare modelId. */
   providerName?: (providerId: string) => string | undefined;
 }) {
   const { intl } = useZCodeIntl();

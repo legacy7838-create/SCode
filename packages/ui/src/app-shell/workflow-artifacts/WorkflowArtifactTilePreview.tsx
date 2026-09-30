@@ -17,25 +17,25 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import type { Theme } from "@/useTheme.js";
 
 /**
- * 产物瓦片的预览区（侧板画廊同用）：产物**本身**的缩略。
+ * Preview area of ​​product tiles (commonly used in side panel galleries): an abbreviation of the product itself.
  *
- * - markdown / 纯文本：文档开头按 2× 宽排版再 `scale(0.5)`——是内容的缩略，不是把界面字号调小；
- * - CSV：前几行的迷你表格；
- * - 图片：渲染本身；
- * - chart / table / metrics / board：`ArtifactPresetBody` compact，按自然尺寸在框里居中，随 report
- *   条目实时长；
- * - 其余（PDF / 二进制 / 超大文件）：纸页字形 + 扩展名徽字。
+ * - markdown / plain text: press 2× wide typesetting at the beginning of the document and then `scale(0.5)` - it is an abbreviation of the content, not to reduce the interface font size;
+ * - CSV: mini table of first few rows;
+ * - Image: the rendering itself;
+ * - chart/table/metrics/board: `ArtifactPresetBody` compact, centered in the box according to natural size, with report
+ *   Entries are real-time long;
+ * - The rest (PDF / binary / very large file): paper glyph + extension emblem.
  *
- * 两处框同一档、同一画法：交付物行的框（160 × 100）与侧板画廊的瓦片框（130–180px 一列）。没有更小
- * 的档——预览要么读得清，要么不画。
+ * The two frames are in the same frame and drawn in the same way: the frame for the delivery row (160 × 100) and the tile frame for the side panel gallery (130–180px for one column). no smaller
+ * The file - the preview can either be read clearly or not drawn.
  *
- * 字节还没到时整块留空白（不闪骨架屏，也不先画一张字形再换掉）。字节走与产物 tab 同一条
- * 分块读取（journal-backed，冷恢复也在）；上限之外不读——卡是转录的一部分，不该为一份 20 MiB
- * 的产物拉整条链路。
+ * When the bytes have not yet arrived, leave the entire block blank (no flashing the skeleton screen, no drawing a glyph first and then replacing it). The byte path is the same as the product tab
+ * Chunked reading (journal-backed, cold recovery too); no reading beyond the upper limit - the card is part of the transcription and should not be 20 MiB per copy
+ * The product pulls the entire link.
  */
 const TEXT_PREVIEW_MAX_BYTES = 256 * 1024;
 const IMAGE_PREVIEW_MAX_BYTES = 4 * 1024 * 1024;
-/** 文档缩略只解码开头这么多字节：一屏缩略装不下更多，整份解码是白算。 */
+/** Document thumbnails only decode so many bytes at the beginning: one screen of thumbnails cannot hold more, and the entire decoding is in vain. */
 const TEXT_DECODE_BYTES = 8 * 1024;
 const TEXT_PREVIEW_CHARS = 1_600;
 const CSV_PREVIEW_ROWS = 6;
@@ -63,7 +63,7 @@ function previewModeFor(artifact: {
   return undefined;
 }
 
-/** 最小的 CSV 读法：只认逗号与成对引号，够画一张缩略；不是解析器。 */
+/** The smallest CSV reading method: only recognizes commas and paired quotation marks, enough to draw an abbreviation; it is not a parser. */
 function csvPreviewRows(text: string): string[][] {
   const rows: string[][] = [];
   for (const line of text.split(/\r?\n/u)) {
@@ -98,12 +98,12 @@ function decodeHead(bytes: Uint8Array): string {
     .slice(0, TEXT_PREVIEW_CHARS);
 }
 
-/** 空白占位：字节在路上。测试与调用方据它区分「还没到」与「画不了」。 */
+/** Empty placeholders: Bytes on the way. Testers and callers use it to distinguish between "not yet arrived" and "cannot draw". */
 function Pending() {
   return <span className="absolute inset-0" data-testid="workflow-artifact-preview-pending" />;
 }
 
-/** 文档缩略底部渐隐到面板色：截断的文档看起来是「还有」，不是「断了」。看板与图片不要它。 */
+/** The bottom of the document thumbnail fades into the panel color: the truncated document looks "still there", not "broken". Boards and pictures don't want it. */
 function Fade() {
   return (
     <span
@@ -162,7 +162,7 @@ export function WorkflowArtifactTilePreview({
   const glyph = <ArtifactSheetGlyph {...(badge === undefined ? {} : { badge })} />;
 
   if (preset) {
-    // spec 只有 journal 带得回来；还没到时安静留白，不闪一句「无法渲染」。到了但坏了才说。
+    // Spec can only be brought back by the journal; if it is not yet available, leave it blank without saying "cannot render". It's only when it's broken that it's broken.
     if (artifact.spec === undefined) return <Pending />;
     return (
       <div
@@ -246,7 +246,7 @@ export function WorkflowArtifactTilePreview({
         data-testid="workflow-artifact-preview-body"
       >
         {mode === "markdown" ? (
-          // markdown 必须**传 theme**（渲染器按 theme 选代码块配色）。
+          // markdown must **pass theme** (the renderer selects the code block color according to theme).
           <MessageResponse className="w-full min-w-0 break-words text-foreground" theme={theme}>
             {text ?? ""}
           </MessageResponse>

@@ -34,7 +34,7 @@ function parseArgs(argv) {
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
 
-    // pnpm run 在透传参数时会保留一个裸 --，这里需要显式跳过，避免把它误当成待分析路径。
+    // pnpm run will retain a naked -- when transparently transmitting parameters, which needs to be skipped explicitly to avoid mistaking it as a path to be analyzed.
     if (arg === "--") {
       continue;
     }
@@ -71,30 +71,30 @@ function parseArgs(argv) {
   }
 
   if (!["mermaid", "dot", "json"].includes(options.format)) {
-    throw new Error(`不支持的输出格式: ${options.format}`);
+    throw new Error(`Unsupported output format: ${options.format}`);
   }
 
   if (!["LR", "RL", "TB", "TD", "BT"].includes(options.direction)) {
-    throw new Error(`不支持的 Mermaid 方向: ${options.direction}`);
+    throw new Error(`Unsupported Mermaid direction: ${options.direction}`);
   }
 
   return options;
 }
 
 function printHelp() {
-  console.log(`根据 packages 里的源码 import/export 关系生成文件级依赖图。
+  console.log(`Generate a file-level dependency graph based on the source code import/export relationship in packages.
 
-用法:
+Usage:
   pnpm dep:graph
   pnpm dep:graph -- packages/ui/src
   pnpm dep:graph -- --format json -o -
 
-选项:
-  -o, --output <path>         输出文件路径，传 - 表示输出到 stdout
-  --format <mermaid|dot|json> 输出格式，默认 mermaid
-  --direction <LR|RL|TB|TD|BT> Mermaid 图方向，默认 LR
-  --include-isolated          把没有任何入边或出边的文件也输出出来
-  -h, --help                  查看帮助
+Options:
+  -o, --output <path> Output file path, pass - to indicate output to stdout
+  --format <mermaid|dot|json> output format, default mermaid
+  --direction <LR|RL|TB|TD|BT> Mermaid graph direction, default LR
+  --include-isolated also output files without any incoming or outgoing edges.
+  -h, --help View help
 `);
 }
 
@@ -381,7 +381,7 @@ function main() {
 
   for (const rootPath of roots) {
     if (!fs.existsSync(rootPath)) {
-      throw new Error(`路径不存在: ${path.relative(ROOT, rootPath) || rootPath}`);
+      throw new Error(`The path does not exist: ${path.relative(ROOT, rootPath) || rootPath}`);
     }
   }
 
@@ -448,7 +448,7 @@ function main() {
 
   const destination = options.output === "-" ? "stdout" : options.output;
   console.error(
-    `已生成依赖图: ${destination} (nodes=${orderedNodes.length}, edges=${orderedEdges.length})`,
+    `Dependency graph generated: ${destination} (nodes=${orderedNodes.length}, edges=${orderedEdges.length})`,
   );
 }
 

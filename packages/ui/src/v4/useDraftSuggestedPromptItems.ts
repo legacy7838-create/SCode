@@ -27,17 +27,23 @@ export function useDraftSuggestedPromptItems({
     const error = clientScenes.error;
     if (!error) return;
     if (isClientScenesBusinessError(error)) {
-      logger.warn("[v4-suggested-prompts] Client scenes 返回失败，推荐列表保持为空", {
-        code: error.code,
-        message: error.responseMessage,
-        workspaceKey,
-      });
+      logger.warn(
+        "[v4-suggested-prompts] Client scenes returned a business failure, keeping recommendations empty",
+        {
+          code: error.code,
+          message: error.responseMessage,
+          workspaceKey,
+        },
+      );
       return;
     }
-    logger.warn("[v4-suggested-prompts] Client scenes 请求失败，推荐列表保持为空", {
-      error: error.message,
-      workspaceKey,
-    });
+    logger.warn(
+      "[v4-suggested-prompts] Client scenes request failed, keeping recommendations empty",
+      {
+        error: error.message,
+        workspaceKey,
+      },
+    );
   }, [clientScenes.error, workspaceKey]);
 
   return useMemo(

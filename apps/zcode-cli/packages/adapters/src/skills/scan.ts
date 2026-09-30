@@ -1,26 +1,26 @@
 // ============================================================
-// 技能根扫描规则（共享实现）
+// Skill root scanning rules (shared implementation)
 // ============================================================
 
-// manifest 的 skills 项既可指向单个技能目录，也可指向一层技能集合。
-// 根目录含 SKILL.md 时先识别根技能，再扫描一层子目录；与桌面发现规则保持一致，
-// 避免把单个技能误当集合而静默漏扫。
-// 插件发现链路（countSkillFiles / collectSkillComponents）是同步代码，技能 adapter 走
-// fs/promises，因此提供 sync/async 两个变体，规则只写一份、由各自实现遵循。
+// The skills item of the manifest can point to either a single skill directory or a layer of skill collections.
+// When the root directory contains SKILL.md, identify the root skill first, and then scan a layer of subdirectories; consistent with the desktop discovery rules,
+// Avoid mistaking a single skill for a collection and silently missing the sweep.
+// The plug-in discovery link (countSkillFiles/collectSkillComponents) is synchronous code, and the skill adapter goes
+// fs/promises, therefore provides two variants of sync/async. The rules are only written once and followed by respective implementations.
 //
-// 错误契约：只吞「常态缺失」——路径不存在（ENOENT）或不是目录时返回空数组；其余错误
-// （如 EACCES 权限、EMFILE）必须向上抛，由调用方决定发 skill_scan_failed 诊断还是
-// 优雅降级。外层 catch 不能吞掉一切错误：权限错误会退化为静默空、skill_scan_failed
-// 诊断成为死代码，重新引入了静默失败路径。
+// Error contract: only swallow "normal missing" - return an empty array when the path does not exist (ENOENT) or is not a directory; other errors
+// (such as EACCES permissions, EMFILE) must be thrown upward, and it is up to the caller to decide whether to issue skill_scan_failed diagnosis or
+// Graceful downgrade. The outer catch cannot swallow all errors: permission errors will degenerate into silent empty, skill_scan_failed
+// Diagnostics became dead code and the silent failure path was reintroduced.
 //
-// 信任边界：plugin-scope 内容不可信，符号链接（含 Windows
-// junction——Dirent.isSymbolicLink/lstat 对两者均返回 true）可指向插件根外的任意
-// 目录或文件（目录级 skills/evil-link -> ../../outside、文件级 SKILL.md -> ~/.aws/
-// credentials）。曾尝试 realpath containment，但边界作为可选参数沿数据流散布，每个
-// 文件接触点都要记得校验（文件级链接、跨盘符 relative 谓词、manifest 失败回退均成
-// 缺口）。收敛为单一规则：插件扫描一律不跟随符号链接——根自身、子目录候选、
-// SKILL.md 文件三个粒度全部拒绝链接（拒绝即无逃逸，无需判定链接指向何处）。
-// 用户级技能根（~/.zcode/skills 的 symlink 导入是受支持功能）保持默认跟随。
+// Trust boundary: plugin-scope content is not trusted, symbolic links (including Windows
+// junction - Dirent.isSymbolicLink/lstat returns true for both) can point to anything outside the plugin root
+// Directory or file (directory level skills/evil-link -> ../../outside, file level SKILL.md -> ~/.aws/
+// credentials). Realpath containment was tried, but the boundaries were spread along the data stream as optional parameters, each
+// Remember to verify file contact points (file-level links, relative predicates across drive letters, manifest failure fallback)
+// gap). Converged to a single rule: plugin scans never follow symbolic links - root itself, subdirectory candidates,
+// The SKILL.md file rejects links at all three granularities (rejection means no escape, no need to determine where the link points).
+// User-level skill roots (symlink imports of ~/.zcode/skills are a supported feature) remain the default to follow.
 
 import { lstatSync, readdirSync, statSync } from "node:fs";
 import { lstat, readdir, stat } from "node:fs/promises";
@@ -29,23 +29,25 @@ import { SKILL_FILE_NAME, shouldWalkSkillDirectoryEntry } from "@zcode/shared";
 
 interface ScanSkillFilesOptions {
   /**
-   * 是否跟随符号链接（目录级与文件级），默认 true（用户级技能根的 symlink 导入
-   * 是受支持功能）。plugin-scope 扫描必须传 false：链接可指向插件根外，拒绝
-   * 链接即拒绝逃逸，无需 realpath 判定指向。
+   * Whether to follow symlinks (directory-level and file-level), default true (symlink imports
+   * at a user-level skill root are a supported feature). plugin-scope scans must pass false: a
+   * link can point outside the plugin root, so refusing links is refusing escapes - no need to
+   * resolve where it points with realpath.
    */
   followSymbolicLinks?: boolean;
 }
 
 /**
- * 根目录下所有真实存在的 SKILL.md 绝对路径（含根自身）。
- * 根目录不存在或不是目录返回空数组；扫描过程中的其他错误（EACCES 等）向上抛。
+ * The absolute paths of every SKILL.md that really exists under the root (the root itself included).
+ * A missing root, or one that is not a directory, returns an empty array; any other error during
+ * the scan (EACCES and friends) is thrown upward.
  */
 export async function scanSkillFilesUnderRoot(
   rootPath: string,
   options: ScanSkillFilesOptions = {},
 ): Promise<string[]> {
   const followSymlinks = options.followSymbolicLinks ?? true;
-  // 根自身是链接（含 junction）时，插件扫描直接判空。
+  // When the root itself is a link (including junction), the plug-in scan directly determines that it is empty.
   if (!followSymlinks && (await isSymbolicLink(rootPath))) return [];
 
   const rootInfo = await stat(rootPath).catch((error) => {
@@ -56,7 +58,7 @@ export async function scanSkillFilesUnderRoot(
 
   const files: string[] = [];
   const own = join(rootPath, SKILL_FILE_NAME);
-  // 根自身无 SKILL.md 是常态，继续扫一层子目录。
+  // It is normal that there is no SKILL.md in the root itself. Continue to scan one layer of subdirectories.
   if (await isLoadableSkillFile(own, followSymlinks)) files.push(own);
 
   const entries = await readdir(rootPath, { withFileTypes: true });
@@ -64,16 +66,16 @@ export async function scanSkillFilesUnderRoot(
     const walkable = entry.isDirectory() || (followSymlinks && entry.isSymbolicLink());
     if (!walkable) continue;
     if (!shouldWalkSkillDirectoryEntry(entry.name)) continue;
-    // 子目录命中的路径必须校验文件真实存在：分类目录（如 skills/engineering/）
-    // 不是技能目录，拼出来的路径不存在；parseSkill 本会静默跳过，但计数与
-    // 组件枚举都消费该结果，不校验会把「不存在的技能」算进来。
+    // The path hit by the subdirectory must verify that the file actually exists: classified directory (such as skills/engineering/)
+    // It is not a skill directory, and the spelled out path does not exist; parseSkill will skip it silently, but the count is the same as
+    // Component enumeration consumes this result, and if it is not verified, "non-existent skills" will be included.
     const candidate = join(rootPath, entry.name, SKILL_FILE_NAME);
     if (await isLoadableSkillFile(candidate, followSymlinks)) files.push(candidate);
   }
   return files;
 }
 
-/** scanSkillFilesUnderRoot 的同步变体，错误契约相同。 */
+/** Synchronous variant of scanSkillFilesUnderRoot, with the same error contract. */
 export function scanSkillFilesUnderRootSync(
   rootPath: string,
   options: ScanSkillFilesOptions = {},
@@ -99,8 +101,9 @@ export function scanSkillFilesUnderRootSync(
 }
 
 /**
- * SKILL.md 候选的可加载判定：真实文件才收录。不跟随链接时符号链接文件
- * （含 junction）一律拒绝——这是文件级逃逸（SKILL.md -> 外部任意文件）的防线。
+ * Loadability verdict for a SKILL.md candidate: only real files are admitted. When links are not
+ * followed, symlink files (junctions included) are rejected outright - this is the defence
+ * against file-level escapes (SKILL.md -> any file outside).
  */
 async function isLoadableSkillFile(path: string, followSymlinks: boolean): Promise<boolean> {
   if (!followSymlinks && (await isSymbolicLink(path))) return false;
@@ -141,7 +144,7 @@ function statSyncOrNull(path: string): { isFile(): boolean; isDirectory(): boole
   }
 }
 
-/** ENOENT（路径不存在）是扫描常态，吞掉；其余错误（EACCES 等）向上抛。 */
+/** ENOENT (the path does not exist) is the normal case during a scan, so it is swallowed; every other error (EACCES and friends) is thrown upward. */
 function throwIfUnexpectedScanError(error: unknown): void {
   if (
     typeof error === "object" &&

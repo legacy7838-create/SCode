@@ -1,16 +1,19 @@
-// 分屏布局计算（纯函数）：分割树 → 每个叶子/分隔条的绝对定位表达式。
-// 叶子扁平渲染为容器直接子元素（key = paneId 稳定）——拆分/关闭只是换 rect，
-// React 不重挂任何存活 pane（virtualizer 测高、滚动位置、composer 草稿全保留）；
-// 若按树递归嵌套渲染，叶子被替换成分割容器时会整棵重挂。
-// rect 表达式引用分割占比 CSS 变量：拖动中改一个变量，受影响的 pane/分隔条全部
-// 由 CSS 重排，零 React 渲染（「容器 CSS 变量」方案按分割节点泛化）。
+// Split screen layout calculation (pure function): split tree → absolute positioning expression for each leaf/divider.
+// The leaves are rendered flat as direct child elements of the container (key = paneId stable) - splitting/closing just replaces rect,
+// React does not rehang any surviving pane (virtualizer height measurement, scroll position, composer draft are all retained);
+// If the tree is recursively nested and rendered, the entire tree will be re-hanged when the leaves are replaced with split containers.
+// The rect expression refers to the split ratio CSS variable: changing a variable while dragging will affect all panes/separators
+// Reflowed by CSS, zero React rendering (the "container CSS variables" scheme is generalized by split nodes).
 import type { CSSProperties } from "react";
 import type { PaneLayoutNode, SplitDirection } from "@/v4/paneLayoutTree.js";
 
-/** 分割占比 CSS 变量前缀（每个分割节点一个 `--v4-split-<nodeId>`）。 */
+/** CSS variable prefix for split ratios (one `--v4-split-<nodeId>` per split node). */
 export const SPLIT_VAR_PREFIX = "--v4-split-";
 
-/** 绝对定位表达式（不含 calc() 包裹；style 侧统一 `calc(${expr})`）。 */
+/**
+ * Absolutely positioned expression (without the calc() wrapper; the style side always uses
+ * `calc(${expr})`).
+ */
 export interface RectExpr {
   left: string;
   top: string;
@@ -26,13 +29,19 @@ interface LeafLayout {
 interface DividerLayout {
   splitId: string;
   direction: SplitDirection;
-  /** store 当前占比（拖拽起点 + 容器 CSS 变量初值）。 */
+  /**
+   * The current ratio in the store (the drag start point + the container CSS variable's initial
+   * value).
+   */
   ratio: number;
-  /** 该分割节点区域占容器主轴的数值比例（拖拽像素→占比换算；祖先占比取 store 数值）。 */
+  /**
+   * The numeric fraction of the container's main axis occupied by this split node's region (drag
+   * pixels → ratio conversion; ancestor ratios take the store values).
+   */
   regionFraction: number;
-  /** 分割线（主轴位置）表达式。 */
+  /** Expression for the split divider (position on the main axis). */
   boundary: string;
-  /** 交叉轴起点/长度表达式。 */
+  /** Expressions for the cross-axis start / length. */
   crossStart: string;
   crossLength: string;
 }

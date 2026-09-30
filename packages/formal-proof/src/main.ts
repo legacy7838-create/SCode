@@ -84,67 +84,67 @@ app.innerHTML = `
       <div class="brand">
         <h1>Conversation State Space</h1>
         <p class="subtitle">
-          从 GUI 用户视角枚举 compact、fork、goal、消息队列和 query 编辑的组合。每个候选动作先进入笛卡尔积，再由产品 guard 剪枝；未定义路径会保留下来供人工 review，并最终导出为 E2E case。
+          Enumerates the combinations of compact, fork, goal, message queue and query editing from the GUI user's point of view. Every candidate action first enters the Cartesian product and is then pruned by product guards; undefined paths are kept for manual review and finally exported as E2E cases.
         </p>
       </div>
 
       <section class="side-section">
-        <div class="panel-header"><h2>参数枚举</h2></div>
+        <div class="panel-header"><h2>Parameter enumeration</h2></div>
         <div class="panel-body controls">
           <div class="control">
-            <label for="profileSelect">初始上下文</label>
+            <label for="profileSelect">Initial context</label>
             <select id="profileSelect">
               ${profiles.map((profile) => `<option value="${profile.id}">${profile.label}</option>`).join("")}
             </select>
           </div>
           <div class="control">
-            <label for="roundSelect">递归轮次</label>
+            <label for="roundSelect">Recursion depth</label>
             <select id="roundSelect">
-              <option value="1">1 轮：只看下一步</option>
-              <option value="2">2 轮：动作后继续枚举</option>
-              <option value="3" selected>3 轮：推荐</option>
-              <option value="4">4 轮：更大状态空间</option>
+              <option value="1">1 round: only the next step</option>
+              <option value="2">2 rounds: keep enumerating after each action</option>
+              <option value="3" selected>3 rounds: recommended</option>
+              <option value="4">4 rounds: larger state space</option>
             </select>
           </div>
           <div class="control">
-            <label for="budgetSelect">画布渲染预算</label>
+            <label for="budgetSelect">Canvas render budget</label>
             <select id="budgetSelect">
-              <option value="350">350 节点</option>
-              <option value="800" selected>800 节点</option>
-              <option value="1600">1,600 节点</option>
-              <option value="3200">3,200 节点</option>
+              <option value="350">350 nodes</option>
+              <option value="800" selected>800 nodes</option>
+              <option value="1600">1,600 nodes</option>
+              <option value="3200">3,200 nodes</option>
             </select>
           </div>
           <div class="control">
-            <label for="decisionSelect">结果过滤</label>
+            <label for="decisionSelect">Result filter</label>
             <select id="decisionSelect">
-              <option value="all">全部结果</option>
-              <option value="reject">只看 reject 剪枝</option>
-              <option value="undefined">只看 undefined</option>
-              <option value="enqueue">只看 queue</option>
-              <option value="allow">只看 allow</option>
-              <option value="system">只看 system</option>
+              <option value="all">All results</option>
+              <option value="reject">Reject prunes only</option>
+              <option value="undefined">Undefined only</option>
+              <option value="enqueue">Queue only</option>
+              <option value="allow">Allow only</option>
+              <option value="system">System only</option>
             </select>
           </div>
         </div>
       </section>
 
       <section class="side-section">
-        <div class="panel-header"><h2>语义统计</h2></div>
-        <div class="metrics" aria-label="状态空间统计">
-          <div class="metric"><strong id="metricNodes">0</strong><span>语义节点</span></div>
+        <div class="panel-header"><h2>Semantic statistics</h2></div>
+        <div class="metrics" aria-label="State space statistics">
+          <div class="metric"><strong id="metricNodes">0</strong><span>Semantic nodes</span></div>
           <div class="metric"><strong id="metricCases">0</strong><span>Review cases</span></div>
-          <div class="metric"><strong id="metricRejects">0</strong><span>Reject 剪枝</span></div>
+          <div class="metric"><strong id="metricRejects">0</strong><span>Reject prunes</span></div>
           <div class="metric"><strong id="metricUndefined">0</strong><span>Undefined</span></div>
           <div class="metric"><strong id="metricQueue">0</strong><span>Queue</span></div>
-          <div class="metric"><strong id="metricRendered">0</strong><span>图节点</span></div>
+          <div class="metric"><strong id="metricRendered">0</strong><span>Graph nodes</span></div>
         </div>
       </section>
 
       <section class="side-section rule-section">
-        <div class="panel-header"><h2>规则命中</h2></div>
+        <div class="panel-header"><h2>Rule matches</h2></div>
         <div class="panel-body rule-body">
-          <p class="hint">点击规则会高亮对应语义节点。reject 是产品规则剪枝，undefined 是还没定义的产品逻辑。</p>
+          <p class="hint">Clicking a rule highlights the matching semantic nodes. reject is a product-rule prune; undefined is product logic that has not been defined yet.</p>
           <div id="ruleList" class="rule-list"></div>
         </div>
       </section>
@@ -154,14 +154,14 @@ app.innerHTML = `
       <div class="toolbar">
         <div>
           <strong>State-Space DAG</strong>
-          <p class="hint">横向按 State、Action、Guard、Effect、Case 展开；等价节点会合并并显示命中次数。拖拽移动，滚轮缩放，点击节点查看详情。</p>
+          <p class="hint">Laid out horizontally by State, Action, Guard, Effect and Case; equivalent nodes are merged and show their match count. Drag to pan, scroll to zoom, click a node for details.</p>
         </div>
         <div class="toolbar-actions">
-          <button id="zoomOut" class="toolbar-button" type="button" aria-label="缩小">-</button>
-          <button id="zoomIn" class="toolbar-button" type="button" aria-label="放大">+</button>
-          <button id="fitTree" class="toolbar-button" type="button">适配</button>
-          <button id="resetTree" class="toolbar-button" type="button">重置</button>
-          <button id="exportCases" class="toolbar-button" type="button">导出 JSON</button>
+          <button id="zoomOut" class="toolbar-button" type="button" aria-label="Zoom out">-</button>
+          <button id="zoomIn" class="toolbar-button" type="button" aria-label="Zoom in">+</button>
+          <button id="fitTree" class="toolbar-button" type="button">Fit</button>
+          <button id="resetTree" class="toolbar-button" type="button">Reset</button>
+          <button id="exportCases" class="toolbar-button" type="button">Export JSON</button>
         </div>
       </div>
       <div class="graph-shell">
@@ -172,17 +172,17 @@ app.innerHTML = `
               <b id="detailTitle">-</b>
               <span id="detailKind">-</span>
             </div>
-            <button id="closeDetail" class="icon-button" type="button" aria-label="关闭节点详情">x</button>
+            <button id="closeDetail" class="icon-button" type="button" aria-label="Close node details">x</button>
           </div>
           <div class="popover-body detail-grid">
-            <div class="detail-row"><b>上下文</b><code id="detailContext">-</code></div>
-            <div class="detail-row"><b>产品语义</b><span id="detailText">-</span></div>
-            <div class="detail-row"><b>E2E 断言</b><span id="detailE2e">-</span></div>
+            <div class="detail-row"><b>Context</b><code id="detailContext">-</code></div>
+            <div class="detail-row"><b>Product semantics</b><span id="detailText">-</span></div>
+            <div class="detail-row"><b>E2E assertion</b><span id="detailE2e">-</span></div>
             <div class="detail-row">
               <b>Review</b>
               <div id="reviewButtons" class="review-buttons"></div>
             </div>
-            <div class="detail-row"><b>代表路径</b><ul id="detailPath" class="path-list"></ul></div>
+            <div class="detail-row"><b>Representative path</b><ul id="detailPath" class="path-list"></ul></div>
           </div>
         </aside>
       </div>
@@ -298,7 +298,7 @@ function renderRules(): void {
   const all = document.createElement("button");
   all.type = "button";
   all.className = `rule-button${viewState.activeRule === "all" ? " active" : ""}`;
-  all.innerHTML = "<b>全部规则</b><span>取消规则高亮</span>";
+  all.innerHTML = "<b>All rules</b><span>Clear rule highlight</span>";
   all.addEventListener("click", () => {
     viewState.activeRule = "all";
     renderAll();
@@ -650,7 +650,7 @@ function renderDetail(graphNode?: GraphNodeDatum): void {
   elements.detailKind.textContent = [
     graphNode.kind,
     graphNode.members.length > 1
-      ? `命中 ${numberFormat.format(graphNode.members.length)} 条 trace`
+      ? `${numberFormat.format(graphNode.members.length)} matching traces`
       : "",
     node.decision ? decisionLabel(node.decision) : "",
   ]
@@ -726,9 +726,10 @@ function summaryNode(parent: TraceNode, hidden: number): TraceNode {
   return {
     id: `${parent.id}-summary-${hidden}`,
     kind: "summary",
-    title: `聚合 ${numberFormat.format(hidden)} 个节点`,
-    subtitle: "超过当前渲染预算",
-    detail: "完整语义仍然参与统计和 JSON 导出，只是画布里折叠显示。",
+    title: `${numberFormat.format(hidden)} aggregated nodes`,
+    subtitle: "over the current render budget",
+    detail:
+      "The full semantics still count toward the statistics and the JSON export; they are only collapsed in the canvas.",
     context: parent.context,
     children: [],
   };
@@ -881,7 +882,7 @@ function zoomBy(factor: number): void {
 
 function sampleRuleText(ruleId: string): string {
   const node = viewState.nodes.find((item) => item.decision?.ruleId === ruleId);
-  return node?.decision?.reason ?? "规则命中路径";
+  return node?.decision?.reason ?? "Rule-matched path";
 }
 
 function shortText(value: string, max: number): string {

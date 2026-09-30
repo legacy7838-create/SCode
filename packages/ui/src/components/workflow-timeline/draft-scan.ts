@@ -1,15 +1,17 @@
 import type { TimelineStation, WorkflowTimelineModel } from "./timeline-model.js";
 
 /**
- * 流式草稿：模型还在写
- * 脚本、分析器还没跑，卡上就先把**阶段线**画出来——只有站与淡墨轨道段，没有药丸、没有弧、没有
- * 状态；子代理只计数（表头的 `N phases · M agents`），画面留给分析器。这是一个**正则级扫描器**，
- * 不是解析器——它只认 `phase("…")` 与 `agent("…")`，认错了也无妨：display 一到整个模型就被
- * 分析器的替换掉（不变式 10）。
+ * Streaming draft: while the model is still writing the script and the analyzer has not run yet,
+ * the card first draws the **phase line** — only stations and faint ink track segments, no pills,
+ * no arcs, no states; sub-agents are only counted (the `N phases · M agents` in the header),
+ * leaving the picture to the analyzer. This is a **regex-level scanner**, not a parser — it only
+ * recognizes `phase("…")` and `agent("…")`, and a misreading does no harm: as soon as the display
+ * arrives, the whole model is replaced by the analyzer's (invariant 10).
  *
- * 同名的第二个 `phase("implement")` 是回到那一站（分析器会把它折成回边），不是新站——草稿
- * 只加不减，站数与分析器的一致，交接时不会有站消失。最后一个未闭合的 `phase("ver` 给最后一站
- * `typing`。
+ * A second `phase("implement")` with the same name is a return to that station (the analyzer folds
+ * it into a back edge), not a new station — the draft only adds and never removes, so its station
+ * count matches the analyzer's and no station disappears at handoff. The last unclosed `phase("ver`
+ * gives the final station `typing`.
  */
 export interface WorkflowDraftPhase {
   name: string;
@@ -18,7 +20,7 @@ export interface WorkflowDraftPhase {
 
 export interface WorkflowDraft {
   phases: WorkflowDraftPhase[];
-  /** 按出现顺序去重的子代理名（只计数，不画）。 */
+  /** Sub-agent names deduplicated in order of appearance (counted only, not drawn). */
   agents: string[];
 }
 
@@ -30,11 +32,11 @@ export function scanWorkflowDraft(script: string): WorkflowDraft {
   for (const match of script.matchAll(TOKEN)) {
     const [, kind, quote, body, closing] = match;
     if (quote === undefined) continue;
-    // 模板字面量里的插值只取头部：`研究员${i}` 记成「研究员」——名字的形状比空着强。
+    // The interpolation in the template literal only takes the header: `researcher${i}` is recorded as "researcher" - the shape of the name is better than leaving it empty.
     const name = (body ?? "").split("${")[0]!.trim();
     const closed = closing !== undefined;
     if (kind === "phase") {
-      // 已经在 typing 的站就是这个标记本身：流式下同一处会被扫到多次，定名而不是再开一站。
+      // The station that is already typing is the mark itself: the same place will be scanned multiple times under streaming mode, naming it instead of opening another station.
       const last = phases[phases.length - 1];
       if (last?.typing === true) {
         last.name = name;
@@ -51,7 +53,9 @@ export function scanWorkflowDraft(script: string): WorkflowDraft {
   return { agents, phases };
 }
 
-/** 草稿 → 时间线模型：只有站与淡墨轨道段，没有药丸、没有弧、没有状态。 */
+/**
+ * Draft → timeline model: only stations and faint ink track segments, no pills, no arcs, no states.
+ */
 export function draftTimeline(draft: WorkflowDraft): WorkflowTimelineModel {
   const stations: TimelineStation[] = draft.phases.map((phase, i) => ({
     id: `draft:${i}`,

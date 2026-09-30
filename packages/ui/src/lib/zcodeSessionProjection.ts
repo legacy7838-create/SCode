@@ -1,4 +1,6 @@
-/* oxlint-disable eslint(max-lines) -- ZCode session 到当前聊天 projection 的迁移桥需要同时保持 snapshot 和 event 映射一致。 */
+/* oxlint-disable eslint(max-lines) -- the migration bridge from ZCode session to the current chat
+ * projection has to keep the snapshot and event mappings consistent at the same time.
+ */
 import {
   decodeCustomModelValue,
   deriveZCodeTaskStatusFromSessionSnapshot,
@@ -65,17 +67,17 @@ function resolveLatestMessageModelSelection(
 function resolveTaskMetaModelSelectionFromSnapshot(
   snapshot: ZCodeSessionStateSnapshot,
 ): ModelSelection | undefined {
-  // 历史 resume 被错误 runtimeModel 覆盖时，settings.current 会变成 app 当前默认模型，
-  // 但消息 info.model 仍记录真实使用的模型。task meta 会作为下次冷恢复 hint，
-  // 因此优先用最近消息模型让已污染的历史记录自愈。
+  // When the history resume is overwritten by the wrong runtimeModel, settings.current will become the current default model of the app.
+  // But the message info.model still records the actual used model. The task meta will be used as the next cold recovery hint.
+  // Therefore, priority is given to using the recent message model to allow the contaminated history to heal itself.
   return resolveLatestMessageModelSelection(snapshot.messages) ?? snapshot.settings.model.current;
 }
 
 export function parseModelPickerValue(value: string): ModelSelection {
   const customModel = decodeCustomModelValue(value);
   if (customModel?.providerId && customModel.modelName) {
-    // UI 自定义模型值是展示态 custom:provider:model，
-    // ZCode Protocol 必须收到严格的 providerId/modelId 结构。
+    // The UI custom model value is the display state custom:provider:model,
+    // ZCode Protocol must receive a strict providerId/modelId structure.
     return {
       providerId: customModel.providerId,
       modelId: customModel.modelName,
@@ -166,8 +168,8 @@ function resolveSettingsThoughtLevelCurrentValue(
     thoughtLevel.defaultLevel && thoughtLevelValues.has(thoughtLevel.defaultLevel)
       ? thoughtLevel.defaultLevel
       : undefined;
-  // ZCode Protocol 的 defaultLevel 是模型事实，current 为空时表示用户尚未显式修改。
-  // 实时模型状态事件也要投影默认值，否则工具栏会拿到空 currentValue，出现没有档位被选中的 UI。
+  // ZCode Protocol's defaultLevel is a model fact. When current is empty, it means that the user has not explicitly modified it.
+  // Real-time model status events must also project default values, otherwise the toolbar will get an empty currentValue and a UI with no gear selected will appear.
   return currentThoughtLevel ?? defaultThoughtLevel ?? thoughtLevel.available[0]?.value;
 }
 

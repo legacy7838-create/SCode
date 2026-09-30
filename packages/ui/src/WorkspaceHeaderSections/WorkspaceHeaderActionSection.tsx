@@ -33,8 +33,8 @@ export function WorkspaceHeaderActionSection({
     <div
       className={cn(
         "flex shrink-0 items-center [app-region:no-drag]",
-        // Windows header 内容区有 p-2，普通工具栏按钮 hover 只覆盖 32px 高度。
-        // 标题栏按钮需要抵消这层垂直内边距，和原生窗控/右侧菜单保持同一个 48px hover 面。
+        // The Windows header content area has p-2, and the normal toolbar button hover only covers a height of 32px.
+        // The title bar button needs to offset this layer of vertical padding and maintain the same 48px hover surface as the native window control/right menu.
         useWindowsCaptionSpacing ? "-my-2 h-12 gap-0" : "gap-0.5",
       )}
     >
@@ -47,7 +47,7 @@ export function WorkspaceHeaderActionSection({
           onSelectedEditorChange={onSelectedEditorChange}
         />
       ) : null}
-      {/* 分享发布接口依赖登录态；未登录时隐藏入口，避免用户打开后只能得到鉴权失败。 */}
+      {/* The sharing and publishing interface relies on the login state; the entrance is hidden when not logged in to prevent users from only getting authentication failures after opening it. */}
       {activeTaskId && user && isDesktop !== false ? (
         <ConversationShareMenu
           taskId={activeTaskId}
@@ -57,7 +57,7 @@ export function WorkspaceHeaderActionSection({
       {!simplifyForNarrowRemote ? (
         <>
           {!hideHelpMenu ? <WorkspaceHelpMenuButton isDesktop={Boolean(isDesktop)} /> : null}
-          {/* 远程控制移动端头部空间过窄，终端入口在这里会和核心操作争抢宽度。*/}
+          {/* The head space of the remote control mobile terminal is too narrow, and the terminal entrance will compete with the core operation for width.*/}
           <WorkspaceTerminalToggleButton
             isTerminalOpen={isTerminalOpen}
             onToggleTerminal={onToggleTerminal}
@@ -66,7 +66,7 @@ export function WorkspaceHeaderActionSection({
           />
         </>
       ) : null}
-      {/* 远程控制移动端只保留图标，避免 diff 数字把按钮撑宽导致标题拥挤。 */}
+      {/* The remote control mobile terminal only retains icons to avoid diff numbers from stretching the buttons and causing crowded titles. */}
       {!isSidePaneOpen ? (
         <WorkspaceSidePaneToggleButton
           isSidePaneOpen={isSidePaneOpen}

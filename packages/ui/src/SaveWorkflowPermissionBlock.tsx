@@ -35,9 +35,12 @@ function MetadataRow({ label, value, mono }: { label: string; value: string; mon
 }
 
 /**
- * args 声明表。列是 名称 / 类型 / 必填 / 默认值，说明另起一行跨列——五列在权限窗这个宽度上
- * 会把说明挤成一列碎字，而 DESIGN.md 明令不允许「靠紧凑截断才活得下去」的布局，也要求
- * 版面扛得住 i18n 膨胀。必填用文字而不是对勾：语义不靠图标单独表达。
+ * args declaration table. Columns are Name / Type / Required / Default, with the description on its
+ * own line spanning the columns — five columns at the permission dialog's width would squeeze the
+ * description into a column of broken-up words, and DESIGN.md explicitly forbids layouts that "only
+ * survive by way of tight truncation" and also requires the layout to hold up under i18n expansion.
+ * Required is spelled out in text rather than a checkmark: the meaning is not carried by the icon
+ * alone.
  */
 function WorkflowArgsTable({ args }: { args: readonly WorkflowArgDeclaration[] }) {
   const { intl } = useZCodeIntl();
@@ -105,14 +108,16 @@ function WorkflowArgsTable({ args }: { args: readonly WorkflowArgDeclaration[] }
 }
 
 /**
- * SaveWorkflow 的保存确认块。
+ * The save confirmation block of SaveWorkflow.
  *
- * 这个 gate **没有 display 载荷**（spec 明确 v1 不加 `save_workflow` display kind）：入参就是
- * 全部内容，所以块里的每一项都读自归一化入参。脚本折叠沿用运行确认窗的同一习语与同一组文案
- * ——同一段脚本在两个窗里必须同名。
+ * This gate has **no display payload** (the spec explicitly adds no `save_workflow` display kind in
+ * v1): the input arguments are the whole content, so every item in the block is read from the
+ * normalized input arguments. Script collapsing reuses the same idiom and the same set of copy as
+ * the run confirmation dialog — the same script must be named the same way in both dialogs.
  *
- * 刻意**不**接 Refine：Refine 的语义是「拒绝这次运行并告诉模型怎么改工作流」，
- * 而保存是一次写盘，改法是模型换一组元数据重新调用，不需要第三个选项。
+ * Deliberately **not** wired to Refine: Refine's semantics are "reject this run and tell the model
+ * how to change the workflow", whereas a save is one write to disk, the fix being the model calling
+ * again with a different set of metadata, so no third option is needed.
  */
 export function SaveWorkflowPermissionBlock({ request }: { request: ZCodePermissionRequest }) {
   const { intl } = useZCodeIntl();
@@ -120,14 +125,14 @@ export function SaveWorkflowPermissionBlock({ request }: { request: ZCodePermiss
   const input = readSaveWorkflowInput(request.raw);
   const [scriptOpen, setScriptOpen] = useState(false);
 
-  // PermissionDialog 跨请求复用组件实例，换请求后必须回到默认折叠态，
-  // 否则上一次的展开会泄漏到下一个保存确认。
+  // PermissionDialog reuses component instances across requests. It must return to the default folded state after changing requests.
+  // Otherwise the last expansion will be leaked to the next save confirmation.
   useEffect(() => {
     setScriptOpen(false);
   }, [request.requestId]);
 
-  // 覆盖与新建是两句**不同的问句**，不是同一句话加个标记：用户要在读第一行时就知道
-  // 这次操作会不会替换掉已经存在的东西。
+  // Overwrite and create are two **different questions**, not the same sentence with a mark: the user should know it when reading the first line
+  // Will this operation replace anything that already exists?
   const title = intl.formatMessage({
     id: input.overwrite
       ? "chat.permission.workflow.save.overwriteTitle"

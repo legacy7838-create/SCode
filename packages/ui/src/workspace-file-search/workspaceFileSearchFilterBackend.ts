@@ -8,24 +8,31 @@ import {
 } from "./workspaceFileSearch.js";
 
 /**
- * 工作区文件搜索过滤后端抽象：候选打分+top-K 排序的执行位置。
+ * The filtering backend abstraction for workspace file search: where candidate scoring and top-K
+ * ordering run.
  *
- * 背景：放开 node_modules 等目录后候选基数
- * 可达数十万，主线程同步打分每键 50-300ms 会阻塞输入——打分已移入 Web Worker。
- * 数据搬运同样不能走结构化克隆：37 万 entries 的 postMessage 克隆实测 ~471ms
- * 主线程同步阻塞（打开 @ 面板整窗冻结数秒的主因之一），因此 worker 传输改用
- * 列式打包字符串（实测 ~31ms），worker 内解码构建候选。
+ * Context: after directories like node_modules were opened up, the candidate count can reach
+ * hundreds of thousands, and scoring synchronously on the main thread blocks input for 50-300ms per
+ * keystroke — so scoring has been moved into a Web Worker. Data transfer cannot go through
+ * structured cloning either: a measured postMessage clone of 370k entries blocked the main thread
+ * synchronously for ~471ms (one of the main reasons the whole window freezes for seconds when the @
+ * panel is opened), so the worker transfer now uses a columnar packed string (measured at ~31ms),
+ * and the worker decodes it to build the candidates.
  *
- * 同步实现保留两个用途：(1) Worker 不可用/运行失败的降级路径，行为与历史版本一致；
- * (2) 单测环境（Node 下无 Web Worker）注入。
+ * The synchronous implementation is kept for two purposes: (1) the degraded path when a Worker is
+ * unavailable or fails to run, with behavior identical to historical versions; (2) injection in the
+ * unit test environment (no Web Worker under Node).
  */
 export interface WorkspaceFileSearchFilterBackend {
-  /** 全量候选更新（列式 packed 字符串 + rootPath 用于拼回 name/path）；调用后既有 filter 结果作废。 */
+  /**
+   * Full candidate update (columnar packed string + rootPath used to reassemble name/path); calling
+   * it invalidates the existing filter results.
+   */
   setPacked(packed: string, rootPath: string): void;
   /**
-   * 按 query 过滤并返回有序 entry 列表（已映射回原始对象，≤limit 条）。
-   * Promise 永不 reject：过期结果（setEntries 或更新的 filter 之后）解析为 null，
-   * 调用方据此丢弃。
+   * Filters by query and returns an ordered list of entries (mapped back to the original objects,
+   * at most limit of them). The promise never rejects: a stale result (after setEntries or a newer
+   * filter) resolves to null, and the caller discards it on that basis.
    */
   filter(
     query: string,
@@ -58,8 +65,8 @@ function createSyncWorkspaceFileSearchFilterBackend(): WorkspaceFileSearchFilter
 }
 
 export function createWorkerWorkspaceFileSearchFilterBackend(): WorkspaceFileSearchFilterBackend {
-  // Node 测试环境（vitest node project）没有 module worker 运行时，直接走同步路径；
-  // jsdom 等有 document 但 Worker 未实现的环境由下方 try/catch 兜底降级。
+  // When the Node test environment (vitest node project) does not have a module worker running, it directly takes the synchronization path;
+  // Environments such as jsdom that have document but are not implemented by Worker are downgraded by try/catch below.
   if (typeof document === "undefined") {
     return createSyncWorkspaceFileSearchFilterBackend();
   }
@@ -70,10 +77,13 @@ export function createWorkerWorkspaceFileSearchFilterBackend(): WorkspaceFileSea
       name: "zcode-workspace-file-search",
     });
   } catch (error) {
-    // 降级路径：非常老的事件循环/测试环境不支持 module worker 时回退同步打分。
-    logger.warn("[workspace-file-search] Worker 创建失败，回退主线程同步过滤", {
-      error: error instanceof Error ? error.message : String(error),
-    });
+    // Downgrade path: Fallback to synchronous scoring when very old event loops/test environments do not support module workers.
+    logger.warn(
+      "[workspace-file-search] failed to create worker, falling back to main-thread sync filtering",
+      {
+        error: error instanceof Error ? error.message : String(error),
+      },
+    );
     return createSyncWorkspaceFileSearchFilterBackend();
   }
 
@@ -96,11 +106,14 @@ export function createWorkerWorkspaceFileSearchFilterBackend(): WorkspaceFileSea
   };
 
   worker.onerror = (event) => {
-    // 运行期失败：让所有在途请求过期（null），后续 filter 仍会重试；
-    // 持续失败由调用方通过空结果感知，不影响输入。
-    logger.warn("[workspace-file-search] Worker 运行失败，本轮过滤结果丢弃", {
-      message: event.message,
-    });
+    // Runtime failure: let all requests in transit expire (null), and subsequent filters will still try again;
+    // Continuous failure is sensed by the caller via a null result and does not affect input.
+    logger.warn(
+      "[workspace-file-search] worker run failed, discarding this round's filter results",
+      {
+        message: event.message,
+      },
+    );
     for (const [, waiter] of pending) {
       waiter.resolve(null);
     }
@@ -114,8 +127,8 @@ export function createWorkerWorkspaceFileSearchFilterBackend(): WorkspaceFileSea
         waiter.resolve(null);
       }
       pending.clear();
-      // packed 由 Host 侧 listWorkspaceFiles 直接产出（RPC 返回字符串，memcpy 级传输），
-      // renderer 全程不构建 entries 对象——37 万条实测省去 11-14s 结构化克隆。
+      // packed is directly output by listWorkspaceFiles on the Host side (RPC returns a string, memcpy level transmission),
+      // The renderer does not build entries objects in the entire process - 370,000 actual measurements save 11-14s of structured cloning.
       worker.postMessage({ type: "entries", packed, rootPath });
     },
     filter(query, options) {

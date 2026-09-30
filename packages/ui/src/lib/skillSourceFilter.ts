@@ -17,8 +17,8 @@ const SKILL_ID_PROVIDER_RE = /^glm:/;
 
 function isZcodeSkill(skill: { id?: string; path: string; scope?: string }): boolean {
   return (
-    // plugin skill 的真实路径在 CLI plugin cache 下，不在 `.zcode/skills`。
-    // 服务层已用 scope 标记来源，前端过滤时要放行，否则 `/` 和 `$` 面板会漏掉插件技能。
+    // The real path of the plugin skill is under the CLI plugin cache, not `.zcode/skills`.
+    // The service layer has used scope to mark the source, which must be allowed during front-end filtering, otherwise the `/` and `$` panels will miss the plug-in skills.
     skill.scope === "plugin" ||
     (typeof skill.id === "string" && SKILL_ID_PROVIDER_RE.test(skill.id)) ||
     resolveSkillSourceType(skill.path) === "glm"

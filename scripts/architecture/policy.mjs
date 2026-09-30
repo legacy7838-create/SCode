@@ -30,15 +30,15 @@ async function walk(root, files) {
 
 function validatePolicy(raw, cwd) {
   if (!raw || raw.version !== 1 || !Array.isArray(raw.modules)) {
-    throw new Error("architecture-policy.yaml 必须包含 version: 1 和 modules 数组");
+    throw new Error("architecture-policy.yaml must contain version: 1 and a modules array");
   }
   const ids = new Set();
   const modules = raw.modules.map((module) => {
     if (!module?.id || ids.has(module.id))
-      throw new Error(`模块 id 重复或为空: ${module?.id ?? ""}`);
+      throw new Error(`Module id is duplicated or empty: ${module?.id ?? ""}`);
     ids.add(module.id);
     if (!Array.isArray(module.roots) || module.roots.length === 0) {
-      throw new Error(`模块 ${module.id} 必须声明 roots`);
+      throw new Error(`Module ${module.id} must declare roots`);
     }
     return {
       id: module.id,
@@ -55,7 +55,7 @@ function validatePolicy(raw, cwd) {
   for (const module of modules) {
     for (const dependency of module.requires) {
       if (!moduleIds.has(dependency))
-        throw new Error(`模块 ${module.id} 依赖未知模块 ${dependency}`);
+        throw new Error(`Module ${module.id} depends on unknown module ${dependency}`);
     }
   }
   const global = {

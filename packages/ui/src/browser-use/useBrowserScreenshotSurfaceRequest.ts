@@ -21,14 +21,17 @@ function matchesTab(
 }
 
 /**
- * 跨进程恢复的 browser tab（browser: 前缀）在 renderer registry 里的 browserId /
- * browserGeneration 是持久 shell 里旧进程的值；tab 被新一轮 scope 接管后 main 侧
- * owner 已更新，但 renderer 没有可靠的同步通道（residency transition 只在状态
- * 变化时携带新值）。prepare/release 若坚持七元组严格匹配，恢复 tab 的截图
- * surface 永远匹配失败：prepare 被静默忽略 → 截图必 3s 超时；release 永不命中
- * → pane 卡死在近透明 fixed 层（用户感知为透明遮罩假死）。因此降级为
- * workspaceKey + sessionId + tabId 匹配——tabId 是全局唯一 uuid，前两者防止
- * 跨工作区/会话串扰；stale 防护由 main 侧 coordinator 用请求内 generation 承担。
+ * For a browser tab restored across processes (the `browser:` prefix), the browserId /
+ * browserGeneration in the renderer registry are the values of the old process in the persistent
+ * shell; once the tab has been taken over by a new scope round, the main-side owner is already
+ * updated, but the renderer has no reliable sync channel (a residency transition only carries the
+ * new values when the state changes). If prepare/release insisted on strict seven-tuple matching,
+ * the screenshot surface of a restored tab would never match: prepare would be silently ignored →
+ * the screenshot would always hit the 3s timeout; release would never hit → the pane would stick on
+ * a nearly transparent fixed layer (which the user perceives as a transparent overlay hang). So
+ * matching degrades to workspaceKey + sessionId + tabId — tabId is a globally unique uuid, and the
+ * first two prevent cross-workspace / cross-session crosstalk; stale protection is carried by the
+ * main-side coordinator using the generation inside the request.
  */
 function matchesTabLoose(
   tab: BrowserUseSidePaneTab,
@@ -64,8 +67,9 @@ function findScreenshotSurfaceTab(
 }
 
 /**
- * prepare 已经被当前 renderer 接收后，browserGeneration 可能随 attach/restore 继续更新。
- * 此时仍需把同一个瞬时请求送到原 tab；main 会用请求中的 generation 做最终 stale 防护。
+ * Once prepare has been received by the current renderer, browserGeneration may keep updating as
+ * attach/restore proceeds. The same transient request still has to be delivered to the original
+ * tab; main uses the generation inside the request for the final stale protection.
  */
 export function findScreenshotSurfaceTabForRender(
   tabs: readonly WorkspaceSidePaneTab[],
@@ -81,8 +85,9 @@ export function findScreenshotSurfaceTabForRender(
 }
 
 /**
- * prepare 接收匹配：严格 scope 命中优先；跨进程恢复的 tab 其 registry scope 元数据
- * 停留在旧进程值（见 matchesTabLoose 注释），必须降级匹配才能收到 prepare。
+ * prepare receive matching: an exact scope hit wins first; a tab restored across processes keeps
+ * its registry scope metadata at the old process's values (see the matchesTabLoose comment), so it
+ * can only receive prepare through the degraded match.
  */
 function findScreenshotSurfaceTabForPrepare(
   tabs: readonly WorkspaceSidePaneTab[],
@@ -92,8 +97,9 @@ function findScreenshotSurfaceTabForPrepare(
 }
 
 /**
- * 只保存已经匹配到当前 renderer tab registry 的瞬时准备请求。请求不进入 workspace store，
- * 从而不会把桌面合成同步扩散到 remote/replayable 的 task 状态。
+ * Only transient prepare requests already matched to the current renderer tab registry are stored.
+ * Requests do not enter the workspace store, so desktop composition sync does not spread into
+ * remote/replayable task state.
  */
 export function useBrowserScreenshotSurfaceRequest(
   tabs: readonly WorkspaceSidePaneTab[],
@@ -105,24 +111,27 @@ export function useBrowserScreenshotSurfaceRequest(
 
   useEffect(() => {
     const disposePrepare = platform.onBrowserViewScreenshotSurfacePrepare?.((payload) => {
-      // browser-use operation 会更新 tab registry；旧 effect 以 tabs 为依赖，
-      // command 与 React effect cleanup 同时发生时会短暂移除 IPC listener，prepare 消息因此
-      // 永久丢失并让后台截图等满 30 秒。listener 只随 platform 生命周期注册，匹配时读取最新 tabs。
+      // The browser-use operation will update the tab registry; the old effect depends on tabs.
+      // When command and React effect cleanup occur at the same time, the IPC listener will be temporarily removed, and the prepare message will therefore
+      // Lose permanently and wait 30 seconds for background screenshot. The listener is only registered with the platform life cycle and reads the latest tabs when matched.
       if (!findScreenshotSurfaceTabForPrepare(tabsRef.current, payload)) {
-        logger.debug("[browser-use] 忽略非当前 renderer tab 的截图 surface prepare", {
-          requestId: payload.requestId,
-          tabId: payload.tabId,
-        });
+        logger.debug(
+          "[browser-use] ignoring screenshot surface prepare for non-current renderer tab",
+          {
+            requestId: payload.requestId,
+            tabId: payload.tabId,
+          },
+        );
         return;
       }
-      logger.debug("[browser-use] 接收截图 surface prepare", {
+      logger.debug("[browser-use] received screenshot surface prepare", {
         requestId: payload.requestId,
         tabId: payload.tabId,
         webContentsId: payload.webContentsId,
       });
       setRequest((current) => {
         if (current && current.requestId !== payload.requestId) {
-          logger.debug("[browser-use] 保留仍在准备中的截图 surface 请求", {
+          logger.debug("[browser-use] keeping screenshot surface request that is still preparing", {
             requestId: current.requestId,
             tabId: current.tabId,
           });

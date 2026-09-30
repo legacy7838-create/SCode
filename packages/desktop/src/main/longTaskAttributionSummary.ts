@@ -12,8 +12,8 @@ interface RawAttribution {
   invokerType?: unknown;
 }
 
-// LoAF(ILongAnimationScript) 才有 invokerType；rAF 来源(ILongTaskAttribution) 只有
-// containerType 等容器字段、无 invokerType，归为通用 "script" 桶，与"有 invokerType 但值未知"区分。
+// LoAF(ILongAnimationScript) only has invokerType; rAF source(ILongTaskAttribution) only has
+// Container fields such as containerType and no invokerType are classified into the general "script" bucket, which is distinguished from "there is invokerType but the value is unknown".
 function classifyInvokerType(raw: RawAttribution): LoafInvokerType {
   if (raw.invokerType === undefined || raw.invokerType === null) {
     return "script";
@@ -25,9 +25,10 @@ function classifyInvokerType(raw: RawAttribution): LoafInvokerType {
 }
 
 /**
- * 纯函数：解析 ARMS RUM longTask 事件的 snapshots(JSON 字符串化的 top-5 attribution) 与
- * 长任务总时长，提炼低基数归因摘要。不返回原始脚本名/URL，避免路径泄露与高基数字段。
- * 解析失败/无有效 attribution 时返回 null，调用方应静默跳过。
+ * Pure function: parses the snapshots (a JSON-stringified top-5 attribution) of an ARMS RUM
+ * longTask event plus the long task's total duration into a low-cardinality attribution summary.
+ * Raw script names/URLs are never returned, which avoids leaking paths and high-cardinality fields.
+ * Returns null when parsing fails or no attribution is usable; callers should skip silently.
  */
 export function summarizeLongTaskAttribution(
   snapshotsRaw: unknown,

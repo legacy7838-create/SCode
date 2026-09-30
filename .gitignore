@@ -1,8 +1,8 @@
 node_modules/
 dist/
-# zcode-server-cli 发行包 staging 输出，本地组装产物不入库。
+# zcode-server-cli release package staging output; locally assembled artifacts are not committed.
 dist-release/
-# macOS CI 按架构隔离 electron-builder 输出目录，这些仍是构建产物。
+# macOS CI isolates electron-builder output directories per architecture; these are still build artifacts.
 packages/desktop/dist-*/
 out/
 prebuilds/
@@ -13,6 +13,20 @@ packages/desktop/bundled-agents/
 packages/desktop/bundled-tools/
 packages/desktop/mock-cdn/
 *.tsbuildinfo
+# tsup --dts emits `*.bundled_<hash>.mjs` next to the config it was pointed at; it is a
+# regenerable build artifact, never source. Without this pattern each `pnpm bundle` leaves a
+# new untracked file that shows up in lint/status output and can only be deleted by hand.
+*.bundled_*.mjs
+# The desktop scheduler is consumed as source by the bundler, but `tsc` run from the repo root
+# (or an editor using the root project graph) still emits schedulerProtocol.js/.d.ts/.map beside
+# schedulerProtocol.ts, because only the `out/` copy is covered by the rule above. These are
+# compiled output shadowing the real source. Scoped to this single leaf name on purpose: a broad
+# `packages/desktop/src/**/*.d.ts` pattern would also match tracked source such as
+# src/shared/armsRumShared.d.ts and hide it from `git add`-based hygiene gates.
+packages/desktop/src/scheduler/schedulerProtocol.js
+packages/desktop/src/scheduler/schedulerProtocol.d.ts
+packages/desktop/src/scheduler/schedulerProtocol.js.map
+packages/desktop/src/scheduler/schedulerProtocol.d.ts.map
 .DS_Store
 coverage/
 .env.local
@@ -22,7 +36,7 @@ coverage/
 .idea/
 .zed/
 .cache
-# CI 会跨任务保留这些下载缓存；不应进入 Git 未跟踪源码枚举。
+# CI keeps these download caches across jobs; they must not enter Git's untracked-source enumeration.
 /.electron-builder-cache/
 /.electron-cache/
 /.pnpm-store/
@@ -36,8 +50,8 @@ packages/stream-animate/dist-server/
 packages/stream-animate/.stream-animate-data/
 .codegraph
 .mimosa/
-# 集成分支曾混入 node-gyp 构建产物与 .playwright-mcp 临时快照；
-# 入库由 scripts/ci/ci-repo-hygiene.mjs 在 CI 第一站拒绝，这里让本地 git add 也忽略它们。
+# Integration branches once picked up node-gyp build artifacts and .playwright-mcp temporary snapshots;
+# committing them is rejected at the first CI stage by scripts/ci/ci-repo-hygiene.mjs, and here local git add ignores them too.
 .playwright-mcp/
 *.o
 .deps/
@@ -46,26 +60,46 @@ config.gypi
 gyp-mac-tool
 *.target.mk
 binding.Makefile
-# 这两条原来写成 build/Makefile、build/Release/*.node，含中间斜杠的 pattern
-# 只相对 .gitignore 所在目录（仓库根）生效，匹配不到 packages/ax-macos/build/ 下的产物；
-# 而 ci-repo-hygiene.mjs 的 denylist 用的是 (^|/)build/... 任意层级匹配。
-# 宽严不一致时无斜杠 pattern 能拦住的产物会被 git add -A 重新扫进索引。
-# 加 **/ 让忽略范围与门禁范围对齐。
+# These two were originally written as build/Makefile and build/Release/*.node; a pattern containing an internal slash
+# only applies relative to the directory containing .gitignore (the repo root) and never matches artifacts under packages/ax-macos/build/,
+# while ci-repo-hygiene.mjs's denylist matches at any depth with (^|/)build/...
+# When the two disagree, artifacts the slash-less pattern would catch get rescanned into the index by git add -A.
+# Adding **/ aligns the ignore scope with the gate scope.
 **/build/Makefile
 **/build/Release/*.node
 
-# CUA 权限浮窗吸附用的 Swift 辅助二进制（由 prepare:macos-window-bounds 从
-# packages/desktop/native/macos-window-bounds/main.swift 编出，源码入库、产物不入库）
+# Swift helper binary used to snap the CUA permission floating window (built by prepare:macos-window-bounds from
+# packages/desktop/native/macos-window-bounds/main.swift; the source is committed, the artifact is not)
 packages/desktop/resources/macos-window-bounds/
-# CUA Helper SEA 基座下载缓存（scripts/cua-helper-sea-base.mjs 落盘的官方 Node 22 运行时，纯下载产物）
+# CUA Helper SEA base download cache (the official Node 22 runtime that scripts/cua-helper-sea-base.mjs writes to disk; a pure download artifact)
 /.tmp/
-# Python 字节码（docker/plugin-eval/summarize.py 在主机上跑会生成）。
 __pycache__/
 *.pyc
 
-# 本地工具运行产物，均可再生：桌面端 e2e 的截图/缓存/网络抓包，以及桌面
-# 开发运行器的 Electron 下载缓存。
+# Local tool run outputs, all regenerable: desktop e2e screenshots/cache/network captures, plus the
+# dev runner's Electron download cache.
 packages/desktop/.e2e-artifacts/
 packages/desktop/.e2e-cache/
 packages/desktop/.e2e-network-capture/
 .zcode-runtime/
+
+# Local agent working state (per-task plan/checkpoint scratch written by the coding harness).
+/__agent__/
+
+# Rust native build artifacts (packages/rust)
+packages/rust/target/
+packages/rust/*.node
+
+# Tauri app build artifacts (apps/zcode-tauri)
+apps/zcode-tauri/src-tauri/target/
+apps/zcode-tauri/src-tauri/gen/
+
+# Storage-harness SQLite snapshots. These are captured from a live ZCode data directory and
+# therefore contain real conversation transcripts, tool payloads, and absolute workspace paths.
+# They are multi-hundred-megabyte local fixtures, regenerable by re-running the harness, and are
+# rejected outright by GitHub push protection above 100 MB, so they must never enter the index.
+/.harness-dbs/
+
+# Mermaid output of `pnpm dep:graph` (scripts/dependency-graph.mjs DEFAULT_OUTPUT); a regenerable
+# report of the local dependency graph, not source.
+/dependency-graph.mmd

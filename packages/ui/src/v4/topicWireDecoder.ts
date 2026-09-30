@@ -9,15 +9,19 @@ import { logger } from "@/logger.js";
 
 interface TopicWireDecoder {
   accept(wire: TopicWireFrameCandidate): void;
-  /** same-sub recovery：只清 fail-closed flag，保留 assembler ordinal tombstone。 */
+  /**
+   * same-sub recovery: only the fail-closed flag is cleared; the assembler ordinal tombstone is
+   * kept.
+   */
   recover(topic: string, subscriptionId: string): void;
   discard(topic: string, subscriptionId: string): void;
   clear(): void;
 }
 
 /**
- * renderer 侧 physical → logical 原子边界。assembler 只在齐片且校验通过时
- * 产出 logical frame；30s timeout 用单个最近到期 timer 驱动，避免每片建 timer。
+ * The renderer-side physical → logical atomic boundary. The assembler only emits a logical frame
+ * when all pieces are present and the check passes; the 30s timeout is driven by a single
+ * nearest-deadline timer, so that no timer is created per piece.
  */
 export function createTopicWireDecoder<F extends { topic: string; subscriptionId: string }>(
   assembler: TopicWireFrameAssembler<F>,
@@ -39,9 +43,9 @@ export function createTopicWireDecoder<F extends { topic: string; subscriptionId
     }
     for (const { fault } of faults) {
       const key = routeKey(fault.topic, fault.subscriptionId);
-      // assembler.accept 会先 expire 旧 assembly，再处理当前 wire。若当前 wire 是
-      // 已完整校验的更高 ordinal recovery，同批旧 online timeout 已被它权威覆盖，
-      // 不得先上报 fault 再把 recovery 丢掉。
+      // assembler.accept will first expire the old assembly and then process the current wire. If the current wire is
+      // Higher ordinal recovery has been fully verified, the same batch of old online timeout has been authoritatively overwritten by it,
+      // Do not report the fault first and then discard the recovery.
       if (healingRoutes.has(key)) continue;
       failedInBatch.add(key);
       faultedRoutes.add(key);
@@ -53,8 +57,8 @@ export function createTopicWireDecoder<F extends { topic: string; subscriptionId
       if (event.kind !== "complete") continue;
       const key = routeKey(event.frame.topic, event.frame.subscriptionId);
       if (event.deliveryKind === "recovery") faultedRoutes.delete(key);
-      // 同一次 accept 可能是 [superseded fault(A), complete(A)]，同 route 必须
-      // fail closed；但 accept(B) 也会顺带 expire 其他 route A，不能因此误丢健康 B。
+      // The same accept may be [superseded fault(A), complete(A)], and the same route must be
+      // fail closed; but accept(B) will also expire other route A, so healthy B cannot be lost by mistake.
       if (failedInBatch.has(key) || faultedRoutes.has(key)) continue;
       deliver(event.frame, event.deliveryKind);
     }
@@ -81,9 +85,9 @@ export function createTopicWireDecoder<F extends { topic: string; subscriptionId
     accept(wire) {
       const key = routeKey(wire.topic, wire.subscriptionId);
       if (faultedRoutes.has(key)) {
-        // resync 在途时迟到旧 online 残片仍可能 fault 并关闭 route；
-        // 真正 recovery 随后会被旧 gate 永久吞掉。deliveryKind 是 publisher
-        // 权威信封事实，因此只有 exact recovery 可原子解 gate，绝不按 RPC 时序猜测。
+        // When resync is late, old online fragments may still fault and close the route;
+        // The real recovery will then be permanently swallowed by the old gate. deliveryKind is publisher
+        // Authoritative envelope facts, so only exact recovery can solve gates atomically, never guesswork by RPC timing.
         if (wire.deliveryKind !== "recovery") return;
         faultedRoutes.delete(key);
         assembler.abort(wire.topic, wire.subscriptionId);
@@ -92,9 +96,9 @@ export function createTopicWireDecoder<F extends { topic: string; subscriptionId
       scheduleExpiry();
     },
     recover(topic, subscriptionId) {
-      // faultedRoutes 不能只靠 unsubscribe/discard 清理：否则 same-sub
-      // recovery 的更高 ordinal 会被永久吞掉。这里只解 fail-closed 门，assembler
-      // 的 settled ordinal 保留，迟到旧 fragment 仍会静默丢弃。
+      // faultedRoutes cannot be cleaned up by unsubscribe/discard alone: otherwise same-sub
+      // The higher ordinal of recovery will be permanently swallowed. Here we only solve the fail-closed door, assembler
+      // The settled ordinal is retained, and the late and old fragment will still be silently discarded.
       faultedRoutes.delete(routeKey(topic, subscriptionId));
       assembler.abort(topic, subscriptionId);
       scheduleExpiry();

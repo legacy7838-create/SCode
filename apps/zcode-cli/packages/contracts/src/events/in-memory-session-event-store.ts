@@ -10,9 +10,9 @@ import {
 } from "./session-event-retention.js";
 
 export interface InMemorySessionEventStoreOptions {
-  /** 默认 `turn-window`；`unbounded` 供回滚与对照测试。也可注入自定义策略工厂（按 session 创建）。 */
+  /** The default `turn-window`; `unbounded` is there for rollback and for contrast tests. A custom policy factory (created per session) can also be injected. */
   retention?: SessionEventRetentionMode | (() => SessionEventRetentionPolicy);
-  /** 供测试注入的时钟；生产用 Date.now。 */
+  /** The clock injected by tests; production uses Date.now. */
   now?: () => number;
 }
 
@@ -24,11 +24,11 @@ interface SessionEventState {
 }
 
 /**
- * 进程内 session event store。
+ * The in-process session event store.
  *
- * 它是 live / replay / snapshot 序号的唯一来源，因此所有事件都经 `append` 分配 seq；
- * 但瞬态事件只按 turn 窗口驻留，已完成并被下一 turn 取代的桶会从内存淘汰。
- * append 若每次全量拷贝数组且永不淘汰，长会话内存就会按 token 线性增长。
+ * It is the single source of live / replay / snapshot sequence numbers, so every event has its seq assigned through `append`;
+ * but transient events only reside by turn window, and a finished bucket that the next turn has replaced gets evicted from memory.
+ * If append copied the whole array every time and never evicted, the memory of a long session would grow linearly in tokens.
  */
 export class InMemorySessionEventStore implements SessionEventStorePort {
   private readonly sessions = new Map<SessionId, SessionEventState>();
@@ -62,7 +62,7 @@ export class InMemorySessionEventStore implements SessionEventStorePort {
     const state = this.stateFor(event.sessionId);
     const sequenceNumber =
       event.sequenceNumber > 0 ? event.sequenceNumber : state.latestSequenceNumber + 1;
-    // 计数器只增不减：淘汰不能让后续 getLatestSequenceNumber()+1 生成重复 seq。
+    // The counter only increases but does not decrease: elimination cannot allow subsequent getLatestSequenceNumber()+1 to generate duplicate seqs.
     state.latestSequenceNumber = Math.max(state.latestSequenceNumber, sequenceNumber);
     const storedEvent = { ...event, sequenceNumber };
     state.events.push(storedEvent);
@@ -74,8 +74,8 @@ export class InMemorySessionEventStore implements SessionEventStorePort {
   }
 
   /**
-   * 时间兜底（由 60s 低频 tick 调用）：淘汰结束超过 grace 且没有后继 turn 的 sealed turn 的瞬态事件。
-   * 覆盖 subagent 子 session 这类一次性 session。返回本次淘汰条数。
+   * The time fallback (invoked by a low-frequency 60s tick): evicts the transient events of sealed turns that ended more than `grace` ago and have no successor turn.
+   * It covers one-shot sessions such as a subagent child session. Returns how many entries were evicted this time.
    */
   pruneTransientEvents(
     nowMs: number = this.now(),
@@ -124,7 +124,7 @@ export class InMemorySessionEventStore implements SessionEventStorePort {
     this.sessions.delete(sessionId);
   }
 
-  /** 供内存诊断日志读取驻留规模；只数长度，不拷贝。 */
+  /** The residency size, read by the in-memory diagnostic log; it only counts the length, it does not copy. */
   getStats(): SessionEventStoreStats {
     let events = 0;
     let evictedEvents = 0;

@@ -2,15 +2,11 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
-import type { Locale } from "@zcode/shared";
 
 const WORKFLOW_NAME = "Open in ZCode.workflow";
 const WORKFLOW_BUNDLE_ID = "dev.zcode.app.finder-open-workflow";
 const WORKFLOW_VERSION = "5";
-const SERVICES_MENU_LABELS: Record<Locale, string> = {
-  "zh-CN": "在ZCode中打开",
-  "en-US": "Open in ZCode",
-};
+const SERVICES_MENU_LABEL = "Open in ZCode";
 
 const workflowScript = `first=""
 for item in "$@"; do
@@ -35,12 +31,8 @@ function escapeXml(value: string): string {
     .replace(/'/g, "&apos;");
 }
 
-function getServicesMenuLabel(locale: Locale): string {
-  return SERVICES_MENU_LABELS[locale] ?? SERVICES_MENU_LABELS["en-US"];
-}
-
-function buildInfoPlist(locale: Locale): string {
-  const servicesMenuName = escapeXml(getServicesMenuLabel(locale));
+function buildInfoPlist(): string {
+  const servicesMenuName = escapeXml(SERVICES_MENU_LABEL);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -247,7 +239,6 @@ function refreshMacServicesIndex(): void {
 
 export function installFinderOpenFolderWorkflow(options: {
   platform: NodeJS.Platform;
-  locale: Locale;
   homeDir?: string;
   logger: { info: (...args: unknown[]) => void; warn: (...args: unknown[]) => void };
   refreshServicesIndex?: () => void;
@@ -267,28 +258,26 @@ export function installFinderOpenFolderWorkflow(options: {
   try {
     mkdirSync(resourcesDir, { recursive: true });
 
-    const infoChanged = writeFileIfChanged(infoPlistPath, buildInfoPlist(options.locale));
+    const infoChanged = writeFileIfChanged(infoPlistPath, buildInfoPlist());
     const workflowContent = buildDocumentWorkflow();
     const workflowChanged = writeFileIfChanged(documentWorkflowPath, workflowContent);
-    // 用户 Automator workflow 通常读取 Contents/document.wflow；
-    // 系统内置 workflow 也存在 Resources/document.wflow 形态。两个位置都写同一份，
-    // 避免 Finder 能显示服务但运行时报 “not configured correctly”。
+    // User Automator workflow usually reads Contents/document.wflow;
+    // The system's built-in workflow also exists in the form of Resources/document.wflow. Write the same copy in both positions,
+    // Avoid Finder being able to display services but reporting "not configured correctly" when running.
     const resourcesWorkflowChanged = writeFileIfChanged(
       resourcesDocumentWorkflowPath,
       workflowContent,
     );
 
     if (infoChanged || workflowChanged || resourcesWorkflowChanged) {
-      // Finder 系统服务展示名来自 workflow 的 Info.plist。
-      // 语言切换后必须重写 plist 并刷新 Services 索引，否则系统菜单会继续显示旧语言。
+      // The Finder system service display name comes from the workflow's Info.plist; the Services index must be refreshed after the content changes.
       (options.refreshServicesIndex ?? refreshMacServicesIndex)();
-      options.logger.info("[finder-open-folder] Finder 服务已安装或更新", {
-        locale: options.locale,
+      options.logger.info("[finder-open-folder] Finder service installed or updated", {
         workflowPath: workflowDir,
       });
     }
   } catch (error) {
-    options.logger.warn("[finder-open-folder] Finder 服务安装失败", {
+    options.logger.warn("[finder-open-folder] failed to install the Finder service", {
       error: error instanceof Error ? error.message : String(error),
       workflowPath: workflowDir,
     });

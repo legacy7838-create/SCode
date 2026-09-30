@@ -1,13 +1,13 @@
 /**
- * MCP 用户目录模块 - 类型和常量定义
+ * MCP user directory module - type and constant definitions
  */
 
 import type { CliMcpSource, McpFileFormat } from "@zcode/shared";
 
 /**
- * MCP 配置键名类型
- * - mcpServers: 通用 JSON 目录格式（.agents/mcp.json）
- * - mcp.servers: zcode CLI config.json 格式
+ * MCP config key name type
+ * - mcpServers: the generic JSON directory format (.agents/mcp.json)
+ * - mcp.servers: the zcode CLI config.json format
  */
 export type McpConfigKeyName = "mcpServers" | "mcp.servers";
 

@@ -1,8 +1,9 @@
-/* oxlint-disable eslint(max-lines) -- settings helper 聚合多个设置分组；终端、网络与自动归档多侧能力暂时超过行数限制。 */
+/* oxlint-disable eslint(max-lines) -- The settings helper aggregates several settings groups; the
+ * multi-side capabilities of terminal, network and auto-archive temporarily exceed the line limit.
+ */
 import type {
   IntegratedTerminalShellOption,
   IntegratedTerminalShellSelection,
-  LocalePreference,
   ZCodeInteractionBehavior,
 } from "@zcode/shared";
 import {
@@ -11,11 +12,6 @@ import {
 } from "@zcode/shared";
 import { useState, useCallback, useEffect } from "react";
 import type { IPlatformService } from "@zcode/shared";
-import {
-  TID_SETTINGS_LOCALE_SELECT_ITEM,
-  TID_SETTINGS_LOCALE_SELECT_TRIGGER,
-  testId,
-} from "@zcode/shared";
 import {
   Select,
   SelectContent,
@@ -38,7 +34,7 @@ import {
   type SettingsSectionId,
 } from "@/settings/settingsPageConfig.js";
 
-export type { Locale, LocalePreference } from "@zcode/shared";
+export type { Locale } from "@zcode/shared";
 export { type SettingsSectionId };
 export { createSettingsPageConfig, resolveSettingsSectionForPlatform };
 
@@ -46,7 +42,6 @@ const TASK_AUTO_ARCHIVE_DAY_OPTIONS = [3, 7, 14, 30] as const;
 const ZCODE_INTERACTION_BEHAVIOR_OPTIONS: readonly ZCodeInteractionBehavior[] = ["queue", "guide"];
 
 export function GeneralSectionContent({
-  localePreference,
   interfaceMode = "coding",
   setInterfaceMode = () => {},
   notificationEnabled,
@@ -69,7 +64,7 @@ export function GeneralSectionContent({
   isDesktop,
   isWindowsDesktop,
   showIntegratedTerminalShell = false,
-  setLocalePreference,
+
   setNotificationEnabled,
   setNotificationSoundEnabled,
   taskAutoArchiveEnabled,
@@ -108,7 +103,6 @@ export function GeneralSectionContent({
   onModelIoFullRetentionEnabledChange = async () => {},
   onOpenOnboardingDialog,
 }: {
-  localePreference: LocalePreference;
   interfaceMode?: InterfaceMode;
   setInterfaceMode?: (mode: InterfaceMode) => void;
   notificationEnabled: boolean;
@@ -132,7 +126,7 @@ export function GeneralSectionContent({
   isWindowsDesktop?: boolean;
   showIntegratedTerminalShell?: boolean;
   platform?: IPlatformService;
-  setLocalePreference: (locale: LocalePreference) => void;
+
   setNotificationEnabled: (enabled: boolean) => void;
   setNotificationSoundEnabled: (enabled: boolean) => void;
   taskAutoArchiveEnabled: boolean;
@@ -173,8 +167,8 @@ export function GeneralSectionContent({
 }) {
   const { intl } = useZCodeIntl();
   const hasServices = Boolean(useOptionalServices());
-  // 部分 SSR 单测会用精简 props 直接渲染本组件，新增终端设置项后旧 helper 未必同步传值。
-  // 这里把运行时缺省值兜到“继承系统 profile”，避免 undefined.trim() 把无关测试打断。
+  // Some SSR single tests will use simplified props to directly render this component. After adding terminal settings, the old helper may not transfer values ​​synchronously.
+  // Here, the runtime default value is transferred to the "inherited system profile" to avoid undefined.trim() interrupting irrelevant tests.
   const [localTerminalFontFamily, setLocalTerminalFontFamily] = useState(terminalFontFamily);
 
   useEffect(() => {
@@ -278,47 +272,6 @@ export function GeneralSectionContent({
 
   return (
     <div className="space-y-4">
-      <SettingsGroupCard>
-        <SettingsRow
-          label={intl.formatMessage({ id: "settings.locale" })}
-          description={intl.formatMessage({ id: "settings.localeDescription" })}
-          control={
-            <Select
-              value={localePreference}
-              onValueChange={(value) => setLocalePreference(value as LocalePreference)}
-            >
-              <SelectTrigger
-                size="lg"
-                className="w-[260px] min-w-0 justify-between"
-                data-testid={TID_SETTINGS_LOCALE_SELECT_TRIGGER}
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem
-                  value="system"
-                  data-testid={testId(TID_SETTINGS_LOCALE_SELECT_ITEM, "system")}
-                >
-                  {intl.formatMessage({ id: "settings.locale.system" })}
-                </SelectItem>
-                <SelectItem
-                  value="zh-CN"
-                  data-testid={testId(TID_SETTINGS_LOCALE_SELECT_ITEM, "zh-CN")}
-                >
-                  {intl.formatMessage({ id: "settings.locale.zh-CN" })}
-                </SelectItem>
-                <SelectItem
-                  value="en-US"
-                  data-testid={testId(TID_SETTINGS_LOCALE_SELECT_ITEM, "en-US")}
-                >
-                  {intl.formatMessage({ id: "settings.locale.en-US" })}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          }
-        />
-      </SettingsGroupCard>
-
       <SettingsGroupCard>
         <SettingsRow
           controlLayout="wide"
@@ -480,7 +433,7 @@ export function GeneralSectionContent({
             />
           }
         />
-        {/* No Proxy 与 HTTP 代理共同决定同一出口策略，必须贴在代理地址下面。*/}
+        {/* No Proxy and the HTTP proxy jointly determine the same egress policy, so it must sit right below the proxy address.*/}
         <SettingsRow
           label={intl.formatMessage({ id: "settings.httpProxyNoProxy" })}
           description={intl.formatMessage({
@@ -515,7 +468,7 @@ export function GeneralSectionContent({
             />
           }
         />
-        {/* 自定义 CA 属于 HTTP 代理的同一网络出口策略，必须跟代理输入放在同一卡片里。*/}
+        {/* A custom CA belongs to the same network egress policy as the HTTP proxy, so it must live in the same card as the proxy inputs.*/}
         <SettingsRow
           label={intl.formatMessage({ id: "settings.httpProxyCaCertPath" })}
           description={intl.formatMessage({
@@ -888,14 +841,12 @@ export function GeneralSectionContent({
   );
 }
 
-export function GeneralSectionHeader({ localePreference }: { localePreference: LocalePreference }) {
+export function GeneralSectionHeader() {
   const { intl } = useZCodeIntl();
 
   return (
     <div className="mt-4 flex flex-wrap gap-2">
-      <SettingsBadge>
-        {intl.formatMessage({ id: `settings.locale.${localePreference}` })}
-      </SettingsBadge>
+      <SettingsBadge>{intl.formatMessage({ id: "settings.locale.en-US" })}</SettingsBadge>
     </div>
   );
 }

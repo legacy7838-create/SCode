@@ -44,8 +44,9 @@ function normalizeThoughtLevelText(value: string): string {
 }
 
 /**
- * 档位值 → 词条 id；表里没有的值返回 undefined（调用方原样显示 provider 自己的档位名）。
- * 工具条之外也有人要说这个词（工作流的子代理模型），两处必须查同一张表。
+ * Tier value → label id; values missing from the table return undefined (the caller displays the
+ * provider's own tier name verbatim). The term is also spoken outside the toolbar (the subagent
+ * model of a workflow), and both places must look up the same table.
  */
 export function thoughtLevelLabelId(value: string): string | undefined {
   return THOUGHT_LEVEL_LABEL_IDS[normalizeThoughtLevelText(value)];
@@ -62,7 +63,7 @@ export function getNextThoughtLevelValue(
     return null;
   }
 
-  // 配置已声明档位顺序；名称别名只用于展示，不能改变菜单或快捷键顺序。
+  // Configuration has declared gear order; name aliases are only for display and cannot change menu or shortcut key order.
   const entries = option.options;
   const currentValue = String(option.currentValue);
   const currentIndex = entries.findIndex((candidate) => candidate.value === currentValue);

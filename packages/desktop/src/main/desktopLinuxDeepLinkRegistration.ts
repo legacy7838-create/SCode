@@ -10,7 +10,7 @@ import {
 
 const LINUX_DEEP_LINK_DESKTOP_FILE = "zcode.desktop";
 const LINUX_DEEP_LINK_MIME_TYPE = "x-scheme-handler/zcode";
-// 归属标记：用于识别用户级 zcode.desktop 是否由本应用写入（历史所有版本都带这行 Comment）。
+// Attribution tag: Used to identify whether user-level zcode.desktop is written by this application (all historical versions have this line of Comment).
 const LINUX_DESKTOP_ENTRY_OWNERSHIP_MARKER = "Comment=ZCode Desktop App";
 
 type LinuxDesktopEnv = {
@@ -61,9 +61,9 @@ function resolveLinuxDeepLinkCommand(params: {
 
   return {
     executablePath: appImagePath,
-    // AppImage 的 zcode:// 回调会由 xdg-open 按 .desktop Exec 二次启动。
-    // 用户手动启动时附加的 sandbox/GPU 参数不会自动继承，二次启动可能在 Electron 初始化前崩溃。
-    // 这里只持久化影响启动成败的 allowlist 参数，避免把 deep link URL、调试端口或工作区路径写死。
+    // AppImage's zcode:// callback will be started a second time by xdg-open pressing .desktop Exec.
+    // The sandbox/GPU parameters attached when the user starts manually will not be automatically inherited, and the secondary startup may crash before Electron is initialized.
+    // Only the allowlist parameters that affect the success or failure of startup are persisted here to avoid hard-coding the deep link URL, debugging port or workspace path.
     args: resolveAppImageDeepLinkArgs(params.argv ?? []),
   };
 }
@@ -146,7 +146,7 @@ function resolveLinuxSystemApplicationDirs(env?: { XDG_DATA_DIRS?: string }): st
         .map((entry) => entry.trim())
         .filter(Boolean)
     : [];
-  // XDG 规范默认值为 /usr/local/share:/usr/share；全部为空的 XDG_DATA_DIRS 也回落默认值。
+  // The XDG specification default value is /usr/local/share:/usr/share; all empty XDG_DATA_DIRS also falls back to the default value.
   const dataDirs = entries.length > 0 ? entries : ["/usr/local/share", "/usr/share"];
   return dataDirs.map((dir) => join(dir, "applications"));
 }
@@ -154,14 +154,14 @@ function resolveLinuxSystemApplicationDirs(env?: { XDG_DATA_DIRS?: string }): st
 function findSystemLevelDesktopEntryPath(systemApplicationDirs: string[]): string | undefined {
   for (const dir of systemApplicationDirs) {
     const candidate = join(dir, LINUX_DEEP_LINK_DESKTOP_FILE);
-    // 边界：目录或损坏的路径不应被当成有效系统级条目，否则纯 AppImage 用户
-    // 的用户级注册会被病态路径误抑制。只有普通文件才参与遮蔽判断。
+    // Boundaries: Directories or corrupted paths should not be treated as valid system-level entries, otherwise pure AppImage users
+    // User-level registrations of are falsely suppressed by pathological paths. Only ordinary files participate in masking judgment.
     try {
       if (statSync(candidate).isFile()) {
         return candidate;
       }
     } catch {
-      // 路径不存在或不可 stat（权限），跳过该候选目录。
+      // The path does not exist or cannot be stat (authorized), skip the candidate directory.
     }
   }
   return undefined;
@@ -170,8 +170,8 @@ function findSystemLevelDesktopEntryPath(systemApplicationDirs: string[]): strin
 function isOwnedDesktopEntry(path: string): boolean {
   try {
     const content = readFileSync(path, "utf8");
-    // 去掉 \r 与行首尾空白，兼容 CRLF 行尾或手工编辑器引入的额外空白，
-    // 避免可清理的遗留条目被误判为用户自定义条目而永久残留。
+    // Remove \r and whitespace at the beginning and end of the line, compatible with CRLF line endings or extra whitespace introduced by manual editors.
+    // This prevents cleanable legacy entries from being misjudged as user-defined entries and remaining permanently.
     return content
       .split("\n")
       .some((line) => line.replaceAll("\r", "").trim() === LINUX_DESKTOP_ENTRY_OWNERSHIP_MARKER);
@@ -188,18 +188,27 @@ function removeOwnedUserDesktopEntry(
     return;
   }
   if (!isOwnedDesktopEntry(desktopFilePath)) {
-    logger.warn("[deep-link] Linux 用户级 zcode.desktop 非本应用写入，保留不清理", {
-      desktopFilePath,
-    });
+    logger.warn(
+      "[deep-link] the Linux user-level zcode.desktop was not written by this app, keeping it",
+      {
+        desktopFilePath,
+      },
+    );
     return;
   }
   try {
     rmSync(desktopFilePath);
-    logger.info("[deep-link] 已清理遗留的用户级 zcode.desktop，恢复系统级条目", {
-      desktopFilePath,
-    });
+    logger.info(
+      "[deep-link] removed the leftover user-level zcode.desktop, restored the system-level entry",
+      {
+        desktopFilePath,
+      },
+    );
   } catch (error) {
-    logger.warn("[deep-link] 清理遗留用户级 zcode.desktop 失败", { desktopFilePath, error });
+    logger.warn("[deep-link] failed to remove the leftover user-level zcode.desktop", {
+      desktopFilePath,
+      error,
+    });
   }
 }
 
@@ -233,14 +242,14 @@ export function registerLinuxDeepLinkProtocol(options: RegisterLinuxDeepLinkProt
   let protocolRegistered = false;
   const runCommand = options.runCommand ?? runXdgCommand;
 
-  // 用户级 zcode.desktop 在 XDG
-  // 解析中永远优先于系统级同名条目。rpm/deb 安装后，旧 AppImage 写入的用户级条目会把
-  // /usr/share/applications/zcode.desktop 持续遮蔽，快捷方式和 zcode:// deep link 一直
-  // 指向旧 AppImage（文件还在时）或直接失效（文件被删后），只有手动跑一次新版才会被覆盖。
-  // 现在只要检测到系统级同 ID 条目：
-  // - 系统安装形态（rpm/deb）运行时：清掉本应用写入的遗留用户级条目，且不再写用户级；
-  // - AppImage 运行时：不再写用户级条目和用户级图标，避免旧 AppImage 再度遮蔽系统安装。
-  // 用户手写的自定义 zcode.desktop（无归属标记）不受影响，保留不清理。
+  // User level zcode.desktop in XDG
+  // Always takes precedence over system-level entries with the same name in parsing. After rpm/deb installation, user-level entries written by the old AppImage will
+  // /usr/share/applications/zcode.desktop remains obscured, shortcuts and zcode:// deep links remain
+  // Point to the old AppImage (when the file is still there) or directly invalid (after the file is deleted). It will only be overwritten by manually running a new version.
+  // Now whenever a system level entry with the same ID is detected:
+  // - When running in system installation mode (rpm/deb): clear the legacy user-level entries written by this application, and no longer write user-level entries;
+  // - AppImage runtime: no longer write user-level entries and user-level icons to prevent old AppImages from blocking system installation again.
+  // User-written custom zcode.desktop (without attribution tag) is not affected and is retained without cleaning.
   const systemDesktopEntryPath = findSystemLevelDesktopEntryPath(
     options.systemApplicationDirs ?? resolveLinuxSystemApplicationDirs(options.env),
   );
@@ -248,7 +257,7 @@ export function registerLinuxDeepLinkProtocol(options: RegisterLinuxDeepLinkProt
   try {
     let changed = false;
     if (systemDesktopEntryPath) {
-      options.logger.info("[deep-link] Linux 系统级 desktop entry 已存在", {
+      options.logger.info("[deep-link] the Linux system-level desktop entry already exists", {
         systemDesktopEntryPath,
         desktopFilePath,
       });
@@ -256,9 +265,9 @@ export function registerLinuxDeepLinkProtocol(options: RegisterLinuxDeepLinkProt
     } else {
       changed = writeFileIfChanged(desktopFilePath, desktopEntry);
     }
-    // AppImage 直跑不会像 deb 安装包一样稳定写入系统 desktop entry。
-    // deep link 是 OAuth/支付/工作区打开的核心链路，必须先完成用户级协议处理器刷新；
-    // 图标安装是可选增强，放到核心注册成功后独立降级，避免扩大登录回调失败域。
+    // AppImage direct running will not be written to the system desktop entry as stably as the deb installation package.
+    // The deep link is the core link opened by OAuth/payment/workspace, and the user-level protocol processor refresh must be completed first;
+    // Icon installation is an optional enhancement and can be downgraded independently after successful core registration to avoid expanding the login callback failure domain.
     const updateResult = runCommand("update-desktop-database", [applicationsDir]);
     const defaultResult = runCommand("xdg-mime", [
       "default",
@@ -268,7 +277,7 @@ export function registerLinuxDeepLinkProtocol(options: RegisterLinuxDeepLinkProt
 
     if (defaultResult.status === 0) {
       protocolRegistered = true;
-      options.logger.info("[deep-link] Linux 用户级协议注册成功", {
+      options.logger.info("[deep-link] Linux user-level protocol registration succeeded", {
         desktopFilePath,
         executablePath: command.executablePath,
         args: command.args,
@@ -276,7 +285,7 @@ export function registerLinuxDeepLinkProtocol(options: RegisterLinuxDeepLinkProt
         systemDesktopEntryPath,
       });
     } else {
-      options.logger.warn("[deep-link] Linux 用户级协议注册失败", {
+      options.logger.warn("[deep-link] Linux user-level protocol registration failed", {
         desktopFilePath,
         executablePath: command.executablePath,
         args: command.args,
@@ -289,17 +298,17 @@ export function registerLinuxDeepLinkProtocol(options: RegisterLinuxDeepLinkProt
     }
 
     if (updateResult.error) {
-      options.logger.warn("[deep-link] update-desktop-database 不可用，已跳过", {
+      options.logger.warn("[deep-link] update-desktop-database is unavailable, skipped", {
         desktopFilePath,
         message: updateResult.error.message,
       });
     } else if (updateResult.signal === "SIGTERM") {
-      options.logger.warn("[deep-link] update-desktop-database 超时，已跳过", {
+      options.logger.warn("[deep-link] update-desktop-database timed out, skipped", {
         desktopFilePath,
         timeoutMs: XDG_COMMAND_TIMEOUT_MS,
       });
     } else if (updateResult.status !== 0) {
-      options.logger.warn("[deep-link] update-desktop-database 失败，已跳过", {
+      options.logger.warn("[deep-link] update-desktop-database failed, skipped", {
         desktopFilePath,
         status: updateResult.status,
         signal: updateResult.signal,
@@ -307,12 +316,15 @@ export function registerLinuxDeepLinkProtocol(options: RegisterLinuxDeepLinkProt
       });
     }
   } catch (error) {
-    options.logger.warn("[deep-link] Linux 用户级协议注册异常", {
-      desktopFilePath,
-      executablePath: command.executablePath,
-      args: command.args,
-      error,
-    });
+    options.logger.warn(
+      "[deep-link] unexpected error during Linux user-level protocol registration",
+      {
+        desktopFilePath,
+        executablePath: command.executablePath,
+        args: command.args,
+        error,
+      },
+    );
   }
 
   const iconInstallResult = systemDesktopEntryPath
@@ -325,7 +337,7 @@ export function registerLinuxDeepLinkProtocol(options: RegisterLinuxDeepLinkProt
         runCommand,
       });
   if (iconInstallResult) {
-    options.logger.info("[deep-link] Linux AppImage 用户级图标安装完成", {
+    options.logger.info("[deep-link] Linux AppImage user-level icon installation completed", {
       protocolRegistered,
       iconFilePath: iconInstallResult.iconFilePath,
       iconInstalled: iconInstallResult.installed,

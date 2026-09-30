@@ -3,16 +3,18 @@ import { join } from "node:path";
 import { ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID } from "../plugin-marketplaces.js";
 
 interface OfficialPluginCacheRoot {
-  /** 缓存目录名，即官方插件 name。 */
+  /** The cache directory name, i.e. the official plugin name. */
   name: string;
-  /** 数字感知降序后的可用版本目录，首项为最新版本。 */
+  /** The available version directories in numeric-aware descending order; the first entry is the newest version. */
   versionRoots: string[];
 }
 
 /**
- * 扫描 `<plugins storage>/cache/zcode-plugins-official/<name>/<version>/`。
- * 内置官方插件由 CLI seed 到这里、没有 installed_plugins.json 记录，services 只读安装记录时会漏掉它们。
- * 版本目录跳过 CLI 的备份 / seed 锁 / 临时目录，并按数字感知降序排序，与 CLI 回退选取一致。
+ * Scans `<plugins storage>/cache/zcode-plugins-official/<name>/<version>/`.
+ * The CLI seeds the built-in official plugins here without any installed_plugins.json
+ * record, so services that only read the install records would miss them. The version
+ * directories skip the CLI's backup / seed lock / temp directories and are sorted in
+ * numeric-aware descending order, matching the CLI's fallback selection.
  */
 export async function scanOfficialPluginCacheRoots(
   pluginStorageRoot: string,

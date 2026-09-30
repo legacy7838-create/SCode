@@ -9,14 +9,14 @@ export function deriveTaskLeadingIndicator(
     return "error";
   }
 
-  // 搜索结果或 sessions-index 尚未水合时可能没有 activity sidecar。
-  // 这种情况仅回退持久化 error；一旦有 sessions-index，phase 就是实时权威。
+  // There may be no activity sidecar when search results or sessions-index are not yet hydrated.
+  // In this case only persistent errors are rolled back; once there is a sessions-index, the phase is real-time authoritative.
   if (!activity && task.status === "error") {
     return "error";
   }
 
-  // unread 是 tasks-index membership 字段，蓝点必须直接读取当前
-  // query-cache row；不再回退旧 Zustand map，避免两个未读权威互相打架。
+  // unread is the tasks-index membership field, and the blue dot must directly read the current
+  // query-cache row; no longer rolls back the old Zustand map to prevent two unread authorities from fighting with each other.
   if (typeof task.unreadAt === "number") {
     return "unread";
   }
@@ -25,8 +25,8 @@ export function deriveTaskLeadingIndicator(
     return "loading";
   }
 
-  // persisted status=running 只说明上次落盘时还没收到终态，不代表新进 app 后仍在实时运行。
-  // loading 必须由当前 runtime 明确证明，否则历史列表会把上次未完成的 task 一直显示成转圈。
+  // persisted status=running only means that the final status has not been received when the last disk was placed, but it does not mean that the new app is still running in real time.
+  // Loading must be clearly proven by the current runtime, otherwise the history list will always display the last unfinished task as a circle.
   return "none";
 }
 

@@ -3,7 +3,7 @@ import type { Readable } from "node:stream";
 
 export const EXIT_STDERR_DRAIN_MS = 250;
 
-/** stderr 的寿命独立于协议；child exit 时管道中仍可能有最后一行诊断。 */
+/** stderr has a lifetime independent of the protocol; the pipe may still hold a last diagnostic line when the child exits. */
 export class AgentStderrCollector {
   private readonly reader;
   private readonly drained: Promise<void>;
@@ -20,7 +20,7 @@ export class AgentStderrCollector {
     this.reader.on("line", (line) => onLine?.(line));
     this.reader.once("close", this.finish);
     this.reader.on("error", this.finish);
-    // 只有诊断出口不可用，不能因此撤销仍然健康的 stdin/stdout 协议。
+    // Only the diagnostic exit is unavailable, and the still healthy stdin/stdout protocols cannot therefore be revoked.
     input.on("error", this.finish);
     input.once("close", this.finish);
     if (input.destroyed || input.readableEnded) this.finish();

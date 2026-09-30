@@ -9,25 +9,35 @@
  *
  * Precedence: `data` = `control` > `fifo` > `seq`.
  *
- * 修复记录
+ * Fix log
  *
- * 一、前向边的删边决策改为逐边对 SURVIVING 集判定。旧实现对 ORIGINAL 关系一次性批量
- * 删边，再用单调恢复环节补回「见证路径自身被删掉」的边——恢复一条边会重新给其他被删边
- * 提供见证，但没有任何一步再删它们，于是在带环输入上收敛到严重过度恢复的边集（真实症状：
- * jsonl-db 优化循环的图 66 条前向边里 55 条被其余边蕴含）。phase 1 的「一站点一步」规则
- * 让共享 helper（循环前后各调一次）产出双向前向边，环是常态而非异常，删边算法必须在环上
- * 保持无冗余。逐边对存活集判定后天然不需要恢复环节：每条被删的边在删除当刻都有存活见证，
- * 后删的边不会作废先前的删除——后删边自己的见证可以代入先前见证（kind 允许集沿
- * seq ⊇ fifo ⊇ data=control 单调收缩，代入后强度只增不减）。DAG 上与唯一的类型化传递
- * 归约逐边一致，只有带残环的图行为改变。
+ * 1. The forward-edge deletion decision is now made per edge against the SURVIVING set. The
+ * old implementation deleted in bulk against the ORIGINAL relation in one pass, then restored
+ * the edges whose witnessing path was itself deleted, using a monotonic restore step —
+ * restoring an edge re-provides witnesses for the other deleted edges, but no step deletes
+ * them again, so on cyclic input it converged to a severely over-restored edge set (the real
+ * symptom: in the jsonl-db optimization loop's graph, 55 of 66 forward edges were implied by
+ * the remaining edges). Phase 1's "one site, one step" rule makes shared helpers (called once
+ * before and once after the loop) produce bidirectional forward edges, so cycles are the norm
+ * rather than the exception, and the deletion algorithm must stay redundancy-free on cycles.
+ * Deciding per edge against the surviving set makes the restore step unnecessary by
+ * construction: every deleted edge had a surviving witness at the moment it was deleted, and
+ * a later deletion never invalidates an earlier one — the later edge's own witness can be
+ * substituted into the earlier witness (the allowed kind set shrinks monotonically along
+ * seq ⊇ fifo ⊇ data=control, so after substitution the strength only ever increases). On a
+ * DAG it agrees edge by edge with the unique typed transitive reduction; only graphs with
+ * residual cycles change behavior.
  *
- * 二、新增 carry 最小化（旧规则「carry 永不删」作废）。carry 边断言 A@k → B@k+1，而
- * 「k 轮内前向路径 → 恰好一跳 carry → k+1 轮内前向路径」的组合断言完全相同的事实，故有
- * 此见证的 carry 是纯冗余墨水（8 步循环体曾画出 19 条 back-edge，前向链 + 一条回边就说
- * 尽了）。逐跳按类型判强弱：见证的每一跳（carry 跳按其底层 kind，即回边被改型前的原始
- * kind）必须不弱于被删 carry 自己的底层 kind；恰好一跳 carry，两跳断言的是 k → k+2，
- * 严格更弱。与前向阶段同样逐边对存活集判定，互为见证的两条回边不会同时消失——闭合过环
- * 的循环仍然闭合。
+ * 2. New carry minimization (the old rule "a carry is never deleted" is void). A carry edge
+ * asserts A@k → B@k+1, and the combined assertion "a forward path within k rounds → exactly
+ * one carry hop → a forward path within k+1 rounds" asserts exactly the same fact, so a carry
+ * that has such a witness is pure redundant ink (an 8-step loop body once drew 19 back edges,
+ * whereas the forward chain plus one back edge says it all). Strength is judged per hop by
+ * kind: every hop of the witness (a carry hop by its underlying kind, i.e. the original kind
+ * the back edge had before being retyped) must be no weaker than the deleted carry's own
+ * underlying kind; exactly one carry hop asserts k → k+2, which is strictly weaker. Decided
+ * per edge against the surviving set exactly as in the forward phase, two mutually witnessing
+ * back edges never vanish together — a loop that closed over a cycle stays closed.
  */
 
 export type OrderKind = "data" | "control" | "fifo" | "seq" | "carry";
@@ -52,8 +62,10 @@ export interface ReducibleEdge {
   to: string;
   kind: OrderKind;
   /**
-   * `carry` 边的底层 kind：回边在改型成 carry 之前原本的前向 kind。carry 最小化按它
-   * 判断见证需要多强；缺席时按 hard（data）处理——宁多留一条回边，不误删数据事实。
+   * The underlying kind of a `carry` edge: the forward kind the back edge had before being
+   * retyped into a carry. Carry minimization judges how strong a witness has to be by it; when
+   * it is absent it is treated as hard (data) — better to keep one extra back edge than to
+   * wrongly delete a data fact.
    */
   carryOf?: Exclude<OrderKind, "carry">;
 }
@@ -86,7 +98,7 @@ const JUSTIFIED_BY: Partial<Record<OrderKind, ReadonlySet<OrderKind>>> = {
   seq: new Set<OrderKind>(["data", "control", "fifo", "seq"]),
 };
 
-/** carry 边的底层 kind；缺席按 hard 处理（见 {@link ReducibleEdge.carryOf}）。 */
+/** The underlying kind of a carry edge; absence is treated as hard (see {@link ReducibleEdge.carryOf}). */
 const underlyingOf = (edge: ReducibleEdge): Exclude<OrderKind, "carry"> =>
   edge.carryOf ?? "data";
 

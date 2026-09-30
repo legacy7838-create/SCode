@@ -1,5 +1,9 @@
-/* oxlint-disable eslint(max-lines) -- WorkbenchLeafPane 集中承载 pane focus、per-pane provider、恢复守卫和 session drop target；拆散会让 DnD/focus/session 绑定链路跨文件跳转，后续稳定后再按职责抽离。 */
-// 分屏叶子 pane：Focus 层外壳 + per-pane 数据面接线 + 恢复守卫。宿主 = V4WorkspaceChatArea。
+/* oxlint-disable eslint(max-lines) -- WorkbenchLeafPane centrally carries pane focus, the per-pane
+ * provider, the restore guard and the session drop target; scattering them would make the
+ * DnD/focus/session binding chain jump across files, so extraction by responsibility waits until
+ * things stabilize.
+ */
+// Split-screen leaf pane: Focus layer enclosure + per-pane data plane wiring + recovery guard. Host = V4WorkspaceChatArea.
 import {
   memo,
   useCallback,
@@ -72,10 +76,10 @@ interface ChatPaneShellProps {
   containerRef?: (element: HTMLDivElement | null) => void;
   paneId: string;
   focused: boolean;
-  /** 单 pane 布局时不画焦点框（无歧义，避免视觉噪音）。 */
+  /** No focus ring in a single-pane layout (unambiguous, avoids visual noise). */
   showFocusIndicator: boolean;
   onFocusRequest: (paneId: string) => void;
-  /** 绝对定位 rect（布局层计算的 calc 表达式）。 */
+  /** Absolutely positioned rect (the calc expression computed by the layout layer). */
   style: CSSProperties;
   dropSide?: PaneSplitSide | null;
   onDragOver?: (event: DragEvent<HTMLDivElement>) => void;
@@ -109,8 +113,9 @@ function dropPreviewClassName(side: PaneSplitSide): string {
 }
 
 /**
- * Focus 层外壳：点击/聚焦 pane 内任意处 → focus 该 pane（capture，不干扰子树交互）。
- * memo + 稳定回调：焦点切换只翻转 data-focused/边框类名，不牵动 pane 内容子树。
+ * Shell of the focus layer: clicking or focusing anywhere inside a pane → focus that pane (capture,
+ * so subtree interaction is not disturbed). memo + stable callback: a focus switch only flips
+ * data-focused / the border class name and does not disturb the pane content subtree.
  */
 const ChatPaneShell = memo(function ChatPaneShell({
   containerRef,
@@ -182,16 +187,19 @@ interface PaneRestoredGuardProps {
 }
 
 /**
- * 持久化恢复守卫（per-pane 泛化）：localStorage 恢复的绑定可能指向已删 session
- * （删除发生在上次运行/其他窗口）。用 pane 自己 scope 的 sessions-index（按
- * endpoint + workspaceKey 隔离）等首个真 snapshot（workspaceId 就绪）后做一次
- * 存在性验证：在场 → 清 restoredUnvalidated；已删 → closePane 优雅塌缩。
- * 不用 useWorkspaceSessionsIndexItems——其聚合 memo 在
- * 订阅 effect 之前按空 store 集计算会误判「已加载且不在」；直连 registry store，
- * 订阅错误/远程 endpoint 不在场（断连代理 reject）时不判定，pane 保留为
- * error/等待连接态，交由 pane 自身 retry 兜底，不误关。
- * 必须挂在 V4PaneConversationProvider 内：useServices 取的是 pane 自己的 accessor
- * （远程 pane 走对应远程连接的 sessions-index，不误查本机 host）。
+ * Persisted restore guard (generalized to per-pane): a binding restored from localStorage may point
+ * at a session that has since been deleted (the deletion happened in a previous run or in another
+ * window). Using the sessions index scoped to the pane itself (isolated by endpoint +
+ * workspaceKey), once the first real snapshot arrives (workspaceId is ready) an existence check is
+ * performed: present → clear restoredUnvalidated; deleted → closePane collapses gracefully.
+ * useWorkspaceSessionsIndexItems is not used — its aggregate memo is computed from the empty store
+ * set before the subscription effect and would misjudge "loaded and absent"; the registry store is
+ * connected directly instead, and when the subscription errors or the remote endpoint is absent (a
+ * disconnected proxy rejects) no verdict is reached, the pane stays in the error / awaiting
+ * connection state and falls back to its own retry, so it is never closed by mistake. It must be
+ * mounted inside V4PaneConversationProvider: useServices reads the pane's own accessor (a remote
+ * pane goes through the sessions index of the corresponding remote connection, so it never queries
+ * the local host by mistake).
  */
 function PaneRestoredGuard({
   paneId,
@@ -250,16 +258,22 @@ function PaneRestoredGuard({
   return null;
 }
 
-/** primary pane 的 shell 侧绑定（activeTaskId 选择态 + 回调，不进 paneLayoutStore）。 */
+/**
+ * Shell-side binding of the primary pane (activeTaskId selection state + callbacks, not in
+ * paneLayoutStore).
+ */
 export interface WorkbenchShellBinding {
   workspacePath: string;
   workspaceIdentity?: string;
   remoteSessionId?: string;
-  /** Prompt 模板埋点当前仅覆盖 Desktop。 */
+  /** Prompt template telemetry currently covers Desktop only. */
   isDesktop?: boolean;
   readOnly?: boolean;
   sessionId: string | null;
-  /** Shell 当前真正激活的 task；split pane 接管 active task 时不等于 primary sessionId。 */
+  /**
+   * The task the shell currently has truly active; when a split pane takes over the active task it
+   * is not the same as the primary sessionId.
+   */
   activeSessionId?: string | null;
   activeSelectionSideChatSessionId?: string | null;
   provider?: ZCodeProvider;
@@ -309,9 +323,12 @@ interface WorkbenchLeafPaneProps {
   showFocusIndicator: boolean;
   canSplit: boolean;
   shellWorkspaceKey: string;
-  /** 非 primary pane 的绑定；primary 传 null（用 shell 绑定）。 */
+  /** Binding of a non-primary pane; null is passed for primary (use the shell binding). */
   binding: PaneBinding | null;
-  /** session workbench group 中 primary pane 的显式绑定；无 group 时为 null。 */
+  /**
+   * The explicit binding of the primary pane in a session workbench group; null when there is no
+   * group.
+   */
   primaryBinding?: WorkbenchSessionBinding | null;
   shell: WorkbenchShellBinding;
   onFocusRequest: (paneId: string) => void;
@@ -393,9 +410,9 @@ export function WorkbenchLeafPane({
   }, [onClosePane, paneId]);
   const handleSessionDeleted = useCallback(() => {
     if (isGroupPrimary) {
-      // group primary 删除过去只关闭布局，shell 仍指向已删除 session。
-      // accepted 后必须先解散 group，再让 shell 回当前 workspace draft；secondary
-      // 仅恢复普通 session 身份，不能在这里被隐式提升。
+      // Group primary deletion only closes the layout in the past, and the shell still points to the deleted session.
+      // After accepted, you must first dissolve the group and then let the shell return to the current workspace draft; secondary
+      // Only restores normal session identity, which cannot be implicitly promoted here.
       handleClosePane();
       shell.onSessionDeleted?.();
       return;
@@ -418,9 +435,9 @@ export function WorkbenchLeafPane({
   const handleSessionCreated = useCallback(
     (createdSessionId: string) => {
       if (isPrimary && !primaryBinding) {
-        // primary draft 旁边已经有拖入的 session 时，首发不能只更新 shell。
-        // 必须先让 workbench 宿主把 draft pane 原地绑定并接管整个布局；否则随后
-        // focus secondary 会改写 shell activeTaskId，primary 就因没有独立 binding 退回 draft。
+        // When there is already a dragged session next to the primary draft, the first draft cannot only update the shell.
+        // You must first let the workbench host bind the draft pane in place and take over the entire layout; otherwise, later
+        // Focus secondary will rewrite shell activeTaskId, and primary will return to draft because there is no independent binding.
         onBindSession(paneId, createdSessionId);
         shell.onSessionCreated?.(createdSessionId);
         return;
@@ -503,7 +520,7 @@ export function WorkbenchLeafPane({
   }, [canDropSession, canSplit, onDropSession, paneId]);
 
   if (!isPrimary && !binding) {
-    // sanitize/迁移保证非 primary 叶子必有绑定；此处是转移瞬间的防御渲染。
+    // sanitize/migrate ensures that non-primary leaves must be bound; here is the defensive rendering at the moment of transfer.
     return null;
   }
 

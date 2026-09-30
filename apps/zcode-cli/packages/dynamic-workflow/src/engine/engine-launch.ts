@@ -1,30 +1,30 @@
 // ============================================================
-// run-launched：发起 run 那一轮的宿主元数据 → 事件
+// run-launched: The host metadata of the run round → event
 // ============================================================
-// 引擎不读这些元数据（锚点、阶段表、并行表、子代理选型），只在建 run 那一世紧跟首条
-// `run-started` 逐字转录一次（engine.ts）。构造独立成模块，engine.ts 与 types.ts 才都留在
-// 400 行的 lint 上限之内——它们是两侧同时增长的文件。
+// The engine does not read these metadata (anchors, stage tables, parallel tables, sub-agent selection), and only builds and runs the first item in that life.
+// `run-started` is transcribed verbatim once (engine.ts). The structure is separated into modules, and engine.ts and types.ts are left in
+// Within the lint limit of 400 lines - they are files that grow on both sides.
 
 import type { RunEvent } from "./types.js";
 
 /**
- * 发起 run 那一轮随 `run-launched` 同车的宿主元数据（EngineConfig.launch）：锚点 `inputId`、
- * 脚本声明的阶段表 `phaseNames`、与之按位置对齐的 `phaseAlongside`、本 run 子代理的选型
- * `subagentModel`、脚本来自哪个文件 `scriptPath`。五者引擎都不读——字段语义见 types.ts 里
- * `run-launched` 的注释。
+ * The host metadata that rides along with `run-launched` in the turn that launches a run (EngineConfig.launch): the anchor `inputId`,
+ * the script-declared phase table `phaseNames`, the positionally aligned `phaseAlongside`, the selection for this run's
+ * subagent `subagentModel`, and which file the script came from `scriptPath`. The engine reads none of the five -- see the comment on
+ * `run-launched` in types.ts for the field semantics.
  */
 export interface RunLaunchConfig {
   inputId: string;
   phaseNames?: string[];
   subagentModel?: string;
-  /** 本 run 脚本文件的绝对路径。 */
+  /** The absolute path of this run's script file. */
   scriptPath?: string;
   phaseAlongside?: number[][];
 }
 
 /**
- * 把 launch 元数据转录成 `run-launched`。未设的键**缺席**而不是落成 undefined 值：读侧
- * （AmendWorkflow 的三态、投影）把「没设」与「设了个空」当两件事。
+ * Transcribes the launch metadata into `run-launched`. Keys that are not set are **absent** rather than landing as an undefined value: the reading
+ * side (the three states of AmendWorkflow, the projection) treats "not set" and "set to empty" as two different things.
  */
 export function runLaunchedEvent(
   launch: RunLaunchConfig,

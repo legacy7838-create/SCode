@@ -218,6 +218,4 @@ export const READONLY_ALLOW_ANY_ARG_COMMANDS = new Set([
 ]);
 
 export const READONLY_ALLOW_ANY_ARG_COMMAND_PREFIXES = [
-  ["docker", "images"],
-  ["docker", "ps"],
 ] as const;

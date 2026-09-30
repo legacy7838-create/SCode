@@ -17,7 +17,7 @@ export function createCustomProviderNodeKey(id: string): string {
 }
 
 export function resolveModelProviderNavLogo(item: ModelProviderNavItem) {
-  // 品牌主入口沿用 Start 导航 ID，但不能因此显示体验套餐图标。
+  // The brand's main entrance inherits the Start navigation ID, but the experience package icon cannot be displayed accordingly.
   if (item.type === "preset") return item.logo;
   return "provider" in item ? item.provider?.config.logo : undefined;
 }

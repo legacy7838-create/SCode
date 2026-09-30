@@ -24,8 +24,8 @@ function getComposerBackgroundWorkCounts(
     if (work.kind === "bash") {
       bashCount += 1;
     } else if (work.kind === "workflow") {
-      // workflow run 单独计数，不并入 bashCount。totalCount 汇总三类后台工作，
-      // 确保只有 workflow run 时也显示 badge，用户仍能打开面板使用停止按钮。
+      // workflow run is counted separately and is not merged into bashCount. totalCount summarizes three types of background work,
+      // Ensure that the badge is only displayed when the workflow is running, and the user can still open the panel and use the stop button.
       workflowCount += 1;
     }
   }
@@ -43,9 +43,9 @@ interface ConversationBackgroundWorkTriggerProps {
   runningSubagentCount?: number;
   onOpen?: () => void;
   /**
-   * onOpen 的落点：
-   * `"workflow-run"` 时 tooltip 说的是「打开工作流详情」，否则沿用按类型的「打开运行中的…」。
-   * 判定归宿主（要 toolCallId 与宿主回调，徽标看不到），这里只如实自述。
+   * The placement point of onOpen:
+   * When `"workflow-run"` is used, the tooltip says "Open workflow details", otherwise it uses "Open running..." by type.
+   * The judgment belongs to the host (toolCallId and host callback are required, and the logo cannot be seen). I will only describe it truthfully here.
    */
   openTarget?: "panel" | "workflow-run";
 }
@@ -64,8 +64,8 @@ function ConversationBackgroundWorkTriggerImpl({
 
   if (!onOpen || counts.totalCount === 0) return null;
 
-  // 恰好一类时用该类文案，否则混合：三类两两组合各写一句会堆出六条同义 tooltip，
-  // 而 badge 的作用只是「有实时活动，点开看」，不承担精确枚举。
+  // If there is exactly one category, use that type of copywriting, otherwise it will be mixed: writing one sentence for each of the three categories in two-two combinations will pile up six synonymous tooltips.
+  // The role of the badge is only to "click to see if there are real-time activities" and is not responsible for accurate enumeration.
   const activeKindCount = [counts.bashCount, counts.workflowCount, counts.subagentCount].filter(
     (count) => count > 0,
   ).length;
@@ -112,7 +112,7 @@ function ConversationBackgroundWorkTriggerImpl({
           className="inline-flex items-center gap-1 @max-[480px]/composer:hidden"
           aria-hidden
         >
-          {/* 终端在前，保持 workflow 拆出之前的视觉次序不变；workflow 插在终端与智能体之间。 */}
+          {/* The terminal is in front, keeping the visual order before the workflow is removed; the workflow is inserted between the terminal and the agent. */}
           {counts.bashCount > 0 ? (
             <span className="inline-flex items-center gap-0.5">
               <SquareTerminalIcon className="size-3.5" />

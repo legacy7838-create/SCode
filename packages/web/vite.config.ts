@@ -6,8 +6,8 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { pdfJsCMapsPlugin } from "../ui/vite/pdfJsCMapsPlugin.js";
 import { thirdPartyNoticesVitePlugin } from "../../scripts/third-party-notices.mjs";
-// Vite 配置在 Node 加载期执行，不能导入 @zcode/shared 根入口。
-// 根入口包含 NodeNext 风格的源码 re-export，Node 会按真实文件查找 .js 并在 bootstrap 阶段失败。
+// Vite configuration is executed during Node loading, and the @zcode/shared root entry cannot be imported.
+// The root entry contains NodeNext style source code re-export, Node will look for .js as real files and fail in the bootstrap phase.
 import {
   resolveRuntimeZCodeEndpointOrigin,
   pickProductEndpointEnv,
@@ -24,9 +24,9 @@ function resolveZCodeEnv(value: string | undefined): "test" | "production" {
 }
 
 export default defineConfig(({ mode }) => {
-  // `.env*` 只提供链接常量；当前产品环境由启动脚本或 CI 注入 ZCODE_ENV。
-  // 启动脚本通过 process.env 显式选择 test/production；它必须优先于 .env 文件，
-  // 否则 share:test 可能被 mode 的旧配置误解析到错误 endpoint。
+  // `.env*` only provide link constants; the current production environment is injected with ZCODE_ENV by the startup script or CI.
+  // The startup script explicitly selects test/production via process.env; it must take precedence over the .env file,
+  // Otherwise share:test may be misresolved to the wrong endpoint by the old configuration of mode.
   const env = { ...loadEnv(mode, REPO_ROOT, ""), ...process.env };
   const zcodeEnv = resolveZCodeEnv(env.ZCODE_ENV);
   const endpointEnv = {
@@ -35,49 +35,49 @@ export default defineConfig(({ mode }) => {
   };
   const zcodeEndpointOrigin = resolveRuntimeZCodeEndpointOrigin(endpointEnv);
   const zaiOAuthOrigin = resolveZaiOAuthOrigin(endpointEnv);
-  // ZAI OAuth client_id 是公开标识，允许注入浏览器包；secret/token 不得走 VITE_。
+  // ZAI OAuth client_id is a public identifier that allows injection of browser packages; secret/token is not allowed to go through VITE_.
   const zaiOAuthClientId = resolveZaiOAuthClientId(endpointEnv);
 
   return {
     plugins: [pdfJsCMapsPlugin(), react(), tailwindcss(), thirdPartyNoticesVitePlugin()],
     resolve: {
       alias: {
-        // 修复 UI 组件库中的 @ 别名解析失败。
-        // 问题原因：packages/ui 的源码直接被 web 应用交给 Vite 打包，但 web 自己没声明 @ -> packages/ui/src，
-        // 所以像 "@/components/lib/utils" 这类导入会在运行时构建阶段报找不到模块。
-        // 这里把别名补到消费方 Vite 配置里，保持现有组件源码不动，影响面最小。
+        // Fix @ alias resolution failure in UI component library.
+        // Cause of the problem: The source code of packages/ui is directly handed over to Vite for packaging by the web application, but the web itself does not declare @ -> packages/ui/src.
+        // So imports like "@/components/lib/utils" will report that the module cannot be found during the runtime build phase.
+        // Here, the alias is added to the consumer Vite configuration, keeping the source code of the existing components unchanged and minimizing the impact.
         "@": resolve(__dirname, "../ui/src"),
-        // Recharts 依赖 d3-shape@3.x，后者需要 d3-path 的 Path 导出。
-        // hoisted node_modules 可能把 d3-shape 旁边的旧 d3-path@1.x 暴露给 Vite 预构建，
-        // 导致桌面/Web dev 都在依赖优化阶段失败；显式指向根部 3.x 入口以固定解析边界。
+        // Recharts depends on d3-shape@3.x, which requires the Path export of d3-path.
+        // hoisted node_modules may expose the old d3-path@1.x next to d3-shape to Vite pre-builds,
+        // Causes desktop/web dev to fail in dependency optimization phase; explicitly points to root 3.x entry to fix parsing boundaries.
         "d3-path": resolve(__dirname, "../../node_modules/d3-path/src/index.js"),
       },
     },
     server: {
       port: 5173,
       proxy: {
-        // Web 登录本地调试时，OAuth token 交换必须先命中线上同源接口。
-        // 该专用代理放在 `/api` 通配代理之前，避免被转发到本地 server 导致 404。
+        // When debugging web login locally, the OAuth token exchange must first hit the online same-origin interface.
+        // This dedicated proxy is placed before the `/api` wildcard proxy to avoid being forwarded to the local server and causing 404.
         "/api/v1/oauth/token": {
           target: zcodeEndpointOrigin,
           changeOrigin: true,
           secure: true,
         },
-        // 将 /ws 和 /api 请求代理到 server（默认 3030 端口）
+        // Proxy /ws and /api requests to server (default port 3030)
         "/ws": { target: "ws://localhost:3030", ws: true },
         "/api": { target: "http://localhost:3030" },
       },
     },
     optimizeDeps: {
-      // 修复：在依赖预构建阶段显式加入 react 相关入口，避免 rolldown 解析 `react/jsx-runtime`
-      // / `react/jsx-dev-runtime` 时返回无后缀路径导致的加载失败（UNLOADABLE_DEPENDENCY）。
+      // Fix: Explicitly add react-related entries in the dependency pre-building phase to avoid rolldown parsing `react/jsx-runtime`
+      // / `react/jsx-dev-runtime` returns a loading failure (UNLOADABLE_DEPENDENCY) caused by an unsuffixed path.
       include: ["react", "react-dom", "react/jsx-runtime", "react/jsx-dev-runtime"],
     },
     worker: {
       rollupOptions: {
-        // @pierre/diffs 的 worker 入口依赖 import 后注册 message 监听。
-        // 它的 package sideEffects 漏声明会让生产 worker 子构建被摇成 0B；
-        // 只关闭 worker 构建的摇树，避免影响主包。
+        // The worker entry of @pierre/diffs relies on importing and then registering the message listener.
+        // Its missing package sideEffects declaration will cause the production worker sub-build to be shaken to 0B;
+        // Only turn off tree shaking built by workers to avoid affecting the main package.
         treeshake: false,
       },
     },
@@ -87,14 +87,14 @@ export default defineConfig(({ mode }) => {
       __ZCODE_COMMIT__: JSON.stringify(env.ZCODE_COMMIT || "unknown"),
       __ZCODE_ENV__: JSON.stringify(zcodeEnv),
       "import.meta.env.VITE_ZCODE_BASE_URL": JSON.stringify(zcodeEndpointOrigin),
-      // 兼容旧 Web runtime 读取名；新代码统一读 VITE_ZCODE_BASE_URL。
+      // Compatible with old Web runtime reading names; new codes uniformly read VITE_ZCODE_BASE_URL.
       "import.meta.env.VITE_ZCODE_ENDPOINT_ORIGIN": JSON.stringify(zcodeEndpointOrigin),
-      // 明确注入 OAuth 公开配置，避免 Web 端在不同 mode 下隐式依赖源码 fallback。
+      // Explicitly inject OAuth public configuration to avoid the web end from implicitly relying on source code fallback in different modes.
       "import.meta.env.VITE_ZAI_OAUTH_CLIENT_ID": JSON.stringify(zaiOAuthClientId),
       "import.meta.env.VITE_ZAI_OAUTH_ORIGIN": JSON.stringify(zaiOAuthOrigin),
     },
     build: {
-      // 生产不在浏览器产物暴露 sourceMappingURL，避免客户端侧还原业务源码。
+      // Production does not expose the sourceMappingURL in browser products to prevent the client from restoring the business source code.
       sourcemap: mode === "production" ? "hidden" : true,
     },
   };

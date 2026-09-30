@@ -1,7 +1,7 @@
-// 设置页插件管理薄服务实现——plugins/* 旧协议词的唯一 host 侧消费点。
-// 插件安装/市场/启停的事实源在 zcode-cli 进程（读写 ~/.zcode 插件目录并热更新
-// 运行态），host 无副本，故实现保持 agent 协议往返；收敛价值在 UI 层不再直触
-// IZCodeAgentService，词表消费面从 UI 散点收拢到本文件一处。
+// Settings page plug-in management thin service implementation - plugins/* The only host-side consumption point for old protocol words.
+// The source of truth for plug-in installation/market/start and stop is in the zcode-cli process (read and write ~/.zcode plug-in directory and hot update
+// Running state), the host has no copy, so the agent protocol round trip is maintained; the convergence value is no longer directly touched at the UI layer
+// IZCodeAgentService, the vocabulary consumption surface is gathered from scattered points in the UI to this document.
 import type { IZCodeAgentService } from "../zcode-agent/zcodeAgent.js";
 import type { IPluginManagementService } from "./pluginManagement.js";
 

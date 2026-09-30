@@ -8,16 +8,24 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./src/index.ts"
+    },
+    "./native": {
+      "types": "./dist/native/bytes-port-native.d.ts",
+      "default": "./src/native/bytes-port-native.ts"
     }
   },
   "scripts": {
     "build": "tsc",
+    "check:bytes-parity": "tsc && node scripts/check-bytes-port-parity.mjs",
     "demo:basic": "node --loader ts-node/esm examples/01-basic-ipc.ts",
     "demo:proxy": "node --loader ts-node/esm examples/02-proxy-channel.ts",
     "demo:messageport": "node --loader ts-node/esm examples/03-ipc-server-client.ts",
     "demo:remote": "node --loader ts-node/esm examples/04-remote-connection.ts",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix"
+  },
+  "dependencies": {
+    "@zcode/rust": "workspace:*"
   },
   "devDependencies": {
     "ts-node": "^10.9.0",

@@ -1,11 +1,11 @@
 // ============================================================
-// Dynamic Workflow Run Service：三条启动入口（submit / amend / resume）与「编译一次」
+// Dynamic Workflow Run Service: three startup entrances (submit / amend / resume) and "compile once"
 // ============================================================
-// dynamic-workflow-run-service.ts 顶到 oxlint max-lines 上限（400 行），把 `submit` /
-// `resume` 两条入口连同它们共用的 compileOnce / mintRunId 拆到本文件；公开面仍从
-// dynamic-workflow-run-service.ts 导出。两条入口方向相反、绝不共用门（那边文件头不变式 1），
-// 但它们共享同一份注册表、同一张停驻表与同一条结算簿记——这三样经
-// {@link DynamicWorkflowRunEntryContext} 从 service 显式递进来，本文件不持有任何自己的状态。
+// dynamic-workflow-run-service.ts reaches the upper limit of oxlint max-lines (400 lines), put `submit` /
+// The two entries of `resume` together with their shared compileOnce / mintRunId are split into this file; the public side is still from
+// dynamic-workflow-run-service.ts export. The two entrances have opposite directions and never share the same door (the file header invariant 1 there),
+// But they share the same registration form, the same parking list and the same settlement bookkeeping - these three things
+// {@link DynamicWorkflowRunEntryContext} is passed in explicitly from service. This file does not hold any state of its own.
 
 import { createHash, randomUUID } from "node:crypto";
 import type {
@@ -55,17 +55,20 @@ import type { WorkflowEscalationRegistry } from "./workflow-escalation-registry.
 import { createWorkflowRunControl } from "./workflow-run-control.js";
 
 /**
- * 两条入口要用的 service 内部状态。全是**引用**而不是副本：注册表与停驻表是 service 的那一份，
- * `trackSettlement` 是 service 的结算簿记（终态进条目、失败归一、结算通知），`caps` 是 submit
- * 路径上按当下并发探测算出的上界（resume 沿用 journal 记录里的 caps，不经它）。
+ * The service-internal state that both entry points need. All of it is a **reference**, not a
+ * copy: the registry and the resident table are the service's own, `trackSettlement` is the
+ * service's settlement bookkeeping (terminal states into entries, failure normalization,
+ * settlement notifications), and `caps` is the ceiling computed on the submit path from the
+ * concurrency probe of the moment (resume reuses the caps recorded in the journal, not this).
  */
 export interface DynamicWorkflowRunEntryContext {
   deps: DynamicWorkflowRunServiceDeps;
   runs: Map<string, RunRegistryEntry>;
   escalations: WorkflowEscalationRegistry;
   /**
-   * 本次启动的 caps。入参是**请求的**并发上界（`CreateWorkflow` / `AmendWorkflow` 的
-   * `max_concurrency`，已由工具层归一成一个数或缺席）：缺席即天花板，给了就钳到 [1, 天花板]。
+   * The caps for this launch. The argument is the **requested** concurrency ceiling (the
+   * `max_concurrency` of `CreateWorkflow` / `AmendWorkflow`, already normalized by the tool layer
+   * into a single number or absent): absent means the ceiling, present means clamp to [1, ceiling].
    */
   caps: (requestedMaxConcurrency?: number) => Caps;
   trackSettlement: (
@@ -75,7 +78,7 @@ export interface DynamicWorkflowRunEntryContext {
   ) => Promise<RunSettlement>;
 }
 
-/** `DynamicWorkflowRunPort.submit` 的实现体：全新 run，没有前驱、没有缓存。 */
+/** Body of `DynamicWorkflowRunPort.submit`: a brand-new run, no predecessor, no cache. */
 export async function submitDynamicWorkflowRun(
   ctx: DynamicWorkflowRunEntryContext,
   request: DynamicWorkflowRunSubmitRequest,
@@ -92,8 +95,8 @@ export async function submitDynamicWorkflowRun(
     ...(request.phaseNames === undefined ? {} : { phaseNames: request.phaseNames }),
     ...(request.maxConcurrency === undefined ? {} : { maxConcurrency: request.maxConcurrency }),
     ...(request.subagentModel === undefined ? {} : { subagentModel: request.subagentModel }),
-    // 脚本文件与子代理模型同车：原样下传，
-    // 端口不做任何推断——写没写下草稿是工具侧的事实，缺席就是真的没有文件。
+    // The script file is in the same vehicle as the subagent model: download it as it is.
+    // The port makes no inferences - whether a draft was written or not is a fact on the tool's side, and absence means there really is no document.
     ...(request.scriptPath === undefined ? {} : { scriptPath: request.scriptPath }),
     ...(request.phaseAlongside === undefined ? {} : { phaseAlongside: request.phaseAlongside }),
     trace: request.trace,
@@ -102,20 +105,19 @@ export async function submitDynamicWorkflowRun(
 }
 
 /**
- * `DynamicWorkflowRunPort.amend` 的实现体。
+ * Body of `DynamicWorkflowRunPort.amend`.
  *
- * 顺序就是全部的语义：
- *   1. **预检**前驱（存在 ∧ 边界齐全）——被拒时什么都没动，前驱照旧在跑；
- *   2. 铸新 id；
- *   3. 前驱在飞则以 `{ superseded: newRunId }` 取消并 **await 它自己的结算 promise**——不是超时、
- *      不是轮询 journal；前驱因此结算成 `stopped(superseded, supersededBy)`；
- *   4. 有界地等被中止的 turn 把尾巴写完，问出「哪些会话此刻可以放心去数」——只有它影响在飞
- *      ask 的接续，完结前缀的边界是 journal 事实（见下面那段注释的完整论证）；
- *   5. 从已结算的前驱构建缓存——预检已过，这里再被拒只可能是宿主故障，上抛；
- *   6. 与全新 submit 同一条 launch 路启动，带 `resumedFrom` 与缓存。
+ * The order is the entire semantics:
+ *   1. **Pre-check** the predecessor (exists AND its bounds are complete) - on rejection nothing has moved, the predecessor runs on;
+ *   2. Mint a new id;
+ *   3. If the predecessor is in flight, cancel it with `{ superseded: newRunId }` and **await its own settlement promise** - no timeout, no journal polling; it therefore settles as `stopped(superseded, supersededBy)`;
+ *   4. Boundedly wait for the aborted turn to finish its tail, then ask which sessions can be safely counted now - that alone decides how in-flight asks continue, the completed prefix's boundary being a journal fact (the full argument is in the comment further down);
+ *   5. Build the cache from the settled predecessor - the pre-check already passed, so a rejection here can only be a host fault and is thrown upward;
+ *   6. Launch along the same path as a brand-new submit, carrying `resumedFrom` and the cache.
  *
- * 旧版让 `submit({resumeFrom})` 对在飞前驱回 `not_amendable`，模型只能 TaskStop → 轮询到
- * stopped → 重提交三步；本方法把停止与结算等待收进 service，竞态随之消失。
+ * The old version let `submit({resumeFrom})` answer `not_amendable` for an in-flight predecessor,
+ * forcing the model into three steps: TaskStop -> poll until stopped -> resubmit; this method
+ * folds the stop and the settlement wait into the service, and the race disappears with it.
  */
 export async function amendDynamicWorkflowRun(
   ctx: DynamicWorkflowRunEntryContext,
@@ -135,14 +137,14 @@ export async function amendDynamicWorkflowRun(
   const predecessor = preflight.run;
   const runId = mintRunId();
 
-  // 在飞判定看**本进程注册表**而不是 journal 状态：journal 说 running 而注册表里没有它，是别的
-  // 进程（或死进程）的 run，本 service 停不了也等不到——按已结算处理，让导入构建的终态门说话
-  // （非终态即抛，见下）。
+  // In Feiju, look at the **registry of this process** instead of the journal status: journal says running but it is not in the registry, it is something else.
+  // When the process (or dead process) runs, this service cannot be stopped or waited for - it will be processed as settled and let the final state gate built by the import speak.
+  // (If it is not the final state, it is thrown away, see below).
   const live = runs.get(request.predecessorRunId);
   let supersededRunId: string | undefined;
   if (live !== undefined && live.terminal === undefined) {
     live.controller.abort({ superseded: runId });
-    // 等前驱自己的结算 promise（与 waitForTask 同一个 promise；trackSettlement 保证它永不 reject）。
+    // Wait for the predecessor's own settlement promise (the same promise as waitForTask; trackSettlement guarantees that it will never reject).
     await live.settlement;
     supersededRunId = request.predecessorRunId;
     deps.logger?.info?.("Dynamic workflow run superseded by an amendment", {
@@ -153,26 +155,26 @@ export async function amendDynamicWorkflowRun(
     });
   }
 
-  // 静默闸门。
+  // Gates of Silence.
   //
-  // 根因：`dispose()` 是同步的，对还有在飞 turn 的会话只挂了一条 `state.turn.then(close, close)`
-  // 而不等它；引擎在 `cancelAsk` 中止 turn 之后立刻结算。所以上面那句 `await live.settlement`
-  // 保证的是「run 结算了」，**不是**「被中止的 turn 把它的尾巴写完了」。此刻去数前驱会话的
-  // 消息条数，可能少数一条，或者数到一条 part 还没落全的消息——而那个数会变成接续位置
-  // （`inFlight.messageBoundary`），被 driver 拿去截断复制。已完结前缀不在此列：它们的边界在
-  // ask 结算时就已经 journal 了，是事实而不是此刻的观察。
+  // Root cause: `dispose()` is synchronous, and only one `state.turn.then(close, close)` is hung for the session that is still turning.
+  // Instead of waiting for it; the engine resolves immediately after `cancelAsk` aborts the turn. So the above sentence `await live.settlement`
+  // What is guaranteed is "the run is resolved", not "the aborted turn has finished writing its tail". Now let’s count the precursor sessions
+  // The number of messages, maybe one less, or one message whose part has not yet been completed - and that number will become the continuation position
+  // (`inFlight.messageBoundary`), used by the driver to truncate and copy. Completed prefixes are not listed here: their boundaries are
+  // The ask is already journaled at settlement, and is a fact rather than an observation at the moment.
   //
-  // 所以问一次 driver「哪些会话已经静默」，只对静默的会话谈接续。**这不是用超时掩盖竞态**：
-  // 到点仍未落地的会话不会被当作静默继续用，它只是拿不到 `inFlight`——也就是本特性之前的
-  // 行为（整段在飞转录丢弃，ask 从完整前缀重开）。我们宁可少做一次优化，也绝不拿一个正在
-  // 变动的条数去截断转录。
+  // So ask the driver "Which sessions have been silenced" and only continue the silenced sessions. **This is not using timeouts to cover up race conditions**:
+  // A session that has not landed at this point will not be used as a silent continuation, it just cannot get `inFlight` - which is what it was before this feature.
+  // Behavior (entire on-the-fly transcription discarded, ask restarted with full prefix). We would rather do one less optimization than take one optimization
+  // Change the number of bars to truncate the transcript.
   //
-  // 两种情形一秒都不等，因为两者都没有可疑的数可言：
-  //   - 本进程没有这个前驱的活条目（早已终态，或死进程留下的行）→ 没有 driver 就没有东西在
-  //     写它的会话；
-  //   - 整个装配没有转录存取面 → 根本数不出条数，`inFlight` 无从产生（构建器那边同样要
-  //     `messageCount` 才谈接续），等待纯属白付。
-  // 两者都落到「缺席 = 全部静默」这一条上（见 AmendImportOptions.quietSessions）。
+  // Neither case waits for a second, because there is no doubtful number in either case:
+  //   - This process does not have a live entry for this predecessor (already terminated, or a line left by a dead process) → without a driver, there is nothing.
+  //     the session in which it was written;
+  //   - The entire assembly has no transcription access interface → the number of entries cannot be counted at all, and `inFlight` cannot be generated (the same is required on the builder side)
+  //     `messageCount` will be discussed later), waiting is in vain.
+  // Both fall into the category of "absent = all silent" (see AmendImportOptions.quietSessions).
   const quietSessions =
     deps.actorTranscriptStore === undefined ? undefined : await live?.quiescence?.quietSessions();
 
@@ -182,19 +184,19 @@ export async function amendDynamicWorkflowRun(
     quietSessions === undefined ? undefined : { quietSessions },
   );
   if (!built.ok) {
-    // 预检刚通过：run 存在、边界齐全；到这里还被拒只剩「前驱非终态」——注册表说它不在飞而
-    // journal 说它还在跑（别的进程持有）。这不是模型能改的输入，按接线故障上抛。
+    // The pre-inspection has just passed: run exists and the boundaries are complete; it has been rejected until now and only the "precursor non-final state" is left - the registry says it is no longer flying.
+    // The journal says it is still running (held by another process). This is not an input that can be changed by the model, and will be thrown up due to wiring faults.
     throw new Error(
       `dynamic workflow amend could not import from run ${request.predecessorRunId} after preflight: ${built.reason}`,
     );
   }
 
-  // 用量起点：**前驱结算之后**再读一次行。preflight 那一份是停止之前的快照，用它会漏掉前驱最后几轮的
-  // 花费——修订一个在飞 run 恰好是这条路最常见的用法。读不到行按 0 处理（前驱刚被清理）。
+  // Usage starting point: **After precursor settlement** read the row again. The preflight one is a snapshot before stopping. Using it will miss the last few rounds of the front wheel drive.
+  // Spend - Revise an on-the-fly run happens to be the most common use of this path. Unreadable lines are treated as 0 (the predecessor has just been cleared).
   const settledPredecessor = deps.journal.getRun(request.predecessorRunId);
   const inheritedTokens = settledPredecessor?.spentTokens ?? 0;
-  // 实参只在调用方明说时沿用（GUI「配置」重跑的是前驱自己的脚本，见端口字段注释）；工具路径
-  // 不传，修订照旧不带实参。前驱没有实参（内联脚本 / 老行）时整个字段缺席。
+  // Actual parameters are only used when explicitly stated by the caller (GUI "Configuration" reruns the precursor's own script, see port field comments); tool path
+  // If not passed, the revision will still take no actual parameters. When the predecessor has no arguments (inline script/old line) the entire field is absent.
   const inheritedArgs =
     request.inheritArgs === true && settledPredecessor?.args !== undefined
       ? settledPredecessor.args
@@ -205,7 +207,7 @@ export async function amendDynamicWorkflowRun(
     scriptText: request.scriptText,
     cwd: request.cwd,
     inheritedTokens,
-    // 展示名沿用前驱：修订是同一件工作的下一版，卡片与通知里换个名字只会让用户以为是另一条工作流。
+    // The display name follows the predecessor: revision is the next version of the same work. Changing the name in cards and notifications will only make users think it is another workflow.
     ...(request.name !== undefined
       ? { name: request.name }
       : predecessor.name === undefined
@@ -215,16 +217,16 @@ export async function amendDynamicWorkflowRun(
     ...(request.parentSessionId === undefined ? {} : { parentSessionId: request.parentSessionId }),
     ...(request.toolCallId === undefined ? {} : { toolCallId: request.toolCallId }),
     ...(request.phaseNames === undefined ? {} : { phaseNames: request.phaseNames }),
-    // 并发上界不从前驱继承：「省略即沿用前驱」是**工具面**的三态，`AmendWorkflow` 的
-    // resolveInput 已经把它归一成这里的一个数或缺席（缺席 = 天花板）。端口若再继承一次，
-    // 「解除限制」（`null`）就永远到不了这里。
+    // The concurrency upper bound is not inherited from the predecessor: "If omitted, the predecessor will be used" is a three-state of **tool surface**, `AmendWorkflow`
+    // resolveInput has normalized it to a number here or absent (absent = ceiling). If the port is inherited again,
+    // "Unrestriction" (`null`) will never get here.
     ...(request.maxConcurrency === undefined ? {} : { maxConcurrency: request.maxConcurrency }),
-    // 子代理模型同样不从前驱继承，与上面的并发上界同一条论证：「省略即沿用前驱」是**工具面**
-    // 的三态，`AmendWorkflow` 的 resolveInput 已经把它归一成这里的一条选择或缺席（缺席 = 回到
-    // 会话模型）。端口若再继承一次，「回到会话模型」（`null`）就永远到不了这里。
+    // The subagent model also does not inherit from the predecessor. It is the same argument as the upper concurrency bound above: "Omitting it means inheriting the predecessor" is the **tool surface**
+    // Three-state, `AmendWorkflow`'s resolveInput has normalized it to a choice here or absence (absence = return
+    // session model). If the port is inherited again, "return to the session model" (`null`) will never get here.
     ...(request.subagentModel === undefined ? {} : { subagentModel: request.subagentModel }),
-    // 脚本文件**绝不从前驱继承**：修订记的是这一次修订的脚本来自哪个文件（`path` 提交就是
-    // 那个文件，内联提交就是刚写下的草稿）。沿用前驱的路径等于让模型下次去编辑旧脚本。
+    // Script files **never inherit from predecessor**: the revision records which file the script of this revision comes from (`path` submission is
+    // That document, inline commit is the draft you just wrote). Following the path of the predecessor is equivalent to letting the model edit the old script next time.
     ...(request.scriptPath === undefined ? {} : { scriptPath: request.scriptPath }),
     ...(request.phaseAlongside === undefined ? {} : { phaseAlongside: request.phaseAlongside }),
     trace: request.trace,
@@ -242,52 +244,55 @@ interface StartNewRunInput {
   parentSessionId?: string;
   toolCallId?: string;
   launchInputId?: string;
-  /** 脚本声明的阶段表（submit 与 amend 都传：修订用**新脚本**的阶段表）。 */
+  /** The phase table declared by the script (passed by both submit and amend: an amendment uses the phase table of the **new** script). */
   phaseNames?: string[];
-  /** 请求的并发上界；缺席即天花板。钳制在 {@link DynamicWorkflowRunEntryContext.caps} 里。 */
+  /** The requested concurrency ceiling; absent means the ceiling. Clamping happens in {@link DynamicWorkflowRunEntryContext.caps}. */
   maxConcurrency?: number;
   /**
-   * 本 run 的子代理模型。缺席即子代理跑在会话模型上。
-   * 结构化选择进来，落库前归一成 picker 字符串——见 startNewRun 里的注释。
+   * The subagent model for this run. Absent means subagents run on the session model.
+   * A structured selection comes in and is normalized into a picker string before it is stored -
+   * see the comment in startNewRun.
    */
   subagentModel?: ModelSelection;
   /**
-   * 本 run 脚本文件的绝对路径。缺席即这个
-   * run 没有可编辑的脚本文件。纯模型面元数据：不参与执行，也不参与 resume 校验。
+   * The absolute path of this run's script file. Absent means this
+   * run has no editable script file. Purely model-facing metadata: it takes part neither in
+   * execution nor in resume validation.
    */
   scriptPath?: string;
-  /** 与 `phaseNames` 对齐的「同时在跑」表；下标指向的就是上面这张表，两者同来同走。 */
+  /** The "concurrently running" table aligned with `phaseNames`; an index points into that very table, and the two always come and go together. */
   phaseAlongside?: number[][];
   trace: TraceContext;
   /**
-   * 本 run 的用量起点（前驱结算后的 `spentTokens`）。amend 路径给出，全新 submit 缺席（= 0）。
+   * The usage starting point for this run (the predecessor's `spentTokens` after settlement). Given on the amend path, absent for a brand-new submit (= 0).
    */
   inheritedTokens?: number;
-  /** amend 路径：lineage 指针与导入缓存成对出现。 */
+  /** amend path: the lineage pointer and the import cache always appear as a pair. */
   imported?: { cache: ImportedRunCache; resumedFrom: string };
 }
 
 /**
- * submit 与 amend 共用的启动尾：编译 → 锚点 → 注册表条目 → fire-and-forget launch。
- * 返回 runId（同步：注册表条目在本函数返回前就已存在，见下面的注释）。
+ * The launch tail shared by submit and amend: compile -> anchor -> registry entry -> fire-and-forget
+ * launch. Returns the runId (synchronously: the registry entry already exists before this function
+ * returns, see the comment below).
  */
 function startNewRun(ctx: DynamicWorkflowRunEntryContext, input: StartNewRunInput): string {
   const { deps, runs, escalations } = ctx;
   const { imported, runId } = input;
   const compiled = compileOnce(input.scriptText);
-  // 钳过的上界只算**一次**：它既要随 EngineConfig 落 dwf_run.caps_max_concurrency，也要作为
-  // 注册表条目的间隙副本（journal 行出现之前 getTask / getRunDetail 唯一能读到的地方）。
-  // 算两次就等于让两条读面在天花板变化的那一瞬间给出不同的数。
+  // The clamped upper bound only counts **once**: it must both drop dwf_run.caps_max_concurrency with EngineConfig and be used as
+  // A gapped copy of the registry entry (the only place getTask / getRunDetail can read before the journal line appears).
+  // Counting twice is equivalent to having the two reading surfaces give different numbers at the moment the ceiling changes.
   const caps = ctx.caps(input.maxConcurrency);
-  // 规范字符串形态（`providerId/modelId[$reasoningLevel]`）。端口收的是结构化选择，而 journal
-  // 事件、两条读面与进度载荷要的都是一个字符串——在这里归一一次，下游全程搬运。
+  // Canonical string form (`providerId/modelId[$reasoningLevel]`). The port accepts structured selection, and the journal
+  // The event, two reading surfaces and the progress load all require a string - they are normalized once here and transported throughout the downstream process.
   const subagentModel =
     input.subagentModel === undefined ? undefined : formatModelPickerValue(input.subagentModel);
 
-  // 发起锚点：修订沿用前驱、直接启动用显式值、聊天用活动轮，
-  // 都没有就铸一个。引擎在建 run 那一世把它记成 run-launched。
-  // 脚本声明的阶段表与本 run 的子代理模型和锚点并列合入：修订续跑沿用前驱的 inputId，
-  // 却用**新脚本**的阶段表、也绝不继承前驱的模型，所以两者都不进 resolveLaunchAnchor。
+  // Initiation anchor point: revision inherits from predecessor, direct activation uses explicit value, chat uses activity wheel,
+  // If you don't have any, just cast one. When the engine is being run, remember it as run-launched.
+  // The stage table declared by the script is merged side by side with the subagent model and anchor point of this run: the revised continuation uses the inputId of the predecessor,
+  // However, it uses the stage table of **new script** and never inherits the model of the predecessor, so neither of them enter resolveLaunchAnchor.
   const launch: RunLaunch = {
     ...resolveLaunchAnchor({
       ...(input.launchInputId === undefined ? {} : { requested: input.launchInputId }),
@@ -303,22 +308,22 @@ function startNewRun(ctx: DynamicWorkflowRunEntryContext, input: StartNewRunInpu
           })()),
     }),
     ...(input.phaseNames === undefined ? {} : { phaseNames: input.phaseNames }),
-    // 子代理模型与阶段表并列同车（同样不进 resolveLaunchAnchor：修订绝不继承前驱的模型）。
-    // 零 SQL——它活在这条事件里，`dwf_run` 上没有对应的列（刻意不做迁移）。
+    // Subagent models are placed side by side with the stage table (also without resolveLaunchAnchor: the revision never inherits the predecessor's model).
+    // Zero SQL - it lives in this event, and there is no corresponding column on `dwf_run` (no migration is done on purpose).
     ...(subagentModel === undefined ? {} : { subagentModel }),
-    // 脚本文件与子代理模型并列同车（同样不进 resolveLaunchAnchor：修订记的是新脚本的文件）。
-    // 零 SQL——它活在这条事件里，`dwf_run` 上没有对应的列。
+    // The script file is in the same car as the subagent model (also not included in resolveLaunchAnchor: the revision notes the file of the new script).
+    // Zero SQL - it lives in this event and there is no corresponding column on `dwf_run`.
     ...(input.scriptPath === undefined ? {} : { scriptPath: input.scriptPath }),
     ...(input.phaseAlongside === undefined ? {} : { phaseAlongside: input.phaseAlongside }),
   };
 
-  // 注册必须先于启动：取消可能在 submit 返回后的任意时刻到达，而后台追踪器也会
-  // 立刻开始轮询快照——注册表是「run 已存在」的唯一同步事实（journal 的 dwf_run 行
-  // 要等引擎构造，晚若干个微任务）。
+  // Registration must precede startup: cancellation may arrive at any time after submit returns, and background trackers may
+  // Start polling the snapshot immediately - the registry is the only synchronized fact that "run exists" (journal's dwf_run line
+  // You have to wait for the engine to be constructed, which will be a few microtasks later).
   const controller = new AbortController();
-  // 活体控制面与 AbortController 同时造、同时进条目（见 RunRegistryEntry.control）：
-  // 「停下这个 run」与「改这个 run 的一项设置」是同一刻就该可用的两条通道，而两者都要在
-  // launch 之前存在——retune 可能在 submit 返回后的任意一个微任务里到达。
+  // The living control surface and the AbortController are created and entered at the same time (see RunRegistryEntry.control):
+  // "Stop this run" and "Change a setting of this run" are two channels that should be available at the same moment, and both of them must be in
+  // Exists before launch - retune may arrive in any microtask after submit returns.
   const control = createWorkflowRunControl();
   const entry: RunRegistryEntry = {
     controller,
@@ -326,29 +331,29 @@ function startNewRun(ctx: DynamicWorkflowRunEntryContext, input: StartNewRunInpu
     startedAt: new Date(),
     ...(input.toolCallId === undefined ? {} : { toolCallId: input.toolCallId }),
     ...(input.parentSessionId === undefined ? {} : { parentSessionId: input.parentSessionId }),
-    // 枚举面在 journal 行出现之前唯一能读到的项目键与标签来源（见 RunRegistryEntry）。
+    // The only source of project keys and tags that the enumeration can read before the journal line appears (see RunRegistryEntry).
     cwd: input.cwd,
     ...(input.name === undefined ? {} : { name: input.name }),
     scriptText: input.scriptText,
-    // 生效的并发上界（= 落库那一份）。同一条间隙论证：`AmendWorkflow` 的 resolveInput 读
-    // getTask 判「沿用什么」，而修订一个刚起步的 run 恰好会落在这个间隙里。
+    // The effective concurrency upper bound (= the share that falls into the library). Same gap argument: resolveInput of `AmendWorkflow` reads
+    // getTask determines "what to use", and revising a run that has just started will fall into this gap.
     maxConcurrency: caps.maxConcurrency,
-    // 子代理模型的间隙副本，与并发上界同规（见 RunRegistryEntry.subagentModel）。这里就是
-    // 「结构化选择 → 规范字符串」的**唯一**归一点：记进 `run-launched` 的是它，两条读面与
-    // `run-started` 载荷读到的也是它，所以格式不可能在三处之间分叉。
+    // A gapped copy of the subagent model, consistent with the concurrency upper bound (see RunRegistryEntry.subagentModel). Here it is
+    // The **only** thing about "structured selection → canonical string" is that it is recorded as `run-launched`, and the two reads are the same as
+    // This is what the `run-started` payload reads, so the format cannot be forked between the three places.
     ...(subagentModel === undefined ? {} : { subagentModel }),
-    // 脚本文件的间隙副本，与子代理模型同规（见 RunRegistryEntry.scriptPath）。
+    // A gapped copy of the script file, as in the subagent model (see RunRegistryEntry.scriptPath).
     ...(input.scriptPath === undefined ? {} : { scriptPath: input.scriptPath }),
     ...(imported === undefined ? {} : { resumedFrom: imported.resumedFrom }),
-    // 用量起点的间隙副本，与并发上界同规：journal 行落下之前，两条读面只能从条目读到用量，
-    // 而修订一个刚起步的 run 恰好落在那几个微任务里——报 0 会让详情面说「这条 lineage 没花钱」。
+    // The gap copy of the usage starting point is the same as the concurrency upper bound: before the journal line falls, the two reading surfaces can only read the usage from the entry.
+    // And revising a just-started run happens to fall into those few microtasks - reporting 0 will cause the details to say "This lineage costs nothing."
     ...(input.inheritedTokens === undefined ? {} : { inheritedTokens: input.inheritedTokens }),
-    // 真正的结算 promise 在下面替换；先占位以满足类型（同步可见）。
+    // The actual settlement promise is replaced below; a placeholder is taken first to satisfy the type (sync visible).
     settlement: Promise.resolve<RunSettlement>({ status: "stopped", reason: "user" }),
   };
   runs.set(runId, entry);
 
-  // fire-and-forget：绝不在 submit 里 await 结算。submit 的契约是「启动并交出 runId」。
+  // fire-and-forget: Never await settlement in submit. The contract of submit is "start and hand over runId".
   entry.settlement = ctx.trackSettlement(
     runId,
     entry,
@@ -357,12 +362,12 @@ function startNewRun(ctx: DynamicWorkflowRunEntryContext, input: StartNewRunInpu
       compiled,
       cwd: input.cwd,
       deps,
-      // name 与 scriptText / cwd 同一条元数据路：launch → harness 原样转交 EngineConfig，
-      // 引擎在 createRun 时落 dwf_run.name。service 侧刻意不做第二次 UPDATE 补写——那会
-      // 造出 dwf_run 的第二个写入者（文件头不变式 1 的同一条论证）。
+      // name is in the same metadata path as scriptText / cwd: launch → harness is transferred to EngineConfig as is,
+      // The engine drops dwf_run.name on createRun. The service side deliberately does not do the second UPDATE - then
+      // Makes the second writer of dwf_run (same argument for file header invariant 1).
       ...(entry.name === undefined ? {} : { name: entry.name }),
-      // 实参走同一条元数据路：launch → harness → EngineConfig（落 args_json）+ spawn
-      // payload（注入沙箱的 args 全局）。内联脚本没有实参，字段整个缺席。
+      // The actual parameters follow the same metadata path: launch → harness → EngineConfig (fall args_json) + spawn
+      // payload (the args global injected into the sandbox). Inline scripts have no arguments and fields are completely absent.
       ...(input.args === undefined ? {} : { args: input.args }),
       ...(entry.parentSessionId === undefined ? {} : { parentSessionId: entry.parentSessionId }),
       escalationRegistry: escalations,
@@ -371,21 +376,21 @@ function startNewRun(ctx: DynamicWorkflowRunEntryContext, input: StartNewRunInpu
       scriptText: input.scriptText,
       signal: controller.signal,
       ...(entry.toolCallId === undefined ? {} : { toolCallId: entry.toolCallId }),
-      // 会话静默探针回填到条目上：本 run 将来被修订时，那次 amend 要问它
-      // （dynamic-workflow-import.ts 的 quietSessions）。三条入口都接，因为哪个 run 会成为
-      // 前驱是将来才知道的事。
+      // The session silence probe is backfilled to the entry: when this run is revised in the future, that amend will ask it
+      // (quietSessions of dynamic-workflow-import.ts). All three entrances are connected, because which run will become
+      // The precursor is something that will only be known in the future.
       onQuiescenceProbe: (probe) => {
         entry.quiescence = probe;
       },
-      // lineage 指针与缓存表成对下传（launch → harness → EngineConfig）：前者落 dwf_run
-      // 的 resumed_from（createRun 一次写死），后者只活在本次执行里。
+      // The lineage pointer and the cache table are downloaded in pairs (launch → harness → EngineConfig): the former falls into dwf_run
+      // resumed_from (createRun is written once), the latter only lives in this execution.
       ...(imported === undefined
         ? {}
         : { importedCache: imported.cache, resumedFrom: imported.resumedFrom }),
-      // 用量起点走同一条路（launch → harness → EngineConfig）：引擎据它写 spent_tokens 的初值。
+      // The usage starts from the same path (launch → harness → EngineConfig): the engine writes the initial value of spent_tokens according to it.
       ...(input.inheritedTokens === undefined ? {} : { inheritedTokens: input.inheritedTokens }),
-      // 子代理模型不单走一路：它就在 launch 里（见上面的 RunLaunch），随同一条 `run-launched`
-      // 落 journal，launch 侧再从同一个对象里取出来解析成选择交给 actor runtime 工厂。
+      // The subagent model doesn't just go all the way: it's in launch (see RunLaunch above), along with a `run-launched`
+      // After entering the journal, the launch side takes it out from the same object and parses it into a selection and hands it to the actor runtime factory.
       launch,
     }),
   );
@@ -393,7 +398,7 @@ function startNewRun(ctx: DynamicWorkflowRunEntryContext, input: StartNewRunInpu
   return runId;
 }
 
-/** `DynamicWorkflowRunPort.resume` 的实现体。 */
+/** Body of `DynamicWorkflowRunPort.resume`. */
 export async function resumeDynamicWorkflowRun(
   ctx: DynamicWorkflowRunEntryContext,
   runId: string,
@@ -401,24 +406,24 @@ export async function resumeDynamicWorkflowRun(
   const { deps, runs, escalations } = ctx;
   const record = deps.journal.getRun(runId);
   if (record === undefined) return { ok: false, reason: "not_found" };
-  // in-process 在飞的同 runId：journal 状态是 running，本就不可恢复；单列 reason 是
-  // 因为它与「不可恢复的终态」对调用方是不同的动作（等它结算 vs 放弃）。
+  // in-process In flight, the runId: journal status is running, which is not recoverable; the single column reason is
+  // Because it and "irrecoverable final state" are different actions for the caller (wait for it to resolve vs. give up).
   const live = runs.get(runId);
   if (live !== undefined && live.terminal === undefined) {
     return { ok: false, reason: "already_running" };
   }
-  // 被修订替代的 run 单列 reason：与「不可恢复的终态」对调用方是不同的动作（去看后继 vs 放弃）。
+  // The revised run single-column reason: and "irrecoverable final state" are different actions for the caller (see follow-up vs abandon).
   if (record.status === "stopped" && record.stopReason === "superseded") {
     return { ok: false, reason: "superseded" };
   }
   if (!isResumableRecord(record)) return { ok: false, reason: "not_resumable" };
-  // scriptText 落库始于 workflow-live-run；更早的记录没有可重跑的脚本。
+  // scriptText is dropped from workflow-live-run; earlier records do not have rerunable scripts.
   if (record.scriptText === undefined) return { ok: false, reason: "script_missing" };
 
-  // 老 run 的 journal 原文是按**当时**的 facade 写的，重构后
-  // 可能不再通过类型检查。compileOnce 对脏脚本是硬失败（那是接线错误的通道），resume 撞上它却是
-  // 一条用户可预期的业务分支——结构化拒绝 + 有界诊断，UI / TUI / 工具面据此指向 AmendWorkflow，
-  // 而不是一条泛化的「执行失败」。诊断与随后的编译共用同一个 Program，仍是「编译一次」。
+  // The original text of the journal of the old run was written according to the facade at that time. After reconstruction,
+  // May no longer pass type checking. compileOnce is a hard fail for dirty scripts (that's a miswired channel), resume hits it but
+  // A user-predictable business branch - structured rejection + bounded diagnosis, UI / TUI / tool surface points to AmendWorkflow accordingly,
+  // Rather than a generalized "execution failure". Diagnosis and subsequent compilation share the same Program and are still "compile once".
   const workflow = createWorkflowProgram(record.scriptText);
   const diagnostics = collectDiagnostics(workflow.program);
   if (diagnostics.length > 0) {
@@ -435,9 +440,9 @@ export async function resumeDynamicWorkflowRun(
     };
   }
   const compiled = compileProgram(record.scriptText, workflow);
-  // 服务端先验（引擎构造时仍二次校验，防御纵深）：记录自身被外力改写（scriptText 与
-  // scriptHash 不再自洽）时不建注册表条目、不启动——引擎侧同步抛错会把条目簿记成
-  // failed 终态，掩盖「记录仍可修复」这个事实。
+  // Server-side priori (the engine is still verified twice during construction, defense depth): the record itself has been overwritten by an external force (scriptText and
+  // scriptHash is no longer self-consistent), the registry entry will not be created and will not be started - a synchronization error on the engine side will record the entry as
+  // failed final state, covering up the fact that "the record can still be repaired".
   if (record.scriptHash !== undefined && record.scriptHash !== compiled.scriptHash) {
     deps.logger?.warn?.("Dynamic workflow resume refused: script hash mismatch", {
       event: "dynamic_workflow.resume.script_hash_mismatch",
@@ -449,15 +454,15 @@ export async function resumeDynamicWorkflowRun(
     return { ok: false, reason: "script_mismatch" };
   }
 
-  // 修订 run 的 resume：重建导入缓存。
-  // 已消费的命中在本 run 的 journal 里是真行、照常 replay 短路；未消费的导入只活在内存里，
-  // 不重建就会在这一次续跑里变成 live 重跑。重建与提交时构建是同一个纯函数读同一份前驱
-  // journal，所以确定性成立——引擎据本 run 的记录行重推分歧点（imported-cache.ts 的
-  // reconcileRecorded），两侧因此不会错位。
+  // Revised resume of run: rebuild import cache.
+  // Consumed hits are true in the journal of this run and are replayed as usual; unconsumed imports only live in memory.
+  // If you don't rebuild, it will become a live rerun in this continuation run. Reconstruction and commit-time construction are the same pure function that reads the same precursor.
+  // journal, so the certainty is established - the engine re-pushes the divergence point according to the record line of this run (imported-cache.ts
+  // reconcileRecorded), so the two sides are not misaligned.
   //
-  // **重建失败绝不拖垮 resume**：前驱 journal 是修订 run 的存续依赖，但只是加速结构——
-  // 丢了变贵，不变错。前驱被清理 / 边界门不再通过时照常无缓存启动，未消费的导入退化成
-  // live 重执行，而 run 自己的 journal 行仍然逐条 replay。
+  // **Reconstruction failure will never bring down resume**: The precursor journal is the survival dependency of the revision run, but it is only an acceleration structure——
+  // It becomes expensive if you lose it, but it’s not wrong. When the precursor is cleared/the boundary gate is no longer passed, it will start without cache as usual, and unconsumed imports will degrade into
+  // live re-executes, while run's own journal lines are still replayed one by one.
   const rebuilt =
     record.resumedFrom === undefined
       ? undefined
@@ -466,35 +471,35 @@ export async function resumeDynamicWorkflowRun(
           runId,
         });
 
-  // 替换注册表条目：同 runId、新 AbortController、新结算 promise——cancel 从此恢复可用。
-  // 必须先于 launch（文件头不变式 5：条目是 watcher 的前提）。
+  // Replace registry entries: same runId, new AbortController, new settlement promise - cancel will be available from now on.
+  // Must precede launch (header invariant 5: entry is a prerequisite for watcher).
   const resumedSubagentModel = readRunSubagentModel(deps.journal, runId);
   const resumedScriptPath = readRunScriptPath(deps.journal, runId);
   const controller = new AbortController();
-  // 与 submit 路同规：新条目 = 新 AbortController + 新控制面。上一世的句柄绑的是已经结算的那个
-  // 引擎，留着它会让 retune 对一个死引擎说话。
+  // Same as submit method: new entry = new AbortController + new control plane. The handle of the previous life is tied to the one that has been settled.
+  // engine, leaving it in will let retune speak to a dead engine.
   const control = createWorkflowRunControl();
   const entry: RunRegistryEntry = {
     controller,
     control,
     startedAt: new Date(),
-    // 本 run 生效的并发上界：**resume 路以 journal 行为准**（一次就地 retune 已经把新值写进
-    // `caps_max_concurrency`，所以行里那个就是这一世要跑的上界）。抄进条目是为了让
-    // `retuneConcurrency` 与两条读面只剩一条规则——有条目就读条目。
+    // The effective concurrency upper bound of this run: **resume route is subject to journal behavior** (an in-place retune has already written the new value into
+    // `caps_max_concurrency`, so the one in the row is the upper bound to run in this life). The entry is copied so that
+    // `retuneConcurrency` has only one rule with two reading surfaces - there are entries reading entries.
     maxConcurrency: record.caps.maxConcurrency,
     ...(record.toolCallId === undefined ? {} : { toolCallId: record.toolCallId }),
     ...(record.parentSessionId === undefined ? {} : { parentSessionId: record.parentSessionId }),
-    // 枚举面的间隙元数据（见 RunRegistryEntry）：resume 的权威在 journal 记录里，
-    // 这里只是同一事实的内存副本。cwd 与下面 launch 的取值同源。
+    // Gap metadata for the enumeration side (see RunRegistryEntry): the resume authority is in the journal record,
+    // Here is just a memory copy of the same fact. cwd has the same origin as the value of launch below.
     cwd: record.cwd ?? process.cwd(),
     ...(record.name === undefined ? {} : { name: record.name }),
     scriptText: record.scriptText,
-    // 子代理模型：读一次事件头抄进条目（见 RunRegistryEntry.subagentModel）。值在建 run 那一世
-    // 就写死在 `run-launched` 上、本 run 余生不变，所以抄下来不会与事件分叉；抄了之后两条读面
-    // 只剩一条规则——有条目就读条目，只有冷行才去扫事件。
+    // Subagent model: Read the event header once and copy the entry (see RunRegistryEntry.subagentModel). It’s worth building and running that life
+    // Just write it down on `run-launched`, and the run will remain unchanged for the rest of its life, so copying it will not branch from the event; after copying it, there will be two readings
+    // There is only one rule left - read the entries if there are entries, and scan the events only if you are cold.
     ...(resumedSubagentModel === undefined ? {} : { subagentModel: resumedSubagentModel }),
-    // 脚本文件：与子代理模型同一条读、同一条论证（建 run 那一世写死、余生不变，抄下来不会
-    // 与事件分叉）。resume 之后两条读面因此照旧「有条目就读条目」。
+    // Script file: The same reading and the same argument as the sub-agent model (build run and write it to death in that life, and it will remain unchanged in the rest of your life. It will not work if you copy it.
+    // fork with events). After resume, the two reading pages are still "there are entries to read entries".
     ...(resumedScriptPath === undefined ? {} : { scriptPath: resumedScriptPath }),
     settlement: Promise.resolve<RunSettlement>({ status: "stopped", reason: "user" }),
   };
@@ -504,36 +509,36 @@ export async function resumeDynamicWorkflowRun(
     runId,
     entry,
     launchDynamicWorkflowRun({
-      // caps 沿用 journal 记录：spentTokens 是对着这套 caps 累计的，
-      // 重算等于悄悄挪门柱。
+      // Caps follows the journal record: spentTokens are accumulated against this set of caps.
+      // To recalculate is to quietly move the goalposts.
       caps: record.caps,
       compiled,
       cwd: record.cwd ?? process.cwd(),
       deps,
       ...(record.name === undefined ? {} : { name: record.name }),
-      // resume **重放**存下来的实参，永不接受新的：一次 run 的身份包含它的实参，
-      // 与「只对 byte-identical 脚本有效」是同一条纪律。resume 入口刻意没有实参形参，
-      // 所以这里唯一的来源就是 journal 记录；没有这一列的老行（缺席 → 沙箱
-      // 读作 `{}`）。换实参 = 一次新的 run = 一次新的确认窗。
+      // resume **replays** the saved arguments and never accepts new ones: the identity of a run includes its arguments,
+      // This is the same rule as "only valid for byte-identical scripts". The resume entry deliberately has no actual parameters.
+      // So the only source here is the journal record; there are no old rows for this column (absent → sandbox
+      // Pronounced `{}`). Changing actual parameters = a new run = a new confirmation window.
       ...(record.args === undefined ? {} : { args: record.args }),
-      // 子代理模型也不下传：它与锚点同住 `run-launched`，建 run 那一世就写死了，launch 侧
-      // 自己从 journal 的事件头读回（上面抄进条目的是同一个读）。与 caps / args 同一条纪律
-      // ——一次 run 的身份包含它跑在哪个模型上，resume 重放存下来的那一份、永不接受新的。
+      // The sub-agent model is not downloaded either: it lives with the anchor `run-launched`, and the run version is programmed to death, and the launch side
+      // Read back from the event header of the journal yourself (the same read that copied the entry above). Same discipline as caps / args
+      // ——The identity of a run includes the model on which it is run. Resume replays the saved copy and never accepts new ones.
       ...(record.parentSessionId === undefined ? {} : { parentSessionId: record.parentSessionId }),
-      // 两条入口共用同一张停驻表（见上面的字段注释）。
+      // Both portals share the same docking table (see field notes above).
       escalationRegistry: escalations,
-      // 控制面与停驻表不同：**每条入口各造一个**（它绑的是这一世的引擎与这一世的座位闸门）。
+      // The control surface is different from the parking table: **Build one** for each entrance (it is tied to the engine of this life and the seat gate of this life).
       control,
       runId,
       scriptText: record.scriptText,
       signal: controller.signal,
       ...(record.toolCallId === undefined ? {} : { toolCallId: record.toolCallId }),
-      // 与 submit / amend 同一条：resume 起来的 run 照样可能成为下一次修订的前驱。
+      // The same thing as submit / amend: the resumed run may still become the precursor to the next revision.
       onQuiescenceProbe: (probe) => {
         entry.quiescence = probe;
       },
-      // resumedFrom 不再下传：createRun 早在提交时就把它写死了，resume 路径上引擎命中既有
-      // 行、根本不走 createRun。只有重建出来的缓存需要下去。
+      // resumedFrom will no longer be downloaded: createRun has been written to death as early as submission, and the engine hits the existing file on the resume path.
+      // OK, don’t use createRun at all. Only the rebuilt cache needs to be deleted.
       ...(rebuilt === undefined ? {} : { importedCache: rebuilt }),
     }),
   );
@@ -546,21 +551,23 @@ export async function resumeDynamicWorkflowRun(
 }
 
 /**
- * 编译一次：一个 ts.Program 同时喂站点表、schema 合成与 lowering。
+ * Compile exactly once: one ts.Program feeds the site table, the schema synthesis and the lowering
+ * at the same time.
  *
- * 脏脚本在这里硬失败且**不建 run**：handler 只在 `ok` 时才调 submit，所以走到这里的脏脚本
- * 只可能是接线错误。防御性检查读的是同一次编译的程序诊断，不再起第二个 Program
- * （那会破坏「编译一次」）。resume 用同一个函数重编 journal 里的原文——byte-identical 的
- * 脚本必然重新通过同一套检查。
+ * A dirty script hard-fails here and **does not create a run**: the handler only calls submit on
+ * `ok`, so a dirty script that gets here can only be a wiring bug. The defensive check reads the
+ * program diagnostics from that same compile instead of spinning up a second Program (which would
+ * break "compile once"). resume recompiles the original text from the journal with the same
+ * function - a byte-identical script necessarily passes the same checks again.
  */
 function compileOnce(scriptText: string): CompiledDynamicWorkflowScript {
   return compileProgram(scriptText, createWorkflowProgram(scriptText));
 }
 
-/** resume 拒绝文案里诊断的上限（与中枢直接启动的 compile_failed 同一量级）。 */
+/** The cap on diagnostics in the resume rejection text (the same order of magnitude as the compile_failed of a hub-launched run). */
 const RESUME_DIAGNOSTICS_MAX_CHARS = 2000;
 
-/** compile_failed 的人可读诊断：一行一条 `L:C message`，整体有界。 */
+/** Human-readable diagnostics for compile_failed: one `L:C message` per line, bounded overall. */
 function boundedResumeDiagnostics(runId: string, diagnostics: CompileDiagnostic[]): string {
   const body = [
     `The stored script of run ${runId} no longer compiles against the current workflow facade:`,
@@ -574,8 +581,10 @@ function boundedResumeDiagnostics(runId: string, diagnostics: CompileDiagnostic[
 }
 
 /**
- * compileOnce 的后半段：对**已建好的** Program 做站点表 / schema 合成 / lowering。resume 先用同一个
- * Program 取诊断再交到这里，仍是「编译一次」（Program 缓存自己的诊断，重读不重算）。
+ * The second half of compileOnce: site table / schema synthesis / lowering over the
+ * **already-built** Program. resume first takes the diagnostics from that same Program and then
+ * hands over here, so it is still "compile once" (a Program caches its own diagnostics; re-reading
+ * them recomputes nothing).
  */
 function compileProgram(
   scriptText: string,
@@ -600,8 +609,8 @@ function compileProgram(
         .join("; ")}`,
     );
   }
-  // world.run 的命令集在同一次编译里收集（授权面：编译期字面量 + 确认窗展示 + driver 复验）。
-  // 非字面量 cmd 在 handler 的 analyze 阶段已经挡回；到这里还出现即接线错误，硬失败不建 run。
+  // The command set of world.run is collected in the same compilation (authorization surface: compile-time literal + confirmation window display + driver verification).
+  // The non-literal cmd has been blocked in the analyze stage of the handler; here, there is still a wiring error, and the hard failure does not build the run.
   const worldRun = collectWorldRunCommands(workflow, table);
   if (worldRun.diagnostics.length > 0) {
     throw new Error(
@@ -609,31 +618,31 @@ function compileProgram(
     );
   }
 
-  // buildAskSpecs 是 askSpecs 的唯一正确构造：untyped 站点显式记 {typed:false}。
-  // 用 schemas 的键去构造会让 untyped 站点整个缺席，而引擎把缺席当接线错误硬失败。
+  // buildAskSpecs is the only correct construct for askSpecs: untyped site explicit notation {typed:false}.
+  // Using schemas keys to construct will make the untyped site completely absent, and the engine will hard-fail the absence as a wiring error.
   const askSpecs = buildAskSpecs(table, schemas);
 
   return {
     askSpecs,
-    // 每个 actor 站点的 submit profile：在**同一个**
-    // Program 上做解释 + 站点图投影（analyzeWorkflowScript 在 handler 的 analyze 阶段已对同一份文本
-    // 跑过这两步），仍是「编译一次」。resume 用同一函数对 byte-identical 文本重算，确定性成立。
+    // submit profile for each actor site: in the same
+    // Explain on Program + site map projection (analyzeWorkflowScript has already analyzed the same text in the analyze phase of the handler.
+    // After running these two steps), it is still "compile once". resume recalculates byte-identical text using the same function, deterministically.
     actorSubmitProfiles: deriveActorSubmitProfilesFor(workflow, table, askSpecs),
     declaredRunCommands: new Set(worldRun.commands),
     lowered: lowerWorkflow(workflow, table).code,
-    // scriptHash 的所有权在**这里**，不在 harness。harness 同时收 scriptText 与 lowered，
-    // 且刻意不校验两者是否自洽——校验等于把编译再跑一遍，正是「编译一次」要省掉的那次
-    // （harness.ts 把这条写成了调用方的不变式）。所以哈希必须算在作者原文上：
-    // 若让 harness 哈希「它看到的文本」，lowered 路径落库的就是 lowered 函数体的哈希，
-    // 而 resume 比对的是作者原文 —— 比对对象会静默错位。本函数从同一次编译里同时产出
-    // lowered 与 hash，两者按构造自洽。
+    // The ownership of scriptHash is here, not in the harness. harness collects scriptText and lowered at the same time,
+    // And deliberately not verify whether the two are self-consistent - verification is equivalent to running the compilation again, which is what "compile once" should omit.
+    // (harness.ts writes this as an invariant for the caller). So the hash must be calculated on the author's original text:
+    // If you let the harness hash the text it sees, the lowered path will be the hash of the lowered function body.
+    // And resume compares the original text of the author - the comparison object will be silently misaligned. This function is produced simultaneously from the same compilation
+    // Lowered and hash are structurally consistent.
     scriptHash: createHash("sha256").update(scriptText, "utf8").digest("hex"),
   };
 }
 
 /**
- * run id。字符集必须安全：它会进 actor 会话 id、URL、文件路径与日志，所以只用
- * `[A-Za-z0-9-]`（randomUUID 的输出即此字符集），绝不含 `#`/`@`/`/`。
+ * The run id. The character set must be safe: it goes into actor session ids, URLs, file paths
+ * and logs, so only `[A-Za-z0-9-]` is used (exactly randomUUID's alphabet) and never `#`/`@`/`/`.
  */
 function mintRunId(): string {
   return `dwfrun-${randomUUID()}`;

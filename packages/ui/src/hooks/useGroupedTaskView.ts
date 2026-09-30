@@ -1,4 +1,7 @@
-/* eslint-disable max-lines -- Grouped 视图 hook 集中维护 optimistic overlay、排序保存和 ungroup 持久化，拆开会让同一份 view 状态在多个 hook 间漂移。 */
+/* eslint-disable max-lines -- The Grouped view hook centrally maintains the optimistic overlay,
+ * sort persistence and ungroup persistence; splitting them apart would let the same view state
+ * drift across several hooks.
+ */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ZCodeTaskMeta } from "@zcode/shared";
 import type {
@@ -44,8 +47,8 @@ function applyPromotedGroupPlacements(
         (node) => node.type === "task" && buildTaskEntityKey(node.task) === taskKey,
       );
       if (rootIndex <= 0) continue;
-      // sessions-index 与 grouped structure 异步到达时，缺序 task 会被临时补到末尾。
-      // 提升态收敛前继续沿用 draft 的 root 顶部位置，避免同一行先到底部再回顶部。
+      // When sessions-index and the grouped structure arrive asynchronously, an out-of-order task is temporarily appended to the end.
+      // Until the promoted state converges, keep using the draft's root top position to avoid the same row jumping to the bottom and then back to the top.
       const nodes = [...nextView.nodes];
       const [rootTask] = nodes.splice(rootIndex, 1);
       if (rootTask) nodes.unshift(rootTask);
@@ -151,9 +154,9 @@ function mergeGroupedTaskViewWithOptimistic(params: {
       const taskKey = buildTaskEntityKey(task);
       optimisticTaskByKey.set(taskKey, task);
       placementTaskByKey.set(taskKey, task);
-      // optimistic overlay 是跨 hook 的运行时对象，旧测试和旧调用可能还没有
-      // promotedGroupedDraftTaskByTaskId。这里用空对象兼容缺省字段，避免 grouped 合并阶段
-      // 因为草稿位置信息缺失而直接崩溃；缺省时按普通 optimistic task 顶层补入。
+      // The optimistic overlay is a cross-hook runtime object; old tests and old callers may not have
+      // promotedGroupedDraftTaskByTaskId yet. Use an empty object here to tolerate the missing field, so the grouped merge stage
+      // doesn't crash outright when draft placement info is absent; when absent, insert at the top level like a normal optimistic task.
     }
     for (const [taskId, promotedDraft] of Object.entries(
       overlay.promotedGroupedDraftTaskByTaskId ?? {},
@@ -186,11 +189,11 @@ function mergeGroupedTaskViewWithOptimistic(params: {
           return task;
         }
         tasksChanged = true;
-        // grouped optimistic meta 也不能整对象覆盖 sessions-index。
-        // 否则虽然显式 sort_order 没变，行内时间/phase 会被 tasks-index 时间污染。
-        // grouped draft 提升的最小 overlay 标题为空，整对象展开
-        // 会持续压住 sessions-index 后续下发的真实标题。先按 task meta 字段权威合并，
-        // 再保留 sessions-index 拥有的 membership/activity 字段。
+        // Grouped optimistic meta must not overwrite sessions-index with the whole object either.
+        // Otherwise, even though the explicit sort_order didn't change, the row's time/phase would be polluted by tasks-index timestamps.
+        // A minimal overlay promoted from a grouped draft has an empty title; spreading the whole object
+        // would keep suppressing the real title sessions-index sends later. Merge authoritatively by task meta fields first,
+        // then keep the membership/activity fields owned by sessions-index.
         return mergeTaskListMembershipFields(
           task,
           mergeTaskWithOptimisticMeta(task, optimisticTask),
@@ -271,11 +274,11 @@ function mergeGroupedTaskViewWithOptimistic(params: {
       nodes.some((node) => node.type === "group" && node.group.id === groupId) ? [] : tasks,
     );
 
-  // grouped 视图以前只展示 sqlite query 的结果；首发 task 已写入本地 optimistic
-  // cache，但服务端初始 snapshot 为避免闪 "New session" 会延后广播，导致 grouped 列表要等重启
-  // 或下一次全量刷新才看见新 task。这里只补已被 grouped hook 标记为临时可见的 optimistic task，
-  // 避免把已归档/置顶等其它本地缓存误插回 grouped 顶层；从 grouped 草稿提升来的 task
-  // 还会沿用临时实体所在的 group/top 位置，直到 sqlite 排序保存完成。
+  // The grouped view used to show only sqlite query results; a freshly created task is already written to the local optimistic
+  // cache, but the server's initial snapshot delays broadcasting to avoid flashing "New session", so the grouped list wouldn't see the new task until a restart
+  // or the next full refresh. Here we only backfill optimistic tasks already marked as temporarily visible by the grouped hook,
+  // avoiding mistakenly re-inserting other local caches (archived/pinned, etc.) at the grouped top level; tasks promoted from a grouped draft
+  // also keep the group/top position of the temporary entity until the sqlite ordering is saved.
   return applyPromotedGroupPlacements(
     {
       nodes: [
@@ -310,9 +313,10 @@ export function shouldHideGroupedTaskContent(params: {
   loading: boolean;
   hasNodes: boolean;
   /**
-   * 门禁只该拦首屏。已经画出过列表之后再回到隐藏态，就是用户看到的
-   * 「grouped 整块闪一下」——祖先重挂载和后台刷新都会走到这里。
-   * 画过一次之后一律继续渲染上一份列表：旧数据优于空白。
+   * The gate should only hold back the first screen. Returning to the hidden state after the list
+   * has already been painted is exactly the "the whole grouped block flashes once" users see —
+   * ancestor remounts and background refreshes both land here. Once painted, the previous list is
+   * always kept rendering: stale data beats a blank screen.
    */
   hasPaintedOnce?: boolean;
 }): boolean {
@@ -326,9 +330,11 @@ function isGroupedTaskViewInitialized(params: {
   remoteDataInitialized: boolean;
   hydratingEndpointKeys: readonly string[];
   /**
-   * 这个门禁只负责首屏。以前它直接读当前的 hydrating 状态，运行中任务每输出一次 tool
-   * 结果都会让 Controller 列表重查一轮（loading=true），门禁随之关门、grouped 主体整棵卸载再
-   * 重挂载——表现为左侧分组列表抖动。就绪一次之后永久保持就绪，后台刷新不再回到首屏态。
+   * This gate only handles the first screen. It used to read the current hydrating state directly,
+   * so every tool result emitted by a running task would make the Controller list re-query once
+   * (loading=true), closing the gate and unmounting then remounting the whole grouped subtree —
+   * which showed up as the grouped list on the left jittering. After becoming ready once it stays
+   * ready for good; background refreshes no longer fall back to the first-screen state.
    */
   previouslyInitialized?: boolean;
 }): boolean {
@@ -339,11 +345,13 @@ function isGroupedTaskViewInitialized(params: {
 }
 
 /**
- * grouped structure/membership 的按 key 单飞缓存。
+ * A per-key single-flight cache for grouped structure/membership.
  *
- * 切换到分组视图时，hook 挂载和 sessions-index 首帧会并发 refresh；旧缓存只保存
- * 已完成结果，所有 cache miss 都各自请求一遍全部 workspace，导致 RPC 风暴并让 loading 不断换代。
- * 这里同时保存进行中的 Promise，并用 generation/sequence 阻止失效或旧 key 的迟到结果回填缓存。
+ * When switching to the grouped view, the hook mount and the first sessions-index frame refresh
+ * concurrently; the old cache only stored settled results, so every cache miss requested all
+ * workspaces on its own, causing an RPC storm and constantly cycling the loading state. Here the
+ * in-flight Promise is stored as well, and generation/sequence stop late results from a stale key
+ * or a superseded request from backfilling the cache.
  */
 class GroupedRemoteDataSingleFlight<T> {
   private generation = 0;
@@ -477,13 +485,13 @@ function areGroupedNodesEquivalent(
     return false;
   }
   if (previous.type === "group" && next.type === "group") {
-    // 用结构比较而非 JSON.stringify：group meta 经 IPC/join 重建后 key 顺序不保证稳定，
-    // 字符串比较会让等价判断恒为 false，节点稳定化静默退化成每帧全新引用。
+    // Compare structurally rather than with JSON.stringify: after group meta is rebuilt through IPC/join the key order isn't guaranteed stable,
+    // and string comparison would make the equivalence check always false, silently degrading node stabilization into fresh references every frame.
     if (!areStabilizedValuesEquivalent(previous.group, next.group)) {
       return false;
     }
-    // 任务对象来自 sessions-index 聚合层（引用已稳定化）+ joinTaskListUnreadAt（未变则保引用），
-    // 引用逐位相同即内容等价。
+    // The task objects come from the sessions-index aggregation layer (references already stabilized) + joinTaskListUnreadAt (keeps the reference if unchanged),
+    // so identical references element-wise means equivalent content.
     return (
       previous.tasks.length === next.tasks.length &&
       next.tasks.every((task, index) => task === previous.tasks[index])
@@ -493,9 +501,11 @@ function areGroupedNodesEquivalent(
 }
 
 /**
- * grouped refresh 每轮都重建整棵视图对象树，即使内容没变（或只变了一条），
- * 所有 group/task 行都会拿到新引用整体重渲染——表现为侧栏分组列表"重新加载"。
- * 这里做节点级引用稳定化：等价节点复用旧对象；整树等价时返回旧视图（setState 同引用直接 bail）。
+ * Every grouped refresh rebuilds the entire view object tree, so even when nothing changed (or only
+ * one row did), all group/task rows get new references and re-render wholesale — which shows up as
+ * the sidebar's grouped list “reloading”. Here references are stabilized at the node level:
+ * equivalent nodes reuse the old objects, and when the whole tree is equivalent the old view is
+ * returned (setState bails out on an identical reference).
  */
 function stabilizeGroupedView(
   previous: ZCodeGroupedTaskView,
@@ -554,17 +564,22 @@ function viewToOrderInput(params: { view: ZCodeGroupedTaskView }): ZCodeGroupedT
 }
 
 /**
- * 跨挂载的 grouped 视图缓存（按 scope 签名分桶）。
+ * A grouped view cache that survives remounts (bucketed by scope signature).
  *
- * grouped 是唯一把整份列表放在组件实例 useState 里的侧栏视图，timeline/pinned
- * 都从模块级 query cache 渲染。一旦 section 因祖先重挂载 / HMR 重新挂载，grouped 会退回
- * 「空视图 + 首屏门禁关门」，直到两个 RPC 回来——表现为分组列表整块闪一下。这里把最后一份
- * 权威视图留在模块级，重挂载可以立即接着画，RPC 只负责收敛。
+ * grouped is the only sidebar view that keeps the whole list in a component instance's useState;
+ * timeline/pinned all render from a module-level query cache. As soon as the section remounts
+ * (ancestor remount / HMR), grouped falls back to "empty view + first-screen gate closed" until the
+ * two RPCs come back — which shows up as the whole grouped list flashing once. Here the last
+ * authoritative view is kept at module level so a remount can keep painting immediately, and the
+ * RPCs only converge it.
  *
- * 脏读窗口（显式契约，不是缺陷）：缓存只在 refresh 成功时写入，没有主动失效。组件卸载期间
- * 发生的删除 / 归档 / 分组变更不会淘汰缓存，重挂载后这些旧行会立即可见且可点击，直到挂载
- * effect 触发的 refresh 返回——窗口上界就是一次 RPC 往返。这是「旧数据优于空白」的既定折衷；
- * 若后续收到点击脏行的反馈，再考虑给缓存条目加 TTL 或降级为占位，而不是扩大这个窗口。
+ * Dirty-read window (an explicit contract, not a defect): the cache is written only when a refresh
+ * succeeds and is never proactively invalidated. Deletions / archiving / regrouping that happen
+ * while the component is unmounted do not evict the cache, so after a remount those stale rows are
+ * immediately visible and clickable until the refresh triggered by the mount effect returns — the
+ * upper bound of the window is a single RPC round trip. This is the established "stale data beats a
+ * blank screen" trade-off; if reports of clicking stale rows come in later, consider giving cache
+ * entries a TTL or downgrading them to placeholders rather than widening this window.
  */
 const GROUPED_VIEW_CACHE_MAX_KEYS = 8;
 const groupedViewCacheBySignature = new Map<string, ZCodeGroupedTaskView>();
@@ -585,14 +600,14 @@ function writeCachedGroupedView(signature: string, view: ZCodeGroupedTaskView): 
 
 export function useGroupedTaskView(params: { workspaceTabs: WorkspaceTabState[] }) {
   const services = useBaseWorkspaceServices();
-  // grouped 仍是本地 workspace-only，但 task facts 也必须来自窗口 Controller，不能在
-  // Renderer 另起 sessions-index join。分组结构/顺序继续走本地 task service，避免能力扩张。
+  // Grouped remains local workspace-only, but task facts must also come from the window Controller — no separate
+  // sessions-index join in the Renderer. Grouping structure/ordering continues through the local task service, avoiding capability creep.
   const localWorkspaceTabs = useLocalWorkspaceScopes({
     workspaceTabs: params.workspaceTabs,
   });
-  // scopes 过去 memo 在 tabs 数组身份上。父级重建同值数组就会换掉 refresh 身份，
-  // 让「refresh 变化即刷新」的 effect 再跑一轮 setState，进而触发下一次渲染——自激刷新环，
-  // 每帧都在发 RPC 并让门禁/空态有机会闪。这里改成值签名，和 useGlobalTaskList 保持一致。
+  // scopes used to be memoized on the tabs array identity. The parent rebuilding an equal-valued array would swap the refresh identity,
+  // letting the "refresh changes → re-fetch" effect run another setState round and trigger the next render — a self-triggering refresh loop,
+  // issuing RPCs every frame and giving the gate/empty state a chance to flash. Here it's changed to a value signature, consistent with useGlobalTaskList.
   const localWorkspaceScopeSignature = JSON.stringify(
     localWorkspaceTabs
       .map(
@@ -609,8 +624,8 @@ export function useGroupedTaskView(params: { workspaceTabs: WorkspaceTabState[] 
           [leftKey, leftPath, leftIdentity, leftPurpose],
           [rightKey, rightPath, rightIdentity, rightPurpose],
         ) =>
-          // 逐级 tie-break：只按 workspaceKey 排序时，同 key 不同 purpose 的两个 tab 比较结果为 0，
-          // 稳定排序保留输入顺序——tabs 数组里互换位置就会换出新签名并触发一次多余 refresh。
+          // Level-by-level tie-break: sorting by workspaceKey alone, two tabs with the same key but different purpose compare as 0,
+          // and a stable sort preserves input order — swapping positions in the tabs array would produce a new signature and trigger a redundant refresh.
           String(leftKey).localeCompare(String(rightKey)) ||
           String(leftPath).localeCompare(String(rightPath)) ||
           String(leftIdentity ?? "").localeCompare(String(rightIdentity ?? "")) ||
@@ -619,7 +634,7 @@ export function useGroupedTaskView(params: { workspaceTabs: WorkspaceTabState[] 
   );
   const scopes = useMemo(
     () => buildWorkspaceScopes(localWorkspaceTabs),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 值签名等价即复用，避免父级数组换身份触发刷新环。
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Reuse when the value signature is equivalent, avoiding a refresh loop from the parent array changing identity.
     [localWorkspaceScopeSignature],
   );
   const sessionsIndexScopes = useMemo(
@@ -663,8 +678,8 @@ export function useGroupedTaskView(params: { workspaceTabs: WorkspaceTabState[] 
     collapsedLimit: 1,
   });
   const sessionsIndexItems = controllerTaskFacts.items;
-  // 缓存命中即视为已初始化：重挂载后 Controller 列表会重新进入 loading，若不把闩锁一起
-  // 从缓存种下，第一帧仍会关门闪一下。
+  // A cache hit counts as initialized: after remount the Controller list goes back into loading, and unless the latch is also
+  // seeded from the cache, the first frame would still close the gate and flash.
   const initializedLatchRef = useRef(
     readCachedGroupedView(localWorkspaceScopeSignature) !== undefined,
   );
@@ -673,14 +688,14 @@ export function useGroupedTaskView(params: { workspaceTabs: WorkspaceTabState[] 
     hydratingEndpointKeys: controllerTaskFacts.loading ? ["window-controller"] : [],
     previouslyInitialized: initializedLatchRef.current,
   });
-  // 渲染期写 ref 的前提（禁止照搬到非单调状态）：本 ref 是单调闩锁（false→true，永不回落），
-  // 且新值完全由本次渲染的输入推导。React 18 concurrent 下被丢弃的渲染同样会执行这次赋值，
-  // 但对单调闩锁而言「提前置位」等价于「提前就绪」，只会让门禁更早开门，不会产生错误状态。
-  // 换成任何可回落 / 依赖提交顺序的状态，这个写法就会漏帧且不可复现——那种状态必须用 effect。
+  // Prerequisite for writing ref during rendering (copying to non-monotonic state is prohibited): This ref is a monotonic latch (false→true, never falls back),
+  // and the new value is derived entirely from this render's inputs. Renders discarded under React 18 concurrent still execute this assignment,
+  // but for a monotonic latch "setting early" equals "ready early" — it only opens the gate sooner and cannot produce a wrong state.
+  // Swap in any state that can fall back or depends on commit order, and this pattern would drop frames irreproducibly — such state must use an effect.
   initializedLatchRef.current = initialized;
   const sessionsIndexItemsRef = useRef(sessionsIndexItems);
   sessionsIndexItemsRef.current = sessionsIndexItems;
-  // pin/archive 归属版本：mutation 后 bump，grouped 视图（非 pinned 非 archived）随之权威 re-filter。
+  // Pin/archive ownership version: bumped after a mutation, so the grouped view (non-pinned, non-archived) authoritatively re-filters.
   const membershipVersion = useTaskListMembershipVersion();
   const optimisticTaskOverlayByWorkspaceKey = useWorkspaceTaskOptimisticOverlayByWorkspaceKey(
     params.workspaceTabs,
@@ -699,9 +714,9 @@ export function useGroupedTaskView(params: { workspaceTabs: WorkspaceTabState[] 
       previousVisibleMissingTaskKeys: visibleMissingTaskKeysRef.current,
     });
     visibleMissingTaskKeysRef.current = visibleMissingTaskKeys;
-    // overlay 帧（运行中任务的 optimistic meta 回写）会绕过 view 的节点稳定化，
-    // 每次都产出新的 group/task 节点对象，让侧栏整棵列表重渲染并重测量虚拟器。
-    // 展示视图再过一遍同一套节点级稳定化，等价时连数组身份都保持不变。
+    // Overlay frames (optimistic meta write-backs of running tasks) bypass the view's node stabilization,
+    // producing fresh group/task node objects every time, which re-renders the whole sidebar list and re-measures the virtualizer.
+    // The display view runs the same node-level stabilization again, keeping even array identity unchanged when equivalent.
     const nextDisplayedView = stabilizeGroupedView(
       displayedViewRef.current,
       mergeGroupedTaskViewWithOptimistic({
@@ -714,9 +729,9 @@ export function useGroupedTaskView(params: { workspaceTabs: WorkspaceTabState[] 
     return nextDisplayedView;
   }, [optimisticTaskOverlayByWorkspaceKey, view]);
 
-  // 差量更新：grouped structure（分组/排序）与 membership（pin/archive/unread）都不随
-  // sessions-index 内容帧（title/status）变化。按「membershipVersion + 结构版本 + scope 签名」
-  // 缓存，内容帧触发的 refresh 只做内存 join，不发 RPC。分组 mutation 路径显式失效。
+  // Differential update: the grouped structure (grouping/order) and membership (pin/archive/unread) don't change with
+  // sessions-index content frames (title/status). Cache by "membershipVersion + structure version + scope signature";
+  // refreshes triggered by content frames only do an in-memory join, issuing no RPC. Grouping mutation paths invalidate explicitly.
   const [remoteDataLoader] = useState(
     () =>
       new GroupedRemoteDataSingleFlight<{
@@ -731,15 +746,15 @@ export function useGroupedTaskView(params: { workspaceTabs: WorkspaceTabState[] 
   const refresh = useCallback(async () => {
     const requestId = requestIdRef.current + 1;
     requestIdRef.current = requestId;
-    // loading 只表达「首屏还没有任何权威节点」。运行中任务每输出一次 tool 结果都会
-    // 触发一轮后台 refresh，如果这里无条件置位，空态文案与首屏门禁都会随之闪一下。
+    // loading only means "there are no authoritative nodes on first screen yet". Every tool result a running task emits
+    // triggers a background refresh; setting this unconditionally would flash both the empty-state text and the first-screen gate.
     if (viewRef.current.nodes.length === 0) {
       setLoading(true);
     }
     try {
-      // tasks-index 同时提供持久 task 行和分组结构；sessions-index 只 enrich activity/detail。
-      // grouped 侧边栏必须跟随当前打开的 workspace scope，
-      // 不传 includeAllWorkspaces，避免其它 workspace 的分组混入。
+      // tasks-index provides both persistent task rows and the grouping structure; sessions-index only enriches activity/detail.
+      // The grouped sidebar must follow the currently open workspace scope,
+      // so includeAllWorkspaces is not passed, keeping other workspaces' groupings out.
       const remoteDataKey = [
         membershipVersion,
         taskListVersionSignature,
@@ -775,23 +790,23 @@ export function useGroupedTaskView(params: { workspaceTabs: WorkspaceTabState[] 
           archivedIds: membership.archivedIds,
           deletedIds: membership.deletedIds,
         });
-        // 内容没变时复用旧视图/旧节点引用，setState 同引用直接 bail，避免整列表无效重渲染。
-        // 用 viewRef 读当前视图而不是在 updater 里做副作用：StrictMode 会重复调用 updater。
+        // When content is unchanged, reuse the old view/old node references; setState bails on the same reference, avoiding an invalid re-render of the whole list.
+        // Read the current view via viewRef instead of doing side effects in the updater: StrictMode calls the updater twice.
         const stabilizedView = stabilizeGroupedView(viewRef.current, nextView);
         writeCachedGroupedView(localWorkspaceScopeSignature, stabilizedView);
         setView(stabilizedView);
       }
     } catch (error) {
-      // 同一 remote Promise 可能被多次 refresh 共享；只由最新请求记录一次失败，避免错误路径
-      // 重新形成日志风暴。旧请求仍会进入 finally，但不能关闭最新一代 loading。
+      // The same remote Promise may be shared by several refreshes; only the latest request records the failure once, keeping the error path
+      // from turning into another log storm. Old requests still reach finally, but must not close the latest generation's loading.
       if (requestIdRef.current === requestId) {
-        logger.error("[useGroupedTaskView] 加载 grouped task 视图失败", error);
+        logger.error("[useGroupedTaskView] failed to load grouped task view", error);
       }
     } finally {
       if (requestIdRef.current === requestId) {
         setLoading(false);
-        // 首次请求无论成功还是失败都结束初始化门禁；失败由日志记录并进入空态，
-        // 避免永久 loading。后续 refresh 保留既有列表，不再回到首次加载态。
+        // The first request ends the initialization gate whether it succeeds or fails; failures are logged and fall into the empty state,
+        // avoiding a permanent loading. Later refreshes keep the existing list and never return to the first-load state.
         setRemoteDataInitialized(true);
       }
     }
@@ -846,9 +861,9 @@ export function useGroupedTaskView(params: { workspaceTabs: WorkspaceTabState[] 
       return;
     }
     promotedGroupPersistenceRef.current.add(signature);
-    // group 内 New task 过去只在 optimistic view 继承草稿位置，SQLite 仍按 root
-    // 新任务置顶，刷新后任务会掉出 group。task 已进入 optimistic index 后，将同一份展示
-    // view 作为完整排序事务落库，使 membership 和组内第一位顺序一起收敛。
+    // A "New task" inside a group used to inherit the draft position only in the optimistic view; SQLite still topped root
+    // new tasks, so the task would drop out of the group after refresh. Once the task is in the optimistic index, persist the same display
+    // view as a complete ordering transaction, letting membership and the first-in-group order converge together.
     void services.zcodeTaskService
       .applyGroupedTaskViewOrder(viewToOrderInput({ view: displayedView }))
       .then(() => {
@@ -861,7 +876,7 @@ export function useGroupedTaskView(params: { workspaceTabs: WorkspaceTabState[] 
       })
       .catch((error) => {
         promotedGroupPersistenceRef.current.delete(signature);
-        logger.error("[useGroupedTaskView] 保存 grouped 草稿提升位置失败", error);
+        logger.error("[useGroupedTaskView] failed to save promoted grouped draft position", error);
       });
   }, [
     clearPromotedGroupedDraftTask,
@@ -878,9 +893,9 @@ export function useGroupedTaskView(params: { workspaceTabs: WorkspaceTabState[] 
         if (event.type !== "workspace_task_list_changed" || event.reason !== "task_created") {
           return;
         }
-        // sessions-index 可见帧可能早于 SQLite grouped sort_order 写入。
-        // task_created 是首次排序已经提交的边界，必须丢弃旧 structure 缓存并重拉；
-        // 否则运行中会按缺序节点补到末尾，只有重启重建缓存后才恢复。
+        // The sessions-index visible frame may arrive before the SQLite grouped sort_order write.
+        // task_created is the boundary where the first ordering has already committed; the old structure cache must be discarded and refetched —
+        // otherwise running items get appended to the end as out-of-order nodes, only recovering after a restart rebuilds the cache.
         invalidateRemoteData();
         void refreshRef.current();
       }),
@@ -888,8 +903,8 @@ export function useGroupedTaskView(params: { workspaceTabs: WorkspaceTabState[] 
     return () => disposables.forEach((disposable) => disposable.dispose());
   }, [invalidateRemoteData, scopes, services.zcodeTaskService]);
 
-  // 唯一的自动刷新入口。refresh 身份已经包含 membership/structure/scope 版本，
-  // sessions-index 内容变化再触发内存 join；避免 mount effect 与 index effect 首帧重复发起请求。
+  // The single automatic refresh entry. The refresh identity already includes the membership/structure/scope versions,
+  // and sessions-index content changes only trigger an in-memory join; this avoids the mount effect and the index effect issuing duplicate requests on the first frame.
   useEffect(() => {
     void refresh();
   }, [refresh, sessionsIndexItems]);
@@ -898,15 +913,15 @@ export function useGroupedTaskView(params: { workspaceTabs: WorkspaceTabState[] 
     setSaving(true);
     try {
       const group = await services.zcodeTaskService.createTaskGroup();
-      // 新 group 的 SQLite 顺序已经置顶，但等待异步 refresh 才展示会短暂沿用旧树并
-      // 落到缺序节点末尾；先按同一 sort_order 语义乐观插顶，refresh 再以 SQLite 收敛。
+      // The new group's SQLite ordering is already topped, but waiting for the async refresh to display would briefly reuse the old tree and
+      // land at the end of out-of-order nodes; optimistically insert at the top with the same sort_order semantics first, then let refresh converge with SQLite.
       setView((current) => prependTaskGroupToView(current, group));
-      // 分组结构已变，失效远端数据缓存再重建（membershipVersion bump 可能晚于本地 refresh）。
+      // The grouping structure changed; invalidate the remote data cache before rebuilding (the membershipVersion bump may trail the local refresh).
       invalidateRemoteData();
       await refresh();
       return group;
     } catch (error) {
-      logger.error("[useGroupedTaskView] 创建 task group 失败", error);
+      logger.error("[useGroupedTaskView] failed to create task group", error);
       throw error;
     } finally {
       setSaving(false);
@@ -956,7 +971,7 @@ export function useGroupedTaskView(params: { workspaceTabs: WorkspaceTabState[] 
         });
       } catch (error) {
         setView(previousView);
-        logger.error("[useGroupedTaskView] 重命名 task group 失败", error);
+        logger.error("[useGroupedTaskView] failed to rename task group", error);
         throw error;
       } finally {
         setSaving(false);
@@ -1007,7 +1022,7 @@ export function useGroupedTaskView(params: { workspaceTabs: WorkspaceTabState[] 
         });
       } catch (error) {
         setView(previousView);
-        logger.error("[useGroupedTaskView] 更新 task group 颜色失败", error);
+        logger.error("[useGroupedTaskView] failed to update task group color", error);
         throw error;
       } finally {
         setSaving(false);
@@ -1022,8 +1037,8 @@ export function useGroupedTaskView(params: { workspaceTabs: WorkspaceTabState[] 
       setView(nextView);
       setSaving(true);
       try {
-        // apply 回包的视图仍由 tasks 表 join（旧数据源），不再采信；
-        // 持久化成功后以「结构 + sessions-index」重建收敛（refresh）。
+        // The view returned in the apply response is still joined from the tasks table (the old data source) and is no longer trusted;
+        // after persistence succeeds, rebuild and converge from "structure + sessions-index" (refresh).
         await services.zcodeTaskService.applyGroupedTaskViewOrder(
           viewToOrderInput({
             view: nextView,
@@ -1032,10 +1047,10 @@ export function useGroupedTaskView(params: { workspaceTabs: WorkspaceTabState[] 
         invalidateRemoteData();
         await refreshRef.current();
       } catch (error) {
-        // grouped 视图写入失败时回滚本地乐观视图，再触发一次刷新收敛到 sqlite 真相源。
+        // When writing the grouped view fails, roll back the local optimistic view, then trigger another refresh to converge to the sqlite source of truth.
         setView(previousView);
         void refresh();
-        logger.error("[useGroupedTaskView] 保存 grouped task 顺序失败", error);
+        logger.error("[useGroupedTaskView] failed to save grouped task order", error);
         throw error;
       } finally {
         setSaving(false);
@@ -1070,7 +1085,7 @@ export function useGroupedTaskView(params: { workspaceTabs: WorkspaceTabState[] 
         invalidateRemoteData();
         await refresh();
       } catch (error) {
-        logger.error("[useGroupedTaskView] 取消 task group 分组失败", error);
+        logger.error("[useGroupedTaskView] failed to ungroup task group", error);
         throw error;
       } finally {
         setSaving(false);

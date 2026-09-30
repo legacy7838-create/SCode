@@ -53,9 +53,9 @@ function listKey(workspacePath: string | undefined, workspaceIdentity?: string):
   return workspaceIdentity?.trim() || workspacePath || "__no_workspace__";
 }
 
-// store 是单例，Scope 菜单可在同一页面切换 target。任何异步结果写回之前都要比对
-// 发起时的 target key，否则慢 target 的列表会覆盖当前投影，随后 delete/toggle 会拿着旧 host
-// 的 filePath 在当前 target 的 host 上执行。
+// The store is a singleton, and the Scope menu can switch targets on the same page. Any asynchronous results must be compared before being written back
+// The target key when launching, otherwise the list of slow targets will overwrite the current projection, and then delete/toggle will take the old host
+// The filePath is executed on the host of the current target.
 function currentListKey(get: StoreGet): string {
   const { workspacePath, workspaceIdentity } = get();
   return listKey(workspacePath ?? undefined, workspaceIdentity ?? undefined);
@@ -145,8 +145,8 @@ export const useCommandsStore = create<CommandsStoreState>((set, get) => ({
     set({ error: null });
     try {
       const { command } = await commandsService.writeCommandFile(params);
-      // 写入在发起时的 target host 上已完成，但期间若切了 Scope，
-      // 结果不能再合并进当前 target 的投影，否则列表混入别的 host 的命令。
+      // The writing is completed on the target host when initiated, but if the Scope is switched during the process,
+      // The results cannot be merged into the current target's projection, otherwise the list will be mixed with commands from other hosts.
       if (currentListKey(get) !== key) return command;
       const { commands, userCommands } = get();
       set({

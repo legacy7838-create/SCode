@@ -41,7 +41,7 @@ export function createWindowsDesktopTray(options: {
   }
 
   const getLabel = (id: (typeof desktopMenuMessageIds)[keyof typeof desktopMenuMessageIds]) =>
-    getDesktopMenuMessage(options.getLocale(), id);
+    getDesktopMenuMessage(id);
   const showTrayWindow = () => {
     void Promise.resolve(options.showCurrentWindow()).catch((error) => {
       options.logger.warn("[desktop-tray] failed to show current window", error);
@@ -72,7 +72,7 @@ export function createWindowsDesktopTray(options: {
           click: () => executeTrayCommand(DesktopCommandIds.OpenWorkspace),
         },
         { type: "separator" },
-        // 更新入口跟随产品身份：Preview（含生产后端的 Preview）禁用更新器，托盘也不能露出入口。
+        // The update entrance follows the product identity: Preview (including Preview of the production backend) disables the updater, and the tray cannot expose the entrance.
         ...(ZCODE_PRODUCT_FLAVOR === "production"
           ? [
               {

@@ -1,22 +1,31 @@
 /**
- * zcode-cli 角色（`cli_chat` / `cli_aux`）的资源样本来源（注册表第五行）。
+ * Resource sample source for the zcode-cli roles (`cli_chat` / `cli_aux`) — the fifth row of the registry.
  *
- * 每个 CLI 进程每 60 秒自采一次，经协议通知交给 services（在那里按所属进程管理器打上 lane），
- * 再由 Host 转发到 main。这里按「角色 × runtime_surface × 进程实例」保留每个进程最近一次读数，
- * 每 60 秒把当前存活进程的合计交给窗口聚合器：
+ * Every CLI process samples itself once per 60 seconds and hands the reading to services through a
+ * protocol notification (tagged there with a lane according to the owning process manager), which
+ * the Host then forwards to main. Here we keep the most recent reading per process under
+ * "role × runtime_surface × process instance" and hand the total of the currently live processes to
+ * the window aggregator every 60 seconds:
  *
- * - 为什么不是每个 10 秒 tick 交一次：CLI 是 60 秒口径，按 tick 交会把同一份读数重复计入统计量，
- *   `sample_count` 也会从预期的 5 变成 30。
- * - 为什么不是「到达即交、交付即清空」（host / renderer heap 的做法）：多个 CLI 进程的 60 秒定时器
- *   各自相位，一个 tick 通常只收到其中一部分进程的读数，那样 `process_count_peak` 与总量都会偏小。
- *   角色事件要的恰恰是「同时存活几个进程、合计多少」，因此必须保留每进程的最近读数。
- * - 过期判据与设备级外部样本一致：超过两个采样周期没有新读数即认为进程已退出，不再计入。
- *   宁可少算，也不拿旧值充当当前事实。
- * - 只在「有新读数」时交付，因此同一份读数不会被两次交付重复计入统计量。
- * - 正常退出走 `flushPending`：把已经收到、还没赶上 60 秒交付点的读数补交给窗口
- *   （只搬已有事实，不做新采样）。
+ * - Why not hand off on every 10 second tick: CLI runs on a 60 second cadence, and handing off per
+ *   tick would count the same reading into the statistics repeatedly, turning `sample_count` from
+ *   the expected 5 into 30.
+ * - Why not "hand off on arrival, clear on delivery" (what the host / renderer heap does): the 60
+ *   second timers of several CLI processes each have their own phase, so one tick usually only
+ *   receives readings from some of them, and both `process_count_peak` and the total would come out
+ *   too small. A role event wants exactly "how many processes are alive at the same time, and how
+ *   much in total", so the latest reading per process has to be retained.
+ * - The expiry criterion matches the device-level external samples: no new reading for more than two
+ *   sampling periods means the process is considered gone and is no longer counted. Undercounting
+ *   is better than passing a stale value off as a current fact.
+ * - Delivery happens only when there is a new reading, so the same reading is never counted twice
+ *   by two deliveries.
+ * - Normal exit goes through `flushPending`, handing the readings that already arrived but have not
+ *   reached their 60 second delivery point to the window (it only moves facts that already exist; it
+ *   takes no new samples).
  *
- * 隐私边界：`instanceToken` 只在本模块内存里用于区分进程，不进任何 ARMS 属性；样本不含 pid。
+ * Privacy boundary: `instanceToken` only lives in this module's memory to tell processes apart and
+ * never reaches any ARMS attribute; samples carry no pid.
  */
 
 import {
@@ -40,12 +49,12 @@ import {
 import { roundMetric } from "./resourceMetricsStats.js";
 
 /**
- * 同时跟踪的 CLI 进程数上限（内存有界）。
- * 正常形态是每 workspace 一个 chat 进程加三条控制面 lane，64 远超实际；超出后新进程直接丢弃。
+ * Maximum number of CLI processes to be tracked simultaneously (memory bounded).
+ * The normal state is one chat process plus three control plane lanes per workspace. The 64 is far more than the actual number; new processes will be discarded directly after exceeding the limit.
  */
 const PROCESS_RESOURCE_MAX_CLI_INSTANCES = 64;
 
-/** 无 instanceToken 的旧 CLI 样本共用一个桶：无法区分进程，只能按一个进程计。 */
+/** The old CLI samples without instanceToken share the same bucket: processes cannot be distinguished and can only be counted as one process. */
 const LEGACY_INSTANCE_KEY = "legacy";
 
 interface StoredCliSample {
@@ -53,11 +62,11 @@ interface StoredCliSample {
   runtimeSurface: ProcessResourceRuntimeSurface;
   environmentKey?: string;
   sample: AgentLaneResourceSample;
-  /** 到达时刻，只用于过期判定。 */
+  /** The arrival time is only used for expiration determination. */
   receivedAt: number;
   /**
-   * 这条读数是否已经交给窗口聚合器。
-   * 用显式标记而不是比时间戳：读数与交付撞在同一毫秒时，比时间戳会把它误判成已交付而永久丢弃。
+   * Whether this reading has been given to the window aggregator.
+   * Use explicit tags instead of timestamps: if the read and delivery hit the same millisecond, the timestamp will misjudge it as delivered and discard it permanently.
    */
   delivered: boolean;
 }
@@ -65,8 +74,10 @@ interface StoredCliSample {
 const latestSamplesByInstance = new Map<string, StoredCliSample>();
 
 /**
- * main 侧的信任边界：payload 经 Host 响应 schema 严格校验后到这里，这里再校验一次
- * （scheduler / 远端 relay 等其他链路复用同一入口）。非法样本直接丢弃，不抛错。
+ * The main-side trust boundary: the payload has already been strictly validated against the Host
+ * response schema by the time it reaches here, and we validate it once more (other links —
+ * scheduler, remote relay, … — reuse this same entry point). Illegal samples are dropped outright,
+ * without throwing.
  */
 export function ingestCliResourceSample(
   raw: unknown,
@@ -100,7 +111,7 @@ export function ingestCliResourceSample(
     receivedAt,
     delivered: false,
   });
-  // 设备总量以实例保存原始到达时间；用组的交付时间会让停更实例被其他组或同组活跃实例续期。
+  // The total device volume saves the original arrival time as an instance; the delivery time of the used group will cause the discontinued instance to be renewed by other groups or active instances in the same group.
   recordExternalAppResourceSample({
     sourceKey: `cli:${key}`,
     runtimeSurface,
@@ -112,7 +123,7 @@ export function ingestCliResourceSample(
   });
 }
 
-/** 采样周期至少按 CLI 自采周期计：读数间隔异常小时不能把过期窗口跟着缩短。 */
+/** The sampling period is at least based on the CLI self-sampling period: abnormally small reading intervals cannot shorten the expiration window accordingly. */
 function resolveSampleIntervalMs(sample: AgentLaneResourceSample): number {
   return Math.max(ZCODE_CLI_RESOURCE_SAMPLE_INTERVAL_MS, sample.intervalMs);
 }
@@ -122,12 +133,12 @@ function resolveHardware(sample: AgentLaneResourceSample): ProcessResourceHardwa
     platform: sample.platform,
     arch: sample.arch,
     logicalCpuCount: sample.logicalCpuCount,
-    // 旧 CLI 不带运行机内存，缺省由出口补桌面机的值。
+    // The old CLI does not have running machine memory, and the default is to export the value of the desktop machine.
     ...(sample.totalMemoryGb === undefined ? {} : { totalMemoryGb: sample.totalMemoryGb }),
   };
 }
 
-/** 丢弃超过两个采样周期没有新读数的进程条目。 */
+/** Process entries with no new readings for more than two sampling periods are discarded. */
 function purgeExpired(now: number): void {
   for (const [key, entry] of latestSamplesByInstance) {
     if (now - entry.receivedAt > resolveSampleIntervalMs(entry.sample) * 2) {
@@ -140,22 +151,22 @@ interface CliRoleGroup {
   role: ProcessResourceRole;
   runtimeSurface: ProcessResourceRuntimeSurface;
   environmentKey?: string;
-  /** 本组共同的运行机：它进了分组 key，因此组内每个进程的运行机信息完全一致。 */
+  /** The common running machine of this group: It enters the group key, so the running machine information of each process in the group is completely consistent. */
   hardware: ProcessResourceHardwareOverride;
   samples: AgentLaneResourceSample[];
   fresh: boolean;
 }
 
 /**
- * 分组 key：角色 × runtime_surface × 运行机。
- * 加运行机是因为多个远端 workspace 可能跑在不同机器上，它们的 RSS 不能相加、
- * 硬件维度也只能描述一台机器（聚合器的窗口 key 用同一个指纹分窗）。
+ * Grouping key: role × runtime_surface × runtime machine.
+ * The reason for adding a running machine is that multiple remote workspaces may run on different machines, and their RSS cannot be added.
+ * The hardware dimension can only describe one machine (the window key of the aggregator uses the same fingerprint to separate windows).
  */
 function groupByRole(): CliRoleGroup[] {
   const groups = new Map<string, CliRoleGroup>();
   for (const entry of latestSamplesByInstance.values()) {
     const hardware = resolveHardware(entry.sample);
-    // 硬件相同并不代表运行环境相同，Host 注入的身份必须贯穿实例缓存和分组。
+    // The same hardware does not mean the same running environment. The identity injected by the Host must run through the instance cache and grouping.
     const key = [
       entry.role,
       entry.runtimeSurface,
@@ -191,7 +202,7 @@ function projectRoleSample(group: CliRoleGroup): ProcessRoleSample {
     rssKbTotal += sample.rssKb;
     rssKbMaxProcess = Math.max(rssKbMaxProcess, sample.rssKb);
     uptimeMinutes = Math.max(uptimeMinutes, sample.uptimeMinutes ?? 0);
-    // 多进程角色的 heap 取本次采样的最大单进程。
+    // The heap of the multi-process role is the largest single process sampled this time.
     if (sample.heapUsedKb !== undefined) {
       heapUsedKb = Math.max(heapUsedKb ?? 0, sample.heapUsedKb);
     }
@@ -201,7 +212,7 @@ function projectRoleSample(group: CliRoleGroup): ProcessRoleSample {
     role: group.role,
     runtimeSurface: group.runtimeSurface,
     ...(group.environmentKey === undefined ? {} : { environmentKey: group.environmentKey }),
-    // CPU 只在相加结束后取整，逐次 round 会让误差随进程数累积。
+    // The CPU only rounds after the addition, and successive rounds will cause the error to accumulate with the number of processes.
     cpuPercent: roundMetric(cpuPercent),
     rssKbTotal: roundMetric(rssKbTotal),
     rssKbMaxProcess: roundMetric(rssKbMaxProcess),
@@ -212,10 +223,10 @@ function projectRoleSample(group: CliRoleGroup): ProcessRoleSample {
   };
 }
 
-/** 上次把角色样本交给窗口聚合器的时刻（`context.now`，与 ingest 的 `Date.now()` 同一墙钟）。 */
+/** The last time a character sample was handed over to the window aggregator (`context.now`, the same wall clock as ingest's `Date.now()`). */
 let lastDeliveredAt: number | null = null;
 
-/** 是否有「已经收到但还没交出去」的读数：没有新读数就不该再交一次同样的事实。 */
+/** Are there any readings that have been "received but not yet handed in": the same facts should not be handed in again without new readings. */
 function hasUndeliveredReading(): boolean {
   for (const entry of latestSamplesByInstance.values()) {
     if (!entry.delivered) {
@@ -225,10 +236,10 @@ function hasUndeliveredReading(): boolean {
   return false;
 }
 
-/** 把含有新读数的存活进程组合交给角色窗口；设备总量在摄入时按实例独立维护。 */
+/** Give the combination of live processes with new readings to the role window; the device total is maintained independently on a per-instance basis upon ingestion. */
 function deliverRoleSamples(context: ProcessResourceSampleContext): void {
   lastDeliveredAt = context.now;
-  // 先读取各组的新读数标记再封口；全局有新读数不代表每组都有，旧组不能被带着续期。
+  // Read the new reading mark of each group first and then seal it; having new readings globally does not mean that each group has them, and old groups cannot be renewed.
   const groups = groupByRole();
   for (const entry of latestSamplesByInstance.values()) {
     entry.delivered = true;
@@ -243,8 +254,8 @@ export const cliProcessResourceSampleSource: ProcessResourceSampleSource = {
   id: "cli",
   sample(context) {
     purgeExpired(context.now);
-    // 60 秒交一次，且只在有新读数时交：窗口切分权仍在 main 的 flush 时钟上，
-    // 这里只决定「多久算一个 CLI 样本」，同一份读数不会被计入两次统计量。
+    // Submitted once every 60 seconds, and only when there are new readings: the window splitting right is still on the flush clock of main,
+    // This only determines "how often to count a CLI sample", and the same reading will not be included in the statistics twice.
     if (
       lastDeliveredAt !== null &&
       context.now - lastDeliveredAt < ZCODE_CLI_RESOURCE_SAMPLE_INTERVAL_MS
@@ -257,8 +268,8 @@ export const cliProcessResourceSampleSource: ProcessResourceSampleSource = {
     deliverRoleSamples(context);
   },
   flushPending(context) {
-    // 正常退出：把本周期已经收到、还没赶上 60 秒交付点的读数交出去，
-    // 否则 1 分钟窗口（开发态 / E2E）里退出会让 cli 角色一条事件都没有。
+    // Normal exit: hand over the readings that have been received in this cycle and have not yet reached the 60-second delivery point.
+    // Otherwise, exiting within the 1-minute window (development state/E2E) will leave the cli role without any events.
     purgeExpired(context.now);
     if (!hasUndeliveredReading()) {
       return;

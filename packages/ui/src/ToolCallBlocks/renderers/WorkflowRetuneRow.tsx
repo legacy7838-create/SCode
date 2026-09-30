@@ -1,29 +1,29 @@
 // ============================================================
-// 就地生效的修订在转写里的那一行
+// The line in the transliteration that takes effect locally
 // ============================================================
-// 只改并发上限、run 又在飞时，`AmendWorkflow` 不编译、不铸新 run，只把那条 run 的上限改掉。于是
-// 这一行没有卡可画：那条 run 的卡在它启动的那一轮里，再画一张会读成第二次运行；而原来的静态卡
-// 会显示编译校验结果，使一次并发设置变更看起来像重新编译和启动了工作流。
+// Only the upper limit of concurrency is changed, and when the run is in flight, `AmendWorkflow` does not compile or create a new run, but only changes the upper limit of that run. So
+// There is no card to draw in this row: the run card is in the round in which it is started, and drawing another card will read it as a second run; while the original static card
+// Compilation verification results are displayed, making a concurrency setting change appear to recompile and start the workflow.
 //
-// 画的就是 GUI「配置」留下的那条设置行（`WorkflowSettingsChangeRow`），一字不差——同一件事由谁
-// 发起不该有两种读法。唯一的差别是它**可点**：工具行是模型这一步的落点，用户从这里回到那条 run。
+// What is drawn is the setting line (`WorkflowSettingsChangeRow`) left by the GUI "Configuration", which is word for word - who does the same thing?
+// Initiation should not be read in two ways. The only difference is that it is clickable: the tool line is the landing point of this step of the model, and the user returns to that run from here.
 
 import type { WorkflowSettingsAmendMeta } from "@zcode/shared/zcode-protocol-v4";
 import { WorkflowSettingsChangeRow } from "@/components/workflow-timeline/WorkflowSettingsChangeRow.js";
 
 /**
- * 入参里那个数 → 设置轮那一块元数据。两者本来就是同一件事的两种记法（GUI 走轮元数据，工具走
- * 入参），映射到同一个形状之后措辞只剩一份实现。
+ * Enter the number in the parameter → set the metadata of the wheel. The two are originally two notations for the same thing (GUI wheel metadata, tool wheel metadata
+ * Input parameters), after mapping to the same shape, there is only one implementation left.
  *
- * `requested` 是**模型发出的、未经钳制**的数（readWorkflowRetuneCall），而 CLI 会把它钳进
- * `[1, 天花板]`。所以这里把天花板一起交给措辞规则：`workflowSettingsChangeSegments` 对
- * `to >= ceiling` 与 `to` 缺席一视同仁，都念「上限恢复为本机默认」——这正是钳制之后的真相
- * （钳到天花板 = 这条 run 没有自己的界）。于是行上永远不会出现一个大于本机上限的数。
- * 天花板未知（那条 run 已被淘汰出投影、或老 CLI 没发过它）时只能照念请求值，此时它也只可能
- * 偏大不偏小——而「最多 n」本就是个上界陈述，不会把用户往「跑得比实际多」的方向误导。
+ * `requested` is the unclamped number emitted by the model (readWorkflowRetuneCall), and the CLI will clamp it into
+ * `[1, ceiling]`. So here the ceiling is given to the wording rules: `workflowSettingsChangeSegments` Right
+ * `to >= ceiling` and the absence of `to` are treated equally, and both mean "the upper limit is restored to the local default" - this is the truth after clamping
+ * (Clamped to the ceiling = this run has no bounds of its own). Therefore, a number greater than the upper limit of the local machine will never appear on the line.
+ * When the ceiling is unknown (that run has been eliminated from the projection, or the old CLI has not sent it), the request value can only be read. At this time, it can only
+ * Too big, not too small - and "at most n" is an upper bound statement and will not mislead users in the direction of "running more than actual".
  *
- * `from` 不填：入参不知道改之前是多少，而这一行的措辞只读 `to`。`predecessorRunId` 同样不填——
- * 就地生效没有前驱（workflow-row-meta.ts）。
+ * `from` is not filled in: I don’t know what the value of the input parameter was before it was changed, and the wording of this line only reads `to`. `predecessorRunId` is also left blank——
+ * There is no predecessor (workflow-row-meta.ts) for in-place effect.
  */
 function retuneAsAmendMeta(
   requested: number | null,
@@ -41,9 +41,9 @@ export function WorkflowRetuneRow({
   requested,
   runId,
 }: {
-  /** 本机并发天花板（那条 run 的投影读数）；未知时缺席。 */
+  /** Native concurrency ceiling (the projected reading for that run); absent when unknown. */
   ceiling?: number;
-  /** 打开这条 run 的详情页；宿主没给（只读展示或功能已关闭）时这一行只是记录。 */
+  /** Open the details page of this run; this line is only recorded when the host does not provide it (read-only display or the function is turned off). */
   onOpen?: () => void;
   requested: number | null;
   runId: string;

@@ -19,7 +19,7 @@ function ensureCachedBinaryExecutable(binaryPath, targetPlatform) {
   if (process.platform === "win32" || targetPlatform === "win32") return;
   if ((statSync(binaryPath).mode & 0o111) !== 0) return;
 
-  // 缓存元数据只校验内容，不能让意外丢失的 Unix 可执行权限随 skip 流程继续传递。
+  // Cache metadata only verifies the content and cannot allow accidentally lost Unix executable permissions to continue to be passed along with the skip process.
   chmodSync(binaryPath, 0o755);
 }
 
@@ -62,11 +62,11 @@ export async function prepareNativeSearchTools({
       try {
         validateBinary(artifact.binaryPath);
         ensureCachedBinaryExecutable(artifact.binaryPath, plan.platform);
-        console.log(`    [skip] ${artifact.toolId} ${artifact.release} 已存在`);
+        console.log(`    [skip] ${artifact.toolId} ${artifact.release} already exists`);
         continue;
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
-        console.log(`    [repair] ${artifact.toolId} 目标校验失败: ${reason}`);
+        console.log(`    [repair] ${artifact.toolId} target verification failed: ${reason}`);
       }
     }
 

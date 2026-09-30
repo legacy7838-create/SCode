@@ -1,6 +1,5 @@
 import { BrowserWindow, dialog, nativeImage, webContents } from "electron";
 import type { WebContents } from "electron";
-import type { Locale } from "@zcode/shared";
 
 const DEFAULT_AUTOMATION_GRACE_MS = 3_000;
 const USER_BROWSER_TAB_PREFIX = "browser:";
@@ -54,25 +53,23 @@ function resolveEmbeddedBrowserDialogSource(frameUrl: string, guestUrl?: string)
         }
       }
     } catch {
-      // 继续尝试 Chromium 维护的下一层可信 URL。
+      // Continue trying the next level of trusted URLs maintained by Chromium.
     }
   }
-  // 非法或无 host URL 统一使用不可伪造的中性来源标签。
+  // Illegal or non-host URLs should always use a neutral source tag that cannot be forged.
   return "This page says";
 }
 
-function resolveEmbeddedBrowserDialogButtons(
-  locale: Locale,
-  type: EmbeddedBrowserDialogRequest["type"],
-): string[] {
-  if (type === "alert") return [locale === "zh-CN" ? "确定" : "OK"];
-  return locale === "zh-CN" ? ["取消", "确定"] : ["Cancel", "OK"];
+function resolveEmbeddedBrowserDialogButtons(type: EmbeddedBrowserDialogRequest["type"]): string[] {
+  if (type === "alert") return ["OK"];
+  return ["Cancel", "OK"];
 }
 
 /**
- * 用户 Browser 的 preload 在网页调用原生 alert/confirm 之前同步进入这里，因此用户路径
- * 不会先创建 Chromium Dialog。自动化期间返回 handled=false，由 preload 调回原生 API，
- * 继续让 BrowserGuestManager 的 getDialog/handleDialog 处理。
+ * The user Browser's preload enters here synchronously before a page calls the native
+ * alert/confirm, so the user path never creates a Chromium dialog first. During automation it
+ * returns handled=false and the preload calls the native API back, leaving handling to
+ * BrowserGuestManager's getDialog/handleDialog.
  */
 export class EmbeddedBrowserJavaScriptDialogController {
   private readonly guests = new Map<number, RegisteredGuest>();
@@ -82,7 +79,6 @@ export class EmbeddedBrowserJavaScriptDialogController {
   constructor(
     private readonly options: {
       iconPath: string;
-      getLocale: () => Locale;
       logger: { warn: (...args: unknown[]) => void };
       automationGraceMs?: number;
     },
@@ -134,12 +130,11 @@ export class EmbeddedBrowserJavaScriptDialogController {
     try {
       const icon = nativeImage.createFromPath(this.options.iconPath);
       const selected = dialog.showMessageBoxSync(parent, {
-        type: request.type === "alert" ? "info" : "question",
-        buttons: resolveEmbeddedBrowserDialogButtons(this.options.getLocale(), request.type),
+        buttons: resolveEmbeddedBrowserDialogButtons(request.type),
         defaultId: request.type === "alert" ? 0 : 1,
         cancelId: 0,
-        // 同源 iframe 的可信 frame URL 可能是 about:blank；该 URL 没有
-        // 可展示 host，必须继续使用 Chromium 维护的 guest 主文档 URL。
+        // A trusted frame URL for a same-origin iframe might be about:blank; this URL does not
+        // Displayable hosts must continue to use the guest master document URL maintained by Chromium.
         message: resolveEmbeddedBrowserDialogSource(frameUrl, registration.guest.getURL()),
         detail: request.message,
         noLink: true,
@@ -151,7 +146,7 @@ export class EmbeddedBrowserJavaScriptDialogController {
         ...(request.type === "confirm" ? { value: selected === 1 } : {}),
       };
     } catch (error) {
-      // 系统框创建失败时不能伪造用户选择；通知 preload 调回网页原生 API。
+      // User selection cannot be forged when the system box creation fails; preload is notified to call back to the web page's native API.
       this.options.logger.warn("[browser-pane] failed to handle JavaScript dialog with source", {
         error: error instanceof Error ? error.message : String(error),
         tabId: registration.tabId,

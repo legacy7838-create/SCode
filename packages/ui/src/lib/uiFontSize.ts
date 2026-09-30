@@ -22,7 +22,7 @@ export function applyUiFontSizePx(fontSizePx: number): void {
   if (!rootStyle?.setProperty) {
     return;
   }
-  // 只更新 UI 字号 Token 的基准变量，避免根 font-size 连带缩放图标、间距和圆角。
+  // Only update the base variable of the UI font size Token to avoid scaling the icon, spacing and rounded corners along with the root font-size.
   rootStyle.setProperty("--ui-font-size", `${normalizeUiFontSizePx(fontSizePx)}px`);
 }
 

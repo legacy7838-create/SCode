@@ -51,13 +51,13 @@ export function StickyGroupHeader({
 }) {
   const { intl } = useZCodeIntl();
   const taskCount = node.tasks.length;
-  // 系统分组（cron / 闲时）标题按语言环境本地化展示，与 GroupItem 保持一致。
+  // The system group (cron/idle) title is localized and displayed according to the locale, consistent with GroupItem.
   const displayTitle = getTaskGroupDisplayTitle(node.group, {
     cron: intl.formatMessage({ id: "taskGroup.cronGroupName" }),
     offPeak: intl.formatMessage({ id: "offPeak.sidebar.groupTitle" }),
   });
-  // sticky header 的右键菜单要和 GroupItem 一样裁剪系统分组的“解散”项，
-  // 否则 cron/闲时组滚动吸顶时可被误解散。系统分组一律不提供解散入口。
+  // The right-click menu of the sticky header needs to crop the "disband" item of the system group just like the GroupItem.
+  // Otherwise the cron/idle group can be misdispersed when scrolling the ceiling. System groups never provide disbandment entrance.
   const isSystemGroup =
     node.group.id === CRON_DEFAULT_GROUP_ID || node.group.id === OFF_PEAK_DEFAULT_GROUP_ID;
   const handleToggle = () => onToggleCollapsed(node.group.id);

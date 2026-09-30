@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@zcode/ui";
 import type { WebAuthCallbackResult, WebAuthService } from "./webAuthService.js";
-import { getWebAuthCopy } from "./webAuthLocale.js";
+import { WEB_AUTH_COPY } from "./webAuthLocale.js";
 
 interface WebCallbackPageProps {
   authService: Pick<WebAuthService, "handleCallback">;
@@ -10,7 +10,7 @@ interface WebCallbackPageProps {
 }
 
 export function WebCallbackPage({ authService, onRetry, onSuccess }: WebCallbackPageProps) {
-  const copy = getWebAuthCopy();
+  const copy = WEB_AUTH_COPY;
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {

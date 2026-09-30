@@ -49,8 +49,8 @@ function serializeErrorForHostLog(error: Error): {
   }
   const cause = (error as Error & { cause?: unknown }).cause;
   if (cause !== undefined) {
-    // Error 被 JSON.stringify 时会变成 {}，导致远端握手失败只剩空对象。
-    // cause 也可能是 Error，这里递归压成普通对象，保证 host 日志中继能保留真实错误链路。
+    // Error will become {} when JSON.stringify is used, causing the remote handshake to fail and leaving only an empty object.
+    // cause may also be Error, which is recursively compressed into a common object to ensure that the host log relay can retain the real error link.
     serialized.cause = cause instanceof Error ? serializeErrorForHostLog(cause) : cause;
   }
   return serialized;

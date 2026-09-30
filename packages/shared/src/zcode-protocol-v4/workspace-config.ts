@@ -1,31 +1,31 @@
-// workspace-config topic（v4 additive 新增）：workspace 级配置目录的活性数据源。
-// 背景：旧协议里 provider registry / 模型目录热更新经 per-session `state.updated`（settings patch）
-// 下发，host 侧 zcodeTaskIndexSyncer 转成 workspace_config_options_update 广播给 UI；
-// 旧 session/subscribe + state.updated 词表不承载配置目录，统一改走本 topic。
-// 语义：conflated 最新态（同 sessions-index），载荷是 workspace 级配置目录 + slash 命令目录。
-// 注意这是 workspace 级不是 session 级——session 级 current 选择在 conversation topic 的
-// `config`（sessionConfigStateSchema）里；本 topic 的 currentValue 表示 workspace 缺省。
-// 纪律：additive 演进——新增 topic / 新增可选字段合法，改已有字段形状不合法。
+// workspace-config topic (new in v4 additive): Active data source for the workspace-level configuration directory.
+// Background: In the old protocol, the provider registry/model directory is hot updated via per-session `state.updated` (settings patch)
+// After delivery, the zcodeTaskIndexSyncer on the host side is converted into workspace_config_options_update and broadcast to the UI;
+// The old session/subscribe + state.updated vocabulary does not carry the configuration directory, so this topic will be changed uniformly.
+// Semantics: conflated latest state (same as sessions-index), the payload is the workspace level configuration directory + slash command directory.
+// Note that this is the workspace level, not the session level - the session level current is selected in the conversation topic
+// In `config` (sessionConfigStateSchema); the currentValue of this topic represents the workspace default.
+// Discipline: additive evolution - adding new topics/adding optional fields is legal, but changing the shape of existing fields is illegal.
 import { z } from "zod";
 
-// 与 host 侧 ZCodeConfigSelectValue（zcode-task-types-core）结构对齐：
-// syncer 转发 workspace_config_options_update 时零映射直通，下游 useZCodeConfig 消费面不改。
+// Aligned with the host side ZCodeConfigSelectValue (zcode-task-types-core) structure:
+// When syncer forwards workspace_config_options_update, zero mapping is passed through, and the downstream useZCodeConfig consumption side does not change.
 export const workspaceConfigSelectValueSchema = z.object({
   value: z.string(),
   name: z.string(),
   description: z.string().optional(),
-  // 值来源：原生模型列表或会话侧注入项（UI 去重与展示控制）。
+  // Value source: native model list or session-side injection (UI deduplication and presentation control).
   origin: z.enum(["native", "injected"]).optional(),
-  // 模型选项所属供应商/分组 id（provider → model 分组选择）。
+  // The provider/group id to which the model option belongs (provider → model group selection).
   modelProviderId: z.string().optional(),
   modelProviderName: z.string().optional(),
-  // 缺失表示旧 payload/能力未知；空数组表示 catalog 已知没有可选 reasoning 档位。
+  // Missing indicates that the old payload/capability is unknown; an empty array indicates that the catalog is known and has no optional reasoning gear.
   modelThoughtLevels: z.array(z.string()).optional(),
   modelDefaultThoughtLevel: z.string().optional(),
 });
 export type WorkspaceConfigSelectValue = z.infer<typeof workspaceConfigSelectValueSchema>;
 
-// 与 host 侧 ZCodeConfigOption 结构对齐（id: model / mode / thought_level / 自定义）。
+// Aligned with the host side ZCodeConfigOption structure (id: model / mode / thought_level / custom).
 export const workspaceConfigOptionSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -37,7 +37,7 @@ export const workspaceConfigOptionSchema = z.object({
 });
 export type WorkspaceConfigOption = z.infer<typeof workspaceConfigOptionSchema>;
 
-// slash 命令目录（workspace 级；与 host 侧 ZCodeSlashCommand 对齐）。
+// slash command directory (workspace level; aligned with host-side ZCodeSlashCommand).
 export const workspaceSlashCommandSchema = z.object({
   name: z.string(),
   description: z.string(),
@@ -46,7 +46,7 @@ export const workspaceSlashCommandSchema = z.object({
 });
 export type WorkspaceSlashCommand = z.infer<typeof workspaceSlashCommandSchema>;
 
-// topic 载荷本体：整体替换语义（conflated 最新态，绝不深合并——同一纪律）。
+// topic payload ontology: overall replacement semantics (conflated is the latest state, never deeply merged - the same discipline).
 export const workspaceConfigStateSchema = z.object({
   configOptions: z.array(workspaceConfigOptionSchema),
   slashCommands: z.array(workspaceSlashCommandSchema),
@@ -56,24 +56,24 @@ export type WorkspaceConfigState = z.infer<typeof workspaceConfigStateSchema>;
 export const workspaceConfigSnapshotSchema = z.object({
   protocolVersion: z.literal(1),
   workspaceId: z.string(),
-  // host 级配置日志代际（与 sessions-index 的 logEpoch 同构、彼此独立）。
+  // Host-level configuration log generation (isomorphic to logEpoch of sessions-index and independent of each other).
   logEpoch: z.string(),
   config: workspaceConfigStateSchema,
 });
 export type WorkspaceConfigSnapshot = z.infer<typeof workspaceConfigSnapshotSchema>;
 
-// delta 集合刻意只有一个 op：配置目录是小体量整体替换态，不做字段级增量。
+// The delta set deliberately has only one op: the configuration directory is a small overall replacement state, and no field-level increments are performed.
 export const workspaceConfigDeltaSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("config.updated"), config: workspaceConfigStateSchema }),
 ]);
 export type WorkspaceConfigDelta = z.infer<typeof workspaceConfigDeltaSchema>;
 
-/** workspace-config topic key 构造（与 parseWorkspaceConfigTopic 对偶）。 */
+/** Builds a workspace-config topic key (dual to parseWorkspaceConfigTopic). */
 export function workspaceConfigTopic(workspaceId: string): string {
   return `workspace-config/${workspaceId}`;
 }
 
-/** workspace-config topic key 解析（"workspace-config/<workspaceId>"）。 */
+/** Parses a workspace-config topic key ("workspace-config/<workspaceId>"). */
 export function parseWorkspaceConfigTopic(topic: string): string | null {
   if (!topic.startsWith("workspace-config/")) return null;
   const workspaceId = topic.slice("workspace-config/".length);

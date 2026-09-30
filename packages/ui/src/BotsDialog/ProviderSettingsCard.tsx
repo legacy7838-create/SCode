@@ -1,4 +1,7 @@
-/* eslint-disable max-lines -- ProviderSettingsCard 集中维护 Bot 凭据、二维码和绑定状态机展示；后续拆分 provider 子组件后移除。 */
+/* eslint-disable max-lines -- ProviderSettingsCard centrally maintains the Bot credentials, the QR
+ * code, and the binding state-machine display; remove this once the provider subcomponents are
+ * split out later.
+ */
 import {
   CircleAlert,
   Clock3,
@@ -53,7 +56,7 @@ function TelegramBotFatherQrPanel({
       })
       .catch((error: unknown) => {
         logger.error(
-          "[BotsDialog] 生成 Telegram BotFather 二维码失败",
+          "[BotsDialog] failed to generate telegram botfather qr code",
           error instanceof Error ? error.message : String(error),
         );
       });

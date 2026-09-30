@@ -1,8 +1,8 @@
 import type { MentionCategory } from "@/mentions/mentionTypes.js";
 
 export const PROMPT_MENTION_BASE_CLASS_NAME =
-  // inline-flex token 用 align-middle 会按父文本基线 + x-height 对齐，不是和行盒视觉中心对齐。
-  // 在输入框里 token 后继续输入正文时会低约 1px；align-top 让同 line-height 的 token 和正文共用行盒顶部基准。
+  // Using align-middle, inline-flex token will be aligned according to the parent text baseline + x-height, not aligned with the visual center of the line box.
+  // When you continue to enter the text after the token in the input box, it will be about 1px lower; align-top allows the token and the text of the same line-height to share the top reference of the line box.
   "inline-flex cursor-default items-center gap-1 align-top text-ui-base leading-5 font-medium";
 
 export function getPromptMentionVariantClassName(category: MentionCategory): string {

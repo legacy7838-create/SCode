@@ -1,10 +1,12 @@
-/* eslint-disable max-lines -- projection/base/recovery/optimistic 必须共享一个原子 store 状态机，拆分会重新引入跨对象竞态。 */
-// Per-session projection store（只读 projection store）。
-// 唯一写入方是订阅推送；UI 只读。客户端遵守三条规则：
-//   1. snapshot → 整体替换，绝不 merge；
-//   2. delta 帧仅在区间衔接（frame.fromSeq === snapshot.seq）时 apply，断档不猜、不缓存补偿；
-//   3. base 与状态同生共死——断档时状态未被污染，携当前水位重订阅，由服务端裁决 resume/snapshot。
-// 除 optimistic overlay（pending 命令展示）外，本 store 不产生任何 conversation 事实。
+/* eslint-disable max-lines -- projection/base/recovery/optimistic must share one atomic store state
+ * machine; splitting them would reintroduce cross-object races.
+ */
+// Per-session projection store (read-only projection store).
+// The only writer is the subscriber push; the UI is read-only. Clients obey three rules:
+//   1. snapshot → overall replacement, never merge;
+//   2. The delta frame is only applied when the interval is connected (frame.fromSeq === snapshot.seq), and there is no guessing or caching compensation when there is a break;
+//   3. The base and the state live and die together - the state is not polluted when the file is interrupted, resubscribe with the current water level, and the server determines resume/snapshot.
+// This store does not generate any conversation facts except optimistic overlay (shown by the pending command).
 import {
   applyConversationDeltas,
   isDeterministicContentFault,
@@ -25,28 +27,36 @@ import type { ConversationTransport } from "@/v4/transport.js";
 import { uiMemoryDiagnosticsRegistry } from "@/lib/memoryDiagnostics.js";
 
 /**
- * runtime 换代打断 subscribe 后的退避节奏。
+ * Backoff pacing after a subscribe is interrupted by a runtime generation change.
  *
- * CUA Helper 冷启动就绪会 recycleUntilStable → disposeWorkspace 回收 agent
- * runtime，在途 subscribe 被 rejectAll 打断。若把这次瞬态失败定格成 status="error"，
- * 懒启动的 agent 在 dispose 后可能无人拉起，onRuntimeRestart 就不会到达，面板只能靠用户
- * 手点「重新连接」。subscribeConversationV4 走 start-if-needed，重订阅自身会拉起 runtime，
- * 所以这里按 sessionsIndexStore 的既定模式做有界退避。
+ * A cold CUA Helper becoming ready runs recycleUntilStable → disposeWorkspace to reclaim the agent
+ * runtime, and in-flight subscribes are interrupted by rejectAll. If this transient failure were
+ * frozen into status="error", a lazily started agent might never be brought back up after the
+ * dispose, so onRuntimeRestart would never arrive and the panel would depend on the user manually
+ * clicking "Reconnect". subscribeConversationV4 goes through start-if-needed, so resubscribing by
+ * itself brings the runtime up; that is why this does bounded backoff following the established
+ * pattern of sessionsIndexStore.
  */
 const RUNTIME_RECYCLE_RETRY_DELAYS_MS = [250, 1_000, 3_000] as const;
 
 /**
- * accepted ACK 后等待权威输入投影的宽限期。
+ * The grace period for waiting on the authoritative input projection after an accepted ACK.
  *
- * Core admission 的 ACK 不等待 TurnStarted/QueueItem/userInput 投影；正常情况下这两条
- * 路径只相差一个 renderer/network round-trip。把窗口设为 2s 可以覆盖正常 desktop/mobile
- * 延迟，又能尽快从“CLI 继续工作、订阅完全静默”的半开通道自愈。超时只恢复订阅，不重放命令。
+ * The ACK for core admission does not wait for the TurnStarted/QueueItem/userInput projection;
+ * under normal conditions the two paths differ by only one renderer/network round-trip. Setting the
+ * window to 2s covers normal desktop/mobile latency while still self-healing quickly from a
+ * half-open channel where “the CLI keeps working but the subscription is completely silent”. Timing
+ * out only restores the subscription; it does not replay the command.
  */
 const ACCEPTED_INPUT_PROJECTION_GRACE_MS = 2_000;
 const ACCEPTED_INPUT_COMMAND_TYPES = new Set(["sendText"]);
 
-/** 退避耗尽时展示给用户的 lastError（无底层 error 对象可引用的换代路径）。 */
-const RUNTIME_RECYCLED_ERROR = "ZCode agent runtime 已被回收，重连未成功";
+/**
+ * The lastError shown to the user once the backoff is exhausted (generation-change paths have no
+ * underlying error object to reference).
+ */
+const RUNTIME_RECYCLED_ERROR =
+  "The ZCode agent runtime was recycled and reconnection did not succeed";
 
 function monotonicNow(): number {
   return typeof performance !== "undefined" ? performance.now() : Date.now();
@@ -57,16 +67,17 @@ function roundedDuration(startedAt: number, endedAt: number): number {
 }
 
 /**
- * 是否为 runtime 换代/回收导致的瞬态 subscribe 失败。
+ * Whether this is a transient subscribe failure caused by a runtime generation change / reclaim.
  *
- * 三种文案都来自同一次回收：transport 关闭时 ZCodeProtocolClient.rejectAll 打断在途请求
- * （transport closed），复用已回收 client 时 assertNotDisposed 早退（client disposed），
- * 以及 runtime 尚未重新拉起时的 fail-fast（runtime is not running）。
+ * All three messages come from the same reclaim: when the transport closes,
+ * ZCodeProtocolClient.rejectAll interrupts in-flight requests (transport closed); reusing an
+ * already reclaimed client exits early in assertNotDisposed (client disposed); and there is a
+ * fail-fast while the runtime has not been brought back up yet (runtime is not running).
  */
 function isRuntimeRecycleError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return (
-    // 冷订阅可能亲自拉起新 runtime；restart 令在途 ACK 失效后仍须有界重订，不能停在 error。
+    // Cold subscription may start a new runtime by itself; restart requires bounded re-subscription after the ACK in transit expires, and cannot stop at error.
     message.includes("fault.subscription.runtimeRestarted") ||
     message.includes("ZCode agent transport closed") ||
     message.includes("ZCode Protocol client disposed") ||
@@ -88,16 +99,19 @@ function hasAcceptedInputProjection(
 }
 
 export type ConversationStoreStatus =
-  // subscribe 在途（首连或断档重订阅）。
+  // The subscribe is in progress (first connection or re-subscription after interruption).
   | "connecting"
-  // 已订阅且帧连续。
+  // Subscribed and frames are continuous.
   | "live"
-  // subscribe 失败，等待 retry()。
+  // Subscribe failed, waiting for retry().
   | "error"
-  // 已释放（SessionDataLayer 退订后），不再接受任何操作。
+  // Released (after SessionDataLayer unsubscribes) and no longer accepts any operations.
   | "closed";
 
-/** optimistic overlay 条目：命令已上行、服务端尚未在投影中确认。 */
+/**
+ * An optimistic overlay entry: the command has gone upstream but the server has not yet confirmed
+ * it in the projection.
+ */
 export interface OptimisticCommand {
   commandId: string;
   type: string;
@@ -109,24 +123,35 @@ export interface ConversationStoreState {
   snapshot: ConversationSnapshot | null;
   subscriptionId: string | null;
   lastError: string | null;
-  /** 首次 conversation subscribe 的低频 Host/CLI timing；不进入 snapshot 事实。 */
+  /**
+   * Low-frequency Host/CLI timing for the first conversation subscribe; not part of the snapshot's
+   * facts.
+   */
   openTiming?: ConversationOpenTiming;
-  /** Renderer 首帧 timing；与 snapshot 一起通知，避免 UI 读取到半更新的诊断状态。 */
+  /**
+   * The renderer's first-frame timing; notified together with the snapshot so the UI never reads a
+   * half-updated diagnostics state.
+   */
   rendererTiming?: SessionOpenRendererTiming;
   optimisticCommands: readonly OptimisticCommand[];
-  /** loadOlder 在途标记（自动预取防重入）。 */
+  /** The in-flight marker for loadOlder (prevents re-entrancy from automatic prefetch). */
   loadingOlder: boolean;
-  /** CLI 完整有效 projection 返回的终态计划目录。 */
+  /** The terminal-state plan catalog returned by the CLI's complete valid projection. */
   sessionPlans: readonly ToolCallRow[];
-  /** 只用于触发计划目录只读 query，不属于 conversation 协议事实。 */
+  /**
+   * Only used to trigger the read-only plan-catalog query; not part of the conversation protocol's
+   * facts.
+   */
   planDirectoryRevision: number;
   plansLoading: boolean;
   /**
-   * 问题导航目录（turn navigator）的失效代际。
-   * not-enough-queries 终态过去只以 logEpoch 判定有效，但
-   * "是否已有 ≥2 条可导航 query"是随增量变化的派生条件，logEpoch 表示日志代际而非
-   * 内容静止。real-user query 增删（row.appended/row.upserted 命中 realUser userInput，
-   * 或 row.removed 截断分支）与 snapshot 整体替换时递增此 revision，使终态缓存失效。
+   * The invalidation generation of the question-navigation catalog (turn navigator). The
+   * not-enough-queries terminal state used to be judged valid by logEpoch alone, but "whether there
+   * are already ≥2 navigable queries" is a derived condition that changes with each delta, and
+   * logEpoch denotes the log generation rather than content quiescence. This revision is
+   * incremented when real-user queries are added or removed (row.appended/row.upserted hitting a
+   * realUser userInput, or row.removed truncating a branch) and when the snapshot is replaced
+   * wholesale, so that the terminal-state cache is invalidated.
    */
   turnNavigatorDirectoryRevision: number;
 }
@@ -173,13 +198,13 @@ function shouldInvalidatePlanDirectory(frame: ConversationTopicFrame): boolean {
 }
 
 /**
- * 问题导航目录是否需要失效。
- * not-enough-queries 终态曾只以 logEpoch 判定，导致同一 epoch
- * 内追加 real-user query 后永久命中缓存。判定条件：
- * - snapshot 整体替换 → true（全新状态，终态作废）；
- * - row.removed → true（rewind/分支裁剪改变可导航 query 集合）；
- * - row.appended/row.upserted 命中 realUser userInput → true（新增/变更用户问题）；
- * - 其余 delta（assistant text、tool、reasoning 流式）→ false，不触发重探测。
+ * Whether the question-navigation catalog needs invalidation. The not-enough-queries terminal state
+ * used to be judged by logEpoch alone, which meant that appending a real-user query within the same
+ * epoch would hit the cache forever. The decision rules:
+ * - the snapshot is replaced wholesale → true (entirely new state, the terminal state is void);
+ * - row.removed → true (a rewind / branch truncation changes the set of navigable queries);
+ * - row.appended/row.upserted hits a realUser userInput → true (a user question added or changed);
+ * - any other delta (streaming assistant text, tool, reasoning) → false, no re-probing.
  */
 function shouldInvalidateTurnNavigatorDirectory(frame: ConversationTopicFrame): boolean {
   if (frame.payload.kind === "snapshot") return true;
@@ -205,8 +230,8 @@ function logSubagentProjectionTransition(
   ) {
     return;
   }
-  // 交互 bug 的根因位于订阅快照交接，不在 React DOM；仅在 Agent 运行集变化时
-  // 记录轻量身份与水位，使本地复现能区分合法终态和迟到快照覆盖。
+  // The root cause of the interaction bug lies in the subscription snapshot handover, not in the React DOM; only when the Agent run set changes
+  // Recording lightweight identities and water levels enables local reproducibility to differentiate between legitimate final states and late snapshot overrides.
   logger.info("[v4-store] running subagent projection changed", {
     delivery,
     nextBackgroundWorkIds: next.backgroundWorks
@@ -221,8 +246,9 @@ function logSubagentProjectionTransition(
 }
 
 /**
- * 还有更早历史可拉 ⇔ 窗口首行不是全序首行（firstRowId 判定）。
- * 纯函数供 store/组件共用；快照缺失/空窗口/未知 firstRowId 一律 false。
+ * Whether earlier history can still be pulled ⇔ the window's first row is not the first row of the
+ * total order (decided by firstRowId). A pure function shared by the store and the components; a
+ * missing snapshot, an empty window, or an unknown firstRowId all yield false.
  */
 export function hasOlderRows(snapshot: ConversationSnapshot | null): boolean {
   if (!snapshot) return false;
@@ -232,8 +258,10 @@ export function hasOlderRows(snapshot: ConversationSnapshot | null): boolean {
 }
 
 /**
- * 冷快照尾窗是否从一个 turn 的中间截断。turnHeader 是完整 turn 的权威起点；首行允许是
- * lightBoundary，因此不能只判断首行 kind，必须检查首个 turn 在当前窗口里是否已有 header。
+ * Whether the cold snapshot's tail window is cut in the middle of a turn. turnHeader is the
+ * authoritative start of a complete turn; the first row is allowed to be a lightBoundary, so the
+ * first row's kind alone cannot decide it — the first turn in the current window must be checked
+ * for an existing header.
  */
 export function shouldAutoLoadIncompleteLeadingTurn(
   snapshot: ConversationSnapshot | null,
@@ -248,9 +276,10 @@ export function shouldAutoLoadIncompleteLeadingTurn(
 }
 
 /**
- * rows/range 结果并入本地窗口（合并规范）：按 rowId 键控、只收
- * 窗口首行之前的行、去重后前插；顺序键 = rowId 升序（全序保证）。
- * 返回 null 表示无可并入行（窗口无变化，调用方不换引用）。
+ * Merging a rows/range result into the local window (merge contract): keyed by rowId, taking only
+ * the rows before the window's first row, deduped and prepended; the ordering key is rowId
+ * ascending (a total-order guarantee). Returning null means there are no rows to merge (the window
+ * is unchanged and the caller keeps the same reference).
  */
 function mergeOlderRows(
   window: readonly ConversationRow[],
@@ -263,11 +292,12 @@ function mergeOlderRows(
 }
 
 /**
- * 外部 store（useSyncExternalStore 兼容：subscribe + getState 返回稳定引用）。
- * 生命周期由 SessionDataLayer 管（引用计数 + keep-warm），组件不直接 new。
+ * The external store (useSyncExternalStore-compatible: subscribe + getState return stable
+ * references). Its lifecycle is managed by SessionDataLayer (reference counting + keep-warm);
+ * components do not construct it directly.
  */
-// 内存诊断计数器：统计存活 store 数与其 rows.window 行数之和，
-// 用于观察窗口数据的内存增长。构造时加入、close() 时移除。
+// Memory diagnostic counter: counts the sum of the number of surviving stores and the number of rows.window rows,
+// Memory growth for observation window data. Added during construction and removed during close().
 const liveProjectionStores = new Set<ConversationProjectionStore>();
 uiMemoryDiagnosticsRegistry.register("projection", () => {
   let rows = 0;
@@ -284,17 +314,21 @@ export class ConversationProjectionStore {
     (transition: SessionModelTransition) => void
   >();
   private observedModelTransitionEventId: string | null = null;
-  // 订阅代际：并发 connect 只认最新一代，过期结果立即退订防服务端悬挂。
+  // Subscription generation: Concurrent connect only recognizes the latest generation, and the expired result will be unsubscribed immediately to prevent the server from hanging.
   private generation = 0;
-  // 首次订阅尚未拿到 ACK 时，runtime available 只是当前启动流程的正常完成信号；
-  // 记录在途数量，避免生命周期通知再次启动 connect，制造同 topic 的订阅替换竞态。
+  // When the first subscription has not received ACK, runtime available is just a normal completion signal of the current startup process;
+  // Record the number in transit to avoid life cycle notifications to start connect again and create a subscription replacement race for the same topic.
   private connectInFlight = 0;
   /**
-   * subscribe ACK mode 持久到该代首个 logical frame；不能只依赖同步 activate 栈，
-   * 因为 notification 可在 ACK Promise resolve 后异步到达。
+   * The subscribe ACK mode is persisted up to the first logical frame of that generation; it cannot
+   * rely on the synchronous activate stack alone, because the notification may arrive
+   * asynchronously after the ACK promise resolves.
    */
   private awaitingInitial: { subscriptionId: string; mode: "snapshot" | "resume" } | null = null;
-  /** 当前 subscription 是否已由旧 applied base 或本代 logical frame 证明水位有效。 */
+  /**
+   * Whether the current subscription's watermark has already been proven valid by an old applied
+   * base or by this generation's logical frame.
+   */
   private subscriptionHasAppliedBase = false;
   private recovery: {
     subscriptionId: string;
@@ -306,7 +340,10 @@ export class ConversationProjectionStore {
     forceSnapshot: boolean;
     postRecoveryGapPending: boolean;
     frameDeadline: ReturnType<typeof setTimeout> | null;
-    /** 本次 flight 是为内容确定性失败发起的：终态用 contentRejected，不混进瞬态统计。 */
+    /**
+     * This flight was started for a determinate content failure: the terminal state is
+     * contentRejected, kept out of the transient statistics.
+     */
     contentFault: boolean;
   } | null = null;
   private readonly offAssemblyFault: () => void;
@@ -318,11 +355,14 @@ export class ConversationProjectionStore {
   private initialSubscribeAckAt: number | null = null;
   private planQueryInFlight = false;
   private planQueryPending = false;
-  /** accepted input 的 projection confirmation watchdog；不承载命令，也不生成本地事实。 */
+  /**
+   * The projection-confirmation watchdog for accepted input; it carries no command and produces no
+   * local facts.
+   */
   private readonly acceptedInputProjectionTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  // hydrated/not-enough-queries 终态缓存。过去仅以
-  // logEpoch 判定有效，同一 epoch 内追加 real-user query 后仍永久命中。现追加
-  // directoryRevision——real-user query 增删会递增该 revision，使终态失效重探测。
+  // hydrated/not-enough-queries final cache. In the past, only
+  // The logEpoch judgment is valid, and the real-user query is still hit permanently after appending it in the same epoch. Add now
+  // directoryRevision——Addition and deletion of real-user query will increment the revision, causing the final state to be invalid and re-detected.
   private turnNavigatorHydrationTerminal:
     | (Extract<
         ConversationTurnNavigatorHydrationResult,
@@ -341,20 +381,20 @@ export class ConversationProjectionStore {
         this.handleAssemblyFault(fault.subscriptionId, fault.deliveryKind, fault.reasonCode);
       }
     });
-    // runtime 换代（CLI 进程换代）按 sessionsIndexStore 的约定优先走 lifecycle：dispose
-    // 当场只有 unavailable 可观测，onRuntimeRestart 要等新进程 spawn——懒启动下可能永不到达。
+    // Runtime replacement (CLI process replacement) takes priority according to the agreement of sessionsIndexStore lifecycle: dispose
+    // There is only unavailable observable on the spot, and onRuntimeRestart has to wait for the new process to spawn - it may never arrive under lazy start.
     if (transport.onRuntimeLifecycle) {
       this.offRuntimeLifecycle = transport.onRuntimeLifecycle((state) => {
         if (state === "available") this.handleRuntimeAvailable();
         else this.handleRuntimeUnavailable();
       });
-      // proxy handoff 不是 runtime 换代，只有 restart 通道携带该语义——
-      // ReplaceableConversationTransport.replace() 只广播 runtimeRestartListeners，不发任何
-      // lifecycle 事件。若这里因"二选一"完全放弃 restart 通道，远程 workspace 的 proxy 换代
-      // 就无人接收：replace() 已 best-effort 退订旧 proxy 的订阅，store 却停在 live + 旧
-      // subscriptionId，帧流静默中断且不自愈。
-      // 只认 transportReplaced 即可两不重叠：底层 runtime restart 经 bindRuntimeRestartListener
-      // 转发时调的是 listener()（reason 为 undefined），已由 lifecycle 的 available 接管。
+      // Proxy handoff is not a runtime replacement, only the restart channel carries this semantic——
+      // ReplaceableConversationTransport.replace() only broadcasts runtimeRestartListeners and does not send any
+      // lifecycle events. If the restart channel is completely abandoned due to "choose one of two", the proxy of the remote workspace will be replaced.
+      // No one will receive it: replace() has best-effort unsubscribed from the old proxy, but the store stops at live + old
+      // subscriptionId, the frame stream is silently interrupted and does not heal itself.
+      // Only recognize transportReplaced so that the two do not overlap: the underlying runtime restart is passed through bindRuntimeRestartListener
+      // When forwarding, listener() is called (reason is undefined), which has been taken over by available in lifecycle.
       this.offRuntimeRestart = transport.onRuntimeRestart((reason) => {
         if (reason !== "transportReplaced") return;
         this.handleRuntimeRestart(reason);
@@ -390,8 +430,10 @@ export class ConversationProjectionStore {
   }
 
   /**
-   * 发起/重发订阅。base 取自当前 snapshot 水位（水位不变量：仅当真持有该时刻
-   * 一致状态才携带）；forceSnapshot 用于 resume 续传帧仍断档的兜底，丢 base 要全量。
+   * Starts or resends a subscription. The base is taken from the current snapshot watermark
+   * (watermark invariant: it is only carried when the consistent state of that moment is genuinely
+   * held); forceSnapshot is the fallback for when a resume's continuation frames still have gaps,
+   * where losing the base requires a full fetch.
    */
   async connect(
     options: {
@@ -426,7 +468,7 @@ export class ConversationProjectionStore {
         base: snapshot ? { logEpoch: snapshot.logEpoch, seq: snapshot.seq } : undefined,
       });
       if (generation !== this.generation || this.closed) {
-        // 过期代际：这份订阅已无人消费，立即退订。
+        // Expired generation: This subscription has no one to consume, please unsubscribe immediately.
         logger.lifecycle.warn("v4 conversation store connect ACK became stale", {
           event: "v4.conversation.store.connect.stale_ack",
           generation,
@@ -439,11 +481,11 @@ export class ConversationProjectionStore {
         void this.transport.unsubscribe(result.ack.subscriptionId);
         return;
       }
-      // 线上 fault.subscription.notOwned 卡死的根因：connect() 只在发起时
-      // discardRecovery，subscribe ACK 的 await 窗口内旧订阅仍可能创建 same-sub recovery；
-      // 而 host scope 在新 ACK remember() 时已按 ownershipKey 静默驱逐旧订阅，该 recovery
-      // 的在途 resync 注定被 notOwned 拒绝。换代成功即丢弃旧 recovery——新订阅的 initial
-      // 会原子替换整个投影，旧恢复流已无意义；否则其迟到失败会把 live 的新订阅打成 error。
+      // The root cause of online fault.subscription.notOwned stuck: connect() only when initiated
+      // discardRecovery, old subscriptions within the await window of subscribe ACK may still create same-sub recovery;
+      // The host scope has silently evicted the old subscription according to the ownershipKey when the new ACK remember() is recovered.
+      // The in-transit resync is destined to be rejected by notOwned . If the generation change is successful, the old recovery - the initial of the new subscription will be discarded.
+      // The entire projection will be replaced atomically, and the old recovery stream will be meaningless; otherwise its late failure will mark live's new subscription as an error.
       this.discardRecovery();
       this.runtimeRecycleRetryAttempt = 0;
       this.initialSubscribeAckAt = monotonicNow();
@@ -456,8 +498,8 @@ export class ConversationProjectionStore {
       this.subscriptionHasAppliedBase = Boolean(
         snapshot && result.ack.mode === "resume" && result.ack.logEpoch === snapshot.logEpoch,
       );
-      // 公共 result 已是 ACK-only；initial 与 online 统一走 notification。
-      // subscriptionId 必须先入 store，activate 才能同步释放同一 read 中暂存的 own initial。
+      // The public result is already ACK-only; initial and online use unified notification.
+      // The subscriptionId must be entered into the store before activate can synchronously release the own initial temporarily stored in the same read.
       this.awaitingInitial = {
         subscriptionId: result.ack.subscriptionId,
         mode: result.ack.mode,
@@ -483,8 +525,8 @@ export class ConversationProjectionStore {
         message.includes("fault.subscription.initialFrameStagingOverflow") &&
         !options.initialOverflowRetry
       ) {
-        // ACK 前 physical batch 已残缺，active same-sub 尚不存在；只能 fresh
-        // subscribe 强制 snapshot。最多自动一次，避免异常 peer 造成重试风暴。
+        // The physical batch before ACK is incomplete, and the active same-sub does not exist yet; it can only be fresh
+        // subscribe forces snapshot. Automatically at most once to avoid retry storms caused by abnormal peers.
         await this.connect({ forceSnapshot: true, initialOverflowRetry: true });
         return;
       }
@@ -498,7 +540,9 @@ export class ConversationProjectionStore {
           status: "retrying",
           topic: this.topic,
         });
-        logger.warn(`[v4-store] subscribe ${this.topic} 被 runtime 换代打断，退避重连: ${message}`);
+        logger.warn(
+          `[v4-store] subscribe ${this.topic} interrupted by a runtime generation change, backing off and reconnecting: ${message}`,
+        );
         return;
       }
       logger.lifecycle.warn("v4 conversation store connect failed", {
@@ -510,7 +554,7 @@ export class ConversationProjectionStore {
         status: "failed",
         topic: this.topic,
       });
-      logger.warn(`[v4-store] subscribe ${this.topic} 失败: ${message}`);
+      logger.warn(`[v4-store] subscribe ${this.topic} failed: ${message}`);
       this.setState({ status: "error", lastError: message });
     } finally {
       this.connectInFlight -= 1;
@@ -524,8 +568,9 @@ export class ConversationProjectionStore {
   }
 
   /**
-   * runtime 换代导致的 subscribe 失败：保持 connecting 并有界退避重连。
-   * 返回 true 表示已接管本次失败，调用方不应再落 error。
+   * A subscribe failure caused by a runtime generation change: stay connecting and reconnect with
+   * bounded backoff. Returning true means this failure has been taken over and the caller should
+   * not record an error.
    */
   private scheduleRuntimeRecycleRetry(error: unknown, generation: number): boolean {
     if (!isRuntimeRecycleError(error)) return false;
@@ -533,9 +578,10 @@ export class ConversationProjectionStore {
   }
 
   /**
-   * 有界退避重连。重订阅走 start-if-needed（zcodeAgentService.subscribeConversationV4），
-   * 自身即可把懒启动的 runtime 拉起来——这是 available 永不到达时唯一的自愈路径。
-   * 返回 true 表示已接管，调用方不应再落 error。
+   * Reconnect with bounded backoff. Resubscribing goes through start-if-needed
+   * (zcodeAgentService.subscribeConversationV4), which by itself brings a lazily started runtime up
+   * — the only self-healing path when available is never reached. Returning true means it has been
+   * taken over and the caller should not record an error.
    */
   private scheduleRuntimeRecycleReconnect(generation: number): boolean {
     if (this.closed) return false;
@@ -543,7 +589,7 @@ export class ConversationProjectionStore {
     if (delayMs === undefined) return false;
     this.runtimeRecycleRetryAttempt += 1;
     this.clearRuntimeRecycleRetry();
-    // 保留旧 snapshot：换代期间投影未被污染，重连成功会原子替换。
+    // Keep the old snapshot: the projection is not contaminated during generation replacement, and will be replaced atomically if the reconnection is successful.
     this.setState({ status: "connecting" });
     this.runtimeRecycleRetryTimer = setTimeout(() => {
       this.runtimeRecycleRetryTimer = null;
@@ -553,7 +599,10 @@ export class ConversationProjectionStore {
     return true;
   }
 
-  /** workspace-dispose 当场：旧 runtime 已死，新的尚不存在，不可重订阅。 */
+  /**
+   * At the moment of workspace-dispose: the old runtime is already dead and the new one does not
+   * exist yet, so resubscribing is impossible.
+   */
   private handleRuntimeUnavailable(): void {
     if (this.closed) return;
     this.clearRuntimeRecycleRetry();
@@ -561,79 +610,88 @@ export class ConversationProjectionStore {
     this.awaitingInitial = null;
     this.subscriptionHasAppliedBase = false;
     this.generation += 1;
-    // 旧 subscriptionId 属于已死 runtime，不得再 unsubscribe（host 侧 owner 已失效）。
+    // The old subscriptionId belongs to the dead runtime and cannot be unsubscribed (the owner on the host side has expired).
     this.setState({ status: "connecting", subscriptionId: null });
-    // 不能只 dormant 等 available：agent 懒启动，dispose 后无人拉起时该信号永不到达，
-    // 面板会永久转圈。退避重连自身会拉起 runtime；available 先到则复位计数并即时重连。
+    // You can't just dormant and wait for available: the agent is started lazily, and the signal will never arrive if no one pulls it up after dispose.
+    // The panel will spin permanently. Backing off and reconnecting itself will start the runtime; if available comes first, the count will be reset and the connection will be reconnected immediately.
     if (this.scheduleRuntimeRecycleReconnect(this.generation)) return;
-    // 退避额度耗尽（runtime 反复回收）：必须落 error 暴露「重新连接」入口，
-    // 否则 connecting 无 timer 就是永久转圈，连手动重试都没有。
+    // The backoff quota is exhausted (runtime is repeatedly recycled): error must be dropped to expose the "reconnection" entrance.
+    // Otherwise, connecting without timer means permanent circles without even manual retries.
     this.setState({ status: "error", lastError: RUNTIME_RECYCLED_ERROR });
   }
 
-  /** 新 runtime 就绪：与 onRuntimeRestart 同义，携原水位重订阅。 */
+  /**
+   * New runtime ready: synonymous with onRuntimeRestart; resubscribes carrying the original
+   * watermark.
+   */
   private handleRuntimeAvailable(): void {
     if (this.closed) return;
     this.clearRuntimeRecycleRetry();
     this.runtimeRecycleRetryAttempt = 0;
     if (this.connectInFlight > 0) {
-      // 冷启动 spawn 会在首次 subscribe ACK
-      // 返回前广播 available。若这里立即再 connect，服务端会按同一 connection/topic
-      // 替换旧订阅；旧 ACK 随即被本地代际防护退订，首帧交接存在竞态，面板可能永久无快照。
-      // 当前在途 connect 已经负责完成这次启动，不需要重复重订阅。
+      // Cold start spawn will subscribe ACK for the first time
+      // Broadcast available before returning. If you connect again here immediately, the server will press the same connection/topic
+      // Replace the old subscription; the old ACK is immediately unsubscribed by the local generation protection, there is a race condition in the first frame handover, and the panel may never have a snapshot.
+      // The currently in-transit connect has been responsible for completing this startup, and there is no need to repeat the subscription.
       return;
     }
     this.handleRuntimeRestart("runtimeRestart");
   }
 
-  /** 订阅失败后的手动重试入口（pane 层「重新连接」按钮落点）。 */
+  /**
+   * The manual retry entry point after a subscription failure (where the pane-level "Reconnect"
+   * button lands).
+   */
   retry(): Promise<void> {
     this.clearRuntimeRecycleRetry();
     this.runtimeRecycleRetryAttempt = 0;
     return this.connect();
   }
 
-  /** row command/query 的 epoch/entity authority 失效，复用 same-sub recovery 收敛。 */
+  /**
+   * A row command/query's epoch/entity authority became invalid; the existing same-sub recovery is
+   * reused to converge.
+   */
   recoverFromStaleAuthority(): void {
     this.requestRecovery();
   }
 
-  /** SessionDataLayer 帧路由入口。 */
+  /** The SessionDataLayer frame routing entry point. */
   handleFrame(
     frame: ConversationTopicFrame,
     delivery?: { deliveryKind: TopicFrameDeliveryKind },
   ): void {
     if (this.closed) return;
-    // 代际防护：旧订阅的迟到帧直接丢弃。
+    // Intergenerational protection: late frames from old subscriptions are discarded directly.
     if (frame.subscriptionId !== this.state.subscriptionId) return;
     const awaitingInitial =
       this.awaitingInitial?.subscriptionId === frame.subscriptionId ? this.awaitingInitial : null;
     const deliveryKind = delivery?.deliveryKind ?? "online";
     const frameReceivedAt = monotonicNow();
-    // RPC 时序无法证明帧用途。只有 publisher 标记的 initial 才消费
-    // awaitingInitial；recovery 必须优先清除此状态，避免 recovery gap 被误判为
-    // original subscribe gap 而换新 subId。迟到 online duplicate 不得消费任何闸门。
+    // RPC timings cannot prove frame usage. Only initial marked by publisher is consumed
+    // awaitingInitial; recovery must first clear this status to avoid recovery gap being misjudged as
+    // original subscribe gap and replace with new subId. Late online duplicates may not consume any gates.
     const initial = deliveryKind === "initial" ? awaitingInitial : null;
     if (initial || (deliveryKind === "recovery" && awaitingInitial)) {
       this.awaitingInitial = null;
     }
     if (deliveryKind === "online" && this.recovery && frame.payload.kind === "snapshot") {
-      // online overflow snapshot 本身是完整权威状态，可建立 applied base；但它不冒充
-      // recovery delivery，flight 仍等待自己的 recovery frame/ACK 收口。
+      // The online overflow snapshot itself is a complete authoritative state and can establish an applied base; but it does not pretend to be
+      // Recovery delivery, flight is still waiting for its own recovery frame/ACK to close.
       this.applyFrame(frame, { subscribeMode: null, recovery: false, online: true });
       return;
     }
     if (deliveryKind === "online" && this.recovery) {
-      // recovery reservation 之后的 online 可能与 ACK 同 read 到达；在 recovery
-      // logical frame 已 apply 后看到非重复 online，ACK 收口时必须再开 successor flight。
+      // Online after recovery reservation may arrive with ACK at the same time as read; after recovery
+      // After the logical frame has been applied and you see non-duplicate online, you must start the successor flight again when the ACK is closed.
       if (frame.toSeq > (this.state.snapshot?.seq ?? 0)) {
         this.recovery.postRecoveryGapPending ||= this.recovery.validFrameSeen;
       }
       return;
     }
     if (frame.payload.kind === "deltas" && !this.subscriptionHasAppliedBase) {
-      // ACK(snapshot) 不构成 applied base；initial 丢失后即便数值 fromSeq 恰好
-      // 对上旧 projection，也不能把新 epoch delta 拼到旧状态。
+      // ACK (snapshot) does not constitute applied base; even if the initial value is lost, the value fromSeq will be exactly
+      // For the old projection, the new epoch delta cannot be restored to the old state.
       this.requestRecovery(deliveryKind === "recovery");
       return;
     }
@@ -662,19 +720,19 @@ export class ConversationProjectionStore {
         frame.payload.snapshot,
         "snapshot",
       );
-      // 规则 1：整体替换，扔掉手里的一切换新的。
+      // Rule 1: Replace the whole thing, throw away the one in hand and replace it with a new one.
       this.setState({
         snapshot: frame.payload.snapshot,
         planDirectoryRevision: this.state.planDirectoryRevision + 1,
-        // snapshot 整体替换后 real-user query 集合可能已变，终态缓存必须失效。
+        // After the snapshot is replaced as a whole, the real-user query set may have changed, and the final state cache must be invalidated.
         turnNavigatorDirectoryRevision: this.state.turnNavigatorDirectoryRevision + 1,
       });
       this.subscriptionHasAppliedBase = true;
       this.reconcileOptimistic(frame.payload.snapshot);
       this.reconcileAcceptedInputProjection(frame.payload.snapshot);
-      // initial 丢失时，publisher 允许完整 online snapshot 建立首个
-      // applied base；其中的持久 transition 可能早于本次订阅，不能冒充实时新事件。
-      // 首帧只播种观察基线，后续 online 跃迁才通知 pane。
+      // When initial is lost, the publisher allows a complete online snapshot to create the first
+      // applied base; the persistent transition in it may be earlier than this subscription and cannot be considered as a new event.
+      // In the first frame, only the observation baseline is seeded, and the pane is notified only in subsequent online transitions.
       this.observeModelTransition(frame.payload.snapshot, context.online && hadAppliedBase);
       if (context.subscribeMode !== null && context.frameReceivedAt !== undefined) {
         const snapshotAppliedAt = monotonicNow();
@@ -697,22 +755,22 @@ export class ConversationProjectionStore {
       return;
     }
     const current = this.state.snapshot;
-    // 规则 2a：迟到/重复 logical frame 永远静默丢弃。若它是 ACK 后的 aligned
-    // recovery `(N,N]`，则只收口 flight，不重复 apply。
+    // Rule 2a: Late/duplicate logical frames are always silently discarded. If it is aligned after ACK
+    // recovery `(N,N]`, then only flight will be closed and apply will not be repeated.
     if (current && frame.toSeq <= current.seq) {
       if (context.recovery) this.markRecoveryFrameSeen();
       return;
     }
     if (!current || frame.fromSeq !== current.seq) {
-      // 规则 2：断档不猜。状态本身仍是 seq=current.seq 时刻的一致投影（这帧没碰它），
-      // 所以 base 仍合法——重订阅让服务端裁决续传或全量；若断档发生在 subscribe 的
-      // resume 续传帧上（服务端已裁决过一次仍不衔接），丢 base 强制 snapshot 防循环。
+      // Rule 2: Don’t guess during breaks. The state itself is still a consistent projection of the moment seq=current.seq (it was not touched this frame),
+      // Therefore, base is still legal - re-subscribe and let the server decide whether to continue the transmission or the full amount; if the interruption occurs in the subscribe
+      // On the resume resume frame (the server has ruled once but still not connected), the base is lost to force the snapshot to prevent loops.
       logger.warn(
-        `[v4-store] ${this.topic} 帧断档 fromSeq=${frame.fromSeq} local=${current?.seq ?? "none"}，重订阅`,
+        `[v4-store] ${this.topic} frame gap fromSeq=${frame.fromSeq} local=${current?.seq ?? "none"}, resubscribing`,
       );
       if (context.subscribeMode !== null) {
-        // fresh subscribe 的 resume initial 仍断档，换代订阅强制 snapshot；active
-        // subscription 的 online/recovery gap 则保持 same-sub。
+        // The resume initial of fresh subscribe is still out of stock, and the replacement subscription is forced to take a snapshot; active
+        // The subscription's online/recovery gap remains same-sub.
         void this.connect({ forceSnapshot: true });
       } else {
         this.requestRecovery(context.recovery);
@@ -720,7 +778,7 @@ export class ConversationProjectionStore {
       return;
     }
     const applied = applyConversationDeltas(current, frame.payload.deltas);
-    // seq 是快照对齐水位，delta 帧应用完推进到帧右端点。
+    // seq is the snapshot alignment water level, and the delta frame is advanced to the right endpoint of the frame after application.
     const next = { ...applied, seq: frame.toSeq };
     logSubagentProjectionTransition(this.topic, current, next, "deltas");
     const removedFromRowId = frame.payload.deltas.reduce<number | null>(
@@ -732,8 +790,8 @@ export class ConversationProjectionStore {
     );
     this.setState({
       snapshot: next,
-      // row.removed 已给出权威裁剪边界，可以同步删掉缓存目录中的旧分支计划；
-      // 完整 query 继续负责补回 wire tail 之外、但仍属于当前分支的早期计划。
+      // row.removed has given the authoritative pruning boundary and can simultaneously delete the old branch plan in the cache directory;
+      // The full query continues to be responsible for patching back earlier plans that are outside the wire tail but still belong to the current branch.
       ...(removedFromRowId === null
         ? {}
         : {
@@ -742,8 +800,8 @@ export class ConversationProjectionStore {
       ...(shouldInvalidatePlanDirectory(frame)
         ? { planDirectoryRevision: this.state.planDirectoryRevision + 1 }
         : {}),
-      // real-user query 增删（row.appended/row.upserted 命中 realUser userInput，
-      // 或 row.removed 截断分支）递增导航目录 revision，使终态缓存失效允许重新探测。
+      // real-user query addition and deletion (row.appended/row.upserted hits realUser userInput,
+      // or row.removed to truncate the branch) increment the navigation directory revision, invalidating the final state cache to allow reprobing.
       ...(shouldInvalidateTurnNavigatorDirectory(frame)
         ? {
             turnNavigatorDirectoryRevision: this.state.turnNavigatorDirectoryRevision + 1,
@@ -761,15 +819,18 @@ export class ConversationProjectionStore {
     const transition = snapshot.modelTransition;
     const eventId = transition?.eventId ?? null;
     if (eventId === this.observedModelTransitionEventId) return;
-    // 持久 transition 会随 initial/recovery snapshot 重放；若只在 toast 时记 ID，
-    // 后续普通 online snapshot 会把旧 fallback 误当新事件。所有合法帧都更新观察基线，
-    // 只有首次实时 online 跃迁才通知当前客户端。
+    // The persistent transition will be replayed with the initial/recovery snapshot; if the ID is only remembered during the toast,
+    // Subsequent normal online snapshots will mistake the old fallback for the new event. All legal frames update the observation baseline,
+    // Only the first live online transition is notified to the current client.
     this.observedModelTransitionEventId = eventId;
     if (!online || !transition) return;
     for (const listener of this.modelTransitionListeners) listener(transition);
   }
 
-  /** physical assembly fault：旧 projection 保持可见，active sub 上 single-flight 恢复。 */
+  /**
+   * physical assembly fault: the old projection stays visible and recovery runs single-flight on
+   * the active sub.
+   */
   handleAssemblyFault(
     subscriptionId: string,
     deliveryKind?: TopicFrameDeliveryKind,
@@ -782,15 +843,15 @@ export class ConversationProjectionStore {
     ) {
       this.awaitingInitial = null;
     }
-    // 内容确定性失败不进瞬态阶梯（04-sync 封闭规则 11）：resume 只会把同一批 delta 再投一遍，
-    // 必然再被拒；deliveryKind 也不改变结论——本端读不懂这份内容。唯一可能产出不同字节的是
-    // 强制 snapshot，所以直接跳到它，它再被内容拒绝就停手，不把订阅烧在必然失败的重试上。
+    // Content deterministic failure will not enter the transient ladder (04-sync closure rule 11): resume will only invest the same batch of delta again,
+    // It will inevitably be rejected again; deliveryKind will not change the conclusion - I cannot understand this content. The only thing that might produce different bytes is
+    // Force snapshot, so jump directly to it and stop if it is rejected by the content, so as not to burn the subscription on retries that will inevitably fail.
     if (isDeterministicContentFault(reasonCode)) {
       this.requestRecovery(true, { contentFault: true });
       return;
     }
-    // 缺失/伪 deliveryKind 会以 undefined typed fault 到达；若 recovery 已在途，
-    // 必须 fail closed/升级，不能把坏 recovery 当普通 burst 后永远等待。
+    // Missing/fake deliveryKind will arrive with undefined typed fault; if recovery is already on the way,
+    // It must fail closed/upgrade, and bad recovery cannot be treated as a normal burst and wait forever.
     const recoveryFault =
       deliveryKind === "recovery" || (deliveryKind === undefined && this.recovery !== null);
     if (deliveryKind === "online" && this.recovery) {
@@ -810,15 +871,15 @@ export class ConversationProjectionStore {
     const contentFault = options.contentFault === true;
     const existing = this.recovery;
     if (existing) {
-      // 一旦本次 flight 里出现过内容失败，终态就归内容失败：后续瞬态 fault 不该把它洗白。
+      // Once a content failure occurs in this flight, the final state is content failure: subsequent transient faults should not whitewash it.
       if (contentFault) existing.contentFault = true;
       if (!recoveryEvent) return;
       if (existing.forceSnapshot) {
         this.failRecovery("fault.subscription.recoveryFailed");
         return;
       }
-      // recovery logical/fault 可早于 ACK Promise continuation；记住升级意图，
-      // ACK=resume 后立即 force snapshot。普通 burst gap 不设置此标记。
+      // recovery logical/fault can precede ACK Promise continuation; remember upgrade intent,
+      // Force snapshot immediately after ACK=resume. Normal burst gap does not set this flag.
       if (existing.requestInFlight || !existing.ackReceived) {
         existing.upgradePending = true;
         return;
@@ -840,7 +901,7 @@ export class ConversationProjectionStore {
       contentFault,
     };
     this.recovery = recovery;
-    // 内容失败跳过 resume 档直接强制 snapshot；瞬态失败仍按原阶梯先试 resume。
+    // If the content fails, skip the resume file and directly force the snapshot; if the transient fails, try the resume first according to the original step.
     this.issueRecovery(recovery, contentFault);
   }
 
@@ -882,13 +943,13 @@ export class ConversationProjectionStore {
         this.clearRecoveryDeadline(recovery);
         this.recovery = null;
         const message = error instanceof Error ? error.message : String(error);
-        logger.warn(`[v4-store] resync ${this.topic} 失败: ${message}`);
+        logger.warn(`[v4-store] resync ${this.topic} failed: ${message}`);
         if (message.includes("fault.subscription.notOwned")) {
-          // 线上事件：notOwned 表示某一层已不认这份 subscription
-          // ownership（scope 换代静默驱逐、错位 unsubscribe 等状态分歧），是确定性失效
-          // 而非瞬态故障；停在 error 等手动重连会让会话永久卡死。本地 snapshot 仍是一致
-          // 投影，携当前水位 fresh subscribe 由服务端裁决 resume/snapshot（04-sync 规则 3），
-          // 完成自愈。仅对 notOwned 特判，避免瞬态错误引发重连风暴。
+          // Online event: notOwned means that a certain layer no longer recognizes this subscription
+          // ownership (scope replacement, silent expulsion, misaligned unsubscribe and other status differences), is a deterministic failure
+          // It is not a transient failure; manual reconnection such as stopping at error will cause the session to be permanently stuck. The local snapshot is still consistent
+          // Projection, with the current water level fresh subscribe is determined by the server resume/snapshot (04-sync rule 3),
+          // Complete self-healing. Only special judgment is given for notOwned to avoid transient errors causing reconnection storms.
           void this.connect();
           return;
         }
@@ -947,13 +1008,15 @@ export class ConversationProjectionStore {
   }
 
   /**
-   * `contentEligible: false` 给**超时**终态用：deadline 没等到 recovery 帧是传输症状，即使本次
-   * flight 起因是内容失败，也不该被重标成 contentRejected——那会连带取消一次仍然有意义的重试。
+   * `contentEligible: false` is for **timeout** terminal states: a deadline that never saw a
+   * recovery frame is a transport symptom, so even when this flight started out as a content
+   * failure it must not be relabelled as contentRejected — that would also cancel a retry that is
+   * still meaningful.
    */
   private failRecovery(reasonCode: string, options: { contentEligible?: boolean } = {}): void {
     if (!this.recovery) return;
-    // 内容确定性失败与传输失败必须可区分：前者重连不会变好，遥测按 code 聚合时也不该把一次
-    // 版本失配读成网络抖动（reasonCode 词表见 wire-fault.ts）。
+    // Content deterministic failures must be distinguishable from transmission failures: reconnections will not improve the former, and telemetry should not be aggregated once when aggregating by code
+    // Version mismatch is read as network jitter (see wire-fault.ts for reasonCode vocabulary).
     const contentFault = this.recovery.contentFault && options.contentEligible !== false;
     const code = contentFault ? SUBSCRIPTION_CONTENT_REJECTED : reasonCode;
     this.discardRecovery();
@@ -963,26 +1026,29 @@ export class ConversationProjectionStore {
 
   private handleRuntimeRestart(reason?: "runtimeRestart" | "transportReplaced"): void {
     if (this.closed) return;
-    // transport 已先失效旧 ownership/assembler；旧 transport/runtime subId 不得再 unsubscribe，
-    // 直接 fresh subscribe，保留旧 snapshot 直到新 snapshot 原子替换。
+    // The transport has expired the old ownership/assembler first; the old transport/runtime subId must no longer be unsubscribed.
+    // Directly fresh subscribe, retaining the old snapshot until the new snapshot is atomically replaced.
     this.generation += 1;
     this.discardRecovery();
     this.awaitingInitial = null;
     this.subscriptionHasAppliedBase = false;
     this.setState({ status: "connecting", subscriptionId: null });
-    // proxy handoff 不等于 CLI runtime 重启；强制 snapshot 会把用户已加载的
-    // older rows 替换回 tail window。handoff 保留一致 projection 水位，由服务端按
-    // logEpoch/seq 裁决 resume 或 snapshot；真实 runtime restart 仍保持 full subscribe。
+    // Proxy handoff is not equal to CLI runtime restart; forcing snapshot will remove the user's loaded
+    // Replace older rows back with tail window. handoff retains the consistent projection water level, which is determined by the server
+    // logEpoch/seq rules resume or snapshot; real runtime restart remains full subscribe.
     if (reason === "transportReplaced") void this.connect();
     else void this.connect({ forceSnapshot: true });
   }
 
   /**
-   * loadOlder：以窗口首行为游标向上拉一窗历史行并前插。
-   * - 单飞：在途期间重复调用 no-op（loadingOlder 防重入）；
-   * - 陈旧读防护：atLogEpoch ≠ 当前快照 epoch 的结果整体丢弃（跨 CLI 重启）；
-   * - 合并以 rowId 为键：与订阅流的 row.upserted/removed 天然一致，
-   *   在途期间到达的 delta 帧不受影响（它们只动 ≥ 窗口首行的行）。
+   * loadOlder: uses the window's first row as a cursor to pull one window of history rows upwards
+   * and prepend them.
+   * - Single-flight: repeated calls while in flight are a no-op (loadingOlder guards re-entrancy);
+   * - Stale-read protection: a result whose atLogEpoch differs from the current snapshot's epoch is
+   *   discarded wholesale (across a CLI restart);
+   * - Merging is keyed by rowId: it is naturally consistent with the subscription stream's
+   *   row.upserted/removed, and delta frames that arrive in flight are unaffected (they only touch
+   *   rows at or after the window's first row).
    */
   async loadOlder(limit: number = PROTOCOL_V4_LIMITS.snapshotTailWindowRows): Promise<void> {
     if (this.closed || this.state.loadingOlder) return;
@@ -1003,12 +1069,12 @@ export class ConversationProjectionStore {
       const current = this.state.snapshot;
       if (!current || result.atLogEpoch !== current.logEpoch) {
         logger.warn(
-          `[v4-store] ${this.topic} rows/range 纪元不匹配（${result.atLogEpoch}），整体丢弃`,
+          `[v4-store] ${this.topic} rows/range log epoch mismatch (${result.atLogEpoch}), discarding the whole result`,
         );
         return;
       }
-      // 在途期间游标失效（row.removed 截断 / snapshot resync 整体替换）→ 结果作废，
-      // 防止把权威侧已移除的历史行复活；下次触发按新窗口重新拉。
+      // The cursor becomes invalid while in transit (row.removed truncates/snapshot resync replaces the whole) → the result is invalidated,
+      // Prevent historical rows that have been removed from the authoritative side from being resurrected; press the new window to pull them again next time it is triggered.
       if (current.rows.window[0]?.rowId !== beforeRowId) return;
       const window = mergeOlderRows(current.rows.window, result.rows);
       if (window === null) return;
@@ -1016,9 +1082,9 @@ export class ConversationProjectionStore {
         snapshot: { ...current, rows: { ...current.rows, window } },
       });
     } catch (error) {
-      // query 只读且可重发：失败不进 error 态，留给下次触发重试。
+      // query is read-only and can be resent: it will not enter the error state if it fails, leaving it to be retried next time it is triggered.
       logger.warn(
-        `[v4-store] rowsRange ${this.topic} 失败: ${error instanceof Error ? error.message : String(error)}`,
+        `[v4-store] rowsRange ${this.topic} failed: ${error instanceof Error ? error.message : String(error)}`,
       );
     } finally {
       if (!this.closed) this.setState({ loadingOlder: false });
@@ -1026,11 +1092,13 @@ export class ConversationProjectionStore {
   }
 
   /**
-   * 完整问题目录：沿既有 rows/range 游标把当前有效分支一次补齐。
+   * The complete question catalog: follows the existing rows/range cursor to fill in the currently
+   * valid branch in one pass.
    *
-   * 问题导航过去直接扫描 renderer 的 tail window，因此 1000 轮会话只显示
-   * 已加载的几十轮。这里按协议上限分页读取，但等全部页成功后只换一次 snapshot，
-   * 避免每 200 行重建一次 timeline render units 与两个 virtualizer。
+   * Question navigation used to scan the renderer's tail window directly, so a 1000-turn session
+   * only showed the few dozen turns that had been loaded. Here the pages are read up to the
+   * protocol limit, but the snapshot is swapped only once after every page has succeeded, so that
+   * the timeline render units and both virtualizers are not rebuilt every 200 rows.
    */
   async loadAllOlder(): Promise<ConversationTurnNavigatorHydrationResult> {
     const stale = (logEpoch = this.state.snapshot?.logEpoch ?? "unknown") => ({
@@ -1040,8 +1108,8 @@ export class ConversationProjectionStore {
     if (this.closed || this.state.loadingOlder) return stale();
     const snapshot = this.state.snapshot;
     if (!snapshot) return stale();
-    // 终态必须同时匹配 logEpoch 与 directoryRevision。logEpoch 表示日志代际，
-    // 不表示内容静止——real-user query 增删会递增 revision 使终态失效，允许重新探测。
+    // The final state must match both logEpoch and directoryRevision. logEpoch represents log generation,
+    // It does not mean that the content is static - real-user query additions and deletions will increment the revision, invalidating the final state and allowing re-exploration.
     const directoryRevision = this.state.turnNavigatorDirectoryRevision;
     if (
       this.turnNavigatorHydrationTerminal?.logEpoch === snapshot.logEpoch &&
@@ -1060,7 +1128,7 @@ export class ConversationProjectionStore {
     let beforeRowId = initialBeforeRowId;
     let committed = false;
     this.setState({ loadingOlder: true });
-    logger.debug("[v4-store] 完整问题目录开始补拉历史 rows", {
+    logger.debug("[v4-store] full question directory: starting to backfill historical rows", {
       beforeRowId,
       loadedRows: snapshot.rows.window.length,
       sessionId,
@@ -1082,23 +1150,29 @@ export class ConversationProjectionStore {
           current.logEpoch !== initialLogEpoch ||
           current.rows.window[0]?.rowId !== initialBeforeRowId
         ) {
-          logger.warn("[v4-store] 完整问题目录补拉期间投影游标失效，整批丢弃", {
-            currentBeforeRowId: current?.rows.window[0]?.rowId,
-            expectedBeforeRowId: initialBeforeRowId,
-            resultLogEpoch: result.atLogEpoch,
-            sessionId,
-          });
+          logger.warn(
+            "[v4-store] full question directory: projection cursor invalidated during backfill, discarding the whole batch",
+            {
+              currentBeforeRowId: current?.rows.window[0]?.rowId,
+              expectedBeforeRowId: initialBeforeRowId,
+              resultLogEpoch: result.atLogEpoch,
+              sessionId,
+            },
+          );
           return stale(initialLogEpoch);
         }
 
         const older = result.rows.filter((row) => row.rowId < beforeRowId);
         const nextBeforeRowId = older[0]?.rowId;
         if (nextBeforeRowId === undefined || nextBeforeRowId >= beforeRowId) {
-          logger.warn("[v4-store] 完整问题目录 rows/range 未推进游标，停止补拉", {
-            beforeRowId,
-            hasMore: result.hasMore,
-            sessionId,
-          });
+          logger.warn(
+            "[v4-store] full question directory: rows/range did not advance the cursor, stopping the backfill",
+            {
+              beforeRowId,
+              hasMore: result.hasMore,
+              sessionId,
+            },
+          );
           return { status: "retryable-failure", logEpoch: initialLogEpoch };
         }
         pages.push(older);
@@ -1128,22 +1202,28 @@ export class ConversationProjectionStore {
             loadingOlder: false,
             snapshot: { ...current, rows: { ...current.rows, window } },
           });
-          // navigator 已经拿到补齐首轮所需的权威 rows，必须在隐藏 rail 前先提交它们。
-          logger.debug("[v4-store] 完整问题目录不足两条 query，保留首轮补齐 rows", {
-            loadedRows: window.length,
-            pages: pages.length,
-            sessionId,
-          });
+          // The navigator has obtained the authoritative rows needed to complete the first round and must submit them before hiding the rail.
+          logger.debug(
+            "[v4-store] full question directory: fewer than two queries, keeping the rows hydrated for the leading turn",
+            {
+              loadedRows: window.length,
+              pages: pages.length,
+              sessionId,
+            },
+          );
         }
-        // wire snapshot 只保留最后 60 rows，tail 中的 0/1 条 query 不能证明
-        // 完整分支也是单 query。宽屏必须探测到分支起点；确认不足两条后不合并探测页，
-        // 避免为一个不会显示的 rail 把完整历史常驻 renderer projection。
-        logger.debug("[v4-store] 完整问题目录探测后不足两条 query", {
-          pages: pages.length,
-          preservedIncompleteLeadingTurn: preserveIncompleteLeadingTurn,
-          realUserQueryCount,
-          sessionId,
-        });
+        // The wire snapshot only retains the last 60 rows, and the 0/1 query in the tail cannot be proved.
+        // The complete branch is also a single query. The wide screen must detect the starting point of the branch; after confirming that there are less than two branches, the detection page will not be merged.
+        // Avoid persisting the full history of the renderer projection for a rail that won't be displayed.
+        logger.debug(
+          "[v4-store] full question directory: still fewer than two queries after probing",
+          {
+            pages: pages.length,
+            preservedIncompleteLeadingTurn: preserveIncompleteLeadingTurn,
+            realUserQueryCount,
+            sessionId,
+          },
+        );
         const result = {
           status: "not-enough-queries" as const,
           logEpoch: initialLogEpoch,
@@ -1159,7 +1239,7 @@ export class ConversationProjectionStore {
         loadingOlder: false,
         snapshot: { ...current, rows: { ...current.rows, window } },
       });
-      logger.debug("[v4-store] 完整问题目录历史 rows 补拉完成", {
+      logger.debug("[v4-store] full question directory: historical rows backfill complete", {
         loadedRows: window.length,
         pages: pages.length,
         sessionId,
@@ -1173,7 +1253,7 @@ export class ConversationProjectionStore {
       return result;
     } catch (error) {
       logger.warn(
-        `[v4-store] 完整问题目录 rowsRange ${this.topic} 失败: ${error instanceof Error ? error.message : String(error)}`,
+        `[v4-store] full question directory rowsRange ${this.topic} failed: ${error instanceof Error ? error.message : String(error)}`,
       );
       return { status: "retryable-failure", logEpoch: initialLogEpoch };
     } finally {
@@ -1182,9 +1262,10 @@ export class ConversationProjectionStore {
   }
 
   /**
-   * 按本地失效 revision 合并并发的计划目录查询。
-   * 旧计划可能早于 snapshot tail；同时 edit/retry 的 row.removed 会让在途
-   * query 立刻过期，必须以 revision + epoch 双重校验，不能把旧分支计划重新写回 UI。
+   * Coalesces concurrent plan-catalog queries by the local invalidation revision. An old plan may
+   * predate the snapshot tail; at the same time a row.removed from a concurrent edit/retry
+   * instantly expires an in-flight query, so it must be validated on both revision and epoch — an
+   * old branch's plan must never be written back into the UI.
    */
   async refreshPlans(): Promise<void> {
     if (this.closed) return;
@@ -1215,7 +1296,7 @@ export class ConversationProjectionStore {
     } catch (error) {
       if (!this.closed) {
         logger.warn(
-          `[v4-store] plans ${this.topic} 失败: ${error instanceof Error ? error.message : String(error)}`,
+          `[v4-store] plans ${this.topic} failed: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     } finally {
@@ -1228,7 +1309,7 @@ export class ConversationProjectionStore {
     }
   }
 
-  /** 命令上行前登记 overlay（pending/stopping 展示用）。 */
+  /** Registers the overlay before the command goes upstream (for pending/stopping display). */
   markCommandPending(command: OptimisticCommand): void {
     if (this.closed) return;
     this.setState({
@@ -1237,12 +1318,14 @@ export class ConversationProjectionStore {
   }
 
   /**
-   * ACK accepted/duplicate 后登记“必须能在权威投影中看见”的输入命令。
+   * After an accepted/duplicate ACK, registers the input command that "must be visible in the
+   * authoritative projection".
    *
-   * command RPC 与 conversation topic 是两条独立通路；只有收到后续
-   * delta 才能发现 gap，若 topic 在 ACK 后完全静默，CLI 继续工作但 UI 永远等不到 user row。
-   * 这里不伪造消息，只在有限窗口后复用既有 same-sub recovery；权威 projection 一旦出现
-   * queue/user row，watchdog 立即收口。
+   * The command RPC and the conversation topic are two independent paths, and a gap can only be
+   * discovered by receiving a later delta: if the topic goes completely silent after the ACK, the
+   * CLI keeps working but the UI never gets the user row. No message is fabricated here — the
+   * existing same-sub recovery is reused after a bounded window, and as soon as a queue/user row
+   * shows up in the authoritative projection the watchdog closes immediately.
    */
   expectAcceptedInputProjection(commandId: string): void {
     if (this.closed || this.acceptedInputProjectionTimers.has(commandId)) return;
@@ -1279,7 +1362,7 @@ export class ConversationProjectionStore {
     this.acceptedInputProjectionTimers.delete(commandId);
   }
 
-  /** 命令被拒/失败等本地收口时移除 overlay。 */
+  /** Removes the overlay when the command is locally settled by a rejection/failure. */
   settleCommand(commandId: string): void {
     this.clearAcceptedInputProjectionWatch(commandId);
     const remaining = this.state.optimisticCommands.filter(
@@ -1290,7 +1373,7 @@ export class ConversationProjectionStore {
     }
   }
 
-  // 服务端投影出现同 commandId（pendingCommands / userInput.sourceCommandId 锚点）即代表权威侧已接管展示，overlay 条目退场。
+  // If the server-side projection appears with the same commandId (pendingCommands / userInput.sourceCommandId anchor), it means that the authoritative side has taken over the display, and the overlay entry has exited.
   private reconcileOptimistic(snapshot: ConversationSnapshot): void {
     if (this.state.optimisticCommands.length === 0) return;
     const acknowledged = new Set<string>(
@@ -1324,12 +1407,12 @@ export class ConversationProjectionStore {
     }
   }
 
-  /** 内存诊断：当前 rows.window 行数；只读。 */
+  /** In-memory diagnostics: the current row count of rows.window; read-only. */
   countProjectionRows(): number {
     return this.state.snapshot?.rows.window.length ?? 0;
   }
 
-  /** 退订并终结本 store（仅 SessionDataLayer 调用）。 */
+  /** Unsubscribes and finalizes this store (called only by SessionDataLayer). */
   async close(): Promise<void> {
     if (this.closed) return;
     liveProjectionStores.delete(this);
@@ -1369,7 +1452,7 @@ export class ConversationProjectionStore {
           subscriptionId,
           topic: this.topic,
         });
-        logger.warn(`[v4-store] unsubscribe ${this.topic} 失败（忽略）: ${String(error)}`);
+        logger.warn(`[v4-store] unsubscribe ${this.topic} failed (ignored): ${String(error)}`);
       }
     }
     logger.lifecycle.info("v4 conversation store close completed", {

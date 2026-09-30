@@ -1,10 +1,10 @@
 // ============================================================
-// sessions-index 的工作流运行摘要
+// Summary of workflow runs for sessions-index
 // ============================================================
-// 侧栏要在会话标题下画一条「Workflow 图标 + 迷你轨道灯 + 当前 phase 名」，却不能为此订阅整个
-// workflowRuns（那是 conversation 权威投影，按 run 进度高频变化）。这里把同一 snapshot 的
-// `workflowRuns` + `backgroundWorks` 派生成一份**有界、只装侧栏真正读的字段**的摘要：
-// 纯函数、无时钟——「已结束的行何时折叠」由渲染端的已确认集合决定，不在这里记时间。
+// In the sidebar, you need to draw a line "Workflow icon + mini track light + current phase name" under the session title, but you cannot subscribe to the entire
+// workflowRuns (that is the conversation authoritative projection, which changes frequently according to the run progress). Here the same snapshot
+// `workflowRuns` + `backgroundWorks` derive a bounded summary containing only the fields actually read in the sidebar:
+// Pure function, no clock - "When the ended line is folded" is determined by the confirmed collection on the rendering side, and the time is not recorded here.
 
 import { z } from "zod";
 import { timestampSchema } from "./core.js";
@@ -17,17 +17,20 @@ import {
   type WorkflowRunsState,
 } from "./workflow-runs.js";
 
-/** 每会话最多下发的 run 数：在跑的按启动序在前，其后是最近结束的。 */
+/** Maximum number of runs shipped per session: live runs first in launch order, then the most recently ended ones. */
 export const SESSION_WORKFLOW_ACTIVITY_MAX_RUNS = 4;
 
 /**
- * 站点灯的四态，与卡片时间线同一词汇（`STATUS_DOT`）。控制流给出骨架：在跑时当前 phase
- * running、已进入 done、其余 pending；completed 已进入 done；errored 当前 failed；stopped 当前 pending。
+ * The four states of a station light, the same vocabulary as the card timeline (`STATUS_DOT`).
+ * The control flow supplies the skeleton: while a run is live the current phase is running, the
+ * phases already entered are done, the rest pending; completed → everything entered is done;
+ * errored → the current one failed; stopped → the current one pending.
  *
- * 成员节点再补一条：run 在跑时，
- * **出生在这一站**且此刻真在跑的节点把它点亮。并行阶段因此能同时烧——控制流只记得最后一个标记，
- * 而 A 的子代理在 B 的标记之后仍在干活。节点只会说「还在跑」，绝不把 done / failed / pending
- * 改成别的：失败词留给控制流。
+ * Member nodes add one more rule: while the run is live, a node **born at this station** that is
+ * genuinely running right now lights it up. Parallel phases can therefore burn at the same time —
+ * the control flow only remembers the last marker, while A's subagent is still working after B's
+ * marker. A node only ever says "still running", and never rewrites done / failed / pending into
+ * something else: the failure word is reserved for the control flow.
  */
 export const sessionWorkflowPhaseStatusSchema = z.enum(["pending", "running", "done", "failed"]);
 export type SessionWorkflowPhaseStatus = z.infer<typeof sessionWorkflowPhaseStatusSchema>;
@@ -36,9 +39,11 @@ export const sessionWorkflowPhaseSummarySchema = z.object({
   name: z.string().min(1).max(WORKFLOW_RUNS_LIMITS.maxPhaseNameLength),
   status: sessionWorkflowPhaseStatusSchema,
   /**
-   * 进入本站时仍在跑的其他站的**下标**（下标落在本 `phases` 数组上），来自
-   * `run.phaseAlongside`。侧栏据此把并行的两站之间画成双线段。只有声明表那条路有这个事实——
-   * 退化路（已进入的 phase）是按进入序拼出来的，没有并行可言，所以那时整个键缺席。
+   * The **indices** of the other stations that were still running when this one was entered (indices
+   * into this `phases` array), taken from `run.phaseAlongside`. The sidebar uses it to draw the two
+   * parallel stations as a double line segment. Only the declaration-table path has this fact — the
+   * fallback path (the entered phases) is assembled in entry order and has no parallelism to speak
+   * of, so the whole key is absent there.
    */
   alongside: z.array(z.number().int().nonnegative()).max(WORKFLOW_RUNS_LIMITS.maxPhases).optional(),
 });
@@ -46,21 +51,23 @@ export type SessionWorkflowPhaseSummary = z.infer<typeof sessionWorkflowPhaseSum
 
 export const sessionWorkflowRunSummarySchema = z.object({
   runId: z.string().min(1),
-  /** 发起行的工具调用 id：点击运行行打开 run pane 的键；直接启动的 run 也有（`launch-` 前缀）。 */
+  /** Tool-call id of the launching row: the key that opens the run pane when the run row is clicked; directly launched runs have one too (the `launch-` prefix). */
   toolCallId: z.string().min(1).optional(),
-  /** 工作流后台工作的标题（= run 的展示名）；投影里没有对应后台工作时缺席。 */
+  /** Title of the workflow's background work (= the run's display name); absent when the projection has no matching background work. */
   name: z.string().min(1).optional(),
   status: workflowRunSchema.shape.status,
   stopReason: workflowRunSchema.shape.stopReason,
-  /** 后台工作的开始时刻，tooltip 的 elapsed 用；没有后台工作时缺席。 */
+  /** Start instant of the background work, used for the tooltip's elapsed; absent when there is no background work. */
   startedAt: timestampSchema.optional(),
   /**
-   * 站点表，声明序：`run.phaseNames`（run-launched 带来的声明表）在场用它，否则退化为已进入的
-   * phase + 当前 phase（进入序）。两者都没有时为空数组，UI 画一个隐含站点「Workflow」。
+   * The station table in declaration order: `run.phaseNames` (the declaration table run-launched
+   * brings) when it is present, otherwise degrading to the entered phases + the current phase (in
+   * entry order). When neither exists it is an empty array and the UI draws one implicit station,
+   * "Workflow".
    */
   phases: z.array(sessionWorkflowPhaseSummarySchema).max(WORKFLOW_RUNS_LIMITS.maxPhases),
   currentPhase: z.string().min(1).max(WORKFLOW_RUNS_LIMITS.maxPhaseNameLength).optional(),
-  /** status === "running" 的子代理数（tooltip 的「{n} agents working」）。 */
+  /** Number of subagents with status === "running" (the tooltip's "{n} agents working"). */
   agentsWorking: z.number().int().nonnegative(),
 });
 export type SessionWorkflowRunSummary = z.infer<typeof sessionWorkflowRunSummarySchema>;
@@ -75,21 +82,25 @@ export function isSessionWorkflowRunLive(status: SessionWorkflowRunSummary["stat
 }
 
 /**
- * 「这个节点此刻真在跑」：与 packages/ui 的 `statusOfRunNode` 的 running 臂逐条相同，也与
- * reducer 推 actor 三态用的那一组相同（workflow-runs-reducer.ts），所以站点灯与
- * 「{n} agents working」永远对同一件事说「在跑」。
+ * "This node is genuinely running right now": term-for-term the same as the running arm of
+ * `statusOfRunNode` in packages/ui, and the same set the reducer uses to push the actor tri-state
+ * (workflow-runs-reducer.ts), so the station light and "{n} agents working" always say "running"
+ * about the very same thing.
  *
- * `dispatched` / `waiting` 不算：前者是「会话就绪、首个请求尚未准入」的短暂相位，后者在等槽位
- * 或在退避——真正发出去了由 `node-executing` 说。
+ * `dispatched` / `waiting` do not count: the former is the brief phase of "session ready, first
+ * request not yet admitted", the latter is waiting for a slot or backing off — `node-executing`
+ * is what says the request actually went out.
  */
 function isRunNodeRunning(node: WorkflowRunNode): boolean {
   return node.phase === "executing" || node.phase === "repairing" || node.phase === "nudged";
 }
 
 /**
- * 站名 ↔ 实例出生戳的关联规则。与 packages/ui 的 `phaseNameMatches`（workflow-graph/phase-name.ts）
- * 逐条相同：精确匹配，站名**恰好顶到上界**时才按前缀兜底——前缀只在截断真的发生过时才开，
- * 否则「计划」会误认「计划修复」。那个 helper 在 ui 层，shared 不能反向依赖，所以这里内联同一条规则。
+ * The rule that associates a station name with an instance birth stamp. Term-for-term the same as
+ * `phaseNameMatches` in packages/ui (workflow-graph/phase-name.ts): an exact match, with a prefix
+ * fallback only when the station name **exactly hits the upper bound** — the prefix is enabled only
+ * when truncation actually happened, otherwise "Plan" would wrongly match "Plan Fix". That helper
+ * lives in the ui layer and shared cannot depend back on it, so the same rule is inlined here.
  */
 function phaseNameMatches(stationName: string, stamp: string): boolean {
   return (
@@ -102,8 +113,8 @@ function derivePhases(run: WorkflowRunState): SessionWorkflowPhaseSummary[] {
   const entered = new Set((run.phases ?? []).map((phase) => phase.name));
   const current = run.currentPhase;
   let names: string[];
-  // 「同时在跑」的下标说的是**声明表**里的位置，所以只有走声明表这条路时它才有意义；退化路
-  // （已进入的 phase + 当前 phase）是另一个下标空间，那时整张表不带。
+  // The subscript of "running at the same time" refers to the position in the declaration table, so it only makes sense when taking the declaration table path; the degenerate path
+  // (Entered phase + current phase) is another subscript space, and the entire table does not have it at that time.
   let alongside: readonly (readonly number[])[] | undefined;
   if (run.phaseNames !== undefined && run.phaseNames.length > 0) {
     names = run.phaseNames;
@@ -113,8 +124,8 @@ function derivePhases(run: WorkflowRunState): SessionWorkflowPhaseSummary[] {
     if (current !== undefined && !entered.has(current)) names = [...names, current];
   }
   const live = isSessionWorkflowRunLive(run.status);
-  // 在跑的节点的出生戳。run 不在跑时整张表为空：终态 run 里没有人还在干活，哪怕某条 settled
-  // 事件没来得及落下（与 actor 三态里「终态压过一切」同一姿态）。
+  // The birth stamp of the running node. The entire table is empty when run is not running: no one is still working in the final state run, even if a certain item is settled
+  // The incident didn't have time to come to an end (the same attitude as "the final state overwhelms everything" in the actor's three states).
   const burning = live
     ? run.nodes.filter(isRunNodeRunning).flatMap((node) => node.phaseName ?? [])
     : [];
@@ -122,7 +133,7 @@ function derivePhases(run: WorkflowRunState): SessionWorkflowPhaseSummary[] {
   return names.slice(0, WORKFLOW_RUNS_LIMITS.maxPhases).map((name, index) => {
     const isCurrent = name === current;
     const wasEntered = entered.has(name) || isCurrent;
-    // 出生在这一站的节点还在跑 → 这一站还在烧，哪怕控制流早已走到下一个标记。
+    // The node born at this station is still running → this station is still burning, even if the control flow has already reached the next mark.
     const burningHere = burning.some((stamp) => phaseNameMatches(name, stamp));
     let status: SessionWorkflowPhaseStatus;
     if (live) {
@@ -132,10 +143,10 @@ function derivePhases(run: WorkflowRunState): SessionWorkflowPhaseSummary[] {
     } else if (run.status === "errored") {
       status = isCurrent ? "failed" : wasEntered ? "done" : "pending";
     } else {
-      // stopped：控制流停在当前 phase，它没有完成也没有失败——留空心灯。
+      // stopped: The control flow is stopped at the current phase, it has not completed or failed - leave an empty light.
       status = isCurrent ? "pending" : wasEntered ? "done" : "pending";
     }
-    // 裁表之后下标空间跟着变窄：指向被裁掉的站的引用一起丢掉，剩下空的就不建键。
+    // After the table is cut, the subscript space becomes narrower: references pointing to the cut sites are discarded, and no keys are created for the remaining empty ones.
     const beside = (alongside?.[index] ?? []).filter(
       (other) => Number.isInteger(other) && other >= 0 && other < emitted && other !== index,
     );
@@ -162,10 +173,12 @@ function summarizeRun(
 }
 
 /**
- * 从同一 snapshot 的 `workflowRuns` + `backgroundWorks` 派生会话的工作流运行摘要。
- * 在跑的 run（pending / running）按 `runs[]` 序（= 启动序）在前；其后是已结束的，按后台工作的
- * `endedAt` 倒序、无 endedAt 时按 `runs[]` 倒序（越晚建的越新）。总数裁到 4。
- * 会话一个 run 都没有 → `undefined`（键整个缺席，旧 CLI 因此什么都不变）。
+ * Derives a session's workflow run summary from the same snapshot's `workflowRuns` +
+ * `backgroundWorks`. Live runs (pending / running) come first in `runs[]` order (= launch order);
+ * ended ones follow, newest first by the background work's `endedAt`, and in `runs[]` order when
+ * there is no endedAt (later-created is newer). The total is trimmed to 4.
+ * A session with no run at all → `undefined` (the key is absent entirely, so older CLIs change
+ * nothing).
  */
 export function deriveSessionWorkflowActivity(input: {
   workflowRuns: WorkflowRunsState | undefined;

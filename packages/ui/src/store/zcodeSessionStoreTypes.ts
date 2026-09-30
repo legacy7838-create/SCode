@@ -1,8 +1,11 @@
-/* oxlint-disable eslint(max-lines) -- ZCode Agent store 类型和默认状态集中导出，避免切片间重复定义共享结构。 */
+/* oxlint-disable eslint(max-lines) -- the types and default state of the ZCode Agent store are
+ * exported in one place, to avoid defining shared structures repeatedly across slices.
+ */
 /**
- * ZCode Session Store 类型定义、接口、常量与默认值工厂
+ * ZCode Session Store type definitions, interfaces, constants, and default-value factories
  *
- * 从 zcodeSessionStore.ts 拆分出来，供 store 本体和 selectors / navigation 等子模块共享。
+ * Split out of zcodeSessionStore.ts so that the store itself and submodules such as selectors /
+ * navigation can share them.
  */
 import {
   buildNativeSupplierKey,
@@ -56,15 +59,27 @@ export interface GroupedDraftTaskState {
 export interface TaskRuntimeState {
   status: ZCodeTaskRuntimeStatus;
   error: string | null;
-  /** 该 task 当前运行态绑定的 ZCode Agent 进程 provider，用于 workspace 级进程重建 busy lock。 */
+  /**
+   * The ZCode Agent process provider bound to this task's current runtime state, used for the
+   * workspace-level busy lock on process rebuilds.
+   */
   provider?: ZCodeProvider;
-  /** 当前模型上下文窗口容量；模型状态事件只更新这里，不覆盖真实 usage.used。 */
+  /**
+   * The current model context window capacity; model status events only update this and never
+   * overwrite the real usage.used.
+   */
   contextWindow: number | null;
   usage: TaskUsageState | null;
   apiRetry: ZCodeApiRetryStatus | null;
-  /** Agent 明确上报的后台任务控制项；host 运行期状态，不落盘持久化。 */
+  /**
+   * Background task control entries explicitly reported by the Agent; host runtime state that is
+   * not persisted to disk.
+   */
   backgroundTaskControls: ZCodeBackgroundTaskControlItem[];
-  /** 当前 session active turn 的类型；用于区分普通生成和 compact 维护态。 */
+  /**
+   * The type of the current session's active turn; used to distinguish ordinary generation from the
+   * compact maintenance state.
+   */
   activeTurnKind?: ZCodeSessionActiveTurnKind;
   activeInputId?: InputId;
   activeInputOwnerClientId?: string;
@@ -76,15 +91,18 @@ export interface DraftRuntimeState {
 }
 
 export interface TaskUsageState {
-  /** 当前上下文窗口已使用的 token 数 */
+  /** The number of tokens already used in the current context window */
   used: number;
-  /** 当前上下文窗口总 token 容量 */
+  /** The total token capacity of the current context window */
   size: number;
-  /** Agent 上报的累计费用 */
+  /** The cumulative cost reported by the Agent */
   cost?: { amount: number; currency: string } | null;
-  /** Agent/app 协议返回的当前主轮缓存命中信息。 */
+  /** The cache-hit information for the current main turn, as returned by the Agent/app protocol. */
   cache?: ZCodeContextCacheUsage;
-  /** Agent 按来源估算的上下文字符量，只用于 context usage 弹窗比例展示。 */
+  /**
+   * The context character count estimated by the Agent per source, used only for the proportional
+   * display in the context usage dialog.
+   */
   breakdown?: ZCodeContextUsageBreakdownItem[];
 }
 
@@ -99,9 +117,11 @@ export interface ElicitationFormDraft {
 }
 
 /**
- * store 收尾：TaskUiState 收敛为「远端广播仍需回放的人工介入面」——
- * 权限/问答弹窗 pending 队列、renderer-local 问答草稿 + 错误横幅。plan/goal/token debug 等旧 ChatView
- * 展示态的写入方已随旧协议链路删除，读侧由 v4 conversation 投影承接。
+ * Store wrap-up: TaskUiState has converged on "the human-intervention surface that remote
+ * broadcasts still need to replay" — the pending queues of the permission/question dialogs and the
+ * renderer-local question draft + error banner. The writers of the old ChatView presentation state
+ * (plan/goal/token debug, etc.) were removed along with the old protocol path, and the read side is
+ * now carried by the v4 conversation projection.
  */
 export interface TaskUiState {
   permissionRequest: ZCodePermissionRequest | null;
@@ -146,77 +166,119 @@ export interface TimelineBottomRequest {
 }
 
 export interface WorkspaceZCodeUIState {
-  /** 当前 workspace 激活中的 task */
+  /** The task currently active in this workspace */
   activeTaskId: string | null;
   /**
-   * ZCode Agent 的 workspace 初始化状态。
+   * The workspace initialization state of the ZCode Agent.
    *
-   * 单 ZCode Agent 迁移后继续按 provider 分桶会保留多份已经不会再被真实运行时更新的旧状态，
-   * UI 在 task / draft / remote identity 切换时容易读到历史 provider 的 ready/failed。这里把状态收敛成
-   * workspace 单一事实源，provider 参数只作为旧调用兼容输入。
+   * After the migration to a single ZCode Agent, continuing to bucket by provider would retain
+   * several copies of old state that the real runtime will never update again, so the UI can easily
+   * read a historical provider's ready/failed when switching between task / draft / remote
+   * identity. Here the state is collapsed into a single source of truth per workspace, and the
+   * provider argument is kept only as a compatibility input for older calls.
    */
   workspaceInit: WorkspaceInitState;
-  /** 草稿态尚未创建 taskId 前的短期运行状态；已有 task 的状态从 taskRuntimeByTaskId 派生。 */
+  /**
+   * Short-lived runtime state for the draft state before a taskId exists; the state of an existing
+   * task is derived from taskRuntimeByTaskId.
+   */
   draftRuntime: DraftRuntimeState;
-  /** 未发送草稿对应的 agent draft session；不进入 task 列表，首发时提升为真实 task。 */
+  /**
+   * The agent draft session backing an unsent draft; it does not enter the task list and is
+   * promoted to a real task on first send.
+   */
   draftSessionId: string | null;
   /**
-   * 草稿运行时能力失效版本；插件、Skill 等能力变化时递增。
-   * legacy 草稿通过 draftSessionId 关闭，protocol-v4 草稿用该版本重建 pane 内预热会话。
+   * The draft runtime capability invalidation version; incremented when capabilities such as
+   * plugins or Skills change. Legacy drafts are closed via draftSessionId, while protocol-v4 drafts
+   * use this version to rebuild the pre-warmed session inside the pane.
    */
   draftRuntimeInvalidationVersion: number;
   composerTextInsertVersion: number;
   composerTextInsertRequest: ComposerTextInsertRequest | null;
   timelineBottomRequestVersion: number;
   timelineBottomRequest: TimelineBottomRequest | null;
-  /** 草稿态错误需要跨页面保留，避免切走再回来后提示被本地 state 一起卸载 */
+  /**
+   * Draft-state errors must be kept across page changes, otherwise the notice would be unmounted
+   * together with the local state after navigating away and back
+   */
   draftError: ZCodeUiError | null;
-  /** 模型切换中的并发保护 requestId；只允许最新请求落库 */
+  /**
+   * The requestId guarding model switching against concurrency; only the newest request may be
+   * persisted
+   */
   modelSwitchRequestId: string | null;
-  /** 模型切换是否进行中（用于禁发和工具栏 loading） */
+  /**
+   * Whether a model switch is in progress (used to disable sending and for the toolbar loading
+   * state)
+   */
   modelSwitchPending: boolean;
-  /** 模型切换阶段（用于细分 loading 文案） */
+  /** The stage of the model switch (used to differentiate the loading copy) */
   modelSwitchStage: ModelSwitchStage;
-  /** 每个 task 各自的运行时状态，供任务列表和状态栏读取真实 task 状态 */
+  /**
+   * The runtime state of each task, so the task list and the status bar can read the real task
+   * state
+   */
   taskRuntimeByTaskId: Record<string, TaskRuntimeState>;
-  /** 每个 task 自己的临时 UI 态，避免切换任务后丢失计划面板和权限弹窗 */
+  /**
+   * Each task's own ephemeral UI state, so the plan panel and the permission dialogs are not lost
+   * after switching tasks
+   */
   taskUiByTaskId: Record<string, TaskUiState>;
   taskConfigOptionsByTaskId: Record<string, ZCodeConfigOption[]>;
   taskConfigOptionsStatusByTaskId: Record<string, ConfigOptionsStatus>;
-  /** task 未读状态的兼容缓存；真实未读状态以 task meta.unreadAt 为准 */
+  /** A compatibility cache of task unread state; the real unread state is task meta.unreadAt */
   taskUnreadByTaskId: Record<string, boolean>;
-  /** 任务列表的乐观元数据，解决新 task 落盘前左侧列表显示慢半拍的问题 */
+  /**
+   * Optimistic metadata for the task list, fixing the half-step-behind delay of the left list
+   * before a new task is persisted
+   */
   optimisticTaskListByTaskId: Record<string, ZCodeTaskMeta>;
-  /** grouped mode 下点击 New task 后的 UI-only 草稿锚点，不进入真实 task index。 */
+  /**
+   * The UI-only draft anchor after clicking New task in grouped mode; it does not enter the real
+   * task index.
+   */
   groupedDraftTask: GroupedDraftTaskState | null;
-  /** 用户发起当前草稿的入口；预热不改变来源。 */
+  /**
+   * The entry point through which the user started the current draft; pre-warming does not change
+   * the origin.
+   */
   draftCreateSource: SessionCreateSource;
-  /** 首发创建后、grouped sqlite order 落地前，真实 task 继承草稿锚点的本地定位。 */
+  /**
+   * After first-send creation and before the grouped sqlite order lands, the real task inherits the
+   * draft anchor's local position.
+   */
   promotedGroupedDraftTaskByTaskId: Record<string, GroupedDraftTaskState>;
-  /** 当前 workspace 选中的 ZCode Agent provider */
+  /** The ZCode Agent provider selected in the current workspace */
   selectedProvider: ZCodeProvider;
-  /** 当前模型供应商选中键（native/custom/ghost） */
+  /** The selected key of the current model provider (native/custom/ghost) */
   selectedSupplierKey: string;
-  /** 当前供应商是否为 ghost 态 */
+  /** Whether the current provider is in the ghost state */
   isGhostSupplier: boolean;
-  /** 当前 ghost 态来源 */
+  /** The origin of the current ghost state */
   supplierMismatchReason: ModelSelectionGhostReason | null;
-  /** ZCode Agent configOptions（模型、模式、思考级别等） */
+  /** The ZCode Agent configOptions (model, mode, thinking level, etc.) */
   configOptions: ZCodeConfigOption[] | null;
-  /** configOptions 加载状态 */
+  /** The configOptions loading state */
   configOptionsStatus: ConfigOptionsStatus;
-  /** 可用的 slash commands */
+  /** The available slash commands */
   slashCommands: ZCodeSlashCommand[];
-  /** 任务列表版本号，每次创建/删除任务时自增，驱动 TaskList 刷新 */
+  /**
+   * The task list version number, incremented on every task creation/deletion, driving the TaskList
+   * refresh
+   */
   taskListVersion: number;
-  /** 缓存已拉取的任务列表，避免组件 remount 时闪烁 */
+  /** Caches the already-fetched task list, avoiding a flicker when a component remounts */
   taskListCache: ZCodeTaskMeta[] | null;
-  /** 新建草稿时递增，驱动输入框在切到草稿态后主动聚焦 */
+  /**
+   * Incremented when a new draft is created, driving the input to focus itself after switching to
+   * the draft state
+   */
   draftFocusVersion: number;
 }
 
 export interface ZCodeSessionStoreState {
-  /** 按 workspace 维护聊天相关 UI 状态 */
+  /** Maintains chat-related UI state per workspace */
   workspaces: Record<string, WorkspaceZCodeUIState>;
   getWorkspaceState: (workspacePath: string, workspaceIdentity?: string) => WorkspaceZCodeUIState;
 
@@ -414,7 +476,10 @@ export interface ZCodeSessionStoreState {
     taskId: string,
     workspaceIdentity?: string,
   ) => void;
-  /** 删除任务后同步回收选中态和乐观态，避免右侧继续展示已删除任务 */
+  /**
+   * After a task is deleted, synchronously reclaim the selection and the optimistic state, so the
+   * right side does not keep showing the deleted task
+   */
   removeTaskState: (workspacePath: string, taskId: string, workspaceIdentity?: string) => void;
 
   setConfigOptions: (
@@ -437,15 +502,18 @@ export interface ZCodeSessionStoreState {
     modeId: string | null,
     workspaceIdentity?: string,
   ) => void;
-  /** 任务列表变更时调用（创建/删除任务），驱动 zcodeTaskMetaMerge 重新拉取列表 */
+  /**
+   * Called when the task list changes (task creation/deletion), driving zcodeTaskMetaMerge to
+   * re-fetch the list
+   */
   bumpTaskListVersion: (workspacePath: string, workspaceIdentity?: string) => void;
-  /** 更新已拉取的任务列表缓存 */
+  /** Updates the cache of the already-fetched task list */
   setTaskListCache: (
     workspacePath: string,
     tasks: ZCodeTaskMeta[],
     workspaceIdentity?: string,
   ) => void;
-  /** 更新 task 的未读提示，控制左侧蓝点显示 */
+  /** Updates a task's unread indicator, controlling the blue dot on the left */
   setTaskUnreadIndicator: (
     workspacePath: string,
     taskId: string,
@@ -453,22 +521,22 @@ export interface ZCodeSessionStoreState {
     workspaceIdentity?: string,
   ) => void;
 
-  /** workspace 导航历史（全局、跨 workspace，包含 task 与 Automations） */
+  /** The workspace navigation history (global, across workspaces, including tasks and Automations) */
   taskNavHistory: TaskNavigationHistory;
-  /** 记录 Automations 主视图或详情导航。 */
+  /** Records navigation to the Automations main view or a detail view. */
   taskNavPushAutomations: (
     workspacePath: string,
     workspaceIdentity?: string,
     automationId?: string,
     automationTab?: AutomationsNavigationTab,
   ) => void;
-  /** 记录插件市场主视图导航。 */
+  /** Records navigation to the plugin market main view. */
   taskNavPushPluginStore: (workspacePath: string, workspaceIdentity?: string) => void;
-  /** 后退，返回目标 entry；到头了返回 null */
+  /** Go back, returning the target entry; null when already at the start */
   taskNavGoBack: () => WorkspaceNavEntry | null;
-  /** 前进，返回目标 entry；到头了返回 null */
+  /** Go forward, returning the target entry; null when already at the end */
   taskNavGoForward: () => WorkspaceNavEntry | null;
-  /** task 被删除时清理导航历史中的对应 task 条目 */
+  /** Cleans up the corresponding task entry in the navigation history when a task is deleted */
   removeTaskFromNavHistory: (taskId: string) => void;
 }
 
@@ -552,7 +620,7 @@ export function createDefaultWorkspaceState(
 const DEFAULT_WORKSPACE_STATE = createDefaultWorkspaceState(FALLBACK_PROVIDER);
 
 export function getDefaultWorkspaceState(): WorkspaceZCodeUIState {
-  // 单 ZCode Agent 迁移后默认 provider 必须收敛到 glm。
-  // 这里返回稳定引用，避免未写入 workspace bucket 的连续 selector 读取产生不同快照。
+  // After single ZCode Agent migration, the default provider must converge to glm.
+  // Stable references are returned here to avoid continuous selector reads that are not written to the workspace bucket to produce different snapshots.
   return DEFAULT_WORKSPACE_STATE;
 }

@@ -1,4 +1,6 @@
-/* eslint-disable max-lines -- 设置同步流程聚合了发现、选择与导入状态机，集中维护更利于问题定位 */
+/* eslint-disable max-lines -- the settings sync flow aggregates the discovery, selection, and
+ * import state machines; keeping it in one place makes problems easier to locate
+ */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   SettingsSyncCategory,
@@ -15,7 +17,9 @@ import type { SettingsSyncUiState, SettingsSyncUiTask } from "@/settings-sync/ty
 const IMPORTING_TASK_DELAY_MS = 320;
 const FORCE_SHOW_ONBOARDING_ON_EVERY_REFRESH = false;
 
-/** 首启自动检测与设置页手动重开对“空 discovery”的处理不同。 */
+/**
+ * First-run auto-detection and manually reopening settings handle an "empty discovery" differently.
+ */
 type LoadDiscoveryIntent = "firstRun" | "manual";
 
 function createInitialState(): SettingsSyncUiState {
@@ -37,7 +41,8 @@ function getSelectionKey(agent: string, category: string): string {
 }
 
 /**
- * 首启 Onboarding 代理设置：仅模型供应商（providers），不展示、不迁移技能与插件。
+ * First-run Onboarding proxy settings: model providers (providers) only, with no skills or plugins
+ * shown or migrated.
  */
 function visibleCategoriesForOnboarding(): SettingsSyncCategory[] {
   return ["providers"];
@@ -172,8 +177,8 @@ export function useSettingsSync(params: { workspacePath?: string; workspaceIdent
         const discovery = normalizeDiscovery(rawDiscovery);
         if (discovery.agents.length === 0) {
           if (intent === "manual") {
-            // 设置页点「引导」会 reopen 并补跑 detect；空结果沿用首启逻辑会把 open 重置为 false，
-            // 用户会看到弹窗一闪即关。手动打开应保留欢迎页，让用户仍可走会话迁移等流程。
+            // Clicking "Guide" on the settings page reopens and reruns detect; passing an empty result through first-run logic would reset open to false and the dialog would flash open then close.
+            // A manual open should keep the welcome page so the user can still run flows like session migration.
             setState((current) => ({
               ...current,
               open: true,
@@ -190,8 +195,8 @@ export function useSettingsSync(params: { workspacePath?: string; workspaceIdent
             });
             return;
           }
-          // 去掉三方 agent 迁移后，首启检测会返回空结果。
-          // 空结果不应打开一个没有可操作项的 onboarding 弹窗，应直接标记为已处理。
+          // With third-party agent migration removed, first-run detection returns an empty result.
+          // An empty result should not open an onboarding dialog with no actionable items; mark it handled directly.
           await settingsSyncService.markFirstRunPromptHandled();
           setState(createInitialState());
           logger.info("[settings-sync] discovery empty, prompt handled", {
@@ -248,9 +253,9 @@ export function useSettingsSync(params: { workspacePath?: string; workspaceIdent
 
     void (async () => {
       try {
-        // onboarding 弹窗是“首启提示”，不是普通刷新提示。
-        // 之前调试阶段直接每次进入 workspace 都弹，用户一旦跳过仍会被重复打断。
-        // 这里先读取 handled 状态，只在第一次尚未消费时才继续做检测和展示。
+        // The onboarding dialog is a "first-run prompt", not an ordinary refresh prompt.
+        // During earlier debugging it simply popped up on every workspace entry, repeatedly interrupting users who had already skipped it.
+        // Here we read the handled state first and only run detection and show the prompt while it is still unconsumed for the first time.
         const promptState = await settingsSyncService.getFirstRunPromptState();
         if (cancelled) {
           return;
@@ -301,8 +306,8 @@ export function useSettingsSync(params: { workspacePath?: string; workspaceIdent
     if (FORCE_SHOW_ONBOARDING_ON_EVERY_REFRESH) {
       return;
     }
-    // “关闭 onboarding”本身就表示用户已经处理过这次首启提示，
-    // 无论是直接开始还是跳过迁移，都应该立刻落库，避免下次启动再次重复弹出。
+    // "Closing onboarding" itself means the user has already dealt with this first-run prompt;
+    // whether they started directly or skipped migration, persist it immediately so it does not pop up again on the next launch.
     void settingsSyncService.markFirstRunPromptHandled().catch((error) => {
       logger.error("[settings-sync] mark first run prompt handled failed", {
         workspacePath: params.workspacePath,
@@ -314,9 +319,9 @@ export function useSettingsSync(params: { workspacePath?: string; workspaceIdent
   const reopen = useCallback(() => {
     setState((current) => {
       if (!current.discovery && !current.loading && params.workspacePath) {
-        // 设置页里的“重新打开 onboarding”可能发生在首启提示已处理之后。
-        // 这时本地状态已经回到初始态；如果只把 open 设成 true，用户会看到一个没有 discovery 数据的空弹窗。
-        // 这里在缺少数据时主动补一次检测，保证从设置页进入仍然能拿到完整可迁移内容。
+        // "Reopen onboarding" from the settings page may happen after the first-run prompt has been handled.
+        // By then the local state is back to its initial value; setting only open to true would show the user an empty dialog with no discovery data.
+        // Here we proactively rerun detection when data is missing, so entering from the settings page still gets the full migratable content.
         void loadDiscovery("manual");
       }
       return { ...current, open: true };
@@ -400,7 +405,7 @@ export function useSettingsSync(params: { workspacePath?: string; workspaceIdent
       }
 
       const includeCurrentSelections = options.includeCurrentSelections ?? true;
-      // 数据迁移向导可临时隐藏代理设置步骤；隐藏时不能把默认选中的 providers 暗中导入。
+      // The data migration wizard may temporarily hide the proxy settings step; while hidden, the default-selected providers must not be silently imported.
       const stateSelections =
         includeCurrentSelections && state.discovery ? buildStateSelections(state.selectedKeys) : [];
       const selections: SettingsSyncSelection[] = [...stateSelections, ...additionalSelections];

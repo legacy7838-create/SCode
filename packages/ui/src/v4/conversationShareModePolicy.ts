@@ -5,8 +5,8 @@ export function resolveConversationSelectionTooltipEnabled({
   selectionActionsEnabled: boolean;
   partialShareActive: boolean;
 }): boolean {
-  // 局部勾选遮罩只改变视觉层级，未关闭全局 Selection 监听，
-  // 因此底层消息仍能唤起跨功能工具条。勾选模式必须独占 message 选择交互。
+  // The local check mask only changes the visual level and does not turn off the global Selection monitoring.
+  // So the underlying message can still evoke the cross-functional toolbar. Check mode must exclusive message selection interaction.
   return selectionActionsEnabled && !partialShareActive;
 }
 
@@ -19,8 +19,8 @@ export function resolveConversationShareBackgroundScrollLocked({
   stage?: "selection" | "configuration";
   view: "selection" | "timeline" | undefined;
 }): boolean {
-  // 选择面板只用 scrim 隔离了正文指针事件，timeline 仍是
-  // overflow-y-auto，背景 scrollbar 和键盘滚动仍可以改变 scrollTop。
+  // The selection panel only uses scrim to isolate the text pointer event, and the timeline is still
+  // overflow-y-auto, background scrollbar and keyboard scrolling can still change scrollTop.
   return resolveConversationShareSelectionPanelVisible({ partialShareActive, stage, view });
 }
 
@@ -33,7 +33,7 @@ export function resolveConversationShareSelectionPanelVisible({
   stage?: "selection" | "configuration";
   view: "selection" | "timeline" | undefined;
 }): boolean {
-  // 过去把视觉遮罩绑定到整个 partial scope，面板收起后遮罩仍在，
-  // 只能靠局部抬高目标文本伪装成“定位完成”。遮罩必须跟面板可见状态同生共灭。
+  // In the past, the visual mask was bound to the entire partial scope, and the mask remained after the panel was closed.
+  // It can only be disguised as "positioning completed" by partially raising the target text. The mask must live and die with the visible state of the panel.
   return partialShareActive && stage === "selection" && view === "selection";
 }

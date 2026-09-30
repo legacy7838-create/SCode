@@ -303,7 +303,7 @@ async function detectProjectContext(projectRoot: string): Promise<ProjectContext
     packageManager = "npm";
   }
 
-  for (const file of ["Makefile", "docker-compose.yml", "docker-compose.yaml", "Dockerfile"]) {
+  for (const file of ["Makefile"]) {
     if (await isFile(join(projectRoot, file))) {
       buildFiles.push(file);
     }

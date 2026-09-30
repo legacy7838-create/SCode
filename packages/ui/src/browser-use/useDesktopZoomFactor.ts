@@ -15,8 +15,9 @@ function resolveDesktopZoomFactor(zoomLevel: number): number {
 }
 
 /**
- * 读取当前窗口的 Electron 页面缩放；Web 装配返回 level 0，因此自然回退为 factor 1。
- * 这里复用 IPlatformService，避免共享 UI 直接访问 window.zcode。
+ * Reads the Electron page zoom of the current window; the web wiring returns level 0, so it falls
+ * back to factor 1 naturally. This reuses IPlatformService to keep the shared UI from reaching into
+ * window.zcode directly.
  */
 export function useDesktopZoomFactor(): number {
   const platform = usePlatform();

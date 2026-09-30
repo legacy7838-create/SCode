@@ -2,10 +2,10 @@ import { zcodeWorkspaceUpdateOffPeakToolPolicyParamsSchema } from "@zcode/shared
 import { parseParams, type ZCodeProtocolAgentServerContext } from "./server-types.js";
 
 /**
- * Off-Peak 工具面门禁（灰度有效 && 本地 workspace）是 workspace 级事实。CLI 进程按 workspace
- * 隔离，因此缓存一份即可；createRecord 对 legacy create/resume、v4 createSession 与 v4 冷恢复
- * （subscribe → resumePersistedSession，没有 host 参数通道）统一读取。
- * 只影响之后创建/恢复的 record；已活跃 record 的工具面不回收（与灰度中途翻转策略一致）。
+ * The Off-Peak tool surface gate (rollout enabled && local workspace) is a workspace-level fact. CLI processes are isolated per workspace,
+ * so caching one copy is enough; createRecord reads it uniformly for legacy create/resume, v4 createSession and v4 cold recovery
+ * (subscribe → resumePersistedSession, which has no host parameter channel).
+ * It only affects records created/resumed afterwards; the tool surface of an already active record is not reclaimed (consistent with the mid-rollout flip policy).
  */
 export async function updateOffPeakToolPolicy(
   context: ZCodeProtocolAgentServerContext,

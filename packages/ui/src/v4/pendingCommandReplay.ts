@@ -69,7 +69,7 @@ function stableJson(value: unknown): string {
   return JSON.stringify(value);
 }
 
-/** 非安全校验摘要；目的只是对账时识别 payload，绝不用于鉴权。 */
+/** Non-security verification digest; its purpose is only to identify the payload during reconciliation, and is never used for authentication. */
 function digestSensitivePayload(payload: unknown): string {
   const text = stableJson(payload);
   let hash = 0x811c9dc5;

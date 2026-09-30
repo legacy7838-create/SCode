@@ -20,7 +20,7 @@ export interface CuaOperationStateReporter {
 
 interface CuaOperationTurnTracker {
   accept(workspace: CuaOperationWorkspaceTarget, event: ZCodeComputerUseOperationEvent): void;
-  /** 当前是否存在仍在执行 Computer Use 工具的 turn。 */
+  /** Whether there are currently any turns of the Computer Use tool that are still executing. */
   hasActiveTurn(): boolean;
   clearWorkspaceKey(workspaceKey: string): void;
   clearAll(): void;
@@ -52,12 +52,12 @@ function toReportedState(record: ActiveTurnRecord, active: boolean): CuaOperatio
 }
 
 export function createCuaOperationTurnTracker(options: {
-  /** Windows 顶部提示条的桌面投影；非 win32 不注入。 */
+  /** Desktop projection of Windows top prompt bar; non-win32 is not injected. */
   reporter?: CuaOperationStateReporter;
-  /** Windows operation indicator 的聚合边界；PiP 不再消费该聚合状态。 */
+  /** Aggregation boundary of Windows operation indicator; PiP no longer consumes this aggregate state. */
   onTurnsActive?: () => void;
   onTurnsIdle?: () => void;
-  /** macOS desktop-local PiP 只消费这些产品事实；panel policy 留在 producer。 */
+  /** The macOS desktop-local PiP only consumes these product facts; the panel policy remains at the producer. */
   onPipSessionLifecycle?: (
     workspace: CuaOperationWorkspaceTarget,
     event: Exclude<PipSessionEvent, { kind: "focus-changed" }>,
@@ -67,11 +67,11 @@ export function createCuaOperationTurnTracker(options: {
   const currentTurnBySession = new Map<string, string>();
   const lastSeqBySession = new Map<string, number>();
   /**
-   * 已排期、且经确认在用 Computer Use 的 tool call（键为 turnKey\0toolCallId）。
+   * A tool call for Computer Use (key turnKey\0toolCallId) has been scheduled and confirmed to be in use.
    *
-   * 只有 tool-scheduled 携带模型源码（ToolCallStartedPayload 没有 input 字段），所以
-   * "是否 CUA" 只能在排期时判定；但浮层要等真正开始执行才亮——排期与开始之间可能卡在
-   * 权限审批上，那时还没有人在操作电脑。于是这里把排期时的事实存下来，交给 tool-started 兑现。
+   * Only tool-scheduled carries the model source code (ToolCallStartedPayload has no input field), so
+   * "Whether it is CUA" can only be determined during scheduling; but the floating layer will not light up until execution actually starts - there may be a gap between scheduling and start
+   * In terms of permission approval, no one was operating the computer at that time. So here the facts during scheduling are saved and handed over to tool-started for redemption.
    */
   const computerUseScheduledCalls = new Set<string>();
   const activeTurns = new Map<string, ActiveTurnRecord>();
@@ -94,7 +94,7 @@ export function createCuaOperationTurnTracker(options: {
     try {
       callback();
     } catch (error) {
-      // 边界回调是展示旁路（PiP 收口），不能截断主 session event 链路。
+      // The boundary callback is a display bypass (PiP closing) and cannot cut off the main session event link.
       options.logger?.warn(`CUA operation turn boundary callback failed error=${String(error)}`);
     }
   }
@@ -117,7 +117,7 @@ export function createCuaOperationTurnTracker(options: {
       try {
         options.reporter.onStateChanged(toReportedState(record, active));
       } catch (error) {
-        // Reporter 是桌面投影旁路；MessagePort 关闭竞态不能截断主 session event 链路。
+        // Reporter is a desktop projection bypass; MessagePort is closed in a race condition and cannot cut off the main session event link.
         options.logger?.warn(
           `CUA operation reporter failed workspace=${record.workspaceKey} session=${record.sessionId} turn=${record.turnId} error=${String(error)}`,
         );
@@ -151,7 +151,7 @@ export function createCuaOperationTurnTracker(options: {
     for (const key of computerUseScheduledCalls) {
       if (key.startsWith(toolPrefix)) computerUseScheduledCalls.delete(key);
     }
-    // 只有真的清掉了一个操作 turn 才可能归零；从未 active 过的 turn 不会触发边界。
+    // Only when an operation turn is actually cleared can it be reset to zero; a turn that has never been active will not trigger the boundary.
     if (record && activeTurns.size === 0) notifyBoundary("idle");
   }
 
@@ -187,8 +187,8 @@ export function createCuaOperationTurnTracker(options: {
       );
       return;
     }
-    // sideband 使用 runtime 原始 sequenceNumber；不能与旧 session/event 的投影 seq
-    // 混用，否则较大的 raw 序号会让后续旧协议终态被误判为迟到并留下永久浮层。
+    // sideband uses runtime raw sequenceNumber; cannot be used with old session/event's projected seq
+    // Mixed use, otherwise a larger raw sequence number will cause the subsequent final state of the old protocol to be mistakenly judged as late and leave a permanent floating layer.
     lastSeqBySession.set(sessionKey, Math.max(lastSeq, event.sequenceNumber));
 
     if (event.kind === "turn-started") {
@@ -250,7 +250,7 @@ export function createCuaOperationTurnTracker(options: {
     const currentTurnId = currentTurnBySession.get(sessionKey);
     const turnId = event.turnId ?? currentTurnId;
     if (!toolCallId || !turnId) return;
-    // 根因：新 turn 已替换旧 turn 后，迟到的旧 tool event 不能再次复活已终止的顶部提示。
+    // Root cause: After the new turn has replaced the old turn, the late old tool event cannot resurrect the terminated top prompt.
     if (currentTurnId && turnId !== currentTurnId) return;
     if (!currentTurnId) currentTurnBySession.set(sessionKey, turnId);
 
@@ -262,15 +262,15 @@ export function createCuaOperationTurnTracker(options: {
       return;
     }
 
-    // 只认"这次 tool call 在用 Computer Use"这一个布尔事实，不解析动作名：
-    // 动作名要从模型源码里抽出来再拿动作词表比对，SDK 面一改就整条链失配。
-    // 判定在 bootstrap 侧一次做完（usesComputerUse）。
+    // Only recognize the Boolean fact "This tool call is using Computer Use" and do not parse the action name:
+    // The action name needs to be extracted from the model source code and then compared with the action word list. Once the SDK is changed, the entire chain will be mismatched.
+    // The determination is done once on the bootstrap side (usesComputerUse).
     if (!computerUseScheduledCalls.delete(toolKey)) return;
 
     const existingRecord = activeTurns.get(turnKey);
     if (existingRecord) {
-      // 同一 turn 内每个新 CUA cell 都要刷新桌面浮层的安全截止时间；Reporter 会在 Main 侧
-      // 重置兜底计时器，但不会重复创建原生窗口。
+      // Each new CUA cell within the same turn must refresh the safety deadline of the desktop floating layer; the Reporter will be on the Main side
+      // Resets the backlog timer, but does not re-create the native window.
       report(existingRecord, true, true);
       return;
     }

@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- The automation service centralizes cron validation, next-run computation, and lifecycle recalculation for scheduled tasks; splitting it would separate schedule-rule semantics from their callers. */
 import type {
   ZCodeAutomation,
   ZCodeAutomationCreateParams,
@@ -22,13 +23,13 @@ import {
   scheduleRuleDefinition,
 } from "#src/session/automationCron.js";
 
-/** 写/单查操作的 workspace 归属；用于跨 workspace 隔离校验。 */
+/** Workspace ownership for write/single-read operations; used for cross-workspace isolation checks. */
 interface AutomationWorkspaceScope {
   workspacePath: string;
   workspaceIdentity?: string;
 }
 
-/** scope → workspaceKey；缺省返回 undefined（不加归属过滤，供 scheduler/host 跨 workspace 用）。 */
+/** scope → workspaceKey; returns undefined by default (no ownership filter, for scheduler/host use across workspaces). */
 function resolveScopeKey(scope?: AutomationWorkspaceScope): string | undefined {
   if (!scope?.workspacePath) return undefined;
   return resolveWorkspaceKey({
@@ -37,34 +38,34 @@ function resolveScopeKey(scope?: AutomationWorkspaceScope): string | undefined {
   });
 }
 
-/** 无效 cron 表达式错误（供管理层向 UI 返回可展示信息）。 */
+/** Invalid cron expression error (lets the management layer surface a displayable message to the UI). */
 export class InvalidCronExprError extends Error {
   constructor(cronExpr: string) {
-    super(`非法的 cron 表达式：${cronExpr}`);
+    super(`Invalid cron expression: ${cronExpr}`);
     this.name = "InvalidCronExprError";
   }
 }
 
-/** 非法的有限次数更新错误；用于阻止矛盾状态写入并误结束仍在运行的任务。 */
+/** Illegal limited-run-count update error; prevents contradictory state writes that would wrongly end a still-running task. */
 class InvalidAutomationMaxRunsUpdateError extends Error {
-  constructor(message = "清空 maxRuns 时必须在同一次更新中设置 recurring=true") {
+  constructor(message = "Clearing maxRuns requires setting recurring=true in the same update") {
     super(message);
     this.name = "InvalidAutomationMaxRunsUpdateError";
   }
 }
 
-/** 非法自定义调度规则；规则必须先通过领域校验才能写入内部任务库。 */
+/** Illegal custom schedule rule; a rule must pass domain validation before it can be written to the internal task store. */
 class InvalidAutomationScheduleRuleError extends Error {
   constructor(message: string) {
-    super(`非法的定时任务调度规则：${message}`);
+    super(`Invalid scheduled task rule: ${message}`);
     this.name = "InvalidAutomationScheduleRuleError";
   }
 }
 
-/** 相对延迟只用于一次性任务，并由服务端真实时钟生成调度规则。 */
+/** Relative delay is only for one-off tasks, and the schedule rule is produced from the server's real clock. */
 class InvalidAutomationRelativeDelayError extends Error {
   constructor(message: string) {
-    super(`非法的相对时间定时任务：${message}`);
+    super(`Invalid relative-delay scheduled task: ${message}`);
     this.name = "InvalidAutomationRelativeDelayError";
   }
 }
@@ -88,55 +89,65 @@ function hasOnlyIntegersInRange(values: number[] | undefined, min: number, max: 
 
 function assertValidAutomationScheduleRule(rule: ZCodeAutomationScheduleRule): void {
   if (!AUTOMATION_SCHEDULE_RULE_UNITS.has(rule.unit)) {
-    throw new InvalidAutomationScheduleRuleError("unit 不受支持");
+    throw new InvalidAutomationScheduleRuleError("unit is not supported");
   }
   if (!Number.isInteger(rule.interval) || rule.interval < 1) {
-    throw new InvalidAutomationScheduleRuleError("interval 必须是正整数");
+    throw new InvalidAutomationScheduleRuleError("interval must be a positive integer");
   }
   if (rule.unit === "monthly" && rule.interval > MAX_MONTHLY_AUTOMATION_SCHEDULE_INTERVAL) {
     throw new InvalidAutomationScheduleRuleError(
-      `monthly interval 不能超过 ${MAX_MONTHLY_AUTOMATION_SCHEDULE_INTERVAL}`,
+      `monthly interval must not exceed ${MAX_MONTHLY_AUTOMATION_SCHEDULE_INTERVAL}`,
     );
   }
   if (!Number.isInteger(rule.hour) || rule.hour < 0 || rule.hour > 23) {
-    throw new InvalidAutomationScheduleRuleError("hour 必须是 0-23 的整数");
+    throw new InvalidAutomationScheduleRuleError("hour must be an integer between 0 and 23");
   }
   if (!Number.isInteger(rule.minute) || rule.minute < 0 || rule.minute > 59) {
-    throw new InvalidAutomationScheduleRuleError("minute 必须是 0-59 的整数");
+    throw new InvalidAutomationScheduleRuleError("minute must be an integer between 0 and 59");
   }
   if (
     rule.monthlyMode !== undefined &&
     rule.monthlyMode !== "date" &&
     rule.monthlyMode !== "weekday"
   ) {
-    throw new InvalidAutomationScheduleRuleError("monthlyMode 不受支持");
+    throw new InvalidAutomationScheduleRuleError("monthlyMode is not supported");
   }
   if (rule.weekdays && !hasOnlyIntegersInRange(rule.weekdays, 0, 6)) {
-    throw new InvalidAutomationScheduleRuleError("weekdays 必须是 0-6 的非空整数数组");
+    throw new InvalidAutomationScheduleRuleError(
+      "weekdays must be a non-empty array of integers between 0 and 6",
+    );
   }
   if (rule.unit === "weekly" && !hasOnlyIntegersInRange(rule.weekdays, 0, 6)) {
-    throw new InvalidAutomationScheduleRuleError("weekly 规则必须包含有效的 weekdays");
+    throw new InvalidAutomationScheduleRuleError("a weekly rule must contain valid weekdays");
   }
   if (rule.unit === "monthly") {
     if (rule.monthlyMode === "weekday" && !hasOnlyIntegersInRange(rule.weekdays, 0, 6)) {
-      throw new InvalidAutomationScheduleRuleError("monthly weekday 规则必须包含有效的 weekdays");
+      throw new InvalidAutomationScheduleRuleError(
+        "a monthly weekday rule must contain valid weekdays",
+      );
     }
     if (rule.monthlyMode !== "weekday" && !hasOnlyIntegersInRange(rule.monthDays, 1, 31)) {
-      throw new InvalidAutomationScheduleRuleError("monthly date 规则必须包含有效的 monthDays");
+      throw new InvalidAutomationScheduleRuleError(
+        "a monthly date rule must contain valid monthDays",
+      );
     }
   }
   if (rule.months && !hasOnlyIntegersInRange(rule.months, 1, 12)) {
-    throw new InvalidAutomationScheduleRuleError("months 必须是 1-12 的非空整数数组");
+    throw new InvalidAutomationScheduleRuleError(
+      "months must be a non-empty array of integers between 1 and 12",
+    );
   }
   if (rule.monthDays && !hasOnlyIntegersInRange(rule.monthDays, 1, 31)) {
-    throw new InvalidAutomationScheduleRuleError("monthDays 必须是 1-31 的非空整数数组");
+    throw new InvalidAutomationScheduleRuleError(
+      "monthDays must be a non-empty array of integers between 1 and 31",
+    );
   }
 }
 
 /**
- * automation 管理服务：包 AutomationRepo，负责 cron 语义（校验 / 下次时间计算）+ 生命周期重算。
- * 仓库只做存储；这里承载「create 时算 next_run_at」「改 cron_expr 重算」「改 recurring/max_runs 重算生命周期」
- * 「restart 重算」等 cron 相关业务，供 UI 管理面 / RPC 调用。
+ * Automation management service: wraps AutomationRepo and owns cron semantics (validation / next-run computation) plus lifecycle recalculation.
+ * The repo is storage only; the cron-related business logic lives here — "compute next_run_at on create", "recompute when cron_expr changes",
+ * "recompute lifecycle when recurring/max_runs changes", "recompute on restart" — serving the UI management surface / RPC callers.
  */
 export class AutomationService {
   constructor(private readonly repo: AutomationRepo = new AutomationRepo()) {}
@@ -150,16 +161,24 @@ export class AutomationService {
         relativeDelayMinutes < 1 ||
         relativeDelayMinutes > 525_600)
     ) {
-      throw new InvalidAutomationRelativeDelayError("delayMinutes 必须是 1-525600 的整数");
+      throw new InvalidAutomationRelativeDelayError(
+        "delayMinutes must be an integer between 1 and 525600",
+      );
     }
     if (relativeDelayMinutes !== undefined && params.recurring) {
-      throw new InvalidAutomationRelativeDelayError("相对延迟任务必须设置 recurring=false");
+      throw new InvalidAutomationRelativeDelayError(
+        "a relative-delay task must set recurring=false",
+      );
     }
     if (relativeDelayMinutes !== undefined && params.maxRuns !== undefined) {
-      throw new InvalidAutomationRelativeDelayError("相对延迟任务固定只运行一次，不能设置 maxRuns");
+      throw new InvalidAutomationRelativeDelayError(
+        "a relative-delay task always runs once and cannot set maxRuns",
+      );
     }
     if (relativeDelayMinutes !== undefined && params.scheduleRule) {
-      throw new InvalidAutomationRelativeDelayError("不能同时提交 delayMinutes 和 scheduleRule");
+      throw new InvalidAutomationRelativeDelayError(
+        "delayMinutes and scheduleRule cannot be submitted together",
+      );
     }
     const intervalUnit = params.intervalUnit;
     const interval = params.interval;
@@ -171,15 +190,15 @@ export class AutomationService {
       recurring: params.recurring,
       maxRuns: params.maxRuns,
     });
-    // carrier 只用于本次归一化，不能透传到 repository 形成未定义的持久化字段。
+    // The carrier is only used for this normalization and cannot be transparently transmitted to the repository to form undefined persistence fields.
     const {
       relativeDelayMinutes: _relativeDelayMinutes,
       intervalUnit: _intervalUnit,
       interval: _interval,
       ...persistedParams
     } = params;
-    // 模型只知道日期时会自行猜测当前时刻，把“3 分钟后”算成两小时后或过去时间。
-    // 相对时间必须由领域层基于真实 Date.now() 建立锚点，不能信任模型换算的绝对 cron。
+    // When the model only knows the date, it will guess the current time by itself, calculating "3 minutes from now" as two hours from now or in the past.
+    // Relative times must be anchored by the domain layer based on the real Date.now(), the model-scaled absolute cron cannot be trusted.
     const relativeNormalizedParams =
       relativeDelayMinutes === undefined
         ? persistedParams
@@ -188,13 +207,13 @@ export class AutomationService {
             ...buildRelativeDelaySchedule(relativeDelayMinutes, createdAt),
             recurring: false,
           };
-    // 会话侧自定义重复 carrier 归一化：把 intervalUnit+interval + 兼容 cron 组装成权威 scheduleRule，
-    // 真实间隔由 scheduleRule 承载，cronExpr 仅作展示。锚点用服务端真实创建时刻（同 relativeDelay）。
+    // Customized repeated carrier normalization on the session side: assemble intervalUnit+interval + compatible cron into an authoritative scheduleRule,
+    // The real interval is carried by scheduleRule, cronExpr is for display only. The anchor point uses the real creation time of the server (same as relativeDelay).
     const normalizedParams =
       intervalUnit !== undefined && interval !== undefined
         ? {
             ...relativeNormalizedParams,
-            // carrier 必须无限循环，避免旧客户端 / 内部调用写出首次派发即完成的矛盾状态。
+            // The carrier must loop infinitely to avoid the conflicting state of the old client/internal call writing being completed on first dispatch.
             recurring: true,
             maxRuns: undefined,
             scheduleRule: buildIntervalScheduleRule(
@@ -208,19 +227,19 @@ export class AutomationService {
     if (!isValidCronExpr(normalizedParams.cronExpr)) {
       throw new InvalidCronExprError(normalizedParams.cronExpr);
     }
-    // computeScheduleRuleNextRunAt 曾静默修正 interval=0，并在超大间隔下返回 null，
-    // 使非法规则仍被持久化为 active。写库前必须在领域层拒绝，不能依赖 UI 选择器兜底。
+    // computeScheduleRuleNextRunAt once silently modified interval=0 and returned null if the interval was too large.
+    // Make illegal rules still persist as active. It must be rejected at the domain level before writing the library, and you cannot rely on the UI selector to get the answer.
     if (normalizedParams.scheduleRule) {
       assertValidAutomationScheduleRule(normalizedParams.scheduleRule);
     }
-    // 标准 `*/N` cron 会对齐墙钟刻度，11:46 创建“每 10 分钟”会在 11:50
-    // 提前触发。产品语义是从创建时刻计时，因此缺少显式规则时在领域层补上分钟锚点。
+    // The standard `*/N` cron will align the wall clock tick at 11:46 creating "every 10 minutes" will be at 11:50
+    // Triggered early. Product semantics are timed from the moment of creation, so in the absence of explicit rules, minute anchors are added at the domain level.
     const scheduleRule = normalizedParams.scheduleRule
       ? { ...normalizedParams.scheduleRule, anchorAt: createdAt }
       : inferMinuteIntervalScheduleRule(normalizedParams.cronExpr, createdAt);
     const createParams = scheduleRule ? { ...normalizedParams, scheduleRule } : normalizedParams;
-    // 五段 cron 不含年份；一次性固定月日任务若在创建过程中刚错过目标分钟，
-    // 普通 nextRun 会滚到下一年。首次计算只补偿小于一分钟的跨分钟误差，陈旧目标在写库前拒绝。
+    // The five-segment cron does not include the year; if the one-time fixed month and day task just misses the target minute during the creation process,
+    // Normal nextRun will roll to the next year. The first calculation only compensates for minute-to-minute errors less than one minute, and stale targets are rejected before writing to the database.
     const nextRunAt = computeInitialAutomationNextRunAt(createParams, createdAt);
     const endedBeforeFirstRun =
       createParams.endAt !== undefined && (nextRunAt ?? Infinity) > createParams.endAt;
@@ -263,10 +282,10 @@ export class AutomationService {
 
     if (params.scheduleRule) assertValidAutomationScheduleRule(params.scheduleRule);
 
-    // 会话侧自定义重复 carrier 校验：intervalUnit+interval 必须配对且限定为 1–200，并与直传 scheduleRule 互斥。
+    // Customized repeated carrier check on the session side: intervalUnit+interval must be paired and limited to 1–200, and are mutually exclusive with the direct transfer scheduleRule.
     const { intervalUnit, interval, scheduleRule: directScheduleRule, ...restParams } = params;
-    // `undefined` 表示不修改，`null` 表示显式清除已有规则；两者不能在解构后混为一谈。
-    // 用 `??` 合并会把 `scheduleRule: null` 当作未传，导致用户无法恢复普通 cron 调度。
+    // `undefined` means no modification, `null` means clearing existing rules explicitly; the two cannot be confused after destructuring.
+    // Merging with `??` will treat `scheduleRule: null` as not passed, causing the user to be unable to restore normal cron scheduling.
     const hasDirectScheduleRule = directScheduleRule !== undefined;
     assertValidAutomationIntervalCarrier({
       intervalUnit,
@@ -277,20 +296,22 @@ export class AutomationService {
     });
     const hasIntervalCarrier = intervalUnit !== undefined && interval !== undefined;
 
-    // 把 maxRuns=null 转成 undefined 后又按一次性任务上限 1 计算，
-    // 会将已运行过的有限次任务静默改成 completed。清空上限必须与切换无限循环原子提交。
+    // Convert maxRuns=null to undefined and then calculate it based on the one-time task upper limit of 1.
+    // Tasks that have been run a limited number of times will be silently changed to completed. Clearing the cap must be done atomically with the toggle infinite loop.
     if (!hasIntervalCarrier && restParams.maxRuns === null && restParams.recurring !== true) {
       throw new InvalidAutomationMaxRunsUpdateError();
     }
 
     const nextRecurring = hasIntervalCarrier ? true : (restParams.recurring ?? existing.recurring);
     if (nextRecurring && typeof restParams.maxRuns === "number") {
-      throw new InvalidAutomationMaxRunsUpdateError("无限循环任务不能设置有限次数 maxRuns");
+      throw new InvalidAutomationMaxRunsUpdateError(
+        "an infinitely recurring task cannot set a finite maxRuns",
+      );
     }
 
-    // 有限任务只提交 recurring=true 时，旧 maxRuns 会被 repo.update 原样保留，
-    // 形成“无限循环 + 有限上限”的矛盾隐藏状态。领域层统一补 null，兼容旧客户端并原子清除旧上限；
-    // 同时顺手修复历史上已经存在的同类脏数据。
+    // When limited tasks are only submitted with recurring=true, the old maxRuns will be retained intact by repo.update.
+    // Forming the contradictory hidden state of "infinite loop + limited upper limit". The domain layer uniformly fills null, is compatible with old clients and clears the old upper limit atomically;
+    // At the same time, the same type of dirty data that already exists in history can be easily repaired.
     const normalizedParams: ZCodeAutomationUpdateParams = hasIntervalCarrier
       ? forceIntervalCarrierRecurring(restParams)
       : nextRecurring &&
@@ -305,7 +326,7 @@ export class AutomationService {
       resetRetry?: boolean;
     } = {};
 
-    // 改 cron_expr：校验 + 以 now 重算 next_run_at + 清 retry 态。
+    // Change cron_expr: check + recalculate next_run_at with now + clear retry state.
     const cronChanged =
       normalizedParams.cronExpr !== undefined && normalizedParams.cronExpr !== existing.cronExpr;
     if (normalizedParams.cronExpr !== undefined && !isValidCronExpr(normalizedParams.cronExpr)) {
@@ -313,9 +334,9 @@ export class AutomationService {
     }
     const updatedAt = Date.now();
     const effectiveCron = normalizedParams.cronExpr ?? existing.cronExpr;
-    // 会话侧长间隔 carrier 归一化：把 intervalUnit+interval + 兼容 cron 组装成权威 scheduleRule。
-    // carrier 场景必须重新锚定（anchorAt=updatedAt），后续 explicitScheduleRule 的「规则未变保留旧锚点」
-    // 判断对 carrier 无意义——carrier 提交即代表用户要重设间隔，统一走本次保存重新计时。
+    // Session-side long interval carrier normalization: assemble intervalUnit+interval + compatible cron into authoritative scheduleRule.
+    // The carrier scene must be re-anchored (anchorAt=updatedAt), and the subsequent "rules of explicitScheduleRule remain unchanged and retain the old anchor point"
+    // The judgment is meaningless for the carrier - Submitting the carrier means that the user needs to reset the interval and save and retime this time.
     const carrierScheduleRule = hasIntervalCarrier
       ? buildIntervalScheduleRule(intervalUnit, interval, effectiveCron, updatedAt)
       : undefined;
@@ -332,7 +353,7 @@ export class AutomationService {
     const explicitScheduleRule = effectiveDirectScheduleRule
       ? {
           ...effectiveDirectScheduleRule,
-          // 规则内容没变只是保存其它字段时保留原锚点；真正修改频率才从本次保存重新计时。
+          // The content of the rule remains unchanged, only the original anchor points are retained when saving other fields; the actual modification frequency is re-timed from this save.
           anchorAt:
             existing.scheduleRule &&
             scheduleRuleDefinition(existing.scheduleRule) ===
@@ -341,8 +362,8 @@ export class AutomationService {
               : updatedAt,
         }
       : effectiveDirectScheduleRule;
-    // cron 改变但调用方没有显式 scheduleRule 时，旧规则不能继续覆盖新 cron；分钟间隔以本次
-    // 修改时间重新锚定，其它 cron 则清空旧规则并恢复日历 cron 语义。
+    // When cron changes but the caller does not have an explicit scheduleRule, the old rule cannot continue to overwrite the new cron; the minute interval is based on this time
+    // Modification time is re-anchored and other cron clears the old rules and restores calendar cron semantics.
     const inferredScheduleRule =
       cronChanged && effectiveDirectScheduleRule === undefined
         ? inferMinuteIntervalScheduleRule(effectiveCron, updatedAt)
@@ -389,17 +410,17 @@ export class AutomationService {
       options.lifecycleStatus = "active";
     }
 
-    // 改 recurring / max_runs：重算生命周期。
+    // Change recurring / max_runs: recalculate the life cycle.
     if (normalizedParams.recurring !== undefined || normalizedParams.maxRuns !== undefined) {
       const nextMaxRuns =
         normalizedParams.maxRuns === undefined
           ? existing.maxRuns
           : (normalizedParams.maxRuns ?? undefined);
-      // runCount 是 Card 的累计展示数，包含 manual run；若用它重算有限计划，
-      // 用户只要手动执行过就可能在编辑 maxRuns 时把任务提前改成 completed。
+      // runCount is the cumulative display number of Card, including manual run; if it is used to recalculate the limited plan,
+      // As long as the user has performed it manually, he or she may change the task to completed in advance when editing maxRuns.
       const scheduledRunCount = await this.repo.getScheduledRunCount(automationId, workspaceKey);
       if (scheduledRunCount === null) return null;
-      // 与 markDispatched 口径一致：有限次任务未显式设 max_runs 时按一次性任务(上限 1)处理。
+      // The same caliber as markDispatched: limited tasks are processed as one-time tasks (upper limit 1) when max_runs is not explicitly set.
       const reachedMax = !nextRecurring && scheduledRunCount >= (nextMaxRuns ?? 1);
       if (reachedMax) {
         options.lifecycleStatus = "completed";
@@ -407,7 +428,7 @@ export class AutomationService {
         existing.lifecycleStatus === "completed" ||
         existing.lifecycleStatus === "failed"
       ) {
-        // 原为终态，编辑后又变得可跑 → 复活为 active 并重算 next_run_at。
+        // Originally the final state, it became runnable after editing → Resurrected to active and recalculated next_run_at.
         options.lifecycleStatus = "active";
         if (options.nextRunAt === undefined) {
           options.nextRunAt = computeAutomationNextRunAt(
@@ -428,7 +449,7 @@ export class AutomationService {
     return this.repo.delete(automationId, resolveScopeKey(scope));
   }
 
-  /** 暂停 / 恢复。 */
+  /** Pause / resume. */
   async setEnabled(
     automationId: string,
     enabled: boolean,
@@ -437,19 +458,19 @@ export class AutomationService {
     return this.repo.setEnabled(automationId, enabled, resolveScopeKey(scope));
   }
 
-  /** 失败任务手动重跑：回 active、清计数，按 cron 重算下次时间。 */
+  /** Manual re-run of a failed task: back to active, counters cleared, next time recomputed from the cron expression. */
   async restart(automationId: string, scope?: AutomationWorkspaceScope): Promise<void> {
     const workspaceKey = resolveScopeKey(scope);
     const existing = await this.repo.get(automationId, workspaceKey);
     if (!existing) return;
-    // completed 是有限次计划自然耗尽后的终态，不能被旧 UI/RPC restart 复活；
-    // 只有 failed 代表可恢复异常，允许用户手动重排下一次运行。
+    // completed is the final state after the limited-time plan is naturally exhausted and cannot be resurrected by the old UI/RPC restart;
+    // Only failed represents a recoverable exception, allowing the user to manually reschedule the next run.
     if (existing.lifecycleStatus !== "failed") return;
     const nextRunAt = computeAutomationNextRunAt(existing);
     return this.repo.restart(automationId, { nextRunAt }, workspaceKey);
   }
 
-  /** 立即运行：创建供当前 host 直接派发的 manual run，不修改原 cron 计划。 */
+  /** Run now: creates a manual run for the current host to dispatch directly, without touching the original cron schedule. */
   async runNow(
     automationId: string,
     scope?: AutomationWorkspaceScope,

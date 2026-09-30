@@ -5,8 +5,9 @@ interface BrowserOperationResultLike {
 }
 
 /**
- * 只有模型明确打开、显示、激活或改变 viewport 的命令才能重建 renderer 尺寸基线。
- * 普通 navigate/locator/screenshot 命令必须返回 false，否则会吞掉同一操作周期内真正的用户 resize。
+ * Only commands where the model explicitly opens, shows, activates, or changes the viewport may
+ * rebuild the renderer size baseline. Ordinary navigate/locator/screenshot commands must return
+ * false, otherwise a genuine user resize within the same operation cycle would be swallowed.
  */
 export function browserOperationResetsResizeBaseline(command: unknown): boolean {
   if (!command || typeof command !== "object") return false;
@@ -24,8 +25,9 @@ function readTabId(value: unknown): string | undefined {
 }
 
 /**
- * browser command 开始时优先使用显式 tabId；没有显式 tabId 的 new/default-tab 调用，
- * 只能在成功结果里读取 manager 已解析的真实 tab identity，禁止 UI 自行猜测。
+ * At the start of a browser command, prefer the explicit tabId; for new/default-tab calls without
+ * one, the real tab identity resolved by the manager may only be read from a successful result —
+ * the UI is forbidden from guessing on its own.
  */
 export function resolveBrowserOperationTabId(
   command: unknown,

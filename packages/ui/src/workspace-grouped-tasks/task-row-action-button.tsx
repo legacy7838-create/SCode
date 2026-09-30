@@ -50,8 +50,8 @@ function TaskRowActionButton({
   }
   return (
     <ControlHintTooltip title={disabledReason ?? label} side="top" sideOffset={2}>
-      {/* 本地 absolute tooltip 会被分组折叠容器的 overflow-hidden 裁剪；
-          使用可接收指针的真实 trigger 包裹 disabled button，再由共享 Portal 渲染提示。 */}
+      {/* The local absolute tooltip will be clipped by the overflow-hidden of the grouped collapse container;
+          Use a real trigger that can receive a pointer to wrap the disabled button, and then the shared portal renders the prompt. */}
       <span className="inline-flex shrink-0">{button}</span>
     </ControlHintTooltip>
   );

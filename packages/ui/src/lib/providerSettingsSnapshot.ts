@@ -30,7 +30,9 @@ export function subscribeProviderSettingsSnapshot(
 }
 
 export function reloadProviderSettingsSnapshot(): Promise<void> {
-  return activeReload?.() ?? Promise.reject(new Error("Provider Settings Service 尚未连接"));
+  return (
+    activeReload?.() ?? Promise.reject(new Error("Provider Settings Service is not connected"))
+  );
 }
 
 export function connectProviderSettingsSnapshot(
@@ -55,7 +57,7 @@ export function connectProviderSettingsSnapshot(
     } catch (cause) {
       if (generation !== connectionGeneration) throw cause;
       const error = cause instanceof Error ? cause : new Error(String(cause));
-      // 已有成功快照时保留 Last Known Good；首次失败才进入可重试 error。
+      // Last Known Good is retained when there is a successful snapshot; a retryable error will be entered only after the first failure.
       if (snapshot.status !== "ready") {
         snapshot = { status: "error", error };
         publish();
@@ -64,7 +66,7 @@ export function connectProviderSettingsSnapshot(
     }
   };
 
-  // 先订阅再读取，避免 getView 与 Registry 更新之间丢失事件。
+  // Subscribe first and then read to avoid losing events between getView and Registry updates.
   const subscription = service.onDidChange(commit);
   const ready = read();
   activeReload = read;

@@ -41,16 +41,18 @@ export async function ensureProviderFamilyDomainMigration(
       selectableProviders = (await services.modelSelectionService.getView()).providers;
       inferredDomain = inferProviderFamilyDomainFromSelection(selectableProviders);
     } catch (error) {
-      logger.warn("[providerFamilyDomainMigration] 读取模型选择视图失败", {
+      logger.warn("[providerFamilyDomainMigration] failed to read model selection view", {
         error,
       });
     }
   }
 
   if (!inferredDomain && selectableProviders?.length === 0) {
-    // 启动早期 OAuth active provider 和 Registry 可能都还没恢复。
-    // 此时如果把“空结果”标记为已迁移，会让后续草稿预热在 selectedKey 为空时吃到旧 Start Plan 偏好。
-    logger.info("[providerFamilyDomainMigration] provider family domain 迁移等待模型选择视图恢复");
+    // The OAuth active provider and Registry may not have been restored after early startup.
+    // At this time, if the "empty result" is marked as migrated, subsequent draft preheating will have the old Start Plan preference when the selectedKey is empty.
+    logger.info(
+      "[providerFamilyDomainMigration] provider family domain migration waiting for model selection view",
+    );
     return;
   }
 
@@ -60,7 +62,7 @@ export async function ensureProviderFamilyDomainMigration(
     providerFamilyDomainMigrated: true,
   });
 
-  logger.info("[providerFamilyDomainMigration] provider family domain 迁移完成", {
+  logger.info("[providerFamilyDomainMigration] provider family domain migration complete", {
     inferredDomain,
   });
 }

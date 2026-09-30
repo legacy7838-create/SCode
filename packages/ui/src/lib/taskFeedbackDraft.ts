@@ -1,7 +1,7 @@
 import { redactFeedbackText } from "@zcode/shared";
 /**
- * 构建任务反馈的 description 文本模版
- * 所有展示文本通过 formatMessage 实现 i18n
+ * The description text templates used to build task feedback. All display text is localized through
+ * formatMessage.
  */
 export function buildTaskFeedbackDescription({
   taskTitle,

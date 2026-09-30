@@ -38,7 +38,9 @@ export function buildImportedClaudeTaskFile(
   taskIdOverride?: string,
 ): LegacyTaskSessionFile {
   if (source.messages.length === 0) {
-    throw new Error(`[claude-native] external session ${source.sessionId} 没有可导入的可见消息`);
+    throw new Error(
+      `[claude-native] external session ${source.sessionId} has no importable visible messages`,
+    );
   }
 
   const taskId =
@@ -65,8 +67,8 @@ export function buildImportedClaudeTaskFile(
     messages: [...source.messages],
   };
 
-  // Claude 原生 session 的 mode/model/provider 是来源端运行态，
-  // 直接落入 ZCode snapshot 会在恢复时污染当前 workspace 的运行时选择。
-  // 这里按显式 path 列表清洗，保留正文和 migrationSource 供列表识别迁移来源。
+  // The mode/model/provider of Claude's native session is the source-side running state.
+  // Falling directly into a ZCode snapshot will pollute the current workspace's runtime selection when restoring.
+  // Here, the list is cleaned according to the explicit path, and the body and migrationSource are retained for the list to identify the migration source.
   return filterImportedClaudeTaskFilePaths(taskFile, filterPaths);
 }

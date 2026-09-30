@@ -1,8 +1,8 @@
-// ── 旧协议兼容面（过渡期）──────────────────────────────
-// 剩余 11 个导出：goal 迭代/可见消息投影函数。
-// 消费者：zcodeTaskServiceAdapter/zcodeSessionProjection/zcodeTaskIndexSyncer、
-// CLI bootstrap session-mapper。textFromZCodeMessageParts 已迁
-// zcode-protocol-legacy-types.ts（幸存面）。本文件与旧投影栈同生命周期。
+// ── Old protocol compatibility (transition period)─────────────────────────────
+// 11 remaining exports: goal iteration/visible message projection function.
+// Consumer: zcodeTaskServiceAdapter/zcodeSessionProjection/zcodeTaskIndexSyncer,
+// CLI bootstrap session-mapper. textFromZCodeMessageParts has been migrated
+// zcode-protocol-legacy-types.ts (survival side). This file has the same life cycle as the old projection stack.
 import type { ZCodeSessionGoal } from "./zcode-protocol/index.js";
 import { getConversationMessageProjectionPolicy } from "./conversation-message-projection-policy.js";
 import {
@@ -72,8 +72,8 @@ export function isZCodeCompactSummaryMessage(message: ZCodeMessageWithParts): bo
         return false;
       }
       const timelineStatus = part.metadata?.["timelineStatus"];
-      // compact summary user message 是压缩后的模型上下文，不是用户可见输入。
-      // 真正要渲染成 timeline 的 lifecycle part 会带 timelineStatus，并且由 assistant message 承载。
+      // compact summary user message is the compressed model context, not user-visible input.
+      // The lifecycle part that is actually rendered into a timeline will have timelineStatus and will be carried by the assistant message.
       return typeof timelineStatus !== "string";
     })
   );
@@ -86,9 +86,9 @@ export function getZCodeUserVisibleMessages(
   const visibleMessages: ZCodeMessageWithParts[] = [];
   for (const message of messages) {
     if (isZCodeModelOnlySyntheticUserMessage(message) || isZCodeCompactSummaryMessage(message)) {
-      // /goal 续跑、后台任务、子 agent、rewind 通知和 compact summary
-      // 都是 runtime 注入给模型继续推理的上下文，不是用户真实 query；可见投影必须过滤，
-      // 避免快照/远控恢复时渲染成右侧用户气泡或挤占 timeline 位置。
+      // /goal continuation, background tasks, sub-agent, rewind notification and compact summary
+      // They are all contexts injected by the runtime into the model to continue reasoning, not the user's real query; visible projections must be filtered.
+      // Avoid rendering the user bubble on the right side or occupying the timeline position during snapshot/remote control restoration.
       continue;
     }
     visibleMessages.push(message);
@@ -114,15 +114,15 @@ export function getZCodeGoalIterationByAssistantMessageId(
   for (const message of sortedMessages) {
     if (message.info.role === "user") {
       if (isZCodeGoalContinuationReminderMessage(message)) {
-        // goal 续跑边界只来自 Continue/source=goal-continuation；
-        // Current session goal state 是同一轮内反复注入的状态提示，不能在这里推进迭代号。
+        // The goal continuation boundary only comes from Continue/source=goal-continuation;
+        // Current session goal state is a status prompt injected repeatedly in the same round, and the iteration number cannot be advanced here.
         currentIteration += 1;
         pendingVisibleGoalUserIteration = false;
         continue;
       }
       if (isVisibleRealGoalUserMessage(message, target)) {
-        // 新协议会同时持久化可见的 /goal 输入和 model-only continuation。
-        // 可见输入只用于旧快照缺少 continuation 时补第一段边界，不能和 continuation 叠加算两轮。
+        // The new protocol persists both visible /goal input and model-only continuations.
+        // It can be seen that the input is only used to fill in the first boundary when the old snapshot lacks a continuation, and cannot be superimposed with the continuation to count as two rounds.
         pendingVisibleGoalUserIteration = true;
       }
       continue;
@@ -132,8 +132,8 @@ export function getZCodeGoalIterationByAssistantMessageId(
       continue;
     }
     if (inactiveAt !== null && message.info.time.created > inactiveAt) {
-      // 目标停止/完成后的普通追问仍在同一个 session 内，不能继续继承旧 goal 轮次。
-      // 否则恢复快照时追问回复会被历史区当成“第 N 次迭代”处理，看起来像被旧完成横线折叠。
+      // Ordinary questioning after the goal is stopped/completed is still within the same session and cannot continue to inherit the old goal round.
+      // Otherwise, when restoring the snapshot, the follow-up reply will be treated as the "Nth iteration" in the history area, and it will look like it is folded by the old completion horizontal line.
       continue;
     }
     if (pendingVisibleGoalUserIteration) {
@@ -141,13 +141,13 @@ export function getZCodeGoalIterationByAssistantMessageId(
       pendingVisibleGoalUserIteration = false;
     }
     if (currentIteration === 0 && message.info.time.created >= target.createdAt) {
-      // 旧会话里 goal 创建输入可能没有 `/goal` 可见气泡或时间早于 target.createdAt。
-      // 第一条 goal 之后的 assistant 仍要归入第 1 次迭代，否则历史区会退回普通“已工作”。
+      // The goal creation input in the old session may not have a `/goal` visible bubble or may be earlier than target.createdAt.
+      // The assistant after the first goal must still be classified into the first iteration, otherwise the history area will return to normal "worked".
       currentIteration = 1;
     }
     if (currentIteration > 0) {
-      // assistant 消息桶只用于历史状态展示，不能把 goal 轮次推进到
-      // verifier timeline 尚未确认的下一轮；新会话传入 maxGoalIteration 后按 verifier 上限收敛。
+      // The assistant message bucket is only used for historical status display and cannot advance the goal round to
+      // The verifier timeline is the next round that has not yet been confirmed; new sessions converge according to the verifier upper limit after passing in maxGoalIteration.
       const boundedIteration =
         options.maxGoalIteration && options.maxGoalIteration > 0
           ? Math.min(currentIteration, options.maxGoalIteration)
@@ -191,8 +191,8 @@ export function getZCodeGoalActiveIterationCount(input: {
     return latestIteration;
   }
   if (input.targetStatus !== "active") {
-    // stop 会先把 target 改成 paused，再把正在跑的 verifier 收口成 cancelled。
-    // 非 active 目标不会自动续跑，不能把 cancelled/failed verifier 预投影成下一轮。
+    // stop will first change the target to paused, and then close the running verifier to canceled.
+    // Non-active targets will not automatically continue running, and canceled/failed verifiers cannot be pre-projected into the next round.
     return latestIteration;
   }
   return latestIteration + 1;

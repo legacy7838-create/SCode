@@ -1,8 +1,8 @@
 import type { LaunchMarks } from "@zcode/shared";
 
-// 启动计时(epoch ms):T0 进程创建 / T1 main JS / T2 whenReady。T3 在 loadWindow 记。
-// 单独成模块，避免被 index.js 的 bootstrap 副作用链拖累（如 desktopHostProcess 也要读这些标记）。
-// process.getCreationTime 是 Electron 给 process 扩展的 API；node 环境（含单测）下不存在，需守卫。
+// Startup timing (epoch ms): T0 process creation / T1 main JS / T2 whenReady. T3 is recorded in loadWindow.
+// into a separate module to avoid being dragged down by the bootstrap side effect chain of index.js (such as desktopHostProcess also reads these tags).
+// process.getCreationTime is an API extended by Electron to process; it does not exist in the node environment (including single test) and needs to be guarded.
 const launchCreatedAt =
   (typeof process.getCreationTime === "function" ? process.getCreationTime() : null) ?? Date.now();
 const launchMainStart = Date.now();

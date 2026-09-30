@@ -107,8 +107,8 @@ export function AssistantCodeCommentCards({
               const openReview = () => {
                 navigationRequestSequence += 1;
                 const requestId = `${card.id}:${navigationRequestSequence}`;
-                // 设计原因：模型评论描述的是 workspace 文件，不是 Git diff。直接打开独立的
-                // code-review source，既保留远程 workspace 路由，也避免未提交状态成为前置条件。
+                // Design reason: Model comments describe workspace files, not Git diffs. Open the independent
+                // code-review source not only retains the remote workspace route, but also prevents the uncommitted status from becoming a precondition.
                 onOpenCodeViewer?.({
                   type: "code-review",
                   title: getPathLeaf(card.path),
@@ -137,9 +137,9 @@ export function AssistantCodeCommentCards({
                     role="button"
                     tabIndex={0}
                     data-code-comment-path={card.displayPath}
-                    // Git 文件行把半透明基础面放在父层，hover 放在内层；若把
-                    // 两个背景放到同一元素，hover 会替换基础背景而不是在其上叠加，
-                    // 浅色主题下对比度几乎不可见。因此这里保持与 Git 文件行相同的分层。
+                    // The Git file line puts the translucent base surface on the parent layer and hover on the inner layer; if
+                    // If two backgrounds are placed on the same element, hover will replace the base background instead of overlaying it.
+                    // Contrast is almost invisible in light themes. So here we keep the same layering as the Git file lines.
                     className="flex min-h-10 w-full min-w-0 cursor-pointer select-text items-center gap-3 px-6 py-2 text-left whitespace-nowrap transition-colors hover:bg-hover/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
                     aria-label={intl.formatMessage(
                       { id: "chat.codeCommentCards.openReview" },

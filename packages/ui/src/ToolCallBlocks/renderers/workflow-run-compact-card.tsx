@@ -9,20 +9,24 @@ import type { WorkflowRunCardSummary } from "@/ToolCallBlocks/shared.js";
 function isInteractiveDescendant(target: EventTarget | null, card: HTMLElement): boolean {
   if (!(target instanceof Element)) return false;
   const interactive = target.closest("button, a, input, textarea, select, [role='button']");
-  // 卡片自身带 role=button，closest 会让卡片任意位置都命中自己，那样「点击卡片打开详情」
-  // 就永远不执行（plan 卡的原始 bug）。这里只拦截真实子控件。
+  // The card itself has role=button, closest will make the card hit itself anywhere, so "click the card to open the details"
+  // It will never be executed (the original bug of the plan card). Only real child controls are intercepted here.
   return interactive !== null && interactive !== card;
 }
 
 /**
- * workflow run 的紧凑可点卡——CreateWorkflow 与 ResumeWorkflowRun 工具卡共享的「run 态第三态」。
+ * The compact clickable card for a workflow run — the "third run state" shared by the
+ * CreateWorkflow and ResumeWorkflowRun tool cards.
  *
- * 整卡就是入口（DESIGN.md 的语义色 + 现有的 run 状态词汇表）：实测的可发现性失败正是
- * 因为入口曾经埋在展开后的卡体里。两个调用方只换 labelText 与 primaryText（create 用
- * 工作流名、resume 用 runId），状态点词与步数都由联接摘要实时驱动。
+ * The whole card is the entry point (DESIGN.md semantic colors + the existing run state
+ * vocabulary): the discoverability failures we measured happened precisely because the entry point
+ * used to be buried inside the expanded card body. The two call sites only swap labelText and
+ * primaryText (create uses the workflow name, resume uses runId), while the state dot word and the
+ * step count are both driven live by the joined summary.
  *
- * `onOpen` 缺席即纯展示态：不加 role/tabIndex/hover——宿主只在确实有可打开的 run 时注入
- * 回调（`ToolCallBlockRenderContext.onOpenWorkflowRun` 的门控语义）。
+ * A missing `onOpen` means pure display mode: no role/tabIndex/hover is added — the host only
+ * injects the callback when there really is an openable run (the gating semantics of
+ * `ToolCallBlockRenderContext.onOpenWorkflowRun`).
  */
 export function WorkflowRunCompactCard({
   ariaLabel,
@@ -47,12 +51,14 @@ export function WorkflowRunCompactCard({
   stepsLabel: string;
   onOpen: (() => void) | undefined;
   showIcon: boolean;
-  /** 卡片下方的附加内容（如 ToolSnapshotFieldNotice），随卡渲染。 */
+  /**
+   * The extra content below the card (e.g. ToolSnapshotFieldNotice); it is rendered with the card.
+   */
   children?: ReactNode;
 }) {
-  // 整卡点击 / Enter / Space —— 逐字照 switch-mode.tsx 的 plan 卡习语，包括两条守卫的理由：
-  // 卡片自身带 role=button，所以判定必须排除卡片本身，否则「点卡片打开详情」永不执行；
-  // 而子控件的 keydown 会继续冒泡到整卡，一次键盘操作会打开两次详情页。
+  // Click / Enter / Space for the whole card - follow the plan card idiom of switch-mode.tsx verbatim, including two reasons for guarding:
+  // The card itself has role=button, so the card itself must be excluded from the judgment, otherwise "click the card to open details" will never be executed;
+  // The keydown of the sub-control will continue to bubble up to the entire card, and one keyboard operation will open the details page twice.
   const handleCardClick = (event: MouseEvent<HTMLElement>) => {
     if (!onOpen) return;
     if (!isInteractiveDescendant(event.target, event.currentTarget)) onOpen();
@@ -87,7 +93,7 @@ export function WorkflowRunCompactCard({
         <span className="shrink-0 text-ui-base font-medium text-foreground-subtle">
           {labelText}
         </span>
-        {/* 工作流名称是界面标题，使用默认字体，避免被当作代码以等宽字体展示。 */}
+        {/* The workflow name is a UI heading, so it uses the default font instead of being shown as code in a monospace font. */}
         <span
           className="min-w-0 flex-1 truncate text-ui-base text-foreground-subtlest"
           title={primaryTitle ?? primaryText}
@@ -95,7 +101,7 @@ export function WorkflowRunCompactCard({
           {primaryText}
         </span>
         <span className="flex shrink-0 items-center gap-1.5">
-          {/* 状态词永远在圆点旁边：状态绝不只靠颜色或动画表达。 */}
+          {/* The state word always sits next to the dot: state is never conveyed by color or animation alone. */}
           <span
             aria-hidden="true"
             className={cn("size-1.5 shrink-0 rounded-full", RUN_STATUS_DOT[workflowRun.status])}
@@ -104,7 +110,7 @@ export function WorkflowRunCompactCard({
             {statusLabel}
           </span>
         </span>
-        {/* 步数是「已排程的里结算了几个」，不是全程百分比——动态工作流没有静态总数。 */}
+        {/* The step count is "how many of the scheduled ones have settled", not a whole-run percentage — a dynamic workflow has no static total. */}
         <span className="shrink-0 font-mono text-ui-xs tabular-nums text-foreground-subtlest">
           {stepsLabel}
         </span>

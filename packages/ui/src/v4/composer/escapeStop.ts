@@ -1,4 +1,4 @@
-// composer parity：Esc → stop 的忽略判定（纯函数，无宿主依赖）。
+// composer parity: Ignore judgment of Esc → stop (pure function, no host dependencies).
 export function shouldIgnoreEscapeForStopGeneration(event: KeyboardEvent): boolean {
   if (event.defaultPrevented) {
     return true;
@@ -15,8 +15,8 @@ export function shouldIgnoreEscapeForStopGeneration(event: KeyboardEvent): boole
       getAttribute?: (name: string) => string | null;
     };
     return (
-      // Cmd/Ctrl+P 文件选择弹窗用 Escape 关闭时，同一事件会继续
-      // 冒泡到窗口；识别 Radix/Dialog 事件路径并跳过停止任务，避免「关闭弹窗」误停生成。
+      // The same event continues when the Cmd/Ctrl+P file selection popup is closed with Escape
+      // Bubbles to the window; identifies the Radix/Dialog event path and skips the stop task to avoid accidental stop generation by "closing the pop-up window".
       maybeElement.dataset?.slot === "dialog-content" ||
       maybeElement.getAttribute?.("role") === "dialog"
     );

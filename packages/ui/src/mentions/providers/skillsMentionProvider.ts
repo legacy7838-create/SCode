@@ -28,9 +28,9 @@ export function mapSkillsToMentionItemsForTest(
   for (const skill of skills) {
     const key = skill.name.trim().toLowerCase();
     const current = uniqueSkillsByName.get(key);
-    // `$` 面板是执行入口，不是来源管理页。
-    // 同名技能如果来自 workspace/user/plugin 多个路径，继续全部展示会让用户看到“同一个 skill”重复刷屏。
-    // 这里按名称折叠，并优先选择 workspace，其次 plugin，最后 user；Settings 页仍保留完整来源列表用于管理。
+    // The `$` panel is the execution entrance, not the source management page.
+    // If a skill with the same name comes from multiple paths of workspace/user/plugin, continuing to display them all will cause the user to see "the same skill" refresh the screen repeatedly.
+    // Here it is collapsed by name, and workspace is selected first, followed by plugin, and finally user; the Settings page still retains the complete source list for management.
     if (!current || scopePriority[skill.scope] < scopePriority[current.scope]) {
       uniqueSkillsByName.set(key, skill);
     }

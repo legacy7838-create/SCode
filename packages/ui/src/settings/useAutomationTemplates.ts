@@ -26,22 +26,31 @@ export function useAutomationTemplates(
   useEffect(() => {
     if (!error) return;
     if (isClientScenesBusinessError(error)) {
-      logger.warn("[automation-templates] Client Scenes 返回失败，保留手动创建入口", {
-        code: error.code,
-        message: error.responseMessage,
-      });
+      logger.warn(
+        "[automation-templates] client scenes returned failure, keeping the manual create entry",
+        {
+          code: error.code,
+          message: error.responseMessage,
+        },
+      );
       return;
     }
-    logger.warn("[automation-templates] Client Scenes 请求失败，保留手动创建入口", {
-      error: error.message,
-    });
+    logger.warn(
+      "[automation-templates] client scenes request failed, keeping the manual create entry",
+      {
+        error: error.message,
+      },
+    );
   }, [error]);
 
   useEffect(() => {
     if (catalog.rejectedScheduledTemplateIds.length === 0) return;
-    logger.warn("[automation-templates] 已拒绝标题为空或调度无法安全编辑的定时模板", {
-      templateIds: catalog.rejectedScheduledTemplateIds,
-    });
+    logger.warn(
+      "[automation-templates] rejected scheduled templates with an empty title or an unsafe-to-edit schedule",
+      {
+        templateIds: catalog.rejectedScheduledTemplateIds,
+      },
+    );
   }, [catalog.rejectedScheduledTemplateIds]);
 
   return {

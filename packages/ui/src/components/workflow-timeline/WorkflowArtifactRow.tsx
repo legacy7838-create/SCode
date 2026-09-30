@@ -13,21 +13,27 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import type { WorkflowCompletionArtifact } from "./WorkflowArtifactTile.js";
 
 /**
- * 交付物行（侧板）：run 的 primary 产物在完成卡与 run 侧板上的样子。
+ * The artifact row (side panel): how a run's primary artifact looks on the completion card and in
+ * the run side panel.
  *
- * 它是**侧躺的瓦片**：同一只 16:10 预览框（160 × 100，与瓦片同一档——不是横幅），框旁是 kind 图标 +
- * 比说明行大一级的标题、作者写的 description（三行截断）、一行等宽的 `kind · size`，尾槽是瓦片的
- * （v{n}，悬停让位给 ↗）。强调来自位置、形态与文字，从不来自更大的预览，也从不来自任何标签——
- * UI 上没有「primary」这个词。
+ * It is a **tile lying on its side**: the same 16:10 preview frame (160 × 100, the same tier as the
+ * tile — not a banner), and beside the frame a kind icon plus a title one step larger than the
+ * description line, the author-written description (clamped to three lines), and one monospaced
+ * `kind · size` line; the trailing slot is the tile's (v{n}, which yields to ↗ on hover). Emphasis
+ * comes from position, form, and text — never from a larger preview, and never from a label: the
+ * word "primary" does not appear anywhere in the UI.
  *
- * 面板窄于 380px 时（容器查询 `wf-artifacts`，由侧板的节身声明）框收成 136 × 85；完成卡不声明
- * 容器，于是恒为 160 × 100。
+ * When the panel is narrower than 380px (container query `wf-artifacts`, declared by the sidebar's
+ * section body) the frame shrinks to 136 × 85; the completion card declares no container, so it is
+ * always 160 × 100.
  *
- * 整行是一颗 `<button>`：宿主没给回调时是禁用的按钮，与瓦片同一条门。与瓦片同一个结构（见
- * WorkflowArtifactTile 文件头）：预览框是按钮的兄弟节点并标 `inert`，按钮只包文字列，
- * 用铺满整行的 `::after` 接住点击。尾槽与细节沿用瓦片的 testid（`workflow-artifact-tile-version` /
- * `-open`、`workflow-run-artifact-badge` / `-bytes` / `-items`）：它们是同一套语法，读测试的人不该
- * 因为形态换了而找不到版本号。
+ * The whole row is a single `<button>`: when the host supplies no callback it is a disabled button,
+ * on the same footing as the tile. It shares the tile's structure (see the file header of
+ * WorkflowArtifactTile): the preview frame is a sibling of the button and is marked `inert`, the
+ * button wraps only the text column, and a full-row `::after` catches the clicks. The trailing slot
+ * and the details reuse the tile's testids (`workflow-artifact-tile-version` / `-open`,
+ * `workflow-run-artifact-badge` / `-bytes` / `-items`): they are one shared vocabulary, and a
+ * reader of the tests should not lose track of the version number just because the form changed.
  */
 export function WorkflowArtifactRow({
   artifact,
@@ -40,12 +46,18 @@ export function WorkflowArtifactRow({
 }: {
   artifact: WorkflowCompletionArtifact;
   labels: PresetLabels;
-  /** 预览框的内容；缺席即纸页字形（由调用方交 `ArtifactSheetGlyph`，与瓦片一致）。 */
+  /**
+   * The contents of the preview frame; when absent, the blank page glyph (supplied by the caller as
+   * `ArtifactSheetGlyph`, same as the tile).
+   */
   preview?: ReactNode;
   onOpen?: (artifactId: string) => void;
   enterDelayMs?: number;
   testId?: string;
-  /** tooltip 覆盖（侧板把工作区出处放进来）；缺席时是「种类词 · 标题」。 */
+  /**
+   * Tooltip override (the side panel puts the workspace origin into it); when absent, it is "kind
+   * label · title".
+   */
   title?: string;
 }) {
   const { intl } = useZCodeIntl();
@@ -139,7 +151,7 @@ export function WorkflowArtifactRow({
           ) : null}
         </span>
         {description === undefined || description.length === 0 ? null : (
-          // 作者没写 description 时这一行消失、行仍在——不用 id 或占位句顶替。
+          // When the author does not write a description, this line disappears and the line remains - no need to replace it with an id or placeholder sentence.
           <span
             className="line-clamp-3 text-ui-sm text-foreground-subtle [text-wrap:pretty]"
             data-testid="workflow-artifact-row-description"

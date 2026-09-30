@@ -22,9 +22,10 @@ export type WorkflowLaneData = WorkflowCausalityGraphData["lanes"][number];
 export type WorkflowParticipantData = WorkflowCausalityGraphData["participants"][number];
 export type WorkflowHandoffData = WorkflowCausalityGraphData["handoffs"][number];
 /**
- * 作者用 `phase("…")` 施加的分组结构。板面的
- * 第一层就是它；无标记脚本由 UI 合成一个隐式阶段（participant-model.ts）。`phases` /
- * `phaseEdges` 是可选的，所以这两个别名先摘掉 undefined——消费者拿到的永远是数组元素类型。
+ * The grouping structure the author imposes with `phase("…")`. It is the first level of the board;
+ * for unmarked scripts the UI synthesizes one implicit phase (participant-model.ts). `phases` /
+ * `phaseEdges` are optional, so these two aliases strip undefined first — consumers always get the
+ * array element type.
  */
 export type WorkflowPhaseData = NonNullable<WorkflowCausalityGraphData["phases"]>[number];
 export type WorkflowPhaseEdgeData = NonNullable<WorkflowCausalityGraphData["phaseEdges"]>[number];
@@ -33,15 +34,17 @@ export type WorkflowPhaseEdgeData = NonNullable<WorkflowCausalityGraphData["phas
 export type StepRunStatus = "pending" | "running" | "done" | "failed";
 
 /**
- * 按 step id 索引的状态表。**偏表**：没有观察到实例的 step 没有条目。缺席与 `pending` 是两件事——前者是
- * 「这里什么都没发生」，后者是「一个真实的实例在排队」；把两者写成同一个值会让控制流没走的
- * 分支站点把整站拖成 pending。
+ * The status table indexed by step id. **Table-biased**: a step with no observed instance has no
+ * entry. Absence and `pending` are two different things — the former means "nothing happened here",
+ * the latter means "a real instance is queued"; writing both as the same value lets branch sites
+ * the control flow never visited drag the whole station into pending.
  */
 export type StepStatusTable = Partial<Record<string, StepRunStatus>>;
 
 /**
- * 板面上可被选中的三类东西：一张
- * 参与者卡、一个阶段模块、终端返回物。`line` 是宿主做脚本行定位的便利字段（权限块）。
+ * The three kinds of things that can be selected on the board: a participant card, a phase module,
+ * and a terminal return. `line` is a convenience field the host uses to locate script lines
+ * (permission blocks).
  */
 export type WorkflowGraphSelectionKind = "participant" | "phase" | "sink";
 export interface WorkflowCausalityGraphSelection {
@@ -57,15 +60,17 @@ export const UNKNOWN_LANE_ID = "unknown";
 /** The terminal marker node: the artifact the workflow returns. */
 export const SINK_NODE_ID = "sink";
 /**
- * 兜底阶段：首个 `phase()` 标记之前发出的 step 的家，也是无标记脚本的隐式唯一阶段
- * （分析器的参与者恒带 `phase: "unphased"`）。保留 id，且**没有 name**——显示名由 UI
- * 本地化，与 `workspace`/`unknown` 车道同一模式（见 phase-name.ts）。
+ * The fallback phase: the home of steps emitted before the first `phase()` marker, and also the
+ * single implicit phase of an unmarked script (the analyzer always gives participants `phase:
+ * "unphased"`). It keeps its id and has **no name** — the display name is localized by the UI,
+ * following the same pattern as the `workspace`/`unknown` lanes (see phase-name.ts).
  */
 export const UNPHASED_PHASE_ID = "unphased";
 /**
- * 无标记脚本的隐式唯一模块的 id（UI 合成，见 participant-model.ts 的 `withImplicitPhase`）。
- * 与 `unphased` 分开：那个词在有标记的脚本里意味着「首个标记之前」（Ungrouped），而隐式
- * 模块就是整个工作流（Workflow）。
+ * The id of the single implicit module of an unmarked script (synthesized by the UI, see
+ * `withImplicitPhase` in participant-model.ts). Kept separate from `unphased`: in a marked script
+ * that word means "before the first marker" (Ungrouped), whereas the implicit module is the whole
+ * workflow (Workflow).
  */
 export const IMPLICIT_PHASE_ID = "workflow";
 

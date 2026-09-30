@@ -1,5 +1,6 @@
 {
   "name": "@zcode/desktop",
+  "version": "3.14.3",
   "private": true,
   "description": "ZCode Desktop App",
   "author": "ZCode",
@@ -43,6 +44,7 @@
     "@zcode/provider": "workspace:*",
     "@zcode/provider-node": "workspace:*",
     "@zcode/rpc": "workspace:*",
+    "@zcode/rust": "workspace:*",
     "@zcode/server": "workspace:*",
     "@zcode/services": "workspace:*",
     "@zcode/shared": "workspace:*",

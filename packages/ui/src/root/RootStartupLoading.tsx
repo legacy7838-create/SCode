@@ -10,8 +10,8 @@ interface RootStartupLoadingProps {
 export function RootStartupLoading({ label, children, busy = true }: RootStartupLoadingProps) {
   return (
     <div
-      // Web 端全局 html/body/#root 为 Electron 透明背景让路，React 接管后会替换 HTML 启动壳。
-      // 这里必须由阻塞态自身承接主题背景，否则远控链接会在 Root 恢复期间继续露出浏览器白底。
+      // The global html/body/#root on the web side makes way for the Electron transparent background, and React will replace the HTML startup shell after taking over.
+      // Here, the blocking state itself must take over the theme background, otherwise the remote control link will continue to show the white background of the browser during the root recovery period.
       className="flex h-full min-h-dvh flex-col items-center justify-center gap-6 bg-background text-foreground"
       role="status"
       aria-busy={busy}
@@ -24,7 +24,10 @@ export function RootStartupLoading({ label, children, busy = true }: RootStartup
   );
 }
 
-/** 初始化与引导共用品牌图标，保持底色、描边、圆角和标志比例一致。 */
+/**
+ * Initialization and onboarding share the brand icon, keeping the fill color, the stroke, the
+ * corner radius and the mark proportions consistent.
+ */
 export function ZCodeStartupLogoBadge({ animated = true }: { animated?: boolean }) {
   return (
     <div className="relative flex size-24 items-center justify-center rounded-3xl bg-[linear-gradient(180deg,#000000_0%,#151718_100%)] text-[#ffffff] shadow-xl/20 before:pointer-events-none before:absolute before:inset-0 before:rounded-[inherit] before:border before:border-[rgba(255,255,255,0.1)] before:content-['']">

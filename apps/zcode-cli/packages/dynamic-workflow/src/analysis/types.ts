@@ -17,15 +17,14 @@ export type SiteKind = "ask" | "world-read" | "join" | "fan-out" | "source" | "s
 export type SiteLoc = ScriptLoc;
 
 /**
- * 名字只在运行时才成形（`` agent(`研究员${i + 1}`) ``）时，静态能拿到的那部分形状：
- * 第一个洞之前的字面量（`head`）与最后一个洞之后的字面量（`tail`）。
+ * The part of the shape that is statically available when a name only takes concrete form at runtime (`` agent(`fellow${i + 1}`) ``): the literal before the first hole (`head`) and the literal after the last hole (`tail`).
  *
- * 为什么只能拿到形状：把模板折成 8 个具体名字要求把 `map` 展开，而 `×N` 与
- * `maybe stack` 存在的意义正是拒绝展开。所以这里给出的是形状，不是名字。
+ * Why only the shape is available: folding the template into 8 concrete names would require expanding `map`, and the whole point of
+ * `×N` and `maybe stack` existing is to refuse that expansion. So what is handed back here is a shape, not a name.
  *
- * 不变量：`head`/`tail` 至少有一个在场（拿不到就返回 undefined，不返回空 pattern），
- * 两者都已 trim，且各自至少含一个字母或数字——`` `${x}-` `` 渲染成 `…-` 比「未命名智能体」
- * 更差，所以那种 affix 直接丢弃。省略号在**渲染时**才加，这里只搬数据。
+ * Invariant: at least one of `head`/`tail` is present (when neither can be obtained it returns undefined, never an empty pattern),
+ * both have been trimmed, and each contains at least one letter or digit — `` `${x}-` `` rendering as `…-` is worse than "unnamed agent",
+ * so such an affix is dropped outright. The ellipsis is added only at **render** time; this function just moves data.
  */
 export interface NamePattern {
   head?: string;
@@ -52,8 +51,8 @@ export interface SiteNode {
   loc?: SiteLoc;
   label: string;
   /**
-   * `label` 只拿到兜底串（内联的 `` agent(`研究员${i}`).ask(…) ``——receiver 是调用式，
-   * 既非字面量也非标识符，于是落到 `"ask"`）时，模板的静态形状。仅 `ask` 节点可能有。
+   * The static shape of the template, for when `label` only got the fallback string (an inline `` agent(`researcher${i}`).ask(…) `` — the receiver is a call
+   * expression, neither a literal nor an identifier, so it lands on `"ask"`). Only `ask` nodes can have this.
    */
   labelPattern?: NamePattern;
   actors?: string[];
@@ -72,9 +71,9 @@ export interface ActorSite {
   loc: SiteLoc;
   name?: string;
   /**
-   * `name` 缺席（`agent()` 的首参不是字面量）而首参是模板字符串时的静态形状。与 `name`
-   * 实际互斥：字面量给名字，模板给形状。**刻意不写进 `name`**——`name` 的契约是「作者原样
-   * 写下的那个词」，把重建物混进去，下游就再也分不清看到的是字面量还是推断。
+   * The static shape when `name` is absent (the first argument of `agent()` is not a literal) and that first argument is a template string. It is mutually exclusive with an actual
+   * `name`: a literal gives a name, a template gives a shape. **Deliberately not written into `name`** — the contract of `name` is "the word the author wrote
+   * verbatim", and mixing a reconstruction in means downstream can never again tell a literal from an inference.
    */
   namePattern?: NamePattern;
   within?: string;

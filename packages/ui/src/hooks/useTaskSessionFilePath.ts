@@ -3,8 +3,8 @@ import { logger } from "@/logger.js";
 import { useZCodeTaskService } from "@/hooks/useZCodeTaskService.js";
 
 /**
- * useWorkspaceActiveTaskState 的导出返回类型间接引用此接口，声明生成要求它可导出。
- * @lintignore
+ * The exported return type of useWorkspaceActiveTaskState references this interface indirectly, and
+ * declaration emit requires it to be exportable. @lintignore
  */
 export interface TaskSessionFilePathState {
   path: string | null;
@@ -36,11 +36,13 @@ function getErrorMessage(error: unknown): string {
 }
 
 /**
- * 读取当前 task 对应的持久化快照文件路径。
+ * Reads the path of the persisted snapshot file for the current task.
  *
- * UI 之前直接在浏览器里访问 crypto.subtle 计算 workspace hash，
- * 在 http 预览或远程访问这类非安全上下文里 subtle 可能不存在，副作用阶段会直接抛错。
- * 这里改成统一走 zcodeTaskService 解析最终路径，既不让 UI 猜目录规则，也能兼容 remote workspace 的远端 home 目录。
+ * The UI used to reach for crypto.subtle directly in the browser to compute the workspace hash; in
+ * a non-secure context such as an http preview or remote access, subtle may not exist, and the
+ * effect phase would throw outright. Resolving the final path through zcodeTaskService instead
+ * means the UI no longer has to guess the directory rules, and a remote workspace's remote home
+ * directory still works.
  */
 export function useTaskSessionFilePath(
   workspacePath: string,
@@ -58,7 +60,7 @@ export function useTaskSessionFilePath(
 
     if (!enabled || !workspacePath || !taskId) {
       requestVersionRef.current += 1;
-      // task 路径只服务右键菜单；菜单未打开时停止 RPC，避免拖拽重排放大为路径查询风暴。
+      // The task path only serves the context menu; stop the RPC while the menu is closed so drag-reorder does not amplify into a path-query storm.
       setState(INITIAL_STATE);
       return () => {
         disposed = true;
@@ -99,7 +101,7 @@ export function useTaskSessionFilePath(
         }
 
         const message = getErrorMessage(error);
-        logger.warn("[useTaskSessionFilePath] 读取 task 快照路径失败", {
+        logger.warn("[useTaskSessionFilePath] failed to read the task snapshot path", {
           workspacePath,
           taskId,
           workspaceIdentity,

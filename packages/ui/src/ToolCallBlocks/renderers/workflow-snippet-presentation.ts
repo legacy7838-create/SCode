@@ -1,6 +1,9 @@
 import type { ToolCallEvalWorkflowSnippetDisplay } from "@zcode/shared/zcode-protocol-v4";
 
-/** handler 的 response 面向模型，含重复耗时/日志；只解包已知格式，未知/截断内容保留。 */
+/**
+ * The handler's response targets the model and carries duplicated timing/log content; only known
+ * formats are unwrapped, and unknown or truncated content is preserved.
+ */
 export function snippetResponse(display: ToolCallEvalWorkflowSnippetDisplay): string | undefined {
   let text = display.response;
   const logs = display.logs.length

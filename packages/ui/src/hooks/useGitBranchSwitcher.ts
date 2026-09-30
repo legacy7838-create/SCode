@@ -26,8 +26,8 @@ import { logger } from "@/logger.js";
 
 interface UseGitBranchSwitcherOptions {
   workspacePath: string;
-  // gitSummary 是 HEAD 的真实来源(由文件 watcher 实时回灌)。传入它的当前分支/HEAD 类型，
-  // 用于在底层 HEAD 变化时丢弃可能过期的本地分支快照。
+  // gitSummary is the source of truth for HEAD (fed in real time by the file watcher). Its current branch/HEAD ref type is passed in
+  // so a possibly stale local branch snapshot can be discarded when the underlying HEAD changes.
   currentBranchName: string | null;
   headRefType: GitRepositorySummary["headRefType"];
   onRefreshGit: () => void;
@@ -72,7 +72,7 @@ export function useGitBranchSwitcher({
       setBranchesResult(nextResult);
     } catch (error: unknown) {
       const message = getErrorMessage(error);
-      logger.warn("[GitBranchSwitcher] 读取本地分支失败", {
+      logger.warn("[GitBranchSwitcher] failed to read local branches", {
         workspacePath,
         error: message,
       });
@@ -95,12 +95,12 @@ export function useGitBranchSwitcher({
   const openRef = useRef(open);
   openRef.current = open;
   useEffect(() => {
-    // 关键业务逻辑：gitSummary 的 HEAD 一旦变化(例如外部命令切分支、watcher 实时回灌)，
-    // 就丢弃上一次展开下拉框时缓存的本地分支快照，让底部分支标签回落到 gitSummary.branchName。
-    // 否则 branchesResult.currentBranchName 的旧值会长期遮挡真实分支名，出现“切了不变”。
-    // 注意：这里只重置本地 UI state，不触发任何刷新 / RPC，避免重新引入 refresh<->watcher 自激回路。
+    // Key business logic: as soon as gitSummary's HEAD changes (e.g. an external command switched branches, or the watcher fed it back in),
+    // discard the local branch snapshot cached from the last dropdown open so the bottom branch label falls back to gitSummary.branchName.
+    // Otherwise branchesResult.currentBranchName's stale value would shadow the real branch name indefinitely, showing "switched but unchanged".
+    // Note: this only resets local UI state — no refresh / RPC is triggered, avoiding reintroducing the refresh<->watcher self-triggering feedback loop.
     if (openRef.current) {
-      // 下拉框展开时正展示实时列表，不清空以免列表闪烁；关闭后下次展开会通过 loadBranches 重新拉取。
+      // The dropdown is open and showing the live list; don't clear it or the list would flicker. Once closed, the next open refetches via loadBranches.
       return;
     }
     setBranchesResult(null);
@@ -111,7 +111,7 @@ export function useGitBranchSwitcher({
       return;
     }
 
-    // 关键业务逻辑：分支列表每次展开都重新读取一次，避免切换成功后还复用上一次打开时的旧快照。
+    // Key business logic: re-read the branch list every time the dropdown opens, so a successful switch never reuses the stale snapshot from the previous open.
     void loadBranches();
   }, [loadBranches, open]);
 
@@ -167,8 +167,8 @@ export function useGitBranchSwitcher({
         return false;
       }
 
-      // 关键业务逻辑：overwrite 型阻塞不再直接 toast，而是转成“失败卡片 -> 提交 -> 自动重试切换”流程。
-      // 这样用户能先看见真正受影响的文件，再决定是否提交当前更改继续。
+      // Key business logic: overwrite-type blocks no longer toast directly; they become a "failure card -> commit -> automatic switch retry" flow.
+      // This way the user first sees the actually affected files, then decides whether to commit the current changes and continue.
       setOpen(false);
       setCreateDialogOpen(false);
       setCommitError(null);
@@ -183,7 +183,7 @@ export function useGitBranchSwitcher({
   const handleMutationResult = useCallback(
     async (result: GitBranchMutationResult, actionLabel: string) => {
       if (!result.ok) {
-        logger.warn("[GitBranchSwitcher] 分支变更被阻塞", {
+        logger.warn("[GitBranchSwitcher] branch change blocked", {
           workspacePath,
           action: result.action,
           branchName: result.branchName,
@@ -201,7 +201,7 @@ export function useGitBranchSwitcher({
         toast(intl.formatMessage({ id: successMessageId }, { branchName: result.branchName }));
       }
 
-      logger.info(`[GitBranchSwitcher] ${actionLabel}成功`, {
+      logger.info(`[GitBranchSwitcher] ${actionLabel} succeeded`, {
         workspacePath,
         branchName: result.branchName,
         action: result.action,
@@ -227,8 +227,8 @@ export function useGitBranchSwitcher({
             }
           : current,
       );
-      // 关键业务逻辑：只有真正发生分支变更时才刷新全局 Git 状态。
-      // 切到当前分支这类 no-op 已经是成功结果，但没必要再触发一轮额外重拉。
+      // Key business logic: only refresh global Git state when a branch change actually happened.
+      // A no-op like switching to the current branch is already a successful result, but there's no need to trigger another full refetch.
       if (result.didChange || result.created) {
         onRefreshGit();
       }
@@ -253,10 +253,10 @@ export function useGitBranchSwitcher({
           workspacePath,
           targetBranchName,
         });
-        await handleMutationResult(result, "切换分支");
+        await handleMutationResult(result, "switch branch");
       } catch (error: unknown) {
         const message = getErrorMessage(error);
-        logger.warn("[GitBranchSwitcher] 切换分支请求失败", {
+        logger.warn("[GitBranchSwitcher] switch branch request failed", {
           workspacePath,
           targetBranchName,
           error: message,
@@ -285,10 +285,10 @@ export function useGitBranchSwitcher({
         workspacePath,
         branchName,
       });
-      await handleMutationResult(result, "创建并切换分支");
+      await handleMutationResult(result, "create and switch branch");
     } catch (error: unknown) {
       const message = getErrorMessage(error);
-      logger.warn("[GitBranchSwitcher] 创建并切换分支请求失败", {
+      logger.warn("[GitBranchSwitcher] create and switch branch request failed", {
         workspacePath,
         branchName,
         error: message,
@@ -331,7 +331,7 @@ export function useGitBranchSwitcher({
     setMutationPending(true);
 
     try {
-      logger.info("[GitBranchSwitcher] 开始提交并重试切换分支", {
+      logger.info("[GitBranchSwitcher] committing then retrying branch switch", {
         workspacePath,
         targetBranchName: switchAssistState.targetBranchName,
         stagedPathCount: switchAssistState.stagePaths.length,
@@ -353,10 +353,10 @@ export function useGitBranchSwitcher({
         workspacePath,
         targetBranchName: switchAssistState.targetBranchName,
       });
-      await handleMutationResult(result, "提交后切换分支");
+      await handleMutationResult(result, "commit and switch branch");
     } catch (error: unknown) {
       const message = getErrorMessage(error);
-      logger.warn("[GitBranchSwitcher] 提交并切换分支失败", {
+      logger.warn("[GitBranchSwitcher] failed to commit and switch branch", {
         workspacePath,
         targetBranchName: switchAssistState.targetBranchName,
         error: message,

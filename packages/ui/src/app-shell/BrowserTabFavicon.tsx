@@ -12,15 +12,18 @@ function BrowserTabFaviconImage({ faviconUrl }: { faviconUrl: string }) {
       alt=""
       className="size-3.5 rounded-sm object-contain"
       draggable={false}
-      // renderer 直接加载 guest favicon 时会携带 localhost Referer，
-      // 带防盗链的 CDN 会返回 403；禁用 referrer 后与网页 guest 自身的成功请求一致。
+      // When the renderer directly loads the guest favicon, it will carry the localhost Referer.
+      // A CDN with anti-hotlinking will return 403; disabling the referrer will be consistent with the successful request of the web page guest itself.
       referrerPolicy="no-referrer"
       onError={() => setHasFailed(true)}
     />
   );
 }
 
-/** Browser 与 Browser Use 共用的 favicon；请求失败时保持稳定的地球占位。 */
+/**
+ * The favicon shared by Browser and Browser Use; it keeps a stable globe placeholder when the
+ * request fails.
+ */
 export function BrowserTabFavicon({ faviconUrl }: { faviconUrl?: string | null }) {
   if (!faviconUrl) return <GlobeIcon className="size-3.5" />;
 

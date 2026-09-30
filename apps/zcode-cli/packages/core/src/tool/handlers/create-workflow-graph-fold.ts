@@ -1,18 +1,18 @@
 // ============================================================
-// 阶段边的折叠与归约 - 显示图阶段层的唯一删边点
+// Folding and reduction of stage edges - display the only edge deletion point of the stage layer of the graph
 // ============================================================
-// 从 create-workflow-graph-bounds.ts 拆出：折叠本身是一段自洽的纯图论（有序对折叠 +
-// 强连通分量 + 在缩点上跑分析器的归约），而裁剪层其余部分讲的是引用完整性与上限。拆开后
-// 这段逻辑可以单独读、单独钉住，也给 bounds 文件留出 max-lines 余量。
+// Extracted from create-workflow-graph-bounds.ts: folding itself is a self-consistent piece of pure graph theory (ordered pair folding +
+// Strongly connected components + reduction that runs the analyzer on contraction points), while the rest of the clipping layer is about referential integrity and upper bounds. After disassembling
+// This logic can be read and pinned separately, and max-lines margin is left for the bounds file.
 
 import {
   reduceOrdering,
   type ReducibleEdge,
-  // 与 bounds 同一条理由：走 /projections 子路径而非根桶，根桶会把 typescript 编译器
-  // 一起拖进浏览器包（作品集回放在浏览器里复用这条链路）。
+  // The same reason as bounds: use the /projections subpath instead of the root bucket, which will cause the typescript compiler to
+  // Drag them together into the browser package (portfolio playback reuses this link in the browser).
 } from "@zcode/dynamic-workflow/projections";
 
-/** 折叠前的一条边：种类已经坍缩成「是不是回边」。 */
+/** One edge before folding: its kind has already been collapsed into "is it a back edge". */
 export interface RawEdge {
   from: string;
   to: string;
@@ -20,21 +20,21 @@ export interface RawEdge {
 }
 
 /**
- * 阶段边的折叠（交接边由分析器按同一算法归约好了送来，这里不再碰）：
+ * The folding of the phase edges (the handoff edges were already reduced by the analyzer with the same algorithm and are delivered as they are, so they are not touched here):
  *
- * 一、同一有序对折叠成一条（首见序），`back` 当且仅当折叠前的**全部**边都是回边——存在
- * 任何一条前向事实就按前向处理，宁可让排秩多一条约束，不能少一条；自环丢弃。
+ * I. The same ordered pair folds into one (first-seen order), and `back` holds if and only if **all** the edges before the folding were back edges -- if
+ * any forward fact exists it is treated as forward, and rather have the ranking carry one extra constraint than miss one; self-loops are dropped.
  *
- * 二、归约跑在**缩点**上，而不是原图上。取前向边（回边不算）的强连通分量：同一分量内的边
- * 无条件留下，跨分量的边按 (分量对, kind) 去重后喂给分析器的贪心不可约归约（前向边同一
- * kind、回边作 carry（`carryOf: "seq"`），它就退化成无类型归约），再按存活的分量对展开
- * 回原边。输出保持输入序。
+ * II. The reduction runs on the **condensation**, not on the original graph. Take the strongly connected components of the forward edges (back edges do not count): edges inside
+ * one component are kept unconditionally, and the cross-component edges are deduplicated by (component pair, kind) before being fed to the analyzer's greedy irredundant reduction (a forward edge of the same
+ * kind, a back edge as carry (`carryOf: "seq"`) makes it degenerate into a kindless reduction), and are then expanded back into original edges over the surviving component pairs.
+ * The output keeps the input order.
  *
- * 把原图直接喂给归约是错的：一条见证路径可以绕环走回
- * 来。两组互不相干的 if/else 复用同一对阶段名时，商图里 甲→乙 与 乙→甲 都是普通分支边，
- * 归约据此把 选择→甲 判成被 选择→乙→甲 蕴含而删掉，画面就变成「条件分支总是走乙，甲是乙
- * 的岔路」——一句假话。穿过与端点同环的节点的路径对「控制能不能到那儿」不作任何断言，所以
- * 见证只在缩点这张 DAG 上才成立。
+ * Feeding the original graph straight into the reduction is wrong: a witness path can loop around and come
+ * back. When two unrelated if/else groups reuse the same pair of phase names, both branch->A and A->branch are ordinary branch edges in the
+ * condensed graph, so the reduction decides that branch->A is implied by branch->A->branch and deletes it, and the picture becomes "the conditional
+ * branch always takes A, and B is a side road off A" -- a false statement. A path passing through a node in the same cycle as an endpoint asserts nothing about
+ * "whether control can get there", so the witness only holds on this condensation DAG.
  */
 export function foldPhaseEdges(raw: readonly RawEdge[]): RawEdge[] {
   const folded = foldPairs(raw);
@@ -42,8 +42,8 @@ export function foldPhaseEdges(raw: readonly RawEdge[]): RawEdge[] {
   const component = (id: string): string => componentOf.get(id) ?? id;
   const keyOf = (from: string, to: string, back: boolean): string => `${from} ${to} ${back}`;
 
-  // 跨分量的边按 (分量对, kind) 去重，首见序；同分量的边根本不进归约——它在缩点里是自环，
-  // 对 DAG 上的可达关系什么都没说。
+  // The edges across components are deduplicated according to (component pair, kind), and the edges with the same component are not reduced at all - they are self-loops in the contraction point,
+  // Says nothing about reachability relations on the DAG.
   const order: string[] = [];
   const byKey = new Map<string, ReducibleEdge>();
   for (const edge of folded) {
@@ -69,7 +69,7 @@ export function foldPhaseEdges(raw: readonly RawEdge[]): RawEdge[] {
   });
 }
 
-/** 同一有序对折叠成一条，首见序；`back` 是折叠成员的合取；自环丢弃。 */
+/** The same ordered pair folds into one, in first-seen order; `back` is the conjunction of the folded members; self-loops are dropped. */
 function foldPairs(raw: readonly RawEdge[]): RawEdge[] {
   const order: string[] = [];
   const byKey = new Map<string, RawEdge>();
@@ -88,11 +88,11 @@ function foldPairs(raw: readonly RawEdge[]): RawEdge[] {
 }
 
 /**
- * 每个节点 → 它所在强连通分量的代表（分量里首次出现的节点）。只看前向边：回边说的是
- * 「下一轮」，把它算进分量会让整个循环体缩成一个点，循环体内部真正冗余的边就再也删不掉。
+ * Each node → the representative of the strongly connected component it is in (the first node to appear in the component). Forward edges only: a back edge means
+ * "the next round", and counting it into the components would collapse the whole loop body into a single point, so the edges that are genuinely redundant inside the loop body could never be deleted again.
  *
- * 用互相可达而不是 Tarjan：阶段图上界 32 个节点（`CREATE_WORKFLOW_GRAPH_MAX_PHASES`），
- * 成本无关紧要，而「a 到 b 且 b 到 a」是分量定义本身，读起来不需要再证一遍。
+ * Mutual reachability rather than Tarjan: the phase graph is bounded at 32 nodes (`CREATE_WORKFLOW_GRAPH_MAX_PHASES`), so the
+ * cost is irrelevant, and "a reaches b and b reaches a" is the component definition itself, which does not need proving again to be read.
  */
 function componentsOf(folded: readonly RawEdge[]): Map<string, string> {
   const nodes: string[] = [];
