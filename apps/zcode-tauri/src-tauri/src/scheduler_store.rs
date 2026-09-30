@@ -236,8 +236,11 @@ pub struct ClaimedAutomation {
     // Dispatch payload (postDispatchRequest, scheduler/index.ts:186-198).
     pub title: String,
     pub prompt: String,
-    /// Raw cron expression and schedule rule JSON, so the caller can run the
-    /// (not yet ported) `computeAutomationNextRunAt` for skips and settlement.
+    /// Raw cron expression and schedule rule JSON, so the caller can run
+    /// `zcode_cron::compute_automation_next_run_at_json` for skips and
+    /// settlement. The JSON shape is kept rather than a parsed struct because
+    /// the value comes straight out of a SQLite column and a row written by a
+    /// newer build must not be able to fail deserialization here.
     pub cron_expr: String,
     pub schedule_rule: Option<String>,
     pub target_task_id: Option<String>,
@@ -552,10 +555,13 @@ impl SchedulerStore {
     /// * `reason` is written to the run row's `error` column verbatim; pass
     ///   [`MISFIRE_SKIP_REASON`] for misfire skips.
     /// * `next_run_at_ms: Some(v)` sets the rescheduled fire point, `None`
-    ///   leaves `next_run_at` unchanged. The store never fabricates a
-    ///   timestamp: Electron computed the value with
-    ///   `computeAutomationNextRunAt` (`scheduler/index.ts:146`), which has no
-    ///   Rust port yet.
+    ///   leaves `next_run_at` unchanged. The store itself never fabricates a
+    ///   timestamp: the value comes from `zcode_cron::compute_automation_next_run_at_json`,
+    ///   the same engine the Electron host calls through
+    ///   `computeAutomationNextRunAt` (`scheduler/index.ts:146`). The caller
+    ///   passes `None` only when the rule is unparseable or has no future
+    ///   fire, which leaves the schedule untouched rather than writing a
+    ///   guessed timestamp.
     /// * A one-shot (`recurring = 0`, `max_runs <= 1`) is finalised instead:
     ///   `completed`, disabled, schedule cleared
     ///   (`automationRepo.ts:1144-1151`) — a missed one-shot is terminal and
@@ -977,6 +983,125 @@ mod tests {
             .conn
             .query_row(sql, [], |row| row.get(0))
             .expect("scalar query")
+    }
+
+    /// The bug this port fixed. A recurring automation whose fire was missed used to be
+    /// released with `next_run_at_ms: None`, which `skip_misfire` COALESCEs into "leave
+    /// next_run_at unchanged". The claim was released and the run row upserted in place (so no
+    /// leak and no row growth), but the schedule never advanced — the same automation was
+    /// re-claimed as a misfire on every 20 s tick, forever.
+    ///
+    /// The value now comes from `zcode_cron::compute_automation_next_run_at_json`, linked as an
+    /// rlib because a Tauri process is not Node (docs/specs/rust-native-cron.md).
+    #[test]
+    fn a_missed_recurring_fire_is_rescheduled_rather_than_re_claimed_forever() {
+        let mut store = store();
+        // A daily rule at 09:00, anchored well before the missed fire.
+        let anchor_at = NOW - 86_400_000;
+        let missed_at = NOW - 60_000; // the fire slipped one minute into the past
+        store
+            .conn
+            .execute(
+                "INSERT INTO automations (
+                     automation_id, cron_expr, schedule_rule, prompt, workspace_key,
+                     workspace_path, recurring, max_runs, next_run_at, dispatch_attempts,
+                     running, created_at, updated_at
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, NULL, ?7, 0, 0, ?8, ?8)",
+                params![
+                    "auto-1",
+                    "0 9 * * *",
+                    r#"{"unit":"daily","interval":1,"hour":9,"minute":0,"anchorAt":1}"#,
+                    "run the thing",
+                    "ws-key",
+                    "/tmp/ws",
+                    missed_at,
+                    NOW,
+                ],
+            )
+            .expect("seed insert");
+
+        // Exactly what lib.rs now does on a misfire skip.
+        let next_run_at_ms = zcode_cron::compute_automation_next_run_at_json(
+            "0 9 * * *",
+            Some(r#"{"unit":"daily","interval":1,"hour":9,"minute":0,"anchorAt":1}"#),
+            NOW,
+        )
+        .expect("a valid rule must parse");
+        let next_run_at_ms = next_run_at_ms.expect("a daily rule must have a future fire");
+        assert!(
+            next_run_at_ms > NOW,
+            "the computed next run must be in the future, or the schedule still stalls"
+        );
+
+        let applied = store
+            .skip_misfire("auto-1", MISFIRE_SKIP_REASON, Some(next_run_at_ms), NOW)
+            .expect("skip_misfire");
+        assert!(applied, "the automation row must still exist");
+
+        // The assertion that was impossible before the port: the schedule advanced.
+        let stored: Option<i64> = col(
+            &store,
+            "SELECT next_run_at FROM automations WHERE automation_id = 'auto-1'",
+        );
+        assert_eq!(
+            stored,
+            Some(next_run_at_ms),
+            "next_run_at must have advanced past the missed fire"
+        );
+        assert_ne!(stored, Some(missed_at));
+
+        // And the claim was genuinely released, so the next tick does not re-claim it.
+        let running: i64 = col(
+            &store,
+            "SELECT running FROM automations WHERE automation_id = 'auto-1'",
+        );
+        assert_eq!(running, 0, "the claim must be released");
+    }
+
+    /// The `None` path is kept deliberately, for a row whose rule cannot be parsed or has no
+    /// future fire. It must still release the claim and leave the schedule alone rather than
+    /// writing a fabricated timestamp.
+    #[test]
+    fn an_uncomputable_next_run_leaves_the_schedule_untouched_but_releases_the_claim() {
+        let mut store = store();
+        let missed_at = NOW - 60_000;
+        store
+            .conn
+            .execute(
+                "INSERT INTO automations (
+                     automation_id, cron_expr, prompt, workspace_key, workspace_path,
+                     recurring, max_runs, next_run_at, dispatch_attempts, running,
+                     created_at, updated_at
+                 ) VALUES ('auto-2', '* * * * *', 'run', 'ws', '/tmp/ws', 1, NULL, ?1, 0, 0, ?2, ?2)",
+                params![missed_at, NOW],
+            )
+            .expect("seed insert");
+
+        // What lib.rs passes when the stored rule cannot be parsed.
+        assert!(
+            zcode_cron::compute_automation_next_run_at_json("* * * * *", Some("{not json"), NOW)
+                .is_err(),
+            "a malformed rule must be an error, so the caller falls back to None"
+        );
+
+        store
+            .skip_misfire("auto-2", MISFIRE_SKIP_REASON, None, NOW)
+            .expect("skip_misfire");
+
+        let stored: Option<i64> = col(
+            &store,
+            "SELECT next_run_at FROM automations WHERE automation_id = 'auto-2'",
+        );
+        assert_eq!(
+            stored,
+            Some(missed_at),
+            "None must leave next_run_at exactly as it was"
+        );
+        let running: i64 = col(
+            &store,
+            "SELECT running FROM automations WHERE automation_id = 'auto-2'",
+        );
+        assert_eq!(running, 0, "the claim must still be released");
     }
 
     #[test]

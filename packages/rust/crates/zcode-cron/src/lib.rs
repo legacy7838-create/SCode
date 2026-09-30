@@ -21,6 +21,7 @@ pub use expr::{
     compute_next_run_at, is_fixed_calendar_cron, is_valid_cron_expr, previous_run_at,
     ONE_SHOT_MISSED_RUN_GRACE_MS, ONE_SHOT_STALE_TARGET_WINDOW_MS,
 };
+pub use localtime::Millis;
 pub use rule::{
     build_interval_schedule_rule, build_relative_delay_schedule, compute_automation_next_run_at,
     compute_schedule_rule_next_run_at, infer_minute_interval_schedule_rule, is_one_shot_automation,
@@ -65,8 +66,8 @@ struct ScheduleRuleJson {
 
 /// Internal helper: plain `String` errors, converted at the napi boundary with
 /// `Error::from_reason`. Keeping it free of napi types means the parsing logic is testable
-/// without the macro-generated surface.
-fn rule_from_json(raw: &str) -> std::result::Result<ScheduleRule, String> {
+/// without the macro-generated surface, and reusable by the rlib consumer below.
+pub fn rule_from_json(raw: &str) -> std::result::Result<ScheduleRule, String> {
     let parsed: ScheduleRuleJson =
         serde_json::from_str(raw).map_err(|error| format!("invalid scheduleRule: {error}"))?;
     let unit = Unit::parse(&parsed.unit)
@@ -280,6 +281,30 @@ pub fn is_fixed_calendar_cron_js(cron_expr: String) -> bool {
     is_fixed_calendar_cron(&cron_expr)
 }
 
+/// The rlib-facing entry point, for a Rust host that holds the rule as JSON.
+///
+/// The Tauri scheduler store already reads `cron_expr` and `schedule_rule` out of SQLite as
+/// strings (`scheduler_store.rs:241-242`), so this takes the same shape rather than making
+/// the caller define a Rust struct it would only immediately re-serialise. A Tauri process is
+/// not Node and cannot `require()` the `.node`, so the crate is linked as an rlib and this is
+/// the function it calls (spec R3).
+///
+/// Errors are returned rather than panicked because the input is a database column: a row
+/// written by a newer build, or hand-edited, must not take the scheduler process down. The
+/// caller decides the degradation; `None` (no future fire) is a legitimate result and is not an
+/// error.
+pub fn compute_automation_next_run_at_json(
+    cron_expr: &str,
+    rule_json: Option<&str>,
+    from: Millis,
+) -> std::result::Result<Option<Millis>, String> {
+    let rule = match rule_json.map(str::trim).filter(|raw| !raw.is_empty()) {
+        Some(raw) => Some(rule_from_json(raw)?),
+        None => None,
+    };
+    Ok(compute_automation_next_run_at(cron_expr, rule.as_ref(), from))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -313,14 +338,61 @@ mod tests {
         assert!(err.contains("Unsupported monthlyMode"), "{err}");
     }
 
+    /// The rlib entry point the Tauri scheduler uses must reach the *same engine* as the napi
+    /// path, because the two differ only in how the rule crosses the boundary. A divergence
+    /// here would mean the Electron and Tauri hosts schedule automations differently.
+    ///
+    /// The napi functions are not compared directly here: `#[napi]` rewrites their signatures
+    /// (`String` in, `napi::Result` out), so calling them from Rust proves nothing about the
+    /// engine. `tests/wire_shapes.rs` covers the JSON layer.
+    #[test]
+    fn the_rlib_entry_point_reaches_the_same_engine() {
+        let from = 1_749_540_000_000i64; // 2025-06-18, a Wednesday
+        let rule = r#"{"unit":"daily","interval":1,"hour":9,"minute":30,"anchorAt":1749536400000}"#;
+
+        let via_rlib = compute_automation_next_run_at_json("30 9 * * *", Some(rule), from)
+            .expect("a valid rule must parse");
+        let parsed = rule_from_json(rule).expect("the same rule must parse");
+        let via_engine = compute_automation_next_run_at("30 9 * * *", Some(&parsed), from);
+        assert_eq!(via_rlib, via_engine, "the rlib entry must not alter the result");
+        assert!(via_rlib.is_some(), "a daily rule must always have a future fire");
+
+        // No rule falls through to the expression path.
+        assert_eq!(
+            compute_automation_next_run_at_json("30 9 * * *", None, from).unwrap(),
+            compute_automation_next_run_at("30 9 * * *", None, from)
+        );
+
+        // An empty or whitespace rule string is treated as absent, not as a parse error: the
+        // column is nullable, and a row holding "" means the same as one holding NULL.
+        for empty in ["", "   "] {
+            assert_eq!(
+                compute_automation_next_run_at_json("30 9 * * *", Some(empty), from).unwrap(),
+                compute_automation_next_run_at("30 9 * * *", None, from),
+                "{empty:?} must behave as an absent rule"
+            );
+        }
+
+        // A malformed rule is an error, not a panic: the input is a database column and must not
+        // be able to take the scheduler process down.
+        assert!(
+            compute_automation_next_run_at_json("30 9 * * *", Some("{not json"), from).is_err()
+        );
+        assert!(compute_automation_next_run_at_json(
+            "30 9 * * *",
+            Some(r#"{"unit":"fortnightly","interval":1,"hour":9,"minute":0,"anchorAt":0}"#),
+            from,
+        )
+        .is_err());
+    }
+
     /// The outcome enum's wire shape is stringly-typed on both sides of the boundary, so a
     /// rename on either side would be invisible until a user's automation silently stopped
     /// rescheduling. The first attempt at this annotation produced
     /// `{"kind":"staleOneShot","target_at":…}` against a reader expecting
     /// `kind === "StaleOneShot"` / `outcome.targetAt`, and every field disagreed at once.
     #[test]
-    fn the_outcome_enum_serialises_with_the_names_the_wrapper_expects() {
-        let at = InitialNextRun::At {
+    fn the_outcome_enum_serialises_with_the_names_the_wrapper_expects() {        let at = InitialNextRun::At {
             next_run_at: Some(1_700_000_000_000.0),
         };
         assert_eq!(

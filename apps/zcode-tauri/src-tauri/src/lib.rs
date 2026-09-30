@@ -163,16 +163,45 @@ pub fn run() {
                             outcomes.push(TickOutcome::Dispatched { run_id });
                         }
                         skipped @ TickOutcome::Skipped { .. } => {
-                            // Release the claim we just took. `next_run_at_ms` is
-                            // `None` because `computeAutomationNextRunAt` has no
-                            // Rust port: `skip_misfire` COALESCEs, so the claim is
-                            // released and the schedule is left untouched rather
-                            // than a timestamp being fabricated.
+                            // Release the claim we just took and reschedule.
+                            //
+                            // `next_run_at_ms` is the *computed* next fire, from the same
+                            // `computeAutomationNextRunAt` the Electron host uses
+                            // (`packages/desktop/src/scheduler/index.ts:146`), linked as an
+                            // rlib because a Tauri process is not Node
+                            // (docs/specs/rust-native-cron.md §10).
+                            //
+                            // Before the port this passed `None`, which `skip_misfire` COALESCEs
+                            // into "leave next_run_at unchanged". That released the claim (no
+                            // leak) and upserted the run row in place (no row growth), but the
+                            // schedule never advanced, so a recurring automation that missed
+                            // its fire was re-claimed as a misfire on every 20 s tick, forever.
+                            //
+                            // `None` is still passed when the rule cannot be parsed or has no
+                            // future fire: that preserves the old "leave it alone" behaviour for
+                            // a row we cannot reason about, rather than writing a fabricated
+                            // timestamp. The reason is recorded on the row either way.
+                            let next_run_at_ms = match zcode_cron::compute_automation_next_run_at_json(
+                                &automation.cron_expr,
+                                automation.schedule_rule.as_deref(),
+                                now_ms,
+                            ) {
+                                Ok(next) => next,
+                                Err(reason) => {
+                                    // A database column that cannot be parsed must not take the
+                                    // scheduler down; log and leave the schedule untouched.
+                                    eprintln!(
+                                        "[scheduler] cannot compute the next run for {}: {reason}",
+                                        automation_id
+                                    );
+                                    None
+                                }
+                            };
                             store
                                 .skip_misfire(
                                     &automation_id,
                                     scheduler_store::MISFIRE_SKIP_REASON,
-                                    None,
+                                    next_run_at_ms,
                                     now_ms,
                                 )
                                 .map_err(|e| e.to_string())?;

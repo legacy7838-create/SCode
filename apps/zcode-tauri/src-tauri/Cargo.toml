@@ -19,6 +19,13 @@ tauri-build = { version = "2", features = [] }
 # so the Node `@zcode/server` process can be retired service by service. Pulled
 # in with default features (which include the `websocket` network edge).
 zcode-rpc-server = { path = "../../../packages/rust/crates/zcode-rpc-server" }
+# Automation schedule computation. A Tauri process is not Node and cannot `require()` a
+# `.node`, so the crate is linked as an rlib rather than loaded at runtime — the same reason
+# `zcode-rpc-server` is a plain path dependency. Without it the scheduler had no way to
+# compute a next run and passed `None` for every misfire skip, which left a recurring
+# automation re-claimed as a misfire on every 20 s tick and never rescheduled.
+# See docs/specs/rust-native-cron.md.
+zcode-cron = { path = "../../../packages/rust/crates/zcode-cron" }
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-fs = "2"
 tauri-plugin-os = "2"

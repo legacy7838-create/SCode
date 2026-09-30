@@ -543,11 +543,7 @@ weaken the suite.
 
 ### Not done (deliberately, and not silently)
 
-- **The Tauri host does not call it yet.** `zcode-cron` builds as both `cdylib` and `rlib`, but
-  `apps/zcode-tauri/src-tauri/Cargo.toml` does not yet depend on it, and `lib.rs:167` still
-  passes `None`. That is the §10 change request, and it is the last step of this wave. Until it
-  lands the crate is used by Node only and the Tauri bug is fixed in capability but not in the
-  Tauri binary.
+- ~~**The Tauri host does not call it yet.**~~ **Wired and verified.** See §14.
 - **§6.2's differential corpus — BUILT, and it paid for itself.** 530 rows captured from
   `croner@10.0.1` (53 expressions x 10 anchors) and replayed against the Rust engine. The first
   run failed with **44 divergences**; see §13.
@@ -619,3 +615,68 @@ against memory: `*/2` in day-of-week from a Wednesday resolves to **Thursday** (
 {Sun,Tue,Thu,Sat}), not the following Sunday; `0 0 * * 7` is Sunday, not Saturday; and
 `0,7` must collapse to a *single* weekday, which is why deduplication happens after mapping
 rather than before.
+
+
+---
+
+## 14. Tauri wiring (closing §7.3 and §10)
+
+The last step of the wave: the Tauri host now computes the next fire instead of passing `None`.
+
+### R3 resolved — the napi/rlib question
+
+Spec R3 asked whether the `#[napi]` macros would make an `rlib` awkward to link into a
+non-Node process, and proposed splitting a `zcode-cron-core` rlib if so. **It was not
+necessary.** `zcode-cron` is declared `crate-type = ["cdylib", "rlib"]` and `cargo check` on
+`apps/zcode-tauri/src-tauri` links cleanly: the macro-generated symbols are only reachable
+through the `.node` entry points, which the Rust host never calls, so nothing dangles. No
+crate split was needed.
+
+### The change
+
+`apps/zcode-tauri/src-tauri/src/lib.rs` — the misfire branch of the 20 s tick now computes:
+
+```rust
+let next_run_at_ms = match zcode_cron::compute_automation_next_run_at_json(
+    &automation.cron_expr,
+    automation.schedule_rule.as_deref(),
+    now_ms,
+) { Ok(next) => next, Err(reason) => { eprintln!(...); None } };
+```
+
+The store already read `cron_expr` and `schedule_rule` out of SQLite as strings
+(`scheduler_store.rs:241-242`) specifically so the caller could do this, so **no schema or
+query change was needed** — only the missing computation.
+
+`compute_automation_next_run_at_json` is a new public, non-napi entry point taking the rule as
+JSON, because that is the shape a SQLite column already has; making the host define a Rust
+struct only to re-serialise it would be noise. Its parity with the engine is unit-tested, and
+an empty/whitespace rule string is treated as **absent** rather than as a parse error, since the
+column is nullable and `""` means the same as `NULL`.
+
+**`None` is still passed when the rule is unparseable or has no future fire.** That preserves
+the old "leave the schedule alone" behaviour for a row the host cannot reason about, rather
+than writing a fabricated timestamp — the reason `next_run_at_ms` is an `Option` in the store's
+signature at all. A parse error is logged with the automation id and the reason; a malformed
+database column must not take the scheduler process down, so the error is returned rather than
+panicking.
+
+### Verification
+
+Two tests in `scheduler_store.rs`, and the first one is a real regression test:
+
+* `a_missed_recurring_fire_is_rescheduled_rather_than_re_claimed_forever` — seeds a recurring
+  daily automation whose fire was missed, computes the next run exactly as `lib.rs` does, and
+  asserts `next_run_at` advanced. **Verified to fail if `skip_misfire` is called with `None`**
+  (temporarily reverted during implementation: `left: Some(999940000), right: Some(1049400000)`
+  — the missed fire unchanged versus the computed one), so the pre-port behaviour cannot
+  return unnoticed.
+* `an_uncomputable_next_run_leaves_the_schedule_untouched_but_releases_the_claim` — the `None`
+  path: the schedule is left exactly as it was, and the claim is still released.
+
+`cargo test --lib` in `apps/zcode-tauri/src-tauri`: **64 passed, 0 failed** (was 50 before this
+wave). `PORT_STATUS.md` item 3 and the "Recurring misfire does not advance" known issue are both
+marked resolved, with the test name cited so a reader can check the claim.
+
+`pnpm-lock.yaml` did not change: the Tauri dependency is a Cargo path dependency, and
+`croner` was already removed from `package.json` in the previous commit.

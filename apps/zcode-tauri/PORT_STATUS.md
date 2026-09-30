@@ -21,7 +21,7 @@ and remains the shipping product; nothing here was cut over.
 
 ## Verified working
 
-Evidence: `cargo test` **50/50**, `cargo build` clean, `tsc --noEmit` clean,
+Evidence: `cargo test` **64/64**, `cargo build` clean, `tsc --noEmit` clean,
 `vite build` clean, and the app launched under Xvfb where the renderer completed
 IPC round-trips against live Rust state (see "Live proof" below).
 
@@ -131,13 +131,19 @@ Ordered by how much they block a real cutover.
    full `IServiceAccessor` over a WebSocket to `@zcode/server`
    (`connectViaWebSocket`), so no transferable port is needed. See "UI status".
 2. **The remaining ~94 IPC commands** and ~94 `IPlatformService` members.
-3. **Scheduler cron engine.** The store claims and settles correctly, but
-   `computeAutomationNextRunAt` (`packages/services`, TypeScript) has no Rust
-   port, so a *recurring* automation that misses its fire is re-claimed as a
-   misfire every 20 s tick. `skip_misfire(…, next_run_at_ms: None)` COALESCEs, so
-   the claim is always released (no leak) and the run row is upserted in place on
-   the same `run_id` (no row growth) — but the schedule never advances until the
-   cron computation is ported. One-shot finalisation is correct today.
+3. ~~**Scheduler cron engine.**~~ **Resolved.** `computeAutomationNextRunAt` is
+   now `zcode-cron` (`packages/rust/crates/zcode-cron`), linked as an rlib
+   because a Tauri process is not Node and cannot `require()` a `.node` — the
+   same reason `zcode-rpc-server` is a plain path dependency. A *recurring*
+   automation that misses its fire is now rescheduled with a real timestamp
+   instead of being re-claimed as a misfire every 20 s tick. `skip_misfire` is
+   still called with `None` when the stored rule cannot be parsed or has no
+   future fire, which leaves the schedule untouched rather than writing a
+   fabricated timestamp.
+   The engine itself is ported with a differential corpus against the
+   `croner@10.0.1` output it replaces (530 rows, 4 enumerated divergences), so
+   the Tauri host and the Electron host schedule automations through the same
+   semantics. See `docs/specs/rust-native-cron.md`.
 4. **Embedded browser.** Electron used a `<webview>` driven over CDP
    (`browserGuestManager.ts`, 4,640 lines). Tauri's model is a child
   `WebviewWindow` per tab — a redesign, not a translation.
@@ -326,8 +332,10 @@ before they can be honoured.
 
 ## Known open issues
 
-- **Recurring misfire does not advance** — see "Not yet ported" item 3. No claim
-  leak and no row growth, but the schedule stalls until the cron engine is ported.
+- ~~**Recurring misfire does not advance.**~~ **Fixed** — see "Not yet ported"
+  item 3. `scheduler_store::tests::a_missed_recurring_fire_is_rescheduled_rather_than_re_claimed_forever`
+  asserts the schedule advances, and it fails if `skip_misfire` is called with
+  `None` again, so the pre-port behaviour cannot come back unnoticed.
 - **Dock/taskbar badge has no Tauri equivalent.** `sync_window_unread_count`
   stores the count in `AppState` for in-app display; there is no `setBadgeCount`
   API, so no fake one was added. Documented in `commands/surface.rs`.
