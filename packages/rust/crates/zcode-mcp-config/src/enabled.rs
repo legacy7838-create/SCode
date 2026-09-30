@@ -51,7 +51,7 @@ pub fn set_server_enabled(config: &JsonObject, enabled: bool) -> JsonObject {
 
 /// The outcome of a legacy migration pass.
 #[derive(Debug, Clone, PartialEq)]
-pub struct MigrationResult {
+pub struct EnabledMigrationResult {
     pub servers: JsonObject,
     /// Whether anything actually changed, so the caller only writes when it must.
     pub changed: bool,
@@ -66,7 +66,7 @@ pub struct MigrationResult {
 ///
 /// Idempotent by construction: the legacy key is removed on the first pass, so a second pass
 /// finds nothing to do and reports `changed: false`.
-pub fn migrate_legacy_enable_flag(server_map: &JsonObject) -> MigrationResult {
+pub fn migrate_legacy_enable_flag(server_map: &JsonObject) -> EnabledMigrationResult {
     let mut changed = false;
     let mut migrated = JsonObject::new();
 
@@ -87,7 +87,7 @@ pub fn migrate_legacy_enable_flag(server_map: &JsonObject) -> MigrationResult {
         migrated.insert(name.clone(), Value::Object(set_server_enabled(record, !disabled)));
     }
 
-    MigrationResult {
+    EnabledMigrationResult {
         servers: migrated,
         changed,
     }
@@ -103,7 +103,7 @@ pub fn remove_legacy_override(
     config: &JsonObject,
     config_key_name: crate::servermap::ConfigKeyName,
     name: &str,
-) -> MigrationResult {
+) -> EnabledMigrationResult {
     let mut next = config.clone();
     // Set only where a change is actually made, so the value is never a dead store.
     let changed: bool;
@@ -119,19 +119,19 @@ pub fn remove_legacy_override(
                 }
                 servers.as_object_mut().expect("just ensured it is an object")
             }
-            _ => return MigrationResult { servers: next, changed: false },
+            _ => return EnabledMigrationResult { servers: next, changed: false },
         },
         crate::servermap::ConfigKeyName::Flat => match next.get_mut(config_key_name.as_str()) {
             Some(Value::Object(map)) => map,
-            _ => return MigrationResult { servers: next, changed: false },
+            _ => return EnabledMigrationResult { servers: next, changed: false },
         },
     };
 
     let Some(Value::Object(server)) = target_map.get(name) else {
-        return MigrationResult { servers: next, changed: false };
+        return EnabledMigrationResult { servers: next, changed: false };
     };
     if !server.contains_key(LEGACY_ENABLE_KEY) {
-        return MigrationResult { servers: next, changed: false };
+        return EnabledMigrationResult { servers: next, changed: false };
     }
 
     // Keep the current enabled value if there is one; otherwise the legacy value decides.
@@ -143,7 +143,7 @@ pub fn remove_legacy_override(
     target_map.insert(name.to_string(), Value::Object(cleaned));
     changed = true;
 
-    MigrationResult {
+    EnabledMigrationResult {
         servers: next,
         changed,
     }

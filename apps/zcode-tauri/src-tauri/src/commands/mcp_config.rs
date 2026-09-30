@@ -203,28 +203,67 @@ pub fn save_mcp_to_user_directory(
     }
 }
 
-/// `zcode:migrate-legacy-common-mcp` — **not yet ported**.
+/// `zcode:migrate-legacy-common-mcp` — imports servers out of a legacy storage location.
 ///
-/// This channel is a different operation from the two above: it *imports* MCP configs out of a
-/// legacy storage directory (`legacyStorageDir` in the request), which is the 243-line
-/// `mcpUserDirectory/legacy.ts` — not the read-path sweep a first draft of this command
-/// performed. Porting it as "read again and let the on-read migration do the work" would have
-/// been a silently different feature behind the same channel name.
+/// The third channel, and a genuinely different operation from the other two: it mines an old
+/// store.json or a LevelDB directory rather than reading or writing the current config. A first
+/// draft re-read the current config under this name, which would have been a silently different
+/// feature behind a familiar channel name — so it is now the real thing.
 ///
-/// It therefore keeps its web-shaped fallback in `tauriPlatform.ts`, which is recorded as a known
-/// divergence rather than pretended done. `docs/specs/rust-native-mcp-config.md` §2.2 scoped
-/// `legacy.ts` in and the implementation did not reach it; the follow-up is named there.
+/// Candidate order and the store.json-first dispatch are the original's
+/// (`legacy.ts:195-243`): the caller's `legacyStorageDir`, then `%APPDATA%\ai.z.zcode\store.json`,
+/// then five LevelDB directories, deduped with first-occurrence order kept.
 ///
-/// The result shape is kept as-is so the renderer contract does not move when it is ported.
+/// "Nothing found" is an empty result, not an error — most machines have no legacy data, and it
+/// must not look like a failure.
 #[tauri::command]
 pub fn migrate_legacy_common_mcp(
     _state: State<'_, Arc<AppState>>,
-    _request: Option<serde_json::Value>,
-) -> Result<serde_json::Value, String> {
-    Err(
-        "migrate_legacy_common_mcp is not implemented in the Tauri host yet; the legacy storage          import (mcpUserDirectory/legacy.ts) is still pending"
-            .to_string(),
+    request: Option<MigrateRequest>,
+) -> Result<MigrateOutcome, String> {
+    let request = request.unwrap_or_default();
+    let home = crate::services::paths::homedir();
+    let result = zcode_mcp_config::migrate_legacy_common_mcp(
+        request.legacy_storage_dir.as_deref(),
+        // `??` semantics, reproduced: an empty-but-present variable is used, not skipped, so a
+        // misconfigured machine searches the same (relative) place the TypeScript would have.
+        std::env::var("LOCALAPPDATA").ok().as_deref(),
+        std::env::var("APPDATA").ok().as_deref(),
+        &home,
     )
+    .map_err(|error| error.to_string())?;
+
+    Ok(MigrateOutcome {
+        servers: serde_json::Value::Object(result.servers),
+        source_path: if result.source_path.is_empty() {
+            None
+        } else {
+            Some(result.source_path)
+        },
+        total_count: result.total_count,
+        imported_count: result.imported_count,
+        skipped_count: result.skipped_count,
+    })
+}
+
+/// `MigrateLegacyCommonMcpRequest`.
+#[derive(Debug, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct MigrateRequest {
+    /// An explicit legacy directory to search before the derived candidates.
+    pub legacy_storage_dir: Option<String>,
+}
+
+/// `MigrateLegacyCommonMcpResult`.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MigrateOutcome {
+    pub servers: serde_json::Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_path: Option<String>,
+    pub total_count: usize,
+    pub imported_count: usize,
+    pub skipped_count: usize,
 }
 
 use std::sync::Arc;

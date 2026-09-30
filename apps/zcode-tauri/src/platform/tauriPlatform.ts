@@ -34,6 +34,8 @@ import {
   type IPlatformService,
   type LoadCliMcpFromUserDirectoryRequest,
   type LoadCliMcpFromUserDirectoryResult,
+  type MigrateLegacyCommonMcpRequest,
+  type MigrateLegacyCommonMcpResult,
   type RemoteTarget,
   type SaveCliMcpToUserDirectoryRequest,
   type SaveFileRequest,
@@ -46,6 +48,24 @@ import { ZC_EVENTS, type ZcEventName } from "./events.js";
 /** True when the Tauri IPC bridge is present (i.e. running inside the app, not a bare browser tab). */
 function hasTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+/**
+ * `invoke` that **propagates** a failure instead of substituting a fallback.
+ *
+ * `safeInvoke` is right for a member whose fallback is a harmless degradation — a file picker
+ * that returns `null` when the bridge is gone. It is wrong for a member whose fallback is a
+ * *plausible wrong answer*: `loadMcpFromUserDirectory` falling back to `{ servers: [] }` tells
+ * the user they have no MCP servers when in fact the read failed, and they will act on that.
+ *
+ * Inside Tauri the bridge is always present, so a failure here is a real fault and must surface
+ * as one. Outside Tauri — a bare browser tab running the web client — there is no command to
+ * call and the web implementation is the correct answer, so that case still degrades.
+ */
+async function strictInvoke<T>(command: string, args: Record<string, unknown>, outsideTauri: T): Promise<T> {
+  if (!hasTauri()) return outsideTauri;
+  // No catch: the error is the answer.
+  return invoke<T>(command, args);
 }
 
 /** `invoke` that resolves to `fallback` when the Tauri bridge is unavailable. */
@@ -227,7 +247,9 @@ export function createTauriPlatform(options: CreateTauriPlatformOptions = {}): I
     async loadMcpFromUserDirectory(
       request?: LoadCliMcpFromUserDirectoryRequest,
     ): Promise<LoadCliMcpFromUserDirectoryResult> {
-      return safeInvoke<LoadCliMcpFromUserDirectoryResult>(
+      // Strict: an empty list here would read as "no servers configured" rather than
+      // "the read failed" (docs/specs/rust-native-mcp-config.md invariant 1).
+      return strictInvoke<LoadCliMcpFromUserDirectoryResult>(
         "load_mcp_from_user_directory",
         { request: request ?? null },
         { servers: [] },
@@ -238,18 +260,24 @@ export function createTauriPlatform(options: CreateTauriPlatformOptions = {}): I
     ): Promise<{ success: boolean; error?: string }> {
       // The Rust side returns the same `{ success, error }` envelope the Electron handler
       // returned, because the renderer branches on `success`.
-      return safeInvoke<{ success: boolean; error?: string }>(
+      // Strict for the same reason: a swallowed error would report a save as failed for an
+      // unrelated reason, and the renderer shows that message to the user.
+      return strictInvoke<{ success: boolean; error?: string }>(
         "save_mcp_to_user_directory",
         { payload },
         { success: false, error: "MCP user-directory save is only available in the desktop app" },
       );
     },
-    // Still a web-shaped fallback: the legacy storage *import* (mcpUserDirectory/legacy.ts)
-    // is not ported. Recording it as unimplemented is deliberate — the previous version of
-    // this command was a read-path sweep under the same name, which would have been a
-    // silently different feature.
-    migrateLegacyCommonMcp: () =>
-      Promise.resolve({ servers: {}, totalCount: 0, importedCount: 0, skippedCount: 0 }),
+    async migrateLegacyCommonMcp(
+      request?: MigrateLegacyCommonMcpRequest,
+    ): Promise<MigrateLegacyCommonMcpResult> {
+      // Strict: "nothing to migrate" and "the migration failed" must not look identical.
+      return strictInvoke<MigrateLegacyCommonMcpResult>(
+        "migrate_legacy_common_mcp",
+        { request: request ?? null },
+        { servers: {}, totalCount: 0, importedCount: 0, skippedCount: 0 },
+      );
+    },
 
     // --- Feedback / community -------------------------------------------------
     openFeedback: () => Promise.resolve(),

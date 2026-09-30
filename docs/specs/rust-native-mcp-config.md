@@ -385,21 +385,95 @@ string-replace instead of comparing against the original bytes).
 
 ### Not done (deliberate, and stated rather than implied)
 
-- **`migrate_legacy_common_mcp` is not ported.** It is a different operation from the other two:
-  it *imports* configs out of a legacy storage directory, which is the 243-line
-  `mcpUserDirectory/legacy.ts`. A first draft implemented it as "read again and let the on-read
-  migration do the work", which would have been a silently different feature behind the same
-  channel name — so the command now returns an explicit "not implemented" error and
-  `tauriPlatform.ts` keeps its documented web-shaped fallback for that one member. Spec §2.2
-  listed `legacy.ts` in scope; the implementation did not reach it.
-- **`packages/desktop/src/main/mcpUserDirectory/` is not deleted.** The Rust path is wired and
-  tested, but the Electron `ipcMain` registrations stay, because the Electron app remains the
-  shipping product (umbrella §2.2). The 751 lines are therefore still on disk and will be removed
-  with the Electron cutover, not before. This means invariant 2 (legacy deleted) is **not yet
-  satisfied** — it is deliberately deferred, not overlooked.
+- ~~**`migrate_legacy_common_mcp` is not ported.**~~ **Ported** — see §11.
+- **`packages/desktop/src/main/mcpUserDirectory/` is still not deleted**, and this is a hard
+  blocker rather than a choice. `desktopMainIpcPlatform.ts:185-212` registers the three
+  `ipcMain.handle` channels and calls these functions, and the Electron app remains the shipping
+  product. Deleting the module would break the preload → `desktopPlatform` →
+  `ipcMain.handle` chain that the released desktop app runs. Invariant 2 (legacy deleted)
+  therefore stays unsatisfied **until the Electron cutover**, at which point 751 lines go in one
+  commit. `tsc -p tsconfig.host.json` is run as a gate on every change here to prove the Electron
+  path is still intact.
 - **No live end-to-end run.** The commands are unit-tested against temp homes and compile into the
   Tauri binary, but `pnpm dev:tauri` was not run in this environment, so the renderer-driven path
   (`loadMcpFromUserDirectory` → real `~/.zcode/cli/config.json`) is unverified against a live
   config file.
 - **R1 (silent config corruption) is mitigated by fixtures, not eliminated.** The fixtures pin the
   byte output for the shapes enumerated in §3; a shape nobody thought of is still uncovered.
+
+
+---
+
+## 11. `legacy.ts` ported — the third channel
+
+`migrate_legacy_common_mcp` is now the real operation rather than a read-path sweep. It **mines**
+an old store.json or a LevelDB directory, which is a different thing entirely from reading or
+writing the current config — the earlier draft would have been a silently different feature behind
+a familiar channel name.
+
+The port covers `legacy.ts` in full: the brace scanner, the double-encoded `store.json` reader,
+the LevelDB text miner, the candidate list, and the dispatch.
+
+### The parts that needed care
+
+* **`extractBalancedJson`** is a hand-written state machine over arbitrary text, ported
+  state-for-state. It has to respect string literals and backslash escapes, because a `}` inside a
+  JSON string value would otherwise close the object early. Five fixtures cover: a brace in a
+  string, an escaped quote, a trailing backslash, an unbalanced object, and NUL bytes (which the
+  original skips explicitly and which are common in a binary LevelDB file).
+* **Byte scanning is safe on UTF-8.** Every delimiter is ASCII and a continuation byte is >= 0x80,
+  so the scan cannot land mid-character. Asserted with a CJK payload.
+* **LevelDB files are read as raw bytes, not text.** The original decodes latin1 precisely so it
+  never fails on a non-UTF-8 byte; scanning the bytes is equivalent for this purpose, and a test
+  feeds the reader a file containing `0xff 0xfe 0xfd`.
+* **The legacy shape is `mcp.mcpServers`** — the flat key nested under `mcp`, which is *not* the
+  current `mcp.servers`. Reading the current shape would silently yield nothing, so it is asserted
+  that `mcp.servers` does **not** satisfy the legacy reader.
+* **`??` is reproduced, not "fixed".** An empty-but-present `LOCALAPPDATA` is used as-is, producing
+  a relative candidate path. The original does not treat `""` as absent; silently correcting it
+  would change which files get searched on a misconfigured machine.
+* **Nothing found is not an error.** Most machines have no legacy data, and it must not look like a
+  failure.
+
+### One real bug, caught by the tests
+
+`leveldb_sort_key` seeded the digit run with an empty string, because the outer loop had already
+consumed the first digit. Every **single**-digit name therefore parsed as `0`, so `9.ldb` and
+`10.ldb` produced identical keys and the numeric ordering silently did nothing — the files would
+still have been scanned, just oldest-first, which on a LevelDB directory means stale records win.
+Caught by `the_leveldb_sort_is_numeric_aware`, which also asserts that for LevelDB's real
+fixed-width zero-padded names the numeric form and a plain byte comparison agree (so the simpler
+numeric key is safe).
+
+### D3 — ICU collation is not reproduced
+
+The original sorts with `localeCompare(…, { numeric: true })`. The port uses a numeric-aware
+comparison instead. For the fixed-width zero-padded names LevelDB produces the two agree, which
+is asserted; for a hand-renamed file they could differ, and only the *order files are tried in*
+is affected — never the result of a successful scan.
+
+### A silent fallback, removed
+
+The three members were first wired through `safeInvoke`, which **catches a failure and returns the
+fallback**. For `loadMcpFromUserDirectory` that fallback is `{ servers: [] }` — so a failed read
+would have told the user they have no MCP servers, and they would act on it. That is exactly the
+silent wrong answer invariant 1 forbids, reintroduced through the helper rather than the port.
+
+A `strictInvoke` was added for these three members: inside Tauri a failure propagates, and the
+fallback applies only outside Tauri (a bare browser tab, where the web implementation genuinely is
+the right answer). `safeInvoke` is unchanged for the members whose fallback is a real degradation.
+
+### Verification
+
+| | |
+|---|---|
+| `zcode-mcp-config` | **69 tests**, 0 failed (20 more than the two-channel cut) |
+| Rust workspace | **511 passed, 0 failed** |
+| Tauri | **139 passed, 0 failed** (two consecutive runs; a single earlier failure was a flake in a timing-sensitive credential test under parallel load, and did not reproduce) |
+| `pnpm typecheck` | exit 0 |
+| `packages/desktop` host typecheck | exit 0 — the Electron path is provably still intact |
+| `apps/zcode-tauri` `tsc --noEmit` | exit 0 |
+| `pnpm lint` | 0 errors, 72 warnings (unchanged) |
+| `architecture:check` | 0 violations |
+| `check-native-graph` | OK |
+| `zcode-packaging` | still 8 shipping; `zcode-mcp-config` classified `not a cdylib crate` |

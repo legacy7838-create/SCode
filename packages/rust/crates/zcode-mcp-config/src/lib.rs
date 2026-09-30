@@ -18,6 +18,7 @@
 pub mod config;
 pub mod enabled;
 pub mod json;
+pub mod legacy;
 pub mod servermap;
 
 pub use config::{
@@ -29,7 +30,11 @@ pub use config::{
 };
 pub use enabled::{
     migrate_legacy_enable_flag, read_server_enabled, remove_legacy_override, set_server_enabled,
-    MigrationResult, ENABLED_KEY, LEGACY_ENABLE_KEY,
+    EnabledMigrationResult, ENABLED_KEY, LEGACY_ENABLE_KEY,
+};
+pub use legacy::{
+    build_storage_candidates, extract_balanced_json, migrate_legacy_common_mcp,
+    MigrationResult,
 };
 pub use json::{
     is_record, normalize_server_map, read_json_object, render_config_json, write_text_atomic,
