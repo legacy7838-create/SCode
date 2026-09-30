@@ -11,7 +11,7 @@
 use std::path::{Path, PathBuf};
 
 use zcode_task_index::offpeak::{
-    model_selection_is_valid, OffPeakRow, OffPeakStore, TERMINAL_STATUSES,
+    model_selection_is_valid, OffPeakStore, TERMINAL_STATUSES,
 };
 
 fn real_database() -> Option<PathBuf> {

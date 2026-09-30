@@ -59,7 +59,9 @@ pub struct OffPeakRow {
 }
 
 impl OffPeakRow {
-    fn from_row(row: &Row<'_>) -> rusqlite::Result<Self> {
+    /// Reads the columns this crate depends on, by name. Public for the same reason as
+    /// [`crate::automation::AutomationRow::from_row`].
+    pub fn from_row(row: &Row<'_>) -> rusqlite::Result<Self> {
         Ok(OffPeakRow {
             off_peak_task_id: row.get("off_peak_task_id")?,
             session_id: row.get("session_id")?,

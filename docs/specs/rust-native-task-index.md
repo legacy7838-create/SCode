@@ -643,3 +643,65 @@ non-terminal count wrong, and the test fails rather than reporting a plausible n
   it moves, the file still has one TypeScript owner.
 - **Step 3 — the task-index read path** and `build_search_snippets`.
 - **Step 6 — deletion**, gated on the Electron cutover (§7).
+
+---
+
+## 15. Step 4 — the automation facade, the last `node:sqlite` user
+
+`src/automation.rs`: `AutomationStore`, the third and final facade over the same connection.
+With this, **the crate owns `tasks-index.sqlite` outright** — the three independent
+`node:sqlite` connections are gone from the design, and one language owns the file and its
+migration ledger.
+
+### The part that must not be "simplified": backoff
+
+`claimDue` (`automationRepo.ts:724-786`) selects due rows with an `OR`, and the split is the
+whole point:
+
+* a row in backoff (`retry_at IS NOT NULL`) becomes due when **`retry_at`** expires;
+* otherwise it becomes due on **`next_run_at`**.
+
+`next_run_at` is then deliberately left alone. The original comment is explicit: a retry that
+also consumed `next_run_at` would leave it stuck in the past, so backoff would be bypassed and
+the task retried **every tick**. Leaving it also keeps `scheduled_at` — and therefore the run id
+— stable, which is what makes a retry an upsert rather than a second run row.
+
+So treating the two conditions as interchangeable is a behaviour change, and
+`a_retrying_automation_is_due_on_retry_at_not_on_a_stale_next_run_at` plus
+`the_run_id_survives_entering_backoff_on_the_real_schema` pin it. The `build_run_id` string is
+the same one the Tauri host derives at `supervisor/scheduler.rs:67`.
+
+### Also preserved
+
+the expired-task retirement that runs *before* the claim pass (otherwise an expired-but-enabled
+task is claimed forever), the zombie-claim reclaim, and the compare-and-swap claim with the
+`running = 0` guard **in the SQL** — pinned by
+`the_claim_statement_keeps_its_guard`, for the same reason as the off-peak one.
+
+### One real bug the tests caught
+
+`has_task_binding` propagated `QueryReturnedNoRows` as an error. A caller probing an automation
+that was deleted since it listed them would get a storage fault for what is really "no binding" —
+a normal deletion looking like a failure. It now returns `false`, which is what the TypeScript
+returns.
+
+### Verified against the real schema — 7 tests, none skipped
+
+| Test | Result |
+|---|---|
+| the claim runs and is a compare-and-swap on the real schema | ✅ |
+| the backoff guard holds there | ✅ |
+| `claim_due` runs, retiring the expired automation first | ✅ |
+| the run id survives entering backoff | ✅ |
+| a zombie claim is reclaimed | ✅ |
+| every `lifecycle_status` / `dispatch_status` in the live data is one the crate knows | ✅ |
+| every column the crate reads exists on the real table | ✅ |
+
+The last two are the drift guards: an unknown status or a renamed column would make a
+comparison silently wrong, and both fail rather than report a plausible result.
+
+### What is left in the crate
+
+Steps 3 (the task-index read path and `build_search_snippets`) and 6 (deletion, gated on the
+Electron cutover). The three facades now exist, so the crate's claim on the file is complete
+even though two of them are not yet wired to a consumer.

@@ -12,10 +12,14 @@
 //! opening a copy of the real database and asserting the schema and ledger match, because
 //! nothing else may start until the file itself is proven readable.
 
+pub mod automation;
 pub mod grouped;
 pub mod migrate;
 pub mod offpeak;
 
+pub use automation::{
+    build_run_id, resolve_scheduled_at, AutomationRow, AutomationStore, CLAIM_STALE_MS,
+};
 pub use grouped::{
     apply_batch, by_node_type, normalize_grouped_top_node_orders, normalize_group_member_orders,
     parse_task_order_node_key, read_node_orders, task_order_node_key, GroupMemberOrder,
