@@ -12,8 +12,14 @@
 //! opening a copy of the real database and asserting the schema and ledger match, because
 //! nothing else may start until the file itself is proven readable.
 
+pub mod grouped;
 pub mod migrate;
 
+pub use grouped::{
+    apply_batch, by_node_type, normalize_grouped_top_node_orders, normalize_group_member_orders,
+    parse_task_order_node_key, read_node_orders, task_order_node_key, GroupMemberOrder,
+    SearchableTextMode, TaskWrite, ViewNodeOrder, WriteBatch, GROUPED_TASK_ORDER_STEP,
+};
 pub use migrate::{
     baseline_time_applied, is_valid_migration_id, read_ledger, run_migrations, Migration,
     MigrationError, LEDGER_DDL,

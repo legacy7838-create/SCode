@@ -517,3 +517,63 @@ only remaining thing to verify is an unambiguous hash.
   and `build_search_snippets` are steps 2 and 3. No consumer has been switched, so nothing has
   changed behaviourally: the crate exists, is tested against the real file, and is not yet
   wired. Per §7, `taskIndexRepo.ts` stays until the Electron cutover regardless.
+
+---
+
+## 13. Step 2 delivered — the write path and write batching
+
+### What landed
+
+`src/grouped.rs`: the `node_key` format, the order normalisation for both the grouped-top
+nodes and the group members, the `tasks` upsert, and `apply_batch` — one transaction across
+`tasks`, `task_group_view_node_orders` and `task_group_members`.
+
+This is the measured win from §1.1. The TypeScript pays a durable commit per `.run()` — 32
+write sites, and `writeRecord` is exactly one per call. A snapshot that touches three tables now
+costs **one** commit, the same collapse the events store got from 3–7 commits per tool call.
+
+### Verified against a copy of the real database — 6 tests, none skipped
+
+`tests/real_write.rs` writes to a *copy* of `~/.zcode/v2/tasks-index.sqlite`, because a schema
+that parses is not a schema the upsert agrees with, and that difference only shows up when the
+statement runs.
+
+| Test | Result |
+|---|---|
+| the upsert runs against the real schema, existing rows untouched | ✅ |
+| omitting `searchable_text` preserves the stored value (silent-data-loss guard) | ✅ |
+| setting and clearing `searchable_text` work | ✅ |
+| a written `node_key` matches the format of the rows already on disk, and writing one does not disturb the others | ✅ |
+| normalising the real rows is stable and a fixed point | ✅ |
+| a three-table batch commits together | ✅ |
+
+### Two real bugs the tests caught
+
+1. **Invalid SQL in the upsert.** The obvious single expression —
+   `CASE WHEN ?18 = 0 THEN searchable_text …` in the `VALUES` list — is not valid: a bare
+   column name in `INSERT … VALUES` has no row to read, and SQLite answers `no such column`.
+   The three states need **two different expressions**: on `INSERT` there is nothing to keep, so
+   `Keep` and `Clear` both write `''` and only `Set` writes text; on `UPDATE` the existing row
+   *is* addressable as `tasks.searchable_text`, which is what makes `Keep` mean "leave it alone".
+   Collapsing them is exactly the silent-data-loss bug §3.1 describes — the task list keeps
+   working and search silently returns nothing.
+2. **`SearchableTextMode::Set` was `2`, but the insert branch tested for "not Keep".** After the
+   fix above it tests for exactly `Set`, so the value is unambiguous.
+
+### An assumption of mine that was simply wrong
+
+I wrote the real-schema rollback test expecting an empty `node_type` to breach `NOT NULL`. It
+does not — `''` is a valid empty `TEXT` value, so the batch *succeeded* and the test failed.
+
+Rather than weaken the test to something that passes, the rollback proof stayed where it can be
+made honestly: the unit test `a_failing_batch_rolls_back_completely`, which references a table
+that does not exist and so fails for a real reason. The real-schema test was replaced with the
+property that actually matters there — that all three tables reflect a batch together, so the
+grouped view can never be observed half-written.
+
+### Not wired
+
+No consumer is switched. Per §7 that is deliberate at every step: the Electron host calls this
+store in-process and remains the shipping product, so `taskIndexRepo.ts` stays until the
+cutover. Steps 3 (read path and `build_search_snippets`), 4 and 5 (the two sibling facades) and 6
+(deletion) remain.
