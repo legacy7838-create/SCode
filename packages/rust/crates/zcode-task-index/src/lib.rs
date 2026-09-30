@@ -13,11 +13,13 @@
 //! nothing else may start until the file itself is proven readable.
 
 pub mod automation;
+pub mod napi;
 pub mod grouped;
 pub mod migrate;
 pub mod offpeak;
 pub mod read;
 
+pub use napi::TaskIndexStore;
 pub use automation::{
     build_run_id, resolve_scheduled_at, AutomationRow, AutomationStore, CLAIM_STALE_MS,
 };

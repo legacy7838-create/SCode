@@ -773,3 +773,54 @@ over the crate with their method signatures intact, so no call site changes and
 That is the next push, and it is the one that makes the "no JavaScript fallback" claim true
 rather than aspirational: right now the crate is complete and unused, and the live path is still
 `node:sqlite`.
+
+---
+
+## 17. The bridge — TypeScript can now reach the crate
+
+`src/napi.rs` and `packages/rust/src/taskIndex.ts`. The crate was complete and **unreachable**;
+this is what makes the consumer switch possible at all, and the end-to-end check
+`scripts/verify-task-index-native.mts` is what proves it.
+
+### Shape, and why
+
+- **JSON strings across the boundary**, as in `zcode-events` §3.3 and `zcode-mcp-config`: the
+  domain types stay in TypeScript where the contracts live.
+- **Every method is an `AsyncTask`**, because all of them touch the database. The two
+  exceptions are the constructor and `close`, which do no IO.
+- **The migration list arrives as data**, each entry carrying its **already-stringified**
+  `JSON.stringify(checksumInput)`. Serialising once, in the language whose `JSON.stringify`
+  defined the format, is what keeps the checksum contract exact.
+- **`readOnly` and `busyTimeoutMs` are `Option`**, because **napi's `FromNapiValue` does not
+  honour `#[serde(default)]`** — a non-`Option` field is simply required, and omitting it fails
+  with "Missing field". The defaults moved into Rust.
+
+### End-to-end: 10 checks, all against a copy of the real database
+
+`ensureReady` accepting the real ledger without a `checksum_mismatch` is the one that matters
+most: it is the checksum contract proven through the napi boundary, not just inside the crate.
+
+### Four bugs this found, three of them only reachable through napi
+
+1. **`loadNative` returns a module object, not a constructor.** `#[napi]` on an `impl` block
+   exports the class as a *property*, so the interface must be
+   `{ TaskIndexStore: new (…) => … }`. Declaring the module itself as constructible yields
+   "NativeTaskIndexStore is not a constructor".
+2. **`new module()(options)` parses as `(new module())(options)`.** A member-less `new` binds
+   tighter than the call.
+3. **A `(row, snippets)` tuple serialises as a two-element array**, so `row.snippets` was
+   `undefined` in TypeScript. The list item is now a flat object with `#[serde(flatten)]`, and a
+   test pins the shape so it cannot regress.
+4. **`ListQuery` needed `#[serde(default)]`** for an empty query, since the wrapper sends `{}`.
+
+None of these were reachable from the crate's own tests — all four only appear once a real
+`require()` of the built `.node` happens, which is the argument for having an end-to-end check
+at all.
+
+### The chicken-and-egg, stated plainly
+
+`zcode-packaging` correctly refused to stage `zcode-task-index`: *"no importer of
+`@zcode/rust/task-index`"*. The wrapper existed, but no consumer imported it, and the tool's rule
+is to ship only what is used. So the binary was built directly to prove the path, and it becomes
+**live the moment the first repository imports the wrapper** — which is the next step, and the
+one that finally removes `node:sqlite`.

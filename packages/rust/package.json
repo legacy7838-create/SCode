@@ -10,6 +10,7 @@
     "./diff": "./src/diff.ts",
     "./codec": "./src/codec.ts",
     "./cron": "./src/cron.ts",
+    "./task-index": "./src/taskIndex.ts",
     "./events": "./src/events.ts",
     "./event-coalescer": "./src/eventCoalescer.ts",
     "./markdown": "./src/markdown.ts",

@@ -26,6 +26,7 @@
 //! cap cannot end up with a trailing space.
 
 use rusqlite::Row;
+use serde::{Deserialize, Serialize};
 
 use crate::migrate::MigrationError;
 
@@ -156,8 +157,9 @@ fn map_lowercase_offset(original: &str, lowercased: &str, offset: usize) -> Opti
     }
 }
 
-/// One row of the task list, as the renderer receives it.
-#[derive(Debug, Clone, PartialEq)]
+/// One row of the task list, as the renderer receives it. Crosses the boundary as JSON.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TaskListRow {
     pub workspace_key: String,
     pub workspace_path: String,
@@ -196,8 +198,9 @@ impl TaskListRow {
     }
 }
 
-/// What the task list is filtered by.
-#[derive(Debug, Clone, Default)]
+/// What the task list is filtered by. Crosses the boundary as JSON.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields, default)]
 pub struct ListQuery {
     pub workspace_keys: Vec<String>,
     /// When set, only tasks with a matching snippet are returned.
@@ -269,16 +272,32 @@ pub fn list_tasks(
     Ok(out)
 }
 
+/// One list row **with its snippets attached** — the shape the renderer receives.
+///
+/// Deliberately a flat object rather than a `(row, snippets)` tuple: a tuple serialises as a
+/// two-element array, so `row.snippets` would be `undefined` on the TypeScript side. The
+/// end-to-end check is what caught that.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskListItem {
+    #[serde(flatten)]
+    pub row: TaskListRow,
+    /// Empty when the query carried no search.
+    pub snippets: Vec<String>,
+}
+
 /// The list, with search snippets attached — `rowToTaskListItem` applied to each row
 /// (`taskIndexRepo.ts:360-370`).
 ///
 /// The `search` filter is applied by the snippet builder rather than in SQL, matching the
 /// original: a row survives when it produced a snippet, and the *first* snippet becomes the
-/// primary `searchSnippet`.
+/// primary `searchSnippet`. Note the consequence: because the builder has a whole-paragraph
+/// fallback, **every** row survives a search, so the filter is effectively a no-op — which is
+/// also what the original does.
 pub fn list_tasks_with_snippets(
     conn: &rusqlite::Connection,
     query: &ListQuery,
-) -> Result<Vec<(TaskListRow, Vec<String>)>, MigrationError> {
+) -> Result<Vec<TaskListItem>, MigrationError> {
     let rows = list_tasks(conn, query)?;
     let search = query.search.as_deref();
     let searching = search.is_some_and(|value| !value.is_empty());
@@ -292,7 +311,7 @@ pub fn list_tasks_with_snippets(
         if searching && snippets.is_empty() {
             continue;
         }
-        out.push((row, snippets));
+        out.push(TaskListItem { row, snippets });
     }
     Ok(out)
 }
@@ -617,12 +636,12 @@ mod tests {
         .expect("list");
         // The fallback means *both* rows survive: the second's hit may have been on the title.
         assert_eq!(rows.len(), 2, "the paragraph fallback keeps a title-only hit");
-        for (row, snippets) in &rows {
-            assert!(!snippets.is_empty(), "{} must carry a snippet", row.task_id);
+        for item in &rows {
+            assert!(!item.snippets.is_empty(), "{} must carry a snippet", item.row.task_id);
         }
         assert!(
-            rows.iter().all(|(_, snippets)| snippets[0].contains("needle")
-                || snippets[0].contains("nothing relevant")),
+            rows.iter().all(|item| item.snippets[0].contains("needle")
+                || item.snippets[0].contains("nothing relevant")),
             "the fallback must be the row's own text"
         );
     }
@@ -633,7 +652,39 @@ mod tests {
         insert(&conn, "/ws", "t1", 100, 0, 0, "body");
         let rows = list_tasks_with_snippets(&conn, &ListQuery::default()).expect("list");
         assert_eq!(rows.len(), 1);
-        assert!(rows[0].1.is_empty(), "no search means no snippet work at all");
+        assert!(rows[0].snippets.is_empty(), "no search means no snippet work at all");
+    }
+
+    /// The wire shape: a **flat object** with the row's columns at the top level and
+    /// `snippets` beside them. A `(row, snippets)` tuple would serialise as a two-element array
+    /// and leave `row.snippets` undefined in TypeScript — which the end-to-end check caught.
+    #[test]
+    fn a_list_item_serialises_flat_with_its_snippets() {
+        let row = TaskListRow {
+            workspace_key: "/ws".into(),
+            workspace_path: "/ws".into(),
+            workspace_identity: None,
+            task_id: "t1".into(),
+            title: "t".into(),
+            updated_at: 1,
+            created_at: 1,
+            archived: 0,
+            deleted: 0,
+            pinned: 0,
+            unread_at: None,
+            last_unread_at: 0,
+            searchable_text: "body".into(),
+            meta_json: "{}".into(),
+        };
+        let json = serde_json::to_string(&TaskListItem {
+            row,
+            snippets: vec!["body".into()],
+        })
+        .expect("serialise");
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("parse");
+        assert!(parsed.is_object(), "must be an object, not an array: {json}");
+        assert_eq!(parsed["taskId"], "t1", "row columns must be flattened in");
+        assert_eq!(parsed["snippets"][0], "body");
     }
 
     /// The four constants, pinned because the UI's layout depends on them.

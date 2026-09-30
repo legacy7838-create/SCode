@@ -28,6 +28,7 @@
 //! `a_retrying_automation_is_due_on_retry_at_not_on_a_stale_next_run_at` pins it.
 
 use rusqlite::Row;
+use serde::{Deserialize, Serialize};
 
 use crate::migrate::MigrationError;
 
@@ -40,8 +41,9 @@ pub const EXPIRED_LIFECYCLE_STATUS: &str = "completed";
 /// The `dispatch_status` a freshly claimed automation carries.
 pub const CLAIMED_DISPATCH_STATUS: &str = "claimed";
 
-/// One `automations` row, reduced to what the claim path reads.
-#[derive(Debug, Clone, PartialEq)]
+/// One `automations` row, reduced to what the claim path reads. Crosses the boundary as JSON.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AutomationRow {
     pub automation_id: String,
     pub workspace_key: String,

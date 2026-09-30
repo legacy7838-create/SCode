@@ -31,6 +31,7 @@
 //! than only in the calling code.
 
 use rusqlite::Row;
+use serde::{Deserialize, Serialize};
 
 use crate::migrate::MigrationError;
 
@@ -40,8 +41,9 @@ pub const OFF_PEAK_CLAIM_STALE_MS: i64 = 10 * 60_000;
 /// `OFF_PEAK_TERMINAL_STATUSES` (`off-peak-types.ts:24`).
 pub const TERMINAL_STATUSES: [&str; 3] = ["completed", "failed", "cancelled"];
 
-/// One `off_peak_tasks` row, as the port reads it.
-#[derive(Debug, Clone, PartialEq)]
+/// One `off_peak_tasks` row, as the port reads it. Crosses the boundary as JSON.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OffPeakRow {
     pub off_peak_task_id: String,
     pub session_id: Option<String>,
