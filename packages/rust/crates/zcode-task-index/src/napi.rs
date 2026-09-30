@@ -210,6 +210,60 @@ impl TaskIndexStore {
     }
 
     // -----------------------------------------------------------------------
+    // Task groups — `taskIndexRepo`'s batch B.
+    //
+    // Spec §23. `create` takes the id from the caller rather than minting one, so a test can use a
+    // stable value instead of reading a UUID out of the result.
+    // -----------------------------------------------------------------------
+
+    /// `createTaskGroup` — the new group goes to the **top** of the current list.
+    #[napi(ts_return_type = "Promise<string>")]
+    pub fn create_task_group(&self, request_json: String) -> AsyncTask<GroupResultTask> {
+        AsyncTask::new(GroupResultTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            body: GroupBody::Create(request_json),
+        })
+    }
+
+    /// `renameTaskGroup` — a blank title falls back rather than storing an empty one.
+    #[napi(ts_return_type = "Promise<string>")]
+    pub fn rename_task_group(&self, request_json: String) -> AsyncTask<GroupResultTask> {
+        AsyncTask::new(GroupResultTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            body: GroupBody::Rename(request_json),
+        })
+    }
+
+    /// `updateTaskGroupColor` — the colour is validated before the write.
+    #[napi(ts_return_type = "Promise<string>")]
+    pub fn update_task_group_color(&self, request_json: String) -> AsyncTask<GroupResultTask> {
+        AsyncTask::new(GroupResultTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            body: GroupBody::Recolour(request_json),
+        })
+    }
+
+    /// `deleteTaskGroup` — the row and its top-level order row go together.
+    #[napi]
+    pub fn delete_task_group(&self, group_id: String) -> AsyncTask<GroupUnitTask> {
+        AsyncTask::new(GroupUnitTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            run: std::sync::Arc::new(move |conn: &mut rusqlite::Connection| {
+                groups::delete_task_group(conn, &group_id)
+            }),
+        })
+    }
+
+    /// `initializeGroupedTaskAtTop` — `true` only the first time a task reaches the top level.
+    #[napi(ts_return_type = "Promise<boolean>")]
+    pub fn initialize_task_at_top(&self, request_json: String) -> AsyncTask<GroupAdmissionTask> {
+        AsyncTask::new(GroupAdmissionTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            request_json,
+        })
+    }
+
+    // -----------------------------------------------------------------------
     // The task read path — `taskIndexRepo`'s batch A.
     //
     // Spec §22. Each of these differs from its neighbour only in the WHERE clause, so the projection
@@ -815,6 +869,8 @@ pub fn to_json<T: Serialize>(value: &T) -> std::result::Result<String, Error> {
 /// The row types, re-exported so the boundary's consumers (and the parity tests) can name
 /// them through one module rather than four.
 pub use crate::grouped::GroupMemberOrder;
+pub use crate::groups::TaskGroup;
+use crate::groups;
 pub use crate::offpeak::OffPeakRow;
 use crate::meta::TaskMeta;
 use crate::task_read;
@@ -1260,6 +1316,157 @@ impl Task for OffPeakRecycleTask {
             OffPeakStore::recycle_awaiting_approval(conn, self.now)
         })
         .map(|recycled| recycled as i64)
+    }
+}
+
+// ---- task groups: request shapes and task bodies --------------------------------
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct CreateGroupRequest {
+    group_id: String,
+    title: Option<String>,
+    color: Option<String>,
+    now: i64,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RenameGroupRequest {
+    group_id: String,
+    title: String,
+    now: i64,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RecolourGroupRequest {
+    group_id: String,
+    color: String,
+    now: i64,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AdmitTaskRequest {
+    workspace_key: String,
+    workspace_path: String,
+    workspace_identity: Option<String>,
+    task_id: String,
+    now: i64,
+}
+
+pub enum GroupBody {
+    Create(String),
+    Rename(String),
+    Recolour(String),
+}
+
+pub struct GroupResultTask {
+    inner: std::sync::Arc<Inner>,
+    body: GroupBody,
+}
+
+impl Task for GroupResultTask {
+    type Output = groups::TaskGroup;
+    type JsValue = String;
+
+    fn resolve(
+        &mut self,
+        _env: Env,
+        output: Self::Output,
+    ) -> std::result::Result<Self::JsValue, Error> {
+        to_json(&output)
+    }
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        with_connection(&self.inner, |conn| -> std::result::Result<groups::TaskGroup, Error> {
+            match &self.body {
+                GroupBody::Create(json) => {
+                    let request: CreateGroupRequest = decode(json)?;
+                    groups::create_task_group(
+                        conn,
+                        &request.group_id,
+                        request.title.as_deref(),
+                        request.color.as_deref(),
+                        request.now,
+                    )
+                    .map_err(store_error)
+                }
+                GroupBody::Rename(json) => {
+                    let request: RenameGroupRequest = decode(json)?;
+                    groups::rename_task_group(conn, &request.group_id, &request.title, request.now)
+                        .map_err(store_error)
+                }
+                GroupBody::Recolour(json) => {
+                    let request: RecolourGroupRequest = decode(json)?;
+                    groups::update_task_group_color(
+                        conn,
+                        &request.group_id,
+                        &request.color,
+                        request.now,
+                    )
+                    .map_err(store_error)
+                }
+            }
+        })
+    }
+}
+
+/// `deleteTaskGroup` needs the mutable handle, because the two deletes are one transaction.
+pub struct GroupUnitTask {
+    inner: std::sync::Arc<Inner>,
+    run: std::sync::Arc<
+        dyn Fn(&mut rusqlite::Connection) -> std::result::Result<(), crate::migrate::MigrationError>
+            + Send
+            + Sync,
+    >,
+}
+
+impl Task for GroupUnitTask {
+    type Output = ();
+    type JsValue = ();
+
+    fn resolve(
+        &mut self,
+        _env: Env,
+        output: Self::Output,
+    ) -> std::result::Result<Self::JsValue, Error> {
+        Ok(output)
+    }
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        let run = std::sync::Arc::clone(&self.run);
+        with_connection_mut(&self.inner, |conn| run(conn))
+    }
+}
+
+pub struct GroupAdmissionTask {
+    inner: std::sync::Arc<Inner>,
+    request_json: String,
+}
+
+impl Task for GroupAdmissionTask {
+    type Output = bool;
+    type JsValue = bool;
+
+    fn resolve(&mut self, _env: Env, output: Self::Output) -> std::result::Result<Self::JsValue, Error> {
+        Ok(output)
+    }
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        with_connection(&self.inner, |conn| {
+            let request: AdmitTaskRequest = decode(&self.request_json)?;
+            groups::initialize_task_at_top(
+                conn,
+                &request.workspace_key,
+                &request.workspace_path,
+                request.workspace_identity.as_deref(),
+                &request.task_id,
+                request.now,
+            )
+            .map_err(store_error)
+        })
     }
 }
 

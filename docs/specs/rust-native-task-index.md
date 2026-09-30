@@ -1148,3 +1148,55 @@ Three findings, two of them harness bugs and one a real omission:
 That third one is the generalisable lesson: **a database copied as a single file is not a fixture
 in WAL mode.** It looks complete, it opens without error, and it is missing everything written since
 the last checkpoint.
+
+---
+
+## 23. Batch B: task groups
+
+`src/groups.rs` — `createTaskGroup`, `renameTaskGroup`, `updateTaskGroupColor`, `deleteTaskGroup`
+and `initializeGroupedTaskAtTop`, on the napi surface and behind `taskGroupRepository.ts`.
+
+**120 Rust tests, up from 110.** Zero build warnings.
+
+### The two things that are easy to get backwards
+
+**A new group goes to the *front*.** `next_top_sort_order` takes `MIN(sort_order)` and subtracts one
+step, not `MAX` and adds one. New content must appear immediately at the top; relying on the
+interleaving of `created_at` and the existing `sort_order` makes positions drift after a refresh,
+because the two coordinate systems have different magnitudes. An empty table gives `MIN = NULL`,
+which becomes `2 × step − step`, so the first group lands on the step rather than on zero and leaves
+room below it.
+
+**Admission happens once.** `initialize_task_at_top` returns `true` only the first time a task
+reaches the top level. It is `false` for a deleted, archived or pinned task; for one that already
+has a membership, so a task the user grouped by hand is not yanked back out; and for one that
+already has an order row. That last case is the point: session visibility and a missing first title
+can both trigger a full snapshot back to the source, and the second must not re-assign the minimum
+`sort_order` — an older task that finishes slowly would then jump above a newer one, and the final
+order would depend on completion timing rather than on creation.
+
+### Why there is no differential for this batch, stated plainly
+
+There is a `task_group_transcript.json` **not** committed, and the reason is a real interaction
+rather than an omission.
+
+`queryGroupedTaskView` performs the **workspace bootstrap** on first sight: it creates groups *and*
+memberships for the active tasks. So any capture that observes the grouped view before exercising
+admission finds every admission already satisfied by a membership the bootstrap itself created, and
+every deletion target replaced. The capture produced `admit.first = false` and a delete that threw
+"does not exist" — both artefacts of the harness, neither a fact about the port.
+
+Resolving it properly needs the batch-C grouped view ported first, so the fixture can be built
+without the bootstrap firing. Committing a transcript that is mostly harness artefact would be
+worse than committing none, because it would look like evidence.
+
+What **is** verified here is the eight unit tests in `groups.rs`, which cover the closed colour set,
+the blank-title fallback, the missing-group refusals, the invalid-colour refusal happening *before*
+the write, a stored colour outside the set reading as the default, the delete taking its order row
+with it, admission happening once, and the three invisible cases plus the missing task.
+
+### Group id is the caller's
+
+`create_task_group` takes the id as a parameter rather than minting one. The original used
+`randomUUID()`, which is fine for a product and useless for a test that needs to assert on the
+result. Moving the decision to the call site is what makes the batch-C fixture possible later.

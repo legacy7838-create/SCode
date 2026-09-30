@@ -15,6 +15,7 @@
 pub mod automation;
 pub mod napi;
 pub mod grouped;
+pub mod groups;
 #[cfg(test)]
 pub mod test_support;
 
@@ -37,6 +38,7 @@ pub use grouped::{
     parse_task_order_node_key, read_node_orders, task_order_node_key, GroupMemberOrder,
     SearchableTextMode, TaskWrite, ViewNodeOrder, WriteBatch, GROUPED_TASK_ORDER_STEP,
 };
+pub use groups::{TaskGroup, TASK_GROUP_COLORS};
 pub use meta::{row_to_meta, TaskMeta, TaskRow, TASK_COLUMNS};
 pub use offpeak::{
     model_selection_is_valid, OffPeakRow, OffPeakStore, OFF_PEAK_CLAIM_STALE_MS, TERMINAL_STATUSES,

@@ -13,6 +13,7 @@
     "./task-index": "./src/taskIndex.ts",
     "./off-peak-repository": "./src/offPeakRepository.ts",
     "./task-read-repository": "./src/taskReadRepository.ts",
+    "./task-group-repository": "./src/taskGroupRepository.ts",
     "./mcp-config": "./src/mcpConfig.ts",
     "./events": "./src/events.ts",
     "./event-coalescer": "./src/eventCoalescer.ts",

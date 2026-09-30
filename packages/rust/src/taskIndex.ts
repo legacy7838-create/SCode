@@ -178,6 +178,13 @@ export interface NativeStore {
   writeBatch(batchJson: string): Promise<number>;
   listTasks(queryJson: string): Promise<string>;
   offpeakClaimDue(nowMs: number): Promise<string>;
+  // Task groups — `taskIndexRepo` batch B.
+  createTaskGroup(requestJson: string): Promise<string>;
+  renameTaskGroup(requestJson: string): Promise<string>;
+  updateTaskGroupColor(requestJson: string): Promise<string>;
+  deleteTaskGroup(groupId: string): Promise<void>;
+  initializeTaskAtTop(requestJson: string): Promise<boolean>;
+
   // The task read path — `taskIndexRepo` batch A.
   getTaskMeta(requestJson: string): Promise<string>;
   listTaskMetas(queryJson: string): Promise<string>;
