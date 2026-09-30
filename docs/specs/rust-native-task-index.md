@@ -393,18 +393,33 @@ The acceptance core, mirroring `zcode-events` §6.
 ## 7. Deletion condition — deliberately stricter than `zcode-events`
 
 `zcode-events` deleted its TypeScript in the same change because its only consumers were
-Node-side. **This store does not have that property yet:**
+Node-side. The three repositories here are consumed by `packages/services`, which runs in
+**both** the Node server and the Electron main process.
 
-- `packages/desktop/src/main/index.ts` and the Electron host reach the store in-process, and
-  **Electron remains the shipping product**.
-- So the port lands as: Rust implementation live, TypeScript still present, consumers switched
-  one at a time.
-- `taskIndexRepo.ts` is deleted **only when the Electron host no longer calls it**, at the Electron
-  cutover — the same position `mcpUserDirectory/` is in, and for the same reason.
+### A correction to this spec's earlier drafts
 
-Every change in this wave therefore runs `tsc -p tsconfig.host.json` as a gate, proving the
-Electron path is intact. Invariant 2 stays unsatisfied until the cutover, and that is recorded
-rather than papered over.
+Those drafts asserted the TypeScript had to stay until the Electron cutover, on the grounds
+that Electron calls the store in-process and could not use the crate. **That was too strong,
+and the repository says so itself.** Electron's main process *is* Node:
+
+- `packages/desktop/src/host/index.ts:17` already does
+  `import { installNativeRpcBytesPort } from "@zcode/rpc/native"`.
+- `packages/desktop/tsup.config.ts:172,234` inlines the `@zcode/rust` wrapper *specifically* so
+  `loadNative()` can resolve the `.node` binary at runtime.
+- `prepare:rust-native` already stages those binaries into
+  `bundled-agents/<os>-<arch>/native/`.
+
+So the Electron host is **already a native-Rust consumer**, and the consumer switch is **not**
+gated on the cutover. `zcode-task-index` is declared `crate-type = ["cdylib", "rlib"]` — cdylib
+for the Node consumers, rlib for the Tauri host — and the three TypeScript repositories can
+become thin wrappers over it **while keeping their method signatures, so no call site changes.**
+
+The cutover remains the right end state, because the wrappers disappear when Electron is
+retired. But it is a later simplification, not a precondition — and treating it as a blocker
+made the remaining work look larger than it is.
+
+Every change in this wave still runs `tsc -p tsconfig.host.json` as a gate, proving the Electron
+path is intact while it is being rewired.
 
 ---
 
