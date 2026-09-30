@@ -1019,3 +1019,73 @@ ground truth and the diff it prints.
 repositories remain on it — `taskIndexRepo.ts` (2,567 lines, 25 methods, 5 of them ported) and
 `automationRepo.ts` (1,489 lines) — and until those are switched and the Electron cutover happens,
 the `node:sqlite` dependency is still in the codebase. This step is real progress, not the end.
+
+---
+
+## 22. `taskIndexRepo` — batching, and why smallest-to-largest is wrong here
+
+`taskIndexRepo.ts` is 2,567 lines with 25 public methods, of which the crate covered five. The
+off-peak repository was switched smallest-first; this one is switched **by concern**, because the
+methods are not independent and a partial switch would leave the file holding two write paths over
+one sqlite file.
+
+| Batch | Methods | Depends on |
+|---|---|---|
+| A — read | `getTaskMeta`, `listTaskMetas`, `listDeletedTaskIds`, `listSessionsByAutomation`, `queryTaskList`, `hasGroupedWorkspaceBootstrapRun`, `archiveStaleTasks` | the `meta_json` schema |
+| B — groups | `createTaskGroup`, `renameTaskGroup`, `updateTaskGroupColor`, `deleteTaskGroup`, `initializeGroupedTaskAtTop` | `grouped.rs`, which exists |
+| C — grouped view | `queryGroupedTaskView`, `queryGroupedTaskViewStructure`, `applyGroupedTaskViewOrder` | B, and the bootstrap logic |
+| D — sync/write | `syncTaskMeta`, `syncTaskMetaAtGroupedTop`, `seedTaskMetaIfMissing`, `clearTaskUnreadIfMatches`, `deleteArchivedTask`, `updateTaskState`, `applyAgentPatch` | `apply_batch`, which exists |
+
+B, C and D are each internally coherent. A is first because it is the surface everything else reads
+and because it forces the one genuinely new piece: **`zcodeTaskMetaSchema`**.
+
+### `zcodeTaskMetaSchema` is the load-bearing part of every read
+
+`rowToMeta` parses `meta_json` with a 54-line zod schema and then **overlays** the row's own
+columns on top. Three behaviours make it more than a parse:
+
+1. **`z.object()` strips unknown keys.** A `meta_json` written by a newer build, or carrying a field
+   this build does not know, is not rejected — the extra keys are silently dropped from the result.
+   A strict parse would fail the whole task.
+2. **`summaryTitle` has `.default(null)`.** Every pre-2.15.0 `/goal` task omits it. Without the
+   default the *entire task list* would fail the runtime schema, which is exactly the failure the
+   comment there warns about.
+3. **The overlay is not symmetric.** `cronAutomationId` and `offPeakTaskId` are `meta_json ?? column`,
+   but `unreadAt` and `titleOverridden` are **column-only** — the column wins even when `meta_json`
+   disagrees, because the column is this Host's own product state and `meta_json` may be another
+   Host's.
+
+A serde struct with exactly the declared fields reproduces (1) for free: serde ignores unknown
+fields, which is stripping. (2) is `#[serde(default)]` on one field. (3) is written out explicitly
+rather than left to a merge, because a merge would get it backwards.
+
+### Batch A, part 1: `meta_json` and the read helpers
+
+`src/meta.rs` (the zod schema) and `src/task_read.rs` (the seven read methods), with
+`src/test_support.rs` holding the fixture schema so four modules stop declaring four copies of it.
+
+**110 tests, up from 104.**
+
+#### The bug the acronym test found
+
+`zcodeTaskGoalSchema` spells its identifiers `sessionID` and `targetID` — the acronym in full caps.
+`#[serde(rename_all = "camelCase")]` produces `sessionId`, so **every goal-bearing task failed
+validation** and silently fell back to the row-derived meta. The task still appeared in the list,
+because the fallback is designed to keep it visible; its `target` was simply gone, with no error
+anywhere. Only a test that asserts the field *round-trips* catches this — a "does it parse" test
+passes, because the fallback parses.
+
+#### Two more, both from the same class of mistake
+
+- **`skip_serializing_if` does not imply `default`.** Three optional `TaskGoal` fields declared
+  `skip_serializing_if` without `default`, so an **absent** field failed the whole document. The
+  pre-2.15.0 goal fixture — the exact case the schema's `.default(null)` exists for — was rejected.
+- **A conditional predicate changed the placeholder count.** `listTaskMetas` omitted
+  `@include_deleted` when the flag was false, leaving five bound parameters against four
+  placeholders. The original emits every predicate unconditionally and relies on the nullable
+  flags, which is both simpler and stable.
+
+#### One place the port is deliberately stricter
+
+`changeSummary.files` is `#[serde(default)]`-free, so a summary without it is rejected, matching
+zod's required field. Being lenient would accept a document the original refuses.

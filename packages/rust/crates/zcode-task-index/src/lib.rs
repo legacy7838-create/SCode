@@ -15,9 +15,14 @@
 pub mod automation;
 pub mod napi;
 pub mod grouped;
+#[cfg(test)]
+pub mod test_support;
+
+pub mod meta;
 pub mod migrate;
 pub mod offpeak;
 pub mod read;
+pub mod task_read;
 
 pub use napi::TaskIndexStore;
 pub use automation::{
@@ -32,6 +37,7 @@ pub use grouped::{
     parse_task_order_node_key, read_node_orders, task_order_node_key, GroupMemberOrder,
     SearchableTextMode, TaskWrite, ViewNodeOrder, WriteBatch, GROUPED_TASK_ORDER_STEP,
 };
+pub use meta::{row_to_meta, TaskMeta, TaskRow, TASK_COLUMNS};
 pub use offpeak::{
     model_selection_is_valid, OffPeakRow, OffPeakStore, OFF_PEAK_CLAIM_STALE_MS, TERMINAL_STATUSES,
 };
