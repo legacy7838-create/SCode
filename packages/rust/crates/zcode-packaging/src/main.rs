@@ -610,3 +610,109 @@ fn cmd_inventory(raw: &[String]) -> Result<(), Failure> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod sea_contract {
+    //! The Rust constants the TypeScript SEA wrapper hardcodes must stay equal.
+    //!
+    //! `zcode-packaging` owns the SEA asset keys and the SEA spelling of a target, but the
+    //! consumer of both is `packages/rust/src/sea-native-runtime.ts`, which cannot import a
+    //! Rust constant. That makes silent drift possible: the manifest would be written under
+    //! one key and read under another, and every packaged binary would fail its first
+    //! `loadNative()` with "no such asset".
+    //!
+    //! These tests are what the two `dead_code` warnings on `plan.rs` and `target.rs` were
+    //! really pointing at — the constants *are* used, by the TypeScript, and nothing was
+    //! checking that.
+
+    use std::path::{Path, PathBuf};
+
+    use super::*;
+
+    fn repo_root() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(4)
+            .expect("crates/zcode-packaging is four levels below the repo root")
+            .to_path_buf()
+    }
+
+    fn read(relative: &str) -> String {
+        let path = repo_root().join(relative);
+        std::fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("cannot read {}: {error}", path.display()))
+    }
+
+    #[test]
+    fn the_runtime_wrapper_agrees_with_the_rust_manifest_key() {
+        let runtime = read("apps/zcode-cli/packages/cli/src/sea-native-runtime.ts");
+        let expected = plan::SEA_MANIFEST_ASSET_KEY;
+        assert!(
+            runtime.contains(&format!("\"{expected}\"")),
+            "sea-native-runtime.ts does not name the manifest key {expected:?}; a mismatch \
+             means every packaged binary fails its first loadNative()"
+        );
+    }
+
+    #[test]
+    fn the_runtime_wrapper_agrees_with_the_rust_asset_prefix() {
+        let runtime = read("apps/zcode-cli/packages/cli/src/sea-native-runtime.ts");
+        let expected = plan::SEA_NATIVE_ASSET_PREFIX;
+        assert!(
+            runtime.contains(&format!("\"{expected}\"")),
+            "sea-native-runtime.ts does not name the asset prefix {expected:?}"
+        );
+    }
+
+    #[test]
+    fn the_sea_build_helper_agrees_with_the_rust_manifest_key() {
+        let helper = read("apps/zcode-cli/packages/cli/scripts/sea-native-assets.mjs");
+        let expected = plan::SEA_MANIFEST_ASSET_KEY;
+        assert!(
+            helper.contains(expected),
+            "sea-native-assets.mjs does not name the manifest key {expected:?}"
+        );
+    }
+
+    /// The SEA target spelling must round-trip, or the build writes a plan the tool will
+    /// not look for. `win32-x64` on the Rust side, `win-x64` on the SEA side.
+    #[test]
+    fn the_sea_target_spelling_is_the_inverse_of_the_alias() {
+        for target in target::TARGETS {
+            let sea = target.sea_key();
+            // Only Windows is spelled differently: the tool says `win32-x64` because that
+            // is `process.platform`, while the SEA build says `win-x64`. Darwin and Linux
+            // are identical in both vocabularies, so asserting they differ would be wrong.
+            if target.key.starts_with("win32-") {
+                assert_ne!(sea, target.key, "{sea} should differ from the Node spelling");
+            } else {
+                assert_eq!(sea, target.key, "{sea} should be spelled identically");
+            }
+            assert_eq!(
+                target::Target::resolve(&sea).unwrap().key,
+                target.key,
+                "{sea} must resolve back to {}",
+                target.key
+            );
+        }
+        // And the SEA build's own vocabulary must be a subset of what the tool accepts.
+        let sea_targets = read("apps/zcode-cli/packages/cli/scripts/sea-targets.mjs");
+        for raw in [
+            "darwin-arm64",
+            "darwin-x64",
+            "linux-arm64",
+            "linux-x64",
+            "win-arm64",
+            "win-x64",
+        ] {
+            assert!(
+                sea_targets.contains(raw),
+                "sea-targets.mjs no longer lists {raw}"
+            );
+            assert!(
+                target::Target::resolve(raw).is_ok(),
+                "zcode-packaging cannot resolve the SEA target {raw}"
+            );
+        }
+    }
+}

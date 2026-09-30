@@ -2685,52 +2685,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "zcode-assembler"
-version = "0.0.0"
-dependencies = [
- "napi",
- "napi-derive",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "zcode-buffer"
-version = "0.0.0"
-dependencies = [
- "napi",
- "napi-derive",
-]
-
-[[package]]
-name = "zcode-channel"
-version = "0.0.0"
-dependencies = [
- "napi",
- "napi-derive",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "zcode-chunkstream"
-version = "0.0.0"
-dependencies = [
- "napi",
- "napi-derive",
-]
-
-[[package]]
-name = "zcode-coalesce"
-version = "0.0.0"
-dependencies = [
- "napi",
- "napi-derive",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "zcode-codec"
 version = "0.0.0"
 dependencies = [
@@ -2840,46 +2794,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "zcode-profiles"
-version = "0.0.0"
-dependencies = [
- "napi",
- "napi-derive",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "zcode-projection"
-version = "0.0.0"
-dependencies = [
- "napi",
- "napi-derive",
- "rayon",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "zcode-protocol"
-version = "0.0.0"
-dependencies = [
- "napi",
- "napi-derive",
- "serde",
-]
-
-[[package]]
-name = "zcode-reassembly"
-version = "0.0.0"
-dependencies = [
- "napi",
- "napi-derive",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "zcode-rpc-server"
 version = "0.0.0"
 dependencies = [
@@ -2892,14 +2806,6 @@ dependencies = [
  "tokio-tungstenite",
  "tracing",
  "zcode-codec",
-]
-
-[[package]]
-name = "zcode-rpc-utils"
-version = "0.0.0"
-dependencies = [
- "napi",
- "napi-derive",
 ]
 
 [[package]]
