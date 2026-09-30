@@ -1,0 +1,24 @@
+[package]
+name = "zcode-task-index"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Task index store: schema, migration, grouped-task-view bookkeeping and the task/automation/off-peak tables over ~/.zcode/v2/tasks-index.sqlite."
+
+[lib]
+# Both, for the same reason as `zcode-cron`: the Node server loads it as a `.node`, and the
+# Tauri host links it as an rlib if it ever becomes a host-side consumer.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+napi = { workspace = true }
+napi-derive = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# Already a workspace dependency from `zcode-events`; `bundled` avoids a system SQLite
+# requirement. Reusing it keeps THIRD-PARTY-NOTICES.md and third-party/inventory.json
+# untouched (spec §10).
+rusqlite = { workspace = true }
+# Migration checksums, same as `zcode-events`.
+sha2 = { workspace = true }

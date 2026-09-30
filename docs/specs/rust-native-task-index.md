@@ -465,3 +465,52 @@ rather than papered over.
 - **R6 — the Electron cutover is out of our control.** Invariant 2 cannot be satisfied while
   Electron ships (§7). This is a scheduling dependency, not a technical one, and it should be
   raised with whoever owns the cutover rather than discovered at the end.
+
+---
+
+## 12. Step 1 delivered — schema and migration, gated on the real file
+
+### The gate passed against the real persisted database
+
+`tests/real_database.rs` opens a **copy** of `~/.zcode/v2/tasks-index.sqlite` and asserts the
+thing that actually matters: that an existing install can still be opened by this build. Seven
+tests, **all ran, none skipped**:
+
+| Test | Result |
+|---|---|
+| every declared table exists (9, including the sibling repos' `automations`, `automation_runs`, `off_peak_tasks`) | ✅ |
+| every declared index exists (11) | ✅ |
+| `0001` nested-`string[][]` checksum equals the real ledger (`3e8337b0…`) | ✅ |
+| `0002` checksum equals the real ledger (`7244ef7c…`) | ✅ |
+| `0003` checksum equals the real ledger (`8987adb5…`) | ✅ |
+| re-running this build's migrations on a copy of the real file is a **no-op** | ✅ |
+| the undeclared `0004_code_plan_modes` row is tolerated and untouched | ✅ |
+
+That last group is the one that would have caught a wrong checksum rule. With the events port's
+`sha256(trimmed SQL)` instead of this store's `sha256(JSON.stringify(checksumInput))`, all three
+rows would mismatch and **every existing install would fail on first launch**.
+
+The tests skip — loudly, with a message naming what was not verified — when no real database is
+present, so they can never report a false pass.
+
+### The boundary decision that removed a whole class of divergence
+
+The TypeScript passes the **already-stringified** `JSON.stringify(checksumInput)` as an opaque
+string, and the crate hashes its bytes. Re-serialising a parsed value in Rust would have to
+reproduce `JSON.stringify` exactly — nested arrays, `\"`/`\\` escaping, control characters as
+`\n`/`\uXXXX`, and non-ASCII emitted raw rather than `\u` escaped. `serde_json` agrees on all of
+those, but "agrees" is not a contract, and the cost of being wrong is every user's install. Now
+the serialisation happens once, in the language whose `JSON.stringify` defined the format, and the
+only remaining thing to verify is an unambiguous hash.
+
+### Known, recorded, not papered over
+
+- **`synchronous` does not do what the store asked for.** `taskIndexRepo.ts:530` requests
+  `PRAGMA synchronous = NORMAL`, but the real database reports **2 (FULL)**. The port sets what
+  the store asked for and records the effective value, rather than assuming the request took
+  effect. This is why the per-write commit costs 6–11 ms (the events port's measured fsync floor)
+  and not less.
+- **Step 1 is the foundation only.** `write_record`, the grouped-order bookkeeping, the read path
+  and `build_search_snippets` are steps 2 and 3. No consumer has been switched, so nothing has
+  changed behaviourally: the crate exists, is tested against the real file, and is not yet
+  wired. Per §7, `taskIndexRepo.ts` stays until the Electron cutover regardless.

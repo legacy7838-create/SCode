@@ -293,6 +293,18 @@ fn cmd_plan(raw: &[String]) -> Result<(), Failure> {
         plan.surface.as_str(),
         out.display()
     );
+    if matches!(surface, plan::Surface::Sea) {
+        // The SEA build names its plan file with its own vocabulary (`win-x64` where this
+        // crate says `win32-x64`), so the build log states the spelling the build must use.
+        // `Target::resolve` accepts both, and the round trip is asserted in the sea_contract
+        // tests; without this line a mismatch would only surface as a missing plan file.
+        println!(
+            "[zcode-packaging] the SEA build addresses this target as {:?}; \
+             pass --target {:?} to sea-assets for a cross-platform build",
+            target.sea_key(),
+            target.sea_key(),
+        );
+    }
     for entry in &plan.entries {
         println!(
             "  ship   {:<24} {:>9} bytes  {}",
@@ -460,6 +472,14 @@ fn cmd_sea_assets(raw: &[String]) -> Result<(), Failure> {
         files.len(),
         plan.target,
         manifest_out.display()
+    );
+    println!(
+        "[zcode-packaging] runtime must read the manifest under the asset key {:?} \
+         (each binary under {:?}<name>); this string is also hardcoded in \
+         apps/zcode-cli/packages/cli/src/sea-native-runtime.ts and asserted equal by the \
+         sea_contract tests",
+        plan::SEA_MANIFEST_ASSET_KEY,
+        plan::SEA_NATIVE_ASSET_PREFIX,
     );
     println!(
         "[zcode-packaging] runtime cache key: {} (the extractor must create this directory)",
