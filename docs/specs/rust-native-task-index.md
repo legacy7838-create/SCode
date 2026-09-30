@@ -720,3 +720,56 @@ comparison silently wrong, and both fail rather than report a plausible result.
 Steps 3 (the task-index read path and `build_search_snippets`) and 6 (deletion, gated on the
 Electron cutover). The three facades now exist, so the crate's claim on the file is complete
 even though two of them are not yet wired to a consumer.
+
+---
+
+## 16. Step 3 — the read path
+
+`src/read.rs`: the task-list query and `build_search_snippets`. With this the crate covers the
+whole surface of the three repositories — schema, migration, all three facades, the write path
+and the read path.
+
+### The snippet builder's three rules
+
+1. **Near-duplicate windows are merged.** Each match is windowed (20 before, 72 after), and a
+   candidate that *overlaps* a window already kept is dropped. Showing four copies of one
+   sentence is worse than showing one — that is the original's stated reason, and without the
+   merge a repeated keyword fills the summary with duplicates.
+2. **The overlap test is strictly `> 0`**, on the unadjusted bounds. Two windows that merely
+   *abut* both survive; one that overlaps by a single character merges. A pair of tests pins both
+   sides of that boundary, because an off-by-one here silently drops or duplicates results.
+3. **Nothing matched → a whole paragraph, still capped.** The hit may have been on the
+   *title*, and returning an empty list leaves a blank space under it. So the fallback is the
+   normalised full text. A consequence worth stating: with a search active, **every** row
+   survives, because the fallback is always non-empty. That matches the original
+   (`rowToTaskListItem` filters on `snippets.length === 0`), and it is why
+   `a_search_filters_by_snippet_and_the_fallback_keeps_title_hits` asserts both rows come back.
+
+The displayed text is always sliced from the **original**, never the lowercased copy, so casing
+is preserved. Offsets are mapped back through the lowercase rather than assumed to line up,
+because `İ` lowercases to two code points and the lengths diverge —
+`search_snippets_handle_length_changing_lowercase` covers a term before, after, and spanning it.
+
+### Two of my own expectations were wrong, corrected against the code
+
+- I asserted a snippet must not end on a space. **The original cannot promise that**: its order is
+  `replace → trim → slice(140)`, so a truncation can land on a space. Trimming again after the
+  slice would be a *behaviour change*. The test now pins the real order — collapse and trim
+  first, cap second, no leading space — and says why.
+- My "abutting windows" spacing was simply wrong: a window runs 20 before and 72 after, so
+  consecutive windows touch only when the matches are at least `72 + 20 + match_length` apart.
+  The test now computes the spacing instead of guessing it, and a companion test places the
+  second match one character closer to prove the merge boundary is exact.
+
+### Still open
+
+The **consumer switch** — which, per the correction in §7, is *not* gated on the Electron
+cutover. `zcode-task-index` is `["cdylib", "rlib"]`, the Electron host already loads
+`@zcode/rpc/native` the same way, and `tsup.config.ts` already inlines the wrapper so
+`loadNative()` resolves the binary. The three TypeScript repositories can become thin wrappers
+over the crate with their method signatures intact, so no call site changes and
+`node:sqlite` leaves the codebase entirely.
+
+That is the next push, and it is the one that makes the "no JavaScript fallback" claim true
+rather than aspirational: right now the crate is complete and unused, and the live path is still
+`node:sqlite`.

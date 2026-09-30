@@ -16,9 +16,14 @@ pub mod automation;
 pub mod grouped;
 pub mod migrate;
 pub mod offpeak;
+pub mod read;
 
 pub use automation::{
     build_run_id, resolve_scheduled_at, AutomationRow, AutomationStore, CLAIM_STALE_MS,
+};
+pub use read::{
+    build_search_snippets, list_tasks, list_tasks_with_snippets, normalize_search_snippet_text,
+    ListQuery, TaskListRow, TASK_SEARCH_SNIPPET_LIMIT, TASK_SEARCH_SNIPPET_MAX_CHARS,
 };
 pub use grouped::{
     apply_batch, by_node_type, normalize_grouped_top_node_orders, normalize_group_member_orders,
