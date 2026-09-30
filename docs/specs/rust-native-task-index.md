@@ -208,12 +208,45 @@ anywhere in this path would produce a stable-but-different order.
 
 ### 3.4 The schema migration ledger
 
-`tasks_schema_migration` has 4 rows on the real database. The events port established the
-parity requirements that apply here unchanged: the same id set, the same checksum definition
-(`sha256` of the **trimmed** SQL, with JavaScript `String.trim` semantics — JS `White_Space`
-includes `U+FEFF`, Rust's `str::trim` does not, so the port must implement JS trim explicitly),
-the same "read only known ids, take the baseline via `ORDER BY id DESC LIMIT 1`" behaviour, and
-`checksum_mismatch` as a distinct failure.
+`tasks_schema_migration` has 4 rows on the real database. The events port's checksum rule does
+**not** apply here, and carrying it over would have been wrong — verified against the real file
+before writing any Rust.
+
+**This store hashes `JSON.stringify`, not SQL.** `migrations.ts:98-100` is
+
+```ts
+const checksum = createHash("sha256").update(JSON.stringify(migration.checksumInput)).digest("hex");
+```
+
+and `checksumInput` is a heterogeneous array: strings for `0002`/`0003`, but for `0001` it mixes
+three schema strings, a **nested `string[][]`** of column tuples, an index blob, a bound-index
+string, and a backfill marker.
+
+Reproduced against the real ledger to confirm the contract, all three matching exactly:
+
+| Migration | Declared | Real ledger |
+|---|---|---|
+| `0001_adopt_task_schema` | `3e8337b015d94b05…` | `3e8337b015d94b05…` ✅ |
+| `0002_provider_selection` | `7244ef7c351f8d02…` | `7244ef7c351f8d02…` ✅ |
+| `0003_official_glm_selection` | `8987adb50ae412a4…` | `8987adb50ae412a4…` ✅ |
+
+So the port must reproduce **`JSON.stringify` byte-for-byte**, which is a harder requirement
+than the events port's:
+
+- nested arrays, not just a flat list;
+- JavaScript string escaping — `"`, `\`, control characters as `\n`/`\t`/`\uXXXX`, and
+  **non-ASCII emitted raw as UTF-8** rather than `\u` escaped;
+- no spaces, no trailing newline.
+
+`serde_json::to_string` on a `Vec<Value>` matches all of that, so the port is feasible — but it
+must be pinned by a test that hashes the **real** inputs and compares to the **real** ledger
+values, not by a round-trip through the port's own serialiser.
+
+**The fourth row is still absent from this checkout.** `0004_code_plan_modes`
+(`6cd402653cf95eef…`) is on disk but not declared in `migrations.ts`, exactly as
+`0023_code_plan_execution_state` was for the session store. The runner must therefore read only
+*known* ids and take the baseline via `ORDER BY id DESC LIMIT 1`, so an unknown row is ignored
+rather than treated as a mismatch or a baseline to re-apply.
 
 ---
 
@@ -343,9 +376,13 @@ The acceptance core, mirroring `zcode-events` §6.
    containing a NUL-adjacent sequence and reads it back whole. If any caller still *produces*
    NUL-containing ids, that is a separate bug to fix, not a reason to keep the workaround.
 2. **The migration SQL stays in TypeScript** and is passed as JSON data, exactly as
-   `zcode-events` §4.4 concluded. 2,567 lines already move; duplicating the SQL into Rust would
+   `zcode-events` §4.4 concluded. 4,895 lines already move; duplicating the SQL into Rust would
    add a checksum-drift surface for no gain, and the crate's `migrate_step` validates the id
    format so a malformed id fails loudly.
+   **But the checksum input is not a SQL string** — it is the `checksumInput` array, and the
+   crate must hash `JSON.stringify` of it (§3.4). The TS therefore passes the *input array*, not
+   the assembled SQL, or the two sides would hash different things and every existing install
+   would report `checksum_mismatch` on first launch.
 3. **`searchable_text` is a three-state `Option<Option<String>>`** at the boundary: absent means
    "leave alone", `Some("")` means "clear", `Some(text)` means "set". Collapsing this is the single
    most likely way to ship silent data loss.
