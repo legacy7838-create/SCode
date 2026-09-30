@@ -1,0 +1,1508 @@
+[
+  {
+    "label": "get.plain",
+    "value": {
+      "taskId": "plain",
+      "traceId": "tr",
+      "title": "plain task",
+      "titleOverridden": false,
+      "workspacePath": "/ws",
+      "createdAt": 1,
+      "updatedAt": 100,
+      "mode": "auto",
+      "status": "completed"
+    }
+  },
+  {
+    "label": "get.goal",
+    "value": {
+      "taskId": "goal",
+      "traceId": "tr",
+      "title": "goal task",
+      "titleOverridden": false,
+      "workspacePath": "/ws",
+      "createdAt": 1,
+      "updatedAt": 600,
+      "mode": "auto",
+      "unreadAt": 6,
+      "target": {
+        "sessionID": "sess-1",
+        "targetID": "goal-1",
+        "objective": "ship the port",
+        "summaryTitle": null,
+        "status": "active",
+        "tokenBudget": null,
+        "tokensUsed": 4,
+        "timeUsedSeconds": 9,
+        "time": {
+          "created": 1,
+          "updated": 2
+        }
+      }
+    }
+  },
+  {
+    "label": "get.cron",
+    "value": {
+      "taskId": "cron",
+      "traceId": "tr",
+      "title": "cron task",
+      "titleOverridden": false,
+      "workspacePath": "/ws",
+      "createdAt": 1,
+      "updatedAt": 700,
+      "mode": "auto",
+      "cronAutomationId": "auto-1",
+      "unreadAt": 7
+    }
+  },
+  {
+    "label": "get.deleted",
+    "value": null
+  },
+  {
+    "label": "get.missing",
+    "value": null
+  },
+  {
+    "label": "get.otherWorkspace",
+    "value": {
+      "taskId": "other",
+      "traceId": "tr",
+      "title": "other workspace",
+      "titleOverridden": false,
+      "workspacePath": "/other",
+      "workspaceIdentity": "other-id",
+      "createdAt": 1,
+      "updatedAt": 500,
+      "mode": "auto",
+      "unreadAt": 5
+    }
+  },
+  {
+    "label": "get.wrongIdentity",
+    "value": null
+  },
+  {
+    "label": "list.default",
+    "value": [
+      {
+        "taskId": "bodiless",
+        "traceId": "tr",
+        "title": "zebra",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 800,
+        "mode": "auto",
+        "status": "completed"
+      },
+      {
+        "taskId": "cron",
+        "traceId": "tr",
+        "title": "cron task",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 700,
+        "mode": "auto",
+        "cronAutomationId": "auto-1",
+        "unreadAt": 7
+      },
+      {
+        "taskId": "goal",
+        "traceId": "tr",
+        "title": "goal task",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 600,
+        "mode": "auto",
+        "unreadAt": 6,
+        "target": {
+          "sessionID": "sess-1",
+          "targetID": "goal-1",
+          "objective": "ship the port",
+          "summaryTitle": null,
+          "status": "active",
+          "tokenBudget": null,
+          "tokensUsed": 4,
+          "timeUsedSeconds": 9,
+          "time": {
+            "created": 1,
+            "updated": 2
+          }
+        }
+      },
+      {
+        "taskId": "archived",
+        "traceId": "tr",
+        "title": "archived task",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 300,
+        "mode": "auto",
+        "status": "completed"
+      },
+      {
+        "taskId": "pinned",
+        "traceId": "tr",
+        "title": "pinned task",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 200,
+        "mode": "auto",
+        "status": "completed"
+      },
+      {
+        "taskId": "plain",
+        "traceId": "tr",
+        "title": "plain task",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 100,
+        "mode": "auto",
+        "status": "completed"
+      }
+    ]
+  },
+  {
+    "label": "list.noScope",
+    "value": [
+      {
+        "taskId": "bodiless",
+        "traceId": "tr",
+        "title": "zebra",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 800,
+        "mode": "auto",
+        "status": "completed"
+      },
+      {
+        "taskId": "cron",
+        "traceId": "tr",
+        "title": "cron task",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 700,
+        "mode": "auto",
+        "cronAutomationId": "auto-1",
+        "unreadAt": 7
+      },
+      {
+        "taskId": "goal",
+        "traceId": "tr",
+        "title": "goal task",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 600,
+        "mode": "auto",
+        "unreadAt": 6,
+        "target": {
+          "sessionID": "sess-1",
+          "targetID": "goal-1",
+          "objective": "ship the port",
+          "summaryTitle": null,
+          "status": "active",
+          "tokenBudget": null,
+          "tokensUsed": 4,
+          "timeUsedSeconds": 9,
+          "time": {
+            "created": 1,
+            "updated": 2
+          }
+        }
+      },
+      {
+        "taskId": "other",
+        "traceId": "tr",
+        "title": "other workspace",
+        "titleOverridden": false,
+        "workspacePath": "/other",
+        "workspaceIdentity": "other-id",
+        "createdAt": 1,
+        "updatedAt": 500,
+        "mode": "auto",
+        "unreadAt": 5
+      },
+      {
+        "taskId": "archived",
+        "traceId": "tr",
+        "title": "archived task",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 300,
+        "mode": "auto",
+        "status": "completed"
+      },
+      {
+        "taskId": "pinned",
+        "traceId": "tr",
+        "title": "pinned task",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 200,
+        "mode": "auto",
+        "status": "completed"
+      },
+      {
+        "taskId": "plain",
+        "traceId": "tr",
+        "title": "plain task",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 100,
+        "mode": "auto",
+        "status": "completed"
+      }
+    ]
+  },
+  {
+    "label": "list.includeDeleted",
+    "value": [
+      {
+        "taskId": "bodiless",
+        "traceId": "tr",
+        "title": "zebra",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 800,
+        "mode": "auto",
+        "status": "completed"
+      },
+      {
+        "taskId": "cron",
+        "traceId": "tr",
+        "title": "cron task",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 700,
+        "mode": "auto",
+        "cronAutomationId": "auto-1",
+        "unreadAt": 7
+      },
+      {
+        "taskId": "goal",
+        "traceId": "tr",
+        "title": "goal task",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 600,
+        "mode": "auto",
+        "unreadAt": 6,
+        "target": {
+          "sessionID": "sess-1",
+          "targetID": "goal-1",
+          "objective": "ship the port",
+          "summaryTitle": null,
+          "status": "active",
+          "tokenBudget": null,
+          "tokensUsed": 4,
+          "timeUsedSeconds": 9,
+          "time": {
+            "created": 1,
+            "updated": 2
+          }
+        }
+      },
+      {
+        "taskId": "gone",
+        "traceId": "tr",
+        "title": "deleted task",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 400,
+        "mode": "auto",
+        "unreadAt": 4
+      },
+      {
+        "taskId": "archived",
+        "traceId": "tr",
+        "title": "archived task",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 300,
+        "mode": "auto",
+        "status": "completed"
+      },
+      {
+        "taskId": "pinned",
+        "traceId": "tr",
+        "title": "pinned task",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 200,
+        "mode": "auto",
+        "status": "completed"
+      },
+      {
+        "taskId": "plain",
+        "traceId": "tr",
+        "title": "plain task",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 100,
+        "mode": "auto",
+        "status": "completed"
+      }
+    ]
+  },
+  {
+    "label": "list.pinnedTrue",
+    "value": [
+      {
+        "taskId": "pinned",
+        "traceId": "tr",
+        "title": "pinned task",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 200,
+        "mode": "auto",
+        "status": "completed"
+      }
+    ]
+  },
+  {
+    "label": "list.pinnedFalse",
+    "value": [
+      {
+        "taskId": "bodiless",
+        "traceId": "tr",
+        "title": "zebra",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 800,
+        "mode": "auto",
+        "status": "completed"
+      },
+      {
+        "taskId": "cron",
+        "traceId": "tr",
+        "title": "cron task",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 700,
+        "mode": "auto",
+        "cronAutomationId": "auto-1",
+        "unreadAt": 7
+      },
+      {
+        "taskId": "goal",
+        "traceId": "tr",
+        "title": "goal task",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 600,
+        "mode": "auto",
+        "unreadAt": 6,
+        "target": {
+          "sessionID": "sess-1",
+          "targetID": "goal-1",
+          "objective": "ship the port",
+          "summaryTitle": null,
+          "status": "active",
+          "tokenBudget": null,
+          "tokensUsed": 4,
+          "timeUsedSeconds": 9,
+          "time": {
+            "created": 1,
+            "updated": 2
+          }
+        }
+      },
+      {
+        "taskId": "archived",
+        "traceId": "tr",
+        "title": "archived task",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 300,
+        "mode": "auto",
+        "status": "completed"
+      },
+      {
+        "taskId": "plain",
+        "traceId": "tr",
+        "title": "plain task",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 100,
+        "mode": "auto",
+        "status": "completed"
+      }
+    ]
+  },
+  {
+    "label": "list.archivedTrue",
+    "value": [
+      {
+        "taskId": "archived",
+        "traceId": "tr",
+        "title": "archived task",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 300,
+        "mode": "auto",
+        "status": "completed"
+      }
+    ]
+  },
+  {
+    "label": "list.archivedFalse",
+    "value": [
+      {
+        "taskId": "bodiless",
+        "traceId": "tr",
+        "title": "zebra",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 800,
+        "mode": "auto",
+        "status": "completed"
+      },
+      {
+        "taskId": "cron",
+        "traceId": "tr",
+        "title": "cron task",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 700,
+        "mode": "auto",
+        "cronAutomationId": "auto-1",
+        "unreadAt": 7
+      },
+      {
+        "taskId": "goal",
+        "traceId": "tr",
+        "title": "goal task",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 600,
+        "mode": "auto",
+        "unreadAt": 6,
+        "target": {
+          "sessionID": "sess-1",
+          "targetID": "goal-1",
+          "objective": "ship the port",
+          "summaryTitle": null,
+          "status": "active",
+          "tokenBudget": null,
+          "tokensUsed": 4,
+          "timeUsedSeconds": 9,
+          "time": {
+            "created": 1,
+            "updated": 2
+          }
+        }
+      },
+      {
+        "taskId": "pinned",
+        "traceId": "tr",
+        "title": "pinned task",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 200,
+        "mode": "auto",
+        "status": "completed"
+      },
+      {
+        "taskId": "plain",
+        "traceId": "tr",
+        "title": "plain task",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 100,
+        "mode": "auto",
+        "status": "completed"
+      }
+    ]
+  },
+  {
+    "label": "list.pinnedAndUnarchived",
+    "value": [
+      {
+        "taskId": "pinned",
+        "traceId": "tr",
+        "title": "pinned task",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 200,
+        "mode": "auto",
+        "status": "completed"
+      }
+    ]
+  },
+  {
+    "label": "list.otherScope",
+    "value": [
+      {
+        "taskId": "other",
+        "traceId": "tr",
+        "title": "other workspace",
+        "titleOverridden": false,
+        "workspacePath": "/other",
+        "workspaceIdentity": "other-id",
+        "createdAt": 1,
+        "updatedAt": 500,
+        "mode": "auto",
+        "unreadAt": 5
+      }
+    ]
+  },
+  {
+    "label": "deleted.ws",
+    "value": [
+      "gone"
+    ]
+  },
+  {
+    "label": "deleted.other",
+    "value": []
+  },
+  {
+    "label": "deleted.provider",
+    "value": []
+  },
+  {
+    "label": "byAutomation.found",
+    "value": [
+      {
+        "taskId": "cron",
+        "traceId": "tr",
+        "title": "cron task",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 700,
+        "mode": "auto",
+        "cronAutomationId": "auto-1",
+        "unreadAt": 7
+      }
+    ]
+  },
+  {
+    "label": "byAutomation.missing",
+    "value": []
+  },
+  {
+    "label": "bootstrapRun.before",
+    "value": false
+  },
+  {
+    "label": "listView.default",
+    "value": {
+      "items": [
+        {
+          "taskId": "bodiless",
+          "traceId": "tr",
+          "title": "zebra",
+          "titleOverridden": false,
+          "workspacePath": "/ws",
+          "createdAt": 1,
+          "updatedAt": 800,
+          "mode": "auto",
+          "status": "completed"
+        },
+        {
+          "taskId": "cron",
+          "traceId": "tr",
+          "title": "cron task",
+          "titleOverridden": false,
+          "workspacePath": "/ws",
+          "createdAt": 1,
+          "updatedAt": 700,
+          "mode": "auto",
+          "cronAutomationId": "auto-1",
+          "unreadAt": 7
+        },
+        {
+          "taskId": "goal",
+          "traceId": "tr",
+          "title": "goal task",
+          "titleOverridden": false,
+          "workspacePath": "/ws",
+          "createdAt": 1,
+          "updatedAt": 600,
+          "mode": "auto",
+          "unreadAt": 6,
+          "target": {
+            "sessionID": "sess-1",
+            "targetID": "goal-1",
+            "objective": "ship the port",
+            "summaryTitle": null,
+            "status": "active",
+            "tokenBudget": null,
+            "tokensUsed": 4,
+            "timeUsedSeconds": 9,
+            "time": {
+              "created": 1,
+              "updated": 2
+            }
+          }
+        },
+        {
+          "taskId": "plain",
+          "traceId": "tr",
+          "title": "plain task",
+          "titleOverridden": false,
+          "workspacePath": "/ws",
+          "createdAt": 1,
+          "updatedAt": 100,
+          "mode": "auto",
+          "status": "completed"
+        }
+      ],
+      "total": 4,
+      "hasMore": false
+    }
+  },
+  {
+    "label": "listView.pinned",
+    "value": {
+      "items": [
+        {
+          "taskId": "pinned",
+          "traceId": "tr",
+          "title": "pinned task",
+          "titleOverridden": false,
+          "workspacePath": "/ws",
+          "createdAt": 1,
+          "updatedAt": 200,
+          "mode": "auto",
+          "status": "completed"
+        }
+      ],
+      "total": 1,
+      "hasMore": false
+    }
+  },
+  {
+    "label": "listView.archived",
+    "value": {
+      "items": [
+        {
+          "taskId": "archived",
+          "traceId": "tr",
+          "title": "archived task",
+          "titleOverridden": false,
+          "workspacePath": "/ws",
+          "createdAt": 1,
+          "updatedAt": 300,
+          "mode": "auto",
+          "status": "completed"
+        }
+      ],
+      "total": 1,
+      "hasMore": false
+    }
+  },
+  {
+    "label": "listView.all",
+    "value": {
+      "items": [
+        {
+          "taskId": "bodiless",
+          "traceId": "tr",
+          "title": "zebra",
+          "titleOverridden": false,
+          "workspacePath": "/ws",
+          "createdAt": 1,
+          "updatedAt": 800,
+          "mode": "auto",
+          "status": "completed"
+        },
+        {
+          "taskId": "cron",
+          "traceId": "tr",
+          "title": "cron task",
+          "titleOverridden": false,
+          "workspacePath": "/ws",
+          "createdAt": 1,
+          "updatedAt": 700,
+          "mode": "auto",
+          "cronAutomationId": "auto-1",
+          "unreadAt": 7
+        },
+        {
+          "taskId": "goal",
+          "traceId": "tr",
+          "title": "goal task",
+          "titleOverridden": false,
+          "workspacePath": "/ws",
+          "createdAt": 1,
+          "updatedAt": 600,
+          "mode": "auto",
+          "unreadAt": 6,
+          "target": {
+            "sessionID": "sess-1",
+            "targetID": "goal-1",
+            "objective": "ship the port",
+            "summaryTitle": null,
+            "status": "active",
+            "tokenBudget": null,
+            "tokensUsed": 4,
+            "timeUsedSeconds": 9,
+            "time": {
+              "created": 1,
+              "updated": 2
+            }
+          }
+        },
+        {
+          "taskId": "plain",
+          "traceId": "tr",
+          "title": "plain task",
+          "titleOverridden": false,
+          "workspacePath": "/ws",
+          "createdAt": 1,
+          "updatedAt": 100,
+          "mode": "auto",
+          "status": "completed"
+        }
+      ],
+      "total": 4,
+      "hasMore": false
+    }
+  },
+  {
+    "label": "listView.emptyScope",
+    "value": {
+      "items": [],
+      "total": 0,
+      "hasMore": false
+    }
+  },
+  {
+    "label": "listView.searchTitle",
+    "value": {
+      "items": [
+        {
+          "taskId": "bodiless",
+          "traceId": "tr",
+          "title": "zebra",
+          "titleOverridden": false,
+          "workspacePath": "/ws",
+          "createdAt": 1,
+          "updatedAt": 800,
+          "mode": "auto",
+          "status": "completed"
+        }
+      ],
+      "total": 1,
+      "hasMore": false
+    }
+  },
+  {
+    "label": "listView.searchBody",
+    "value": {
+      "items": [
+        {
+          "taskId": "plain",
+          "traceId": "tr",
+          "title": "plain task",
+          "titleOverridden": false,
+          "workspacePath": "/ws",
+          "createdAt": 1,
+          "updatedAt": 100,
+          "mode": "auto",
+          "status": "completed",
+          "searchSnippet": "the quick brown fox",
+          "searchSnippets": [
+            "the quick brown fox"
+          ]
+        }
+      ],
+      "total": 1,
+      "hasMore": false
+    }
+  },
+  {
+    "label": "listView.searchWhitespace",
+    "value": {
+      "items": [
+        {
+          "taskId": "bodiless",
+          "traceId": "tr",
+          "title": "zebra",
+          "titleOverridden": false,
+          "workspacePath": "/ws",
+          "createdAt": 1,
+          "updatedAt": 800,
+          "mode": "auto",
+          "status": "completed"
+        },
+        {
+          "taskId": "cron",
+          "traceId": "tr",
+          "title": "cron task",
+          "titleOverridden": false,
+          "workspacePath": "/ws",
+          "createdAt": 1,
+          "updatedAt": 700,
+          "mode": "auto",
+          "cronAutomationId": "auto-1",
+          "unreadAt": 7
+        },
+        {
+          "taskId": "goal",
+          "traceId": "tr",
+          "title": "goal task",
+          "titleOverridden": false,
+          "workspacePath": "/ws",
+          "createdAt": 1,
+          "updatedAt": 600,
+          "mode": "auto",
+          "unreadAt": 6,
+          "target": {
+            "sessionID": "sess-1",
+            "targetID": "goal-1",
+            "objective": "ship the port",
+            "summaryTitle": null,
+            "status": "active",
+            "tokenBudget": null,
+            "tokensUsed": 4,
+            "timeUsedSeconds": 9,
+            "time": {
+              "created": 1,
+              "updated": 2
+            }
+          }
+        },
+        {
+          "taskId": "plain",
+          "traceId": "tr",
+          "title": "plain task",
+          "titleOverridden": false,
+          "workspacePath": "/ws",
+          "createdAt": 1,
+          "updatedAt": 100,
+          "mode": "auto",
+          "status": "completed"
+        }
+      ],
+      "total": 4,
+      "hasMore": false
+    }
+  },
+  {
+    "label": "listView.searchMixedCase",
+    "value": {
+      "items": [
+        {
+          "taskId": "bodiless",
+          "traceId": "tr",
+          "title": "zebra",
+          "titleOverridden": false,
+          "workspacePath": "/ws",
+          "createdAt": 1,
+          "updatedAt": 800,
+          "mode": "auto",
+          "status": "completed"
+        }
+      ],
+      "total": 1,
+      "hasMore": false
+    }
+  },
+  {
+    "label": "listView.searchNoHit",
+    "value": {
+      "items": [],
+      "total": 0,
+      "hasMore": false
+    }
+  },
+  {
+    "label": "listView.limit",
+    "value": {
+      "items": [
+        {
+          "taskId": "bodiless",
+          "traceId": "tr",
+          "title": "zebra",
+          "titleOverridden": false,
+          "workspacePath": "/ws",
+          "createdAt": 1,
+          "updatedAt": 800,
+          "mode": "auto",
+          "status": "completed"
+        },
+        {
+          "taskId": "cron",
+          "traceId": "tr",
+          "title": "cron task",
+          "titleOverridden": false,
+          "workspacePath": "/ws",
+          "createdAt": 1,
+          "updatedAt": 700,
+          "mode": "auto",
+          "cronAutomationId": "auto-1",
+          "unreadAt": 7
+        }
+      ],
+      "total": 4,
+      "hasMore": true
+    }
+  },
+  {
+    "label": "listView.limitZero",
+    "value": {
+      "items": [
+        {
+          "taskId": "bodiless",
+          "traceId": "tr",
+          "title": "zebra",
+          "titleOverridden": false,
+          "workspacePath": "/ws",
+          "createdAt": 1,
+          "updatedAt": 800,
+          "mode": "auto",
+          "status": "completed"
+        },
+        {
+          "taskId": "cron",
+          "traceId": "tr",
+          "title": "cron task",
+          "titleOverridden": false,
+          "workspacePath": "/ws",
+          "createdAt": 1,
+          "updatedAt": 700,
+          "mode": "auto",
+          "cronAutomationId": "auto-1",
+          "unreadAt": 7
+        },
+        {
+          "taskId": "goal",
+          "traceId": "tr",
+          "title": "goal task",
+          "titleOverridden": false,
+          "workspacePath": "/ws",
+          "createdAt": 1,
+          "updatedAt": 600,
+          "mode": "auto",
+          "unreadAt": 6,
+          "target": {
+            "sessionID": "sess-1",
+            "targetID": "goal-1",
+            "objective": "ship the port",
+            "summaryTitle": null,
+            "status": "active",
+            "tokenBudget": null,
+            "tokensUsed": 4,
+            "timeUsedSeconds": 9,
+            "time": {
+              "created": 1,
+              "updated": 2
+            }
+          }
+        },
+        {
+          "taskId": "plain",
+          "traceId": "tr",
+          "title": "plain task",
+          "titleOverridden": false,
+          "workspacePath": "/ws",
+          "createdAt": 1,
+          "updatedAt": 100,
+          "mode": "auto",
+          "status": "completed"
+        }
+      ],
+      "total": 4,
+      "hasMore": false
+    }
+  },
+  {
+    "label": "listView.sortCreated",
+    "value": {
+      "items": [
+        {
+          "taskId": "bodiless",
+          "traceId": "tr",
+          "title": "zebra",
+          "titleOverridden": false,
+          "workspacePath": "/ws",
+          "createdAt": 1,
+          "updatedAt": 800,
+          "mode": "auto",
+          "status": "completed"
+        },
+        {
+          "taskId": "cron",
+          "traceId": "tr",
+          "title": "cron task",
+          "titleOverridden": false,
+          "workspacePath": "/ws",
+          "createdAt": 1,
+          "updatedAt": 700,
+          "mode": "auto",
+          "cronAutomationId": "auto-1",
+          "unreadAt": 7
+        },
+        {
+          "taskId": "goal",
+          "traceId": "tr",
+          "title": "goal task",
+          "titleOverridden": false,
+          "workspacePath": "/ws",
+          "createdAt": 1,
+          "updatedAt": 600,
+          "mode": "auto",
+          "unreadAt": 6,
+          "target": {
+            "sessionID": "sess-1",
+            "targetID": "goal-1",
+            "objective": "ship the port",
+            "summaryTitle": null,
+            "status": "active",
+            "tokenBudget": null,
+            "tokensUsed": 4,
+            "timeUsedSeconds": 9,
+            "time": {
+              "created": 1,
+              "updated": 2
+            }
+          }
+        },
+        {
+          "taskId": "plain",
+          "traceId": "tr",
+          "title": "plain task",
+          "titleOverridden": false,
+          "workspacePath": "/ws",
+          "createdAt": 1,
+          "updatedAt": 100,
+          "mode": "auto",
+          "status": "completed"
+        }
+      ],
+      "total": 4,
+      "hasMore": false
+    }
+  },
+  {
+    "label": "listView.searchAndLimit",
+    "value": {
+      "items": [
+        {
+          "taskId": "cron",
+          "traceId": "tr",
+          "title": "cron task",
+          "titleOverridden": false,
+          "workspacePath": "/ws",
+          "createdAt": 1,
+          "updatedAt": 700,
+          "mode": "auto",
+          "cronAutomationId": "auto-1",
+          "unreadAt": 7
+        }
+      ],
+      "total": 3,
+      "hasMore": true
+    }
+  },
+  {
+    "label": "listView.twoScopes",
+    "value": {
+      "items": [
+        {
+          "taskId": "bodiless",
+          "traceId": "tr",
+          "title": "zebra",
+          "titleOverridden": false,
+          "workspacePath": "/ws",
+          "createdAt": 1,
+          "updatedAt": 800,
+          "mode": "auto",
+          "status": "completed"
+        },
+        {
+          "taskId": "cron",
+          "traceId": "tr",
+          "title": "cron task",
+          "titleOverridden": false,
+          "workspacePath": "/ws",
+          "createdAt": 1,
+          "updatedAt": 700,
+          "mode": "auto",
+          "cronAutomationId": "auto-1",
+          "unreadAt": 7
+        },
+        {
+          "taskId": "goal",
+          "traceId": "tr",
+          "title": "goal task",
+          "titleOverridden": false,
+          "workspacePath": "/ws",
+          "createdAt": 1,
+          "updatedAt": 600,
+          "mode": "auto",
+          "unreadAt": 6,
+          "target": {
+            "sessionID": "sess-1",
+            "targetID": "goal-1",
+            "objective": "ship the port",
+            "summaryTitle": null,
+            "status": "active",
+            "tokenBudget": null,
+            "tokensUsed": 4,
+            "timeUsedSeconds": 9,
+            "time": {
+              "created": 1,
+              "updated": 2
+            }
+          }
+        },
+        {
+          "taskId": "other",
+          "traceId": "tr",
+          "title": "other workspace",
+          "titleOverridden": false,
+          "workspacePath": "/other",
+          "workspaceIdentity": "other-id",
+          "createdAt": 1,
+          "updatedAt": 500,
+          "mode": "auto",
+          "unreadAt": 5
+        },
+        {
+          "taskId": "plain",
+          "traceId": "tr",
+          "title": "plain task",
+          "titleOverridden": false,
+          "workspacePath": "/ws",
+          "createdAt": 1,
+          "updatedAt": 100,
+          "mode": "auto",
+          "status": "completed"
+        }
+      ],
+      "total": 5,
+      "hasMore": false
+    }
+  },
+  {
+    "label": "listView.twoScopesPinned",
+    "value": {
+      "items": [
+        {
+          "taskId": "pinned",
+          "traceId": "tr",
+          "title": "pinned task",
+          "titleOverridden": false,
+          "workspacePath": "/ws",
+          "createdAt": 1,
+          "updatedAt": 200,
+          "mode": "auto",
+          "status": "completed"
+        }
+      ],
+      "total": 1,
+      "hasMore": false
+    }
+  },
+  {
+    "label": "listView.twoScopesSearch",
+    "value": {
+      "items": [
+        {
+          "taskId": "cron",
+          "traceId": "tr",
+          "title": "cron task",
+          "titleOverridden": false,
+          "workspacePath": "/ws",
+          "createdAt": 1,
+          "updatedAt": 700,
+          "mode": "auto",
+          "cronAutomationId": "auto-1",
+          "unreadAt": 7
+        },
+        {
+          "taskId": "goal",
+          "traceId": "tr",
+          "title": "goal task",
+          "titleOverridden": false,
+          "workspacePath": "/ws",
+          "createdAt": 1,
+          "updatedAt": 600,
+          "mode": "auto",
+          "unreadAt": 6,
+          "target": {
+            "sessionID": "sess-1",
+            "targetID": "goal-1",
+            "objective": "ship the port",
+            "summaryTitle": null,
+            "status": "active",
+            "tokenBudget": null,
+            "tokensUsed": 4,
+            "timeUsedSeconds": 9,
+            "time": {
+              "created": 1,
+              "updated": 2
+            }
+          }
+        },
+        {
+          "taskId": "plain",
+          "traceId": "tr",
+          "title": "plain task",
+          "titleOverridden": false,
+          "workspacePath": "/ws",
+          "createdAt": 1,
+          "updatedAt": 100,
+          "mode": "auto",
+          "status": "completed",
+          "searchSnippet": "the quick brown fox",
+          "searchSnippets": [
+            "the quick brown fox"
+          ]
+        }
+      ],
+      "total": 3,
+      "hasMore": false
+    }
+  },
+  {
+    "label": "listView.withPurpose",
+    "value": {
+      "items": [
+        {
+          "taskId": "bodiless",
+          "traceId": "tr",
+          "title": "zebra",
+          "titleOverridden": false,
+          "workspacePath": "/ws",
+          "createdAt": 1,
+          "updatedAt": 800,
+          "mode": "auto",
+          "status": "completed",
+          "workspacePurpose": "project"
+        },
+        {
+          "taskId": "cron",
+          "traceId": "tr",
+          "title": "cron task",
+          "titleOverridden": false,
+          "workspacePath": "/ws",
+          "createdAt": 1,
+          "updatedAt": 700,
+          "mode": "auto",
+          "cronAutomationId": "auto-1",
+          "unreadAt": 7,
+          "workspacePurpose": "project"
+        },
+        {
+          "taskId": "goal",
+          "traceId": "tr",
+          "title": "goal task",
+          "titleOverridden": false,
+          "workspacePath": "/ws",
+          "createdAt": 1,
+          "updatedAt": 600,
+          "mode": "auto",
+          "unreadAt": 6,
+          "target": {
+            "sessionID": "sess-1",
+            "targetID": "goal-1",
+            "objective": "ship the port",
+            "summaryTitle": null,
+            "status": "active",
+            "tokenBudget": null,
+            "tokensUsed": 4,
+            "timeUsedSeconds": 9,
+            "time": {
+              "created": 1,
+              "updated": 2
+            }
+          },
+          "workspacePurpose": "project"
+        },
+        {
+          "taskId": "plain",
+          "traceId": "tr",
+          "title": "plain task",
+          "titleOverridden": false,
+          "workspacePath": "/ws",
+          "createdAt": 1,
+          "updatedAt": 100,
+          "mode": "auto",
+          "status": "completed",
+          "workspacePurpose": "project"
+        }
+      ],
+      "total": 4,
+      "hasMore": false
+    }
+  },
+  {
+    "label": "archive.noneQualify",
+    "value": [
+      {
+        "taskId": "bodiless",
+        "traceId": "tr",
+        "title": "zebra",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 800,
+        "mode": "auto",
+        "status": "completed"
+      },
+      {
+        "taskId": "plain",
+        "traceId": "tr",
+        "title": "plain task",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 100,
+        "mode": "auto",
+        "status": "completed"
+      }
+    ]
+  },
+  {
+    "label": "archive.afterClearStillNone",
+    "value": []
+  },
+  {
+    "label": "archive.negativeFloored",
+    "value": []
+  },
+  {
+    "label": "archive.cutoffInFuture",
+    "value": []
+  },
+  {
+    "label": "listAfterArchive",
+    "value": [
+      {
+        "taskId": "bodiless",
+        "traceId": "tr",
+        "title": "zebra",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 800,
+        "mode": "auto",
+        "status": "completed"
+      },
+      {
+        "taskId": "cron",
+        "traceId": "tr",
+        "title": "cron task",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 700,
+        "mode": "auto",
+        "cronAutomationId": "auto-1",
+        "unreadAt": 7
+      },
+      {
+        "taskId": "goal",
+        "traceId": "tr",
+        "title": "goal task",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 600,
+        "mode": "auto",
+        "unreadAt": 6,
+        "target": {
+          "sessionID": "sess-1",
+          "targetID": "goal-1",
+          "objective": "ship the port",
+          "summaryTitle": null,
+          "status": "active",
+          "tokenBudget": null,
+          "tokensUsed": 4,
+          "timeUsedSeconds": 9,
+          "time": {
+            "created": 1,
+            "updated": 2
+          }
+        }
+      },
+      {
+        "taskId": "archived",
+        "traceId": "tr",
+        "title": "archived task",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 300,
+        "mode": "auto",
+        "status": "completed"
+      },
+      {
+        "taskId": "pinned",
+        "traceId": "tr",
+        "title": "pinned task",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 200,
+        "mode": "auto",
+        "status": "completed"
+      },
+      {
+        "taskId": "plain",
+        "traceId": "tr",
+        "title": "plain task",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 100,
+        "mode": "auto",
+        "status": "completed"
+      }
+    ]
+  },
+  {
+    "label": "listAfterArchive.pinned",
+    "value": [
+      {
+        "taskId": "pinned",
+        "traceId": "tr",
+        "title": "pinned task",
+        "titleOverridden": false,
+        "workspacePath": "/ws",
+        "createdAt": 1,
+        "updatedAt": 200,
+        "mode": "auto",
+        "status": "completed"
+      }
+    ]
+  }
+]

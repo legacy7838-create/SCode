@@ -103,3 +103,7 @@ apps/zcode-tauri/src-tauri/gen/
 # Mermaid output of `pnpm dep:graph` (scripts/dependency-graph.mjs DEFAULT_OUTPUT); a regenerable
 # report of the local dependency graph, not source.
 /dependency-graph.mmd
+# sqlite sidecars: a fixture database is committed as a single file, so a -wal or -shm that appears
+# beside it is a leftover from a run, never part of the fixture.
+*.sqlite-wal
+*.sqlite-shm

@@ -178,6 +178,15 @@ export interface NativeStore {
   writeBatch(batchJson: string): Promise<number>;
   listTasks(queryJson: string): Promise<string>;
   offpeakClaimDue(nowMs: number): Promise<string>;
+  // The task read path — `taskIndexRepo` batch A.
+  getTaskMeta(requestJson: string): Promise<string>;
+  listTaskMetas(queryJson: string): Promise<string>;
+  listDeletedTaskIds(requestJson: string): Promise<string>;
+  listSessionsByAutomation(automationId: string): Promise<string>;
+  queryTaskList(queryJson: string): Promise<string>;
+  hasGroupedWorkspaceBootstrapRun(): Promise<boolean>;
+  archiveStaleTasks(requestJson: string): Promise<string>;
+
   offpeakRecycleAwaitingApproval(now: number): Promise<number>;
   offpeakCountNonTerminal(): Promise<number>;
   offpeakCountActive(): Promise<number>;

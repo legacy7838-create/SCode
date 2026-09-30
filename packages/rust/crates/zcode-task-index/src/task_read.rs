@@ -66,6 +66,9 @@ pub struct TaskListItem {
     /// Every snippet, for the expanded result. Absent when there was no search or no hit.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub search_snippets: Option<Vec<String>>,
+    /// The workspace's purpose, from the caller's scope list — never stored on the row.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_purpose: Option<String>,
 }
 
 /// `normalizeLimit` (`taskIndexRepo.ts`): a non-positive or absent limit means "no limit".
@@ -384,19 +387,34 @@ pub fn query_task_list(
     }
     let rows = query_rows(conn, &list_sql, &list_args)?;
 
+    // The purpose is per **workspace**, not per task, and is not stored on the row — it comes from
+    // the caller's scope list. It is attached on the way out rather than in SQL, so a task in a
+    // workspace with no declared purpose simply has none.
+    let purposes: std::collections::BTreeMap<&str, &str> = query
+        .workspace_purpose_by_key
+        .iter()
+        .map(|(key, purpose)| (key.as_str(), purpose.as_str()))
+        .collect();
     let items = rows
         .iter()
         .map(|row| {
             let snippets = build_search_snippets(&row.searchable_text, search);
             let meta = row_to_meta(row);
-            match snippets.split_first() {
+            let mut item = match snippets.split_first() {
                 Some((first, rest)) => TaskListItem {
                     meta,
                     search_snippet: Some(first.clone()),
-                    search_snippets: Some(std::iter::once(first.clone()).chain(rest.iter().cloned()).collect()),
+                    search_snippets: Some(
+                        std::iter::once(first.clone()).chain(rest.iter().cloned()).collect(),
+                    ),
+                    workspace_purpose: None,
                 },
-                None => TaskListItem { meta, search_snippet: None, search_snippets: None },
+                None => TaskListItem { meta, search_snippet: None, search_snippets: None, workspace_purpose: None },
+            };
+            if let Some(purpose) = purposes.get(row.workspace_key.as_str()) {
+                item.workspace_purpose = Some((*purpose).to_string());
             }
+            item
         })
         .collect::<Vec<_>>();
 

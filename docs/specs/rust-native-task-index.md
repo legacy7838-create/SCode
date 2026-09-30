@@ -1089,3 +1089,62 @@ passes, because the fallback parses.
 
 `changeSummary.files` is `#[serde(default)]`-free, so a summary without it is rejected, matching
 zod's required field. Being lenient would accept a document the original refuses.
+
+### Batch A, part 2: the read path is ported and **verified, not yet switched**
+
+`src/napi.rs` grew the seven methods, `src/taskReadRepository.ts` wraps them, and
+`scripts/verify-task-read-parity.mts` replays a **46-entry** captured transcript against the Rust
+engine. **46/46 match.**
+
+#### Why the consumer switch is deliberately *not* in this commit
+
+Switching the reads now would leave `taskIndexRepo.ts` with a JavaScript **write** path and a Rust
+**read** path over the same file — two connections in two languages, both running the same migration
+ledger, on `~/.zcode/v2/tasks-index.sqlite`. That is precisely the arrangement §4.4 exists to avoid,
+and it would be introduced by the very change meant to remove it.
+
+It is also, concretely, worse than it sounds: 23 statement sites in that file still go through
+`node:sqlite`, so a read taken through Rust could observe a write that a `node:sqlite` transaction
+has not yet committed, and there would be no single owner of the busy-timeout or of the ledger.
+
+So the reads are **ported and proven**, and the switch lands with batch D, when the writes move
+too and the file has one owner. A verified port that is not yet wired is not a fallback — nothing
+in the product calls it — and it is the honest state of the work.
+
+#### What the transcript pinned, and the three things it caught
+
+The 46 entries are chosen for the cases where a read *silently* returns the wrong thing rather than
+throwing:
+
+- **A deleted task that reads as live.** `get.deleted` is `null` while `deleted.ws` still lists the
+  tombstone; the two have to agree or the task reappears after a cold start.
+- **An absent filter that narrows.** `list.default` (6 rows) against `list.pinnedTrue` (1),
+  `list.pinnedFalse` (5) and `list.archivedFalse` (5). A tri-state that collapsed to a boolean
+  would make the first three identical.
+- **A `kind` that is not the closed set it looks like.** `listView.all` is the same as
+  `listView.default`, because the match falls through to "unpinned and unarchived" — an unknown
+  kind is not an error.
+- **`hasMore` comparing the page against itself.** `limit: 2` against `total: 4` is `hasMore: true`;
+  `limit: 0` is **not** a zero-length page but *no limit*, so all 4 rows come back.
+- **A search that matches the body, the title, nothing, and a case fold.** `searchBody` finds a
+  task whose hit is only in `searchable_text`; `searchWhitespace` is not a search; `searchMixedCase`
+  matches because the column side is `LOWER(…)` while the pattern side is `toLocaleLowerCase`.
+- **The sweep's idempotence.** The first `archiveStaleTasks` returns 2 rows; the next three return
+  none, because `archived = 1` has joined the predicate.
+
+Three findings, two of them harness bugs and one a real omission:
+
+1. **`workspacePurpose` was collected and never applied.** The query carried the per-workspace
+   purpose map and the engine dropped it, so every item lost a field the sidebar renders. Now
+   attached on the way out — it is per **workspace**, not per task, and is not stored on the row.
+2. **The committed fixture was captured *after* the archive sweep**, so the file on disk disagreed
+   with the transcript recorded before it. The seed dump moved to immediately after the fixture
+   rows are written, which is the state the reads start from.
+3. **The WAL was never checkpointed before the dump.** The database runs in WAL mode, so the
+   `completed` status updates — written *after* the last checkpoint — lived in the `-wal` sidecar
+   and were not in the main file. Copying the main file alone produced a fixture silently missing
+   every task the sweep selects: 18 mismatches, all of the form "the Rust replay is missing a row".
+
+That third one is the generalisable lesson: **a database copied as a single file is not a fixture
+in WAL mode.** It looks complete, it opens without error, and it is missing everything written since
+the last checkpoint.

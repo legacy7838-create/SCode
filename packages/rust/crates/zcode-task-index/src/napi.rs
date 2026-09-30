@@ -210,6 +210,79 @@ impl TaskIndexStore {
     }
 
     // -----------------------------------------------------------------------
+    // The task read path — `taskIndexRepo`'s batch A.
+    //
+    // Spec §22. Each of these differs from its neighbour only in the WHERE clause, so the projection
+    // lives once in `meta::TASK_COLUMNS` rather than in seven SELECTs that may drift apart.
+    // -----------------------------------------------------------------------
+
+    /// `getTaskMeta` — a deleted row reads as absent.
+    #[napi(ts_return_type = "Promise<string>")]
+    pub fn get_task_meta(&self, request_json: String) -> AsyncTask<TaskMetaResultTask> {
+        AsyncTask::new(TaskMetaResultTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            body: TaskReadBody::Get(request_json),
+        })
+    }
+
+    /// `listTaskMetas` — every filter is a nullable tri-state, so an absent one does not filter.
+    #[napi(ts_return_type = "Promise<string>")]
+    pub fn list_task_metas(&self, query_json: String) -> AsyncTask<TaskMetaListTask> {
+        AsyncTask::new(TaskMetaListTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            query_json,
+        })
+    }
+
+    /// `listDeletedTaskIds` — the tombstones, so a deleted task cannot reappear after a cold start.
+    #[napi(ts_return_type = "Promise<string>")]
+    pub fn list_deleted_task_ids(&self, request_json: String) -> AsyncTask<StringListTask> {
+        AsyncTask::new(StringListTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            run: std::sync::Arc::new(move |conn: &rusqlite::Connection| {
+                let request: DeletedTaskIdsRequest = decode(&request_json)?;
+                task_read::list_deleted_task_ids(conn, &request.workspace_key, request.provider.as_deref())
+                    .map_err(store_error)
+            }),
+        })
+    }
+
+    /// `listSessionsByAutomation` — the runs an automation produced.
+    #[napi(ts_return_type = "Promise<string>")]
+    pub fn list_sessions_by_automation(&self, automation_id: String) -> AsyncTask<TaskMetaListByKeyTask> {
+        AsyncTask::new(TaskMetaListByKeyTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            run: std::sync::Arc::new(move |conn: &rusqlite::Connection| {
+                task_read::list_sessions_by_automation(conn, &automation_id).map_err(store_error)
+            }),
+        })
+    }
+
+    /// `queryTaskList` — the sidebar, with search snippets and a `hasMore` against the total.
+    #[napi(ts_return_type = "Promise<string>")]
+    pub fn query_task_list(&self, query_json: String) -> AsyncTask<TaskListResultTask> {
+        AsyncTask::new(TaskListResultTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            query_json,
+        })
+    }
+
+    /// `hasGroupedWorkspaceBootstrapRun` — a global marker, not a per-workspace one.
+    #[napi(ts_return_type = "Promise<boolean>")]
+    pub fn has_grouped_workspace_bootstrap_run(&self) -> AsyncTask<BootstrapRunTask> {
+        AsyncTask::new(BootstrapRunTask { inner: std::sync::Arc::clone(&self.inner) })
+    }
+
+    /// `archiveStaleTasks` — select, then archive in one transaction, returning the pre-archive rows.
+    #[napi(ts_return_type = "Promise<string>")]
+    pub fn archive_stale_tasks(&self, request_json: String) -> AsyncTask<ArchiveStaleTask> {
+        AsyncTask::new(ArchiveStaleTask {
+            inner: std::sync::Arc::clone(&self.inner),
+            request_json,
+        })
+    }
+
+    // -----------------------------------------------------------------------
     // The automation facade.
     //
     // Spec §15. The four task types below already existed with their `compute` implementations —
@@ -743,6 +816,8 @@ pub fn to_json<T: Serialize>(value: &T) -> std::result::Result<String, Error> {
 /// them through one module rather than four.
 pub use crate::grouped::GroupMemberOrder;
 pub use crate::offpeak::OffPeakRow;
+use crate::meta::TaskMeta;
+use crate::task_read;
 pub use crate::read::TaskListRow;
 
 
@@ -1185,6 +1260,221 @@ impl Task for OffPeakRecycleTask {
             OffPeakStore::recycle_awaiting_approval(conn, self.now)
         })
         .map(|recycled| recycled as i64)
+    }
+}
+
+// ---- the task read path: request shapes and task bodies ------------------------
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct TaskRefRequest {
+    /// Already resolved: the identity rule is the caller's, so two paths sharing an identity
+    /// cannot produce two scopes.
+    workspace_key: String,
+    task_id: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DeletedTaskIdsRequest {
+    workspace_key: String,
+    provider: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ArchiveStaleRequest {
+    workspace_key: String,
+    /// The caller has already floored the span at 1 day; the engine does not re-clamp, because a
+    /// zero-day span would archive everything that ever completed and that bound belongs at the
+    /// decision, not at the storage layer.
+    cutoff: i64,
+    provider: Option<String>,
+}
+
+/// Which single-result read a task performs.
+pub enum TaskReadBody {
+    Get(String),
+}
+
+pub struct TaskMetaResultTask {
+    inner: std::sync::Arc<Inner>,
+    body: TaskReadBody,
+}
+
+impl Task for TaskMetaResultTask {
+    type Output = Option<TaskMeta>;
+    type JsValue = String;
+
+    fn resolve(
+        &mut self,
+        _env: Env,
+        output: Self::Output,
+    ) -> std::result::Result<Self::JsValue, Error> {
+        to_json(&output)
+    }
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        with_connection(&self.inner, |conn| -> std::result::Result<Option<TaskMeta>, Error> {
+            match &self.body {
+                TaskReadBody::Get(json) => {
+                    let request: TaskRefRequest = decode(json)?;
+                    task_read::get_task_meta(conn, &request.workspace_key, &request.task_id)
+                        .map_err(store_error)
+                }
+            }
+        })
+    }
+}
+
+pub struct TaskMetaListTask {
+    inner: std::sync::Arc<Inner>,
+    query_json: String,
+}
+
+impl Task for TaskMetaListTask {
+    type Output = Vec<TaskMeta>;
+    type JsValue = String;
+
+    fn resolve(
+        &mut self,
+        _env: Env,
+        output: Self::Output,
+    ) -> std::result::Result<Self::JsValue, Error> {
+        to_json(&output)
+    }
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        with_connection(&self.inner, |conn| -> std::result::Result<Vec<TaskMeta>, Error> {
+            let query: task_read::ListQuery = decode(&self.query_json)?;
+            task_read::list_task_metas(conn, &query).map_err(store_error)
+        })
+    }
+}
+
+pub struct TaskMetaListByKeyTask {
+    inner: std::sync::Arc<Inner>,
+    run: std::sync::Arc<
+        dyn Fn(&rusqlite::Connection) -> std::result::Result<Vec<TaskMeta>, Error> + Send + Sync,
+    >,
+}
+
+impl Task for TaskMetaListByKeyTask {
+    type Output = Vec<TaskMeta>;
+    type JsValue = String;
+
+    fn resolve(
+        &mut self,
+        _env: Env,
+        output: Self::Output,
+    ) -> std::result::Result<Self::JsValue, Error> {
+        to_json(&output)
+    }
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        let run = std::sync::Arc::clone(&self.run);
+        with_connection(&self.inner, |conn| run(conn))
+    }
+}
+
+pub struct StringListTask {
+    inner: std::sync::Arc<Inner>,
+    run: std::sync::Arc<
+        dyn Fn(&rusqlite::Connection) -> std::result::Result<Vec<String>, Error> + Send + Sync,
+    >,
+}
+
+impl Task for StringListTask {
+    type Output = Vec<String>;
+    type JsValue = String;
+
+    fn resolve(
+        &mut self,
+        _env: Env,
+        output: Self::Output,
+    ) -> std::result::Result<Self::JsValue, Error> {
+        to_json(&output)
+    }
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        let run = std::sync::Arc::clone(&self.run);
+        with_connection(&self.inner, |conn| run(conn))
+    }
+}
+
+pub struct TaskListResultTask {
+    inner: std::sync::Arc<Inner>,
+    query_json: String,
+}
+
+impl Task for TaskListResultTask {
+    type Output = task_read::TaskListResult;
+    type JsValue = String;
+
+    fn resolve(
+        &mut self,
+        _env: Env,
+        output: Self::Output,
+    ) -> std::result::Result<Self::JsValue, Error> {
+        to_json(&output)
+    }
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        with_connection(&self.inner, |conn| -> std::result::Result<task_read::TaskListResult, Error> {
+            let query: task_read::TaskListQuery = decode(&self.query_json)?;
+            task_read::query_task_list(conn, &query).map_err(store_error)
+        })
+    }
+}
+
+pub struct BootstrapRunTask {
+    inner: std::sync::Arc<Inner>,
+}
+
+impl Task for BootstrapRunTask {
+    type Output = bool;
+    type JsValue = bool;
+
+    fn resolve(&mut self, _env: Env, output: Self::Output) -> std::result::Result<Self::JsValue, Error> {
+        Ok(output)
+    }
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        with_connection(&self.inner, |conn| {
+            task_read::has_grouped_workspace_bootstrap_run(conn)
+        })
+    }
+}
+
+/// `archiveStaleTasks` — needs the mutable handle, because the archive is a real transaction.
+pub struct ArchiveStaleTask {
+    inner: std::sync::Arc<Inner>,
+    request_json: String,
+}
+
+impl Task for ArchiveStaleTask {
+    type Output = Vec<TaskMeta>;
+    type JsValue = String;
+
+    fn resolve(
+        &mut self,
+        _env: Env,
+        output: Self::Output,
+    ) -> std::result::Result<Self::JsValue, Error> {
+        to_json(&output)
+    }
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        with_connection_mut(&self.inner, |conn| -> std::result::Result<Vec<TaskMeta>, Error> {
+            let request: ArchiveStaleRequest = decode(&self.request_json)?;
+            task_read::archive_stale_tasks(
+                conn,
+                &request.workspace_key,
+                request.cutoff,
+                request.provider.as_deref(),
+            )
+            .map_err(store_error)
+        })
     }
 }
 
