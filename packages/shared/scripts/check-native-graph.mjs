@@ -39,12 +39,53 @@ const NATIVE_IMPORT_RE =
   /(?:^|\n)\s*(?:import|export)[\s\S]{0,400}?from\s*["']@zcode\/rust(?:\/[^"']*)?["']/g;
 
 /**
- * The one sanctioned exception: `packages/rpc/src/native/**` is the Node-only byte-port binding,
- * reachable exclusively through the `@zcode/rpc/native` subpath. No renderer code imports that
- * subpath, so nothing behind it is renderer-reachable. Any *new* native import in rpc/shared/ui/web
- * still fails this gate.
+ * Sanctioned Node-only directories, each reachable exclusively through a Node-only subpath.
+ *
+ * A directory is listed here **only** because nothing renderer-reachable imports its subpath, and
+ * `assertNotRendererReachable` re-checks that claim on every run rather than trusting this comment.
+ * Any *new* native import in rpc/shared/ui/web still fails this gate.
  */
-const SANCTIONED_NATIVE_DIRS = ["packages/rpc/src/native/"];
+const SANCTIONED_NATIVE_DIRS = ["packages/rpc/src/native/", "packages/shared/src/node/"];
+
+/**
+ * Subpaths that renderer code must never import, mapped to the module path that must be free of
+ * them.
+ *
+ * This is the check that makes sanctioning safe. The directory list above says "these files may hold
+ * native imports"; this says "and nothing the renderer reaches may pull them in". Without it, a
+ * sanctioned directory becomes a hole: one stray import from `packages/ui` would put a `.node` back
+ * into the renderer bundle, and the first gate would no longer see it.
+ */
+const NODE_ONLY_SUBPATHS = [
+  { subpath: "@zcode/shared/node", module: "packages/shared/src/node.ts" },
+  { subpath: "@zcode/rpc/native", module: "packages/rpc/src/native.ts" },
+];
+
+/** Every `@zcode/<pkg>/<subpath>` reference in a source file. */
+const SUBPATH_RE = /@zcode\/[a-z-]+\/[a-z][a-z0-9-]*/g;
+
+function assertNotRendererReachable(rootDir, violations) {
+  for (const { subpath, module } of NODE_ONLY_SUBPATHS) {
+    for (const file of walk(rootDir)) {
+      if (file.endsWith(module)) continue; // the Node-only barrel itself is fine
+      let source;
+      try {
+        source = readFileSync(file, "utf8");
+      } catch {
+        continue;
+      }
+      const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+      for (const match of code.match(SUBPATH_RE) ?? []) {
+        if (match === subpath) {
+          violations.push({
+            file: relative(repoRoot, file).split("\\").join("/"),
+            text: `${match} — ${subpath} is Node-only and must not be reachable from the renderer`,
+          });
+        }
+      }
+    }
+  }
+}
 
 function* walk(dir) {
   if (!existsSync(dir)) return;
@@ -70,6 +111,11 @@ for (const root of rendererReachableRoots) {
   }
 }
 
+// The reverse check runs before reporting, so a violation of either rule surfaces together.
+for (const root of rendererReachableRoots) {
+  assertNotRendererReachable(root, violations);
+}
+
 if (violations.length > 0) {
   process.stdout.write(
     "@zcode/rust must not be imported from renderer-reachable modules (the renderer imports the shared/rpc/client barrels for runtime values):\n",
@@ -77,6 +123,8 @@ if (violations.length > 0) {
   for (const v of violations) process.stdout.write(`  ${v.file}: ${v.text}\n`);
   process.stdout.write(
     "\nThe sandboxed renderer cannot load a .node binary; Vite externalizes node:fs.\n" +
+      "A sanctioned Node-only directory (packages/rpc/src/native, packages/shared/src/node) is\n" +
+      "only safe while nothing renderer-reachable imports its subpath — that is checked here.\n" +
       "See docs/specs/rust-native-ports.md invariant 9.\n",
   );
   process.exit(1);
