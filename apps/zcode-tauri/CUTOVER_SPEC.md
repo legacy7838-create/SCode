@@ -220,7 +220,19 @@ prerequisites are the two unstarted redesigns above, not any leftover wiring: th
 (§3 A2) has no Tauri equivalent, and auto-update depends on an endpoint **outside this repository**
 (`/api/v1/releases/electron/manifest`, YAML, with an `electron-updater` `Provider` subclass in
 `manifestUpdateProvider.ts`). Tauri wants JSON. That cannot be fixed from inside this tree — it is an
-external release-server change, so it stays a dependency rather than a task here.
+external release-server change.
+
+**Then the decision was taken: self-update is dropped, not ported.** The Tauri app ships no updater
+plugin and `tauri.conf.json` declares no updater, so there is no format problem left to solve — the
+feature ends with `packages/desktop`. This retires the item as a *port* and turns it into a *deletion*,
+which is a smaller and verifiable job. Recorded here so it is not re-litigated as a blocker.
+
+**Do not confuse it with `packages/shared/src/forceUpdate.ts`.** Despite the name, that is not
+auto-update: it resolves a **minimum version required to keep a BigModel coding-plan subscription**,
+consumed by `bigmodelCodingPlanSubscriptionProvider`. It is a subscription-entitlement rule that
+applies to paying customers, it has no Electron dependency, and removing it would change what paid
+users are allowed to do. It is **out of scope for the Electron cutover** and needs a product decision
+of its own.
 
 ### 8.1 Rung 1 — register the unwired commands (PARTIALLY WRONG PREMISE)
 
