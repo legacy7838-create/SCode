@@ -22,7 +22,6 @@ import { useFileContextActions } from "@/hooks/useFileContextActions.js";
 import { usePlatform } from "@/hooks/usePlatform.js";
 import { FileDisplayIcon, resolveFileDisplayDescriptor } from "@/lib/fileDisplay.js";
 import { logger } from "@/logger.js";
-import { resolveWorkspaceFileManagerEditor } from "@/lib/workspaceEditorSelection.js";
 import { buildFileMentionMarkdown } from "@/mentions/mentionMarkdown.js";
 import {
   dispatchWorkspaceFileAddToChat,
@@ -106,7 +105,6 @@ export function WorkspaceFileTreeRowView({
   const relativePath = getWorkspaceFileRelativePath(workspacePath, row.path);
   const isDirectory = row.type === "directory";
   const isDeletedFile = isWorkspaceFileTreeDeletedFile(row, gitStatus);
-  const wslFileManagerEditor = resolveWorkspaceFileManagerEditor(installedEditors, remoteTarget);
   const rowStyle = {
     ...style,
     "--workspace-file-tree-depth": row.depth,
@@ -199,10 +197,6 @@ export function WorkspaceFileTreeRowView({
     onOpenBrowserUrl?.(url);
   };
   const handleRevealInFileManager = async () => {
-    if (wslFileManagerEditor) {
-      await handleOpenInEditor(wslFileManagerEditor);
-      return;
-    }
     await fileActions.revealInFileManager({
       path: row.path,
       deleted: isDeletedFile,
@@ -331,14 +325,13 @@ export function WorkspaceFileTreeRowView({
       ) : null}
     </div>
   );
-  // Ordinary remote paths cannot be handed to the native file manager, but WSL Explorer will
-  // to UNC; therefore it and Open with → Explorer must share the same availability and execution path.
-  const canRevealInFileManager =
-    (!isDeletedFile && Boolean(wslFileManagerEditor)) ||
-    fileActions.canRevealInFileManager({
-      path: row.path,
-      deleted: isDeletedFile,
-    });
+  // An ordinary remote path is never handed to the native file manager. The WSL
+  // Explorer / UNC branch that used to sit in front of this check is gone
+  // (docs/specs/remove-wsl.md), so availability is exactly the local decision.
+  const canRevealInFileManager = fileActions.canRevealInFileManager({
+    path: row.path,
+    deleted: isDeletedFile,
+  });
   const canOpenPrimary = !isDeletedFile;
   const canOpenInBrowser =
     !isDeletedFile &&

@@ -7,9 +7,8 @@ import type {
   RemoteTarget,
   RemoteWorkspaceSessionEntry,
   SSHConfigAliasOption,
-  WSLDistro,
 } from "@zcode/shared";
-import { AlertTriangleIcon, ChevronDownIcon, Plus } from "lucide-react";
+import { ChevronDownIcon, Plus } from "lucide-react";
 import {
   TID_SSH_CONFIG_ALIAS_SELECT,
   TID_SSH_AUTH_PASSWORD,
@@ -19,9 +18,6 @@ import {
   TID_SSH_PORT_INPUT,
   TID_SSH_PRIVATE_KEY_INPUT,
   TID_SSH_USERNAME_INPUT,
-  TID_WSL_DISTRO_SELECT,
-  TID_WSL_USER_INPUT,
-  isValidWslUser,
 } from "@zcode/shared";
 import type { SSHAuthMethod } from "@/hooks/useRemoteConnectionForm.js";
 import { usePlatform } from "@/hooks/usePlatform.js";
@@ -39,16 +35,8 @@ import {
   CommandList,
 } from "@/components/ui/command.js";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover.js";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 
-const DEFAULT_WSL_DISTRO_VALUE = "__default_wsl_distro__";
 const NO_SSH_CONFIG_ALIAS_VALUE = "__ssh_config_alias_none__";
 
 function formatSshConfigAliasSummary(aliasOption: SSHConfigAliasOption): string {
@@ -68,14 +56,10 @@ export function RemoteConnectionFields({
   password,
   privateKeyPath,
   privateKeyPassphrase,
-  wslDistro,
-  wslUser = "",
-  wslDistros,
   sshConfigAliases,
   sshConfigAliasesLoading,
   sshConfigAliasesError,
   selectedSshConfigAlias,
-  runtimeOptionsLoading,
   remoteWorkspaceSessions = [],
   applySshConfigAlias,
   clearSelectedSshConfigAlias,
@@ -87,8 +71,6 @@ export function RemoteConnectionFields({
   setPassword,
   setPrivateKeyPath,
   setPrivateKeyPassphrase,
-  setWslDistro,
-  setWslUser,
 }: {
   kind: RemoteTarget["kind"];
   host: string;
@@ -99,14 +81,10 @@ export function RemoteConnectionFields({
   password: string;
   privateKeyPath: string;
   privateKeyPassphrase: string;
-  wslDistro: string;
-  wslUser?: string;
-  wslDistros: WSLDistro[];
   sshConfigAliases: SSHConfigAliasOption[];
   sshConfigAliasesLoading: boolean;
   sshConfigAliasesError: string;
   selectedSshConfigAlias: string | null;
-  runtimeOptionsLoading: boolean;
   remoteWorkspaceSessions?: RemoteWorkspaceSessionEntry[];
   applySshConfigAlias: (value: SSHConfigAliasOption) => void;
   clearSelectedSshConfigAlias: () => void;
@@ -118,12 +96,7 @@ export function RemoteConnectionFields({
   setPassword: (value: string) => void;
   setPrivateKeyPath: (value: string) => void;
   setPrivateKeyPassphrase: (value: string) => void;
-  setWslDistro: (value: string) => void;
-  setWslUser?: (value: string) => void;
 }) {
-  const wslUserIsInvalid = wslUser.trim().length > 0 && !isValidWslUser(wslUser.trim());
-  const wslUserIsRoot = wslUser.trim() === "root";
-
   const { intl } = useZCodeIntl();
   const platform = usePlatform();
   const [sshAliasPopoverOpen, setSshAliasPopoverOpen] = useState(false);
@@ -482,93 +455,6 @@ export function RemoteConnectionFields({
               {intl.formatMessage({ id: "ssh.assetInstallModeDescription" })}
             </p>
           </div>
-        </div>
-      );
-    case "wsl":
-      return (
-        <div className="space-y-3">
-          <p className="text-ui-base text-foreground-subtle">
-            {intl.formatMessage({ id: "wsl.description" })}
-          </p>
-          <div>
-            <label className="mb-1 block text-ui-base text-foreground-subtle">
-              {intl.formatMessage({ id: "wsl.distro" })}
-            </label>
-            {wslDistros.length > 0 ? (
-              <Select
-                value={wslDistro || DEFAULT_WSL_DISTRO_VALUE}
-                onValueChange={(value) => {
-                  setWslDistro(value === DEFAULT_WSL_DISTRO_VALUE ? "" : value);
-                }}
-              >
-                <SelectTrigger size="lg" className="h-9 w-full" data-testid={TID_WSL_DISTRO_SELECT}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent align="start">
-                  <SelectItem value={DEFAULT_WSL_DISTRO_VALUE}>
-                    {intl.formatMessage({ id: "wsl.defaultDistro" })}
-                  </SelectItem>
-                  {wslDistros.map((distro) => (
-                    <SelectItem key={distro.name} value={distro.name}>
-                      {distro.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (
-              <Input
-                size="lg"
-                className="h-9 text-ui-base"
-                value={wslDistro}
-                onChange={(e) => setWslDistro(e.target.value)}
-                placeholder={intl.formatMessage({ id: "wsl.defaultDistro" })}
-              />
-            )}
-          </div>
-          <p className="text-ui-base text-foreground-subtle">
-            {runtimeOptionsLoading
-              ? intl.formatMessage({ id: "wsl.loading" })
-              : wslDistros.length > 0
-                ? intl.formatMessage(
-                    { id: "wsl.detectedCount" },
-                    {
-                      count: String(wslDistros.length),
-                    },
-                  )
-                : intl.formatMessage({ id: "wsl.noDistros" })}
-          </p>
-          <div>
-            <label className="mb-1 block text-ui-base text-foreground-subtle">
-              {intl.formatMessage({ id: "wsl.user" })}
-            </label>
-            <Input
-              size="lg"
-              className="h-9 text-ui-base"
-              value={wslUser}
-              onChange={(event) => setWslUser?.(event.target.value)}
-              placeholder={intl.formatMessage({ id: "wsl.defaultUser" })}
-              autoCapitalize="none"
-              spellCheck={false}
-              aria-invalid={wslUserIsInvalid}
-              data-testid={TID_WSL_USER_INPUT}
-            />
-            <p
-              className={cn(
-                "mt-1 text-ui-base",
-                wslUserIsInvalid ? "text-destructive" : "text-foreground-subtle",
-              )}
-            >
-              {intl.formatMessage({
-                id: wslUserIsInvalid ? "wsl.validation.invalidUser" : "wsl.userDescription",
-              })}
-            </p>
-          </div>
-          {wslUserIsRoot ? (
-            <div className="flex items-start gap-2 rounded-lg border border-warning bg-warning px-3 py-2 text-ui-base text-warning-foreground">
-              <AlertTriangleIcon className="mt-0.5 size-4 shrink-0" />
-              <span>{intl.formatMessage({ id: "wsl.rootWarning" })}</span>
-            </div>
-          ) : null}
         </div>
       );
   }

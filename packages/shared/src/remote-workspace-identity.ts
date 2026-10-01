@@ -3,15 +3,13 @@
 // Construct side (dual): packages/ui/src/lib/remoteWorkspaceHistory.ts
 // buildRemoteWorkspaceIdentity - format contract:
 //   remote:ssh:<host>:<port>:<username>:<posixPath>
-//   remote:wsl:<distro>[:<user>]:<posixPath>
 // The path segments are normalized by normalizeWorkspacePathForIdentity (separator → "/", remove the trailing slash,
-// Empty → "/"), so it always starts with "/"; each authority section does not contain "/" (host is lowercase, port is a number,
-// The legal character set of wsl distribution name does not include ":" and "/").
+// Empty → "/"), so it always starts with "/"; each authority section does not contain "/" (host is lowercase, port is a number).
 // Consumer: workspaceId of CLI v4 createSession (workspaceKey = in remote pane
 // identity) needs to restore the real workspacePath as the session workingDirectory.
 import type { RemoteTarget } from "./remoteTarget.js";
 
-export type RemoteWorkspaceIdentityKind = "ssh" | "wsl";
+export type RemoteWorkspaceIdentityKind = "ssh";
 
 export interface ParsedRemoteWorkspaceIdentity {
   kind: RemoteWorkspaceIdentityKind;
@@ -21,14 +19,13 @@ export interface ParsedRemoteWorkspaceIdentity {
 
 const REMOTE_IDENTITY_PREFIX = "remote:";
 
-/** Number of required authority segments (excluding kind): ssh = host/port/username, other remote kinds = a single segment. */
+/** Number of required authority segments (excluding kind): ssh = host/port/username. */
 const AUTHORITY_SEGMENTS: Record<RemoteWorkspaceIdentityKind, number> = {
   ssh: 3,
-  wsl: 1,
 };
 
 function isRemoteWorkspaceIdentityKind(value: string): value is RemoteWorkspaceIdentityKind {
-  return value === "ssh" || value === "wsl";
+  return value === "ssh";
 }
 
 function normalizeWorkspacePathForIdentity(workspacePath: string): string {
@@ -44,17 +41,7 @@ function normalizeWorkspacePathForIdentity(workspacePath: string): string {
  */
 export function buildRemoteWorkspaceIdentity(workspacePath: string, target: RemoteTarget): string {
   const normalizedPath = normalizeWorkspacePathForIdentity(workspacePath);
-  switch (target.kind) {
-    case "ssh":
-      return `remote:ssh:${target.host.trim().toLowerCase()}:${target.port ?? 22}:${target.username.trim()}:${normalizedPath}`;
-    case "wsl": {
-      const distro = target.distro?.trim() || "default";
-      const user = target.user?.trim();
-      return user
-        ? `remote:wsl:${distro}:${user}:${normalizedPath}`
-        : `remote:wsl:${distro}:${normalizedPath}`;
-    }
-  }
+  return `remote:ssh:${target.host.trim().toLowerCase()}:${target.port ?? 22}:${target.username.trim()}:${normalizedPath}`;
 }
 
 /**
@@ -87,16 +74,10 @@ export function parseRemoteWorkspaceIdentity(
     }
     cursor = next + 1;
   }
-  // WSL identity adds optional user section to distinguish default users from explicit users, old parser
-  // Still only consumes distro, causing user to be misjudged as a path and causing identity to fail to resolve as a whole. remote path
-  // Must start with "/" so that legacy userless format can be distinguished unambiguously from explicit user format.
-  if (kind === "wsl" && rest[cursor] !== "/") {
-    const userEnd = rest.indexOf(":", cursor);
-    if (userEnd <= cursor) {
-      return null;
-    }
-    cursor = userEnd + 1;
-  }
+  // Parsing deliberately keeps no per-kind tail handling: `wsl` was the only kind
+  // with an optional authority section, and it was removed (docs/specs/remove-wsl.md),
+  // so every remaining kind is exactly `AUTHORITY_SEGMENTS[kind]` segments then a
+  // path that starts with "/".
   const workspacePath = rest.slice(cursor);
   if (!workspacePath.startsWith("/")) {
     return null;

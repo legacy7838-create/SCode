@@ -45,7 +45,7 @@ export function useFileContextActions(options: FileContextActionOptions = {}) {
     (target: FileContextActionTarget) =>
       canOpenLocalFileManager &&
       !target.deleted &&
-      (!isRemoteWorkspace || remoteTarget?.kind === "wsl"),
+      !isRemoteWorkspace,
     [canOpenLocalFileManager, isRemoteWorkspace, remoteTarget?.kind],
   );
 
@@ -87,14 +87,7 @@ export function useFileContextActions(options: FileContextActionOptions = {}) {
       // The review area used to disable all remote workspaces uniformly; simply enabling it would hand WSL's
       // Linux paths to the local file manager. Only go through Explorer when the target resolves exactly to WSL,
       // preserving this entry's "open the containing folder" semantics, with main converting to UNC at the platform boundary.
-      const result =
-        remoteTarget?.kind === "wsl"
-          ? await platform.openInEditor("explorer", openPath, {
-              pathKind: "directory",
-              remoteTarget,
-              workspaceIdentity,
-            })
-          : await platform.openInFileManager(openPath);
+      const result = await platform.openInFileManager(openPath);
       if (result.success) {
         return;
       }

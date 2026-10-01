@@ -58,12 +58,10 @@ interface RemoteConnectionDialogProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   hideTriggerWhenClosed?: boolean;
-  isWindowsDesktop?: boolean;
   remoteWorkspaceSessions?: RemoteWorkspaceSessionEntry[];
   onFlowActiveChange?: (active: boolean) => void;
   onFlowRequestIdChange?: (requestId: string | null) => void;
   preferredKind?: RemoteTarget["kind"];
-  preferredWslDistro?: string;
 }
 
 export function RemoteConnectionDialog({
@@ -78,12 +76,10 @@ export function RemoteConnectionDialog({
   open: controlledOpen,
   onOpenChange,
   hideTriggerWhenClosed = false,
-  isWindowsDesktop = false,
   remoteWorkspaceSessions = [],
   onFlowActiveChange,
   onFlowRequestIdChange,
   preferredKind,
-  preferredWslDistro,
 }: RemoteConnectionDialogProps) {
   const { intl } = useZCodeIntl();
   const confirmDialog = useConfirmDialog();
@@ -110,13 +106,10 @@ export function RemoteConnectionDialog({
     password,
     privateKeyPath,
     privateKeyPassphrase,
-    wslDistro,
-    wslUser,
     sshConfigAliases,
     sshConfigAliasesLoading,
     sshConfigAliasesError,
     selectedSshConfigAlias,
-    wslDistros,
     availableKinds,
     setKind,
     setHost,
@@ -127,17 +120,12 @@ export function RemoteConnectionDialog({
     setPassword,
     setPrivateKeyPath,
     setPrivateKeyPassphrase,
-    setWslDistro,
-    setWslUser,
     applySshConfigAlias,
     clearSelectedSshConfigAlias,
-    currentRuntimeOptionsLoading,
     currentRuntimeOptionsError,
   } = useRemoteConnectionForm({
     open,
-    isWindowsDesktop,
     preferredKind,
-    preferredWslDistro,
   });
   const directoryBrowserServices = useRemoteWorkspaceSessionStore((state) =>
     connectedSessionId ? (state.sessionsById[connectedSessionId]?.services ?? null) : null,
@@ -319,8 +307,6 @@ export function RemoteConnectionDialog({
       privateKeyPath,
       privateKeyPassphrase,
       selectedSshConfigAlias,
-      wslDistro,
-      wslUser,
     });
     if (!nextTarget) {
       // Missing required fields belong to form validation and should not share the destructive error style with real connection failures.
@@ -514,14 +500,10 @@ export function RemoteConnectionDialog({
                     password={password}
                     privateKeyPath={privateKeyPath}
                     privateKeyPassphrase={privateKeyPassphrase}
-                    wslDistro={wslDistro}
-                    wslUser={wslUser}
-                    wslDistros={wslDistros}
                     sshConfigAliases={sshConfigAliases}
                     sshConfigAliasesLoading={sshConfigAliasesLoading}
                     sshConfigAliasesError={sshConfigAliasesError}
                     selectedSshConfigAlias={selectedSshConfigAlias}
-                    currentRuntimeOptionsLoading={currentRuntimeOptionsLoading}
                     currentRuntimeOptionsError={currentRuntimeOptionsError}
                     remoteWorkspaceSessions={remoteWorkspaceSessions}
                     validationMessage={validationMessage}
@@ -538,8 +520,6 @@ export function RemoteConnectionDialog({
                     onPasswordChange={setPassword}
                     onPrivateKeyPathChange={setPrivateKeyPath}
                     onPrivateKeyPassphraseChange={setPrivateKeyPassphrase}
-                    onWslDistroChange={setWslDistro}
-                    onWslUserChange={setWslUser}
                     onApplySshConfigAlias={applySshConfigAlias}
                     onClearSelectedSshConfigAlias={clearSelectedSshConfigAlias}
                     onConnect={() => {

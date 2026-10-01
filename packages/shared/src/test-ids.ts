@@ -154,7 +154,6 @@ export const TID_SSH_DIALOG = "ssh-dialog";
 /** Remote connection kind: switch to SSH */
 export const TID_REMOTE_KIND_SSH = "remote-kind-ssh";
 /** Remote connection kind: switch to WSL */
-export const TID_REMOTE_KIND_WSL = "remote-kind-wsl";
 /** SSH host address input */
 export const TID_SSH_HOST_INPUT = "ssh-host-input";
 /** SSH port input */
@@ -172,9 +171,7 @@ export const TID_SSH_AUTH_PASSWORD = "ssh-auth-password";
 /** SSH auth method: private key */
 export const TID_SSH_AUTH_PRIVATE_KEY = "ssh-auth-private-key";
 /** WSL distribution picker */
-export const TID_WSL_DISTRO_SELECT = "wsl-distro-select";
 /** WSL Linux user input */
-export const TID_WSL_USER_INPUT = "wsl-user-input";
 /** SSH connect confirm button */
 export const TID_SSH_CONNECT_BUTTON = "ssh-connect-button";
 /** Cancel button in the SSH dialog */

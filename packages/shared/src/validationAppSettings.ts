@@ -1,9 +1,8 @@
 /* oxlint-disable eslint(max-lines) -- the AppSettings schema aggregates historical migrations, defaults and patch validation; splitting it would weaken the single entry point for settings migrations. */
 import { z } from "zod";
-import type { AppSettings } from "./protocol.js";
 import { REMOTE_ASSET_INSTALL_MODES } from "./remoteAssetInstallMode.js";
 import { isKnownRemoteResourcePackageId } from "./remoteResourcePackages.js";
-import { wslUserSchema } from "./wslUserValidation.js";
+
 import { normalizeZCodeEndpointOrigin } from "./zcodeEndpoint.js";
 import {
   DEFAULT_EMBEDDED_BROWSER_VIEWPORT_PREFERENCE,
@@ -88,12 +87,6 @@ const remoteWorkspaceTargetSchema = z.discriminatedUnion("kind", [
       .optional(),
     passwordCredentialKey: nonEmptyStringSchema.optional(),
     privateKeyPassphraseCredentialKey: nonEmptyStringSchema.optional(),
-  }),
-  z.object({
-    kind: z.literal("wsl"),
-    distro: z.string().optional(),
-    // Remote historical reconnection will directly use the WSL user in settings, and must share the verification with the connection entry to avoid contaminating the identity/log after bypassing the UI.
-    user: wslUserSchema.optional(),
   }),
 ]);
 

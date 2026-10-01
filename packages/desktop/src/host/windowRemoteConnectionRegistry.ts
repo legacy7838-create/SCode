@@ -109,17 +109,8 @@ interface LogicalSession<TServices, TCapabilities> {
   cancellation: Promise<never>;
 }
 
-function normalizeWslSegment(value: string | undefined): string {
-  return value?.trim() || "<default>";
-}
-
 function buildConnectionKey(target: RemoteTarget): string {
-  switch (target.kind) {
-    case "ssh":
-      return `ssh:${buildSshRemoteHostKey(target)}`;
-    case "wsl":
-      return `wsl:${normalizeWslSegment(target.distro)}\0${normalizeWslSegment(target.user)}`;
-  }
+  return `ssh:${buildSshRemoteHostKey(target)}`;
 }
 
 function toSessionSnapshot<TServices, TCapabilities>(
@@ -145,14 +136,12 @@ export function createWindowRemoteConnectionRegistry<TServices, TCapabilities = 
   onSessionClosed?: (event: WindowRemoteConnectionCloseEvent & { remoteSessionId: string }) => void;
   releaseWorkspace?: (services: TServices, context: RemoteWorkspaceContext) => Promise<void>;
   onWorkspaceReleaseError?: (context: RemoteWorkspaceContext, error: unknown) => void;
-  wslIdleTtlMs?: number;
 }) {
   const entriesByKey = new Map<string, ConnectionEntry<TServices, TCapabilities>>();
   const sessionsById = new Map<string, LogicalSession<TServices, TCapabilities>>();
   const pendingSessionsByRequestId = new Map<string, LogicalSession<TServices, TCapabilities>>();
   let disposed = false;
   let disposePromise: Promise<void> | null = null;
-  const wslIdleTtlMs = options.wslIdleTtlMs ?? 60_000;
 
   function clearIdleTimer(entry: ConnectionEntry<TServices, TCapabilities>): void {
     if (!entry.idleTimer) {
@@ -162,183 +151,27 @@ export function createWindowRemoteConnectionRegistry<TServices, TCapabilities = 
     entry.idleTimer = undefined;
   }
 
-  function hasRunningTasks(entry: ConnectionEntry<TServices, TCapabilities>): boolean {
-    return Array.from(entry.runningTaskCountByWorkspaceKey.values()).some((count) => count > 0);
-  }
 
-  function sessionOwnsWorkspace(
-    session: LogicalSession<TServices, TCapabilities>,
-    entry: ConnectionEntry<TServices, TCapabilities>,
-    workspaceKey: string,
-  ): boolean {
-    return (
-      !session.cancelled &&
-      session.entry === entry &&
-      session.workspaceKey === workspaceKey &&
-      sessionsById.get(session.remoteSessionId) === session
-    );
-  }
 
-  function hasOtherWorkspaceOwner(
-    entry: ConnectionEntry<TServices, TCapabilities>,
-    workspaceKey: string,
-    excludedRemoteSessionId: string,
-  ): boolean {
-    return Array.from(sessionsById.values()).some(
-      (candidate) =>
-        candidate.remoteSessionId !== excludedRemoteSessionId &&
-        sessionOwnsWorkspace(candidate, entry, workspaceKey),
-    );
-  }
 
-  function startWorkspaceRelease(
-    entry: ConnectionEntry<TServices, TCapabilities>,
-    workspaceKey: string,
-    state: WorkspaceRuntimeState,
-    generation: number,
-  ): Promise<void> | undefined {
-    if (
-      entry.target.kind !== "wsl" ||
-      state.generation !== generation ||
-      state.releaseInFlight ||
-      !entry.handle ||
-      entry.state !== "online" ||
-      !options.releaseWorkspace
-    ) {
-      return state.releaseInFlight;
-    }
-    state.pendingReleaseGeneration = undefined;
-    const release = options
-      .releaseWorkspace(entry.handle.services, state.context)
-      .catch((error) => {
-        options.onWorkspaceReleaseError?.(state.context, error);
-        throw error;
-      })
-      .finally(() => {
-        if (state.releaseInFlight === release) {
-          state.releaseInFlight = undefined;
-        }
-        if (
-          state.generation === generation &&
-          !state.pendingReleaseGeneration &&
-          !Array.from(sessionsById.values()).some((candidate) =>
-            sessionOwnsWorkspace(candidate, entry, workspaceKey),
-          )
-        ) {
-          entry.workspaceRuntimeByKey.delete(workspaceKey);
-        }
-      });
-    // release is triggered by the dispose/running-task event; failure is logged by a structured callback, while rejecting is retained
-    // Promise is given to the next generation acquire of the same workspace, making it fail-closed rather than stepping on unfinished cleanup.
-    void release.catch(() => undefined);
-    state.releaseInFlight = release;
-    return release;
-  }
+  /// No longer releases anything: the per-workspace release it drove was the WSL
+  /// runtime teardown. SSH keeps its multiplexed connection for the life of the
+  /// window, so the in-flight promise is always `undefined` and is returned
+  /// unchanged for the callers that already handle it.
 
-  function requestWorkspaceRelease(params: {
-    entry: ConnectionEntry<TServices, TCapabilities>;
-    remoteSessionId: string;
-    workspaceKey?: string;
-    workspaceGeneration?: number;
-  }): Promise<void> | undefined {
-    const { entry, workspaceKey, workspaceGeneration } = params;
-    if (entry.target.kind !== "wsl" || !workspaceKey || !workspaceGeneration) {
-      return undefined;
-    }
-    if (hasOtherWorkspaceOwner(entry, workspaceKey, params.remoteSessionId)) {
-      return undefined;
-    }
-    const state = entry.workspaceRuntimeByKey.get(workspaceKey);
-    if (!state || state.generation !== workspaceGeneration) {
-      return undefined;
-    }
-    if ((entry.runningTaskCountByWorkspaceKey.get(workspaceKey) ?? 0) > 0) {
-      state.pendingReleaseGeneration = workspaceGeneration;
-      return undefined;
-    }
-    return startWorkspaceRelease(entry, workspaceKey, state, workspaceGeneration);
-  }
-
+  /// Mark the workspace ready.
+  ///
+  /// The per-workspace runtime this used to build — a generation counter, a
+  /// context, and a wait on the previous generation's release — existed for the
+  /// WSL path, where a workspace outlived its logical attach. SSH reuses one
+  /// connection across attaches, so there is nothing to wait for and the session
+  /// is ready as soon as it is created.
   function prepareWorkspaceRuntime(
     session: LogicalSession<TServices, TCapabilities>,
   ): Promise<void> {
-    if (session.entry.target.kind !== "wsl" || !session.workspacePath || !session.workspaceKey) {
-      session.workspaceReadyState = "ready";
-      session.workspaceReady = Promise.resolve();
-      return session.workspaceReady;
-    }
-    const workspaceKey = session.workspaceKey;
-    const entry = session.entry;
-    const existing = entry.workspaceRuntimeByKey.get(workspaceKey);
-    const hasOtherOwner = hasOtherWorkspaceOwner(entry, workspaceKey, session.remoteSessionId);
-    const state =
-      existing ??
-      ({
-        context: {
-          workspacePath: session.workspacePath,
-          ...(session.workspaceIdentity ? { workspaceIdentity: session.workspaceIdentity } : {}),
-        },
-        generation: 0,
-      } satisfies WorkspaceRuntimeState);
-    entry.workspaceRuntimeByKey.set(workspaceKey, state);
-    state.context = {
-      workspacePath: session.workspacePath,
-      ...(session.workspaceIdentity ? { workspaceIdentity: session.workspaceIdentity } : {}),
-    };
-    if (!hasOtherOwner) {
-      state.generation += 1;
-      // While the previous generation release is still waiting for a running task, the new logical owner has re-held it.
-      // workspace; old releases that have not yet been started must be invalidated, and the runtime cannot be accidentally refreshed after the task is reset to zero.
-    }
-    state.pendingReleaseGeneration = undefined;
-    session.workspaceGeneration = state.generation;
-    session.workspaceReadyState = "pending";
-    const releaseToWait = state.releaseInFlight;
-    const ready = (releaseToWait ?? Promise.resolve())
-      .then(() => {
-        if (
-          sessionsById.get(session.remoteSessionId) !== session ||
-          session.cancelled ||
-          entry.workspaceRuntimeByKey.get(workspaceKey)?.generation !== session.workspaceGeneration
-        ) {
-          throw new WindowRemoteConnectCancelledError();
-        }
-        session.workspaceReadyState = "ready";
-      })
-      .catch((error) => {
-        session.workspaceReadyState = "failed";
-        throw error;
-      });
-    session.workspaceReady = ready;
-    return ready;
-  }
-
-  function scheduleWslIdleDispose(
-    entry: ConnectionEntry<TServices, TCapabilities>,
-    reason: string,
-  ): void {
-    clearIdleTimer(entry);
-    entry.idleReason = reason;
-    if (
-      entry.target.kind !== "wsl" ||
-      entry.disposed ||
-      entry.sessions.size > 0 ||
-      hasRunningTasks(entry)
-    ) {
-      return;
-    }
-    entry.idleTimer = setTimeout(() => {
-      entry.idleTimer = undefined;
-      if (
-        entriesByKey.get(entry.key) !== entry ||
-        entry.disposed ||
-        entry.sessions.size > 0 ||
-        hasRunningTasks(entry)
-      ) {
-        return;
-      }
-      void disposeEntry(entry);
-    }, wslIdleTtlMs);
+    session.workspaceReadyState = "ready";
+    session.workspaceReady = Promise.resolve();
+    return session.workspaceReady;
   }
 
   async function disposeEntry(entry: ConnectionEntry<TServices, TCapabilities>): Promise<void> {
@@ -557,13 +390,6 @@ export function createWindowRemoteConnectionRegistry<TServices, TCapabilities = 
     pendingSessionsByRequestId.delete(requestId);
     sessionsById.delete(session.remoteSessionId);
     session.entry.sessions.delete(session.remoteSessionId);
-    const workspaceRelease = requestWorkspaceRelease({
-      entry: session.entry,
-      remoteSessionId: session.remoteSessionId,
-      workspaceKey: session.workspaceKey,
-      workspaceGeneration: session.workspaceGeneration,
-    });
-    void workspaceRelease?.catch(() => undefined);
     session.rejectCancellation(new WindowRemoteConnectCancelledError());
     if (session.entry.sessions.size === 0) {
       if (session.entry.target.kind === "ssh" && session.entry.state === "connecting") {
@@ -575,9 +401,7 @@ export function createWindowRemoteConnectionRegistry<TServices, TCapabilities = 
         }
         session.entry.state = "closing";
         session.entry.abortController.abort();
-      } else if (session.entry.target.kind === "wsl" && session.entry.state === "online") {
-        scheduleWslIdleDispose(session.entry, "cancelled-logical-connect");
-      } else if (session.entry.target.kind === "ssh" && session.entry.state === "online") {
+      } else if (session.entry.state === "online") {
         // ready SSH connection is a window cache; canceling a logical attach should not cause subsequent workspace
         // The multiplexed connections are destroyed together and released when the real window Host shuts down.
         clearIdleTimer(session.entry);
@@ -598,22 +422,12 @@ export function createWindowRemoteConnectionRegistry<TServices, TCapabilities = 
         `remote logical session not found, remoteSessionId=${params.remoteSessionId}`,
       );
     }
-    const previousOwnership = {
-      entry: session.entry,
-      remoteSessionId: session.remoteSessionId,
-      workspaceKey: session.workspaceKey,
-      workspaceGeneration: session.workspaceGeneration,
-    };
     session.workspacePath = params.workspacePath;
     session.workspaceIdentity = params.workspaceIdentity;
     session.generation += 1;
     session.workspaceKey = params.workspaceIdentity.trim() || params.workspacePath;
     session.entry.workspaceKeys.add(session.workspaceKey);
     const ready = prepareWorkspaceRuntime(session);
-    if (previousOwnership.workspaceKey !== session.workspaceKey) {
-      const release = requestWorkspaceRelease(previousOwnership);
-      void release?.catch(() => undefined);
-    }
     return ready;
   }
 
@@ -662,16 +476,8 @@ export function createWindowRemoteConnectionRegistry<TServices, TCapabilities = 
     sessionsById.delete(remoteSessionId);
     pendingSessionsByRequestId.delete(session.requestId);
     session.entry.sessions.delete(remoteSessionId);
-    const workspaceRelease = requestWorkspaceRelease({
-      entry: session.entry,
-      remoteSessionId,
-      workspaceKey: session.workspaceKey,
-      workspaceGeneration: session.workspaceGeneration,
-    });
     if (session.entry.sessions.size === 0) {
-      if (session.entry.target.kind === "wsl" && session.entry.state === "online") {
-        scheduleWslIdleDispose(session.entry, "last-logical-session-disposed");
-      } else if (session.entry.target.kind === "ssh" && session.entry.state === "online") {
+      if (session.entry.state === "online") {
         // Only migrate the owner of the SSH pool: ready connection and continue to maintain the window-scoped cache.
         // Clearing the logical session does not mean the connection is exited; the real window is released uniformly when the host shuts down.
         clearIdleTimer(session.entry);
@@ -679,7 +485,6 @@ export function createWindowRemoteConnectionRegistry<TServices, TCapabilities = 
         await disposeEntry(session.entry);
       }
     }
-    await workspaceRelease?.catch(() => undefined);
   }
 
   return {
@@ -727,27 +532,10 @@ export function createWindowRemoteConnectionRegistry<TServices, TCapabilities = 
       runningTaskCount: number;
     }): void {
       const workspaceKey = params.workspaceIdentity?.trim() || params.workspacePath;
-      for (const entry of entriesByKey.values()) {
-        if (entry.target.kind !== "wsl" || !entry.workspaceKeys.has(workspaceKey)) {
-          continue;
-        }
-        if (params.runningTaskCount > 0) {
-          entry.runningTaskCountByWorkspaceKey.set(workspaceKey, params.runningTaskCount);
-          clearIdleTimer(entry);
-        } else {
-          entry.runningTaskCountByWorkspaceKey.delete(workspaceKey);
-          const state = entry.workspaceRuntimeByKey.get(workspaceKey);
-          if (state?.pendingReleaseGeneration) {
-            void startWorkspaceRelease(
-              entry,
-              workspaceKey,
-              state,
-              state.pendingReleaseGeneration,
-            )?.catch(() => undefined);
-          }
-          scheduleWslIdleDispose(entry, entry.idleReason);
-        }
-      }
+      // Was a WSL-only bookkeeping loop: SSH has no per-workspace runtime state
+      // to park or release, so there is nothing to do for it here.
+      void workspaceKey;
+      void params;
     },
     async waitForScopedServices(scope: WindowHostAttachmentScope): Promise<TServices> {
       if (scope.kind !== "remote") {

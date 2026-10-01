@@ -51,7 +51,6 @@ import type {
   RemoteSessionClosedEvent,
   SSHConfigAliasOption,
   TaskNotificationPayload,
-  WSLDistro,
   UpdateCheckResultPayload,
   UpdateStatePayload,
   DesktopZoomState,
@@ -186,8 +185,6 @@ export const PlatformChannels = {
   BindRemoteWorkspaceSessionContext: "zcode:bind-remote-workspace-session-context",
   /** Release the remote session held by the current window */
   DisposeRemoteSession: "zcode:dispose-remote-session",
-  /** Renderer → Main: list the WSL distributions available on this machine */
-  ListWSLDistros: "zcode:list-wsl-distros",
   /** Renderer → Main: list the SSH config aliases that can be used to fill the form quickly */
   ListSSHConfigAliases: "zcode:list-ssh-config-aliases",
   /** Renderer → Main: load the CLI MCP config from the user directory */
@@ -727,10 +724,6 @@ export interface PlatformChannelMap {
   [PlatformChannels.DisposeRemoteSession]: {
     request: string;
     response: void;
-  };
-  [PlatformChannels.ListWSLDistros]: {
-    request: void;
-    response: WSLDistro[];
   };
   [PlatformChannels.ListSSHConfigAliases]: {
     request: void;

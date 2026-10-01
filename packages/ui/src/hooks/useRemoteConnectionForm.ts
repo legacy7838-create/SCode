@@ -3,7 +3,6 @@ import type {
   RemoteAssetInstallMode,
   RemoteTarget,
   SSHConfigAliasOption,
-  WSLDistro,
 } from "@zcode/shared";
 import { DEFAULT_REMOTE_ASSET_INSTALL_MODE } from "@zcode/shared";
 import { usePlatform } from "@/hooks/usePlatform.js";
@@ -11,25 +10,18 @@ import { usePlatform } from "@/hooks/usePlatform.js";
 type RemoteKind = RemoteTarget["kind"];
 export type SSHAuthMethod = "password" | "privateKey";
 
-function buildAvailableKinds(options: { isWindowsDesktop: boolean }): RemoteKind[] {
-  const kinds: RemoteKind[] = ["ssh"];
-  // In the remote connection entry, WSL and SSH are both host-type connections.
-  if (options.isWindowsDesktop) {
-    kinds.push("wsl");
-  }
-  return kinds;
+function buildAvailableKinds(): RemoteKind[] {
+  // WSL was the second kind here and is removed (docs/specs/remove-wsl.md), so
+  // the list is no longer platform-dependent: SSH is offered everywhere.
+  return ["ssh"];
 }
 
 export function useRemoteConnectionForm({
   open,
-  isWindowsDesktop,
   preferredKind,
-  preferredWslDistro,
 }: {
   open: boolean;
-  isWindowsDesktop: boolean;
   preferredKind?: RemoteKind;
-  preferredWslDistro?: string;
 }) {
   const platform = usePlatform();
   const [kind, setKind] = useState<RemoteKind>("ssh");
@@ -43,22 +35,13 @@ export function useRemoteConnectionForm({
   const [password, setPassword] = useState("");
   const [privateKeyPath, setPrivateKeyPathState] = useState("");
   const [privateKeyPassphrase, setPrivateKeyPassphrase] = useState("");
-  const [wslDistro, setWslDistro] = useState("");
-  const [wslUser, setWslUser] = useState("");
   const [sshConfigAliases, setSshConfigAliases] = useState<SSHConfigAliasOption[]>([]);
   const [sshConfigAliasesLoading, setSshConfigAliasesLoading] = useState(false);
   const [sshConfigAliasesLoaded, setSshConfigAliasesLoaded] = useState(false);
   const [sshConfigAliasesError, setSshConfigAliasesError] = useState("");
   const [selectedSshConfigAlias, setSelectedSshConfigAlias] = useState<string | null>(null);
-  const [wslDistros, setWslDistros] = useState<WSLDistro[]>([]);
-  const [wslOptionsLoading, setWslOptionsLoading] = useState(false);
-  const [wslOptionsLoaded, setWslOptionsLoaded] = useState(false);
-  const [wslOptionsError, setWslOptionsError] = useState("");
   const applyingSshAliasRef = useRef(false);
-  const availableKinds = useMemo(
-    () => buildAvailableKinds({ isWindowsDesktop }),
-    [isWindowsDesktop],
-  );
+  const availableKinds = useMemo(() => buildAvailableKinds(), []);
 
   useEffect(() => {
     if (availableKinds.includes(kind)) {
@@ -78,17 +61,10 @@ export function useRemoteConnectionForm({
     setSshConfigAliasesLoaded(false);
     setSshConfigAliasesError("");
     setSelectedSshConfigAlias(null);
-    setWslOptionsLoaded(false);
-    setWslOptionsLoading(false);
-    setWslOptionsError("");
-    setWslDistros([]);
     if (preferredKind && availableKinds.includes(preferredKind)) {
       setKind(preferredKind);
     }
-    if (preferredWslDistro !== undefined) {
-      setWslDistro(preferredWslDistro);
-    }
-  }, [availableKinds, open, preferredKind, preferredWslDistro]);
+  }, [availableKinds, open, preferredKind]);
 
   useEffect(() => {
     if (!open || kind !== "ssh" || sshConfigAliasesLoaded) {
@@ -139,44 +115,6 @@ export function useRemoteConnectionForm({
 
     setSelectedSshConfigAlias(null);
   }, [selectedSshConfigAlias, sshConfigAliases]);
-
-  useEffect(() => {
-    if (!open || kind !== "wsl" || !isWindowsDesktop || wslOptionsLoaded) {
-      return;
-    }
-
-    let cancelled = false;
-    setWslOptionsLoading(true);
-    setWslOptionsError("");
-
-    void (async () => {
-      try {
-        const nextWslDistros = await platform.listWSLDistros();
-        if (cancelled) {
-          return;
-        }
-
-        setWslDistros(nextWslDistros);
-        setWslOptionsLoaded(true);
-      } catch (runtimeError) {
-        if (cancelled) {
-          return;
-        }
-
-        setWslDistros([]);
-        setWslOptionsLoaded(true);
-        setWslOptionsError(String(runtimeError));
-      } finally {
-        if (!cancelled) {
-          setWslOptionsLoading(false);
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isWindowsDesktop, kind, open, platform, wslOptionsLoaded]);
 
   const setHost = (value: string) => {
     if (!applyingSshAliasRef.current && selectedSshConfigAlias && value !== host) {
@@ -246,13 +184,10 @@ export function useRemoteConnectionForm({
     password,
     privateKeyPath,
     privateKeyPassphrase,
-    wslDistro,
-    wslUser,
-    sshConfigAliases,
+      sshConfigAliases,
     sshConfigAliasesLoading,
     sshConfigAliasesError,
     selectedSshConfigAlias,
-    wslDistros,
     availableKinds,
     setKind,
     setHost,
@@ -263,11 +198,9 @@ export function useRemoteConnectionForm({
     setPassword,
     setPrivateKeyPath,
     setPrivateKeyPassphrase,
-    setWslDistro,
-    setWslUser,
     applySshConfigAlias,
     clearSelectedSshConfigAlias,
-    currentRuntimeOptionsLoading: kind === "wsl" && wslOptionsLoading,
-    currentRuntimeOptionsError: kind === "wsl" ? wslOptionsError : "",
+    currentRuntimeOptionsLoading: false,
+    currentRuntimeOptionsError: "",
   };
 }

@@ -94,14 +94,11 @@ function shouldPersistRemoteWorkspaceFailure(params: {
   sessionEntry: RemoteWorkspaceSessionEntry;
   workspaceKey: string;
 }): boolean {
-  if (params.sessionEntry.target.kind !== "wsl") {
-    return true;
-  }
-
-  // When WSL is accidentally disconnected, the closing event of the old session may be later than the manual reconnection process.
-  // As long as there is a pending reconnect in the current workspace, don’t write failed to the setting first.
-  // Let the final outcome be determined by the success/failure of this reconnection.
-  return !params.pendingReconnectRequestIds.has(params.workspaceKey);
+  // Was WSL-only: it deferred writing "failed" while a manual reconnect was in
+  // flight, because the old session's close event could arrive after the reconnect
+  // and would then overwrite the good outcome. With WSL gone every kind persists
+  // immediately, which is the pre-existing SSH behaviour.
+  return true;
 }
 interface RemoteWorkspaceTabStoreReader {
   getState(): {

@@ -89,7 +89,6 @@ import {
 const DEFAULT_LUCIDE_STROKE_WIDTH = 1.5;
 interface RemoteConnectionOpenPreference {
   preferredKind?: RemoteTarget["kind"];
-  preferredWslDistro?: string;
 }
 
 type WelcomeScreenOpenReason =
@@ -922,14 +921,12 @@ function RootInner({
       onSelectProject={handleSelectRemoteProject}
       onCancelSession={handleCancelRemoteProject}
       localWorkspacePath={localWorkspacePathForRemoteConnection}
-      isWindowsDesktop={isWindowsDesktop}
       remoteWorkspaceSessions={remoteWorkspaceSessions}
       open={remoteConnectionDialogOpen}
       onOpenChange={handleRemoteConnectionDialogOpenChange}
       onFlowActiveChange={setRemoteConnectionInProgress}
       onFlowRequestIdChange={setRemoteConnectionRequestId}
       preferredKind={remoteConnectionOpenPreference?.preferredKind}
-      preferredWslDistro={remoteConnectionOpenPreference?.preferredWslDistro}
       hideTriggerWhenClosed
     />
   ) : null;

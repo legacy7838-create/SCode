@@ -1607,11 +1607,6 @@ const enUS: Record<string, string> = {
   "workspace.openPluginsSettings": "Plugin Marketplace",
   "workspace.backToWorkspace": "Back to workspace",
   "workspace.noActiveForNewTask": "There is no available workspace yet. Open a workspace first.",
-  "workspace.wslUncPrompt.title": "Open this through WSL remote connection?",
-  "workspace.wslUncPrompt.description":
-    "You selected a WSL path:\n{path}\n\nWe recommend opening it through WSL connection, though you can still continue with the path.",
-  "workspace.wslUncPrompt.openWsl": "Open WSL connection",
-  "workspace.wslUncPrompt.continuePath": "Continue with path",
   "workspaceSidebar.workspaces": "Tasks",
   "workspaceSidebar.archivedTasks": "Archived",
   "workspaceSidebar.taskViewOptions": "Filter and sort",
@@ -1749,7 +1744,7 @@ const enUS: Record<string, string> = {
   "webRemoteControl.botChannel.manageBots": "Manage bots",
   "remote.title": "Connect remote environment",
   "remote.description":
-    "Connect to a remote workspace over SSH, Server, or WSL, then choose a directory in the current window.",
+    "Connect to a remote workspace over SSH or Server, then choose a directory in the current window.",
   "remote.step.connect": "Connect",
   "remote.step.selectDirectory": "Choose directory",
   "remote.selectDirectoryTitle": "Choose remote directory",
@@ -1759,9 +1754,7 @@ const enUS: Record<string, string> = {
   "remote.selectedMethod": "Selected method",
   "remote.methods": "Connection method",
   "remote.kind.ssh": "SSH",
-  "remote.kind.wsl": "WSL",
   "remote.kind.ssh.wizardDescription": "Remote host",
-  "remote.kind.wsl.wizardDescription": "Windows Subsystem for Linux",
   "remote.connect": "Connect",
   "remote.connecting": "Connecting...",
   "remote.minimize": "Minimize remote connection window",
@@ -1786,22 +1779,6 @@ const enUS: Record<string, string> = {
   "remote.log.requestingSession": "Requesting the host process to create a remote session...",
   "remote.log.sessionReady":
     "Remote session created successfully. You can choose a directory next.",
-  "wsl.description":
-    "Connect to the default distro, or choose a specific distro installed on this device.",
-  "wsl.distro": "Distribution",
-  "wsl.defaultDistro": "Default distro",
-  "wsl.user": "Linux user",
-  "wsl.defaultUser": "Default user",
-  "wsl.userDescription":
-    "Leave empty to use the distro default user. Enter root or another existing Linux user to run WSL commands as that user.",
-  "wsl.rootWarning":
-    "Root mode runs the remote host, agent, and terminal as root. Files created during the session may be owned by root.",
-  "wsl.validation.invalidUser":
-    "Linux user names cannot contain control characters, colons, slashes, or backslashes, and must be 64 characters or fewer.",
-  "wsl.loading": "Detecting WSL distros...",
-  "wsl.detectedCount": "{count} distros detected on this device.",
-  "wsl.noDistros":
-    "No WSL distros were detected. You can still connect to the default distro if WSL is installed.",
 
   // Locale switch
   "locale.switchLanguage": "Switch language",
@@ -5993,7 +5970,6 @@ const enUS: Record<string, string> = {
   "feedback.module.modelCallError": "Model call error",
   "feedback.module.permissionConfigSave": "Permissions / settings save",
   "feedback.module.sshConnectionFailed": "SSH connection failed",
-  "feedback.module.wslConnectionFailed": "WSL connection failed",
   "feedback.module.uiLayoutInteraction": "UI layout / interaction",
   "feedback.module.modelSlowQuota": "Slow model response / quota",
   "feedback.module.crashInternalError": "Crash / Internal error",
@@ -6787,7 +6763,7 @@ const enUS: Record<string, string> = {
     "The Computer Use plugin is not enabled. Enable it in Plugins to use Computer Use.",
   "settings.computerUse.unsupported.title": "Computer Use is unavailable here",
   "settings.computerUse.unsupported.remoteDescription":
-    "Computer Use is not yet supported for SSH, WSL, or other remote environments. Switch to a local macOS or Windows workspace.",
+    "Computer Use is not yet supported for SSH or other remote environments. Switch to a local macOS or Windows workspace.",
   "settings.computerUse.unsupported.linuxDescription":
     "Computer Use is not yet supported on Linux desktops. Switch to a local macOS or Windows workspace.",
   "settings.computerUse.unsupported.badge": "Unavailable here",

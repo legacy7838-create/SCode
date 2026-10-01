@@ -23,7 +23,7 @@ export const sessionCreateTelemetrySchema = z
         create_source: z.enum(["group", "project", "session"]),
         client_kind: z.literal("mobile"),
         workspace_kind: z.enum(["local", "remote"]),
-        remote_kind: z.enum(["", "ssh", "wsl", "server"]),
+        remote_kind: z.enum(["", "ssh", "server"]),
       })
       .strict(),
   })

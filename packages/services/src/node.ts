@@ -9,7 +9,10 @@ import {
   NodeModelSelectionConfigRepository,
   PERSONAL_PROVIDER_CONFIG_FILE_NAME,
 } from "@zcode/provider-node";
-import { getAppConfigDir as resolveAppConfigDir } from "./paths.js";
+import {
+  getAppConfigDir as resolveAppConfigDir,
+  getConversationWorkspaceDir as resolveConversationWorkspaceDir,
+} from "./paths.js";
 import {
   buildLocalMediaPreviewUrl,
   isProviderProvisioningAccountCredentialKey,
@@ -25,19 +28,13 @@ export { createFileService } from "./file/fileService.js";
 export {
   attributeHostProcessTree,
   createProcessResourceSampler,
-  createProcessResourceTableReader,
   type HostResourceUsageAgent,
   type ProcessResourceSample,
   type ProcessResourceSampler,
 } from "./process/processResourceSampler.js";
 export { createMediaPreviewService } from "./media-preview/mediaPreview.js";
 export type { CreateFileServiceOptions } from "./file/fileService.js";
-export {
-  defaultWorkspaceFileSearchFilter,
-  type WorkspaceFileSearchDecision,
-  type WorkspaceFileSearchEntry,
-  type WorkspaceFileSearchFilter,
-} from "./file/workspaceFileMentionFilter.js";
+export { FileServiceScope } from "./file/fileServiceScope.js";
 export {
   createFsFaultInjector,
   getProcessFsFaultInjector,
@@ -328,9 +325,9 @@ import { IMemoryService } from "./memory/memory.js";
 import { ISettingsSyncService } from "./settings-sync/settingsSync.js";
 import { IFeedbackService } from "./feedback/feedback.js";
 import { IPromptAttachmentTransferService } from "./prompt-attachment-transfer/promptAttachmentTransfer.js";
+import { FileServiceScope } from "./file/fileServiceScope.js";
 import { createFileService } from "./file/fileService.js";
 import { createMediaPreviewService } from "./media-preview/mediaPreview.js";
-import type { WorkspaceFileSearchFilter } from "./file/workspaceFileMentionFilter.js";
 import { createGitService } from "./git/gitService.js";
 import { GitCommitMessageGenerator } from "./git/gitCommitMessageGenerator.js";
 import { createGitCheckpointService } from "./git/gitCheckpointService.js";
@@ -523,7 +520,6 @@ import {
   zcodeAccountAccessSchema,
   zcodeProviderAccountAccessSchema,
   ZCODE_VERSION,
-  ZCODE_ENV,
   buildRuntimeZCodeApiUrl,
 } from "@zcode/shared";
 
@@ -1311,8 +1307,6 @@ export function createLocalServices(options: {
   >;
   processLifecycleReporter?: RuntimeProcessLifecycleReporter;
   taskRuntimeReporter?: RuntimeTaskReporter;
-  /** Workspace file search defaults to the built-in filter; later rule sources only need to inject the final implementation at Host assembly time. */
-  workspaceFileSearchFilter?: WorkspaceFileSearchFilter;
   forwardSessionMessageSendRequested?: (
     request: SessionMessageSendRequested,
   ) => Promise<void> | void;
@@ -2412,9 +2406,17 @@ export function createLocalServices(options: {
       credentials: await resolveOffPeakCredentials(offPeakCredentialResolverDeps),
       ticketId,
     });
-  const fileService = createFileService({
-    workspaceFileSearchFilter: options?.workspaceFileSearchFilter,
-  });
+  // Every filesystem call the Host makes is confined to this allowlist inside
+  // the native crate (docs/specs/rust-native-fs.md). The two seeds are the roots
+  // the service owns outright: the scratch/default workspace area and the
+  // conversation workspace. A host assembly that opens a workspace outside those
+  // calls `fileServiceScope.allow(workspacePath)`; the set is append-only, so a
+  // root admitted once stays admitted for the life of the process.
+  const fileServiceScope = new FileServiceScope([
+    join(homedir(), "ZCodeProject"),
+    resolveConversationWorkspaceDir(),
+  ]);
+  const fileService = createFileService({ scope: fileServiceScope });
   const mediaPreviewService = createMediaPreviewService({
     fileService,
     authorizeLocalMediaPreviewPath: options?.authorizeLocalMediaPreviewPath,

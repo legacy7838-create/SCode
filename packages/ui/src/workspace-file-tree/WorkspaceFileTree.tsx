@@ -58,7 +58,6 @@ import { useInstalledFileTreeEditors } from "@/workspace-file-tree/useInstalledF
 import { useWorkspaceOpenInEditorTarget } from "@/hooks/useWorkspaceOpenInEditorTarget.js";
 import {
   resolveWorkspaceEditorSelection,
-  resolveWorkspaceFileManagerEditor,
 } from "@/lib/workspaceEditorSelection.js";
 import { useWorkspaceFileTreeData } from "@/workspace-file-tree/useWorkspaceFileTreeData.js";
 import { useWorkspaceFileTreeStickyFolders } from "@/workspace-file-tree/useWorkspaceFileTreeStickyFolders.js";
@@ -144,9 +143,7 @@ export function WorkspaceFileTree({
           }).availableEditors,
     [installedEditors, isRemoteWorkspaceFileTree, remoteTarget],
   );
-  const wslFileManagerEditor = resolveWorkspaceFileManagerEditor(availableEditors, remoteTarget);
-  const canOpenInFileManager =
-    Boolean(wslFileManagerEditor) || (canOpenLocalFileManager && !isRemoteWorkspaceFileTree);
+  const canOpenInFileManager = canOpenLocalFileManager && !isRemoteWorkspaceFileTree;
   const hasFileSearchQuery = fileSearchQuery.trim().length > 0;
   const searchIndex = useWorkspaceFileSearchIndex({
     workspacePath,
@@ -420,13 +417,7 @@ export function WorkspaceFileTree({
     if (!canOpenInFileManager) {
       return;
     }
-    const result = wslFileManagerEditor
-      ? await platform.openInEditor(wslFileManagerEditor.id, workspacePath, {
-          pathKind: "directory",
-          remoteTarget,
-          workspaceIdentity,
-        })
-      : await platform.openInFileManager(workspacePath);
+    const result = await platform.openInFileManager(workspacePath);
     if (!result.success) {
       logger.warn("[WorkspaceFileTree] failed to open workspace path", {
         path: workspacePath,
@@ -441,7 +432,6 @@ export function WorkspaceFileTree({
     remoteTarget,
     workspaceIdentity,
     workspacePath,
-    wslFileManagerEditor,
   ]);
 
   const handleCopyPath = useCallback(async () => {

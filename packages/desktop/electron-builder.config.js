@@ -692,6 +692,25 @@ export default {
       filter: ["**/*", "!**/*.map"],
     },
     {
+      // Rust `.node` payload for the packaged agent, staged by
+      // `pnpm --filter @zcode/rust native:stage-desktop` into
+      // `bundled-agents/<os>-<arch>/native/`.
+      //
+      // `native/` is a SIBLING of `glm/`, not a child of it: `zcode.cjs` is staged at
+      // `resources/glm/zcode.cjs`, `@zcode/rust` is inlined into that bundle, and
+      // `packages/rust/src/loader.ts:60` probes `join(here, "..", "native")` where `here`
+      // is the directory holding the bundle. That resolves to `resources/native`.
+      // See docs/specs/rust-native-packaging.md D2 and
+      // crates/zcode-packaging/src/plan.rs `Surface::DesktopAgent`.
+      //
+      // Without this entry the artifact contains no Rust natives at all, and the bundled
+      // agent throws `[zcode-rust] native binary ... not found` on its first loadNative()
+      // call — the zero-JS-fallback invariant makes that fatal, not degraded.
+      from: `bundled-agents/${targetPlatform.key}/native`,
+      to: "native",
+      filter: ["**/*"],
+    },
+    {
       // The agent shell previously relied entirely on the host system PATH, often failing to
       // find the user's own rg on GUI startup. Package ripgrep as a desktop built-in runtime
       // tool under resources/tools; later host/server appends this directory to PATH. The

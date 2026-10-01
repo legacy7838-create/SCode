@@ -85,7 +85,7 @@ export function classifyRemoteUsageError(error: unknown): RemoteUsageErrorCatego
   if (/(relay|websocket|web socket|pair|device.*(?:kicked|not.found))/.test(value)) {
     return "relay";
   }
-  if (/(connect|network|socket|ssh|wsl|server|timeout|timedout|econn)/.test(value)) {
+  if (/(connect|network|socket|ssh|server|timeout|timedout|econn)/.test(value)) {
     return "connect";
   }
   return "unknown";

@@ -23,9 +23,5 @@ export async function createRemoteBackend(target: RemoteTarget): Promise<IRemote
         privateKey,
       });
     }
-    case "wsl": {
-      const { WSLBackend } = await import("./wsl-backend.js");
-      return new WSLBackend(target);
-    }
   }
 }

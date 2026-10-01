@@ -214,7 +214,6 @@ function createWebPlatform(): IPlatformService {
     },
     cancelPendingRemoteConnection: (_requestId?: string) => Promise.resolve(),
     disposeRemoteSession: () => Promise.resolve(),
-    listWSLDistros: () => Promise.resolve([]),
     listSSHConfigAliases: () => Promise.resolve([]),
     loadMcpFromUserDirectory: () => Promise.resolve({ servers: [] }),
     saveMcpToUserDirectory: () =>

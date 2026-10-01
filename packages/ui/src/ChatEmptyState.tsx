@@ -467,7 +467,6 @@ export function ChatEmptyWorkspacePreviewMenu({
           onSelectProject={onSelectRemoteProject}
           onCancelSession={onCancelRemoteProject}
           localWorkspacePath={localWorkspacePathForRemoteConnection}
-          isWindowsDesktop={isWindowsDesktop}
           remoteWorkspaceSessions={remoteWorkspaceSessions}
           open={sshDialogOpen}
           onOpenChange={setSshDialogOpen}

@@ -17,7 +17,6 @@ import { useConfirmDialog } from "@/hooks/useConfirmDialog.js";
 import { reportAppTelemetryEvent } from "@/lib/appTelemetry.js";
 import { resolveLogoutProviderFamilyDomain } from "@/lib/providerFamilyDomainSettings.js";
 import { isRendererReloadNavigation } from "@/lib/rendererNavigation.js";
-import { parseWslUncWorkspacePath } from "@/lib/wslUncWorkspace.js";
 import { logger } from "@/logger.js";
 import { openFolderFromWorkspaceEntry } from "@/root/openWorkspaceFolderEntry.js";
 import { useConversationWorkspaceActions } from "@/root/useConversationWorkspaceActions.js";
@@ -36,7 +35,6 @@ import { persistV4ComposerDraft, V4_DRAFT_SCOPE_ROOT } from "@/v4/composer/compo
 
 interface OpenRemoteConnectionPreference {
   preferredKind?: RemoteTarget["kind"];
-  preferredWslDistro?: string;
 }
 
 /**
@@ -375,35 +373,6 @@ export function useRootWorkspaceActions({
     async (path: string) => {
       logger.info("[Root] handleSelectProject called with path:", path);
       try {
-        const wslUncWorkspace = parseWslUncWorkspacePath(path);
-        if (wslUncWorkspace && onOpenRemoteConnection) {
-          const shouldOpenWslConnection = await requestConfirmation({
-            title: intl.formatMessage({ id: "workspace.wslUncPrompt.title" }),
-            description: intl.formatMessage(
-              { id: "workspace.wslUncPrompt.description" },
-              {
-                path,
-              },
-            ),
-            confirmLabel: intl.formatMessage({ id: "workspace.wslUncPrompt.openWsl" }),
-            cancelLabel: intl.formatMessage({ id: "workspace.wslUncPrompt.continuePath" }),
-          });
-          if (shouldOpenWslConnection) {
-            logger.info(
-              "[Root] the user chose to open the UNC workspace over a WSL remote connection",
-              {
-                distro: wslUncWorkspace.distro,
-                path,
-              },
-            );
-            onOpenRemoteConnection({
-              preferredKind: "wsl",
-              preferredWslDistro: wslUncWorkspace.distro,
-            });
-            return;
-          }
-        }
-
         // Desktop: Check if there is another window opening the directory, and if so, activate the tab corresponding to the window
         const result = await platform.activateOrSetWorkspace(path);
         if (result.activated) {

@@ -35,7 +35,7 @@ export type {
   RemoteResourcePackageId,
   RemoteResourcePackageSelection,
 } from "./remoteResourcePackages.js";
-export type { RemoteTarget, SSHConnectOptions, WSLConnectOptions } from "./remoteTarget.js";
+export type { RemoteTarget, SSHConnectOptions } from "./remoteTarget.js";
 export { stripRemoteTargetSecrets } from "./remoteTarget.js";
 export { buildSshRemoteHostKey } from "./remoteSshHostKey.js";
 export { buildRemoteEnvironmentKey } from "./remoteEnvironmentKey.js";
@@ -212,7 +212,6 @@ export type {
   TaskNotificationPayload,
   UpdateCheckResultPayload,
   UpdateStatePayload,
-  WSLDistro,
   ZCodeStdioTapDevState,
 } from "./platform.js";
 export type {

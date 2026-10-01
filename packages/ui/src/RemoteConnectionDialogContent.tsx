@@ -7,9 +7,8 @@ import type {
   RemoteTarget,
   RemoteWorkspaceSessionEntry,
   SSHConfigAliasOption,
-  WSLDistro,
 } from "@zcode/shared";
-import { TID_REMOTE_KIND_SSH, TID_REMOTE_KIND_WSL } from "@zcode/shared";
+import { TID_REMOTE_KIND_SSH } from "@zcode/shared";
 import type {
   IMcpSyncService,
   IPluginSyncService,
@@ -22,7 +21,6 @@ import {
   ChevronRightIcon,
   LoaderIcon,
   ServerIcon,
-  TerminalIcon,
 } from "lucide-react";
 import { DirectoryBrowser } from "@/DirectoryBrowser.js";
 import { RemoteConnectionFields } from "@/RemoteConnectionFields.js";
@@ -41,8 +39,6 @@ function getKindIcon(kind: RemoteTarget["kind"]) {
   switch (kind) {
     case "ssh":
       return ServerIcon;
-    case "wsl":
-      return TerminalIcon;
   }
 }
 
@@ -73,7 +69,7 @@ export function RemoteConnectionKindStep({
               key={value}
               type="button"
               onClick={() => onKindChange(value)}
-              data-testid={value === "ssh" ? TID_REMOTE_KIND_SSH : TID_REMOTE_KIND_WSL}
+              data-testid={TID_REMOTE_KIND_SSH}
               className={cn(
                 "flex min-h-32 flex-col items-start gap-4 rounded-2xl border p-4 text-left transition-colors",
                 selected
@@ -135,14 +131,10 @@ export function RemoteConnectionSettingsStep({
   password,
   privateKeyPath,
   privateKeyPassphrase,
-  wslDistro,
-  wslUser = "",
-  wslDistros,
   sshConfigAliases,
   sshConfigAliasesLoading,
   sshConfigAliasesError,
   selectedSshConfigAlias,
-  currentRuntimeOptionsLoading,
   currentRuntimeOptionsError,
   remoteWorkspaceSessions = [],
   validationMessage,
@@ -156,8 +148,6 @@ export function RemoteConnectionSettingsStep({
   onPasswordChange,
   onPrivateKeyPathChange,
   onPrivateKeyPassphraseChange,
-  onWslDistroChange,
-  onWslUserChange,
   onApplySshConfigAlias,
   onClearSelectedSshConfigAlias,
   onConnect,
@@ -171,14 +161,10 @@ export function RemoteConnectionSettingsStep({
   password: string;
   privateKeyPath: string;
   privateKeyPassphrase: string;
-  wslDistro: string;
-  wslUser?: string;
-  wslDistros: WSLDistro[];
   sshConfigAliases: SSHConfigAliasOption[];
   sshConfigAliasesLoading: boolean;
   sshConfigAliasesError: string;
   selectedSshConfigAlias: string | null;
-  currentRuntimeOptionsLoading: boolean;
   currentRuntimeOptionsError: string;
   remoteWorkspaceSessions?: RemoteWorkspaceSessionEntry[];
   validationMessage: string;
@@ -192,8 +178,6 @@ export function RemoteConnectionSettingsStep({
   onPasswordChange: (value: string) => void;
   onPrivateKeyPathChange: (value: string) => void;
   onPrivateKeyPassphraseChange: (value: string) => void;
-  onWslDistroChange: (value: string) => void;
-  onWslUserChange?: (value: string) => void;
   onApplySshConfigAlias: (value: SSHConfigAliasOption) => void;
   onClearSelectedSshConfigAlias: () => void;
   onConnect: () => void;
@@ -225,14 +209,10 @@ export function RemoteConnectionSettingsStep({
           password={password}
           privateKeyPath={privateKeyPath}
           privateKeyPassphrase={privateKeyPassphrase}
-          wslDistro={wslDistro}
-          wslUser={wslUser}
-          wslDistros={wslDistros}
           sshConfigAliases={sshConfigAliases}
           sshConfigAliasesLoading={sshConfigAliasesLoading}
           sshConfigAliasesError={sshConfigAliasesError}
           selectedSshConfigAlias={selectedSshConfigAlias}
-          runtimeOptionsLoading={currentRuntimeOptionsLoading}
           remoteWorkspaceSessions={remoteWorkspaceSessions}
           applySshConfigAlias={onApplySshConfigAlias}
           clearSelectedSshConfigAlias={onClearSelectedSshConfigAlias}
@@ -244,8 +224,6 @@ export function RemoteConnectionSettingsStep({
           setPassword={onPasswordChange}
           setPrivateKeyPath={onPrivateKeyPathChange}
           setPrivateKeyPassphrase={onPrivateKeyPassphraseChange}
-          setWslDistro={onWslDistroChange}
-          setWslUser={onWslUserChange}
         />
       </div>
 

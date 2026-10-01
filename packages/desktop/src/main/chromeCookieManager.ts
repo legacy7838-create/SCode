@@ -3,10 +3,14 @@
 // Prevent Windows App-Bound atomic failure semantics and Linux helper fallback order from drifting after splitting.
 import { createDecipheriv, pbkdf2Sync } from "node:crypto";
 import { copyFile, mkdtemp, rm, stat } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import type { ChromeBrowserDataImportError } from "@zcode/shared";
+import {
+  backupChromeCookieDatabase,
+  readChromeCookieSnapshot,
+  type ChromeCookieSnapshotRow,
+} from "@zcode/rust/chrome-cookies";
 import { readChromeCookiesWithHelper } from "./chromeLocalStorageManager.js";
 import {
   toCookieDetails,
@@ -26,11 +30,6 @@ import {
   type WindowsChromeAppBoundKeyReader,
 } from "./windowsChromeAppBoundKey.js";
 
-const nodeRequire = createRequire(import.meta.url);
-// tsup/esbuild will rewrite the dynamic import("node:sqlite") error as import("sqlite"),
-// The Electron runtime therefore reports ERR_MODULE_NOT_FOUND. createRequire stably preserves the node: protocol.
-const { DatabaseSync, backup } = nodeRequire("node:sqlite") as typeof import("node:sqlite");
-
 const COOKIE_IMPORT_CONCURRENCY = 32;
 const DATABASE_SNAPSHOT_COPY_ATTEMPTS = 3;
 
@@ -48,7 +47,14 @@ interface CookieTargetSession {
 
 type CookieDecryptor = (encrypted: Uint8Array, hostKey: string, schemaVersion: number) => string;
 export type ChromeCookieHelper = typeof readChromeCookiesWithHelper;
-export type ChromeCookieDatabaseBackup = typeof backup;
+/**
+ * The injectable Online Backup seam, preserved from the `node:sqlite` version so
+ * tests can still substitute a fake. The parameters are now a **(sourcePath,
+ * destPath)** pair rather than `(DatabaseSync, destPath)`: the native side owns
+ * the connection, so the caller no longer opens (and can no longer leak) a handle
+ * it would only pass straight through (spec §14.6).
+ */
+export type ChromeCookieDatabaseBackup = typeof backupChromeCookieDatabase;
 
 interface CookieDecryptorResource {
   decrypt: CookieDecryptor;
@@ -159,16 +165,10 @@ async function withDatabaseSnapshot<T>(
 ): Promise<T> {
   const tempDir = await mkdtemp(join(tmpdir(), "zcode-browser-import-"));
   const snapshotPath = join(tempDir, "database.sqlite");
-  let sourceDatabase: import("node:sqlite").DatabaseSync | null = null;
   try {
     try {
-      sourceDatabase = new DatabaseSync(sourcePath, { readOnly: true });
-      await databaseBackup(sourceDatabase, snapshotPath);
-      sourceDatabase.close();
-      sourceDatabase = null;
+      await databaseBackup(sourcePath, snapshotPath);
     } catch (onlineBackupError) {
-      sourceDatabase?.close();
-      sourceDatabase = null;
       logger.warn(
         "[browser-data] Chrome Cookie online backup unavailable, falling back to a WAL file snapshot",
         toSafeBrowserDataError(onlineBackupError),
@@ -177,7 +177,6 @@ async function withDatabaseSnapshot<T>(
       let fallbackError: unknown = onlineBackupError;
       for (let attempt = 1; attempt <= DATABASE_SNAPSHOT_COPY_ATTEMPTS; attempt += 1) {
         const stagedPath = join(tempDir, `source-${attempt}.sqlite`);
-        let stagedDatabase: import("node:sqlite").DatabaseSync | null = null;
         try {
           await rm(snapshotPath, { force: true });
           await copyFile(sourcePath, stagedPath);
@@ -187,17 +186,13 @@ async function withDatabaseSnapshot<T>(
           }
           // Chrome's SHM is only used for concurrency coordination and may be locked exclusively on Windows.
           // SQLite in the temporary directory will rebuild SHM by itself, and then solidify and verify the main database and WAL through Online Backup.
-          stagedDatabase = new DatabaseSync(stagedPath, { readOnly: true });
-          await databaseBackup(stagedDatabase, snapshotPath);
-          stagedDatabase.close();
-          stagedDatabase = null;
+          await databaseBackup(stagedPath, snapshotPath);
           logger.info("[browser-data] Chrome Cookie WAL file snapshot completed", { attempt });
           fallbackError = null;
           break;
         } catch (error) {
           fallbackError = error;
         } finally {
-          stagedDatabase?.close();
           await rm(stagedPath, { force: true });
           await rm(`${stagedPath}-wal`, { force: true });
           await rm(`${stagedPath}-shm`, { force: true });
@@ -213,10 +208,8 @@ async function withDatabaseSnapshot<T>(
     }
     return await run(snapshotPath);
   } finally {
-    // TypeScript will narrow the finally path that was explicitly left blank to never.
-    // But SQLite backup may still leave handles on exception boundaries; retain runtime coverage and explicitly restore the actual union type.
-    const danglingDatabase = sourceDatabase as import("node:sqlite").DatabaseSync | null;
-    danglingDatabase?.close();
+    // The native backup owns its own connection and closes it before resolving, so
+    // there is no dangling handle to restore here any more — only the temp dir.
     await rm(tempDir, { recursive: true, force: true });
   }
 }
@@ -225,22 +218,9 @@ async function readChromeCookies(databasePath: string): Promise<{
   rows: ChromeCookieRow[];
   schemaVersion: number;
 }> {
-  const database = new DatabaseSync(databasePath, { readOnly: true });
-  try {
-    const versionRow = database.prepare("SELECT value FROM meta WHERE key = 'version'").get() as
-      | { value?: string }
-      | undefined;
-    const statement = database.prepare(
-      "SELECT host_key, name, path, expires_utc, is_secure, is_httponly, samesite, value, encrypted_value FROM cookies",
-    );
-    statement.setReadBigInts(true);
-    return {
-      rows: statement.all() as unknown as ChromeCookieRow[],
-      schemaVersion: Number(versionRow?.value ?? 0),
-    };
-  } finally {
-    database.close();
-  }
+  const snapshot: { rows: ChromeCookieSnapshotRow[]; schemaVersion: number } =
+    readChromeCookieSnapshot(databasePath);
+  return { rows: snapshot.rows as unknown as ChromeCookieRow[], schemaVersion: snapshot.schemaVersion };
 }
 
 async function resolveChromeCookieDatabasePath(profilePath: string): Promise<string | null> {
@@ -432,7 +412,7 @@ export async function importChromeCookies(options: {
   return withDatabaseSnapshot(
     cookieDatabasePath,
     options.logger,
-    options.databaseBackup ?? backup,
+    options.databaseBackup ?? backupChromeCookieDatabase,
     async (snapshotPath) => {
       const { rows, schemaVersion } = await readChromeCookies(snapshotPath);
       options.logger.info("[browser-data] Chrome Cookie snapshot read completed", {

@@ -41,7 +41,6 @@ import {
   IMediaPreviewService,
   IOffPeakTaskService,
   IModelSelectionService,
-  ISettingService,
   IWindowControllerService,
   IConversationShareService,
   IZCodeAgentService,
@@ -1553,15 +1552,7 @@ function logRpc(message: string, ...args: unknown[]): void {
 }
 
 function formatRemoteTargetForLog(target: RemoteTarget): string {
-  switch (target.kind) {
-    case "ssh":
-      return `ssh:${target.username}@${target.host}:${target.port ?? 22}`;
-    case "wsl": {
-      const user = target.user?.trim();
-      const distro = target.distro ?? "default";
-      return user ? `wsl:${distro}:${user}` : `wsl:${distro}`;
-    }
-  }
+  return `ssh:${target.username}@${target.host}:${target.port ?? 22}`;
 }
 
 console.log = (...args: unknown[]) => {
@@ -1611,28 +1602,6 @@ function requireActiveHostApiNetworkTransport(): HostApiNetworkTransport {
   return activeHostApiNetworkTransport;
 }
 
-async function resolveDesktopRemoteRuntimeNetwork(
-  target: RemoteTarget,
-): Promise<RemoteRuntimeNetworkOptions | undefined> {
-  if (target.kind !== "wsl") {
-    return undefined;
-  }
-  const settingService = activeServices?.getOptional(ISettingService);
-  if (!settingService) {
-    return undefined;
-  }
-  try {
-    const settings = await settingService.get();
-    return {
-      authoritative: true,
-      httpProxy: settings.httpProxy,
-      noProxy: settings.httpProxyNoProxy,
-    };
-  } catch {
-    // Set the original remote connection behavior to be retained when the read fails to prevent network enhancement from directly blocking the WSL workspace.
-    return undefined;
-  }
-}
 
 async function disposeHostRemoteConnection(connection: HostRemoteConnection): Promise<void> {
   await connection.disposeAndWait({ timeoutMs: 5_000 });
@@ -1658,10 +1627,10 @@ async function createWindowRemoteConnectionHandle(params: {
     params.target,
     params.remoteAssets,
     { fetch: requireActiveHostApiNetworkTransport().fetch },
-    await resolveDesktopRemoteRuntimeNetwork(params.target),
+    undefined,
     (exitCode) => notifyClose({ exitCode, signal: null }),
-    params.target.kind === "ssh" ? "caller-serialized" : "remote",
-    params.target.kind === "ssh" ? params.signal : undefined,
+    "caller-serialized",
+    params.signal,
   );
 
   if (params.signal.aborted) {

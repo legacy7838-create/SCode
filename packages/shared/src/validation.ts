@@ -1,6 +1,5 @@
 import { databaseStartupControlSchema, databaseStartupStateSchema } from "./database-startup.js";
 import {
-  sessionCreateTelemetrySchema,
   automationSessionCreateTelemetrySchema,
 } from "./sessionCreateTelemetry.js";
 /* eslint-disable max-lines -- The runtime schemas are currently centralized at the shared package entry; keeping a single export surface for now, even as external relay payload validation is added. */
@@ -22,9 +21,7 @@ import {
   zcodeProcessResourceSampleSchema,
 } from "./zcode-protocol/index.js";
 import { zcodeTaskModeSchema } from "./zcode-task-mode-schema.js";
-import { PROTOCOL_V4_LIMITS } from "./zcode-protocol-v4/core.js";
 import { errorAttributionSchema } from "./zcode-protocol-v4/snapshot.js";
-import { sessionWorkflowActivitySchema } from "./zcode-protocol-v4/sessions-index-workflow-activity.js";
 import {
   taskOwnerCommandDeliverySchema,
   taskOwnerCommandRequestSchema,
@@ -39,9 +36,7 @@ import {
   taskStreamMirrorTargetSchema,
 } from "./task-realtime-core.js";
 
-export { WSL_USER_MAX_LENGTH, isValidWslUser, wslUserSchema } from "./wslUserValidation.js";
 export { zcodeTaskModeSchema } from "./zcode-task-mode-schema.js";
-import { wslUserSchema } from "./wslUserValidation.js";
 export {
   appSettingsOccupationEnum,
   appSettingsPatchSchema,
@@ -82,16 +77,7 @@ export const sshConnectOptionsSchema = z.object({
     .optional(),
 });
 
-export const wslConnectOptionsSchema = z.object({
-  kind: z.literal("wsl"),
-  distro: z.string().optional(),
-  user: wslUserSchema.optional(),
-});
-
-export const remoteTargetSchema = z.discriminatedUnion("kind", [
-  sshConnectOptionsSchema,
-  wslConnectOptionsSchema,
-]);
+export const remoteTargetSchema = z.discriminatedUnion("kind", [sshConnectOptionsSchema]);
 
 export const helloMessageSchema = z.object({
   type: z.literal("zcode-hello"),

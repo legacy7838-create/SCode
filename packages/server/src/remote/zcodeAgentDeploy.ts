@@ -15,13 +15,9 @@ import { buildWriteLiteralFileCommand } from "@zcode/server/remote/posixShell.js
 import { deployDevelopmentZCodeAgentRuntime } from "@zcode/server/remote/zcodeAgentDevDeploy.js";
 import {
   buildRemoteAgentBundleWrapper,
-  isRemoteAgentBundleWrapperCurrent,
   REMOTE_AGENT_BUNDLE_NAME,
 } from "@zcode/server/remote/zcodeAgentBundleWrapper.js";
-import {
-  deployRemoteAgentWrapper,
-  isWslBackend,
-} from "@zcode/server/remote/zcodeAgentWrapperDeploy.js";
+import { deployRemoteAgentWrapper } from "@zcode/server/remote/zcodeAgentWrapperDeploy.js";
 import {
   buildRemoteAgentOfficialPluginDir,
   buildRemoteAgentOfficialPluginRequiredPaths,
@@ -96,19 +92,6 @@ async function shouldSkipZCodeAgentDeploy(params: {
     return false;
   }
 
-  if (isWslBackend(params.backend)) {
-    try {
-      const remoteWrapper = await params.backend.readFile(params.remoteBinaryPath);
-      if (!isRemoteAgentBundleWrapperCurrent(remoteWrapper, params.runtimeResourceDir)) {
-        params.loggers.logWarn(
-          `[remote-assets] ${params.installer.mode === "remote-download" ? "download required" : "upload required"}: component=${params.componentId} reason=wsl wrapper stale path=${params.remoteBinaryPath}`,
-        );
-        return false;
-      }
-    } catch {
-      return false;
-    }
-  }
 
   // The wrapper also needs to be redeployed when zcode.cjs is missing (cleaned/remaining from the old native binary deployment).
   if (!(await params.backend.exists(params.remoteBundlePath))) {

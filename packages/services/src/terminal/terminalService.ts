@@ -1,15 +1,17 @@
-import { accessSync, chmodSync, constants, existsSync, statSync } from "node:fs";
+import { accessSync, chmodSync, constants, existsSync } from "node:fs";
 import { createRequire } from "node:module";
-import { homedir, release } from "node:os";
-import { delimiter, dirname, join, resolve } from "node:path";
+import { release } from "node:os";
+import { delimiter, dirname, resolve } from "node:path";
 import { Emitter, type Event } from "@zcode/rpc";
 import type { IPty } from "node-pty";
 import type { ISettingService } from "../setting/setting.js";
 import type { ITerminalService, TerminalWindowsPtyInfo } from "./terminal.js";
 import {
-  resolveTerminalFontProfile,
-  type TerminalFontFamilySource,
-  type TerminalThemeProfile,
+    resolveTerminalCwd,
+    resolveTerminalFontProfile,
+    resolveTerminalShell,
+    type TerminalFontFamilySource,
+    type TerminalThemeProfile,
 } from "./terminalProfile.js";
 import { registerMemoryDiagnosticsProvider } from "#src/memoryDiagnostics.js";
 
@@ -64,37 +66,6 @@ function resolveTerminalWindowsPtyInfo(
   };
 }
 
-function isExecutable(command: string): boolean {
-  try {
-    if (/[\\/]/.test(command)) {
-      accessSync(command, constants.X_OK);
-      return true;
-    }
-
-    const pathEnv = process.env.PATH;
-    if (!pathEnv) return false;
-
-    return pathEnv.split(delimiter).some((dir) => {
-      if (!dir) return false;
-      try {
-        accessSync(join(dir, command), constants.X_OK);
-        return true;
-      } catch {
-        return false;
-      }
-    });
-  } catch {
-    return false;
-  }
-}
-
-function isUsableDirectory(path: string): boolean {
-  try {
-    return statSync(path).isDirectory();
-  } catch {
-    return false;
-  }
-}
 
 function resolveNodePtySpawnHelperPath(): string | null {
   if (process.platform !== "darwin") return null;
@@ -282,44 +253,6 @@ function spawnTerminalProcess(params: {
   }
 }
 
-function resolveTerminalShell(): string {
-  if (process.platform === "win32") {
-    // Windows PowerShell 5.1's PSReadLine makes it easier to redraw input line blanks to ANSI black background under ConPTY.
-    // The terminal compatibility of PowerShell 7+ is closer to the desktop. The installed pwsh is used first. If it cannot be found, it will fall back to the system's own shell.
-    const candidates = ["pwsh.exe", "powershell.exe", process.env.ComSpec, "cmd.exe"];
-
-    for (const candidate of candidates) {
-      if (candidate && isExecutable(candidate)) return candidate;
-    }
-
-    throw new Error("No usable Windows shell found for terminal startup");
-  }
-
-  // Previously, the SHELL environment variable was directly trusted. If a non-existent shell path remains in the external environment,
-  // The bottom layer of node-pty will directly hand this bad path to posix_spawnp, and an error will be reported when the terminal is created.
-  // Here we first check whether SHELL is really executable. If it is not available, we will fall back according to the common shell order to avoid direct startup failure.
-  const candidates = [process.env.SHELL, "/bin/zsh", "/bin/bash", "/bin/sh"];
-
-  for (const candidate of candidates) {
-    if (candidate && isExecutable(candidate)) return candidate;
-  }
-
-  throw new Error("No usable shell found for terminal startup");
-}
-
-function resolveTerminalCwd(cwd?: string): string {
-  // The workspace directory may have been deleted, moved, or an invalid path was passed in during startup.
-  // Previously, passing this cwd to node-pty as it was would also fail in the spawn stage.
-  // Here, priority is given to using the incoming directory. If it is unavailable, it will fall back to the HOME / system home / root directory to ensure that the terminal can still be launched.
-  const candidates = [cwd, process.env.HOME, homedir(), "/"];
-
-  for (const candidate of candidates) {
-    if (candidate && isUsableDirectory(candidate)) return candidate;
-  }
-
-  throw new Error("No usable working directory found for terminal startup");
-}
-
 export function createTerminalService(dependencies: {
   settingService: ISettingService;
 }): ITerminalService {
@@ -367,7 +300,7 @@ export function createTerminalService(dependencies: {
         terminalFontFamily: undefined,
         terminalInheritSystemProfile: true,
       }));
-      const fontProfile = resolveTerminalFontProfile({
+      const fontProfile = await resolveTerminalFontProfile({
         settings: terminalProfileSettings,
         env: process.env,
       });

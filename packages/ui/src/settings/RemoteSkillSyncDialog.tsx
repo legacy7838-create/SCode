@@ -76,9 +76,7 @@ export function formatRemoteSkillSyncTarget(
   const target =
     remoteTarget.kind === "ssh"
       ? `${remoteTarget.username}@${remoteTarget.host}${remoteTarget.port ? `:${remoteTarget.port}` : ""}`
-      : remoteTarget.kind === "wsl"
-        ? ["WSL", remoteTarget.distro, remoteTarget.user?.trim()].filter(Boolean).join(" · ")
-        : "";
+      : "";
   return workspacePath ? `${target} · ${workspacePath}` : target;
 }
 

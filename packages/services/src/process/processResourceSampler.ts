@@ -1,15 +1,14 @@
-import { execFile as nodeExecFile } from "node:child_process";
-import { readdir, readFile } from "node:fs/promises";
-import { basename } from "node:path";
 import os from "node:os";
+import { basename } from "node:path";
 import {
   formatZCodeAgentProcessName,
   type HostResourceUsageProcess,
   type ZCodeProcessChildProcess,
 } from "@zcode/shared";
+import { loadSysinfo } from "@zcode/rust/sysinfo";
 
 /**
- * Host-side sampling for the resource manager.
+ * Host-side attribution for the resource manager.
  *
  * Design boundaries:
  * - It runs only inside the Window Host (utility process), and reads the process table only once, when the
@@ -17,248 +16,13 @@ import {
  *   process (a synchronous ps / PowerShell call historically froze the whole app).
  * - After reading the machine-wide process table it attributes rows by Host descendants; plugin attribution comes from the CLI's `process/childProcesses`.
  * - CPU is uniformly a machine-wide normalized percentage (100% = all logical cores saturated), derived from the cputime delta of two samples.
+ *
+ * The table read and the cputime-delta accounting live in Rust
+ * (`zcode-sysinfo`, spec: docs/specs/rust-native-sysinfo.md). This module is the
+ * TypeScript adapter: it owns the wall clock, the abort wiring and the `Map` the
+ * attribution pass consumes, because those are host concerns the native boundary
+ * deliberately does not own.
  */
-
-const POSIX_TABLE_TIMEOUT_MS = 3_000;
-const WINDOWS_TABLE_TIMEOUT_MS = 5_000;
-const TABLE_MAX_BUFFER_BYTES = 16 * 1024 * 1024;
-/** Linux /proc always reports utime/stime in USER_HZ=100 units, independent of the kernel HZ. */
-const LINUX_CLOCK_TICKS_PER_SECOND = 100;
-const WINDOWS_100NS_PER_MS = 10_000;
-/** A previous cputime baseline is discarded after it has not been seen again for this long (pid reuse guard) */
-const CPU_BASELINE_TTL_MS = 60_000;
-
-interface ProcessResourceRow {
-  pid: number;
-  ppid: number;
-  rssKb: number;
-  /** Process cumulative CPU time (user + system), in milliseconds */
-  cpuTimeMs: number;
-  /** Command name or executable path (as the platform reports it) */
-  command: string;
-}
-
-type ProcessResourceTableReader = (
-  signal?: AbortSignal,
-) => Promise<ProcessResourceRow[] | undefined>;
-
-interface ExecFileResult {
-  error?: unknown;
-  stdout: string;
-}
-
-type ExecFileFn = (
-  file: string,
-  args: readonly string[],
-  options: { timeout: number; maxBuffer: number; windowsHide?: boolean; signal?: AbortSignal },
-) => Promise<ExecFileResult>;
-
-function defaultExecFile(
-  file: string,
-  args: readonly string[],
-  options: { timeout: number; maxBuffer: number; windowsHide?: boolean; signal?: AbortSignal },
-): Promise<ExecFileResult> {
-  return new Promise((resolve) => {
-    nodeExecFile(file, [...args], { ...options, encoding: "utf8" }, (error, stdout) => {
-      resolve(error ? { error, stdout: "" } : { stdout });
-    });
-  });
-}
-
-function parseNonNegativeInteger(text: string | undefined): number | undefined {
-  const value = Number(text);
-  return Number.isInteger(value) && value >= 0 ? value : undefined;
-}
-
-/**
- * Parses the cputime text of ps: macOS `[[dd-]hh:]mm:ss.cc`, Linux `[dd-]hh:mm:ss`.
- * Returns milliseconds; returns undefined when it cannot be parsed.
- */
-function parseCpuTimeText(text: string): number | undefined {
-  const trimmed = text.trim();
-  if (!trimmed) return undefined;
-  let days = 0;
-  let clock = trimmed;
-  const dayIndex = trimmed.indexOf("-");
-  if (dayIndex > 0) {
-    days = Number(trimmed.slice(0, dayIndex));
-    clock = trimmed.slice(dayIndex + 1);
-    if (!Number.isInteger(days) || days < 0) return undefined;
-  }
-  const parts = clock.split(":");
-  if (parts.length === 0 || parts.length > 3) return undefined;
-  const seconds = Number(parts[parts.length - 1]);
-  const minutes = parts.length >= 2 ? Number(parts[parts.length - 2]) : 0;
-  const hours = parts.length === 3 ? Number(parts[0]) : 0;
-  if (![seconds, minutes, hours].every((value) => Number.isFinite(value) && value >= 0)) {
-    return undefined;
-  }
-  return Math.round((((days * 24 + hours) * 60 + minutes) * 60 + seconds) * 1000);
-}
-
-/** Output of `ps -axo pid=,ppid=,rss=,cputime=,comm=`; comm may contain spaces, so everything after the first 4 columns is comm */
-function parseDarwinProcessTable(stdout: string): ProcessResourceRow[] {
-  const rows: ProcessResourceRow[] = [];
-  for (const line of stdout.split(/\r?\n/)) {
-    const match = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(.*)$/.exec(line);
-    if (!match) continue;
-    const pid = parseNonNegativeInteger(match[1]);
-    const ppid = parseNonNegativeInteger(match[2]);
-    const rssKb = parseNonNegativeInteger(match[3]);
-    const cpuTimeMs = parseCpuTimeText(match[4] ?? "");
-    if (pid === undefined || pid <= 0 || ppid === undefined || rssKb === undefined) continue;
-    if (cpuTimeMs === undefined) continue;
-    rows.push({ pid, ppid, rssKb, cpuTimeMs, command: (match[5] ?? "").trim() });
-  }
-  return rows;
-}
-
-/** Parses `/proc/<pid>/stat`: comm is wrapped in parentheses and may contain spaces and parentheses, so it is split on the last `)` */
-function parseLinuxProcStat(
-  content: string,
-): { pid: number; ppid: number; command: string; cpuTimeMs: number } | undefined {
-  const open = content.indexOf("(");
-  const close = content.lastIndexOf(")");
-  if (open < 0 || close < open) return undefined;
-  const pid = parseNonNegativeInteger(content.slice(0, open).trim());
-  const command = content.slice(open + 1, close);
-  const rest = content
-    .slice(close + 1)
-    .trim()
-    .split(/\s+/);
-  // rest[0]=state, rest[1]=ppid, ... rest[11]=utime, rest[12]=stime (original field number 14/15)
-  const ppid = parseNonNegativeInteger(rest[1]);
-  const utime = parseNonNegativeInteger(rest[11]);
-  const stime = parseNonNegativeInteger(rest[12]);
-  if (
-    pid === undefined ||
-    pid <= 0 ||
-    ppid === undefined ||
-    utime === undefined ||
-    stime === undefined
-  ) {
-    return undefined;
-  }
-  return {
-    pid,
-    ppid,
-    command,
-    cpuTimeMs: Math.round(((utime + stime) * 1000) / LINUX_CLOCK_TICKS_PER_SECOND),
-  };
-}
-
-/** Parses `VmRSS:\t 1234 kB` in `/proc/<pid>/status` */
-export function parseLinuxVmRssKb(content: string): number {
-  const match = /^VmRSS:\s*(\d+)\s*kB/m.exec(content);
-  return match ? Number(match[1]) : 0;
-}
-
-/** PowerShell output: `pid ppid workingSetBytes cpu100ns name...` */
-function parseWindowsProcessTable(stdout: string): ProcessResourceRow[] {
-  const rows: ProcessResourceRow[] = [];
-  for (const line of stdout.split(/\r?\n/)) {
-    const match = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*(.*)$/.exec(line);
-    if (!match) continue;
-    const pid = parseNonNegativeInteger(match[1]);
-    const ppid = parseNonNegativeInteger(match[2]);
-    const workingSetBytes = parseNonNegativeInteger(match[3]);
-    const cpu100ns = parseNonNegativeInteger(match[4]);
-    if (pid === undefined || pid <= 0 || ppid === undefined || workingSetBytes === undefined)
-      continue;
-    if (cpu100ns === undefined) continue;
-    rows.push({
-      pid,
-      ppid,
-      rssKb: Math.round(workingSetBytes / 1024),
-      cpuTimeMs: cpu100ns / WINDOWS_100NS_PER_MS,
-      command: (match[5] ?? "").trim(),
-    });
-  }
-  return rows;
-}
-
-interface CreateProcessResourceTableReaderOptions {
-  platform?: NodeJS.Platform;
-  execFile?: ExecFileFn;
-  readdir?: (path: string) => Promise<string[]>;
-  readFile?: (path: string) => Promise<string>;
-}
-
-/** Reads the machine-wide process table per platform; any failure returns undefined (skip this round) instead of throwing */
-export function createProcessResourceTableReader(
-  options: CreateProcessResourceTableReaderOptions = {},
-): ProcessResourceTableReader {
-  const platform = options.platform ?? process.platform;
-  const execFile = options.execFile ?? defaultExecFile;
-
-  if (platform === "win32") {
-    return async (signal) => {
-      signal?.throwIfAborted();
-      const result = await execFile(
-        "powershell.exe",
-        [
-          "-NoLogo",
-          "-NoProfile",
-          "-NonInteractive",
-          "-Command",
-          "Get-CimInstance Win32_Process | ForEach-Object { '{0} {1} {2} {3} {4}' -f $_.ProcessId, $_.ParentProcessId, $_.WorkingSetSize, ($_.KernelModeTime + $_.UserModeTime), $_.Name }",
-        ],
-        {
-          timeout: WINDOWS_TABLE_TIMEOUT_MS,
-          maxBuffer: TABLE_MAX_BUFFER_BYTES,
-          windowsHide: true,
-          signal,
-        },
-      );
-      return result.error ? undefined : parseWindowsProcessTable(result.stdout);
-    };
-  }
-
-  if (platform === "linux") {
-    const readDirectory = options.readdir ?? ((path: string) => readdir(path));
-    return async (signal) => {
-      signal?.throwIfAborted();
-      const readText =
-        options.readFile ?? ((path: string) => readFile(path, { encoding: "utf8", signal }));
-      let entries: string[];
-      try {
-        entries = await readDirectory("/proc");
-      } catch {
-        return undefined;
-      }
-      const rows = await Promise.all(
-        entries
-          .filter((entry) => /^\d+$/.test(entry))
-          .map(async (entry): Promise<ProcessResourceRow | undefined> => {
-            try {
-              signal?.throwIfAborted();
-              const [stat, status] = await Promise.all([
-                readText(`/proc/${entry}/stat`),
-                readText(`/proc/${entry}/status`),
-              ]);
-              const parsed = parseLinuxProcStat(stat);
-              if (!parsed) return undefined;
-              return { ...parsed, rssKb: parseLinuxVmRssKb(status) };
-            } catch {
-              // It is normal for the process to exit during reading and can be skipped.
-              return undefined;
-            }
-          }),
-      );
-      return rows.filter((row): row is ProcessResourceRow => row !== undefined);
-    };
-  }
-
-  return async (signal) => {
-    signal?.throwIfAborted();
-    const result = await execFile("ps", ["-axo", "pid=,ppid=,rss=,cputime=,comm="], {
-      timeout: POSIX_TABLE_TIMEOUT_MS,
-      maxBuffer: TABLE_MAX_BUFFER_BYTES,
-      signal,
-    });
-    return result.error ? undefined : parseDarwinProcessTable(result.stdout);
-  };
-}
 
 export interface ProcessResourceSample {
   pid: number;
@@ -274,60 +38,40 @@ export interface ProcessResourceSampler {
 }
 
 interface CreateProcessResourceSamplerOptions {
-  readTable: ProcessResourceTableReader;
   now?: () => number;
   logicalCpuCount?: number;
 }
 
 export function createProcessResourceSampler(
-  options: CreateProcessResourceSamplerOptions,
+  options: CreateProcessResourceSamplerOptions = {},
 ): ProcessResourceSampler {
   const now = options.now ?? Date.now;
   const logicalCpuCount = Math.max(1, options.logicalCpuCount ?? os.cpus().length);
-  const baselines = new Map<number, { cpuTimeMs: number; at: number; command: string }>();
+  const native = new (loadSysinfo().ProcessResourceSampler)(logicalCpuCount);
 
   return {
     async sample(signal) {
-      const rows = await options.readTable(signal);
-      // Late IO after closing the window cannot change the sampling baseline for the next time the window is opened.
       signal?.throwIfAborted();
-      if (!rows) return undefined;
-      const at = now();
-      const samples = new Map<number, ProcessResourceSample>();
-      for (const row of rows) {
-        const baseline = baselines.get(row.pid);
-        let cpuPercent = 0;
-        // PID reuse protection: if the command changes or the cputime goes backwards, it will be treated as a new process and the baseline will be re-established.
-        const reusable =
-          baseline &&
-          baseline.command === row.command &&
-          row.cpuTimeMs >= baseline.cpuTimeMs &&
-          at > baseline.at;
-        if (reusable) {
-          const elapsedMs = at - baseline.at;
-          cpuPercent = (((row.cpuTimeMs - baseline.cpuTimeMs) / elapsedMs) * 100) / logicalCpuCount;
+      // `cancel()` is the native half of the abort contract (spec invariant 6): it
+      // abandons the round mid-read and the pending `sample()` resolves to null.
+      // The listener is attached before `sample()` is called because the native side
+      // clears its own cancel flag synchronously on entry.
+      const onAbort = () => native.cancel();
+      signal?.addEventListener("abort", onAbort, { once: true });
+      try {
+        const rows = await native.sample(now());
+        // Same position as the predecessor's post-read check: a round that raced an
+        // abort must surface as AbortError, not as "no processes".
+        signal?.throwIfAborted();
+        if (!rows) {
+          return undefined;
         }
-        baselines.set(row.pid, { cpuTimeMs: row.cpuTimeMs, at, command: row.command });
-        samples.set(row.pid, {
-          pid: row.pid,
-          ppid: row.ppid,
-          rssKb: row.rssKb,
-          cpuPercent: Math.max(0, Math.min(100, roundPercent(cpuPercent))),
-          command: row.command,
-        });
+        return new Map(rows.map((row) => [row.pid, row]));
+      } finally {
+        signal?.removeEventListener("abort", onAbort);
       }
-      for (const [pid, baseline] of baselines) {
-        if (!samples.has(pid) && at - baseline.at > CPU_BASELINE_TTL_MS) {
-          baselines.delete(pid);
-        }
-      }
-      return samples;
     },
   };
-}
-
-function roundPercent(value: number): number {
-  return Number.isFinite(value) ? Math.round(value * 10) / 10 : 0;
 }
 
 export interface HostResourceUsageAgent {
@@ -416,6 +160,10 @@ function ownerToRow(
  * Attributes every descendant of the Host by its "nearest known ancestor":
  * MCP root pid → the matching plugin; Agent pid → the basic-service cli; no attribution → a basic-service host subprocess.
  * The Host itself is not in the result (its metrics come from main's app.getAppMetrics).
+ *
+ * Not ported: measured at 0.119 ms for 309 samples, which is 1 253x the FFI floor but
+ * less than the ~0.19 ms it costs to marshal 309 sample objects in and 309 attributed
+ * rows back out. See docs/specs/rust-native-sysinfo.md §2.3.
  */
 export function attributeHostProcessTree(
   options: AttributeHostProcessTreeOptions,

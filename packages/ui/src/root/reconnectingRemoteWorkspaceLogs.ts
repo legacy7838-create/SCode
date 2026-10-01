@@ -17,11 +17,6 @@ function getRemoteWorkspaceReconnectLogTargetSuffix(
   switch (target.kind) {
     case "ssh":
       return target.host;
-    case "wsl": {
-      const user = target.user?.trim();
-      const distro = target.distro ?? "default";
-      return user ? `${distro}-${user}` : distro;
-    }
   }
 }
 

@@ -1,5 +1,5 @@
 /* eslint-disable max-lines -- The cross-platform platform contract declares renderer capabilities in one place; OAuth and browser lifecycle must keep their desktop/web type contracts, so this MR does not split the platform boundary. */
-import type { RemoteTarget, SSHConnectOptions, WSLConnectOptions } from "./remoteTarget.js";
+import type { RemoteTarget, SSHConnectOptions } from "./remoteTarget.js";
 import type {
   LoadCliMcpFromUserDirectoryRequest,
   LoadCliMcpFromUserDirectoryResult,
@@ -220,9 +220,10 @@ export interface ApplicationIconRequest {
   locators: ApplicationIconLocator[];
 }
 
-export type OpenInEditorRemoteTarget =
-  | Pick<SSHConnectOptions, "kind" | "host" | "port" | "username" | "sshConfigAlias">
-  | Pick<WSLConnectOptions, "kind" | "distro" | "user">;
+export type OpenInEditorRemoteTarget = Pick<
+  SSHConnectOptions,
+  "kind" | "host" | "port" | "username" | "sshConfigAlias"
+>;
 
 export interface OpenInEditorOptions {
   remoteTarget?: OpenInEditorRemoteTarget;
@@ -270,33 +271,15 @@ export interface PrintPageToPdfResult {
 }
 
 export function createOpenInEditorRemoteTarget(target: RemoteTarget): OpenInEditorRemoteTarget {
-  switch (target.kind) {
-    case "ssh":
-      // openInEditor only needs to construct the connection identifier of VS Code Remote-SSH URI,
-      // Credential fields such as password/privateKeyPassphrase should not be passed through renderer/preload/main IPC.
-      return {
-        kind: "ssh",
-        host: target.host,
-        port: target.port,
-        username: target.username,
-        ...(target.sshConfigAlias?.trim() ? { sshConfigAlias: target.sshConfigAlias.trim() } : {}),
-      };
-    case "wsl": {
-      const user = target.user?.trim();
-      return {
-        kind: "wsl",
-        distro: target.distro,
-        ...(user ? { user } : {}),
-      };
-    }
-  }
-}
-
-export interface WSLDistro {
-  name: string;
-  isDefault: boolean;
-  state: string;
-  version: 1 | 2 | null;
+  // openInEditor only needs to construct the connection identifier of VS Code Remote-SSH URI,
+  // Credential fields such as password/privateKeyPassphrase should not be passed through renderer/preload/main IPC.
+  return {
+    kind: "ssh",
+    host: target.host,
+    port: target.port,
+    username: target.username,
+    ...(target.sshConfigAlias?.trim() ? { sshConfigAlias: target.sshConfigAlias.trim() } : {}),
+  };
 }
 
 export interface SSHConfigAliasOption {
@@ -581,9 +564,6 @@ export interface IPlatformService {
 
   /** Releases the remote session created in the current window */
   disposeRemoteSession(sessionId: string): Promise<void>;
-
-  /** Lists the WSL distributions available on this machine */
-  listWSLDistros(): Promise<WSLDistro[]>;
 
   /** Lists the SSH config aliases on this machine that can be used to fill the form quickly */
   listSSHConfigAliases(): Promise<SSHConfigAliasOption[]>;

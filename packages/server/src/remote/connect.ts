@@ -18,7 +18,7 @@ import { deployServer } from "./deploy.js";
 import type { DeployOptions } from "./deploy.js";
 import { assertSupportedRemoteEnvironment } from "@zcode/server/remote/remotePlatformSupport.js";
 import { quotePosixShellArg } from "./posixShell.js";
-import { formatWslProxyForLog } from "./wslProxy.js";
+import { formatProxyUrlForLog } from "./proxyUrlForLog.js";
 
 const BACKEND_DISCONNECT_EXIT_CODE = -1;
 
@@ -340,9 +340,9 @@ async function resolveRemoteRuntimeNetwork(
     if (resolvedProxy !== network.httpProxy) {
       log(
         "resolved remote runtime proxy via wsl-host-gateway",
-        formatWslProxyForLog(network.httpProxy),
+        formatProxyUrlForLog(network.httpProxy),
         "->",
-        formatWslProxyForLog(resolvedProxy),
+        formatProxyUrlForLog(resolvedProxy),
       );
     }
     return { ...network, httpProxy: resolvedProxy };

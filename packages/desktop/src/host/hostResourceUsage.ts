@@ -2,7 +2,6 @@ import type { IZCodeAgentService } from "@zcode/services";
 import {
   attributeHostProcessTree,
   createProcessResourceSampler,
-  createProcessResourceTableReader,
   type ProcessResourceSampler,
 } from "@zcode/services/node";
 import {
@@ -36,9 +35,7 @@ export function createHostResourceUsageResponder(
 ): HostResourceUsageResponder {
   const hostPid = options.hostPid ?? process.pid;
   const now = options.now ?? Date.now;
-  const sampler =
-    options.sampler ??
-    createProcessResourceSampler({ readTable: createProcessResourceTableReader() });
+  const sampler = options.sampler ?? createProcessResourceSampler();
   let active: { requestId: string; controller: AbortController } | undefined;
 
   async function respond(

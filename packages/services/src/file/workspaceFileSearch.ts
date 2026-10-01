@@ -7,6 +7,10 @@ import {
   type WorkspaceFileSearchCandidate,
 } from "@zcode/shared/workspaceFileSearch";
 
+
+/** The decoded, scored candidates a packed workspace index expands into. */
+export type WorkspaceFileSearchCandidates = WorkspaceFileSearchCandidate[];
+
 /** Decodes the existing packed index in batches, so the Renderer's long task is not simply moved to the shared Host. */
 export async function buildHostFileSearchCandidates(packed: string, rootPath: string) {
   const candidates: WorkspaceFileSearchCandidate[] = [];

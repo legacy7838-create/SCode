@@ -78,29 +78,15 @@ export function useTaskListItemContextActions({
       remoteSessionId || workspaceIdentity?.trim() || workspaceOpenTarget.isRemoteWorkspace,
     );
     if (hasRemoteWorkspaceScope) {
-      if (workspaceOpenTarget.remoteTarget?.kind !== "wsl") {
-        // The remote project path is not a host machine path. When it cannot be precisely resolved to WSL, it must fail closed
-        // to prevent SSH Linux paths from incorrectly landing in the native Windows, macOS, or Linux file manager.
-        logger.warn("[TaskListItem] remote workspace does not support the local file manager", {
-          taskId,
-          path: workspacePath,
-          remoteKind: workspaceOpenTarget.remoteTarget?.kind ?? "unresolved",
-        });
-        return;
-      }
-
-      const result = await platform.openInEditor("explorer", workspacePath, {
-        pathKind: "directory",
-        remoteTarget: workspaceOpenTarget.remoteTarget,
-        workspaceIdentity,
+      // A remote workspace path is never a host path. The WSL branch that used
+      // to translate it through Explorer's UNC mapping is gone
+      // (docs/specs/remove-wsl.md), so every remote kind now fails closed rather
+      // than landing an SSH Linux path in the local file manager.
+      logger.warn("[TaskListItem] remote workspace does not support the local file manager", {
+        taskId,
+        path: workspacePath,
+        remoteKind: workspaceOpenTarget.remoteTarget?.kind ?? "unresolved",
       });
-      if (!result.success) {
-        logger.warn("[TaskListItem] failed to open WSL workspace path", {
-          taskId,
-          path: workspacePath,
-          error: result.error ?? "unknown-error",
-        });
-      }
       return;
     }
 

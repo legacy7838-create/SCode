@@ -12,18 +12,6 @@ interface WorkspaceEditorSelectionState {
   selectionKind: Exclude<WorkspaceEditorSelectionKind, "explicit">;
 }
 
-export function resolveWorkspaceFileManagerEditor(
-  availableEditors: EditorInfo[],
-  remoteTarget?: RemoteTarget | OpenInEditorRemoteTarget,
-): EditorInfo | null {
-  // WSL's Explorer already has UNC mapping capabilities, "Open in Explorer" should be the same as
-  // "Open with → Explorer" reuses the same editor entry; SSH still fails to close.
-  if (remoteTarget?.kind !== "wsl") {
-    return null;
-  }
-  return availableEditors.find((editor) => editor.id === "explorer") ?? null;
-}
-
 function filterEditorsByIdOrder(
   installedEditors: EditorInfo[],
   orderedIds: string[],

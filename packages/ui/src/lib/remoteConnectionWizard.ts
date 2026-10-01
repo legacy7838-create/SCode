@@ -1,5 +1,5 @@
 import type { RemoteAssetInstallMode, RemoteTarget } from "@zcode/shared";
-import { isValidWslUser, normalizeRemoteResourcePackageSelection } from "@zcode/shared";
+import { normalizeRemoteResourcePackageSelection } from "@zcode/shared";
 import type { SSHAuthMethod } from "@/hooks/useRemoteConnectionForm.js";
 import type { RemoteWizardStep } from "@/RemoteConnectionWizardChrome.js";
 
@@ -18,7 +18,6 @@ interface RemoteConnectionFormSnapshot {
   password: string;
   privateKeyPath: string;
   privateKeyPassphrase: string;
-  wslDistro: string;
   wslUser?: string;
 }
 
@@ -106,21 +105,6 @@ export function buildRemoteTarget(
             : {}),
         },
       };
-    case "wsl": {
-      const wslUser = snapshot.wslUser?.trim();
-      if (wslUser && !isValidWslUser(wslUser)) {
-        return {
-          errorMessage: intl.formatMessage({ id: "wsl.validation.invalidUser" }),
-        };
-      }
-      return {
-        target: {
-          kind: "wsl",
-          distro: snapshot.wslDistro || undefined,
-          ...(wslUser ? { user: wslUser } : {}),
-        },
-      };
-    }
   }
 }
 

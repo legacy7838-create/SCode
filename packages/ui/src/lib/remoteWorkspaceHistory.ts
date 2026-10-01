@@ -55,43 +55,17 @@ export function hasRemoteWorkspaceIdentity(entry: {
   return Boolean(entry.remoteSessionId || entry.remoteTarget || entry.workspaceIdentity);
 }
 
-type WslRemoteTargetLike = Extract<RemoteTarget | RemoteTargetSnapshot, { kind: "wsl" }>;
-
-function getWslRemoteTargetUser(target: WslRemoteTargetLike): string | undefined {
-  return target.user?.trim() || undefined;
-}
-
-function formatWslRemoteTargetAuthority(target: WslRemoteTargetLike): string {
-  const user = getWslRemoteTargetUser(target);
-  if (target.distro) {
-    return user ? `wsl:${target.distro}:${user}` : `wsl:${target.distro}`;
-  }
-
-  return user ? `wsl:default:${user}` : "wsl";
-}
 
 export function formatRemoteWorkspaceTargetSubtitle(
   target: RemoteTarget | RemoteTargetSnapshot,
 ): string {
-  switch (target.kind) {
-    case "ssh":
-      return `SSH · ${target.username}@${target.host}${target.port ? `:${target.port}` : ""}`;
-    case "wsl": {
-      const user = getWslRemoteTargetUser(target);
-      return ["WSL", target.distro, user].filter(Boolean).join(" · ");
-    }
-  }
+  return `SSH · ${target.username}@${target.host}${target.port ? `:${target.port}` : ""}`;
 }
 
 export function formatRemoteWorkspaceHeaderHostLabel(
   target: RemoteTarget | RemoteTargetSnapshot,
 ): string {
-  switch (target.kind) {
-    case "ssh":
-      return target.port && target.port !== 22 ? `${target.host}:${target.port}` : target.host;
-    case "wsl":
-      return formatWslRemoteTargetAuthority(target);
-  }
+  return target.port && target.port !== 22 ? `${target.host}:${target.port}` : target.host;
 }
 
 export function formatRemoteWorkspaceDisplayLabel(
@@ -120,13 +94,6 @@ function getRemoteWorkspaceAuthorityKey(target: RemoteTarget | RemoteTargetSnaps
       const normalizedUsername = target.username.trim();
       const normalizedPort = target.port ?? 22;
       return ["ssh", normalizedHost, normalizedPort, normalizedUsername].join(":");
-    }
-    case "wsl": {
-      // WSL default user has different file permission boundaries than root/other explicit users,
-      // Workspace identity must distinguish explicit users to avoid session, cache, and queue concatenation.
-      const user = getWslRemoteTargetUser(target);
-      const base = ["wsl", target.distro ?? "default"];
-      return user ? [...base, user].join(":") : base.join(":");
     }
   }
 }
@@ -198,14 +165,6 @@ function createRemoteTargetSnapshot(
               : buildRemoteWorkspacePrivateKeyPassphraseCredentialKey(workspaceKey)
             : undefined,
       };
-    case "wsl": {
-      const user = target.user?.trim();
-      return {
-        kind: "wsl",
-        distro: target.distro,
-        ...(user ? { user } : {}),
-      };
-    }
   }
 }
 
@@ -230,12 +189,6 @@ export function createRemoteTargetFromSnapshot(
         ...(credentials.privateKeyPassphrase
           ? { privateKeyPassphrase: credentials.privateKeyPassphrase }
           : {}),
-      };
-    case "wsl":
-      return {
-        kind: "wsl",
-        distro: snapshot.distro,
-        ...(snapshot.user ? { user: snapshot.user } : {}),
       };
   }
 }

@@ -18,7 +18,10 @@ import {
   type WorkspaceHookSourceInput,
   type WorkspaceHooksConfig,
 } from "@zcode/shared/workspace-hook-discovery";
-import { parseWorkspaceHookTrustStoreContent } from "@zcode/shared/workspace-hook-trust-store-file";
+import {
+  readWorkspaceHookTrustDigests,
+  resolveWorkspaceHookTrustStorePath,
+} from "@zcode/rust/config";
 import { createServiceLogger, type ServiceLogger } from "#src/logger/serviceLogger.js";
 import type { IHooksService } from "./hooks.js";
 import { atomicWriteWorkspaceHookConfig } from "./workspaceHookConfigMutation.js";
@@ -158,15 +161,10 @@ async function readPersistentWorkspaceHookTrustDigests(
   const userConfig = (await readJsonFile<Record<string, unknown>>(getConfigPath("zcode"))) ?? {};
   const storage = isRecord(userConfig.storage) ? userConfig.storage : {};
   const configured = typeof storage.dir === "string" ? storage.dir.trim() : "";
-  const home = resolveUserHomeDir();
-  const storageRoot = configured
-    ? configured.startsWith("~/")
-      ? join(home, configured.slice(2))
-      : isAbsolute(configured)
-        ? resolve(configured)
-        : resolve(home, configured)
-    : join(home, ".zcode");
-  const trustFilePath = join(storageRoot, "security", "workspace-hook-trust-v1.json");
+  // Resolved natively (spec T22-T25) so this reader and the CLI's adapter cannot
+  // disagree about *which file* is meant. The predecessor resolved it inline, and
+  // that duplication is exactly what its own comment above records as unresolved.
+  const trustFilePath = resolveWorkspaceHookTrustStorePath(resolveUserHomeDir(), configured);
 
   // Asynchronous reading + ENOENT distinction: no existsSync preflight required - synchronous calls will block the service
   // thread, and there is a TOCTOU window between "Check→Read"; the ENOENT of readFile itself is
@@ -192,23 +190,20 @@ async function readPersistentWorkspaceHookTrustDigests(
     return { digests: new Set<string>(), corrupt: true };
   }
 
-  // JSON syntax errors and schema verification failures are collectively judged as corrupt (the same as runtime/adapters).
-  const parsedStore = parseWorkspaceHookTrustStoreContent(content);
-  if (parsedStore.status === "invalid") {
+  // The strict parse, the fail-closed classification and the per-workspace digest
+  // projection all live in `zcode-config` (docs/specs/rust-native-config.md §3.1).
+  // This layer keeps only the transport, because ENOENT has to come from the read
+  // itself: a `existsSync` preflight would introduce a TOCTOU window between the
+  // check and the read, and the ENOENT of `readFile` is the authoritative signal.
+  const read = readWorkspaceHookTrustDigests(content, workspaceIdentity);
+  if (read.corrupt) {
     logger.warn(
       undefined,
-      "Workspace Hook Trust store does not match the schema, failing closed and ignoring all persisted trust records",
-      { path: trustFilePath },
+      "Workspace Hook Trust store is corrupt, failing closed and ignoring all persisted trust records",
+      { path: trustFilePath, reason: read.reason },
     );
-    return { digests: new Set<string>(), corrupt: true };
   }
-
-  const digests = new Set<string>(
-    parsedStore.file.records
-      .filter((record) => record.workspaceIdentity === workspaceIdentity)
-      .map((record) => record.hookDeclarationDigest),
-  );
-  return { digests, corrupt: false };
+  return { digests: read.digests, corrupt: read.corrupt };
 }
 
 async function loadHooksImpl(
