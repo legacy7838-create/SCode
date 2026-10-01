@@ -15,7 +15,7 @@
  * write-read path of run/actor/node/event), and each carries a long argument for "why this table is the data source, why this is the sort order". The same split as dwf-journal-codecs.ts.
  */
 
-import type { DatabaseSync } from "node:sqlite";
+import type { DwfJournalClient } from "@zcode/rust/events";
 import type { NodeRecord } from "@zcode/dynamic-workflow";
 import { decodeNode, type DwfEventRow, type DwfNodeRow } from "./dwf-journal-codecs.js";
 
@@ -62,10 +62,8 @@ export interface DwfArtifactItem {
  * Failed publications are in the result too (`status: "failed"` + `error`): the read surface has to be able to say "this publication did not
  * succeed", and filtering it out amounts to making a user-visible failure not exist on any surface.
  */
-export function listArtifactRows(db: DatabaseSync, runId: string): NodeRecord[] {
-  const rows = db
-    .prepare("select * from dwf_node where run_id = ? and kind = 'artifact' order by id")
-    .all(runId) as unknown as DwfNodeRow[];
+export function listArtifactRows(db: DwfJournalClient, runId: string): NodeRecord[] {
+  const rows = db.exec<DwfNodeRow[]>("listArtifactRows", { runId });
   return rows.map(decodeNode);
 }
 
@@ -86,33 +84,19 @@ export function listArtifactRows(db: DatabaseSync, runId: string): NodeRecord[] 
  * Untagged reports are naturally excluded: their payload simply has no `artifactId` key, `json_extract` yields NULL, and SQL's `= ?` does not match NULL.
  */
 export function listArtifactItems(
-  db: DatabaseSync,
+  db: DwfJournalClient,
   runId: string,
   artifactId: string,
   query: DwfArtifactItemsQuery,
 ): DwfArtifactItem[] {
-  // limit ≤ 0 is an empty page (the `limit -1` full idiom of `listEvents` does not apply to this query - Kanban's
-  // The number surface is always bounded). Floor here, ceiling not: see {@link DwfArtifactItemsQuery}.limit.
+  // limit ≤ 0 is an empty page (floor here, no ceiling — see {@link DwfArtifactItemsQuery.limit}).
   if (query.limit <= 0) return [];
-  const after = query.afterSequence;
-  const cursor = after === undefined ? "" : " and sequence > ?";
-  const rows = db
-    .prepare(
-      `
-      select sequence, payload_json from dwf_event
-      where run_id = ?
-        and type = 'report'
-        and json_extract(payload_json, '$.artifactId') = ?${cursor}
-      order by sequence
-      limit ?
-      `,
-    )
-    .all(
-      runId,
-      artifactId,
-      ...(after === undefined ? [] : [after]),
-      query.limit,
-    ) as unknown as Pick<DwfEventRow, "payload_json" | "sequence">[];
+  const rows = db.exec<Pick<DwfEventRow, "payload_json" | "sequence">[]>("listArtifactItems", {
+    runId,
+    artifactId,
+    afterSequence: query.afterSequence,
+    limit: query.limit,
+  });
   return rows.map((row) => {
     // The payload is the `RunEvent` that is stringified by appendEvent as is, so the narrow shape here is the same as
     // `{ type: "report"; instance: InstanceRef; item: unknown; artifactId?: string }` has the same origin.

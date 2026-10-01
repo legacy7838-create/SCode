@@ -3075,3 +3075,23 @@ mod startup_error_tests {
         assert_eq!(parsed["k"], "open_failed");
     }
 }
+
+/// Checkpoints and truncates the task-index WAL, then closes.
+///
+/// The only reason this exists is the **fixture producer**
+/// (`scripts/capture-task-read-ground-truth.mts`): it copies the database file
+/// into a committed fixture, and a WAL database keeps everything written after the
+/// last checkpoint in the `-wal` sidecar. Copying the main file alone produced a
+/// fixture silently missing every task the read sweep selects.
+///
+/// It used to be the one `node:sqlite` import in `scripts/`, which existed only
+/// for this `PRAGMA wal_checkpoint(TRUNCATE)`. Doing it here keeps the repository
+/// free of a SQLite driver in JavaScript, with no fallback (spec §28 invariants 1-2).
+#[napi]
+pub fn checkpoint_task_index_wal(db_path: String) -> Result<()> {
+    let conn = rusqlite::Connection::open(&db_path)
+        .map_err(|error| to_napi_error(StoreError::from(error).to_string()))?;
+    conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")
+        .map_err(|error| to_napi_error(StoreError::from(error).to_string()))?;
+    Ok(())
+}

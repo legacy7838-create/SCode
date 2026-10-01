@@ -130,7 +130,12 @@ Ordered by how much they block a real cutover.
    **Resolved** by reusing the Web client's transport: the renderer connects the
    full `IServiceAccessor` over a WebSocket to `@zcode/server`
    (`connectViaWebSocket`), so no transferable port is needed. See "UI status".
-2. **The remaining ~94 IPC commands** and ~94 `IPlatformService` members.
+2. **The remaining IPC surface.** ~~The remaining ~94 IPC commands~~ Re-measured 2026-10-01, after
+   the Rung 1 work: all 59 written `#[tauri::command]` are now in `generate_handler!` (the missing
+   `pub mod editor;` was the reason `editor.rs`/`terminal.rs` had never compiled), and the platform
+   adapter grew from 8 to 21 `invoke()` sites. What remains is the ~156 `IPlatformService` members
+   that still return web-shaped fallbacks, plus the IPC channels that are not platform members.
+   The ordered ladder is `CUTOVER_SPEC.md` §8.
 3. ~~**Scheduler cron engine.**~~ **Resolved.** `computeAutomationNextRunAt` is
    now `zcode-cron` (`packages/rust/crates/zcode-cron`), linked as an rlib
    because a Tauri process is not Node and cannot `require()` a `.node` — the
@@ -331,6 +336,15 @@ before they can be honoured.
 > `@zcode/server` can load its native git/diff binaries.
 
 ## Known open issues
+
+- **The Tauri test suite now runs, and 15 of its tests fail.** The 25 compile errors that
+  prevented `cargo test` from running at all are fixed — they predated this work (the test target,
+  like `editor.rs`, had never been compiled). Status is **195 passed / 15 failed**. The failures are
+  newly *visible*, not newly introduced: a WSL column parser that returns the name `"a l p h a"`,
+  SSH block matching and `~` expansion, a session-id ordering fault, a URI authority being
+  double-encoded, and one genuine spec question about the dedupe window boundary. Full
+  categorisation is in `CUTOVER_SPEC.md` §8.7. The "142 tests pass" evidence quoted above predates
+  this tree and must not be quoted until the suite is green.
 
 - ~~**Recurring misfire does not advance.**~~ **Fixed** — see "Not yet ported"
   item 3. `scheduler_store::tests::a_missed_recurring_fire_is_rescheduled_rather_than_re_claimed_forever`

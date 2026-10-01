@@ -5,9 +5,12 @@
 //! closed set whose SQL is ported verbatim from the legacy repositories — there
 //! is no raw-SQL escape hatch.
 
+mod debug;
+mod dwf_journal;
 mod error;
 mod jsjson;
 mod migrate;
+mod migrations;
 mod ops;
 mod store;
 
@@ -69,13 +72,12 @@ impl EventsStore {
   }
 
   /// Runs the native migration state machine to its next yield point
-  /// (progress | delay | done). `migrations` = JSON `[{id, sql, appVersion}]` —
-  /// SQL text is data supplied by TS (§4.4).
+  /// (progress | delay | done). The frozen migration list is owned by the crate
+  /// (`migrations.rs`), so no migration SQL text crosses the boundary.
   #[napi]
-  pub fn migrate_step(&self, migrations: String) -> AsyncTask<MigrateStepTask> {
+  pub fn migrate_step(&self) -> AsyncTask<MigrateStepTask> {
     AsyncTask::new(MigrateStepTask {
       inner: self.inner.clone(),
-      migrations,
     })
   }
 
@@ -151,7 +153,6 @@ fn into_napi<T>(result: Result<T, StoreError>) -> TaskResult<T> {
 
 pub struct MigrateStepTask {
   inner: Arc<StoreInner>,
-  migrations: String,
 }
 
 impl Task for MigrateStepTask {
@@ -159,7 +160,7 @@ impl Task for MigrateStepTask {
   type JsValue = MigrationStepResult;
 
   fn compute(&mut self) -> TaskResult<Self::Output> {
-    let step = into_napi(self.inner.migrate_step(&self.migrations))?;
+    let step = into_napi(self.inner.migrate_step())?;
     Ok(MigrationStepResult {
       kind: step.kind.to_string(),
       progress: step.progress,

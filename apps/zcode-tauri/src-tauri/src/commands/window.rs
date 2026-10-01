@@ -98,12 +98,6 @@ pub fn get_window_state(
         .ok_or_else(|| CommandError::WindowUnavailable(window.label().to_string()))
 }
 
-/// List every live window and its visible state.
-#[tauri::command]
-pub fn list_windows(state: State<'_, Arc<AppState>>) -> Vec<(String, WindowStateWire)> {
-    state.snapshot().into_iter().collect()
-}
-
 /// `zcode:ActivateOrSetWorkspace` — reveal the primary window and route the
 /// workspace to it. Electron returned `{ activated: boolean }`; the same shape
 /// is kept so the renderer contract is unchanged.
@@ -131,15 +125,4 @@ pub fn activate_or_set_workspace(
         }
         None => Ok(ActivateResult { activated: false }),
     }
-}
-
-/// Ask a specific window to focus one of its tabs.
-#[tauri::command]
-pub fn focus_tab(
-    app: AppHandle,
-    window: WebviewWindow,
-    path: String,
-) -> CommandResult<()> {
-    app.emit_to(window.label(), events::FOCUS_TAB, path)
-        .map_err(|e| CommandError::Platform(e.to_string()))
 }

@@ -9,6 +9,7 @@
     "./git": "./src/git.ts",
     "./diff": "./src/diff.ts",
     "./codec": "./src/codec.ts",
+    "./config": "./src/config.ts",
     "./cron": "./src/cron.ts",
     "./task-index": "./src/taskIndex.ts",
     "./off-peak-repository": "./src/offPeakRepository.ts",
@@ -18,8 +19,12 @@
     "./automation-repository": "./src/automationRepository.ts",
     "./mcp-config": "./src/mcpConfig.ts",
     "./events": "./src/events.ts",
+    "./chrome-cookies": "./src/chromeCookies.ts",
     "./event-coalescer": "./src/eventCoalescer.ts",
     "./markdown": "./src/markdown.ts",
+    "./fs": "./src/fs.ts",
+    "./terminal-profile": "./src/terminalProfile.ts",
+    "./sysinfo": "./src/sysinfo.ts",
     "./package.json": "./package.json"
   },
   "scripts": {

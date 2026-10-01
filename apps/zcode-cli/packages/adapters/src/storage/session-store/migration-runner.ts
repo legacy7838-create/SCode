@@ -42,6 +42,9 @@ export interface AsyncSqliteMigrationOptions {
  * loop shape, `{delayMs}` timers, progress transport and error normalization
  * stay here, exactly as `runSqliteSessionMigrationsAsync` behaved).
  *
+ * The frozen migration list is owned by the crate (`migrations.rs`); the runner
+ * no longer carries SQL text, so no migration SQL lives in TypeScript.
+ *
  * The legacy sync runner (`runSqliteSessionMigrations` + `Atomics.wait`) is
  * deleted: a synchronous open would block the event loop through the whole
  * migration.
@@ -49,19 +52,11 @@ export interface AsyncSqliteMigrationOptions {
 export async function runSqliteSessionMigrationsAsync(
   client: EventsClient,
   dbPath: string,
-  migrations: readonly { id: string; sql: string; appVersion: string }[],
   options: AsyncSqliteMigrationOptions = {},
 ): Promise<void> {
-  const migrationsJson = JSON.stringify(
-    migrations.map((migration) => ({
-      id: migration.id,
-      sql: migration.sql,
-      appVersion: migration.appVersion,
-    })),
-  );
   try {
     for (;;) {
-      const step = await client.migrateStep(migrationsJson);
+      const step = await client.migrateStep();
       if (step.kind === "done") return;
       if (step.kind === "delay") {
         await new Promise<void>((resolve) => setTimeout(resolve, step.delayMs ?? 1));

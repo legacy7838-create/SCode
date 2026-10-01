@@ -67,12 +67,23 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_deep_link::init())
-        // Required by `commands::native::show_notification`; without this the
+        // Required by `commands::session::show_task_notification`; without this the
         // `app.notification()` lookup panics at first use.
         .plugin(tauri_plugin_notification::init())
         // Main-side zoom registry: `WebviewWindow::set_zoom` has no getter, so
         // `SurfaceState` is the only source of truth for reads.
-        .manage(commands::surface::SurfaceState::default());
+        .manage(commands::surface::SurfaceState::default())
+        // Per-window session and notification-routing state for
+        // `commands::session` (CUTOVER_SPEC.md §3 A4). Kept separate from
+        // `SurfaceState` because the two have different lifetimes: a window can
+        // outlive a renderer reload, and a reload must not lose session identity
+        // (`desktopWindowLifecycle.ts:130-163`).
+        .manage(commands::session::SessionState::default())
+        // Live pty handles for `commands::terminal` (CUTOVER_SPEC.md §3 A3). The
+        // registry is process-wide rather than per-window because a pty outlives the
+        // window that opened it — the same lifetime rule the Electron scheduler
+        // needed supervision for (`PORT_STATUS.md:39-44`).
+        .manage(commands::terminal::TerminalRegistry::default());
 
     // Deep-link handler. Electron routed `zcode://` through
     // `app.on("open-url")` plus a Linux `.desktop` registration
@@ -222,21 +233,36 @@ pub fn run() {
         })
         .on_window_event(|_window, _event| {})
         .invoke_handler(tauri::generate_handler![
-            commands::app::get_app_info,
             commands::app::show_current_window,
             commands::app::request_quit,
-            commands::app::get_quit_kind,
-            commands::app::describe_runtime,
             commands::window::notify_renderer_ready,
             commands::window::sync_window_tabs,
             commands::window::sync_window_unread_count,
             commands::window::sync_active_task_session,
             commands::window::get_window_state,
-            commands::window::list_windows,
             commands::window::activate_or_set_workspace,
-            commands::window::focus_tab,
-            commands::fs::read_text_file,
             commands::fs::create_temp_text_attachment,
+            commands::fs::save_download_file,
+            commands::editor::get_installed_editors,
+            commands::editor::open_in_editor,
+            commands::editor::open_external_file,
+            commands::editor::reveal_in_file_manager,
+            commands::terminal::terminal_create,
+            commands::terminal::terminal_write,
+            commands::terminal::terminal_resize,
+            commands::terminal::terminal_kill,
+            commands::terminal::terminal_kill_all,
+            commands::terminal::terminal_list,
+            commands::session::begin_renderer_session,
+            commands::session::get_renderer_session,
+            commands::session::detach_renderer_session,
+            commands::session::bind_remote_workspace_session_context,
+            commands::session::connect_remote,
+            commands::session::cancel_pending_remote_connection,
+            commands::session::dispose_remote_session,
+            commands::session::show_task_notification,
+            commands::session::get_desktop_session_activity,
+            commands::session::list_ssh_config_aliases,
             commands::mcp_config::load_mcp_from_user_directory,
             commands::mcp_config::save_mcp_to_user_directory,
             commands::mcp_config::migrate_legacy_common_mcp,
@@ -244,14 +270,8 @@ pub fn run() {
             commands::native::pick_file,
             commands::native::save_file,
             commands::native::open_external,
-            commands::native::open_in_file_manager,
-            commands::native::show_notification,
             commands::surface::set_desktop_zoom,
             commands::surface::get_desktop_zoom,
-            commands::surface::set_window_title,
-            commands::surface::get_window_bounds,
-            commands::surface::set_window_bounds,
-            commands::rpc::get_rpc_endpoint,
             commands::urls::decide_external_open,
             commands::urls::decide_navigation,
             commands::urls::is_coding_plan_webview,

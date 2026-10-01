@@ -17,7 +17,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { createRequire } from "node:module";
+import { checkpointTaskIndexWal } from "../packages/rust/src/taskIndex.ts";
 
 import { TaskIndexRepo } from "../packages/services/src/session/taskIndexRepo.ts";
 
@@ -129,15 +129,10 @@ repo.close();
 // main file. Copying `dbPath` alone produced a fixture silently missing every task the sweep
 // selects, which showed up as 18 mismatches all of the form "the Rust replay is missing a row".
 //
-// The checkpoint uses `node:sqlite` directly: this is the harness that *produces* the fixture, and
-// the assertion path is Rust. Nothing in the shipped code reads sqlite from Node.
-{
-  const require = createRequire(import.meta.url);
-  const { DatabaseSync } = require("node:sqlite") as typeof import("node:sqlite");
-  const connection = new DatabaseSync(dbPath);
-  connection.exec("PRAGMA wal_checkpoint(TRUNCATE)");
-  connection.close();
-}
+// The checkpoint runs natively: this is the harness that *produces* the fixture, and the
+// assertion path is Rust. Nothing in the shipped code reads SQLite from Node — the last
+// `node:sqlite` import in `scripts/` is gone (spec §28).
+checkpointTaskIndexWal(dbPath);
 writeFileSync(
   join(process.cwd(), "packages/rust/crates/zcode-task-index/tests/fixtures/task_read_seed.sqlite"),
   readFileSync(dbPath),

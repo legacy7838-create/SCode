@@ -11,11 +11,14 @@
 //! TypeScript payload interfaces are reused verbatim — no reshaping in between.
 
 pub mod app;
+pub mod editor;
 pub mod fs;
 pub mod mcp_config;
 pub mod native;
 pub mod rpc;
+pub mod session;
 pub mod surface;
+pub mod terminal;
 pub mod urls;
 pub mod window;
 

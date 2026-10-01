@@ -2,7 +2,8 @@ import { existsSync } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import type { DebugSnapshotClient } from "@zcode/rust/events";
+import { createDebugSnapshot } from "@zcode/rust/events";
 import type {
   DbMessageRecord,
   DbObservation,
@@ -70,9 +71,12 @@ export function loadSqlite(options: ObservationOptions): SourceLoadResult<DbObse
     };
   }
 
-  let db: DatabaseSync | undefined;
+  // Read-only native connection (spec §14.5): the three observation queries live in
+  // the zcode-events crate. It is a separate handle on purpose — the observation
+  // server must never take a write lock on the live session DB.
+  let db: DebugSnapshotClient | undefined;
   try {
-    db = new DatabaseSync(dbPath, { readOnly: true });
+    db = createDebugSnapshot(dbPath);
     const observation: DbObservation = {
       sessions: readSessions(db),
       messages: readMessages(db),
@@ -192,18 +196,34 @@ function toEventRecord(record: JsonRecord): EventRecord | null {
   };
 }
 
-function readSessions(db: DatabaseSync): DbSessionRecord[] {
-  const rows = db
-    .prepare(
-      `
-      select id, project_id, title, directory, time_created, time_updated
-      from session
-      order by time_updated desc
-      limit 200
-      `,
-    )
-    .all() as Record<string, unknown>[];
+interface SessionRow {
+  id: unknown;
+  project_id: unknown;
+  title: unknown;
+  directory: unknown;
+  time_created: unknown;
+  time_updated: unknown;
+}
 
+interface MessageRow {
+  id: unknown;
+  session_id: unknown;
+  time_created: unknown;
+  time_updated: unknown;
+  data: unknown;
+}
+
+interface PartRow {
+  id: unknown;
+  message_id: unknown;
+  session_id: unknown;
+  time_created: unknown;
+  time_updated: unknown;
+  data: unknown;
+}
+
+function readSessions(db: DebugSnapshotClient): DbSessionRecord[] {
+  const rows = db.rows<SessionRow>("debugSessions");
   return rows.map((row) => ({
     id: String(row.id),
     projectId: String(row.project_id),
@@ -214,18 +234,8 @@ function readSessions(db: DatabaseSync): DbSessionRecord[] {
   }));
 }
 
-function readMessages(db: DatabaseSync): DbMessageRecord[] {
-  const rows = db
-    .prepare(
-      `
-      select id, session_id, time_created, time_updated, data
-      from message
-      order by time_created asc, rowid asc
-      limit 1000
-      `,
-    )
-    .all() as Record<string, unknown>[];
-
+function readMessages(db: DebugSnapshotClient): DbMessageRecord[] {
+  const rows = db.rows<MessageRow>("debugMessages");
   return rows.map((row) => {
     const data = parseData(row.data);
     return {
@@ -239,18 +249,8 @@ function readMessages(db: DatabaseSync): DbMessageRecord[] {
   });
 }
 
-function readParts(db: DatabaseSync): DbPartRecord[] {
-  const rows = db
-    .prepare(
-      `
-      select id, message_id, session_id, time_created, time_updated, data
-      from part
-      order by time_created asc, id asc
-      limit 2000
-      `,
-    )
-    .all() as Record<string, unknown>[];
-
+function readParts(db: DebugSnapshotClient): DbPartRecord[] {
+  const rows = db.rows<PartRow>("debugParts");
   return rows.map((row) => {
     const data = parseData(row.data);
     return {

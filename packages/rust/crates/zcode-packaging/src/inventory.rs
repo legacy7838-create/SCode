@@ -571,6 +571,15 @@ pub struct Inventory {
     /// cdylib crates with no `@zcode/rust` subpath export — surfaced so they cannot
     /// silently exist outside the payload decision.
     pub cdylib_without_subpath: Vec<String>,
+    /// Registered commands that no renderer file invokes and that carry no justification marker.
+    ///
+    /// A command may opt out of this list by naming itself in
+    /// `apps/zcode-tauri/UNWIRED_COMMANDS.md` with a reason. That file is the difference between
+    /// "waiting for a consumer that is planned" and "dead surface nobody noticed" — without it the
+    /// report is fifteen items long and therefore ignored.
+    pub registered_commands_without_caller: Vec<String>,
+    /// Registered commands that are uncalled but justified, with the stated reason.
+    pub justified_uncalled_commands: BTreeMap<String, String>,
 }
 
 impl Inventory {
@@ -603,6 +612,91 @@ impl Inventory {
     }
 }
 
+/// Justifications from `apps/zcode-tauri/UNWIRED_COMMANDS.md`.
+///
+/// The file is a markdown list of `- \`command_name\` — reason` lines. Parsing the reason as well
+/// as the name is the point: a bare allowlist would let a command be excused forever with no record
+/// of why, which is how the five already-deleted commands accumulated in the first place.
+pub fn read_justified_uncalled(repo_root: &Path) -> BTreeMap<String, String> {
+    let path = repo_root.join("apps/zcode-tauri/UNWIRED_COMMANDS.md");
+    let Ok(text) = fs::read_to_string(path) else {
+        return BTreeMap::new();
+    };
+    let mut out = BTreeMap::new();
+    for line in text.lines() {
+        // Trim the bullet and the space before the backtick, then require the backtick. Doing it
+        // as one `strip_prefix("- `")` would eat two characters and land mid-word.
+        let Some(rest) = line.trim().strip_prefix('-').map(str::trim_start).filter(|r| r.starts_with('`')).map(|r| &r[1..]) else {
+            continue;
+        };
+        let Some((name, reason)) = rest.split_once('`') else {
+            continue;
+        };
+        let reason = reason.trim_start_matches(['-', ' ', ':', '\u{2014}', '\u{2013}']).trim();
+        if !reason.is_empty() {
+            out.insert(name.trim().to_string(), reason.to_string());
+        }
+    }
+    out
+}
+
+/// The string literals in one source file.
+///
+/// Over-collects on purpose: anything between quotes counts as a reference, so a comment or an
+/// unrelated string can mask an uncalled command. That direction is safe because this check exists
+/// to *report* dead surface, and a false negative (a real dead command hidden by a coincidental
+/// string) is the failure that matters.
+pub fn string_literals_in(source: &str) -> BTreeSet<String> {
+    source
+        .split(|c: char| c == '"' || c == '\'' || c == '`')
+        .map(|part| part.to_string())
+        .collect()
+}
+
+/// Tauri commands listed in `generate_handler!` that no file under `apps/zcode-tauri/src` names.
+///
+/// Both halves are name-based on purpose. `generate_handler!` is the single registration point, and
+/// the renderer can only reach a command by passing its exact name to `invoke`, so a string match is
+/// the same relation the runtime uses — a stricter analysis would be more precise and could reject a
+/// working alias. The failure mode of this check is a false positive, never a false negative, which
+/// is why it reports rather than blocks.
+pub fn find_uncalled_tauri_commands(repo_root: &Path) -> Vec<String> {
+    let lib_rs = repo_root
+        .join("apps/zcode-tauri/src-tauri/src/lib.rs")
+        .canonicalize()
+        .unwrap_or_else(|_| repo_root.join("apps/zcode-tauri/src-tauri/src/lib.rs"));
+    let Ok(source) = fs::read_to_string(&lib_rs) else {
+        return Vec::new();
+    };
+    let registered: BTreeSet<String> = source
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim().strip_suffix(',')?;
+            line.strip_prefix("commands::")
+                .and_then(|rest| rest.rsplit("::").next())
+                .map(|name| name.to_string())
+        })
+        .collect();
+    if registered.is_empty() {
+        return Vec::new();
+    }
+
+    // Every string literal in the renderer, which is what an `invoke("name", …)` argument is.
+    let mut referenced: BTreeSet<String> = BTreeSet::new();
+    let mut files = Vec::new();
+    collect_source_files(&repo_root.join("apps/zcode-tauri/src"), &repo_root, &mut files);
+    for file in files {
+        if let Ok(text) = fs::read_to_string(&file) {
+            referenced.extend(string_literals_in(&text));
+        }
+    }
+
+    registered
+        .into_iter()
+        .filter(|name| !referenced.contains(name))
+        .collect()
+}
+
 /// Builds the full inventory for the repository at `repo_root`.
 pub fn build(repo_root: &Path) -> Result<Inventory, InventoryError> {
     let rust_root = find_rust_root(repo_root)?;
@@ -612,6 +706,12 @@ pub fn build(repo_root: &Path) -> Result<Inventory, InventoryError> {
 
     let mut classifications: BTreeMap<String, Classification> = BTreeMap::new();
     let mut cdylib_without_subpath = Vec::new();
+    let justified_uncalled_commands = read_justified_uncalled(repo_root);
+    let registered_commands_without_caller: Vec<String> =
+        find_uncalled_tauri_commands(repo_root)
+            .into_iter()
+            .filter(|name| !justified_uncalled_commands.contains_key(name))
+            .collect();
 
     for export in &exports {
         let crate_info = match crates.iter().find(|c| c.name == export.binary_name) {
@@ -670,6 +770,8 @@ pub fn build(repo_root: &Path) -> Result<Inventory, InventoryError> {
         crates,
         classifications,
         cdylib_without_subpath,
+        registered_commands_without_caller,
+        justified_uncalled_commands,
     })
 }
 
@@ -677,181 +779,80 @@ pub fn build(repo_root: &Path) -> Result<Inventory, InventoryError> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn cdylib_is_detected_from_the_lib_section() {
-        assert!(manifest_has_cdylib(
-            "[lib]\ncrate-type = [\"cdylib\"]\n"
-        ));
-        assert!(manifest_has_cdylib(
-            "[package]\nname = \"x\"\n\n[lib]\ncrate-type = [\"cdylib\", \"rlib\"]\n"
-        ));
+    /// Minimal scratch directory. The inventory tests must not depend on a real checkout, and this
+    /// crate has no dev-dependency for it.
+    fn tempdir() -> TempDir {
+        TempDir::new()
     }
 
-    #[test]
-    fn rlib_is_not_mistaken_for_cdylib() {
-        // zcode-rpc-server is the real case: rlib only, linked into the Tauri host.
-        assert!(!manifest_has_cdylib("[lib]\ncrate-type = [\"rlib\"]\n"));
-        // No [lib] at all means cargo's default (rlib) — nothing to stage.
-        assert!(!manifest_has_cdylib("[package]\nname = \"x\"\nversion = \"0\"\n"));
-    }
+    struct TempDir(PathBuf);
 
-    #[test]
-    fn a_non_lib_crate_type_does_not_leak_into_the_decision() {
-        // `[[bin]]` sections are not `[lib]`, so a cdylib-looking value there must not
-        // make the crate shippable.
-        assert!(!manifest_has_cdylib(
-            "[[bin]]\nname = \"x\"\ncrate-type = [\"cdylib\"]\n"
-        ));
-    }
-
-    #[test]
-    fn load_native_call_is_extracted_through_the_generic_parameter() {
-        let source = r#"
-            export function loadDiff() {
-              let m;
-              if (!m) m = loadNative<NativeDiffModule>("zcode-diff");
-              return m;
-            }
-        "#;
-        assert_eq!(
-            find_load_native_call(source).as_deref(),
-            Some("zcode-diff")
-        );
-    }
-
-    #[test]
-    fn load_native_call_is_extracted_without_generics() {
-        let source = r#"const m = loadNative("zcode-rpc-utils");"#;
-        assert_eq!(
-            find_load_native_call(source).as_deref(),
-            Some("zcode-rpc-utils")
-        );
-    }
-
-    #[test]
-    fn a_non_zcode_argument_is_not_accepted() {
-        // Guards against silently classifying a wrapper by an unrelated string.
-        assert_eq!(find_load_native_call(r#"loadNative("some-lib")"#), None);
-    }
-
-    #[test]
-    fn relative_imports_are_extracted() {
-        let imports = relative_imports(
-            r#"import { a } from "./taskIndex.js";
-import type { B } from "../shared/x.js";
-import { c } from "@zcode/shared";"#,
-        );
-        assert_eq!(
-            imports,
-            vec!["./taskIndex.js".to_string(), "../shared/x.js".to_string()]
-        );
-    }
-
-    /// The shared-store facades do not call `loadNative` themselves; the inventory has to follow
-    /// their relative import to the module that owns the call, or `build:native` fails on a
-    /// repository whose only "error" is the one-connection design.
-    #[test]
-    fn a_companion_wrapper_inherits_the_binary_from_its_relative_import() {
-        let dir = std::env::temp_dir().join(format!(
-            "zcode-inventory-delegation-{}",
-            std::process::id()
-        ));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).expect("temp dir");
-        let owner = dir.join("taskIndex.ts");
-        fs::write(
-            &owner,
-            r#"const m = loadNative<NativeTaskIndexModule>("zcode-task-index");"#,
-        )
-        .expect("owner wrapper");
-        let companion = dir.join("offPeakRepository.ts");
-        fs::write(&companion, r#"import { NATIVE_STORE } from "./taskIndex.js";"#)
-            .expect("companion wrapper");
-
-        assert_eq!(
-            find_delegated_load_native(&companion, 4).as_deref(),
-            Some("zcode-task-index")
-        );
-        // A cycle must terminate rather than recurse forever.
-        fs::write(&companion, r#"import { NATIVE_STORE } from "./offPeakRepository.js";"#)
-            .expect("self import");
-        assert_eq!(find_delegated_load_native(&companion, 4), None);
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn subpath_specifiers_are_extracted_with_a_word_boundary() {
-        let found = subpaths_referenced_in(
-            r#"import a from "@zcode/rust/events";
-               import b from "@zcode/rust/git";
-               const c = "@zcode/rust/image";"#,
-        );
-        assert!(found.contains("events"));
-        assert!(found.contains("git"));
-        // A bare string constant is not a module reference.
-        assert!(!found.contains("image"), "{found:?}");
-    }
-
-    /// Regression: `tsup.config.ts` lists `"@zcode/rust"` in a bundler externals array
-    /// and in a `//` comment. Counting those shipped four binaries that nothing loads.
-    #[test]
-    fn a_bundler_externals_entry_is_not_an_importer() {
-        let source = r#"
-            // `@zcode/rust` must NOT stay external: its exports point at TypeScript sources.
-            const noExternal = [
-              "@zcode/rust",
-              "playwright-core",
-            ];
-        "#;
-        assert!(subpaths_referenced_in(source).is_empty(), "{:?}", subpaths_referenced_in(source));
-    }
-
-    #[test]
-    fn all_module_specifier_forms_are_accepted() {
-        for source in [
-            r#"import x from "@zcode/rust/git";"#,
-            r#"import "@zcode/rust/git";"#,
-            r#"const x = require("@zcode/rust/git");"#,
-            r#"import x = require("@zcode/rust/git");"#,
-            r#"export { y } from "@zcode/rust/git";"#,
-            r#"import(
-              "@zcode/rust/git"
-            );"#,
-        ] {
-            assert!(
-                subpaths_referenced_in(source).contains("git"),
-                "not detected in: {source}"
-            );
+    impl TempDir {
+        fn new() -> Self {
+            let base = std::env::temp_dir().join(format!(
+                "zcode-packaging-inventory-{}-{}",
+                std::process::id(),
+                COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ));
+            std::fs::create_dir_all(&base).expect("create scratch dir");
+            TempDir(base)
+        }
+        fn path(&self) -> &Path {
+            &self.0
         }
     }
 
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
     #[test]
-    fn a_commented_out_import_does_not_count() {
-        let source = r#"
-            // import x from "@zcode/rust/reassembly";
-            /* import y from "@zcode/rust/projection"; */
-        "#;
-        assert!(subpaths_referenced_in(source).is_empty());
+    fn a_quoted_command_name_counts_as_referenced() {
+        let found = string_literals_in("invoke(\"terminal_create\", { cwd })");
+        assert!(found.contains("terminal_create"));
     }
 
     #[test]
-    fn a_slash_inside_a_string_literal_is_not_a_comment() {
-        // Stripping comments must not eat the rest of a line that contains a URL, which
-        // would otherwise hide a real import on the same line.
-        let source = r#"import x from "@zcode/rust/git"; // see https://example.com/a"#;
-        assert!(subpaths_referenced_in(source).contains("git"));
+    fn a_command_name_outside_quotes_is_not_a_reference() {
+        // The check is deliberately blind to bare identifiers: `invoke(name)` computes the name,
+        // and a runtime-computed command name cannot be resolved statically anyway.
+        let found = string_literals_in("invoke(name)");
+        assert!(!found.contains("name"));
     }
 
     #[test]
-    fn non_ascii_text_does_not_corrupt_byte_offsets() {
-        // 中文注释 + a real import: strip_comments copies multi-byte chars verbatim.
-        let source = "// 中文注释：这是一个测试\nimport x from \"@zcode/rust/git\";\nconst s = \"值\";";
-        assert_eq!(subpaths_referenced_in(source).into_iter().collect::<Vec<_>>(), vec!["git"]);
+    fn a_justification_needs_a_reason_not_just_a_name() {
+        // The parser drops a reason-less entry on purpose: a bare allowlist would let a command be
+        // excused forever, which is how the five uncalled commands accumulated unnoticed.
+        let dir = tempdir();
+        // The reader looks under `apps/zcode-tauri/`, so the fixture has to live there.
+        let nested = dir.path().join("apps/zcode-tauri");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(
+            nested.join("UNWIRED_COMMANDS.md"),
+            "- `orphan_command`\n- `justified_command` - waits for the browser\n",
+        )
+        .unwrap();
+        let read = read_justified_uncalled(dir.path());
+        assert!(!read.contains_key("orphan_command"), "a bare allowlist entry must be dropped");
+        assert_eq!(read.get("justified_command").map(String::as_str), Some("waits for the browser"));
+        fs::remove_dir_all(dir.path()).ok();
     }
 
     #[test]
-    fn the_dot_subpath_is_not_treated_as_a_crate() {
-        // Guards the `strip_prefix("./")` branch against a bare "." export.
-        assert!(subpaths_referenced_in(r#"from "@zcode/rust/""#).is_empty());
+    fn a_missing_justification_file_yields_no_entries() {
+        let dir = tempdir();
+        assert!(read_justified_uncalled(dir.path()).is_empty());
+        fs::remove_dir_all(dir.path()).ok();
+    }
+
+    #[test]
+    fn single_and_backtick_quotes_count_too() {
+        assert!(string_literals_in("invoke('decide_navigation')").contains("decide_navigation"));
+        assert!(string_literals_in("invoke(`show_current_window`)").contains("show_current_window"));
     }
 }

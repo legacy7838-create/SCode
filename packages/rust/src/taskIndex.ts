@@ -145,6 +145,11 @@ export interface OffPeakRow {
  */
 interface NativeTaskIndexModule {
   TaskIndexStore: new (options: TaskIndexOpenOptions) => NativeStore;
+  /**
+   * Checkpoints + truncates the WAL of the given database (spec §28). Used by the
+   * fixture producer so a committed copy of a WAL database carries its rows.
+   */
+  checkpointTaskIndexWal(dbPath: string): void;
 }
 
 /**
@@ -294,6 +299,23 @@ let cached: NativeTaskIndexModule | null = null;
 function module(): NativeTaskIndexModule {
   cached ??= loadNative<NativeTaskIndexModule>("zcode-task-index");
   return cached;
+}
+
+/**
+ * Checkpoints and truncates the task-index WAL, then releases the handle.
+ *
+ * A WAL database keeps everything written after the last checkpoint in the `-wal`
+ * sidecar, so copying the main file alone yields a database silently missing recent
+ * rows. The fixture producer needs a committed copy; this is the native equivalent
+ * of the `PRAGMA wal_checkpoint(TRUNCATE)` that used to require `node:sqlite` in
+ * `scripts/`. Sync and short — it is a one-shot maintenance call, not a store op.
+ */
+export function checkpointTaskIndexWal(dbPath: string): void {
+  try {
+    module().checkpointTaskIndexWal(dbPath);
+  } catch (error) {
+    throw fromNativeError(error);
+  }
 }
 
 /**

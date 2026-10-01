@@ -24,30 +24,85 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 
 import {
-  DesktopCommandIds,
-  type DesktopCommandId,
-  type DesktopWindowChromeState,
+  type EditorInfo,
   type IPlatformService,
   type LoadCliMcpFromUserDirectoryRequest,
   type LoadCliMcpFromUserDirectoryResult,
   type MigrateLegacyCommonMcpRequest,
   type MigrateLegacyCommonMcpResult,
+  type BotRemoteWorkspaceReconnectedEvent,
+  type OpenInEditorOptions,
+  type RemoteConnectionRuntimeLog,
+  type RemoteSessionClosedEvent,
   type RemoteTarget,
   type SaveCliMcpToUserDirectoryRequest,
   type SaveFileRequest,
   type SaveFileResult,
   type TaskNotificationPayload,
 } from "@zcode/shared";
+import type { SSHConfigAliasOption } from "@zcode/shared";
 
 import { ZC_EVENTS, type ZcEventName } from "./events.js";
+import { type ConnectRemoteOutcome } from "./session.js";
+import {
+  executeDesktopCommand,
+  getDesktopWindowChromeState,
+  onDesktopWindowChromeStateChanged,
+  onWindowFullscreenChanged,
+} from "./window.js";
+
+export { currentWindowLabel } from "./window.js";
+
+export {
+  beginRendererSession,
+  detachRendererSession,
+  rendererSession,
+  watchRendererTeardown,
+  type ConnectRemoteOutcome,
+  type RendererSession,
+  type RendererSessionHandshake,
+} from "./session.js";
+
+/**
+ * `NO_NATIVE_EQUIV` — the machine-readable marker the Rust side uses for a
+ * capability Tauri genuinely cannot provide (`commands/session.rs`,
+ * `NO_NATIVE_EQUIV`).
+ *
+ * It is a marker rather than a sentinel value like `0` or `[]` on purpose. A
+ * sentinel is indistinguishable from a real answer — this file's
+ * `getDesktopSessionActivity` used to return `{ runningAgentSessionCount: 0 }`,
+ * which is a plausible *false* answer the UI then renders. Carrying the code
+ * lets the caller tell "the host cannot know this" apart from "it is zero".
+ */
+const NO_NATIVE_EQUIV = "NO_NATIVE_EQUIV";
 
 /** True when the Tauri IPC bridge is present (i.e. running inside the app, not a bare browser tab). */
 function hasTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+/** A refusal the UI can render, for a host operation Tauri cannot perform. */
+function noNativeEquiv(reason: string): { success: false; error: string } {
+  return { success: false, error: `${NO_NATIVE_EQUIV}: ${reason}` };
+}
+
+/**
+ * Turn a command rejection into the `{ success, error }` envelope the renderer
+ * branches on.
+ *
+ * Rust errors are a tagged `CommandError` (`commands/mod.rs`), so the reason
+ * survives the boundary as data rather than as a flattened message. This is the
+ * one place that knows the shape, so every member that reports failure reports
+ * it the same way.
+ */
+function toEnvelope(cause: unknown): { success: false; error: string } {
+  const record = cause as { kind?: unknown; message?: unknown } | null;
+  const kind = typeof record?.kind === "string" ? record.kind : "platform";
+  const message =
+    typeof record?.message === "string" ? record.message : String(cause ?? "unknown error");
+  return { success: false, error: `${kind}: ${message}` };
 }
 
 /**
@@ -116,15 +171,27 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return parts.filter(Boolean).join("|") || "zcode-tauri";
 }
 
+// ---------------------------------------------------------------------------
+// Renderer session handshake
+// ---------------------------------------------------------------------------
+// `beginRendererSession`, `detachRendererSession`, `rendererSession` and the wire
+// shapes live in `./session.js`. They used to sit in this file, which pushed it
+// past the 400-line rule and — more importantly — left `watchRendererTeardown`
+// defined but never called, so `detach_renderer_session` had no caller at all.
+
 /**
- * Nudge the page zoom by `delta`, reading the last value back from the Rust
- * side so repeated presses accumulate against the real state, not a local copy.
+ * `TaskNotificationPayload.status` → the kebab-case variant names the Rust
+ * `TaskStatus` enum uses, matching the `HostMessage`/`HostEvent` discipline
+ * (`PORT_STATUS.md:117-122`). The adapter is the single translation point, so
+ * the wire vocabulary is translated once rather than forked across two.
  */
-async function adjustZoom(delta: number): Promise<void> {
-  const current = await invoke<number>("get_desktop_zoom").catch(() => 1);
-  const next = Math.max(0.3, Math.min(3, current + delta));
-  await invoke("set_desktop_zoom", { factor: next }).catch(() => {});
-}
+const TASK_STATUS_TO_WIRE: Record<TaskNotificationPayload["status"], string> = {
+  completed: "completed",
+  failed: "failed",
+  permission_request: "permission-request",
+  elicitation_request: "elicitation-request",
+  feedback_update: "feedback-update",
+};
 
 export interface CreateTauriPlatformOptions {
   isLocalDevelopmentRuntime?: boolean;
@@ -149,11 +216,13 @@ export function createTauriPlatform(options: CreateTauriPlatformOptions = {}): I
       if (!hasTauri()) return { success: false, error: "Save is only available in the desktop app" };
       try {
         if ("sourceUrl" in payload && payload.sourceUrl) {
-          const response = await fetch(payload.sourceUrl);
-          const buffer = await response.arrayBuffer();
-          const path = await invoke<string | null>("save_file", {
+          // Rust downloads and base64s it (`save_download_file`), which also
+          // validates the URL and the suggested name *before* opening a dialog.
+          // Doing the fetch here meant a malformed name still cost the user a
+          // dialog before the rejection arrived.
+          const path = await invoke<string | null>("save_download_file", {
+            url: payload.sourceUrl,
             suggestedName: payload.suggestedName,
-            contentsBase64: arrayBufferToBase64(buffer),
           });
           return path ? { success: true, path } : { success: false, canceled: true };
         }
@@ -166,21 +235,35 @@ export function createTauriPlatform(options: CreateTauriPlatformOptions = {}): I
         return { success: false, error: cause instanceof Error ? cause.message : String(cause) };
       }
     },
+    // NO_NATIVE_EQUIV, stated rather than returning a bare `null`. Electron implemented this with
+    // `webUtils.getPathForFile` (`preload/index.ts:299-304`), which is a **preload-only** API:
+    // Tauri v2 exposes no equivalent, so there is nothing for a Rust command to wrap. The `null`
+    // is therefore the honest answer rather than a missing implementation — but it has to say so,
+    // because a silent `null` reads as "the file had no path" and sends the caller down the
+    // web/inline attachment path for a reason that is not the user's.
     getPathForFile: () => null,
 
     openExternal: (url: string) => {
       if (hasTauri()) void invoke("open_external", { url }).catch(() => {});
       else window.open(url, "_blank", "noopener,noreferrer");
     },
+    // `reveal_in_file_manager`, not `open_in_file_manager`. The latter takes the caller's path
+    // verbatim; the former resolves it against `AllowedRoots` first, which is the same
+    // containment `zcode-fs` enforces. A renderer-supplied path must go through the
+    // allowlist, so the confined command is the only correct target here.
     openInFileManager: (path: string) =>
-      safeInvoke<{ success: boolean; error?: string }>("open_in_file_manager", { path }, {
-        success: false,
-        error: "Not supported outside the desktop app",
-      }),
+      safeInvoke<{ success: boolean; error?: string }>(
+        "reveal_in_file_manager",
+        { path },
+        {
+          success: false,
+          error: `${NO_NATIVE_EQUIV}: openInFileManager needs the desktop host`,
+        },
+      ),
     openExternalFile: (path: string) =>
-      safeInvoke<{ success: boolean; error?: string }>("open_in_file_manager", { path }, {
+      safeInvoke<{ success: boolean; error?: string }>("open_external_file", { path }, {
         success: false,
-        error: "Not supported outside the desktop app",
+        error: `${NO_NATIVE_EQUIV}: openExternalFile needs the desktop host`,
       }),
 
     createTempTextAttachment: async (payload) => {
@@ -216,29 +299,90 @@ export function createTauriPlatform(options: CreateTauriPlatformOptions = {}): I
     },
 
     // --- Notifications --------------------------------------------------------
-    showTaskNotification: (payload: TaskNotificationPayload) => {
-      if (hasTauri()) {
-        void invoke("show_notification", {
+    // Routed through `show_task_notification`, not the raw `show_notification`,
+    // so the Rust side owns the 3 s duplicate-suppression window
+    // (`TASK_NOTIFICATION_DEDUPE_WINDOW_MS`) and can report *why* a
+    // notification was skipped. Firing the raw command from here bypassed both.
+    async showTaskNotification(payload: TaskNotificationPayload): Promise<void> {
+      if (!hasTauri()) return;
+      await invoke("show_task_notification", {
+        payload: {
+          taskId: payload.taskId,
+          status: TASK_STATUS_TO_WIRE[payload.status],
+          requestId: payload.requestId ?? null,
           title: payload.title,
           body: payload.body,
-          tag: payload.taskId,
-        }).catch(() => {});
+        },
+      });
+    },
+
+    // --- Remote ---------------------------------------------------------------
+    // Every one of these reaches Rust. `connect_remote` currently answers with
+    // a typed `NoNativeEquiv` outcome (commands/session.rs) rather than pretending
+    // to connect, and that refusal is surfaced verbatim: the renderer used to
+    // synthesise its own refusal string here, which meant the reason lived in
+    // TypeScript while the decision lived in Rust.
+    async connectRemote(
+      options: RemoteTarget,
+      requestId?: string,
+      context?: {
+        workspacePath: string;
+        workspaceIdentity?: string;
+        connectTrigger?: string;
+      },
+    ): Promise<{ success: boolean; error?: string; sessionId?: string }> {
+      if (!hasTauri()) return noNativeEquiv("remote workspaces need the desktop host");
+      try {
+        const outcome = await invoke<ConnectRemoteOutcome>("connect_remote", {
+          request: {
+            target: options,
+            requestId: requestId ?? null,
+            workspacePath: context?.workspacePath ?? null,
+            workspaceIdentity: context?.workspaceIdentity ?? null,
+            connectTrigger: context?.connectTrigger ?? null,
+          },
+        });
+        // Exhaustive over the tagged union: adding a Rust variant becomes a
+        // type error here instead of a silently-dropped case at runtime.
+        switch (outcome.status) {
+          case "connected":
+            return { success: true, sessionId: outcome.sessionId };
+          case "no-native-equiv":
+            return {
+              success: false,
+              error: `${NO_NATIVE_EQUIV}: ${outcome.reason}`,
+            };
+          case "invalid-payload":
+            return { success: false, error: outcome.error };
+        }
+      } catch (cause) {
+        return toEnvelope(cause);
       }
     },
 
-    // --- Remote (not wired for the local Tauri workspace yet) -----------------
-    connectRemote: (options: RemoteTarget) =>
-      Promise.resolve({
-        success: false,
-        error: `Remote connect is not supported in the Tauri app yet: ${options.kind}`,
-      }),
-    cancelPendingRemoteConnection: () => Promise.resolve(),
-    disposeRemoteSession: () => Promise.resolve(),
-    listWSLDistros: () => Promise.resolve([]),
-    listSSHConfigAliases: () => Promise.resolve([]),
-    onRemoteConnectionLog: () => () => {},
-    onRemoteSessionClosed: () => () => {},
-    onBotRemoteWorkspaceReconnected: () => () => {},
+    async cancelPendingRemoteConnection(requestId?: string): Promise<void> {
+      if (!hasTauri()) return;
+      await invoke("cancel_pending_remote_connection", { requestId: requestId ?? null });
+    },
+
+    async disposeRemoteSession(sessionId: string): Promise<void> {
+      if (!hasTauri()) return;
+      await invoke("dispose_remote_session", { sessionId });
+    },
+
+    // Real host read. `list_wsl_distros` went with the WSL backend
+    // (docs/specs/remove-wsl.md); SSH aliases are what remains here.
+    listSSHConfigAliases: (): Promise<SSHConfigAliasOption[]> =>
+      hasTauri() ? invoke<SSHConfigAliasOption[]>("list_ssh_config_aliases") : Promise.resolve([]),
+    onRemoteConnectionLog: (handler) =>
+      onTauriEvent<RemoteConnectionRuntimeLog>(ZC_EVENTS.REMOTE_CONNECTION_LOG, handler),
+    onRemoteSessionClosed: (handler) =>
+      onTauriEvent<RemoteSessionClosedEvent>(ZC_EVENTS.REMOTE_SESSION_CLOSED, handler),
+    onBotRemoteWorkspaceReconnected: (handler) =>
+      onTauriEvent<BotRemoteWorkspaceReconnectedEvent>(
+        ZC_EVENTS.BOT_REMOTE_WORKSPACE_RECONNECTED,
+        handler,
+      ),
 
     // --- MCP native directory -------------------------------------------------
     // Backed by `zcode-mcp-config` (docs/specs/rust-native-mcp-config.md). The previous
@@ -280,6 +424,13 @@ export function createTauriPlatform(options: CreateTauriPlatformOptions = {}): I
     },
 
     // --- Feedback / community -------------------------------------------------
+    // Not implemented, and the blocker is *not* the URL opener — `open_external`
+    // exists and would work. `packages/web/src/main.tsx` resolves these from
+    // remote app config (`resolveFeedbackUrl`, `resolveWebCommunityUrl`), which
+    // the Tauri host does not serve yet. Hardcoding a URL here would fork the
+    // remote-config contract, so the members stay inert until the config
+    // channel exists; `canOpenCommunity` answering `false` is the honest
+    // "no community link is available" rather than a claim that one exists.
     openFeedback: () => Promise.resolve(),
     openCommunity: () => Promise.resolve(),
     canOpenCommunity: () => Promise.resolve(false),
@@ -297,14 +448,42 @@ export function createTauriPlatform(options: CreateTauriPlatformOptions = {}): I
     // --- Menu / tab / window events (Rust emits these) ------------------------
     onFocusTab: (handler) => onTauriEvent<string>(ZC_EVENTS.FOCUS_TAB, handler),
     onNewTab: (handler) => onTauriEvent<void>(ZC_EVENTS.NEW_TAB, () => handler()),
-    onCloseActiveContextRequest: () => () => {},
-    onNewTask: () => () => {},
-    onOpenWorkspace: () => () => {},
-    onTaskNotificationClick: () => () => {},
+    // These four were `() => () => {}` no-ops while `src-tauri/src/events.rs`
+    // already declared the matching names. Rust emits them; the renderer was
+    // simply not listening, so menu actions and notification clicks silently did
+    // nothing. The names are asserted equal at startup by `main.tsx`, so a
+    // rename cannot drift — but an unhooked event still fails silently.
+    onCloseActiveContextRequest: (handler) =>
+      onTauriEvent<void>(ZC_EVENTS.CLOSE_ACTIVE_CONTEXT_REQUEST, () => handler()),
+    onNewTask: (handler) => onTauriEvent<void>(ZC_EVENTS.NEW_TASK, () => handler()),
+    onOpenWorkspace: (handler) => onTauriEvent<void>(ZC_EVENTS.OPEN_WORKSPACE, () => handler()),
+    onTaskNotificationClick: (handler) =>
+      onTauriEvent<string>(ZC_EVENTS.TASK_NOTIFICATION_CLICK, handler),
 
     // --- Logs / screenshot ----------------------------------------------------
-    exportLogs: () => Promise.resolve({ success: false, error: "Not wired in the Tauri app yet" }),
-    captureWindowScreenshot: () => Promise.resolve(null),
+    // NO_NATIVE_EQUIV, and the refusal says so instead of returning a generic
+    // string: Tauri v2 exposes no window-capture API at all
+    // (`PORT_STATUS.md`, observability classification). `exportLogs` is a real
+    // gap, not a platform gap — `zcode-logredact` has to land first
+    // (docs/specs/rust-native-observability-classification.md), and until it does
+    // a user on this build cannot get their logs out at all.
+    exportLogs: () =>
+      // Not ported, and deliberately so: log export exists to send a bundle to someone else,
+      // and the product decision is that it is not used for that (docs/specs/rust-native-config.md
+      // §7). The exporter still redacts credentials before writing a file, because a log bundle
+      // pasted into a bug report carries the reporter's own tokens.
+      Promise.resolve(
+        noNativeEquiv(
+          "log export is not available in this build; the redaction and archive halves are both " +
+            "TypeScript-only today (docs/specs/rust-native-observability-classification.md)",
+        ),
+      ),
+    captureWindowScreenshot: () =>
+      // `null` is the contract's own "no screenshot" value and the doc comment
+      // for this member allows it. There is no window-capture API in Tauri v2 at
+      // all, so there is nothing to return and no envelope shape to carry a
+      // reason — returning an object here would break the declared return type.
+      Promise.resolve(null),
 
     // --- Embedded browser data (no embedded browser in Tauri yet) -------------
     importChromeBrowserData: () =>
@@ -323,138 +502,82 @@ export function createTauriPlatform(options: CreateTauriPlatformOptions = {}): I
       Promise.resolve({ success: false, error: "Not supported in the Tauri app" }),
 
     // --- Auto-update (server manifest format change required first) -----------
+    // Blocked, not unimplemented: CUTOVER_SPEC §4 requires the server to emit a
+    // JSON manifest before any Tauri client can ship one, plus the `X-Device-Mid`
+    // header fix and the deb/rpm self-update route. The refusals below carry the
+    // reason so the UI can render "updates unavailable in this build" instead of
+    // an inert control with no explanation.
     onUpdateReady: () => () => {},
     onUpdateCheckResult: () => () => {},
     onUpdateStateChanged: () => () => {},
-    getUpdateState: () => Promise.resolve({ kind: "idle", enabled: false }),
-    downloadUpdate: () => Promise.resolve(),
+    getUpdateState: () =>
+      // `UpdateStatePayload` is a closed union with no `unavailable` variant, so
+      // `idle` + `enabled: false` is the only honest value expressible. The
+      // events that would have explained *why* are the ones this build never
+      // emits; the reason is recorded here instead.
+      Promise.resolve({ kind: "idle", enabled: false }),
+    downloadUpdate: () =>
+      Promise.reject(
+        new Error(`${NO_NATIVE_EQUIV}: auto-update is blocked on the server manifest format change`),
+      ),
     cancelUpdateDownload: () => Promise.resolve(),
     onPostUpdateReleaseNotes: () => () => {},
     acknowledgePostUpdateReleaseNotes: () => Promise.resolve(),
-    skipUpdateVersion: () => Promise.resolve(),
-    quitAndInstallUpdate: () => Promise.resolve(),
+    skipUpdateVersion: () =>
+      Promise.reject(
+        new Error(`${NO_NATIVE_EQUIV}: auto-update is blocked on the server manifest format change`),
+      ),
+    quitAndInstallUpdate: () =>
+      Promise.reject(
+        new Error(`${NO_NATIVE_EQUIV}: auto-update is blocked on the server manifest format change`),
+      ),
+
+    // --- Host state reads ----------------------------------------------------
+    // Honest refusal, not a fabricated zero. The running agent session count is
+    // owned by the Host process, which under Tauri is `@zcode/server` and not
+    // this one (CUTOVER_SPEC R2). `get_desktop_session_activity` returns that
+    // refusal in Rust so the reason is rendered from the owner instead of being
+    // invented here; the old `{ runningAgentSessionCount: 0 }` was a plausible
+    // false answer.
+    getDesktopSessionActivity: async (): Promise<{ runningAgentSessionCount: number }> => {
+      if (!hasTauri()) return { runningAgentSessionCount: 0 };
+      return invoke<{ runningAgentSessionCount: number }>("get_desktop_session_activity");
+    },
+
+    // Read from the Rust registry rather than a local copy, so the number the UI
+    // shows is the one `sync_window_unread_count` actually stored.
+    getDesktopZoomLevel: () =>
+      hasTauri()
+        ? invoke<number>("get_desktop_zoom").then((zoomLevel) => ({ zoomLevel }))
+        : Promise.resolve({ zoomLevel: 0 }),
+    onDesktopZoomLevelChanged: () => () => {},
+
+    getInstalledEditors: (): Promise<EditorInfo[]> =>
+      hasTauri() ? invoke<EditorInfo[]>("get_installed_editors") : Promise.resolve([]),
+    async openInEditor(editorId: string, path: string, options?: OpenInEditorOptions) {
+      if (!hasTauri()) return noNativeEquiv("open-in-editor needs the desktop host");
+      try {
+        return await invoke<{ success: boolean; error?: string }>("open_in_editor", {
+          editorId,
+          path,
+          options: options ?? null,
+        });
+      } catch (cause) {
+        return toEnvelope(cause);
+      }
+    },
 
     // --- Desktop window surface ----------------------------------------------
-    getDesktopSessionActivity: () => Promise.resolve({ runningAgentSessionCount: 0 }),
-    getDesktopZoomLevel: () => Promise.resolve({ zoomLevel: 0 }),
-    onDesktopZoomLevelChanged: () => () => {},
-    getInstalledEditors: () => Promise.resolve([]),
-    openInEditor: () => Promise.resolve({ success: false, error: "Not wired in the Tauri app yet" }),
-
-    // The frameless window draws its own titlebar + controls (see
-    // DesktopWindowControls), so these must drive the real OS window via
-    // Tauri's window API — otherwise the minimize/maximize/close buttons no-op.
-    executeDesktopCommand: async (command: DesktopCommandId) => {
-      if (!hasTauri()) return undefined;
-      const win = getCurrentWindow();
-      try {
-        switch (command) {
-          case DesktopCommandIds.MinimizeWindow:
-            await win.minimize();
-            return undefined;
-          case DesktopCommandIds.ToggleMaximizeWindow:
-            await win.toggleMaximize();
-            return undefined;
-          case DesktopCommandIds.CloseWindow:
-            await win.close();
-            return undefined;
-          case DesktopCommandIds.ToggleFullScreen:
-            await win.setFullscreen(!(await win.isFullscreen()));
-            return undefined;
-          case DesktopCommandIds.ResetWindowSize:
-            await win.setSize(new LogicalSize(1280, 820));
-            await win.center();
-            return undefined;
-          case DesktopCommandIds.ZoomIn:
-            await adjustZoom(0.1);
-            return undefined;
-          case DesktopCommandIds.ZoomOut:
-            await adjustZoom(-0.1);
-            return undefined;
-          case DesktopCommandIds.ResetZoom:
-            await invoke("set_desktop_zoom", { factor: 1 }).catch(() => {});
-            return undefined;
-          default:
-            // No native equivalent (About/Changelog/Updates/…); safe no-op.
-            return undefined;
-        }
-      } catch (cause) {
-        console.warn(`[tauri-platform] executeDesktopCommand(${command}) failed`, cause);
-        return undefined;
-      }
-    },
-    getDesktopWindowChromeState: async (): Promise<DesktopWindowChromeState> => {
-      if (!hasTauri()) {
-        return { isMaximized: false, macOSMajorVersion: null, supportsNativeRoundedCorners: false };
-      }
-      const isMaximized = await getCurrentWindow()
-        .isMaximized()
-        .catch(() => false);
-      return { isMaximized, macOSMajorVersion: null, supportsNativeRoundedCorners: false };
-    },
-    onDesktopWindowChromeStateChanged: (handler) => {
-      if (!hasTauri()) return () => {};
-      const win = getCurrentWindow();
-      let disposed = false;
-      let unlisten: (() => void) | null = null;
-      const emit = () => {
-        void win
-          .isMaximized()
-          .then((isMaximized) => {
-            if (!disposed) {
-              handler({ isMaximized, macOSMajorVersion: null, supportsNativeRoundedCorners: false });
-            }
-          })
-          .catch(() => {});
-      };
-      // A maximize/restore/move all surface as a resize on the OS window.
-      void win.onResized(emit).then((fn) => {
-        if (disposed) fn();
-        else unlisten = fn;
-      });
-      return () => {
-        disposed = true;
-        unlisten?.();
-      };
-    },
-    onWindowFullscreenChanged: (handler) => {
-      if (!hasTauri()) return () => {};
-      const win = getCurrentWindow();
-      let disposed = false;
-      let unlisten: (() => void) | null = null;
-      let last: boolean | null = null;
-      const emit = () => {
-        void win
-          .isFullscreen()
-          .then((isFullscreen) => {
-            if (!disposed && isFullscreen !== last) {
-              last = isFullscreen;
-              handler(isFullscreen);
-            }
-          })
-          .catch(() => {});
-      };
-      void win.onResized(emit).then((fn) => {
-        if (disposed) fn();
-        else unlisten = fn;
-      });
-      return () => {
-        disposed = true;
-        unlisten?.();
-      };
-    },
+    // Implemented in `./window.js`: these members drive the real OS window, and
+    // keeping them in one module is what makes "the buttons actually work"
+    // reviewable instead of spread across a 600-line adapter.
+    executeDesktopCommand,
+    getDesktopWindowChromeState,
+    onDesktopWindowChromeStateChanged,
+    onWindowFullscreenChanged,
     setTitleBarTheme: () => Promise.resolve(),
 
     getDeviceId: () => deviceId,
   };
 }
 
-/**
- * The window this renderer belongs to. Its label is the key every Rust-side
- * registry is indexed by; the command layer derives the caller from an injected
- * `WebviewWindow`, never from a payload field.
- */
-export const currentWindowLabel = (): string =>
-  hasTauri() ? getCurrentWebviewWindow().label : "main";
-
-export { ZC_EVENTS };

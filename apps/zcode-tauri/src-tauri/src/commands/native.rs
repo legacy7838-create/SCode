@@ -18,14 +18,16 @@
 //! callback API through a oneshot channel — `blocking_pick_file` and friends
 //! must never run on the main thread, and parking a runtime worker behind a
 //! modal dialog would stall every other command. The opener commands offload
-//! process/D-Bus work to `spawn_blocking`. `show_notification` alone stays
-//! synchronous because the notification plugin already dispatches its D-Bus
-//! round-trip onto the async runtime itself.
+//! process/D-Bus work to `spawn_blocking`.
+//
+// `show_notification` used to live here and was removed: `commands::session::show_task_notification`
+// superseded it, because that one owns the duplicate-suppression window and the tag bookkeeping.
+// A registered-but-uncalled command is dead surface, so it was deleted rather than left as an
+// alternative path to the same notification.
 
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 use tauri_plugin_dialog::{DialogExt, FilePath};
-use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_opener::OpenerExt;
 
 use super::{CommandError, CommandResult};
@@ -282,106 +284,18 @@ pub async fn open_external(app: AppHandle, url: String) -> CommandResult<()> {
 
 /// Decided result for an empty/whitespace path, without touching the opener.
 /// Electron refuses it up front too: `main/desktopMainIpcHelpers.ts:51-53`.
-fn empty_open_path_result(path: &str) -> Option<OpenResult> {
-    path.trim().is_empty().then(|| OpenResult {
-        success: false,
-        error: Some("empty path".to_string()),
-    })
-}
+
 
 /// Reveal the target first (select-the-file semantics). When that fails — path
 /// gone, or no `FileManager1` service on this desktop — fall back to opening
 /// it with the default application, mirroring Electron's `shell.openPath`
 /// (`main/desktopMainIpcHelpers.ts:66-75`). Both outcomes are values; the
 /// caller never sees a thrown error.
-fn reveal_or_open(app: &AppHandle, target: &str) -> OpenResult {
-    let opener = app.opener();
-    let reveal_error = match opener.reveal_item_in_dir(target) {
-        Ok(()) => {
-            return OpenResult {
-                success: true,
-                error: None,
-            };
-        }
-        Err(error) => error,
-    };
-    // The free `open_path` checks `metadata()` first, so a missing path is
-    // reported here instead of being handed to `xdg-open`, which fails only
-    // asynchronously and would read as success.
-    match tauri_plugin_opener::open_path(target, None::<&str>) {
-        Ok(()) => OpenResult {
-            success: true,
-            error: None,
-        },
-        Err(open_error) => OpenResult {
-            success: false,
-            error: Some(format!("reveal failed: {reveal_error}; open failed: {open_error}")),
-        },
-    }
-}
 
-/// Reveal `path` in the OS file manager, falling back to opening it with the
-/// default application.
-///
-/// Electron: `main/desktopMainIpcHelpers.ts:46-75` (`openPathInFileManager`);
-/// the Tauri side uses `reveal_item_in_dir` for reveal-in-folder semantics and
-/// returns `{ success, error }` — a missing path is reported to the renderer,
-/// never thrown across the IPC boundary.
-#[tauri::command]
-pub async fn open_in_file_manager(app: AppHandle, path: String) -> CommandResult<OpenResult> {
-    if let Some(result) = empty_open_path_result(&path) {
-        return Ok(result);
-    }
-    // On Linux `reveal_item_in_dir` talks to FileManager1 over a blocking zbus
-    // connection; keep the D-Bus round-trip off every shared thread.
-    let result =
-        tauri::async_runtime::spawn_blocking(move || reveal_or_open(&app, path.trim())).await?;
-    Ok(result)
-}
 
 // ---------------------------------------------------------------------------
 // Notification
 // ---------------------------------------------------------------------------
-
-/// Trim both strings and refuse an empty result — Electron does the same at
-/// `main/desktopNotifications.ts:104-116` so a notification never fires with
-/// missing (unlocalized) copy.
-fn trimmed_notification_text(title: &str, body: &str) -> CommandResult<(String, String)> {
-    let title = title.trim().to_owned();
-    let body = body.trim().to_owned();
-    if title.is_empty() || body.is_empty() {
-        return Err(CommandError::InvalidPayload(
-            "notification title and body must not be empty".to_string(),
-        ));
-    }
-    Ok((title, body))
-}
-
-/// Fire a desktop notification.
-///
-/// Electron: `main/desktopNotifications.ts:104-116` (trimmed copy, empty copy
-/// refused) and `:123-127` (`new Notification({ title, body })`).
-#[tauri::command]
-pub fn show_notification(
-    app: AppHandle,
-    title: String,
-    body: String,
-    tag: Option<String>,
-) -> CommandResult<()> {
-    let (title, body) = trimmed_notification_text(&title, &body)?;
-    // Electron's `tag` replaces an earlier same-tag notification. The Tauri
-    // notification plugin has no desktop backend support for tags — its
-    // desktop.rs forwards only title/body/icon/sound — and `show()` hands back
-    // no handle to close the previous notification, so the tag cannot be
-    // honoured (NO_NATIVE_EQUIV); the parameter stays for wire compatibility.
-    let _ = tag;
-    app.notification()
-        .builder()
-        .title(title)
-        .body(body)
-        .show()
-        .map_err(|e| CommandError::Platform(e.to_string()))
-}
 
 #[cfg(test)]
 mod tests {
@@ -477,14 +391,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn empty_path_is_reported_not_thrown() {
-        let result = empty_open_path_result("").unwrap();
-        assert!(!result.success);
-        assert_eq!(result.error.as_deref(), Some("empty path"));
-        assert!(empty_open_path_result("   \t").is_some());
-        assert!(empty_open_path_result("/tmp/zcode").is_none());
-    }
 
     #[test]
     fn open_result_wire_shape() {
@@ -507,17 +413,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn notification_copy_must_be_present() {
-        let (title, body) = trimmed_notification_text("  Hello  ", "\n world \n").unwrap();
-        assert_eq!(title, "Hello");
-        assert_eq!(body, "world");
-        for (title, body) in [("   ", "body"), ("title", "\n\t"), ("", "")] {
-            let error = trimmed_notification_text(title, body).unwrap_err();
-            assert!(
-                matches!(error, CommandError::InvalidPayload(_)),
-                "({title:?}, {body:?}) should be InvalidPayload, got {error:?}"
-            );
-        }
-    }
 }

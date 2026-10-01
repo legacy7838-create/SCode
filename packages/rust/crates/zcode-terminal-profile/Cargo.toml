@@ -1,0 +1,31 @@
+[package]
+name = "zcode-terminal-profile"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Terminal profile detection, shell/cwd selection and the terminal spawn policy check."
+
+[lib]
+# `cdylib` is what the Node consumer loads: `zcode-terminal-profile.<platform>.node`.
+# `rlib` is kept so the crate's own integration tests (tests/*.rs) can link the pure
+# modules without going through napi.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+napi = { workspace = true }
+napi-derive = { workspace = true }
+serde_json = { workspace = true }
+# TOML for the alacritty.toml detector. Replaces the `smol-toml` npm package that
+# terminalProfile.ts used. Not yet in [workspace.dependencies] — see
+# docs/specs/rust-native-terminal-profile.md §9.
+toml = "0.8"
+# YAML for the alacritty.yml/.yaml detectors. Replaces the `yaml` npm package.
+# Chosen over `serde_yaml` (deprecated) and over a serde-based fork because the
+# extraction needs a value tree, not a typed deserialisation.
+yaml-rust2 = "0.10"
+# `access(2)` with X_OK, so `is_executable` has the same semantics as Node's
+# `accessSync(path, constants.X_OK)` — a mode-bit test would differ for an ACL-only
+# grant. Already compiled in the tree as a transitive `napi` dependency.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

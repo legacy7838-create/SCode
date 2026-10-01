@@ -6,7 +6,7 @@
  * - Boundary B (driver port): the engine core (a deterministic state machine) drives {@link WorkflowDriver} downward,
  *   and the driver reports progress upward through {@link WorkflowReportSink}.
  * - Journal: {@link JournalStorePort} exposes run/actor/node/event records through repository-style methods,
- *   so the in-memory implementation and the future SQLite implementation both fall into place naturally (synchronous methods fit node:sqlite's DatabaseSync, and keep the core deterministic).
+ *   so the in-memory implementation and the native implementation both fall into place naturally (synchronous methods keep the core deterministic; the production journal is the `zcode-events` crate's `DwfJournal`, spec §14).
  */
 
 import type {

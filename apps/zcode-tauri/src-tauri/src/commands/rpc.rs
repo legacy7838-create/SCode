@@ -5,9 +5,7 @@
 //! startup, so the renderer never learned an address. Under Tauri the listener
 //! is a real socket, so the address is real state that has to be published.
 
-use tauri::State;
 
-use crate::rpc::RpcHost;
 
 /// Result of asking the host where its RPC listener is.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -23,33 +21,6 @@ pub struct RpcEndpointState {
     pub channel_count: usize,
     /// `true` when unported channels are relayed to `@zcode/server`.
     pub proxy_enabled: bool,
-}
-
-/// Where the in-process RPC listener is, and whether it is up.
-///
-/// Returns `running: false` rather than an error when the listener failed to
-/// start: the UI is still served by `@zcode/server` at this stage, so a missing
-/// RPC listener is a degraded capability, not a fatal condition.
-#[tauri::command]
-pub fn get_rpc_endpoint(host: State<'_, RpcHost>) -> RpcEndpointState {
-    match host.endpoint() {
-        Some(endpoint) => RpcEndpointState {
-            running: true,
-            ws_url: Some(endpoint.ws_url),
-            address: Some(endpoint.address),
-            // Read the live count rather than the value captured at bind time,
-            // so a channel registered after startup is reflected.
-            channel_count: host.channel_count(),
-            proxy_enabled: host.proxy_enabled(),
-        },
-        None => RpcEndpointState {
-            running: false,
-            ws_url: None,
-            address: None,
-            channel_count: 0,
-            proxy_enabled: false,
-        },
-    }
 }
 
 #[cfg(test)]

@@ -1,0 +1,31 @@
+[package]
+name = "zcode-config"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Workspace Hook trust store: strict schema, fail-closed read, and deterministic digests."
+
+[lib]
+# `cdylib` is what the Node consumer loads: `zcode-config.<platform>.node`.
+# `rlib` is kept so the crate's integration tests (`tests/*.rs`) can link the pure
+# modules without going through napi.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+napi = { workspace = true }
+napi-derive = { workspace = true }
+serde = { workspace = true }
+# `preserve_order` is load-bearing, not a preference: `settingService.ts:308-309`
+# compares `providerFamilyConnectionSelections` by `JSON.stringify` form, so
+# re-serialising in sorted-key order would change the bytes of `setting.json` on
+# the next write. See docs/specs/rust-native-config.md §6 R4.
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+
+[features]
+default = ["napi-exports"]
+napi-exports = []
+
+[dev-dependencies]
+serde_json = { workspace = true }

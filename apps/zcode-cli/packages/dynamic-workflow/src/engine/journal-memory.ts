@@ -1,7 +1,8 @@
 /**
  * The in-memory {@link JournalStorePort}: used in phase one for fake-driver tests and for replay/resume. Purely in memory and synchronous;
  * values are deep-copied in and out so that a reference the caller holds can never be changed by a later
- * write behind its back (simulating the storage boundary). The production implementation sits on the zcode session store's node:sqlite (DatabaseSync, synchronous)
+ * write behind its back (simulating the storage boundary). The production implementation is the native
+ * `DwfJournal` in the `zcode-events` crate (synchronous, spec §14), reached through the session store's `JournalStorePort` adapter
  * and shares the JournalStorePort; transactional behavior is not part of the port surface — the driver composes the journal+session writes.
  */
 

@@ -1,0 +1,16 @@
+[package]
+name = "zcode-chrome-cookies"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = { workspace = true }
+napi-derive = { workspace = true }
+serde_json = { workspace = true }
+rusqlite = { workspace = true }
+base64 = { workspace = true }

@@ -12,7 +12,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::Connection;
 use serde::Serialize;
-use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use crate::error::StoreError;
@@ -186,42 +185,24 @@ pub fn classify(error: &StoreError) -> String {
   fallback
 }
 
-fn validate_migrations(migrations_json: &str) -> Result<Vec<MigrationDef>, StoreError> {
-  let parsed: Value = serde_json::from_str(migrations_json)
-    .map_err(|e| StoreError::op(format!("migrations payload must be JSON: {}", e)))?;
-  let list = parsed
-    .as_array()
-    .ok_or_else(|| StoreError::op("migrations payload must be a JSON array"))?;
-  if list.is_empty() {
+/// The crate now owns the frozen migration list ([`crate::migrations`]); validate
+/// its shape so a bad edit fails loudly here rather than mid-migration. This
+/// preserves the invariants the previous JSON payload was validated against
+/// (non-empty list, `databaseMigrationIdSchema` id format) without the JSON hop.
+fn validate_migrations() -> Result<Vec<MigrationDef>, StoreError> {
+  let migrations = crate::migrations::migration_definitions();
+  if migrations.is_empty() {
     return Err(StoreError::op("migrations list must not be empty"));
   }
-  let mut out = Vec::with_capacity(list.len());
-  for entry in list {
-    let id = entry
-      .get("id")
-      .and_then(Value::as_str)
-      .ok_or_else(|| StoreError::op("migration entry missing `id`"))?;
-    if !valid_migration_id(id) {
+  for migration in &migrations {
+    if !valid_migration_id(&migration.id) {
       return Err(StoreError::op(format!(
         "invalid migration id `{}` (expected ^[a-zA-Z_0-9-]{{1,128}}$)",
-        id
+        migration.id
       )));
     }
-    let sql = entry
-      .get("sql")
-      .and_then(Value::as_str)
-      .ok_or_else(|| StoreError::op(format!("migration `{}` missing `sql`", id)))?;
-    let app_version = entry
-      .get("appVersion")
-      .and_then(Value::as_str)
-      .ok_or_else(|| StoreError::op(format!("migration `{}` missing `appVersion`", id)))?;
-    out.push(MigrationDef {
-      id: id.to_string(),
-      sql: sql.to_string(),
-      app_version: app_version.to_string(),
-    });
   }
-  Ok(out)
+  Ok(migrations)
 }
 
 /// `databaseMigrationIdSchema` (`packages/shared/src/database-startup.ts:110`).
@@ -405,13 +386,8 @@ fn pending_delay_yield(state: &mut MigState) -> Option<StepOut> {
 }
 
 /// Advance the machine by one legacy yield point (or a terminal value/error).
-pub fn step(
-  state: &mut MigState,
-  conn: &Connection,
-  db_path: &str,
-  migrations_json: &str,
-) -> Result<StepOut, StoreError> {
-  let migrations = validate_migrations(migrations_json)?;
+pub fn step(state: &mut MigState, conn: &Connection, db_path: &str) -> Result<StepOut, StoreError> {
+  let migrations = validate_migrations()?;
   loop {
     match state.phase {
       Phase::Init => {

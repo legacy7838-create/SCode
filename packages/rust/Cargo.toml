@@ -27,7 +27,9 @@ base64 = "0.23"
 crc32fast = "1.5"
 # zcode-events (docs/specs/rust-native-events.md): rusqlite bundled avoids a system-SQLite dependency;
 # sha2 matches migration checksums computed as createHash("sha256") of trimmed SQL (migration-runner.ts:296-298).
-rusqlite = { version = "0.37", features = ["bundled"] }
+# `backup` adds SQLite's Online Backup API, which zcode-chrome-cookies uses to snapshot Chrome's own
+# Cookies database (the last node:sqlite user in the repo, packages/desktop/src/main/chromeCookieManager.ts).
+rusqlite = { version = "0.37", features = ["bundled", "backup"] }
 sha2 = "0.10"
 # zcode-markdown: inline tokenization of independent blocks is data-parallel, so
 # rayon maps it over the libuv worker pool instead of lexing blocks serially.
@@ -45,7 +47,31 @@ cron = "0.15"
 # existing version. Hand-rolling WHATWG URL semantics for a security decision is not
 # acceptable — docs/specs/rust-native-url-guard.md §3.3.
 url = "2"
+# zcode-fs (docs/specs/rust-native-fs.md): Gitignore-spec 2.22 matching. Hand-writing
+# gitignore parsing is forbidden by the ported workspaceFileIgnore.ts:16-20, which names
+# the npm `ignore` package as the reference implementation; this is its Rust counterpart
+# (same spec, same author), so the rules behave identically.
+#
+# NOTE: `mime_guess` was staged for this port and then deliberately REJECTED. The
+# predecessor's inferMediaTypeFromPath is a closed three-step extension table, and
+# mime_guess disagrees with it (audio/ogg for .opus, text/plain for .ts). Reproducing
+# the table verbatim is invariant 3 compliance; matching a general-purpose crate is a
+# behavior fork. See docs/specs/rust-native-fs.md §3.7 / R9.
+ignore = "0.4.33"
+# zcode-sysinfo (docs/specs/rust-native-sysinfo.md): cross-platform host + process
+# introspection. Chosen over hand-rolled per-OS syscalls because Windows is a supported
+# release target and per-OS code there is the maintenance hazard.
+sysinfo = "0"
 
 [profile.release]
 lto = "thin"
 strip = "symbols"
+
+# Dev-profile debug info. Cargo's default is `debug = true` (full DWARF), and
+# this workspace's dependency tree is large enough that the generated `.rlib`
+# debug sections dominate `target/` — measured 2026-10-01 at 36 GB for
+# `apps/zcode-tauri/src-tauri/target/debug` alone. Line tables keep panics and
+# backtraces pointing at the right source line, which is what a dev build is
+# actually for, while dropping the bulk of the payload. Release already strips.
+[profile.dev]
+debug = "line-tables-only"

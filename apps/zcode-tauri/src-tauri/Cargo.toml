@@ -63,6 +63,16 @@ reqwest = { version = "0.13", default-features = false, features = ["blocking", 
 # secrets written by the Node build stay readable. `sha2`, `base64` and `rand` are
 # already in the lock file via the plugin tree; only the AEAD is new.
 aes-gcm = "0.10"
+# Terminal pty spawn for the Tauri host (apps/zcode-tauri/CUTOVER_SPEC.md §3 A3).
+# A Tauri process is not Node, so it cannot load the node-pty prebuild the Electron host
+# used. portable-pty is the cross-platform replacement because it wraps ConPTY on Windows,
+# forkpty on macOS and openpty on Linux behind one API — which matters when the release
+# matrix is six targets and cross-compilation is still a known gap (CUTOVER_SPEC R4).
+portable-pty = "0.8"
+# Desktop notification replacement for A4. The Tauri notification plugin returns no
+# handle, so same-tag replacement (which Electron had via the notification `tag`) has to
+# be tracked in-process to stay reproducible.
+notify-rust = "4"
 crossbeam-channel = "0.5"
 rand = "0.8"
 sha2 = "0.10"
@@ -86,3 +96,10 @@ opt-level = "s"
 # backoff and per-child restart unreachable. Unwinding is what makes crash
 # recovery work; see src/supervisor/mod.rs.
 strip = true
+
+# Dev-profile debug info. Cargo defaults to full DWARF, which is what made
+# `target/debug` the single largest directory in the tree — 36 GB measured
+# 2026-10-01. `line-tables-only` keeps usable backtraces (the dev loop's actual
+# need) and is a cache the user can delete with `cargo clean`, not an output.
+[profile.dev]
+debug = "line-tables-only"

@@ -21,6 +21,7 @@ import "@zcode/ui/styles.css";
 import { connectViaWebSocket } from "@zcode/client";
 
 import { createTauriPlatform } from "./platform/tauriPlatform.js";
+import { beginRendererSession } from "./platform/session.js";
 
 // --- Theme seed (mirrors the Electron/Web first-paint theme resolution) ------
 {
@@ -120,10 +121,28 @@ function ErrorScreen({ message }: { message: string }) {
 }
 
 async function bootstrap(): Promise<void> {
+  // Attach to the surviving host session **before** the service channel is opened.
+  //
+  // Electron owned this: `main` transferred a `MessagePortMain` and the Host kept the identity
+  // across a renderer reload, because rebuilding the host "is the root cause of 'session identity is
+  // volatile'" (`desktopWindowLifecycle.ts:125-166`). Tauri has no transferable port, so the session
+  // is Rust-side state the renderer has to ask for. Without this call the handshake commands
+  // (`begin_renderer_session`, `get_renderer_session`) were registered but unreachable, and the
+  // whole identity story was inert.
+  const session = await beginRendererSession();
+  if (!session) {
+    // A missing attachment is not a reason to render the UI: `connectViaWebSocket` would connect a
+    // renderer that has no identity, which is exactly the "session identity is volatile" failure the
+    // handshake exists to prevent. Fail loudly instead.
+    root.render(
+      <ErrorScreen message="Could not attach to the desktop host session. Please restart ZCode." />,
+    );
+    return;
+  }
+  document.title = "ZCode";
   platform.notifyRendererReady();
   try {
     const services = await connectViaWebSocket(resolveServiceWsUrl(), { onClose: () => {} });
-    document.title = "ZCode";
     root.render(
       <AppErrorBoundary
         isDesktop

@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { DatabaseSync } from "node:sqlite";
 import type {
   CollaborationMode,
   ClaimLegacySessionWorkspaceInput,
@@ -77,7 +76,7 @@ import {
 import type { ForkCommitFaultStage, SqliteSessionStoreOptions } from "./options.js";
 import { ensureParentDir, getDefaultSessionDbPath } from "./paths.js";
 import { maybeThrowStorageFsFault } from "../fs-fault-injection.js";
-import { createDwfJournalStore } from "./repositories/dwf-journal.js";
+import { createDwfJournalStore, type SqliteDwfJournalStore } from "./repositories/dwf-journal.js";
 import {
   decodeActivity,
   decodeDefinition,
@@ -90,7 +89,6 @@ import {
   type WorkflowRunRow,
   type SessionTaskLinkRow,
 } from "./repositories/script-workflow-codecs.js";
-import { SQLITE_MIGRATIONS } from "./migrations.js";
 import {
   decodeMessageRow,
   decodePartRow,
@@ -695,8 +693,7 @@ export class SqliteSessionStore
   private readonly client: EventsClient;
   private readonly dbPath: string;
   private readonly forkCommitFaultAt?: ForkCommitFaultStage;
-  private dwfJournalStore?: JournalStorePort;
-  private dwfJournalDb?: DatabaseSync;
+  private dwfJournalStore?: SqliteDwfJournalStore;
 
   private constructor(options: SqliteSessionStoreOptions, migrationLockWaitMs: number) {
     this.dbPath = options.dbPath ?? getDefaultSessionDbPath();
@@ -731,12 +728,7 @@ export class SqliteSessionStore
       migrationOptions.lockWaitTimeoutMs ?? DEFAULT_SQLITE_MIGRATION_WAIT_MS,
     );
     try {
-      await runSqliteSessionMigrationsAsync(
-        store.client,
-        store.dbPath,
-        SQLITE_MIGRATIONS,
-        migrationOptions,
-      );
+      await runSqliteSessionMigrationsAsync(store.client, store.dbPath, migrationOptions);
       return store;
     } catch (error) {
       // close may also fail due to IO; the original cause of the migration is the reason the user should deal with.
@@ -753,13 +745,13 @@ export class SqliteSessionStore
     // Sync by contract (§5.3): releases the dispatcher + native store; the
     // dwf journal runs on its own connection and closes with the store.
     this.client.close();
-    if (this.dwfJournalDb) {
+    if (this.dwfJournalStore) {
       try {
-        this.dwfJournalDb.close();
+        this.dwfJournalStore.close();
       } catch {
         /* Connection may already be unusable; close stays sync and loud-free. */
       }
-      this.dwfJournalDb = undefined;
+      this.dwfJournalStore = undefined;
     }
   }
 
@@ -2245,16 +2237,13 @@ export class SqliteSessionStore
    * The dynamic-workflow execution engine's durable journal (dwf_* tables). The port is synchronous, so here returns
    * The port object itself rather than being forwarded method by method - the engine holds it and reads and writes it at its own pace.
    *
-   * The journal keeps `node:sqlite` on ITS OWN connection (spec §2.2): the ported
-   * store no longer owns a DatabaseSync, and the journal's synchronous domain
-   * contract is out of this port's boundary.
+   * The journal has its own native connection (spec §14.2): the ported store no
+   * longer owns a DatabaseSync, and the journal's synchronous domain contract is
+   * served by the `zcode-events` crate's sync `DwfJournal` surface.
    */
   workflowJournalStore(): JournalStorePort {
     if (!this.dwfJournalStore) {
-      const journalDb = new DatabaseSync(this.dbPath, { timeout: 5_000 });
-      journalDb.exec("pragma foreign_keys = on");
-      this.dwfJournalDb = journalDb;
-      this.dwfJournalStore = createDwfJournalStore(journalDb);
+      this.dwfJournalStore = createDwfJournalStore(this.dbPath);
     }
     return this.dwfJournalStore;
   }

@@ -320,6 +320,28 @@ fn cmd_plan(raw: &[String]) -> Result<(), Failure> {
             inv.cdylib_without_subpath.join(", ")
         );
     }
+    if !inv.registered_commands_without_caller.is_empty() {
+        println!(
+            "[zcode-packaging] note: {} registered Tauri command(s) that no renderer file invokes: {}",
+            inv.registered_commands_without_caller.len(),
+            inv.registered_commands_without_caller.join(", ")
+        );
+        if !inv.justified_uncalled_commands.is_empty() {
+            println!(
+                "[zcode-packaging] note: {} registered Tauri command(s) are uncalled but justified in apps/zcode-tauri/UNWIRED_COMMANDS.md",
+                inv.justified_uncalled_commands.len()
+            );
+        }
+        println!(
+            "  No justification is recorded for these in apps/zcode-tauri/UNWIRED_COMMANDS.md."
+        );
+        println!(
+            "  Give each a reason, or delete it and its registration. A bare allowlist is not accepted:"
+        );
+        println!(
+            "  the parser drops an entry with no reason after the dash."
+        );
+    }
 
     plan::write_plan(&plan, &out)?;
     Ok(())

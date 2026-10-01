@@ -1,0 +1,21 @@
+[package]
+name = "zcode-fs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = { workspace = true }
+napi-derive = { workspace = true }
+base64 = { workspace = true }
+# Gitignore-spec 2.22 matching. The workspace does not declare this yet, so it
+# is pinned here directly; see docs/specs/rust-native-fs.md §6 R8 and the
+# REQUIRED-CHANGE block in the port report. Hand-writing gitignore parsing is
+# forbidden by workspaceFileIgnore.ts:16-20 (the npm `ignore` package is the
+# reference implementation); this crate is its Rust counterpart, same spec and
+# same author, so the rules behave identically.
+ignore = "0.4.33"

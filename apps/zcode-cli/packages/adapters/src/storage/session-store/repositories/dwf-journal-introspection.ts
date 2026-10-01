@@ -8,7 +8,7 @@
  * The engine's `JournalStorePort` write surface is not here — there is no writer in this file.
  */
 
-import type { DatabaseSync } from "node:sqlite";
+import type { DwfJournalClient } from "@zcode/rust/events";
 import type { NodeRecord, NodeRecordStatus, RunStatus, StoredEvent } from "@zcode/dynamic-workflow";
 import type { DwfArtifactItem, DwfArtifactItemsQuery } from "./dwf-journal-artifacts.js";
 import {
@@ -26,7 +26,6 @@ import {
   type DwfRunRow,
   type DwfRunSessionListItem,
   type DwfRunSessionRow,
-  encodeRunStatusPredicate,
 } from "./dwf-journal-codecs.js";
 
 /** The query bag of {@link DwfRunIntrospectionQueries.listRuns}. */
@@ -125,44 +124,19 @@ export interface DwfRunIntrospectionQueries {
  * Rows are a narrow projection ({@link DwfRunListItem}, without failure / result): the listing surface does not show artifacts, and
  * artifacts can be large.
  */
-export function listRuns(db: DatabaseSync, query: DwfListRunsQuery): DwfRunListItem[] {
-  // The semantics of an empty state set is "not matching any state" rather than "no filtering": treating it as the latter is equivalent to making an explicit
-  // Passed-down filters are silently disabled. In the same way, limit ≤ 0 is an empty page (the `limit -1` of listEvents is the full idiom
-  // Doesn't apply to this query - enum faces are always bounded).
-  //
-  // The floor is here, the ceiling is not there: the caller legally passes "Tool surface upper limit + 1" when truncating the probe line, adding one
-  // `Math.min(50, …)` will make truncated permanently absent at exactly limit = 50. See {@link DwfListRunsQuery.limit}.
+export function listRuns(db: DwfJournalClient, query: DwfListRunsQuery): DwfRunListItem[] {
+  // The semantics of an empty state set is "not matching any state" rather than "no filtering", and limit ≤ 0 is an empty page.
+  // The native op keeps both guards; they are repeated here so the contract is visible at the boundary.
   if (query.statuses !== undefined && query.statuses.length === 0) return [];
   if (query.limit <= 0) return [];
-
-  // By default, cwd does not add predicates: the history of the global workflow spans all projects it runs (global variants are not filtered by cwd).
-  // If cwd is given, the literal equivalent value will be matched, and dwf_run_cwd_idx will be used, and the behavior will remain unchanged literally.
-  const cwdFilter = query.cwd === undefined ? "" : " and cwd = ?";
-  // Logical state → physical predicate (stopped / errored shared physical failed, relying on the code of failure_json in SQL
-  // to distinguish; see encodeRunStatusPredicate of dwf-journal-codecs.ts).
-  const statusPredicate =
-    query.statuses === undefined ? undefined : encodeRunStatusPredicate(query.statuses);
-  const statusFilter = statusPredicate === undefined ? "" : ` and ${statusPredicate.sql}`;
-  const nameFilter = query.name === undefined ? "" : " and name = ?";
-  const rows = db
-    .prepare(
-      `
-      select
-        id, parent_session_id, cwd, name, script_text, script_hash, tool_call_id,
-        args_json, resumed_from, caps_max_concurrency,
-        spent_tokens, status, failure_json, time_created, time_updated
-      from dwf_run
-      where 1 = 1${cwdFilter}${statusFilter}${nameFilter}
-      order by time_updated desc
-      limit ?
-      `,
-    )
-    .all(
-      ...(query.cwd === undefined ? [] : [query.cwd]),
-      ...(statusPredicate?.params ?? []),
-      ...(query.name === undefined ? [] : [query.name]),
-      query.limit,
-    ) as unknown as DwfRunMetadataRow[];
+  // cwd / statuses / ordering / limit are all pushed down into SQL by the native op (the same
+  // predicate `encodeRunStatusPredicate` produced; it moved into the crate with the SQL).
+  const rows = db.exec<DwfRunMetadataRow[]>("listRuns", {
+    cwd: query.cwd,
+    limit: query.limit,
+    statuses: query.statuses,
+    name: query.name,
+  });
   return rows.map(decodeRunListItem);
 }
 
@@ -171,8 +145,8 @@ export function listRuns(db: DatabaseSync, query: DwfListRunsQuery): DwfRunListI
  * not care), while the detail surface has to report createdAt / updatedAt, and it **must read the journal directly** — the in-memory
  * snapshot reports a fake start time once the entry has evaporated.
  */
-export function getRunRow(db: DatabaseSync, runId: string): DwfRunDetailRow | undefined {
-  const row = db.prepare("select * from dwf_run where id = ?").get(runId) as DwfRunRow | undefined;
+export function getRunRow(db: DwfJournalClient, runId: string): DwfRunDetailRow | undefined {
+  const row = db.exec<DwfRunRow | null>("getRunRow", { runId });
   return row ? decodeRunDetailRow(row) : undefined;
 }
 
@@ -184,10 +158,10 @@ export function getRunRow(db: DatabaseSync, runId: string): DwfRunDetailRow | un
  * missing key would turn "no nodes yet" into NaN. The vocabulary is the three values of `NodeRecordStatus` — `queued` exists only in
  * the event phase and is never persisted.
  */
-export function countNodesByStatus(db: DatabaseSync, runId: string): DwfNodeStatusCounts {
-  const rows = db
-    .prepare("select status, count(*) as total from dwf_node where run_id = ? group by status")
-    .all(runId) as unknown as { status: NodeRecordStatus; total: number }[];
+export function countNodesByStatus(db: DwfJournalClient, runId: string): DwfNodeStatusCounts {
+  const rows = db.exec<{ status: NodeRecordStatus; total: number }[]>("countNodesByStatus", {
+    runId,
+  });
   const counts: DwfNodeStatusCounts = { running: 0, completed: 0, failed: 0 };
   for (const row of rows) counts[row.status] = Number(row.total);
   return counts;
@@ -200,14 +174,15 @@ export function countNodesByStatus(db: DatabaseSync, runId: string): DwfNodeStat
  * reading the whole journal into memory for a few tail rows is exactly what the existence of pagination rules out. The type filter
  * is pushed down as well — the `type` column is redundancy stored for this purpose (payload_json holds a copy too).
  */
-export function listRecentLogEvents(db: DatabaseSync, runId: string, limit: number): StoredEvent[] {
+export function listRecentLogEvents(
+  db: DwfJournalClient,
+  runId: string,
+  limit: number,
+): StoredEvent[] {
   if (limit <= 0) return [];
-  const rows = db
-    .prepare(
-      "select * from dwf_event where run_id = ? and type = 'log' order by sequence desc limit ?",
-    )
-    .all(runId, limit) as unknown as DwfEventRow[];
-  return rows.reverse().map(decodeEvent);
+  // The native op fetched `order by sequence desc limit ?` and re-sorted ascending in SQL.
+  const rows = db.exec<DwfEventRow[]>("listRecentLogEvents", { runId, limit });
+  return rows.map(decodeEvent);
 }
 
 /**
@@ -226,32 +201,11 @@ export function listRecentLogEvents(db: DatabaseSync, runId: string, limit: numb
  * The subquery always has a solution (the interval contains at least `run-started` itself), so a normal row never returns null; it
  * is still narrowed defensively — this is a read surface that crosses a storage boundary, and a null would silently become NaN milliseconds.
  */
-export function listRunLifeSpans(db: DatabaseSync, runId: string): DwfRunLifeSpan[] {
-  const rows = db
-    .prepare(
-      `
-      with lives as (
-        select sequence, time_created,
-               lead(sequence) over (order by sequence) as next_sequence
-        from dwf_event
-        where run_id = ? and type = 'run-started'
-      )
-      select
-        l.time_created as started_at,
-        (
-          select e.time_created
-          from dwf_event e
-          where e.run_id = ?
-            and e.sequence >= l.sequence
-            and (l.next_sequence is null or e.sequence < l.next_sequence)
-          order by e.sequence desc
-          limit 1
-        ) as last_activity_at
-      from lives l
-      order by l.sequence
-      `,
-    )
-    .all(runId, runId) as unknown as { started_at: number; last_activity_at: number | null }[];
+export function listRunLifeSpans(db: DwfJournalClient, runId: string): DwfRunLifeSpan[] {
+  const rows = db.exec<{ started_at: number; last_activity_at: number | null }[]>(
+    "listRunLifeSpans",
+    { runId },
+  );
   return rows.map((row) => ({
     startedAt: Number(row.started_at),
     lastActivityAt:
@@ -277,56 +231,27 @@ export function listRunLifeSpans(db: DatabaseSync, runId: string): DwfRunLifeSpa
  * with the rows (`RunRecord` deliberately carries none).
  */
 export function listRunsByParentSession(
-  db: DatabaseSync,
+  db: DwfJournalClient,
   parentSessionId: string,
   limit: number,
 ): DwfRunSessionListItem[] {
-  const rows = db
-    .prepare(
-      `
-      select
-        id, parent_session_id, cwd, name, script_text, script_hash, tool_call_id,
-        args_json, resumed_from, caps_max_concurrency,
-        spent_tokens, status, failure_json, time_created, time_updated
-      from dwf_run
-      where parent_session_id = ?
-      order by time_updated desc, id desc
-      limit ?
-      `,
-    )
-    .all(parentSessionId, Math.max(0, limit)) as unknown as DwfRunSessionRow[];
+  const rows = db.exec<DwfRunSessionRow[]>("listRunsByParentSession", {
+    parentSessionId,
+    limit: Math.max(0, limit),
+  });
   return rows.map(decodeRunSessionListItem);
 }
 
-export function listWorldNodes(db: DatabaseSync, runId: string): DwfWorldNodeRow[] {
-  const rows = db
-    .prepare(
-      `
-      select
-        run_id, site_id, ordinal, kind, actor_site_id, actor_ordinal, actor_seq, input_hash,
-        status, error_json, stats_json, message_boundary, artifact_id, input_json,
-        length(cast(result_json as blob)) as result_bytes,
-        case when json_type(result_json) = 'array' then json_array_length(result_json) end
-          as result_count,
-        case when json_type(result_json) = 'object' then json_extract(result_json, '$.exitCode') end
-          as exit_code,
-        case when json_type(result_json) = 'object'
-          then length(cast(json_extract(result_json, '$.stdout') as blob)) end as stdout_bytes,
-        case when json_type(result_json) = 'object'
-          then length(cast(json_extract(result_json, '$.stderr') as blob)) end as stderr_bytes,
-        time_created, time_updated
-      from dwf_node
-      where run_id = ? and kind in ('world-read', 'world-run')
-      order by id
-      `,
-    )
-    .all(runId) as unknown as (Omit<DwfNodeRow, "id" | "result_json"> & {
-    result_bytes: number | null;
-    result_count: number | null;
-    exit_code: number | null;
-    stdout_bytes: number | null;
-    stderr_bytes: number | null;
-  })[];
+export function listWorldNodes(db: DwfJournalClient, runId: string): DwfWorldNodeRow[] {
+  const rows = db.exec<
+    (Omit<DwfNodeRow, "id" | "result_json"> & {
+      result_bytes: number | null;
+      result_count: number | null;
+      exit_code: number | null;
+      stdout_bytes: number | null;
+      stderr_bytes: number | null;
+    })[]
+  >("listWorldNodes", { runId });
   return rows.map((row) => {
     const record = decodeNode({ ...row, id: 0, result_json: null });
     return {

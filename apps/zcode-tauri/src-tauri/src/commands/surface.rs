@@ -71,7 +71,7 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-use tauri::{LogicalPosition, LogicalSize, State, WebviewWindow};
+use tauri::{State, WebviewWindow};
 
 use super::{require_registered_window, CommandError, CommandResult};
 use crate::app_state::AppState;
@@ -240,26 +240,6 @@ pub fn load_window_bounds(path: &Path) -> WindowBounds {
 
 /// Live geometry of `window` in logical pixels.
 ///
-/// Uses `outer_position` + `inner_size` — exactly what `set_window_bounds`
-/// applies (`set_position` takes the outer position, `set_size` the inner
-/// size), so get→set round-trips precisely on the frameless window
-/// (`window.rs` builds it with `decorations(false)`).
-fn read_live_bounds(window: &WebviewWindow, maximized: bool) -> CommandResult<WindowBounds> {
-    let scale = window.scale_factor().map_err(CommandError::from)?;
-    let position = window.outer_position().map_err(CommandError::from)?.to_logical::<f64>(scale);
-    let size = window.inner_size().map_err(CommandError::from)?.to_logical::<f64>(scale);
-    Ok(WindowBounds {
-        // Positions round (nearest DIP under fractional scale factors);
-        // width/height floor, matching `Math.floor` in `persistCurrentState`
-        // (`desktopWindowSize.ts:50-51`).
-        x: position.x.round() as i32,
-        y: position.y.round() as i32,
-        width: size.width.floor() as u32,
-        height: size.height.floor() as u32,
-        maximized,
-    })
-}
-
 /// Apply a zoom factor to the calling window.
 ///
 /// The main-side replacement for `updateDesktopZoomLevel`
@@ -293,94 +273,6 @@ pub fn get_desktop_zoom(
 ) -> CommandResult<f64> {
     require_registered_window(&app_state, window.label())?;
     Ok(surface.zoom(window.label()))
-}
-
-/// Set the OS window title for the calling window.
-///
-/// The target is derived from the injected `WebviewWindow`, never from a
-/// payload field, so a caller cannot retitle a window it does not own.
-#[tauri::command]
-pub fn set_window_title(
-    window: WebviewWindow,
-    app_state: State<'_, Arc<AppState>>,
-    title: String,
-) -> CommandResult<()> {
-    require_registered_window(&app_state, window.label())?;
-    window.set_title(&title).map_err(CommandError::from)?;
-    Ok(())
-}
-
-/// Read the calling window's geometry, persisting it write-through.
-///
-/// While maximized, Tauri has no `getNormalBounds` equivalent: the live
-/// geometry *is* the monitor workspace, and overwriting the persisted normal
-/// bounds with it is precisely the corruption the Electron original guarded
-/// against (`desktopWindowSize.ts:46-48`: "Always read normal bounds and save
-/// maximized as a separate state"). So a maximized read serves the last
-/// persisted normal geometry with `maximized: true` (flipping and persisting
-/// the flag, as the `maximize` hook did at `desktopWindowSize.ts:79`);
-/// with nothing persisted yet it reports the live work area but does not
-/// write it.
-#[tauri::command]
-pub fn get_window_bounds(
-    window: WebviewWindow,
-    app_state: State<'_, Arc<AppState>>,
-) -> CommandResult<WindowBounds> {
-    require_registered_window(&app_state, window.label())?;
-    let path = window_bounds_file();
-
-    if window.is_maximized().map_err(CommandError::from)? {
-        if path.exists() {
-            let mut stored = load_window_bounds(&path);
-            if !stored.maximized {
-                // Flip and persist the flag (idempotent: only writes on the
-                // transition), keeping the stored normal geometry untouched.
-                stored.maximized = true;
-                save_window_bounds(&path, &stored)?;
-            }
-            return Ok(stored);
-        }
-        return read_live_bounds(&window, true);
-    }
-
-    let live = read_live_bounds(&window, false)?;
-    save_window_bounds(&path, &live)?;
-    Ok(live)
-}
-
-/// Apply geometry to the calling window and persist it immediately.
-///
-/// Bounds are applied to the *normal* geometry: a maximized window is
-/// unmaximized first (window managers ignore or corrupt `set_position`/
-/// `set_size` on a maximized window — the Tauri counterpart of reading
-/// `getNormalBounds` rather than maximized bounds in
-/// `desktopWindowSize.ts:48`), then `bounds.maximized` is re-applied last.
-/// The write is synchronous — there is no 250ms debounce whose pending entry
-/// `close` could drop (`desktopWindowSize.ts:79-81`).
-#[tauri::command]
-pub fn set_window_bounds(
-    window: WebviewWindow,
-    app_state: State<'_, Arc<AppState>>,
-    bounds: WindowBounds,
-) -> CommandResult<()> {
-    require_registered_window(&app_state, window.label())?;
-    let bounds = bounds.clamp();
-
-    if window.is_maximized().map_err(CommandError::from)? {
-        window.unmaximize().map_err(CommandError::from)?;
-    }
-    window
-        .set_position(LogicalPosition::new(bounds.x as f64, bounds.y as f64))
-        .map_err(CommandError::from)?;
-    window
-        .set_size(LogicalSize::new(bounds.width as f64, bounds.height as f64))
-        .map_err(CommandError::from)?;
-    if bounds.maximized {
-        window.maximize().map_err(CommandError::from)?;
-    }
-
-    save_window_bounds(&window_bounds_file(), &bounds)?;
-    Ok(())
 }
 
 #[cfg(test)]

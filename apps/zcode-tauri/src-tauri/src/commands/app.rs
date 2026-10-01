@@ -6,7 +6,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 
-use super::{require_registered_window, CommandError, CommandResult};
+use super::{require_registered_window, CommandResult};
 use crate::app_state::{AppState, QuitKind};
 
 /// Identity and build information for the running app.
@@ -20,19 +20,6 @@ pub struct AppInfo {
     pub tauri_version: String,
     pub os: String,
     pub arch: String,
-}
-
-#[tauri::command]
-pub fn get_app_info(app: AppHandle) -> AppInfo {
-    let package = app.package_info();
-    let os = tauri_plugin_os::platform();
-    let arch = tauri_plugin_os::arch();
-    AppInfo {
-        version: package.version.to_string(),
-        tauri_version: tauri::VERSION.to_string(),
-        os: os.to_string(),
-        arch: arch.to_string(),
-    }
 }
 
 /// Show the primary window (tray click, dock click, deep link).
@@ -68,26 +55,4 @@ pub fn request_quit(
     };
     state.request_quit(kind);
     Ok(true)
-}
-
-/// Read the recorded quit kind; used by the renderer to decide whether to warn
-/// about in-flight sessions.
-#[tauri::command]
-pub fn get_quit_kind(state: State<'_, Arc<AppState>>) -> Option<String> {
-    state.quit_kind().map(|k| match k {
-        QuitKind::Normal => "normal".to_string(),
-        QuitKind::UpdateInstall => "updateInstall".to_string(),
-    })
-}
-
-/// Diagnostics: the whole window registry, for the resource-manager surface and
-/// for e2e assertions.
-#[tauri::command]
-pub fn describe_runtime(state: State<'_, Arc<AppState>>) -> Result<serde_json::Value, CommandError> {
-    Ok(serde_json::json!({
-        "windows": state.snapshot(),
-        "mainWindows": state.main_window_labels(),
-        "primaryReady": state.is_primary_ready(),
-        "quitRequested": state.quit_requested(),
-    }))
 }

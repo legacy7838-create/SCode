@@ -81,7 +81,7 @@ impl StoreInner {
     Ok(())
   }
 
-  pub fn migrate_step(&self, migrations: &str) -> Result<migrate::StepOut, StoreError> {
+  pub fn migrate_step(&self) -> Result<migrate::StepOut, StoreError> {
     let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
     Self::check_open(&state)?;
     let lock_wait = self.migration_lock_wait_ms;
@@ -91,7 +91,7 @@ impl StoreInner {
     let mut machine = state.migration.take().expect("migration state just initialized");
     let outcome = {
       let conn = state.conn.as_ref().expect("connection just opened");
-      migrate::step(&mut machine, conn, &db_path, migrations)
+      migrate::step(&mut machine, conn, &db_path)
     };
     state.migration = Some(machine);
     outcome

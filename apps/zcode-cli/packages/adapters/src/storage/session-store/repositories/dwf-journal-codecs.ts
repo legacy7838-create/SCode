@@ -136,38 +136,9 @@ function isStoppedEnvelope(
   return typeof value.stopReason === "string" && STOP_REASONS.has(value.stopReason);
 }
 
-/**
- * Logical status filter → SQL predicate (the statuses pushdown of `listRuns`). At the physical layer `stopped` / `errored` share
- * the `failed` column value and are told apart by the code inside `failure_json` — use SQLite's json_extract to separate them in SQL
- * rather than fetching a page and filtering (the latter would make limit and truncation probing lie).
- */
-export function encodeRunStatusPredicate(statuses: readonly RunStatus[]): {
-  sql: string;
-  params: string[];
-} {
-  const clauses: string[] = [];
-  const params: string[] = [];
-  for (const status of statuses) {
-    switch (status) {
-      case "stopped":
-        clauses.push(
-          "(status = 'cancelled' or (status = 'failed' and json_extract(failure_json, '$.code') = ?))",
-        );
-        params.push(INTERRUPTED_CODE);
-        break;
-      case "errored":
-        clauses.push(
-          "(status = 'failed' and coalesce(json_extract(failure_json, '$.code'), '') <> ?)",
-        );
-        params.push(INTERRUPTED_CODE);
-        break;
-      default:
-        clauses.push("status = ?");
-        params.push(status);
-    }
-  }
-  return { sql: clauses.length === 0 ? "0" : `(${clauses.join(" or ")})`, params };
-}
+// `encodeRunStatusPredicate` moved into the `zcode-events` crate
+// (`src/dwf_journal.rs::run_status_predicate`) together with the SQL it feeds: the
+// predicate is pushed down into `listRuns`, so it is a native concern now (spec §14).
 
 export interface DwfRunRow {
   args_json: string | null;

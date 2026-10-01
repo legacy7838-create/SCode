@@ -34,7 +34,7 @@ export interface NativeMigrationStepResult {
 }
 
 export interface NativeEventsStore {
-  migrateStep(migrations: string): Promise<NativeMigrationStepResult>;
+  migrateStep(): Promise<NativeMigrationStepResult>;
   writeBatch(ops: NativeStoreOp[]): Promise<string>;
   read(op: NativeStoreOp): Promise<string>;
   txBegin(): Promise<void>;
@@ -53,6 +53,80 @@ export interface NativeEventsOpenOptions {
 
 export interface NativeEventsModule {
   EventsStore: new (options: NativeEventsOpenOptions) => NativeEventsStore;
+  DwfJournal: new (dbPath: string) => NativeDwfJournal;
+  DebugSnapshot: new (dbPath: string) => NativeDebugSnapshot;
+}
+
+/**
+ * Read-only observation handle over the session DB (spec §14.5). The `debug`
+ * package's observation server used to open its own `node:sqlite` connection;
+ * this is the same connection, native.
+ */
+export interface NativeDebugSnapshot {
+  exec(op: string): string;
+  close(): void;
+}
+
+/** Typed facade over the read-only snapshot; row shaping stays in the caller. */
+export class DebugSnapshotClient {
+  constructor(private readonly native: NativeDebugSnapshot) {}
+
+  rows<T = Record<string, unknown>>(op: string): T[] {
+    try {
+      return JSON.parse(this.native.exec(op)) as T[];
+    } catch (error) {
+      throw fromNativeError(error);
+    }
+  }
+
+  close(): void {
+    this.native.close();
+  }
+}
+
+/** Opens the session DB read-only. Throws with the native `open_failed` envelope. */
+export function createDebugSnapshot(dbPath: string): DebugSnapshotClient {
+  const module = loadEvents();
+  return new DebugSnapshotClient(new module.DebugSnapshot(dbPath));
+}
+
+/**
+ * The **synchronous** dwf-journal native surface (spec §14). Its domain contract
+ * (`JournalStorePort`) is synchronous by design, so these calls are synchronous too;
+ * the row ⇄ record codecs stay in `@zcode/adapters`.
+ */
+export interface NativeDwfJournal {
+  exec(op: string, payload: string): string;
+  close(): void;
+}
+
+/**
+ * Synchronous facade over the native journal: one `exec(op, payload)` per call.
+ * Native errors are decoded through `fromNativeError` (the structured envelope),
+ * so the two journal contract errors keep readable messages.
+ */
+export class DwfJournalClient {
+  constructor(private readonly native: NativeDwfJournal) {}
+
+  exec<T = unknown>(op: string, payload: unknown): T {
+    let raw: string;
+    try {
+      raw = this.native.exec(op, JSON.stringify(payload));
+    } catch (error) {
+      throw fromNativeError(error);
+    }
+    return JSON.parse(raw) as T;
+  }
+
+  close(): void {
+    this.native.close();
+  }
+}
+
+/** Open a journal connection over the session DB (sync open, spec §14.2). */
+export function createDwfJournal(dbPath: string): DwfJournalClient {
+  const module = loadEvents();
+  return new DwfJournalClient(new module.DwfJournal(dbPath));
 }
 
 /** Hard-throwing loader for the zcode-events binary (invariant 1: no fallback). */
@@ -112,10 +186,14 @@ export class EventsClient {
     this.store = store;
   }
 
-  /** Migration step driver primitive (runs before any store op exists). */
-  migrateStep(migrations: string): Promise<NativeMigrationStepResult> {
+  /**
+   * Migration step driver primitive (runs before any store op exists). The frozen
+   * migration list lives in the crate (`migrations.rs`), so no SQL crosses the
+   * boundary.
+   */
+  migrateStep(): Promise<NativeMigrationStepResult> {
     if (this.closed) return Promise.reject(storeClosedError());
-    return this.store.migrateStep(migrations).catch((error: unknown) => {
+    return this.store.migrateStep().catch((error: unknown) => {
       throw fromNativeError(error);
     });
   }
@@ -143,10 +221,7 @@ export class EventsClient {
    * to `txExec`) → `txCommit`/`tx_rollback`. The queue is held for the whole
    * scope, reproducing legacy run-to-completion atomicity (§4.3, D4).
    */
-  scope<T>(
-    run: (exec: EventsScopeExec) => Promise<T>,
-    preDispatch?: () => void,
-  ): Promise<T> {
+  scope<T>(run: (exec: EventsScopeExec) => Promise<T>, preDispatch?: () => void): Promise<T> {
     if (this.closed) return Promise.reject(storeClosedError());
     return new Promise<T>((resolve, reject) => {
       this.queue.push({
@@ -251,11 +326,9 @@ export class EventsClient {
     try {
       const exec: EventsScopeExec = {
         exec: (kind: string, payload: unknown) =>
-          this.store
-            .txExec({ kind, payload: JSON.stringify(payload) })
-            .catch((error: unknown) => {
-              throw fromNativeError(error);
-            }),
+          this.store.txExec({ kind, payload: JSON.stringify(payload) }).catch((error: unknown) => {
+            throw fromNativeError(error);
+          }),
       };
       const result = await entry.run(exec);
       await this.store.txCommit();
