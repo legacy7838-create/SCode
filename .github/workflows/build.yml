@@ -1,0 +1,181 @@
+# Cross-platform build matrix — the native .node binaries and the Tauri app, for all six release
+# targets.
+#
+# WHY A MATRIX AND NOT CROSS-COMPILATION. The Rust stack builds for the host target only
+# (`rust-native-program.md` R3, `rust-native-packaging.md` R3), and that is not a gap to work around
+# — it is a fact of the toolchain: a macOS app bundle cannot be produced on Linux (code signing and
+# notarization require Apple's tools), and a Windows MSVC build needs the Windows SDK. So each target
+# is built on its own native runner. GitHub provides a GA runner for every one of the six, which is
+# why no emulation or sysroot juggling is needed:
+#
+#   linux-x64    -> ubuntu-22.04
+#   linux-arm64  -> ubuntu-22.04-arm
+#   darwin-x64   -> macos-13      (Intel)
+#   darwin-arm64 -> macos-14      (Apple Silicon)
+#   win32-x64    -> windows-2022
+#   win32-arm64  -> windows-11-arm
+#
+# `zcode-packaging` already keys its staging on `target/<triple>/release` and accepts
+# `--target <os-arch>`, so each runner builds natively and the packager picks up the artifact for
+# its own triple. The suffix table (`native-targets.generated.ts`) and the packager agree by
+# construction — `cargo test -p zcode-packaging` byte-compares them.
+name: build
+
+on:
+  # Tagged releases build and upload every target.
+  push:
+    tags: ["v*"]
+  # Manual runs, for verifying the matrix without cutting a release.
+  workflow_dispatch:
+
+env:
+  PNPM_VERSION: "10.33.2"
+  NODE_VERSION: "24.14.0"
+
+jobs:
+  native:
+    name: native ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      # One target's failure must not cancel the others — a Windows SDK hiccup should not hide a
+      # green macOS build.
+      fail-fast: false
+      matrix:
+        include:
+          - { target: linux-x64, runner: ubuntu-22.04, triple: x86_64-unknown-linux-gnu }
+          - { target: linux-arm64, runner: ubuntu-22.04-arm, triple: aarch64-unknown-linux-gnu }
+          - { target: darwin-x64, runner: macos-13, triple: x86_64-apple-darwin }
+          - { target: darwin-arm64, runner: macos-14, triple: aarch64-apple-darwin }
+          - { target: win32-x64, runner: windows-2022, triple: x86_64-pc-windows-msvc }
+          - { target: win32-arm64, runner: windows-11-arm, triple: aarch64-pc-windows-msvc }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install Rust (host triple)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.triple }}
+
+      - name: Cache cargo + target
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/rust
+          key: ${{ matrix.target }}
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      # `build:native` builds the release profile and stages every cdylib into
+      # packages/rust/<crate>.<suffix>.node. On a native runner the host triple IS the target, so no
+      # --target flag is required; the packager reads target/release and names the artifact from the
+      # suffix table.
+      - name: Build and stage native crates
+        run: pnpm --filter @zcode/rust build:native
+
+      # The byte-boundary smoke is the acceptance gate for invariant 8 (every crate that moves bytes
+      # across the boundary). It must pass on every target, because a napi Buffer binding that works
+      # on glibc can still break on a different libc or pointer width.
+      - name: Byte-boundary smoke
+        run: node packages/rust/scripts/smoke-byte-boundary.mjs
+
+      - name: Upload native binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.target }}
+          # Every staged binary for this runner. `build:native` only emits the host suffix, so this
+          # glob cannot pick up a foreign target's artifact.
+          path: packages/rust/*.node
+          if-no-files-found: error
+
+  tauri:
+    name: tauri ${{ matrix.target }}
+    needs: native
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: linux-x64, runner: ubuntu-22.04 }
+          - { target: linux-arm64, runner: ubuntu-22.04-arm }
+          - { target: darwin-x64, runner: macos-13 }
+          - { target: darwin-arm64, runner: macos-14 }
+          - { target: win32-x64, runner: windows-2022 }
+          - { target: win32-arm64, runner: windows-11-arm }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo + target
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/zcode-tauri/src-tauri
+          key: tauri-${{ matrix.target }}
+
+      # Tauri renders through WebKitGTK on Linux, which is a system package, not a crate. The deb/rpm
+      # bundlers also need rsvg and the appindicator library. macOS (WKWebView) and Windows (WebView2,
+      # which the installer ships) need no extra system packages.
+      - name: Install Linux WebKitGTK + bundler deps
+        if: startsWith(matrix.runner, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libxdo-dev \
+            build-essential \
+            file
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The Tauri host links the native crates as rlibs (zcode-rpc-server, zcode-cron, …) and the
+      # renderer loads the .node binaries; staging them first means the webview and the server both
+      # find them. This is the step PORT_STATUS.md names as the prerequisite for a working run.
+      - name: Build and stage native crates
+        run: pnpm --filter @zcode/rust build:native
+
+      - name: Download native binaries for this target
+        uses: actions/download-artifact@v4
+        with:
+          name: native-${{ matrix.target }}
+          path: packages/rust
+
+      # `tauri build` runs the frontend build (beforeBuildCommand) and then bundles. On Linux it
+      # emits deb/appimage/rpm; on macOS a .app/.dmg; on Windows an .msi/.exe. The bundle target list
+      # is per-platform and lives in tauri.conf.json.
+      - name: Build Tauri app
+        run: pnpm --filter @zcode/tauri run tauri build
+
+      - name: Upload Tauri bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: tauri-${{ matrix.target }}
+          path: |
+            apps/zcode-tauri/src-tauri/target/release/bundle/**
+          if-no-files-found: error

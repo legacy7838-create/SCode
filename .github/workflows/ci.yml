@@ -1,0 +1,91 @@
+# Continuous integration — the gates that run on every push and PR.
+#
+# This mirrors exactly what `AGENTS.md` lists as the pre-push checks, so a green run here is the same
+# bar a local `pnpm verify:pre-push` clears. It runs on one Linux runner because every gate here is
+# host-independent: typecheck, lint, the architecture policy, the renderer-graph rule, and the Rust
+# unit tests do not depend on the target platform. The per-platform *build* matrix is `build.yml`;
+# this file is only the correctness gates.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# A newer push to the same ref cancels the older run — the gates are deterministic, so an
+# in-flight run against a superseded commit is wasted compute.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The pnpm store is the slow part of install; keying it on the lockfile hash is what makes a
+  # second run fast without ever serving a stale dependency.
+  PNPM_VERSION: "10.33.2"
+  NODE_VERSION: "24.14.0"
+
+jobs:
+  gates:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      # The Rust toolchain is needed for the native .node binaries the typecheck's consumers load,
+      # and for the crate tests below. Pinned via rust-toolchain if present; otherwise stable.
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo + target
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            packages/rust
+            apps/zcode-tauri/src-tauri
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The native binaries must exist before typecheck: the TypeScript wrappers import @zcode/rust
+      # subpaths whose .node is produced here. Without this the consumer typecheck would load a
+      # missing binary at test time.
+      - name: Build native crates
+        run: pnpm --filter @zcode/rust build:native
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Format check
+        run: pnpm fmt:check
+
+      - name: Architecture policy
+        # The full baseline-aware check, not `--changed`: CI validates the whole tree, and `--changed`
+        # needs a working-tree diff that a fresh checkout does not have. `check` fails on any NEW
+        # violation against `.architecture-baseline.json`.
+        run: pnpm architecture:check
+
+      # Invariant 9: no @zcode/rust import may be reachable from the renderer bundle, and the
+      # Node-only sanctioned subpaths must stay unreachable. This is the gate that keeps a .node out
+      # of the sandboxed renderer.
+      - name: Renderer-graph gate
+        run: node packages/shared/scripts/check-native-graph.mjs
+
+      - name: Rust workspace tests
+        run: cargo test --workspace --manifest-path packages/rust/Cargo.toml
+
+      - name: Tauri host tests
+        run: cargo test --manifest-path apps/zcode-tauri/src-tauri/Cargo.toml
