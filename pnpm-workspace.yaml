@@ -20,8 +20,6 @@ supportedArchitectures:
 allowBuilds:
   cpu-features: true
   edgedriver: true
-  electron: true
-  electron-winstaller: true
   esbuild: true
   geckodriver: true
   koffi: true

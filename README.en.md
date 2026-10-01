@@ -46,18 +46,16 @@ The default `bootstrap` skips remote asset preparation and is suitable for local
 ### Desktop
 
 ```bash
-pnpm dev:desktop
-
-# Use the test environment
-pnpm dev:desktop:test
+pnpm dev:desktop   # alias of pnpm dev:tauri
+pnpm dev:tauri
 ```
 
-`pnpm dev:desktop` defaults to `pnpm dev:desktop:prod` and uses production service configuration. The startup script prepares local runtime assets, builds the desktop Agent, then starts Electron and source watchers.
+The desktop app is Tauri (`apps/zcode-tauri`); `pnpm dev:desktop` now aliases `pnpm dev:tauri`. The Electron launchers (`dev:desktop:test`, `dev:desktop:prod`, `dev:desktop:bytecode`, `dev:desktop:remote-prod`) were deleted along with the Electron app.
 
 Set `ZCODE_DATA_BASE_DIR` to use a separate development data directory. For example, on macOS / Linux:
 
 ```bash
-ZCODE_DATA_BASE_DIR="$HOME/.zcode-dev-home" pnpm dev:desktop:test
+ZCODE_DATA_BASE_DIR="$HOME/.zcode-dev-home" pnpm dev:tauri
 ```
 
 ### Web Development
@@ -117,7 +115,7 @@ This entry runs the Agent CLI directly and does not handle the distribution's `-
 
 ## Configuration
 
-The root [.env.example](.env.example) provides sample service URLs and build configuration. Copy it to `.env` as needed and place local overrides in `.env.local`. Select the Desktop development environment with `dev:desktop:test` or `dev:desktop:prod`.
+The root [.env.example](.env.example) provides sample service URLs and build configuration. Copy it to `.env` as needed and place local overrides in `.env.local`. Select the desktop development environment with `dev:tauri`.
 
 | Setting                              | Purpose                                                                                 |
 | ------------------------------------ | --------------------------------------------------------------------------------------- |
@@ -132,18 +130,16 @@ Runtime variables can be set explicitly in the environment of the startup comman
 
 See [third-party/README.md](third-party/README.md) for notice generation, distribution checks, and where the notices are included in each distribution.
 
-### Desktop
+### Desktop (Tauri)
 
 ```bash
-pnpm bundle:desktop
+pnpm --filter @zcode/tauri run tauri build
 
-# Set the target platform and CPU architecture
-pnpm bundle:desktop -- --os win --arch x64
-
-pnpm bundle:desktop -- --help
+# Print the bundler's options
+pnpm --filter @zcode/tauri run tauri build -- --help
 ```
 
-The default target is macOS arm64, and the default output directory is `packages/desktop/dist/`. `--os` accepts `mac`, `win`, or `linux`; `--arch` accepts `x64` or `arm64`. Packaging and signing require the tools and configuration for the target platform.
+Bundles are produced by `tauri build` into `apps/zcode-tauri/src-tauri/target/release/bundle/`; on Linux it emits `deb`/`appimage`/`rpm`, on macOS a `.app`/`.dmg`, on Windows an `.msi`. The electron-builder configuration, and with it the Electron runtime, were deleted. The six-target CI matrix is `.github/workflows/build.yml`. Packaging and signing require the tools and configuration for the target platform.
 
 ### ZCode CLI distribution
 
@@ -195,7 +191,7 @@ Open `http://127.0.0.1:3030` to validate the complete flow, with one backend ser
 
 | Directory                                            | Responsibility                                                                          |
 | ---------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `packages/desktop`                                   | Electron Main, Host, Renderer, and desktop packaging                                    |
+| `apps/zcode-tauri`                                   | Tauri desktop app: Rust host, renderer, packaging                                       |
 | `packages/web`                                       | Web client                                                                              |
 | `packages/server`                                    | HTTP / WebSocket services and remote connections                                        |
 | `packages/zcode-server-cli`                          | Standalone server startup and process management                                        |

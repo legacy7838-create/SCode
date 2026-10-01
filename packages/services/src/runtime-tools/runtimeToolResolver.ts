@@ -58,14 +58,18 @@ function resolveCommandOnPath(
 
 function resolvePlatformScopedBundledToolRoots(moduleDir?: string): Array<string | null> {
   const platformKey = `${process.platform}-${process.arch}`;
+  // The bundled tools live at `<repo>/packages/bundled-tools/<platform>`, written by
+  // `scripts/native-search-tools-config.mjs` and by the zcode-cli SEA packaging. Every candidate
+  // here used to route through `packages/desktop`, which Electron's removal deleted; three of the
+  // five are gone with it, and one (`../../desktop`) pointed at `packages/services/desktop` —
+  // a path that never existed. What is left is the cwd-relative entry, the `packages/`-relative
+  // entry, and the one that walks up from this module to `packages/`.
   return [
     resolvePath(process.cwd(), "bundled-tools", platformKey),
-    resolvePath(process.cwd(), "packages", "desktop", "bundled-tools", platformKey),
-    resolvePath(process.cwd(), "..", "desktop", "bundled-tools", platformKey),
+    resolvePath(process.cwd(), "packages", "bundled-tools", platformKey),
     moduleDir
-      ? resolvePath(moduleDir, "..", "..", "..", "desktop", "bundled-tools", platformKey)
+      ? resolvePath(moduleDir, "..", "..", "..", "bundled-tools", platformKey)
       : null,
-    moduleDir ? resolvePath(moduleDir, "..", "..", "desktop", "bundled-tools", platformKey) : null,
   ];
 }
 

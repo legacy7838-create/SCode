@@ -47,9 +47,6 @@ modules:
   - id: web
     roots: [packages/web/src]
     managed: false
-  - id: desktop
-    roots: [packages/desktop/src]
-    managed: false
   - id: formal-proof
     roots: [packages/formal-proof/src]
     managed: false

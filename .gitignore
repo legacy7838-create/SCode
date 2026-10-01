@@ -3,15 +3,10 @@ dist/
 # zcode-server-cli release package staging output; locally assembled artifacts are not committed.
 dist-release/
 # macOS CI isolates electron-builder output directories per architecture; these are still build artifacts.
-packages/desktop/dist-*/
 out/
 prebuilds/
 bundled-resources/
 mock-cdn/
-packages/desktop/bundled-resources/
-packages/desktop/bundled-agents/
-packages/desktop/bundled-tools/
-packages/desktop/mock-cdn/
 *.tsbuildinfo
 # tsup --dts emits `*.bundled_<hash>.mjs` next to the config it was pointed at; it is a
 # regenerable build artifact, never source. Without this pattern each `pnpm bundle` leaves a
@@ -23,10 +18,6 @@ packages/desktop/mock-cdn/
 # compiled output shadowing the real source. Scoped to this single leaf name on purpose: a broad
 # `packages/desktop/src/**/*.d.ts` pattern would also match tracked source such as
 # src/shared/armsRumShared.d.ts and hide it from `git add`-based hygiene gates.
-packages/desktop/src/scheduler/schedulerProtocol.js
-packages/desktop/src/scheduler/schedulerProtocol.d.ts
-packages/desktop/src/scheduler/schedulerProtocol.js.map
-packages/desktop/src/scheduler/schedulerProtocol.d.ts.map
 .DS_Store
 coverage/
 .env.local
@@ -70,7 +61,6 @@ binding.Makefile
 
 # Swift helper binary used to snap the CUA permission floating window (built by prepare:macos-window-bounds from
 # packages/desktop/native/macos-window-bounds/main.swift; the source is committed, the artifact is not)
-packages/desktop/resources/macos-window-bounds/
 # CUA Helper SEA base download cache (the official Node 22 runtime that scripts/cua-helper-sea-base.mjs writes to disk; a pure download artifact)
 /.tmp/
 __pycache__/
@@ -78,9 +68,6 @@ __pycache__/
 
 # Local tool run outputs, all regenerable: desktop e2e screenshots/cache/network captures, plus the
 # dev runner's Electron download cache.
-packages/desktop/.e2e-artifacts/
-packages/desktop/.e2e-cache/
-packages/desktop/.e2e-network-capture/
 .zcode-runtime/
 
 # Local agent working state (per-task plan/checkpoint scratch written by the coding harness).
@@ -108,3 +95,5 @@ apps/zcode-tauri/src-tauri/gen/
 *.sqlite-wal
 *.sqlite-shm
 \n# Rust build artifacts staged at the repo root by ad-hoc builds\n/*.node\n
+
+packages/bundled-tools/

@@ -16,7 +16,7 @@ The following commands are run from the repository root:
 | Type checking         | `pnpm typecheck`                                     |
 | Lint                  | `pnpm lint` / `pnpm lint:fix`                        |
 | Format checking       | `pnpm fmt:check`                                     |
-| Desktop development   | `pnpm dev:desktop`                                   |
+| Desktop development   | `pnpm dev:desktop` (= `pnpm dev:tauri`)              |
 | Web development       | `pnpm dev:web`                                       |
 | Pre-commit check      | `pnpm verify:pre-push` (Lint and architecture check) |
 | Architecture check    | `pnpm architecture:check --changed`                  |
@@ -26,7 +26,7 @@ The following commands are run from the repository root:
 
 Test entry points are based on the target package's current `package.json` and actual test files; do not assume a unified unit test or E2E command exists.
 
-- `packages/desktop`: Electron main, host, renderer.
+- The desktop app is `apps/zcode-tauri` (Tauri). `packages/desktop` — the Electron main, host and renderer — was deleted; there is no Electron left in this repository, and no JavaScript fallback may be introduced in its place.
 - `packages/web`, `packages/server`: Web client and server.
 - `packages/ui`: Shared React components, hooks, and Zustand store.
 - `packages/services`: Business services; `packages/rpc`: RPC framework.

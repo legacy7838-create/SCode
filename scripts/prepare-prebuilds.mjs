@@ -39,8 +39,9 @@ export { computeComponentSourceSha256, packComponentSourceAsArchive };
 const require = createRequire(import.meta.url);
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const rootDir = resolve(scriptDir, "..");
-const desktopDir = join(rootDir, "packages/desktop");
-const mockCdnDir = join(desktopDir, "mock-cdn");
+// Lives at the repository root now: `packages/desktop` no longer exists, and the generic
+// `mock-cdn/` entry in .gitignore covers the directory wherever it sits.
+const mockCdnDir = join(rootDir, "mock-cdn");
 const version = require(join(rootDir, "package.json")).version;
 const ZCODE_AGENT_RUNTIME = {
   glm: {

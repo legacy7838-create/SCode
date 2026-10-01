@@ -25,11 +25,11 @@ pub struct Target {
 
 /// The six platforms the desktop packager supports.
 ///
-/// The key strings are intentionally identical to
-/// `packages/desktop/scripts/desktop-native-package-policy.mjs:1-8`
-/// (`darwin-arm64`, `darwin-x64`, `linux-arm64`, `linux-x64`, `win32-arm64`,
-/// `win32-x64`) so the staging tool and the electron-builder prune list speak the
-/// same vocabulary.
+/// The key strings are `darwin-arm64`, `darwin-x64`, `linux-arm64`, `linux-x64`,
+/// `win32-arm64`, `win32-x64` — the same vocabulary the staging tool, the zcode-cli SEA
+/// packaging and the CI build matrix all speak. They once matched a table in
+/// `packages/desktop/scripts/desktop-native-package-policy.mjs`; that Electron packaging
+/// script went with Electron, and the keys are kept here as the single source.
 pub const TARGETS: &[Target] = &[
     Target {
         key: "darwin-arm64",

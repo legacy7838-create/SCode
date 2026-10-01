@@ -133,21 +133,6 @@ function runBootstrapServerBuild() {
   );
 }
 
-function runBootstrapDesktopBuild() {
-  const desktopDir = resolve(rootDir, "packages/desktop");
-  // The goal of bootstrap:with-remote is to complete remote resource and local runtime initialization.
-  // Continuing to trigger the desktop app bundle will enter the tsup/vite path in the production build script and be SIGKILL in the local low-memory environment.
-  // Here only the build meta is retained in the bootstrap runner, and the production/CI build:no-runtime-assets still maintains the original semantics.
-  runCommand(process.execPath, ["scripts/build-metadata.mjs"], {
-    cwd: desktopDir,
-    env: {
-      ...process.env,
-      ...bootstrapWithRemoteEnv,
-    },
-  });
-  console.log("[bootstrap:with-remote] skip desktop app bundle build; runtime assets are prepared");
-}
-
 function runBootstrapWithRemoteBuild() {
   for (const filter of ["@zcode/rpc", "@zcode/web", "@zcode/formal-proof"]) {
     // pnpm -r will launch multiple Vite/esbuild/tsups concurrently during the final build phase of bootstrap:with-remote.
@@ -155,23 +140,11 @@ function runBootstrapWithRemoteBuild() {
     runPnpm(["--filter", filter, "build"]);
   }
   runBootstrapServerBuild();
-  runBootstrapDesktopBuild();
 }
 
 runGit(["submodule", "update", "--init", "--recursive", "apps/zcode-cli"]);
 
 runPnpm(withRemoteAssets ? ["install", "--config.confirmModulesPurge=false"] : ["install"]);
-
-runPnpm(["prepare:desktop-runtime"], {
-  env: withRemoteAssets
-    ? {}
-    : {
-        // Local bootstrap used to prepare remote mock-cdn by default.
-        // Cross-platform components are repackaged every time, causing normal initialization to be slow.
-        // By default, only the local runtime on the desktop is prepared; use bootstrap:with-remote when remote resources are needed.
-        ZCODE_SKIP_REMOTE_ASSETS: "1",
-      },
-});
 
 if (withRemoteAssets) {
   runBootstrapWithRemoteBuild();

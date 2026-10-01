@@ -3,6 +3,7 @@
     "aaron-bond.better-comments",
     "vstirbu.vscode-mermaid-preview",
     "oxc.oxc-vscode",
-    "bradlc.vscode-tailwindcss"
+    "bradlc.vscode-tailwindcss",
+    "vadimcn.vscode-lldb"
   ]
 }

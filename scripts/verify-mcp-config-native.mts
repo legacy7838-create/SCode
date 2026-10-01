@@ -190,11 +190,18 @@ try {
 }
 
 // 5. The invariant this whole change exists for: no JavaScript implementation is left.
-const legacyPath = join(
-  process.cwd(),
-  "packages/desktop/src/main/mcpUserDirectory/legacy.ts",
+//
+// This used to assert that `packages/desktop/src/main/mcpUserDirectory/legacy.ts` specifically was
+// gone. Electron's removal deleted the package that held it, so checking that one path would now
+// pass while proving nothing — the file cannot exist because everything above it is missing. The
+// check is therefore strengthened to the whole package: if `packages/desktop` ever comes back, the
+// legacy implementation comes back with it.
+const desktopPackagePath = join(process.cwd(), "packages/desktop");
+check(
+  "packages/desktop (Electron) is deleted, not disabled",
+  !existsSync(desktopPackagePath),
+  desktopPackagePath,
 );
-check("legacy.ts is deleted, not disabled", !existsSync(legacyPath), legacyPath);
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

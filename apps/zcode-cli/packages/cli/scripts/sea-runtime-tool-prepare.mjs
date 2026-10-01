@@ -7,7 +7,7 @@ export const resolveSeaRuntimeToolPreparationPlan = ({ root, target }) => {
   const { arch, releasePlatform } = targetParts(target);
   const platform = releasePlatform === "win" ? "win32" : releasePlatform;
   const platformKey = `${platform}-${arch}`;
-  const outputDir = join(root, "packages/desktop/bundled-tools", platformKey);
+  const outputDir = join(root, "packages/bundled-tools", platformKey);
   const releasePlan = resolveNativeSearchReleasePlan({ platform, arch });
 
   return {

@@ -68,7 +68,7 @@ async function downloadFile(url: string, destinationPath: string): Promise<void>
  * 3. Download tar.xz from the Node dist image (see resolveNodeDistBase) and extract bin/node and write it into its own cache.
  */
 async function ensureNodeBinary(repoRoot: string, target: ServerTarget): Promise<string> {
-  const mockCdnReleasesDir = join(repoRoot, "packages/desktop/mock-cdn/releases");
+  const mockCdnReleasesDir = join(repoRoot, "mock-cdn", "releases");
   if (await pathExists(mockCdnReleasesDir)) {
     for (const entry of (await readdir(mockCdnReleasesDir)).sort().reverse()) {
       for (const binaryName of target.startsWith("win32-") ? ["node.exe", "node"] : ["node"]) {

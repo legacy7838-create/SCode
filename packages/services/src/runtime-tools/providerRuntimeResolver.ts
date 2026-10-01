@@ -21,12 +21,16 @@ function resolvePlatformScopedBundledAgentRoots(moduleDir?: string): Array<strin
   const platformKey = `${process.platform}-${process.arch}`;
   return [
     resolvePath(process.cwd(), "bundled-agents", platformKey),
-    resolvePath(process.cwd(), "packages", "desktop", "bundled-agents", platformKey),
-    // dev:web will be started with pnpm --filter @zcode/server dev, and cwd will be in packages/server.
-    // ZCode Agent resources may be located in bundled-agents/<platform> at the desktop package or repository root.
-    // All platform directory candidates in the warehouse are unified here, and desktop/web/server share a set of parsing links.
-    resolvePath(process.cwd(), "..", "desktop", "bundled-agents", platformKey),
-    moduleDir ? resolvePath(moduleDir, "..", "..", "desktop", "bundled-agents", platformKey) : null,
+    // The bundles live at `<repo>/packages/bundled-agents/<platform>` now. Three of these
+    // candidates used to route through `packages/desktop`, which Electron's removal deleted,
+    // and one of them (`../../desktop`) pointed at `packages/services/desktop` — a path that
+    // never existed. What remains is the repo-root entry, the `packages/` entry, and the
+    // module-relative walk up to `packages/`.
+    resolvePath(process.cwd(), "packages", "bundled-agents", platformKey),
+    // dev:web starts with `pnpm --filter @zcode/server dev`, so cwd is packages/server and a
+    // cwd-relative candidate misses the repo root. Resolve from this module as well, so both
+    // layouts find the same directory.
+    moduleDir ? resolvePath(moduleDir, "..", "..", "..", "bundled-agents", platformKey) : null,
     moduleDir ? resolvePath(moduleDir, "..", "..", "bundled-agents", platformKey) : null,
   ];
 }
@@ -34,9 +38,8 @@ function resolvePlatformScopedBundledAgentRoots(moduleDir?: string): Array<strin
 function resolveLegacyBundledResourceRoots(moduleDir?: string): Array<string | null> {
   return [
     resolvePath(process.cwd(), "bundled-resources"),
-    resolvePath(process.cwd(), "packages", "desktop", "bundled-resources"),
-    resolvePath(process.cwd(), "..", "desktop", "bundled-resources"),
-    moduleDir ? resolvePath(moduleDir, "..", "..", "desktop", "bundled-resources") : null,
+    resolvePath(process.cwd(), "packages", "bundled-resources"),
+    moduleDir ? resolvePath(moduleDir, "..", "..", "..", "bundled-resources") : null,
     moduleDir ? resolvePath(moduleDir, "..", "..", "bundled-resources") : null,
   ];
 }
@@ -70,8 +73,8 @@ export function findZCodeAgentRuntimeBinary(): string | null {
 
 /**
  * Locates the agent's JS bundle (resources/glm/zcode.cjs).
- * In the packaged desktop build this bundle is executed directly by the Electron Node runtime built into
- * the app, and no standalone Node binary is shipped with the package anymore. The candidate directories
+ * The bundle is executed by a Node runtime shipped alongside it; no Electron Node runtime exists
+ * any more (the Electron app and its packaging were deleted wholesale). The candidate directories
  * are exactly parallel to findZCodeAgentRuntimeBinary, only the entry point is the platform-independent
  * nodeBundleEntryFile. GLM_BINARY_PATH is not consulted — that env var points at a native binary, which
  * is a different thing.

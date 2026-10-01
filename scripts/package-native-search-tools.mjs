@@ -14,7 +14,7 @@ import { resolveNativeSearchPrebuiltPlan } from "./native-search-tools-config.mj
 import { stageNativeSearchNotices } from "./third-party-notices.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const require = createRequire(join(repoRoot, "packages/desktop/package.json"));
+const require = createRequire(join(repoRoot, "package.json"));
 
 export function resolveNativeSearchPackagedArtifactPath({ artifact, artifactsDir }) {
   return join(

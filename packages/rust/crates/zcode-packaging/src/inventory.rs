@@ -404,9 +404,9 @@ pub fn find_subpath_importers(repo_root: &Path) -> BTreeMap<String, BTreeSet<Str
 
 /// Every `@zcode/rust/<subpath>` **module specifier** appearing in `source`.
 ///
-/// Matching a bare mention is not enough. `packages/desktop/tsup.config.ts` names
-/// `"@zcode/rust"` in a bundler externals array and in a `//` comment, and neither is
-/// a consumer; counting them shipped ~4 MB of binaries that nothing loads. So a
+/// Matching a bare mention is not enough. A bundler config naming `"@zcode/rust"` in an
+/// externals array, or a `//` comment mentioning the subpath, is not a consumer; counting
+/// them shipped ~4 MB of binaries that nothing loads. So a
 /// reference only counts when it sits in an import/export/require position inside a
 /// quoted string, with comments stripped first.
 fn subpaths_referenced_in(source: &str) -> BTreeSet<String> {

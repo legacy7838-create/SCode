@@ -90,9 +90,12 @@ impl Surface {
     ) -> Option<PathBuf> {
         match self {
             // Sibling of glm/, per the measurement in D2.
+            // `packages/bundled-agents`, not `packages/desktop/bundled-agents`: Electron's
+            // removal deleted the package that used to hold it, and this is a build-artifact
+            // directory with no Electron in it, so it now sits directly under `packages/`.
             Surface::DesktopAgent => Some(
                 repo_root
-                    .join("packages/desktop/bundled-agents")
+                    .join("packages/bundled-agents")
                     .join(target.key)
                     .join("native"),
             ),
@@ -661,10 +664,10 @@ mod tests {
             .expect("desktop-agent has a measured destination");
         assert_eq!(
             root,
-            Path::new("/repo/packages/desktop/bundled-agents/linux-x64/native")
+            Path::new("/repo/packages/bundled-agents/linux-x64/native")
         );
         assert!(
-            !root.starts_with("/repo/packages/desktop/bundled-agents/linux-x64/glm"),
+            !root.starts_with("/repo/packages/bundled-agents/linux-x64/glm"),
             "native/ must not live under glm/: zcode.cjs is the file in glm/, and the \
              loader probes join(dirname(zcode.cjs), \"..\", \"native\")"
         );

@@ -323,7 +323,7 @@ export function resolveNativeSearchBuildPlan({
   const normalizedArch = normalizeNativeSearchArch(arch);
   const platformKey = `${normalizedPlatform}-${normalizedArch}`;
   const resolvedOutputDir = resolve(
-    outputDir ?? join(repoRoot, "packages/desktop/bundled-tools", platformKey),
+    outputDir ?? join(repoRoot, "packages/bundled-tools", platformKey),
   );
   const runtimeToolIds = getNativeSearchRuntimeToolIdsForPlatform(normalizedPlatform);
   const producerOutputIds = getNativeSearchProducerOutputIds({

@@ -48,23 +48,21 @@ By default, `bootstrap` skips remote asset preparation, suitable for local deskt
 ### Desktop
 
 ```bash
-pnpm dev:desktop
-
-# Use test environment
-pnpm dev:desktop:test
+pnpm dev:desktop   # alias of pnpm dev:tauri
+pnpm dev:tauri
 ```
 
-`pnpm dev:desktop` is by default equivalent to `pnpm dev:desktop:prod`, using production service configuration. The startup script prepares local runtime resources, builds the desktop Agent, then launches Electron and source watchers.
+The desktop app is Tauri (`apps/zcode-tauri`); `pnpm dev:desktop` now aliases `pnpm dev:tauri`. The Electron launchers (`dev:desktop:test`, `dev:desktop:prod`, `dev:desktop:bytecode`, `dev:desktop:remote-prod`) were deleted along with the Electron app.
 
 When you need an independent development data directory, set `ZCODE_DATA_BASE_DIR`. For example, on macOS / Linux:
 
 ```bash
-ZCODE_DATA_BASE_DIR="$HOME/.zcode-dev-home" pnpm dev:desktop:test
+ZCODE_DATA_BASE_DIR="$HOME/.zcode-dev-home" pnpm dev:tauri
 ```
 
 ### Remote Features (SSH)
 
-First run `pnpm bootstrap:with-remote` to prepare remote assets (mock-cdn), then `pnpm dev:desktop`; when connecting to a remote project, select "download locally then upload". Development assets come from the local `packages/desktop/mock-cdn` and local build artifacts, uploaded to the remote via SFTP; the CDN is not accessed.
+First run `pnpm bootstrap:with-remote` to prepare remote assets (mock-cdn), then `pnpm dev:desktop`; when connecting to a remote project, select "download locally then upload". Development assets come from the local `mock-cdn/` (repository root) and local build artifacts, uploaded to the remote via SFTP; the CDN is not accessed.
 
 ### Web Development
 
@@ -123,7 +121,7 @@ This entry point runs the Agent CLI directly, bypassing the distribution package
 
 ## Configuration
 
-The root [.env.example](.env.example) provides service address and build configuration examples; copy to `.env` as needed, and put local overrides in `.env.local`. Desktop's development environment is selected via `dev:desktop:test` / `dev:desktop:prod`.
+The root [.env.example](.env.example) provides service address and build configuration examples; copy to `.env` as needed, and put local overrides in `.env.local`. The desktop development environment is selected via `dev:tauri`.
 
 | Configuration                        | Purpose                                              |
 | ------------------------------------ | ---------------------------------------------------- |
@@ -138,18 +136,16 @@ Runtime variables can be explicitly set in the startup command's environment. De
 
 For third-party notice generation, distribution verification flow, and notice placement in distribution artifacts, see [third-party/README.md](third-party/README.md).
 
-### Desktop
+### Desktop (Tauri)
 
 ```bash
-pnpm bundle:desktop
+pnpm --filter @zcode/tauri run tauri build
 
-# Specify target platform and CPU architecture
-pnpm bundle:desktop -- --os win --arch x64
-
-pnpm bundle:desktop -- --help
+# Print the bundler's options
+pnpm --filter @zcode/tauri run tauri build -- --help
 ```
 
-Default target is macOS arm64; default output directory is `packages/desktop/dist/`. `--os` supports `mac`, `win`, `linux`; `--arch` supports `x64`, `arm64`. Actual packaging and signing require the corresponding tools and configuration for the target platform.
+Bundles are produced by `tauri build` into `apps/zcode-tauri/src-tauri/target/release/bundle/`; on Linux it emits `deb`/`appimage`/`rpm`, on macOS a `.app`/`.dmg`, on Windows an `.msi`. The electron-builder configuration, and with it the Electron runtime, were deleted. The six-target CI matrix is `.github/workflows/build.yml`. Actual packaging and signing require the corresponding tools and configuration for the target platform.
 
 Installation: double-click to open the DMG artifact, then drag ZCode into "Applications". Local builds are unsigned; if blocked on first open on macOS, run:
 
@@ -207,7 +203,7 @@ Open `http://127.0.0.1:3030` in your browser to verify the full chain where the 
 
 | Directory                                              | Responsibility                              |
 | ------------------------------------------------------ | ------------------------------------------- |
-| `packages/desktop`                                     | Electron Main, Host, Renderer, and desktop packaging |
+| `apps/zcode-tauri`                                     | Tauri desktop app: Rust host, renderer, packaging |
 | `packages/web`                                         | Web client                                 |
 | `packages/server`                                      | HTTP / WebSocket service and remote connections |
 | `packages/zcode-server-cli`                            | Standalone Server startup and process management |
