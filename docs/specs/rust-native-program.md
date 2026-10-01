@@ -259,6 +259,29 @@ renderer graph. Where the compute hides behind a renderer barrel, the step is bl
 | 1 | Settings + hooks trust | `zcode-config` | `services/src/setting`, `services/src/hooks`, `services/src/settings-sync` schema/merge halves | `settingService`, `hooksService`, `settingsSyncService` | none — spec ready |
 | 2 | Node-only shared primitives | `zcode-node-fs` (proposed) | `shared/src/node/{atomicFileLock,privateFilePersistence,subagentMarkdownMigration,officialPluginCache}` | services, desktop host, provider-node | **gate done** — `check-native-graph.mjs` sanctions the directory *and* asserts the subpath is unreachable from every renderer root |
 | 2x | ~~`nodeSelfResourceTelemetry`~~ | — | measured and **rejected**: it converts `process.cpuUsage()`/`process.memoryUsage()` for the current process, which a Rust host has no equivalent of, and `zcode-sysinfo` reads *other* processes so it does not subsume it. Porting it would be a translation exercise with no compute win (invariant 10) | — | — |
+
+### 9.5 Step 2 measured in full — the crate is not worth creating
+
+All five `shared/src/node/` modules were examined before writing `zcode-node-fs`, and none is a port
+that wins. The pattern is `zcode-fs` §2.2 restated: these are **host IO policy**, not compute.
+
+| Module | Lines | Why it is not a candidate |
+| --- | --- | --- |
+| `atomicFileLock` | 275 | A lock protocol: a retry loop around `mkdir`/`O_EXCL` with stale detection. The compute (`parseLockMetadata`, timestamp validation) is a `JSON.parse` and a few numeric checks — below the FFI floor — and porting it alone leaves the IO loop with no body, the `migrate_legacy_common_mcp` trap. |
+| `privateFilePersistence` | 121 | Atomic write + corrupt-file backup. Pure IO orchestration. |
+| `subagentMarkdownMigration` | 97 | The migration compute, `importSubagentStateSelections`, **already lives in the renderer-safe `shared/src/subagent-state-migration.ts`**. The `node/` module is `readFile`/`writeFile`/`rename`/`chmod` plumbing around it, with nothing left to move. |
+| `officialPluginCache` | 56 | Two `readdir`s with a transient-name filter and a `localeCompare` sort. IO with a trivial tail. |
+
+**Conclusion: Step 2 ships no crate.** The gate work (§9.4, the reverse reachability check) was still
+necessary — it is what lets wave 3 and 4 import a Node-only shared subpath safely — but the "primitives"
+it was meant to unblock turned out to be IO, and invariant 10 rejects them. This is the second
+measurement rejection recorded in this programme (`sysinfo`-the-crate was the first), and recording it
+is cheaper than discovering a 0.3x port after it is written.
+
+Wave 2's remaining value is therefore the gate, not a crate. The next real port is wave 3's
+`provider-config-file-codec` / `legacy-reasoning-level` pair, which carry genuine schema and
+rename-table compute — but both consume `@zcode/provider`, which `packages/ui` imports (30 files), so
+they need the shared-schema-reimplementation shape `zcode-config` used, not a move.
 | 3 | Provider-node pure compute | `zcode-provider-node` (proposed) | `provider-node/{provider-config-file-codec,personal-provider-config-repository,zcode-builtin-cache-paths,legacy-reasoning-level*,runtime-paths}` | `services/src/model-provider`, desktop | none (0 renderer imports) |
 | 4 | Services host compute | per-surface | `usage-stats`, `fileWatcher`, `conversation-telemetry`, `cua-permission-broker`, residual `setting` | services only | per-file renderer classification |
 | 5 | Server + `zcode-server-cli` | per-surface | `server` (10.3k), `zcode-server-cli` (5.7k) | self-contained | none |
