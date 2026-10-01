@@ -11,6 +11,10 @@ publish = false
 [workspace.dependencies]
 napi = { version = "3", features = ["serde-json"] }
 napi-derive = "3"
+# CDP client for zcode-browser. Pure Rust — the absence of any JavaScript in that
+# crate's path is the point (docs/specs/browser-port.md §1), so this is not optional.
+chromiumoxide = "0.9"
+thiserror = "2"
 serde = { version = "1", features = ["derive"] }
 # `preserve_order` is REQUIRED for RPC wire compatibility, not a preference.
 # The TS side uses `JSON.stringify`, which emits object keys in insertion order;

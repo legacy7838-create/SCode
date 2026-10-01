@@ -1,0 +1,24 @@
+[package]
+name = "zcode-browser"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Chromium automation over CDP for the Coding Plan browser tabs."
+
+[lib]
+# rlib only: the consumer is the Tauri host, a Rust process. The browser commands keep
+# travelling over CHANNEL 1 (the existing WebSocket to @zcode/server), so no `.node` is
+# produced and nothing is staged into a Node payload — invariant 9 holds by construction.
+crate-type = ["rlib"]
+
+[dependencies]
+# The CDP client. Pure Rust; there is no JavaScript in this crate and none may be added
+# (docs/specs/browser-port.md §1). `chromiumoxide_fetcher` is deliberately NOT enabled: it
+# would download Chromium from inside the process, and engine distribution is a release
+# decision recorded in the spec, not something the automation layer decides for itself.
+chromiumoxide = "0.9"
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = "2"
+tokio = { version = "1", features = ["rt", "sync"] }

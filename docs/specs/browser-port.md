@@ -96,8 +96,30 @@ leaving Playwright's resolver, and it is what the model prompt must document.
 
 Each rung is independently shippable and leaves the Electron browser working until the last one.
 
-1. **`zcode-browser` crate** — Chromium launch over pipe, tab registry, `Runtime.evaluate` +
-   `DOM.querySelector`, `Input.dispatch*`. Proves CDP works before anything else depends on it.
+1. ~~**`zcode-browser` crate** — Chromium launch over pipe, tab registry, `Runtime.evaluate` +
+   `DOM.querySelector`, `Input.dispatch*`.~~ **Done** — `packages/rust/crates/zcode-browser`,
+   38 tests, clippy clean. It is `rlib` only, so invariant 9 holds by construction.
+
+   What rung 1 settled, all asserted in tests rather than described:
+
+   - `LaunchMode::Pipe` is the default and the two modes are mutually exclusive. A launch that
+     carries both flags makes Chromium honour the port, which silently deletes the pipe's
+     security property.
+   - `--user-data-dir` is required, not optional. Omitting it would put automation tabs in the
+     user's own Chromium profile.
+   - `TabRegistry` ids are never reused, so a late event naming a closed tab cannot reach the
+     tab that took its slot. This replaces the four maps in `browserGuestManager.ts`.
+   - `find` counts matches *before* resolving. `DOM.querySelector` returns the first of many and
+     says nothing about the rest; that count is the one behaviour Playwright's resolver gave for
+     free and a naive port would drop.
+   - Selectors are JSON-encoded before entering an `evaluate` expression. The selector is
+     agent-supplied, so raw interpolation would be injection into a page holding the session.
+   - `click` sends mouseMoved → mousePressed → mouseReleased in order, and refuses non-finite
+     coordinates, because NaN serialises to `null` and the browser drops the event — a click
+     that reports success while doing nothing.
+
+   `type_text` is a stub returning an error, deliberately not `todo!()`: a caller reaching it
+   gets a boundary error, not a panic inside the host process.
 2. **`find`/`click`/snapshot tools** over the existing command path, behind the existing Electron
    browser for comparison.
 3. **Screenshot, clipboard, webm recorder, tab recovery** moved to Rust.
