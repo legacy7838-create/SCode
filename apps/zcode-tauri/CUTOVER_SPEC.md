@@ -191,6 +191,37 @@ Reading the diagram:
   wired before it can replace a web fallback (§8.3). A command that is written but unregistered is
   invisible to every test that does not call it directly in Rust.
 
+### 8.0.1 Deletion precondition — measured, and it is close
+
+`packages/desktop` was measured for deletability rather than assumed. The result decides whether the
+last rung is a refactor or a delete:
+
+| Question | Finding |
+| --- | --- |
+| Does anything outside it `import "electron"`? | **No.** Electron is fully contained. |
+| Does any package depend on `@zcode/desktop`? | **No.** Only its own `package.json` names it. |
+| Does any source file import `@zcode/desktop`? | **No.** Zero call sites. |
+| Does anything drive it under Playwright/Electron? | **No.** No `_electron` launch anywhere. |
+| Is there a Tauri dev path to replace `dev:desktop`? | **Yes** — `pnpm dev:tauri` → `scripts/dev-tauri.mjs`. |
+
+So the package is **self-contained**, and the final rung is a *delete*, not a migration: 261 files and
+60,075 lines that nothing reaches. The coupling that must be untied is **configuration only**:
+
+- `package.json` — `dev:desktop`, `dev:desktop:test`, `dev:desktop:prod`, `dev:desktop:bytecode`,
+  `dev:desktop:remote-prod`, `bundle:desktop`, `prepare:desktop-runtime`, `prepare:remote-assets`,
+  `build:desktop-agent:bytecode`, and two shared lines (`build:bootstrap`'s `--filter "!@zcode/desktop"`,
+  `typecheck`'s trailing `packages/desktop/tsconfig.host.json`)
+- `architecture-policy.yaml` — the `roots: [packages/desktop/src]` entry
+- `scripts/` — `dev-desktop-env.mjs`, `dev-desktop-remote-prod.mjs`, `build-desktop-agent-bytecode.mjs`
+- `pnpm-lock.yaml` — the `packages/desktop` importer
+
+**What still gates the delete.** Configuration is the *only* blocker found, which means the real
+prerequisites are the two unstarted redesigns above, not any leftover wiring: the embedded browser
+(§3 A2) has no Tauri equivalent, and auto-update depends on an endpoint **outside this repository**
+(`/api/v1/releases/electron/manifest`, YAML, with an `electron-updater` `Provider` subclass in
+`manifestUpdateProvider.ts`). Tauri wants JSON. That cannot be fixed from inside this tree — it is an
+external release-server change, so it stays a dependency rather than a task here.
+
 ### 8.1 Rung 1 — register the unwired commands (PARTIALLY WRONG PREMISE)
 
 One `generate_handler!` edit plus one `capabilities/*.json` audit per command. No new logic.
