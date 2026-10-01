@@ -104,21 +104,22 @@ The port moves compute + I/O off the loop and fixes the prune storm **by constru
 
 - **Streaming `SessionEventStorePort` / `InMemorySessionEventStore`** — different owner
   (runtime instance), zero I/O (§0). Unchanged.
-- **Dwf journal + introspection** (`repositories/dwf-journal*.ts`) — the domain contract
+- **Dwf journal + introspection** (`repositories/dwf-journal*.ts`) — **ported** as the
+  synchronous surface of the same `zcode-events` crate (§14). The domain contract
   `JournalStorePort` is synchronous by design
   (`dynamic-workflow/src/engine/types.ts:878-879`; rationale at
   `repositories/dwf-journal.ts:4-10` and `engine/journal-memory.ts:4-5`: "synchronous
   methods fit node:sqlite's DatabaseSync, and keep the core deterministic"), and its
   consumers probe it synchronously (`bootstrap/src/app/dynamic-workflow-run-journal.ts:44-57`
-  plus artifact/workspace/introspection capability probes). Changing it to async would
-  rewrite the domain package `@zcode/dynamic-workflow` — outside this port's ownership.
-  It keeps running on `node:sqlite` **on its own connection** opened lazily by
-  `SqliteSessionStore.workflowJournalStore()` (`sqlite-session-store.ts:996-999`), with
-  `PRAGMA foreign_keys = on` + `busy_timeout = 5000` on that connection (parity with the
-  legacy single connection: `foreign_keys` from the migration runner
-  (`migration-runner.ts:137`), `timeout: 5000` from `sqlite-session-store.ts:242,248`).
-  A second same-file connection is already production reality — the debug server opens
-  `db.sqlite` read-only (`debug/server/sources.ts:5,75`).
+  plus artifact/workspace/introspection capability probes). Porting therefore keeps the
+  methods synchronous: the native `DwfJournal` exposes sync `exec(op, payload)` calls
+  over its own rusqlite connection, and the TS files keep only the frozen codecs. The
+  journal was opened lazily by `SqliteSessionStore.workflowJournalStore()`, with
+  `PRAGMA foreign_keys = on` + `busy_timeout = 5000` (parity with the legacy single
+  connection: `foreign_keys` from the migration runner (`migration-runner.ts:137`),
+  `timeout: 5000` from `sqlite-session-store.ts:242,248`). A second same-file connection
+  is already production reality — the debug server opens `db.sqlite` read-only
+  (`debug/server/sources.ts:5,75`).
 - **Debug server reads** (`debug/server/sources.ts`) — read-only sibling, untouched.
 - **Tasks-index / automation / off-peak DBs** (`packages/services/src/session/*Repo.ts`)
   and **chrome cookies** (`packages/desktop/src/main/chromeCookieManager.ts`) —
@@ -152,7 +153,7 @@ identical because the TS codecs still build them (§3.3).
 | adapters integration: `sqlite-session-store.ts`, `migration-runner.ts`, `storage/session-store.ts` barrel, the deleted repositories (§5.1) | EventsSpecAuthor |
 | consumer files (§5.3), incl. `scripts/shadow-replay.mjs` and bootstrap permission-mode reads | EventsSpecAuthor |
 | shared files: `packages/rust/Cargo.toml`, `package.json`, `tsconfig.json`, `src/loader.ts`, `src/index.ts`, `scripts/build-native.sh`, umbrella spec, `architecture-policy.yaml`, `apps/zcode-cli/packages/cli/scripts/build.mjs`, root `package.json` | main session — change requests in §11 |
-| dwf-journal files, debug server, streaming `InMemorySessionEventStore`, migration SQL data (§4.4) | untouched / stay TS as scoped in §2.2, §4.4 |
+| dwf-journal files (`dwf-journal.ts`, `dwf-journal-codecs.ts`, `dwf-journal-introspection.ts`, `dwf-journal-artifacts.ts`), `packages/rust/src/events.ts` (journal client), debug server, streaming `InMemorySessionEventStore` | that port's agent (§14); debug server / streaming store untouched |
 
 ### 2.5 Invariants (engine rules 1–7 made concrete)
 
@@ -166,8 +167,8 @@ identical because the TS codecs still build them (§3.3).
 4. **Event-loop rule.** All DB operations are `AsyncTask`s; the only sync exports are
    the I/O-free constructor and `close()` (§2.3).
 5. **Process rule.** The ported feature performs zero child-process spawns. Unported
-   siblings (dwf journal on `node:sqlite`, debug-server reads, streaming in-memory event
-   store — §2.2) are separate features, documented here, never alternatives.
+   siblings (debug-server reads, streaming in-memory event store — §2.2) are separate
+   features, documented here, never alternatives.
 6. **Abort parity.** §6.
 7. **Packaging.** `@zcode/rust` stays esbuild-external (`build.mjs:14` already lists
    it); the `.node` loads only through `loadNative`; staging into desktop/SEA artifacts
@@ -214,7 +215,7 @@ impl EventsStore {
   pub fn new(options: EventsOpenOptions) -> Self;            // SYNC, no I/O
 
   /// Runs the native migration state machine to its next yield point (progress | delay | done).
-  /// `migrations` = JSON [{id, sql, appVersion}] — SQL text is data supplied by TS (§4.4).
+  /// No argument: the frozen migration list is owned by the crate (§4.4).
   #[napi] pub fn migrate_step(&self, migrations: String) -> AsyncTask<MigrateStepTask>;
   //  → Promise<MigrationStepResult>
 
@@ -406,16 +407,20 @@ same op code serves both batch and scope.
   SQL exec + ledger insert (`:159-201`), facts inspection (`inspectMigrationKind`,
   `:318-336`), busy_timeout switching (25 ms during migration, restore 5 000 after —
   `:46,66,92`), rollback-on-failure (`:195-198,204-232`).
-- **Stays TS (data + driver):**
-  - **Migration SQL definitions** — `migrations.ts` (22 entries, 930 lines) and
-    `migrations/0020-0022*.ts` (note `0020` *generates* its SQL with TS string builders,
-    `migrations/0020-provider-model-selection.ts:1-20`). SQL text is **data** passed as
-    JSON to `migrate_step` — no JS statement ever executes against the database, so this
-    is not a JS path. Keeping it in TS avoids duplicating 930 lines, where a byte of
-    drift means `checksum_mismatch` against every existing DB
-    (`migration-runner.ts:300-316`), and preserves the current authoring workflow. The
-    crate validates the list (non-empty; id regex `^[a-zA-Z_0-9-]{1,128}$` per
-    `databaseMigrationIdSchema`) and fails loudly otherwise.
+- **Moves native (data, revision):** the **Migration SQL definitions** — previously
+  `migrations.ts` (22 entries, 930 lines) plus `migrations/0020-0022*.ts` (`0020` was a
+  pure TS string builder). They now live in `crates/zcode-events/src/migrations.rs` as 22
+  frozen constants plus `migration_definitions()`; `0020`'s generated output is frozen
+  verbatim (it was constant — it read no live data). `migrate_step` takes no argument and
+  no migration SQL text remains in TypeScript. The move is gated on **byte stability**,
+  not inspection: `migrations.rs` pins the 22 real `schema_migration` digests
+  (`sha256(JS-trim(sql))` read from a production `db.sqlite`) as a test, so any drift
+  fails the build instead of surfacing as `checksum_mismatch` on a user's database. This
+  supersedes the original “SQL data stays TS” decision, which traded exactly that drift
+  risk for authoring convenience; the task-index port made the identical move into
+  `schema.rs`. The crate still validates the list shape (non-empty; id regex
+  `^[a-zA-Z_0-9-]{1,128}$` per `databaseMigrationIdSchema`) in `validate_migrations`.
+- **Stays TS (driver only):**
   - **Step driver + progress + error normalization** — the async loop shape of
     `runSqliteSessionMigrationsAsync` (`:59-97`): consume `migrate_step` results,
     `await onProgress(...)` (required: `storage-startup.ts:31-37` awaits the transport
@@ -448,13 +453,13 @@ same op code serves both batch and scope.
 | `runSqliteSessionMigrations` sync runner, `waitSync`, `deferredStartup` two-phase ctor | §4.4 |
 | all `this.db.prepare/exec` SQL in the store class + deleted repos | SQL text moves into the crate verbatim |
 
-Kept deliberately (data/shape/sibling, not legacy engines): `migrations.ts` +
-`migrations/*` (§4.4), `codecs.ts`, `rows.ts`, `json.ts`, `paths.ts`
+Kept deliberately (shape/sibling, not legacy engines): `codecs.ts`, `rows.ts`, `json.ts`, `paths.ts`
 (`getDefaultSessionDbPath`/`ensureParentDir` stay; the wrapper still calls
 `maybeThrowStorageFsFault({operation:"sqliteOpen"})` before open, legacy
 `sqlite-session-store.ts:244-245`), `fs-fault-injection.ts` (`sqliteRun` hook before
 each write batch — the `ZCODE_E2E_FS_FAULTS` contract survives), `errors.ts`,
-`options.ts`, `dwf-journal*.ts` (§2.2).
+`options.ts`. The `dwf-journal*.ts` files stay TS for their frozen codecs and typed
+ports, but their `node:sqlite` handle is replaced by the native `DwfJournal` (§14).
 
 ### 5.2 Rewritten (owner: EventsSpecAuthor — consumer integration files)
 
@@ -535,7 +540,7 @@ concern).
 | Property | Legacy | Port | Note |
 |---|---|---|---|
 | File | `~/.zcode/cli/db/db.sqlite` (`paths.ts:6-8`), same path resolution incl. `config.storage.sessionDbPath` | identical (native receives the path from TS after `ensureParentDir`) | same file |
-| Schema | 22 migrations + ledger `schema_migration` | identical SQL executed by the same native runner from the same TS SQL data (§4.4) | ledger rows byte-comparable; the real ledger holds **23** rows — one id absent from this checkout (`0023_code_plan_execution_state`, written by some newer build). The runner only reads *known* ids (`migration-runner.ts:171-198`) and takes the baseline via `ORDER BY id DESC LIMIT 1` (`:165-169`); the native runner must mirror both behaviors — harness asserts identical facts/progress on this very DB |
+| Schema | 22 migrations + ledger `schema_migration` | identical SQL executed by the same native runner from the crate-owned list (§4.4) | ledger rows byte-comparable; the real ledger holds **23** rows — one id absent from this checkout (`0023_code_plan_execution_state`, written by some newer build). The runner only reads *known* ids (`migration-runner.ts:171-198`) and takes the baseline via `ORDER BY id DESC LIMIT 1` (`:165-169`); the native runner must mirror both behaviors — harness asserts identical facts/progress on this very DB |
 | Journal mode | WAL via `pragma journal_mode = wal` (`migration-runner.ts:139-150,248`) | same pragma text in the native runner | — |
 | `synchronous` | never set → SQLite default **FULL** (measured `synchronous=2` on the real DB) | never set → default FULL | unchanged: same fsync behavior; batching is the win, not weaker durability |
 | `foreign_keys` | `= on` per connection (`migration-runner.ts:137`) | `= on` on the native connection **and** on the journal's own connection (§2.2) | per-connection pragma must be re-set on the new journal connection |
@@ -699,3 +704,82 @@ Cargo.toml edit — main session's call.)
   `saveMessage`+touch 0.088 ms, batched 7 upserts+1 prune 0.308 ms total.
 - Harness results will be appended post-implementation (same convention as
   `rust-native-diff.md`).
+
+---
+
+## 14. DWF journal — the synchronous surface of `zcode-events` (added after the wave-2 port)
+
+Wave 2 stopped at the async `SessionStorePort`; the `dwf_*` journal stayed on
+`node:sqlite` because `JournalStorePort`
+(`dynamic-workflow/src/engine/types.ts:878-919`) is **synchronous by design**. That
+rationale is a contract about the *TS domain API*, not about where the SQL runs: a
+native `#[napi]` function may be synchronous, so the journal moves to the same crate
+without changing the domain contract. This section is the spec for that surface; it was
+written before the implementation, per `AGENTS.md:3`.
+
+### 14.1 Scope
+
+- **Ported:** every SQL body in `repositories/dwf-journal.ts`,
+  `dwf-journal-introspection.ts`, `dwf-journal-artifacts.ts`; the connection open
+  (`foreign_keys = on`, `busy_timeout = 5000`).
+- **Stays TS (frozen, not a fallback):** the row ↔ record codecs
+  (`dwf-journal-codecs.ts`) and the domain types. The native call returns raw rows as
+  JSON (same column names/types as `node:sqlite`), and the same TS codecs build the
+  contract records — exactly the row-transport rule of §3.3. `encodeRunStatusPredicate`
+  moves into the crate (it is a SQL predicate for a native query), so the TS export is
+  deleted.
+- **Deleted:** the `node:sqlite` `DatabaseSync` handle in
+  `SqliteSessionStore.workflowJournalStore()` (`sqlite-session-store.ts:2247-2256`).
+
+### 14.2 napi surface (sync — the domain contract is sync)
+
+```rust
+#[napi]
+pub struct DwfJournal { /* Mutex<Connection>, opened in the constructor */ }
+
+#[napi]
+impl DwfJournal {
+  #[napi(constructor)]
+  pub fn new(db_path: String) -> napi::Result<Self>;   // pragmas foreign_keys=on, busy_timeout=5000
+  /// One named op; payload and result are JSON strings (the §3.1 `StoreOp` transport).
+  #[napi]
+  pub fn exec(&self, op: String, payload: String) -> napi::Result<String>;
+  #[napi]
+  pub fn close(&self);
+}
+```
+
+The op set is closed (`crate::dwf_journal::dispatch`); there is no raw-SQL escape hatch.
+Writes return `"null"`; reads return a JSON `[{col: value, …}, …]` row array; the two
+scalar ops (`appendEvent` → sequence, `countNodesByStatus` → the grouped rows) are
+documented at their op.
+
+### 14.3 Ownership, ordering, failure
+
+- **Owner:** one `DwfJournal` per `workflowJournalStore()` call — the same one-connection
+  ownership the deleted `DatabaseSync` had. The engine and the capability probes are the
+  only callers; no other writer shares the handle.
+- **Ordering:** calls are synchronous and execute in JS invocation order (the legacy
+  property the journal's determinism depends on — no queue, no batching).
+- **Idempotency:** identical SQL and `ON CONFLICT` clauses to the deleted files; the
+  `sequence` allocation stays the single-statement `coalesce(max(sequence)+1, 0)`
+  RETURNING insert.
+- **Failure:** the crate's structured `StoreError` envelope (`error.rs`) crosses the
+  boundary; the two journal-specific contract errors keep their exact messages
+  (`dwf journal: run already exists: <id>`, `dwf journal: unknown run: <id>`,
+  `dwf journal: event insert returned no sequence for run: <id>`).
+- **Sync-on-the-loop is unchanged:** the legacy bodies ran on the JS loop through
+  `DatabaseSync`; the native call does the same work on the same thread. No new blocking
+  is introduced (invariant 4's async rule is for the `SessionStorePort`, whose methods
+  are contracts-as-promises; this port's methods are contracts-as-sync).
+
+### 14.4 Acceptance
+
+1. Spec (this section) predates the implementation in git history.
+2. `rg "node:sqlite|DatabaseSync" apps/zcode-cli/packages/adapters/src` → zero hits.
+3. Journal parity harness: run the same op sequence (runs/actors/nodes/events, all
+   settlement statuses, `listRuns` filters, life spans, artifacts) through the deleted
+   TS bodies and the native surface over two copies of the same fixture DB →
+   `JSON.stringify`-equal rows.
+4. `cargo test -p zcode-events` covers the SQL against an in-memory/temp DB.
+5. Existing consumer suites (`dynamic-workflow`, bootstrap) typecheck and pass.

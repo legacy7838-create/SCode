@@ -107,3 +107,4 @@ apps/zcode-tauri/src-tauri/gen/
 # beside it is a leftover from a run, never part of the fixture.
 *.sqlite-wal
 *.sqlite-shm
+\n# Rust build artifacts staged at the repo root by ad-hoc builds\n/*.node\n

@@ -96,3 +96,31 @@ Step 3 is mechanical. Step 4 is thin.
 - **R4 — encoding detection has a scoring heuristic** (`TEXT_DETECTION_SAMPLE_BYTES`,
   preferred/invalid char ratios). Porting a heuristic without its calibration data risks
   mis-detecting a UTF-16 log and then corrupting it during redaction.
+
+---
+
+## Status 2026-10-01 — attempted, then reverted
+
+`zcode-logredact` was written (31 tests, dependency-free) and wired into
+`packages/desktop/src/main/exportLogs.ts`, deleting the predecessor redaction. It was then
+**reverted in full**: the crate, the `@zcode/rust/logredact` subpath, the wrapper, the parity script,
+and the `exportLogs.ts` edit.
+
+**Reason: a product decision, not a technical failure.** The user does not send user logs to anyone,
+so the export-then-redact path is not part of the product. Everything below stays valid reference if
+that changes.
+
+The attempt is recorded because of how it ended. The redaction itself was sound — a recorded
+differential against the predecessor surfaced **7 real divergences, all defects in the port and none
+in the predecessor**, including `api_key` not being classified as sensitive at all and a half-redacted
+`db_password = ***REDACTED***hunter2`. Fixing them was attempted by patching `redact_line`
+piecemeal and then rewriting it; the rewrite introduced a non-advancing loop, and because the line
+scan allocated a `String` per iteration it grew until the machine was OOM-pressured. The guard that
+fixes it is one line (`index = hit.value_end.max(index + 1)`), but the crate was already reverted by
+the time it was written.
+
+**The lesson is the one the spec already states.** `rust-native-program.md` §5 requires a port to be
+one bounded step with a recorded differential *before* the predecessor is deleted. Here the
+differential ran *after* the delete (reconstructing the predecessor from `git show HEAD:`), and the
+fixes were attempted without tests in between. One divergence, one test, one fix, verify — in that
+order — is the discipline that would have kept a working feature working.
