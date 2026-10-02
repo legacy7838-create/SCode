@@ -12,6 +12,9 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Manual runs: the gates are also usable on demand (e.g. to re-verify a ref before
+  # a release or to reproduce a CI-only failure) without pushing a commit.
+  workflow_dispatch:
 
 # A newer push to the same ref cancels the older run — the gates are deterministic, so an
 # in-flight run against a superseded commit is wasted compute.
