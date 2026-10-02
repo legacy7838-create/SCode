@@ -53,6 +53,28 @@ show_task_notification
 - macOS: `.hint()` was already unavailable there (notify-rust gates it to non-macOS
   unix); the cfg in this fix matches notify-rust exactly, so macOS compiles too.
 
+## CI run 37050820634 findings (first tauri-dev-simulate dispatch)
+
+Both matrix rows ran; both failed for reasons now fixed — **neither re-opens the
+five issue #2 compile errors**:
+
+1. **win32-x64: `zcode-packaging` host-target spelling (real repo bug).**
+   `cargo build --release` of `packages/rust` **succeeded** on windows-2022 (every
+   crate compiles clean on MSVC), but `plan --target host` exited 64:
+   `unsupported target "windows-x64"`. `Target::host()` concatenated
+   `std::env::consts::OS` ("windows") raw, bypassing the `windows-x64` aliases in
+   `resolve()`. Fixed in `crates/zcode-packaging/src/target.rs` — one
+   `from_consts(os, arch)` normalizer (windows→win32, macos→darwin); see
+   `rust-native-packaging.md` finding 1.
+2. **linux-x64: headless GTK panic (environmental).** The debug build finished and
+   `target/debug/zcode-tauri` launched, then tao panicked: `Failed to initialize gtk
+   backend` — GitHub's Linux runners have no display server. Server :3030 and Vite
+   :5199 both came up; only the GUI needed a display. Fixed in the workflow: `xvfb`
+   package + `xvfb-run` wrapping the simulate step on ubuntu.
+3. The simulate step on win32 was **skipped** (the job failed earlier at
+   build:native), so the issue #2 compile fixes from `7bf681f` still await their
+   first Windows verification in the next run.
+
 ## Verification
 
 - Linux: `cargo check` / `cargo test` for `apps/zcode-tauri/src-tauri` stay green;

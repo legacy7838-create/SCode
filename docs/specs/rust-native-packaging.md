@@ -655,6 +655,14 @@ Recorded because each was a real defect that would have shipped, not a test-auth
    so the derived key was `linux-x86_64` and matched nothing. Every `build-native.sh` run on an
    x86_64 machine would have failed. Fixed with an explicit arch translation; pinned by
    `rust_arch_names_are_translated_to_node_names`.
+   **The OS half of the same mismatch shipped past this.** `consts::OS` is `windows`/`macos`
+   where every contract key uses `win32`/`darwin`; `host()` concatenated raw, bypassing the
+   `windows-x64` aliases `resolve()` accepts, so `plan --target host` exited 64 with
+   `unsupported target "windows-x64"` on the windows-2022 CI runner (tauri-dev-simulate run
+   37050820634, issue #2) — invisible to tests that only ever execute on Linux. Fixed by
+   routing `host()` through one `from_consts(os, arch)` normalizer (windows→win32,
+   macos→darwin); pinned by `consts_os_names_are_translated_to_contract_names`, which asserts
+   all six keys directly instead of trusting whichever host the test runs on.
 2. **The plan schema key was wrong.** serde emitted `schema_version`; the §4.4 wire shape is
    `schemaVersion`. Fixed with `rename_all = "camelCase"` + `deny_unknown_fields`.
 3. **The live set over-counted to 13.** `packages/rust` was never actually excluded from the

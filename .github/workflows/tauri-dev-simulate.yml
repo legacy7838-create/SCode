@@ -82,7 +82,12 @@ jobs:
           key: tauri-dev-${{ matrix.platform }}
 
       # Same WebKitGTK/bundler deps as build.yml — the Linux row must boot on the same
-      # system packages a real Linux desktop provides.
+      # system packages a real Linux desktop provides. `xvfb` supplies the virtual
+      # display: GitHub's Linux runners are headless, and without one GTK cannot
+      # initialize — tao panics with "Failed to initialize gtk backend" the moment the
+      # compiled app launches (run 37050820634).
+      # 中文：GitHub 的 Linux runner 无显示服务器，GTK 无法初始化，tao 直接
+      # panic（"Failed to initialize gtk backend"）—— 必须用 Xvfb 虚拟显示。
       - name: Install Linux WebKitGTK deps
         if: startsWith(matrix.runner, 'ubuntu')
         run: |
@@ -92,7 +97,8 @@ jobs:
             libappindicator3-dev \
             librsvg2-dev \
             libxdo-dev \
-            build-essential
+            build-essential \
+            xvfb
 
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
@@ -105,9 +111,19 @@ jobs:
 
       # The real command, supervised: spawns `pnpm dev:tauri`, watches :3030 (server),
       # :5199 (vite) and the app process, tears the tree down, prints the log tail on
-      # failure. Exit code 1 = the dev boot did not come up.
+      # failure. Exit code 1 = the dev boot did not come up. On Linux the whole thing
+      # runs under `xvfb-run` so the GUI app has a display to open a window on;
+      # Windows runners have a real desktop session and need no wrapper.
+      # 中文：Linux 下用 xvfb-run 包裹以提供虚拟显示；Windows runner 自带
+      # 桌面会话，直接运行。
       - name: "Simulate pnpm dev:tauri"
-        run: node scripts/ci-dev-tauri-simulate.mjs
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            xvfb-run --auto-servernum --server-args="-screen 0 1280x800x24" node scripts/ci-dev-tauri-simulate.mjs
+          else
+            node scripts/ci-dev-tauri-simulate.mjs
+          fi
 
       # The full boot transcript survives a failed run — that transcript is the point
       # of this workflow (it names the failing stage: server / vite / cargo / app).

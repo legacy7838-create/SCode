@@ -113,8 +113,33 @@ impl Target {
     /// `linux-x86_64`, which matched nothing — caught by
     /// `host_resolves_on_every_supported_platform`.
     pub fn host() -> Result<Self, UnknownTarget> {
-        let os = std::env::consts::OS;
-        let arch = match std::env::consts::ARCH {
+        Self::from_consts(std::env::consts::OS, std::env::consts::ARCH)
+    }
+
+    /// Builds the contract key from raw `std::env::consts` spellings.
+    ///
+    /// Both vocabularies need translating: `consts::ARCH` is `x86_64`/`aarch64` where
+    /// every key uses Node's `x64`/`arm64`, and `consts::OS` is `windows`/`macos` where
+    /// every key uses `win32`/`darwin` (`linux` happens to be spelled the same in both).
+    /// The arch half was fixed when `host_resolves_on_every_supported_platform` caught
+    /// `linux-x86_64`; the OS half only manifests on a Windows/macOS host —
+    /// `plan --target host` died with `unsupported target "windows-x64"` on the
+    /// windows-2022 CI runner (run 37050820634, issue #2) because `host()` built the
+    /// key by raw concatenation, bypassing the `windows-x64` aliases `resolve()`
+    /// accepts.
+    ///
+    /// 中文：`std::env::consts` 的 OS/ARCH 拼写与契约词表不一致 —— OS 给出
+    /// "windows"/"macos"，词表是 "win32-*"/"darwin-*"。架构一半早已修正，
+    /// OS 一半从未归一化，只在 Windows/macOS 宿主上暴露：CI windows-2022 上
+    /// `plan --target host` 拼出 "windows-x64" 直接 exit 64（issue #2 的
+    /// 第二个阻塞点）。归一化只发生在这里一处（P4 平台表单一来源）。
+    fn from_consts(os: &str, arch: &str) -> Result<Self, UnknownTarget> {
+        let os = match os {
+            "windows" => "win32",
+            "macos" => "darwin",
+            other => other,
+        };
+        let arch = match arch {
             "x86_64" => "x64",
             "aarch64" => "arm64",
             other => other,
@@ -233,6 +258,29 @@ mod tests {
                 !TARGETS.iter().any(|t| t.key.ends_with(rust_name)),
                 "target keys must not use the rust arch name {rust_name}"
             );
+        }
+    }
+
+    /// Regression guard for the OS half of the same mismatch. `host()` tests only
+    /// exercise the machine they run on (CI is all Linux), so the windows/macos
+    /// spellings would never be asserted there — this pins all six keys directly.
+    ///
+    /// 中文：host() 的测试只在运行机器上生效（CI 全是 Linux），Windows/macOS 的
+    /// OS 拼写因此从未被断言 —— 此测试直接钉死全部六个键，防回归。
+    #[test]
+    fn consts_os_names_are_translated_to_contract_names() {
+        let cases = [
+            (("windows", "x86_64"), "win32-x64"),
+            (("windows", "aarch64"), "win32-arm64"),
+            (("macos", "x86_64"), "darwin-x64"),
+            (("macos", "aarch64"), "darwin-arm64"),
+            (("linux", "x86_64"), "linux-x64"),
+            (("linux", "aarch64"), "linux-arm64"),
+        ];
+        for ((os, arch), expected) in cases {
+            let resolved = Target::from_consts(os, arch)
+                .unwrap_or_else(|e| panic!("{os}-{arch} must resolve: {e}"));
+            assert_eq!(resolved.key, expected, "{os}-{arch}");
         }
     }
 
