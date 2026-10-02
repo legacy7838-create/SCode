@@ -1594,7 +1594,8 @@ function resolveLegacyRemoteWorkspace(
 ): { workspaceIdentity: WorkspaceId; workspacePath: string } | null {
   const currentWorkspacePath = context.deps.cwd ?? process.cwd();
   const direct = parseRemoteWorkspaceIdentity(legacyWorkspaceDirectory);
-  if (direct?.kind === "wsl" && direct.workspacePath === currentWorkspacePath) {
+  // wsl 已移除（docs/specs/remove-wsl.md），parse 成功即为合法远程类型（当前仅 ssh）。
+  if (direct && direct.workspacePath === currentWorkspacePath) {
     return {
       workspaceIdentity: legacyWorkspaceDirectory as WorkspaceId,
       workspacePath: direct.workspacePath,
@@ -1606,7 +1607,7 @@ function resolveLegacyRemoteWorkspace(
   const embeddedIdentity = legacyWorkspaceDirectory.slice(identityPrefix.length);
   const embedded = parseRemoteWorkspaceIdentity(embeddedIdentity);
   if (
-    embedded?.kind !== "wsl" ||
+    !embedded ||
     `${identityPrefix}${embeddedIdentity}` !== legacyWorkspaceDirectory ||
     embedded.workspacePath !== currentWorkspacePath
   ) {
