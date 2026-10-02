@@ -35,11 +35,31 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SERVER_PORT = Number(process.env.PORT) || 3030;
 
 /**
- * On Windows `pnpm` is a `pnpm.cmd` shim, which Node's `spawn` cannot execute
- * directly (it raises `ENOENT`). Running through `shell: true` lets cmd.exe
- * resolve the shim; on POSIX it is a no-op because `pnpm` is a real binary.
+ * Spawn `pnpm` cross-platform. On Windows `pnpm` is a `pnpm.cmd` shim, which
+ * Node's `spawn` cannot execute directly (it raises `ENOENT`). We run it through
+ * `cmd.exe /c` explicitly rather than `shell: true`: the args stay an array
+ * (no unescaped-concatenation DEP0190 warning or injection surface), and
+ * cmd.exe resolves the shim. On POSIX `pnpm` is a real binary, so it spawns
+ * directly.
  */
-const isWindows = process.platform === "win32";
+function spawnPnpm(args, options) {
+  if (process.platform === "win32") {
+    return spawn("cmd.exe", ["/c", "pnpm", ...args], options);
+  }
+  return spawn("pnpm", args, options);
+}
+
+/**
+ * Log a child process's exit so a failure names the process that died instead
+ * of surfacing as a bare non-zero exit code from the launcher.
+ */
+function logChildExit(label, code, signal) {
+  if (code === 0 && !signal) return;
+  console.error(
+    `[dev-tauri] ${label} exited (code=${code}, signal=${signal ?? "none"}); ` +
+      `check its output above for the error.`,
+  );
+}
 
 const args = process.argv.slice(2);
 
@@ -82,12 +102,12 @@ async function startServerIfNeeded() {
   if (!serverEnv.ZCODE_NATIVE_DIR && existsSync(nativeDir)) {
     serverEnv.ZCODE_NATIVE_DIR = nativeDir;
   }
-  const child = spawn("pnpm", ["--filter", "@zcode/server", "dev"], {
+  const child = spawnPnpm(["--filter", "@zcode/server", "dev"], {
     stdio: ["inherit", "inherit", "inherit"],
     env: serverEnv,
     detached: true,
-    shell: isWindows,
   });
+  child.on("exit", (code, signal) => logChildExit("@zcode/server", code, signal));
   const stop = () => {
     try {
       process.kill(-child.pid, "SIGTERM");
@@ -106,11 +126,10 @@ async function startServerIfNeeded() {
  */
 function launchTauri() {
   return new Promise((resolve) => {
-    const child = spawn("pnpm", ["--filter", "@zcode/tauri", "tauri", "dev", ...args], {
+    const child = spawnPnpm(["--filter", "@zcode/tauri", "tauri", "dev", ...args], {
       stdio: "inherit",
       env: process.env,
       detached: true,
-      shell: isWindows,
     });
 
     const stopGroup = () => {
@@ -132,7 +151,10 @@ function launchTauri() {
       console.error(`[dev-tauri] failed to launch: ${error.message}`);
       resolve(1);
     });
-    child.on("exit", (code, signal) => resolve(code ?? (signal ? 1 : 0)));
+    child.on("exit", (code, signal) => {
+      logChildExit("tauri dev", code, signal);
+      resolve(code ?? (signal ? 1 : 0));
+    });
   });
 }
 
