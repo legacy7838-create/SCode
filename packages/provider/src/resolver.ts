@@ -50,6 +50,9 @@ export function serializeRegistryProviderConfig(
             ...(config.access.apiKeyManagementUrl === undefined
               ? {}
               : { apiKeyManagementUrl: config.access.apiKeyManagementUrl }),
+            ...(config.access.apiKeyEditable === undefined
+              ? {}
+              : { apiKeyEditable: config.access.apiKeyEditable }),
           }
         : {
             type: config.access.type,

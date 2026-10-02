@@ -756,7 +756,10 @@ impl BoundedOrder {
     ///
     /// Exists so the eviction and re-tagging rules are assertable directly; a
     /// test that cannot observe the order has to infer it from side effects,
-    /// which is how a cap that evicts the *newest* entry still passes.
+    /// which is how a cap that evicts the *newest* entry still passes. Test-only:
+    /// production never reads the order back out, so it is gated to the test build
+    /// to stay out of the lib's dead-code set.
+    #[cfg(test)]
     fn iter(&self) -> std::collections::vec_deque::Iter<'_, String> {
         self.order.iter()
     }
@@ -765,10 +768,7 @@ impl BoundedOrder {
         self.order.retain(|existing| existing != key);
     }
 
-    fn contains(&self, key: &str) -> bool {
-        self.order.iter().any(|existing| existing == key)
-    }
-
+    #[cfg(test)]
     fn len(&self) -> usize {
         self.order.len()
     }

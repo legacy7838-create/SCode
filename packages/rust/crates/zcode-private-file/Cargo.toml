@@ -1,0 +1,16 @@
+[package]
+name = "zcode-private-file"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Private-file persistence: inter-process directory locking, atomic writes, and corruption backups. Promoted from apps/zcode-tauri/src-tauri/src/services/private_file.rs so the Rust provider-config crate can use the same write discipline."
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+sha2 = { workspace = true }
+serde_json = { workspace = true }
+rand = "0.8"
+tracing = "0.1"

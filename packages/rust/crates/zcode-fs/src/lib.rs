@@ -56,10 +56,10 @@
 //!   the Node-only implementation module does.
 
 pub mod containment;
-mod ignore_rules;
+pub mod ignore_rules;
 mod mention_filter;
-mod reads;
-mod walk;
+pub mod reads;
+pub mod walk;
 #[cfg(test)]
 mod tests;
 

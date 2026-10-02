@@ -76,7 +76,8 @@ fields: no I/O, no clock read except the explicit `from` parameter, no process, 
 - `inferMinuteIntervalScheduleRule` (`:228-240`)
 - `buildIntervalScheduleRule` (`:301-348`) — the interval carrier normaliser
 - `computeAutomationNextRunAt` (`:353-358`) — the entry point both schedulers call
-- `automationCronValidation.ts` → `isValidCronExpr`
+- `automationCronValidation.ts` → `isValidCronExpr` — **host-only**; §2.5/8 records why this
+  ported export must never be reachable from the `@zcode/services` root barrel.
 
 ### 2.2 NOT ported (siblings / non-goals)
 
@@ -127,6 +128,42 @@ port has no I/O at all, so the rule does not trigger.**
    native function is a pure function of its arguments and a test can pin `from`.
 6. **No process, no I/O.** The ported feature spawns nothing and touches no file.
 7. **`croner` and its types are removed from `packages/services/package.json`.**
+8. **`isValidCronExpr` is host-only — the renderer must never reach it** (rust-native-ports.md
+   invariant 9). The engine is native, and the sandboxed renderer cannot load a `.node`: Vite
+   externalizes `node:fs` and `packages/rust/src/loader.ts` throws `Module "node:fs" has been
+   externalized for browser compatibility … Cannot access "node:fs.existsSync"`.
+
+   The port shipped that reachability: `packages/ui/src/settings/useAutomationTemplates.ts`
+   value-imported `isValidCronExpr` from the `@zcode/services` root barrel, and
+   `index.ts:247` re-exported it from `automationCronValidation.ts` → `@zcode/rust/cron` →
+   `loader.ts`. One line owned every chain — a reverse-graph trace of the Tauri renderer build
+   found **386 chains**, and every one passed through
+   `services/index.ts → session/automationCronValidation.ts → rust/cron.ts → loader.ts`.
+
+   The fix is invariant 9's prescribed shape, not a branch: the root barrel
+   (`@zcode/services`) stays renderer-safe, and the validator keeps its home on the Node-only
+   subpath (`@zcode/services/node` → `automationCron.ts`), which is where host consumers read it
+   from. There is still exactly one implementation.
+
+   **What the renderer gates on instead:** `canVisualizeCronInAutomationEditor`, the round-trip
+   through the builder — presentation, which §2.2 already keeps in TypeScript. Semantic
+   authority stays with the host and is enforced on write: `automationService.ts:227` (create)
+   and `:332` (update) reject an invalid expression with `InvalidCronExprError`, from this same
+   engine. A differential run of the committed 65-expression corpus against the native binary
+   measured the trade: **5 expressions** are structurally editable but semantically invalid
+   (`60 * * * *`, `0 24 * * *`, `0 0 32 * *`, `61 * * * *`, `0 61 * * *`). They used to be
+   filtered out of the template picker; now they are offered and refused on save with a typed
+   error. That is the deliberate cost of a single engine and zero JS fallback — not a silent
+   behavioural fork.
+
+   Gate: `packages/shared/scripts/check-native-graph.mjs` now walks **value** imports (not
+   `import type`, which the TS transform erases) from the renderer entries
+   (`apps/zcode-tauri/src/main.tsx`, `packages/web/src/main.tsx`) across every workspace package
+   — 1762 modules — and treats reaching `packages/rust/src/**` as the violation, reporting the
+   full import chain. The roots-only scan that predates this could not see the bug at all: it
+   checks *direct* `@zcode/rust` imports under a fixed list of directories, and neither
+   `services/index.ts` nor `apps/zcode-tauri/src` was in that list. Re-adding the export now
+   fails statically instead of re-breaking the build.
 
 ---
 

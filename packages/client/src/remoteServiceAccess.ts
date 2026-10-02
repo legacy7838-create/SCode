@@ -39,7 +39,6 @@ import {
   ISettingsSyncService,
   IFeedbackService,
   IPromptAttachmentTransferService,
-  IWindowControllerService,
   type IServiceAccessor,
 } from "@zcode/services";
 
@@ -60,7 +59,6 @@ export class RemoteServiceAccess implements IServiceAccessor {
   readonly credentialService: ICredentialService;
   readonly broadcastService: IBroadcastService;
   readonly zcodeTaskService: IZCodeTaskService;
-  readonly windowControllerService: IWindowControllerService;
   readonly zcodeAgentService: IZCodeAgentService;
   readonly zcodeSessionService: IZCodeSessionService;
   // cuaPermissionService is optional on IServiceAccessor (not provided by remote/bots host), but desktop renderer
@@ -129,9 +127,14 @@ export class RemoteServiceAccess implements IServiceAccessor {
     this.zcodeTaskService = ProxyChannel.toService<IZCodeTaskService>(
       channelClient.getChannel(IZCodeTaskService.channelName),
     );
-    this.windowControllerService = ProxyChannel.toService<IWindowControllerService>(
-      channelClient.getChannel(IWindowControllerService.channelName),
-    );
+    // `windowControllerService` is intentionally NOT constructed here. Its only implementation
+    // lived in the deleted Electron host (`packages/desktop/src/host/windowHostControllerService.ts`)
+    // and no current host registers `ServiceChannels.WindowController`; fabricating the proxy made
+    // every list query wait out the RPC timeout and answer `Unknown channel`, and it defeated the
+    // optional contract on `IServiceAccessor.windowControllerService`. Consumers therefore see
+    // `undefined` and follow their documented unavailable path. Restore this proxy in the same
+    // change that registers a real Window Host Controller (native port or service host), never as a
+    // JavaScript stub.
     this.zcodeAgentService = ProxyChannel.toService<IZCodeAgentService>(
       channelClient.getChannel(IZCodeAgentService.channelName),
     );

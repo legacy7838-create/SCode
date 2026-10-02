@@ -37,12 +37,15 @@ export class ApiKeyAccessConfig extends ConfigOverlay<ApiKeyAccessConfig> {
   readonly type: ApiKeyAccessConfigObject["type"];
   readonly apiKey?: ApiKeyAccessConfigInput["apiKey"];
   readonly apiKeyManagementUrl?: ApiKeyAccessConfigInput["apiKeyManagementUrl"];
+  /** false = built-in credential shipped by the Template; the settings UI must not offer an edit surface. */
+  readonly apiKeyEditable?: ApiKeyAccessConfigInput["apiKeyEditable"];
 
   constructor(input: ApiKeyAccessConfigInput = {}) {
     super();
     this.type = input.type ?? "api-key";
     this.apiKey = input.apiKey;
     this.apiKeyManagementUrl = input.apiKeyManagementUrl;
+    this.apiKeyEditable = input.apiKeyEditable;
     Object.freeze(this);
   }
 
@@ -51,6 +54,7 @@ export class ApiKeyAccessConfig extends ConfigOverlay<ApiKeyAccessConfig> {
       type: next.type,
       apiKey: this.overlayValue(this.apiKey, next.apiKey),
       apiKeyManagementUrl: this.overlayValue(this.apiKeyManagementUrl, next.apiKeyManagementUrl),
+      apiKeyEditable: this.overlayValue(this.apiKeyEditable, next.apiKeyEditable),
     });
   }
 
@@ -64,6 +68,7 @@ export class ApiKeyAccessConfig extends ConfigOverlay<ApiKeyAccessConfig> {
       ...objectWithoutUndefined({
         apiKey: this.apiKey,
         apiKeyManagementUrl: this.apiKeyManagementUrl,
+        apiKeyEditable: this.apiKeyEditable,
       }),
     };
   }

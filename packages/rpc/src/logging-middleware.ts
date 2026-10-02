@@ -20,6 +20,34 @@ import { Event } from "./foundation.js";
 
 export type RPCLogger = (message: string, ...args: unknown[]) => void;
 
+/**
+ * Optional classification for the logging middleware. Callers that know a rejection is expected
+ * control flow (for example a dormant workspace with no agent runtime) can route it away from the
+ * `FAIL` line. See docs/specs/rpc-expected-error-logging.md.
+ */
+export interface RpcLoggingOptions {
+  /** Return true when a rejection is expected and must not be logged as a failure. */
+  isExpectedError?: (error: unknown) => boolean;
+  /** Sink for expected errors. Omitted means "do not log them"; the handling owner keeps its own record. */
+  expectedLogger?: RPCLogger;
+}
+
+/** Shared failure line: expected errors go to `expectedLogger` (or nowhere), everything else to `FAIL`. */
+function reportFailure(
+  logger: RPCLogger,
+  options: RpcLoggingOptions,
+  base: string,
+  elapsedMs: string | null,
+  error: unknown,
+): void {
+  const suffix = elapsedMs === null ? "" : ` (${elapsedMs}ms)`;
+  if (options.isExpectedError?.(error)) {
+    options.expectedLogger?.(`${base} expected${suffix}`, error);
+    return;
+  }
+  logger(`${base} FAIL${suffix}`, error);
+}
+
 // ============================================================================
 // LoggingServerChannel — decorates a single IServerChannel, logging call/listen
 // ============================================================================
@@ -29,6 +57,7 @@ class LoggingServerChannel<TContext> implements IServerChannel<TContext> {
     private inner: IServerChannel<TContext>,
     private channelName: string,
     private logger: RPCLogger,
+    private options: RpcLoggingOptions = {},
   ) {}
 
   async call<T>(
@@ -45,7 +74,13 @@ class LoggingServerChannel<TContext> implements IServerChannel<TContext> {
       return result;
     } catch (err) {
       const elapsed = (performance.now() - start).toFixed(1);
-      this.logger(`[rpc:call] ${this.channelName}.${command} FAIL (${elapsed}ms)`, err);
+      reportFailure(
+        this.logger,
+        this.options,
+        `[rpc:call] ${this.channelName}.${command}`,
+        elapsed,
+        err,
+      );
       throw err;
     }
   }
@@ -56,7 +91,13 @@ class LoggingServerChannel<TContext> implements IServerChannel<TContext> {
       this.logger(`[rpc:listen] ${this.channelName}.${event} subscribed`);
       return result;
     } catch (err) {
-      this.logger(`[rpc:listen] ${this.channelName}.${event} FAIL`, err);
+      reportFailure(
+        this.logger,
+        this.options,
+        `[rpc:listen] ${this.channelName}.${event}`,
+        null,
+        err,
+      );
       throw err;
     }
   }
@@ -80,13 +121,14 @@ export class LoggingChannelServer<TContext = string> implements IChannelServer<T
   constructor(
     private inner: IChannelServer<TContext>,
     private logger: RPCLogger,
+    private options: RpcLoggingOptions = {},
   ) {}
 
   registerChannel(channelName: string, channel: IServerChannel<TContext>): void {
     this.logger(`[rpc:register] channel "${channelName}"`);
     this.inner.registerChannel(
       channelName,
-      new LoggingServerChannel(channel, channelName, this.logger),
+      new LoggingServerChannel(channel, channelName, this.logger, this.options),
     );
   }
 
@@ -104,6 +146,7 @@ class LoggingChannel implements IChannel {
     private inner: IChannel,
     private channelName: string,
     private logger: RPCLogger,
+    private options: RpcLoggingOptions = {},
   ) {}
 
   async call<T>(command: string, arg?: any, cancellationToken?: CancellationToken): Promise<T> {
@@ -115,7 +158,13 @@ class LoggingChannel implements IChannel {
       return result;
     } catch (err) {
       const elapsed = (performance.now() - start).toFixed(1);
-      this.logger(`[rpc:call] ${this.channelName}.${command} → FAIL (${elapsed}ms)`, err);
+      reportFailure(
+        this.logger,
+        this.options,
+        `[rpc:call] ${this.channelName}.${command} →`,
+        elapsed,
+        err,
+      );
       throw err;
     }
   }
@@ -144,6 +193,7 @@ export class LoggingChannelClient implements IChannelClient {
   constructor(
     private inner: IChannelClient,
     private logger: RPCLogger,
+    private options: RpcLoggingOptions = {},
   ) {}
 
   getChannel<T extends IChannel>(channelName: string): T {
@@ -152,6 +202,7 @@ export class LoggingChannelClient implements IChannelClient {
       channel as unknown as IChannel,
       channelName,
       this.logger,
+      this.options,
     ) as unknown as T;
   }
 }

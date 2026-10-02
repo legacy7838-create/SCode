@@ -8,12 +8,8 @@ import {
   Palette,
   Sun,
   BarChart3,
-  Terminal,
   AlarmClock,
-  Anchor,
   Brain,
-  Blocks,
-  Globe2,
   Cable,
   WandSparkles,
   Keyboard,
@@ -86,12 +82,6 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     groupId: "agentCapabilities",
   },
   {
-    id: "plugin",
-    icon: Blocks,
-    titleId: "settings.plugins.title",
-    groupId: "agentCapabilities",
-  },
-  {
     id: "mcp",
     icon: Cable,
     titleId: "settings.mcpTitle",
@@ -104,39 +94,13 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     groupId: "agentCapabilities",
   },
   {
-    id: "commands",
-    icon: Terminal,
-    titleId: "settings.commands.title",
-    groupId: "agentCapabilities",
-  },
-  {
     id: "automations",
     icon: AlarmClock,
     titleId: "settings.automations.title",
     titleBadgeId: "settings.automations.betaBadge",
     groupId: "agentCapabilities",
   },
-  {
-    id: "hooks",
-    icon: Anchor,
-    titleId: "settings.hooks.title",
-    groupId: "agentCapabilities",
-  },
-  {
-    id: "browser",
-    icon: Globe2,
-    titleId: "settings.browser.title",
-    groupId: "basics",
-  },
-  // Computer control follows "browser": both are local control portals for Agent.
-  // Put it in the basic settings so that users can understand the relationship between "controlling the browser/controlling the entire computer" at the same place.
-  {
-    id: "computerUse",
-    icon: Monitor,
-    titleId: "settings.computerUse.title",
-    groupId: "basics",
-  },
-  // Keyboard shortcuts follow "Computer Control": they both belong to the local control/efficiency configuration and are stored at the end of the basic settings.
+  // Keyboard shortcuts are stored at the end of the basic settings.
   {
     id: "shortcuts",
     icon: Keyboard,
@@ -158,28 +122,16 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
   },
 ];
 
-// Compatible with existing read-only consumers: the default configuration represents a web view without desktop platform capabilities;
-// macOS/Windows/Linux must continue to dynamically join Computer Use via createSettingsPageConfig.
-export const SETTINGS_SECTIONS = BASE_SETTINGS_SECTIONS.filter(
-  (section) => section.id !== "computerUse" && isSettingsSectionEnabled(section.id),
+// Compatible with existing read-only consumers: the default configuration is the same visible
+// section list that createSettingsPageConfig derives.
+export const SETTINGS_SECTIONS = BASE_SETTINGS_SECTIONS.filter((section) =>
+  isSettingsSectionEnabled(section.id),
 );
 
-interface SettingsPageConfigOptions {
-  isDesktop?: boolean;
-  isMacDesktop?: boolean;
-  isWindowsDesktop?: boolean;
-}
-
-export function createSettingsPageConfig({
-  isDesktop = false,
-  isMacDesktop = false,
-  isWindowsDesktop = false,
-}: SettingsPageConfigOptions = {}) {
-  const showComputerUse = isDesktop || isMacDesktop || isWindowsDesktop;
-  const settingsSections = BASE_SETTINGS_SECTIONS.filter((section) => {
-    if (section.id === "computerUse" && !showComputerUse) return false;
-    return isSettingsSectionEnabled(section.id);
-  });
+export function createSettingsPageConfig() {
+  const settingsSections = BASE_SETTINGS_SECTIONS.filter((section) =>
+    isSettingsSectionEnabled(section.id),
+  );
   const settingsSectionGroups = BASE_SETTINGS_SECTION_GROUPS.map((group) => ({
     ...group,
     sections: settingsSections.filter((section) => section.groupId === group.id),

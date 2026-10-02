@@ -244,7 +244,12 @@ export {
   type ClientSceneResponseBody,
   type ClientScenesResponse,
 } from "./client-scenes/clientScenes.js";
-export { isValidCronExpr } from "./session/automationCronValidation.js";
+// `isValidCronExpr` must NOT be exported from this barrel. The root index is value-imported by
+// the renderer (packages/services/src/index.ts:87), and the validator is native —
+// `automationCronValidation.ts` → `@zcode/rust/cron` → `loader.ts` → `node:fs`, which Vite
+// externalizes and the sandboxed renderer throws on. Host consumers read it from the Node-only
+// subpath (`@zcode/services/node` → `automationCron.ts`), so there is still one implementation
+// and no JS fallback. See rust-native-cron.md §2.5/8 and invariant 9.
 // Idle time task management service (independent of the automation service surface); interface/descriptor browser-safe.
 export { IOffPeakTaskService } from "./session/offPeakTask.js";
 export type { OffPeakUpdateTaskParams } from "./session/offPeakTask.js";

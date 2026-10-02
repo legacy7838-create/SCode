@@ -1,0 +1,11 @@
+[package]
+name = "zcode-model-option-map"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Restricted-CEL option map compiler/evaluator. Pure Rust port of packages/model-option-map so provider config validation runs without Node. See docs/specs/rust-native-server.md rung 3."
+
+[dependencies]
+serde_json = { workspace = true }
+thiserror = { workspace = true }

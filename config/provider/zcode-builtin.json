@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "revision": 30,
+  "revision": 32,
   "config": {
     "providerConfigRules": {
       "templateRules": [
@@ -680,6 +680,71 @@
               "deepseek-v4-flash",
               "glm-5.1",
               "nemotron-3.5-lightning-free"
+            ],
+            "logo": {
+              "type": "builtin",
+              "key": "opencode"
+            }
+          }
+        },
+        {
+          "templateId": "opencode-free",
+          "templateNameMap": {
+            "zh-CN": "OpenCode Free (Anthropic)",
+            "en-US": "OpenCode Free (Anthropic)"
+          },
+          "config": {
+            "access": {
+              "type": "api-key",
+              "apiKey": "public",
+              "apiKeyEditable": false
+            },
+            "api": {
+              "type": "anthropic-messages",
+              "baseUrl": "https://opencode.ai/zen/v1",
+              "headers": {
+                "User-Agent": "opencode/1.18.31 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14",
+                "x-opencode-client": "desktop",
+                "x-opencode-project": "global"
+              }
+            },
+            "builtinModelIds": ["space-bunny-free"],
+            "logo": {
+              "type": "builtin",
+              "key": "opencode"
+            }
+          }
+        },
+        {
+          "templateId": "opencode-free-chat",
+          "templateNameMap": {
+            "zh-CN": "OpenCode Free (Chat)",
+            "en-US": "OpenCode Free (Chat)"
+          },
+          "config": {
+            "access": {
+              "type": "api-key",
+              "apiKey": "public",
+              "apiKeyEditable": false
+            },
+            "api": {
+              "type": "openai-chat-completions",
+              "baseUrl": "https://opencode.ai/zen/v1",
+              "headers": {
+                "User-Agent": "opencode/1.18.31 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14",
+                "x-opencode-client": "desktop",
+                "x-opencode-project": "global"
+              }
+            },
+            "builtinModelIds": [
+              "big-pickle",
+              "space-bunny-free",
+              "fledge-alpha-free",
+              "mimo-v2.5-free",
+              "mimo-v2.6-flash-free",
+              "nemotron-3-ultra-free",
+              "nemotron-3.5-lightning-free",
+              "longcat-2.5-preview-free"
             ],
             "logo": {
               "type": "builtin",
@@ -3279,6 +3344,17 @@
             "optionSpecs": {
               "reasoningLevel": {
                 "map": "{\n  \"reasoning\": {\n    \"effort\": reasoningLevel\n  }\n}"
+              }
+            }
+          }
+        },
+        {
+          "modelMatch": "space-bunny-free",
+          "apiTypeMatch": "anthropic-messages",
+          "config": {
+            "optionSpecs": {
+              "reasoningLevel": {
+                "map": "reasoningLevel == \"disabled\" ? { \"thinking\": null } : { \"thinking\": { \"type\": \"adaptive\" }, \"output_config\": { \"effort\": reasoningLevel == \"enabled\" ? \"high\" : reasoningLevel } }"
               }
             }
           }

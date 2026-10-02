@@ -32,6 +32,12 @@ export const apiKeyAccessDataSchema = z
     type: z.enum(["api-key", "zhipu-coding-plan-api-key"]),
     apiKey: z.string().nullable().optional(),
     apiKeyManagementUrl: z.string().url().nullable().optional(),
+    /**
+     * false = the key is a built-in credential shipped by the Provider Template (e.g. the OpenCode Free
+     * anonymous `public` key); the settings UI must not offer an edit surface, because overwriting it
+     * silently switches the request to an unrecognised credential. Absent keeps the field editable.
+     */
+    apiKeyEditable: z.boolean().nullable().optional(),
   })
   .strict();
 export const completeApiKeyAccessDataSchema = apiKeyAccessDataSchema.extend({

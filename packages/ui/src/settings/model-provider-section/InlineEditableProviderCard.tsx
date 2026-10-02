@@ -764,7 +764,11 @@ export function InlineEditableProviderCard({
 
   const headerProviderName = providerDisplayName;
   const isAccountProvider = provider.config.access?.type === "zhipu-account";
-  const isApiKeyProvider = isApiKeyAccess(provider.config.access);
+  // A Template can pin a built-in credential (e.g. the OpenCode Free anonymous `public` key). Such a
+  // Provider is usable without any user-supplied key, so the card must not offer an API-key input at
+  // all — editing it would silently swap the built-in credential for a broken one.
+  const isApiKeyProvider =
+    isApiKeyAccess(provider.config.access) && provider.config.access.apiKeyEditable !== false;
   const effectiveHeaderVisible = headerVisible && statusSection === undefined;
 
   return (

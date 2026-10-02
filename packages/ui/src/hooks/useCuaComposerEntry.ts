@@ -62,7 +62,7 @@ export function useCuaComposerEntry({
 
   const macLocalDesktop = supportsLocalMacCuaPermissionOnboarding(platform);
   const windowsLocalDesktop = supportsLocalWindowsCuaEntry(platform);
-  // Local-workspace check using the same criteria as ComputerUseSection: CUA on a remote workspace would operate
+  // Local-workspace check using the same criteria as computerUseAvailability: CUA on a remote workspace would operate
   // the remote machine's screen, which the product does not offer.
   const isLocalWorkspace =
     !remoteSessionId &&

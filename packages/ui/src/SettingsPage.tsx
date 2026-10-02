@@ -38,8 +38,6 @@ import {
   clearPendingSettingsPluginScopeKey,
   consumeInitialSettingsSection,
   consumePendingSettingsPluginOrigin,
-  consumePendingSettingsPluginScopeKey,
-  consumePendingSettingsPluginTab,
   consumePendingSettingsModelProviderTarget,
   consumePendingSettingsUsageTab,
   resolveSettingsSection,
@@ -66,11 +64,8 @@ import { SubagentsSection } from "@/settings/SubagentsSection.js";
 import { AutomationsSection } from "@/settings/AutomationsSection.js";
 import { SegmentPill } from "@/settings/PluginStoreListView.js";
 import { PluginsSection } from "@/settings/PluginsSection.js";
-import { HooksSection } from "@/settings/HooksSection.js";
 import { WorkspaceFileSearchSection } from "@/settings/WorkspaceFileSearchSection.js";
 import { MemorySettingsSection } from "@/settings/MemorySettingsSection.js";
-import { BrowserSettingsSection } from "@/settings/BrowserSettingsSection.js";
-import { ComputerUseSection } from "@/settings/ComputerUseSection.js";
 import { ShortcutSettingsSection } from "@/settings/ShortcutSettingsSection.js";
 import { MigrationSection } from "@/settings/MigrationSection.js";
 import { SETTINGS_FRAME_CONTENT_CLASSNAME } from "@/settings/SettingsPageParts.js";
@@ -293,15 +288,7 @@ export function SettingsPage({
   user?: UserInfo | null;
 }) {
   const { intl } = useZCodeIntl();
-  const { settingsSectionGroups, settingsSections } = useMemo(
-    () =>
-      createSettingsPageConfig({
-        isDesktop: Boolean(isDesktop),
-        isMacDesktop: Boolean(isMacDesktop),
-        isWindowsDesktop: Boolean(isWindowsDesktop),
-      }),
-    [isDesktop, isMacDesktop, isWindowsDesktop],
-  );
+  const { settingsSectionGroups, settingsSections } = useMemo(() => createSettingsPageConfig(), []);
   const isLinuxDesktop = Boolean(isDesktop && !isMacDesktop && !isWindowsDesktop);
   const usesInlineWindowControls = Boolean(isWindowsDesktop || isLinuxDesktop);
   const platform = usePlatform();
@@ -316,12 +303,8 @@ export function SettingsPage({
     writeLastSettingsSectionPreference(visibleInitialSection);
     return visibleInitialSection;
   });
-  const [pluginTab, setPluginTab] = useState(() => consumePendingSettingsPluginTab());
   const [pluginNavigationOrigin, setPluginNavigationOrigin] = useState(() =>
     consumePendingSettingsPluginOrigin(),
-  );
-  const [pluginScopeKey, setPluginScopeKey] = useState(() =>
-    consumePendingSettingsPluginScopeKey(),
   );
   const [settingsSectionNavigationVersion, setSettingsSectionNavigationVersion] = useState(0);
   useEffect(() => {
@@ -692,8 +675,6 @@ export function SettingsPage({
   const [httpProxy, setHttpProxy] = useState("");
   const [httpProxyNoProxy, setHttpProxyNoProxy] = useState("");
   const [httpProxyCaCertPath, setHttpProxyCaCertPath] = useState("");
-  const [embeddedBrowserAllowInsecureCertificates, setEmbeddedBrowserAllowInsecureCertificates] =
-    useState(false);
   const [taskAutoArchiveEnabled, setTaskAutoArchiveEnabled] = useState(false);
   const [taskAutoArchiveOlderThanDays, setTaskAutoArchiveOlderThanDays] = useState(7);
   const [closeToTrayOnWindows, setCloseToTrayOnWindows] = useState(true);
@@ -749,11 +730,7 @@ export function SettingsPage({
         if (section === "usage" && detail?.usageTab) {
           setUsageActiveTab(detail.usageTab);
         }
-        if (resolveSettingsSection(section) === "plugin" && detail?.pluginTab) {
-          setPluginTab(detail.pluginTab);
-          setPluginNavigationOrigin(detail.pluginOrigin);
-          setPluginScopeKey(detail.pluginScopeKey);
-        } else if (resolveSettingsSection(section) !== "plugin") {
+        if (resolveSettingsSection(section) !== "plugin") {
           setPluginNavigationOrigin(undefined);
         }
         if (section === "modelProvider" && detail?.modelProviderId) {
@@ -776,9 +753,6 @@ export function SettingsPage({
         setHttpProxy(settings.httpProxy ?? "");
         setHttpProxyNoProxy(settings.httpProxyNoProxy ?? "");
         setHttpProxyCaCertPath(settings.httpProxyCaCertPath ?? "");
-        setEmbeddedBrowserAllowInsecureCertificates(
-          settings.embeddedBrowserAllowInsecureCertificates ?? false,
-        );
         setTaskAutoArchiveEnabled(settings.taskAutoArchiveEnabled ?? false);
         setTaskAutoArchiveOlderThanDays(settings.taskAutoArchiveOlderThanDays ?? 7);
         setCloseToTrayOnWindows(settings.closeToTrayOnWindows ?? true);
@@ -1113,30 +1087,6 @@ export function SettingsPage({
     },
     [services.settingService, intl],
   );
-  const handleEmbeddedBrowserAllowInsecureCertificatesChange = useCallback(
-    async (enabled: boolean) => {
-      await runSettingsActionAsync({
-        featureId: "settings.browser",
-        action: "toggle_insecure_certificates",
-        trigger: "switch",
-        operation: () =>
-          services.settingService.update({ embeddedBrowserAllowInsecureCertificates: enabled }),
-        completed: {
-          resultSource: "setting_service",
-          stateAfter: enabled ? "enabled" : "disabled",
-          requiresRestart: true,
-        },
-      });
-      setEmbeddedBrowserAllowInsecureCertificates(enabled);
-      // The certificate policy is installed on the Session when main is started. After modification, verifyProc must be replaced only after restarting.
-      toast(
-        intl.formatMessage({
-          id: "settings.embeddedBrowserAllowInsecureCertificatesSavedHint",
-        }),
-      );
-    },
-    [services.settingService, intl],
-  );
   const handleReceivePreviewUpdatesChange = useCallback(
     async (enabled: boolean) => {
       await runSettingsActionAsync({
@@ -1310,7 +1260,7 @@ export function SettingsPage({
     [setCodePreviewSettings],
   );
   const activeSectionMeta = settingsSections.find((section) => section.id === activeSection);
-  // Grayscale verdict arrives asynchronously: the sections list may change after mounting (e.g. computerUse section is removed by Grayscale).
+  // Grayscale verdict arrives asynchronously: the sections list may change after mounting (e.g. a section can be removed by Grayscale).
   // If the user is staying in the removed section, fall back to the first visible area to avoid returning null on the entire page.
   useEffect(() => {
     setActiveSection((current) => resolveSettingsSectionForPlatform(current, settingsSections));
@@ -1322,18 +1272,13 @@ export function SettingsPage({
   const activeSectionLabel = intl.formatMessage({
     id: activeSectionMeta.contentTitleId ?? activeSectionMeta.titleId,
   });
-  const settingsBreadcrumbSectionLabel =
-    activeSection === "plugin" && pluginNavigationOrigin === "plugin-store"
-      ? intl.formatMessage({ id: "workspace.openPluginsSettings" })
-      : activeSectionLabel;
+  const settingsBreadcrumbSectionLabel = activeSectionLabel;
   const visibleSettingsBreadcrumbItems =
     settingsBreadcrumbItems[0]?.label === settingsBreadcrumbSectionLabel
       ? settingsBreadcrumbItems
       : [];
   const hasVisibleSettingsBreadcrumb = visibleSettingsBreadcrumbItems.length >= 2;
-  const showActiveSectionTitle =
-    !hasVisibleSettingsBreadcrumb ||
-    (activeSection === "plugin" && pluginNavigationOrigin === "plugin-store");
+  const showActiveSectionTitle = !hasVisibleSettingsBreadcrumb;
 
   return (
     <>
@@ -1801,24 +1746,6 @@ export function SettingsPage({
                               workspaceDisplayNames={memoryWorkspaceDisplayNames}
                             />
                           </ServiceProvider>
-                        ) : activeSection === "plugin" ? (
-                          <PluginsSection
-                            key={`plugin:${settingsSectionNavigationVersion}`}
-                            isDesktop={Boolean(isDesktop)}
-                            isMacDesktop={Boolean(isMacDesktop)}
-                            isWindowsDesktop={Boolean(isWindowsDesktop)}
-                            initialTab={pluginTab}
-                            initialScopeKey={pluginScopeKey}
-                            workspacePath={activeWorkspacePath}
-                            workspaceIdentity={activeWorkspaceIdentity}
-                            showMarketplaceBreadcrumb={pluginNavigationOrigin === "plugin-store"}
-                            onCreateTask={onCreateTask}
-                            onOpenPluginStore={(_returnScopeKey, intent) => {
-                              // To add market and browsing plug-ins, leave the settings layer first and then display the store.
-                              requestPluginStoreOpen({ returnScopeKey: "user", intent });
-                              onBack?.();
-                            }}
-                          />
                         ) : activeSection === "mcp" ? (
                           <PluginsSection
                             key={`mcp:${settingsSectionNavigationVersion}`}
@@ -1870,51 +1797,10 @@ export function SettingsPage({
                             workspacePath={activeWorkspacePath}
                             workspaceIdentity={activeWorkspaceIdentity}
                           />
-                        ) : activeSection === "commands" ? (
-                          <PluginsSection
-                            mode="command"
-                            workspacePath={activeWorkspacePath}
-                            workspaceIdentity={activeWorkspaceIdentity}
-                            onCreateTask={onCreateTask}
-                            onOpenPluginStore={(_returnScopeKey, intent) => {
-                              // To add market and browsing plug-ins, leave the settings layer first and then display the store.
-                              requestPluginStoreOpen({ returnScopeKey: "user", intent });
-                              onBack?.();
-                            }}
-                          />
-                        ) : activeSection === "hooks" ? (
-                          <HooksSection
-                            workspacePath={activeWorkspacePath}
-                            workspaceIdentity={activeWorkspaceIdentity}
-                          />
                         ) : activeSection === "workspaceFileSearch" ? (
                           <WorkspaceFileSearchSection
                             workspacePath={activeWorkspacePath}
                             workspaceIdentity={activeWorkspaceIdentity}
-                          />
-                        ) : activeSection === "browser" ? (
-                          <BrowserSettingsSection
-                            isDesktop={Boolean(isDesktop)}
-                            isWindowsDesktop={isWindowsDesktop}
-                            workspacePath={activeWorkspacePath}
-                            workspaceIdentity={activeWorkspaceIdentity}
-                            embeddedBrowserAllowInsecureCertificates={
-                              embeddedBrowserAllowInsecureCertificates
-                            }
-                            onEmbeddedBrowserAllowInsecureCertificatesChange={
-                              handleEmbeddedBrowserAllowInsecureCertificatesChange
-                            }
-                          />
-                        ) : activeSection === "computerUse" ? (
-                          <ComputerUseSection
-                            isDesktop={Boolean(isDesktop)}
-                            isMacDesktop={Boolean(isMacDesktop)}
-                            isWindowsDesktop={Boolean(isWindowsDesktop)}
-                            workspacePath={activeWorkspacePath}
-                            workspaceIdentity={activeWorkspaceIdentity}
-                            remoteSessionId={activeWorkspaceTab?.remoteSessionId}
-                            remoteTarget={activeWorkspaceTab?.remoteTarget}
-                            localWorkspacePath={activeWorkspaceTab?.localWorkspacePath}
                           />
                         ) : null}
                       </div>

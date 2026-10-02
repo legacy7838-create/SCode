@@ -328,10 +328,6 @@ export function SkillsImportDialog(props: ExternalAgentImportDialogProps) {
   return <ExternalAgentImportDialog {...props} category="skills" />;
 }
 
-export function CommandsImportDialog(props: ExternalAgentImportDialogProps) {
-  return <ExternalAgentImportDialog {...props} category="commands" />;
-}
-
 export function McpServersImportDialog(props: ExternalAgentImportDialogProps) {
   return <ExternalAgentImportDialog {...props} category="mcpServers" />;
 }

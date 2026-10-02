@@ -1,16 +1,12 @@
 import type {
-  PluginCommand,
   McpServerStatus,
   SkillSummary,
-  UserCommand,
-  ZCodeCommand,
   ZCodeMcpServer,
   ZCodeMcpServerStatusSnapshot,
   ZCodePluginInfo,
   ZCodePluginComponentKind,
   ZCodePluginsDescribeResult,
 } from "@zcode/shared";
-import { isPluginCommand, isUserCommand, ZCODE_COMMAND_AGENT_SOURCE } from "@zcode/shared";
 import type { PluginComponentDisplayGroup } from "@/settings/PluginComponentGroups.js";
 
 interface ResourceGroups<TLocal, TPlugin> {
@@ -175,36 +171,6 @@ export function groupSkillsByPlugin(
       plugin.push(skill);
     } else {
       local.push(skill);
-    }
-  }
-  return { local, plugin };
-}
-
-export function groupCommandsByPlugin(
-  commands: ZCodeCommand[],
-  query: string,
-): ResourceGroups<UserCommand, PluginCommand> {
-  const local: UserCommand[] = [];
-  const plugin: PluginCommand[] = [];
-  for (const command of commands) {
-    if (
-      isUserCommand(command) &&
-      command.agentSource === ZCODE_COMMAND_AGENT_SOURCE &&
-      normalizedQueryMatches(query, [command.name, command.description, command.prompt])
-    ) {
-      local.push(command);
-      continue;
-    }
-    if (
-      isPluginCommand(command) &&
-      normalizedQueryMatches(query, [
-        command.name,
-        command.description,
-        command.prompt,
-        command.pluginName,
-      ])
-    ) {
-      plugin.push(command);
     }
   }
   return { local, plugin };

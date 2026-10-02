@@ -22,6 +22,7 @@ use std::collections::HashSet;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
@@ -706,16 +707,10 @@ fn parse_ssh_g_output(output: &str) -> (Option<String>, Option<u16>, Option<Stri
 
 static ALIAS_CACHE: Mutex<Option<(u64, Vec<SshConfigAliasOption>)>> = Mutex::new(None);
 
-/// Drop the process-wide alias cache. Public so tests are order-independent.
-///
-/// `unwrap_or_else(|poisoned| poisoned.into_inner())` is deliberate: a poisoned
-/// lock means some earlier alias listing panicked. The cache holds nothing but
-/// a recomputable list of aliases, so discarding the poisoned value is correct
-/// and propagating the poison would make one failed listing permanently break
-/// every later one.
-pub fn invalidate_alias_cache() {
-    *lock_alias_cache() = None;
-}
+// The cache is refreshed only by `list_from_local_config`; there is deliberately
+// no invalidate entry point. The TS original has none either (`sshConfigAlias.ts`
+// keeps the same `CACHE_TTL_MS` lease), so 30 s is the sole refresh path and an
+// invalidation helper would be an API nothing calls.
 
 /// Take the alias-cache guard, recovering from poisoning rather than panicking.
 fn lock_alias_cache() -> std::sync::MutexGuard<'static, Option<(u64, Vec<SshConfigAliasOption>)>> {
@@ -760,6 +755,53 @@ fn resolve_now() -> Vec<SshConfigAliasOption> {
     resolve_config(&root_config)
 }
 
+/// Apply `f` to every item with at most `cap` in flight, preserving input order.
+///
+/// Port of `mapWithConcurrency` (`sshConfigAlias.ts:604-636`), which is what
+/// gives `SSH_G_CONCURRENCY` its meaning: a config with 200 aliases costs
+/// 200 × 1.5 s if each `ssh -G` runs after the previous one, and
+/// `docs/specs/rust-native-sysinfo.md:70` records the port as "3 concurrent,
+/// 1.5 s cap" for exactly that reason. A sequential `.map()` was a silent
+/// regression against the spec, not a design choice.
+///
+/// Workers pull indices from a shared cursor and each writes its own slot, so
+/// completion order never reaches the caller — the alias list keeps the order
+/// the config enumerated it in. `cap` is floored at one: a zero-width pool
+/// would spawn nothing and leave every slot empty.
+pub(super) fn map_with_concurrency<T, R, F>(items: &[T], cap: usize, f: F) -> Vec<R>
+where
+    T: Sync,
+    R: Send,
+    F: Fn(&T) -> R + Send + Sync,
+{
+    if items.is_empty() {
+        return Vec::new();
+    }
+    let workers = cap.max(1).min(items.len());
+    let cursor = AtomicUsize::new(0);
+    let slots: Vec<Mutex<Option<R>>> = items.iter().map(|_| Mutex::new(None)).collect();
+    std::thread::scope(|scope| {
+        for _ in 0..workers {
+            scope.spawn(|| loop {
+                let index = cursor.fetch_add(1, Ordering::Relaxed);
+                if index >= items.len() {
+                    return;
+                }
+                let value = f(&items[index]);
+                *slots[index].lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(value);
+            });
+        }
+    });
+    slots
+        .into_iter()
+        .map(|slot| {
+            slot.into_inner()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .expect("every slot is written exactly once by its worker")
+        })
+        .collect()
+}
+
 /// Resolve aliases from one specific config file.
 ///
 /// Split out of [`resolve_now`] so the resolver is a function of its input rather
@@ -778,26 +820,23 @@ pub(crate) fn resolve_config(root_config: &Path) -> Vec<SshConfigAliasOption> {
     let Some(ssh) = resolve_ssh_executable_path() else {
         return fallback;
     };
-    fallback
-        .into_iter()
-        .map(|fallback_option| {
-            let Some(output) = run_ssh_config_query(&ssh, root_config, &fallback_option.alias)
-            else {
-                return fallback_option;
-            };
-            let (host, port, username) = parse_ssh_g_output(&output);
-            SshConfigAliasOption {
-                alias: fallback_option.alias.clone(),
-                host: host.unwrap_or(fallback_option.host),
-                port: port.or(fallback_option.port),
-                username: username.or(fallback_option.username),
-                // Only the explicit `IdentityFile` from the parsed config, never
-                // `ssh -G`'s default one.
-                private_key_path: fallback_option.private_key_path,
-                source: fallback_option.source,
-            }
-        })
-        .collect()
+    map_with_concurrency(&fallback, SSH_G_CONCURRENCY, |fallback_option| {
+        let Some(output) = run_ssh_config_query(&ssh, root_config, &fallback_option.alias)
+        else {
+            return fallback_option.clone();
+        };
+        let (host, port, username) = parse_ssh_g_output(&output);
+        SshConfigAliasOption {
+            alias: fallback_option.alias.clone(),
+            host: host.unwrap_or_else(|| fallback_option.host.clone()),
+            port: port.or(fallback_option.port),
+            username: username.or_else(|| fallback_option.username.clone()),
+            // Only the explicit `IdentityFile` from the parsed config, never
+            // `ssh -G`'s default one.
+            private_key_path: fallback_option.private_key_path.clone(),
+            source: fallback_option.source.clone(),
+        }
+    })
 }
 
 /// The parse-only half of [`list_from_local_config`], without the `ssh -G`

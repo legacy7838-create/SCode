@@ -97,7 +97,14 @@ export const providerTemplateConfigRuleSchema = providerTemplateDataSchema.exten
   config: providerConfigDataSchema
     .pick({ logo: true, access: true, api: true, builtinModelIds: true })
     .extend({
-      access: apiKeyAccessDataSchema.omit({ apiKey: true }).nullable().optional(),
+      // A Template must never carry a user credential (it ships with the repository). The only value
+      // it may declare is "public": the OpenCode Zen anonymous-lane marker, which is not a secret and
+      // must stay hardcoded so the Free provider works without any user-supplied key.
+      access: apiKeyAccessDataSchema
+        .omit({ apiKey: true })
+        .extend({ apiKey: z.literal("public").nullable().optional() })
+        .nullable()
+        .optional(),
     }),
 });
 export const builtinProviderConfigRuleSchema = providerConfigRuleSchema.extend({

@@ -97,7 +97,6 @@ function hasLocalizedTitle(item: ClientSceneItem): boolean {
 function resolveReferencedCronExpr(
   scene: ClientSceneConfig,
   promptItem: ClientSceneItem,
-  isValidCronExpr: (cronExpr: string) => boolean,
 ): string | null {
   const cronItemIds = promptItem.defaults?.cronExpr;
   const cronItems = scene.options.cronExpr?.items;
@@ -115,7 +114,13 @@ function resolveReferencedCronExpr(
     if (localizedValues.some((value) => value !== cronExpr)) return null;
     // Croner supports six/seven paragraph expressions, but Automation builder can only edit them losslessly.
     // A collection of five paragraphs. Only performing Service verification will cause the template to be silently rewritten after the form is opened and before the user edits it.
-    if (isValidCronExpr(cronExpr) && canVisualizeCronInAutomationEditor(cronExpr)) {
+    //
+    // Semantic validity is deliberately NOT checked here: the only validator is native
+    // (`@zcode/rust/cron`) and the sandboxed renderer cannot load it (invariant 9,
+    // rust-native-cron.md §2.5/8). The host owns that decision and enforces it on write
+    // (`automationService.ts:227` create, `:332` update, both `InvalidCronExprError`), so an
+    // expression that is editable but invalid is refused on save instead of filtered here.
+    if (canVisualizeCronInAutomationEditor(cronExpr)) {
       return cronExpr;
     }
   }
@@ -124,7 +129,6 @@ function resolveReferencedCronExpr(
 
 function mapScheduledTemplates(
   scenes: readonly ClientSceneConfig[],
-  isValidCronExpr: (cronExpr: string) => boolean,
 ): Pick<AutomationTemplateCatalog, "scheduled" | "rejectedScheduledTemplateIds"> {
   const scene = scenes.find((candidate) => candidate.scene === "scheduled-task");
   const items = scene?.options.prompts?.items ?? [];
@@ -137,7 +141,7 @@ function mapScheduledTemplates(
       rejectedScheduledTemplateIds.push(item.id);
       continue;
     }
-    const cronExpr = resolveReferencedCronExpr(scene, item, isValidCronExpr);
+    const cronExpr = resolveReferencedCronExpr(scene, item);
     if (!cronExpr) {
       rejectedScheduledTemplateIds.push(item.id);
       continue;
@@ -179,10 +183,9 @@ function mapOffPeakTemplates(scenes: readonly ClientSceneConfig[]): OffPeakAutom
 
 export function mapClientScenesToAutomationTemplates(
   scenes: readonly ClientSceneConfig[],
-  isValidCronExpr: (cronExpr: string) => boolean,
 ): AutomationTemplateCatalog {
   return {
-    ...mapScheduledTemplates(scenes, isValidCronExpr),
+    ...mapScheduledTemplates(scenes),
     offPeak: mapOffPeakTemplates(scenes),
   };
 }

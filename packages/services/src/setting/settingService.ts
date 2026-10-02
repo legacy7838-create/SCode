@@ -198,7 +198,10 @@ async function writeSettings(
   const settingsFile = getSettingsFile();
   // The test under Windows only changed HOME. If the top-level constants of the module are fixed in homedir() when imported,
   // Subsequent reads and writes will still go to the real user directory. Here it is changed to parse the configuration path according to the current environment each time to ensure that both local and testing are stable.
-  log("writing settings to:", settingsFile, JSON.stringify(settings));
+  // Log the target path only. AppSettings carries real user data (recent project paths,
+  // last-workspace sessions) and the Environment endpoint origin; AGENTS.md forbids writing
+  // those to production logs, so the serialized settings object must never be logged.
+  log("writing settings to:", settingsFile);
   maybeThrowInjectedFsFault({ operation: "mkdir", path: settingsDir });
   await mkdir(settingsDir, { recursive: true });
   if (!shouldCommit()) return;

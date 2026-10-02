@@ -65,6 +65,7 @@ import {
   releaseSessionsIndex,
   type SessionsIndexScope,
 } from "@/v4/sessionsIndexRegistry.js";
+import { createRestoredPaneGuardController } from "@/v4/restoredPaneGuardController.js";
 import { rectStyle, type RectExpr } from "@/v4/workbenchLayout.js";
 import type {
   ChatSearchResultHighlightRequest,
@@ -223,24 +224,19 @@ function PaneRestoredGuard({
       ...(remoteSessionId ? { endpointKey: remoteSessionId } : {}),
     };
     const store = acquireSessionsIndex(indexScope, agentService);
-    let disposed = false;
-    let settled = false;
-    const evaluate = () => {
-      if (disposed || settled || store.getState().workspaceId === null) {
-        return;
-      }
-      settled = true;
-      const exists = store.getSessions().some((summary) => summary.sessionId === sessionId);
-      if (exists) {
-        onConfirmed(paneId);
-      } else {
-        onMissing(paneId);
-      }
-    };
-    const unsubscribe = store.subscribe(evaluate);
-    evaluate();
+    // Settlement (including the dormant/error grace window for runtime-less workspaces) lives in a
+    // pure controller so the rule is unit-testable without React; see
+    // docs/specs/sessions-index-restore-guard.md.
+    const controller = createRestoredPaneGuardController({
+      store,
+      sessionId,
+      onConfirmed: () => onConfirmed(paneId),
+      onMissing: () => onMissing(paneId),
+    });
+    const unsubscribe = store.subscribe(() => controller.evaluate());
+    controller.evaluate();
     return () => {
-      disposed = true;
+      controller.dispose();
       unsubscribe();
       releaseSessionsIndex(indexScope, store);
     };

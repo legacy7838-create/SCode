@@ -99,6 +99,7 @@ export { ProxyChannel } from "./proxy-channel.js";
 // Logging middleware — decorates ChannelServer/ChannelClient, uniformly logging RPC calls
 export {
   type RPCLogger,
+  type RpcLoggingOptions,
   LoggingChannelServer,
   LoggingChannelClient,
 } from "./logging-middleware.js";

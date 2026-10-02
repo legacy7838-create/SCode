@@ -1,0 +1,128 @@
+node_modules/
+dist/
+# zcode-server-cli release package staging output; locally assembled artifacts are not committed.
+dist-release/
+# macOS CI isolates electron-builder output directories per architecture; these are still build artifacts.
+out/
+prebuilds/
+bundled-resources/
+mock-cdn/
+*.tsbuildinfo
+# tsup --dts emits `*.bundled_<hash>.mjs` next to the config it was pointed at; it is a
+# regenerable build artifact, never source. Without this pattern each `pnpm bundle` leaves a
+# new untracked file that shows up in lint/status output and can only be deleted by hand.
+*.bundled_*.mjs
+# The desktop scheduler is consumed as source by the bundler, but `tsc` run from the repo root
+# (or an editor using the root project graph) still emits schedulerProtocol.js/.d.ts/.map beside
+# schedulerProtocol.ts, because only the `out/` copy is covered by the rule above. These are
+# compiled output shadowing the real source. Scoped to this single leaf name on purpose: a broad
+# `packages/desktop/src/**/*.d.ts` pattern would also match tracked source such as
+# src/shared/armsRumShared.d.ts and hide it from `git add`-based hygiene gates.
+.DS_Store
+coverage/
+.env.local
+.env.*.local
+.env
+.VSCodeCounter
+.idea/
+.zed/
+.cache
+# CI keeps these download caches across jobs; they must not enter Git's untracked-source enumeration.
+/.electron-builder-cache/
+/.electron-cache/
+/.pnpm-store/
+/.npm-cache/
+.turbo/
+z-work/
+openclaw/
+.run-logs/
+.worktrees/
+packages/stream-animate/dist-server/
+packages/stream-animate/.stream-animate-data/
+.codegraph
+.mimosa/
+# Integration branches once picked up node-gyp build artifacts and .playwright-mcp temporary snapshots;
+# committing them is rejected at the first CI stage by scripts/ci/ci-repo-hygiene.mjs, and here local git add ignores them too.
+.playwright-mcp/
+*.o
+.deps/
+obj.target/
+config.gypi
+gyp-mac-tool
+*.target.mk
+binding.Makefile
+# These two were originally written as build/Makefile and build/Release/*.node; a pattern containing an internal slash
+# only applies relative to the directory containing .gitignore (the repo root) and never matches artifacts under packages/ax-macos/build/,
+# while ci-repo-hygiene.mjs's denylist matches at any depth with (^|/)build/...
+# When the two disagree, artifacts the slash-less pattern would catch get rescanned into the index by git add -A.
+# Adding **/ aligns the ignore scope with the gate scope.
+**/build/Makefile
+**/build/Release/*.node
+
+# Swift helper binary used to snap the CUA permission floating window (built by prepare:macos-window-bounds from
+# packages/desktop/native/macos-window-bounds/main.swift; the source is committed, the artifact is not)
+# CUA Helper SEA base download cache (the official Node 22 runtime that scripts/cua-helper-sea-base.mjs writes to disk; a pure download artifact)
+/.tmp/
+__pycache__/
+*.pyc
+
+# Local tool run outputs, all regenerable: desktop e2e screenshots/cache/network captures, plus the
+# dev runner's Electron download cache.
+.zcode-runtime/
+
+# Local agent working state (per-task plan/checkpoint scratch written by the coding harness).
+/__agent__/
+
+# Rust native build artifacts (packages/rust)
+packages/rust/target/
+packages/rust/*.node
+
+# Tauri app build artifacts (apps/zcode-tauri)
+apps/zcode-tauri/src-tauri/target/
+apps/zcode-tauri/src-tauri/gen/
+
+# Storage-harness SQLite snapshots. These are captured from a live ZCode data directory and
+# therefore contain real conversation transcripts, tool payloads, and absolute workspace paths.
+# They are multi-hundred-megabyte local fixtures, regenerable by re-running the harness, and are
+# rejected outright by GitHub push protection above 100 MB, so they must never enter the index.
+/.harness-dbs/
+
+# Mermaid output of `pnpm dep:graph` (scripts/dependency-graph.mjs DEFAULT_OUTPUT); a regenerable
+# report of the local dependency graph, not source.
+/dependency-graph.mmd
+# sqlite sidecars: a fixture database is committed as a single file, so a -wal or -shm that appears
+# beside it is a leftover from a run, never part of the fixture.
+*.sqlite-wal
+*.sqlite-shm
+\n# Rust build artifacts staged at the repo root by ad-hoc builds\n/*.node\n
+
+packages/bundled-tools/
+
+# ===== ↑ 以上同步自 .gitignore（「从 .gitignore 同步」只重写以上部分）=====
+.git/
+.hg/
+.svn/
+bower_components/
+jspm_packages/
+site-packages/
+venv/
+htmlcov/
+lcov-report/
+cmakefiles/
+cmake-build-*/
+bazel-*/
+pods/
+deriveddata/
+storybook-static/
+playwright-report/
+test-results/
+allure-results/
+allure-report/
+cdk.out/
+*.egg-info/
+*.dist-info/
+eggs/
+pip-wheel-metadata/
+wheels/
+# ----- ↑ 以上为 ZCode 默认排除规则（自定义规则请写在本行下方，不会被同步/恢复改动）-----
+# 自定义规则写在下方（本行提示可删除）

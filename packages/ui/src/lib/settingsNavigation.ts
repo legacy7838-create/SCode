@@ -38,13 +38,28 @@ const SETTINGS_SECTION_INTENT_EVENT = "zcode:settings-section-intent",
   SETTINGS_LAST_SECTION_STORAGE_KEY = "zcode-settings-last-section";
 const HIDDEN_SETTINGS_SECTIONS = new Set<SettingsSectionId>([
   // Product semantics: Scheduled tasks are the main view of the workspace and can no longer appear as settings page partitions.
-  // Note: hooks is already an official settings page partition and is not listed here.
   "automations",
+  // The Hooks page was removed from the Settings surface (docs/specs/settings-section-hooks-removal.md).
+  // The id stays valid only so stored preferences, one-shot intents and protocol jumps degrade to
+  // the fallback instead of failing — the same migration pattern as the retired "plugins" id.
+  "hooks",
+  // The Commands page was removed from the Settings surface (docs/specs/settings-section-commands-removal.md);
+  // the id stays valid so legacy plugin-tab intents ("commands" -> "plugins") keep parsing.
+  "commands",
+  // The Plugins page was removed from the Settings surface (docs/specs/settings-section-plugin-removal.md);
+  // the id stays valid so stored preferences, the retired market id ("plugins") and plugin-tab
+  // intents degrade to the fallback instead of rendering an unreachable page.
+  "plugin",
+  // The Browser Use page was removed from the Settings surface (docs/specs/settings-section-browser-removal.md);
+  // the id stays valid so a stored preference degrades to the fallback instead of failing.
+  "browser",
   // The old plugin market has been moved out of the settings page; the ids are retained only for migrating historical preferences and old calls.
   "plugins",
   // The workspace search (.zcodeignore) setting entry is hidden first: the rule file is still in effect and can be edited manually.
   // The edit page code is retained and can be removed from here when released.
   "workspaceFileSearch",
+  // The Computer Use page was removed from the Settings surface (docs/specs/settings-section-computer-use-removal.md);
+  // the id stays valid so stored preferences and the composer entry's intent degrade to the fallback.
   "computerUse",
 ]);
 
@@ -92,8 +107,10 @@ export function resolveSettingsSection(
   section: SettingsSectionId,
   fallbackSection: SettingsSectionId = "general",
 ): SettingsSectionId {
-  if (section === "plugins") return "plugin";
-  return isSettingsSectionEnabled(section) ? section : fallbackSection;
+  // The retired plugin-market id still maps onto the Plugins page id; resolve that mapping first so
+  // a hidden section degrades to the fallback instead of bypassing the visibility check.
+  const mapped = section === "plugins" ? "plugin" : section;
+  return isSettingsSectionEnabled(mapped) ? mapped : fallbackSection;
 }
 
 function getLocalStorage(): Storage | null {
@@ -126,7 +143,7 @@ function readLastSettingsSectionPreference(
     if (raw === "plugins") {
       storage.setItem(SETTINGS_LAST_SECTION_STORAGE_KEY, "plugin");
       setPendingPluginTab("plugins");
-      return "plugin";
+      return resolveSettingsSection("plugin", fallbackSection);
     }
     if (raw === "skills") {
       storage.setItem(SETTINGS_LAST_SECTION_STORAGE_KEY, "skill");

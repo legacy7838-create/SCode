@@ -632,3 +632,17 @@ mod tests {
         );
     }
 }
+
+/// Serialize a top-level binary payload (the raw byte channel).
+///
+/// Mirrors the TS `serialize` path for a `Buffer`/`Uint8Array`: the type tag is
+/// `Buffer` (2), followed by the VQL length and the raw bytes. The client
+/// decodes tag 2 into a `Uint8Array`, which is exactly what a method like
+/// `readFileRange` must return at the top level — wrapping the bytes in an
+/// object field would degenerate them into JSON+base64.
+pub fn serialize_binary(writer: &mut VqlWriter, bytes: &[u8]) -> Result<(), CodecError> {
+    writer.write_u8(DataType::Buffer as u8);
+    writer.write_vql(bytes.len() as u32);
+    writer.write_bytes(bytes);
+    Ok(())
+}

@@ -488,7 +488,7 @@ allowed in §9, D3), `desktop-native-package-policy.mjs`, `electron-builder.conf
 - **D3 — `ZCODE_NATIVE_DIR` stays.** It is a path override, not an implementation switch: it changes
   *where* the same bytes are read from, never *what* runs. The umbrella spec's ban is on
   `try { native } catch { legacy }` shapes, which this is not. It is documented here so its
-  legality is a decision rather than an oversight. `dev-tauri.mjs:284-288` keeps using it.
+  legality is a decision rather than an oversight. `dev-tauri.mjs:75-76` keeps using it.
 - **D4 — the plan is a new artifact.** `*.json` plan files appear in build temp directories. They
   are build output, not source, and must be gitignored (§10).
 - **D5 — the liveness analysis is textual, but stricter than the first draft.** §4.2 resolves

@@ -153,9 +153,15 @@ export class TaskWriteRepository {
     };
     now?: number;
   }): Promise<unknown> {
+    // 修复原因：原生侧 StateRequest 用 #[serde(flatten)] 把 patch 平铺在请求顶层（与 applyAgentPatch 同形），
+    // 嵌套的 { patch: {...} } 会被 deny_unknown_fields 拒绝并报 unknown field `patch`，
+    // 导致 archive / pin / delete / unread 的全部写入失败（zcode-task.archiveTask FAIL）。
+    // 修复方式：发送前把 patch 展开到顶层；undefined 叶子在 stringify 时自然消失（= StatePatch 的
+    // leave alone），null 保留下来（= 清除，例如 unreadAt: null）。见 spec §29。
+    const { workspaceKey, taskId, patch, now } = params;
     return JSON.parse(
       await this.#store.updateTaskState(
-        JSON.stringify({ ...params, now: params.now ?? Date.now() }),
+        JSON.stringify({ workspaceKey, taskId, now: now ?? Date.now(), ...patch }),
       ),
     );
   }

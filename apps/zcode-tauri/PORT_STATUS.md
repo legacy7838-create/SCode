@@ -193,7 +193,9 @@ pnpm dev:tauri
 ```
 
 `dev:tauri` is **not** a plain `tauri dev` alias — it runs
-`scripts/dev-tauri.mjs`, a supervisor described below. `tauri dev` itself runs
+`scripts/dev-tauri.mjs`, a thin launcher that boots `@zcode/server` (unless one
+is already listening) and then runs `tauri dev` in its own process group so one
+Ctrl-C tears down the app and Vite together. `tauri dev` itself runs
 `build.beforeDevCommand` (`pnpm --filter @zcode/tauri dev:web`) first, so Vite
 comes up on :5199 before the binary starts. The target-dir cache makes subsequent
 runs fast; the first is a full `cargo build`.
@@ -218,10 +220,13 @@ upstream tauri#9394).
 **The fix that keeps hardware acceleration** is `__NV_DISABLE_EXPLICIT_SYNC=1`.
 It disables only NVIDIA's explicit-sync mode, which is what WebKitGTK's DMABUF
 path trips, and it is documented upstream as fixing `Error 71` *without a
-performance cost* — i.e. the app stays GPU-accelerated. Verified here on
-Wayland + driver 610.57.04: the live process maps `libEGL_nvidia`,
-`libGLX_nvidia`, `libnvidia-glcore` and `libnvidia-gpucomp`, holds `nvidia0` /
-`nvidiactl` open, and loads **no** software rasteriser (`swrast` / `llvmpipe`).
+performance cost* — i.e. the app stays GPU-accelerated. It is set inside the
+process, on every launch, by `src-tauri/src/rendering.rs` before the first EGL
+display is initialized; it is not an env var a launcher has to remember.
+Verified here on Wayland + driver 610.57.04: the live process maps
+`libEGL_nvidia`, `libGLX_nvidia`, `libnvidia-glcore` and `libnvidia-gpucomp`,
+holds `nvidia0` / `nvidiactl` open, and loads **no** software rasteriser
+(`swrast` / `llvmpipe`).
 
 Two earlier hypotheses in this file were wrong and have been removed:
 
@@ -230,51 +235,30 @@ Two earlier hypotheses in this file were wrong and have been removed:
 - `GDK_BACKEND=x11` does stop the crash, but it is **not** hardware-accelerated:
   the process then maps no NVIDIA GL libraries at all.
 
-#### The tier ladder
+#### Rendering is fixed in the process, not probed by the launcher
 
-`scripts/dev-tauri.mjs` walks rendering tiers from most to least degraded and
-remembers the first that survives, in a marker under the gitignored Cargo target
-dir (`.zcode-render-tier`). Order follows the upstream ladder, whose earlier
-entries keep hardware acceleration:
+The variable is set in Rust, so there is no tier ladder, no remembered marker,
+and no JavaScript retry that relaunches the app under a different renderer. A
+rendering environment is fixed where it is read; the dev launcher stays a
+descriptor of *how to start the app*, not a component of the graphics path.
 
-| Tier | Env | Keeps GPU? |
-|---|---|---|
-| `native` | — | yes (best on healthy AMD/Intel) |
-| `nv-sync` | `__NV_DISABLE_EXPLICIT_SYNC=1` | **yes — the NVIDIA fix** |
-| `no-dmabuf` | `+ WEBKIT_DISABLE_DMABUF_RENDERER=1` | partly |
-| `software` | `+ WEBKIT_DISABLE_COMPOSITING_MODE=1`, `LIBGL_ALWAYS_SOFTWARE=1` | no |
-
-A tier is recorded as working as soon as it is still alive past the 30 s startup
-window — not on exit, because the app is normally stopped with Ctrl-C, which
-exits non-zero, and waiting for a clean exit would re-probe the broken tiers on
-every run.
-
-Escape hatches:
+`src-tauri/src/rendering.rs` is the single owner of the Linux graphics
+environment. It is inert on Mesa-based drivers, and it never clobbers a value
+already exported by the operator. Its two escape hatches are explicit and
+native — they change what `rendering.rs` sets, and nothing else:
 
 ```bash
-ZCODE_WEBKIT_SOFTWARE=1 pnpm dev:tauri   # force the software tier
-ZCODE_WEBKIT_HARDWARE=1 pnpm dev:tauri   # re-probe from native, ignore the marker
+ZCODE_WEBKIT_SOFTWARE=1 pnpm dev:tauri   # force CPU rendering from the start
+ZCODE_WEBKIT_HARDWARE=1 pnpm dev:tauri   # skip the workaround, test the stock path
 ```
 
-**For packaged builds** the same variable must be set inside the process before
-the webview is created, e.g. in `main()` in `src-tauri/src/main.rs`:
-
-```rust
-#[cfg(target_os = "linux")]
-std::env::set_var("__NV_DISABLE_EXPLICIT_SYNC", "1");
-```
+The DMABUF and software variables are **not** shipped unconditionally: they cost
+every user a faster path for no benefit on working hardware, so they only appear
+behind `ZCODE_WEBKIT_SOFTWARE=1`.
 
 Note that WebKitGTK masks the WebGL renderer string (`WEBGL_debug_renderer_info`
 reports `Apple GPU` on every Linux host), so the UI cannot self-detect which
 renderer it landed on. Verify from outside with `/proc/<pid>/maps`.
-
-**The ladder is dev-loop automation, not a product setting.** The thing to ship
-is the single `__NV_DISABLE_EXPLICIT_SYNC=1` set in Rust, which keeps hardware
-acceleration; the degraded tiers exist only so a broken host still gets a
-window. Note that `__NV_DISABLE_EXPLICIT_SYNC` is NVIDIA-specific and inert on
-Mesa-based drivers, so setting it unconditionally is safe — but do **not** ship
-the DMABUF/software tiers unconditionally, since those cost every user a faster
-path for no benefit on working hardware.
 
 Individual steps, if you need them:
 

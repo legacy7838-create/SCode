@@ -1,38 +1,22 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import type {
-  WindowHostControllerTaskListItem,
-  ZCodeTaskListKind,
-  ZCodeTaskListWorkspaceScope,
-} from "@zcode/services";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { IZCodeTaskService, ZCodeTaskListItem, ZCodeTaskListKind } from "@zcode/services";
 import { logger } from "@/logger.js";
 import { useBaseWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
 import type { WorkspaceTabState } from "@/store/tabStore.js";
-import { selectWorkspaceZCodeState, useZCodeSessionStore } from "@/store/zcodeSessionStore.js";
-import { attachTaskListRowActivity } from "@/v4/taskListRowActivity.js";
+import { useRemoteWorkspaceSessionStore } from "@/store/remoteWorkspaceSessionStore.js";
 import { stabilizeTaskListItems } from "@/v4/taskListItemStabilization.js";
-import { getWindowControllerTaskListRegistry } from "@/v4/windowControllerTaskListRegistry.js";
-import type { WindowControllerTaskListVersion } from "@/v4/windowControllerTaskListRegistry.js";
+import { mergeGlobalTaskListResults } from "@/lib/globalTaskListMerge.js";
+import { resolveWorkspaceServices } from "@/lib/workspaceServiceResolver.js";
+import type { ZCodeWorkspaceEvent } from "@zcode/shared";
 
-type GlobalTaskListItem = WindowHostControllerTaskListItem;
+type GlobalTaskListItem = ZCodeTaskListItem;
 
-const subscribeToNothing = () => () => {};
-const zeroRevision = () => 0;
-
-function buildWorkspaceScopes(workspaceTabs: WorkspaceTabState[]): ZCodeTaskListWorkspaceScope[] {
-  const scopes = new Map<string, ZCodeTaskListWorkspaceScope>();
-  for (const tab of workspaceTabs) {
-    const scope = {
-      workspacePath: tab.workspacePath,
-      ...(tab.workspaceIdentity ? { workspaceIdentity: tab.workspaceIdentity } : {}),
-    };
-    scopes.set(
-      JSON.stringify([tab.workspaceIdentity?.trim() || tab.workspacePath, tab.workspacePath]),
-      scope,
-    );
-  }
-  return Array.from(scopes.values());
-}
-
+/**
+ * The Window Host Controller channel has no host implementation since the Electron cutover
+ * (see docs/specs/window-controller-availability.md). This hook therefore aggregates per
+ * workspace scope over each scope's own zcodeTaskService.listTaskList — the documented
+ * authoritative renderer-side path. It never fabricates the controller contract.
+ */
 export function useGlobalTaskList(params: {
   kind: ZCodeTaskListKind;
   workspaceTabs: WorkspaceTabState[];
@@ -42,16 +26,22 @@ export function useGlobalTaskList(params: {
   collapsedLimit: number;
 }) {
   const baseServices = useBaseWorkspaceServices();
-  const controller = baseServices.windowControllerService;
-  const controllerRegistry = useMemo(
-    () => (controller ? getWindowControllerTaskListRegistry(controller) : null),
-    [controller],
+  const sessionsById = useRemoteWorkspaceSessionStore((state) => state.sessionsById);
+  const sessionIdByWorkspaceIdentity = useRemoteWorkspaceSessionStore(
+    (state) => state.sessionIdByWorkspaceIdentity,
   );
-  const controllerRevision = useSyncExternalStore(
-    controllerRegistry?.subscribe ?? subscribeToNothing,
-    controllerRegistry?.getRevision ?? zeroRevision,
-    controllerRegistry?.getRevision ?? zeroRevision,
+  const sessionIdByWorkspacePath = useRemoteWorkspaceSessionStore(
+    (state) => state.sessionIdByWorkspacePath,
   );
+  const serviceResolverState = useMemo(
+    () => ({
+      sessionsById,
+      sessionIdByWorkspaceIdentity,
+      sessionIdByWorkspacePath,
+    }),
+    [sessionIdByWorkspaceIdentity, sessionIdByWorkspacePath, sessionsById],
+  );
+
   const workspaceSignature = JSON.stringify(
     params.workspaceTabs
       .map(
@@ -62,147 +52,166 @@ export function useGlobalTaskList(params: {
           leftKey.localeCompare(rightKey) || leftPath.localeCompare(rightPath),
       ),
   );
-  const workspaceSourceGenerationSignature = JSON.stringify(
-    params.workspaceTabs
-      .map(
-        (tab) =>
-          [
-            tab.workspaceIdentity?.trim() || tab.workspacePath,
-            tab.workspacePath,
-            tab.remoteSessionId?.trim() || null,
-          ] as const,
-      )
-      .sort(
-        ([leftKey, leftPath, leftSession], [rightKey, rightPath, rightSession]) =>
-          leftKey.localeCompare(rightKey) ||
-          leftPath.localeCompare(rightPath) ||
-          (leftSession ?? "").localeCompare(rightSession ?? ""),
-      ),
-  );
-  const workspaceScopes = useMemo(
-    () => buildWorkspaceScopes(params.workspaceTabs),
-    // workspaceSignature is a normalized signature of the scope values, avoiding repeated queries when the parent rebuilds the tabs array.
+
+  /**
+   * One resolved query source per unique workspace scope. Remote tabs must resolve to their live
+   * session before they produce a source; a disconnected placeholder is skipped instead of being
+   * queried against local sqlite (which would cache a wrong empty result).
+   */
+  const resolvedScopes = useMemo(() => {
+    const byKey = new Map<
+      string,
+      {
+        scopeKey: string;
+        workspacePath: string;
+        workspaceIdentity?: string;
+        remoteSessionId?: string;
+        taskService: IZCodeTaskService;
+      }
+    >();
+    for (const tab of params.workspaceTabs) {
+      const scopeKey = tab.workspaceIdentity?.trim() || tab.workspacePath;
+      const resolved = resolveWorkspaceServices(
+        {
+          workspacePath: tab.workspacePath,
+          workspaceIdentity: tab.workspaceIdentity,
+          remoteSessionId: tab.remoteSessionId,
+        },
+        baseServices,
+        serviceResolverState,
+      );
+      if (!resolved) {
+        continue;
+      }
+      byKey.set(scopeKey, {
+        scopeKey,
+        workspacePath: tab.workspacePath,
+        ...(tab.workspaceIdentity ? { workspaceIdentity: tab.workspaceIdentity } : {}),
+        ...(resolved.remoteSessionId ? { remoteSessionId: resolved.remoteSessionId } : {}),
+        taskService: resolved.services.zcodeTaskService,
+      });
+    }
+    return Array.from(byKey.values());
+    // workspaceSignature is a normalized signature of the scope values, avoiding repeated
+    // resolution when the parent rebuilds the tabs array every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [workspaceSignature],
+  }, [baseServices, serviceResolverState, workspaceSignature, params.workspaceTabs]);
+
+  const resolvedScopesSignature = JSON.stringify(
+    resolvedScopes.map((scope) => [scope.scopeKey, scope.remoteSessionId ?? "local"]),
   );
-  const taskListVersionSignature = useZCodeSessionStore((state) =>
-    JSON.stringify(
-      params.workspaceTabs
-        .map((tab) => {
-          const workspace = selectWorkspaceZCodeState(
-            state,
-            tab.workspacePath,
-            tab.workspaceIdentity,
-          );
-          return [
-            tab.workspaceIdentity?.trim() || tab.workspacePath,
-            workspace.taskListVersion,
-          ] as const;
-        })
-        .sort(([left], [right]) => left.localeCompare(right)),
-    ),
-  );
+
+  const limit = params.expanded ? undefined : params.collapsedLimit;
+
+  const resolvedScopesRef = useRef(resolvedScopes);
+  resolvedScopesRef.current = resolvedScopes;
+
   const [items, setItems] = useState<GlobalTaskListItem[]>([]);
   const itemsRef = useRef<GlobalTaskListItem[]>(items);
   const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState(false);
-  const [loading, setLoading] = useState(workspaceScopes.length > 0);
+  const [loading, setLoading] = useState(resolvedScopes.length > 0);
   const requestSerialRef = useRef(0);
-  const manualRefreshSerialRef = useRef(0);
 
-  const query = useMemo(
-    () => ({
-      kind: params.kind,
-      workspaceScopes,
-      sortBy: params.sortBy,
-      search: params.searchQuery.trim() || undefined,
-      limit: params.expanded ? undefined : params.collapsedLimit,
-    }),
-    [
-      params.collapsedLimit,
-      params.expanded,
-      params.kind,
-      params.searchQuery,
-      params.sortBy,
-      workspaceScopes,
-    ],
-  );
-  const queryKey = useMemo(() => JSON.stringify(query), [query]);
-
-  const load = useCallback(
-    async (version: WindowControllerTaskListVersion) => {
-      const requestSerial = ++requestSerialRef.current;
-      if (workspaceScopes.length === 0) {
-        setItems([]);
-        itemsRef.current = [];
-        setTotal(0);
-        setHasMore(false);
-        setLoading(false);
+  const load = useCallback(async () => {
+    const requestSerial = ++requestSerialRef.current;
+    const scopes = resolvedScopesRef.current;
+    if (scopes.length === 0) {
+      setItems([]);
+      itemsRef.current = [];
+      setTotal(0);
+      setHasMore(false);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const results = await Promise.all(
+        scopes.map(async (scope) => {
+          try {
+            return await scope.taskService.listTaskList({
+              kind: params.kind,
+              workspaceScopes: [
+                {
+                  workspacePath: scope.workspacePath,
+                  ...(scope.workspaceIdentity
+                    ? { workspaceIdentity: scope.workspaceIdentity }
+                    : {}),
+                },
+              ],
+              sortBy: params.sortBy,
+              search: params.searchQuery.trim() || undefined,
+              limit,
+            });
+          } catch (error) {
+            // A single scope's failure must not empty the other workspaces; keep its shard empty
+            // for this round and log — the next event or refresh retries it.
+            logger.error(
+              `[useGlobalTaskList] failed to load ${params.kind} list for workspace ${scope.scopeKey}`,
+              error,
+            );
+            return { items: [] as GlobalTaskListItem[], total: 0, hasMore: false };
+          }
+        }),
+      );
+      if (requestSerialRef.current !== requestSerial) {
         return;
       }
-      if (!controllerRegistry) {
-        // After the atomic switch the base attachment must provide a Controller; its absence means a Host/Renderer version mismatch.
-        logger.error("[useGlobalTaskList] window Host Controller channel unavailable");
+      const merged = mergeGlobalTaskListResults({
+        shards: results,
+        sortBy: params.sortBy,
+        limit,
+      });
+      const nextItems = stabilizeTaskListItems(itemsRef.current, merged.items);
+      itemsRef.current = nextItems;
+      setItems(nextItems);
+      setTotal(merged.total);
+      setHasMore(merged.hasMore);
+    } finally {
+      if (requestSerialRef.current === requestSerial) {
         setLoading(false);
-        return;
       }
-      setLoading(true);
-      try {
-        const result = await controllerRegistry.list(queryKey, version, query);
-        if (requestSerialRef.current !== requestSerial) {
-          return;
-        }
-        // Every activity frame from the Controller (tool calls of running tasks, etc.) makes this hook re-query,
-        // while attachTaskListRowActivity and the tasks-index join produce brand-new objects each time. Downstream (the grouped view)
-        // can only compare by reference, so the entire list tree re-renders and the virtualizer re-measures. Here we apply the same per-item
-        // reference stabilization as the sessions-index lane: equivalent content reuses the old object, an equivalent list reuses the old array.
-        const nextItems = stabilizeTaskListItems(
-          itemsRef.current,
-          result.items.map((item) =>
-            item.activity ? attachTaskListRowActivity(item, item.activity) : item,
-          ),
-        );
-        itemsRef.current = nextItems;
-        setItems(nextItems);
-        setTotal(result.total);
-        setHasMore(result.hasMore);
-      } catch (error) {
-        if (requestSerialRef.current === requestSerial) {
-          // Keep the last trustworthy list when a Controller query fails, so a single source's failure doesn't empty other workspaces.
-          logger.error(
-            `[useGlobalTaskList] failed to load ${params.kind} list from controller`,
-            error,
-          );
-        }
-      } finally {
-        if (requestSerialRef.current === requestSerial) {
-          setLoading(false);
-        }
-      }
-    },
-    [controllerRegistry, params.kind, query, queryKey, workspaceScopes],
-  );
+    }
+  }, [limit, params.kind, params.searchQuery, params.sortBy]);
 
   const refresh = useCallback(async () => {
-    manualRefreshSerialRef.current += 1;
-    await load({
-      controllerRevision,
-      taskListVersionSignature,
-      workspaceSourceGenerationSignature,
-      manualRefreshSerial: manualRefreshSerialRef.current,
-    });
-  }, [controllerRevision, load, taskListVersionSignature, workspaceSourceGenerationSignature]);
+    await load();
+  }, [load]);
 
   useEffect(() => {
-    // When a remote workspace recovers from a disconnected placeholder to an online session, identity/path stay unchanged and
-    // taskListVersion may not have changed yet either, so the old cache would permanently keep the pre-connection empty result. remoteSessionId
-    // only triggers a re-query as a source generation; it does not change the workspaceIdentity or Controller query contract.
-    void load({
-      controllerRevision,
-      taskListVersionSignature,
-      workspaceSourceGenerationSignature,
-    });
-  }, [controllerRevision, load, taskListVersionSignature, workspaceSourceGenerationSignature]);
+    void load();
+  }, [load, resolvedScopesSignature]);
+
+  // Membership changes (archive/unarchive/pin, remote mutations) arrive as low-frequency
+  // workspace_task_list_changed events per scope. One event triggers exactly one re-query here;
+  // the consumer caches that share this event (taskQueryCacheStore) deduplicate by their own
+  // membership version.
+  useEffect(() => {
+    if (resolvedScopes.length === 0) {
+      return;
+    }
+    const scopes = resolvedScopes;
+    const disposables = scopes.map((scope) =>
+      scope.taskService.onDynamicWorkspaceEvent({
+        workspacePath: scope.workspacePath,
+        ...(scope.workspaceIdentity ? { workspaceIdentity: scope.workspaceIdentity } : {}),
+      })((event: ZCodeWorkspaceEvent) => {
+        if (event.type !== "workspace_task_list_changed") {
+          return;
+        }
+        const eventWorkspaceKey = event.workspaceIdentity?.trim() || event.workspacePath;
+        if (eventWorkspaceKey !== scope.scopeKey) {
+          return;
+        }
+        void load();
+      }),
+    );
+    return () => {
+      for (const disposable of disposables) {
+        disposable.dispose();
+      }
+    };
+  }, [load, resolvedScopes]);
 
   const hasRemoteScope = params.workspaceTabs.some((tab) => Boolean(tab.workspaceIdentity));
   return {

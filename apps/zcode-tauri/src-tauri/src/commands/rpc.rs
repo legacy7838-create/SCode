@@ -42,9 +42,18 @@ mod tests {
         host.start().expect("bind");
         let endpoint = host.endpoint().expect("endpoint");
         assert!(endpoint.ws_url.starts_with("ws://127.0.0.1:"));
-        // Three native channels (`system`, `setting`, `credential`); the proxy is
-        // off, so nothing is relayed to the Node process.
-        assert_eq!(endpoint.channel_count, 3);
+        // Eight native channels (`system`, `setting`, `credential`,
+        // `client-scenes`, `client-config`, `onboarding-record`,
+        // `provider-settings`, `model-selection`); the proxy is off, so nothing
+        // is relayed to the Node process.
+        // Every always-registered channel is present. The count may exceed this
+        // because `zcode-agent` registers conditionally (only when the zcode-cli
+        // entrypoint resolves), so this is a floor, not an exact pin.
+        assert!(
+            endpoint.channel_count >= 16,
+            "at least the always-registered channels must be present, got {}",
+            endpoint.channel_count
+        );
         assert!(!host.proxy_enabled());
     }
 }

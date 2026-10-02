@@ -55,6 +55,20 @@ pub trait ChannelHandler: Send + Sync + 'static {
         args: &[JsonValue],
     ) -> Result<JsonValue, HandlerError>;
 
+    /// Optional top-level binary answer for methods that return bytes (the raw
+    /// byte channel). A method like `readFileRange` returns a `Uint8Array`, not
+    /// a JSON value; wrapping it in an object field would degenerate into
+    /// JSON+base64, which the client mis-reads. The default is `None` (no
+    /// binary method), so handlers that only return JSON are untouched.
+    fn call_binary(
+        &self,
+        _ctx: &str,
+        _method: &str,
+        _args: &[JsonValue],
+    ) -> Option<Result<Vec<u8>, HandlerError>> {
+        None
+    }
+
     /// Subscribe to an event. Returning `None` means the event is unknown, which
     /// is reported to the client instead of silently never firing.
     fn subscribe(
@@ -517,9 +531,11 @@ impl Connection {
         // The handler is synchronous here, but it may be CPU- or IO-bound, so it
         // runs off the read loop and the answer is written when it completes.
         std::thread::spawn(move || {
-            let response = match handler.call(&ctx, &name, &args) {
-                Ok(value) => Response::success(id, value),
-                Err(error) => {
+            // A handler may answer with a top-level binary payload; that takes
+            // precedence over the JSON path for the methods that define it.
+            let response = match handler.call_binary(&ctx, &name, &args) {
+                Some(Ok(bytes)) => Response::success_binary(id, bytes),
+                Some(Err(error)) => {
                     let (is_error, payload) = error.to_payload();
                     if is_error {
                         Response::error(id, payload)
@@ -527,6 +543,17 @@ impl Connection {
                         Response::error_obj(id, payload)
                     }
                 }
+                None => match handler.call(&ctx, &name, &args) {
+                    Ok(value) => Response::success(id, value),
+                    Err(error) => {
+                        let (is_error, payload) = error.to_payload();
+                        if is_error {
+                            Response::error(id, payload)
+                        } else {
+                            Response::error_obj(id, payload)
+                        }
+                    }
+                },
             };
             if let Ok(bytes) = encode_response(&response) {
                 outbound.send(bytes);

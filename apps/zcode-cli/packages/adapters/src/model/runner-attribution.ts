@@ -12,7 +12,12 @@ import type {
   ResolvedModelApiCallObservation,
 } from "@zcode/contracts";
 import { ModelApiActorKind, ModelApiOperation, ModelRequestSessionType } from "@zcode/contracts";
-import { isOpenCodeGoBaseUrl } from "./opencode-session.js";
+import {
+  isOpenCodeGoBaseUrl,
+  isOpenCodeZenBaseUrl,
+  toOpenCodeRequestId,
+  toOpenCodeSessionId,
+} from "./opencode-session.js";
 import type { ModelStatusContext } from "./runner-status.js";
 
 const MODEL_TRACE_HEADER = "x-zcode-trace-id";
@@ -31,9 +36,12 @@ export function createModelRequestAttributionHeaders(
 ): Record<string, string> {
   const sessionHeaderValue = normalizeModelSessionIdForAttribution(statusContext.sessionId);
   const queryHeaderValue = modelQueryHeaderValue(statusContext.queryId);
-  const openCodeSessionHeaderValue = isOpenCodeGoBaseUrl(statusContext.baseURL)
-    ? sessionHeaderValue
-    : undefined;
+  // The keyed OpenCode Go lane keeps forwarding the raw conversation id, while the Zen free lane
+  // gate only accepts canonical `ses_`/`msg_` identifiers — minting a new one per request would burn
+  // the per-session free quota, so both are translated deterministically from ZCode identities.
+  const openCodeFree = isOpenCodeZenBaseUrl(statusContext.baseURL);
+  const openCodeGoSessionHeaderValue =
+    !openCodeFree && isOpenCodeGoBaseUrl(statusContext.baseURL) ? sessionHeaderValue : undefined;
   // Only the observation attribution fields required across provider network boundaries are written to the header, and fine-grained information such as span remains in events and logs.
   return {
     [MODEL_REQUEST_HEADER]: statusContext.requestId,
@@ -43,7 +51,13 @@ export function createModelRequestAttributionHeaders(
     [MODEL_TRACE_HEADER]: statusContext.traceId,
     ...(queryHeaderValue ? { [MODEL_QUERY_HEADER]: queryHeaderValue } : {}),
     ...(sessionHeaderValue ? { [MODEL_SESSION_HEADER]: sessionHeaderValue } : {}),
-    ...(openCodeSessionHeaderValue ? { "x-opencode-session": openCodeSessionHeaderValue } : {}),
+    ...(openCodeGoSessionHeaderValue ? { "x-opencode-session": openCodeGoSessionHeaderValue } : {}),
+    ...(openCodeFree
+      ? {
+          "x-opencode-session": toOpenCodeSessionId(sessionHeaderValue),
+          "x-opencode-request": toOpenCodeRequestId(statusContext.requestId),
+        }
+      : {}),
   };
 }
 

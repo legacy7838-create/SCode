@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from "react";
-import { isValidCronExpr, type IClientScenesService } from "@zcode/services";
+import type { IClientScenesService } from "@zcode/services";
 import {
   isClientScenesBusinessError,
   useClientScenesResource,
@@ -18,10 +18,7 @@ export function useAutomationTemplates(
   clientScenesService: IClientScenesService,
 ): AutomationTemplateCatalogState {
   const { scenes, loading, error } = useClientScenesResource(clientScenesService);
-  const catalog = useMemo(
-    () => mapClientScenesToAutomationTemplates(scenes, isValidCronExpr),
-    [scenes],
-  );
+  const catalog = useMemo(() => mapClientScenesToAutomationTemplates(scenes), [scenes]);
 
   useEffect(() => {
     if (!error) return;

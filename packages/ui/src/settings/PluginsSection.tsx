@@ -35,7 +35,6 @@ import { getPathLeaf } from "@/lib/path.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { McpSettingsSection } from "@/settings/McpSettingsSection.js";
 import { SkillsSection } from "@/settings/SkillsSection.js";
-import { CommandsSection } from "@/settings/CommandsSection.js";
 import { SettingsSearchInput } from "@/settings/SettingsSearchInput.js";
 import { SettingsResourceHeaderActions } from "@/settings/SettingsResourceHeaderActions.js";
 import { PluginStoreAvatar } from "@/settings/PluginStoreAvatar.js";
@@ -122,7 +121,7 @@ interface PluginsSectionProps {
   isWindowsDesktop?: boolean;
   initialTab?: PluginTabTarget;
   initialScopeKey?: string;
-  mode?: "plugin" | "mcp" | "skill" | "command";
+  mode?: "plugin" | "mcp" | "skill";
   workspacePath?: string | null;
   workspaceIdentity?: string;
   onCreateTask?: (request?: CreateTaskRequest) => void;
@@ -1010,7 +1009,7 @@ export function PluginsSection({
   const [pickedScopeKey, setPickedScopeKey] = useState(() => initialScopeKey?.trim() || "user");
   const selectedScopeKey = pickedScopeKey;
   const fixedTab: PluginTabTarget | null =
-    mode === "mcp" ? "mcps" : mode === "skill" ? "skills" : mode === "command" ? "commands" : null;
+    mode === "mcp" ? "mcps" : mode === "skill" ? "skills" : null;
   const [interactiveTab, setInteractiveTab] = useState<PluginTab>(() =>
     normalizePluginTab(initialTab),
   );
@@ -1035,8 +1034,6 @@ export function PluginsSection({
   const [skillDetailOpen, setSkillDetailOpen] = useState(false);
   const [mcpFormScopeKey, setMcpFormScopeKey] = useState<string | null>(null);
   const [pluginDetailOpen, setPluginDetailOpen] = useState(false);
-  const [commandEditorOpen, setCommandEditorOpen] = useState(false);
-  const [commandFormScopeKey, setCommandFormScopeKey] = useState<string | null>(null);
   const activeSearchQuery = searchQueries[selectedTab];
   const selectedScope: PluginScope = useMemo(() => {
     const tab = workspaceTabs.find((candidate) => workspaceKey(candidate) === selectedScopeKey);
@@ -1063,32 +1060,12 @@ export function PluginsSection({
     mcpEditorOpen && mcpFormScopeKey && mcpFormScopeKey !== "user" && !effectiveMcpWorkspace,
   );
   const mcpTarget = mcpEditorWorkspaceMissing ? null : (effectiveMcpWorkspace ?? preferredHost);
-  const effectiveCommandScopeKey =
-    commandEditorOpen && commandFormScopeKey ? commandFormScopeKey : selectedScopeKey;
-  const effectiveCommandWorkspace = workspaceTabs.find(
-    (tab) => workspaceKey(tab) === effectiveCommandScopeKey,
-  );
-  const commandEditorWorkspaceMissing = Boolean(
-    commandEditorOpen &&
-    commandFormScopeKey &&
-    commandFormScopeKey !== "user" &&
-    !effectiveCommandWorkspace,
-  );
-  const commandTarget = commandEditorWorkspaceMissing
-    ? null
-    : (effectiveCommandWorkspace ?? preferredHost);
 
   useEffect(() => {
     if (!mcpEditorWorkspaceMissing) return;
     setMcpEditorOpen(false);
     setMcpFormScopeKey(null);
   }, [mcpEditorWorkspaceMissing]);
-
-  useEffect(() => {
-    if (!commandEditorWorkspaceMissing) return;
-    setCommandEditorOpen(false);
-    setCommandFormScopeKey(null);
-  }, [commandEditorWorkspaceMissing]);
 
   useEffect(() => {
     if (
@@ -1131,14 +1108,6 @@ export function PluginsSection({
     },
     [selectedScope.key, selectedTargetKey],
   );
-  const updateCommandCount = useCallback(
-    (count: number) => {
-      setCapabilityCounts((current) =>
-        current.commands === count ? current : { ...current, commands: count },
-      );
-    },
-    [selectedScope.key, selectedTargetKey],
-  );
   const handleMcpEditorOpenChange = useCallback((open: boolean) => {
     setMcpEditorOpen(open);
     if (!open) setMcpFormScopeKey(null);
@@ -1170,7 +1139,7 @@ export function PluginsSection({
           }
         }}
       >
-        {!mcpEditorOpen && !pluginDetailOpen && !commandEditorOpen ? (
+        {!mcpEditorOpen && !pluginDetailOpen ? (
           <div className="flex min-w-0 flex-wrap items-center gap-3">
             <div className="flex min-w-0 flex-wrap items-center gap-3">
               <PluginScopeMenu
@@ -1227,19 +1196,11 @@ export function PluginsSection({
                   <span>
                     {intl.formatMessage({
                       id:
-                        mode === "mcp"
-                          ? "settings.plugin.tab.mcps"
-                          : mode === "skill"
-                            ? "settings.plugin.tab.skills"
-                            : "settings.plugin.tab.commands",
+                        mode === "mcp" ? "settings.plugin.tab.mcps" : "settings.plugin.tab.skills",
                     })}
                   </span>
                   <span className="text-ui-sm text-foreground-subtle">
-                    {mode === "mcp"
-                      ? capabilityCounts.mcps
-                      : mode === "skill"
-                        ? capabilityCounts.skills
-                        : capabilityCounts.commands}
+                    {mode === "mcp" ? capabilityCounts.mcps : capabilityCounts.skills}
                   </span>
                 </div>
               )}
@@ -1268,9 +1229,7 @@ export function PluginsSection({
                     ? "settings.plugin.plugins.searchPlaceholder"
                     : selectedTab === "mcps"
                       ? "settings.mcp.searchPlaceholder"
-                      : selectedTab === "skills"
-                        ? "settings.skills.searchPlaceholder"
-                        : "settings.commands.searchPlaceholder",
+                      : "settings.skills.searchPlaceholder",
               })}
             />
           </div>
@@ -1355,37 +1314,6 @@ export function PluginsSection({
                 showMarketplaceBreadcrumb={showMarketplaceBreadcrumb}
                 reportDetailBreadcrumb={mode === "plugin"}
                 onVisibleCountChange={updateSkillCount}
-              />
-            ) : (
-              <EmptyState
-                message={intl.formatMessage({
-                  id: "settings.plugin.noWorkspace",
-                })}
-              />
-            )}
-          </TabsContent>
-        ) : null}
-        {mode === "command" ? (
-          <TabsContent
-            forceMount
-            value="commands"
-            className={
-              commandEditorOpen
-                ? "data-[state=inactive]:hidden"
-                : "mt-6 data-[state=inactive]:hidden"
-            }
-          >
-            {commandTarget ? (
-              <CommandsSection
-                workspacePath={commandTarget.workspacePath}
-                workspaceIdentity={commandTarget.workspaceIdentity}
-                scopeFilter={effectiveCommandScopeKey === "user" ? "user" : "workspace"}
-                parentScopeKey={selectedScopeKey}
-                workspaceTabs={workspaceTabs}
-                searchQuery={searchQueries.commands}
-                onVisibleCountChange={updateCommandCount}
-                onEditorOpenChange={setCommandEditorOpen}
-                onFormScopeKeyChange={setCommandFormScopeKey}
               />
             ) : (
               <EmptyState

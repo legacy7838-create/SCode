@@ -28,3 +28,12 @@ allowBuilds:
   protobufjs: true
   ssh2: true
   unsafe-pointer: true
+# pnpm 10 reads these from pnpm-workspace.yaml; the matching package.json "pnpm" field is no
+# longer read and was migrated here so the react pin and the two @ai-sdk patches are not silently
+# dropped on the next config-resolving install.
+overrides:
+  react: 19.2.7
+  react-dom: 19.2.7
+patchedDependencies:
+  '@ai-sdk/anthropic@3.0.81': patches/@ai-sdk__anthropic@3.0.81.patch
+  '@ai-sdk/openai-compatible@2.0.60': patches/@ai-sdk__openai-compatible@2.0.60.patch

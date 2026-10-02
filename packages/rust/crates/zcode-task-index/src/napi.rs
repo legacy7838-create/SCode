@@ -3095,3 +3095,35 @@ pub fn checkpoint_task_index_wal(db_path: String) -> Result<()> {
         .map_err(|error| to_napi_error(StoreError::from(error).to_string()))?;
     Ok(())
 }
+
+#[cfg(test)]
+mod state_request_wire_tests {
+    use super::{decode, StateRequest};
+
+    /// Spec §29 — the wire body `taskWriteRepository.ts` sends is **flat**: `#[serde(flatten)]`
+    /// puts the `StatePatch` fields at the top level next to `workspaceKey`/`taskId`/`now`,
+    /// the same shape `applyAgentPatch` takes.
+    #[test]
+    fn state_request_decodes_the_flat_body_the_typescript_glue_sends() {
+        let json =
+            r#"{"workspaceKey":"ws:home","taskId":"t1","archived":true,"now":1712345678901}"#;
+        let request: StateRequest = decode(json).expect("the flat body must decode");
+        assert_eq!(request.workspace_key, "ws:home");
+        assert_eq!(request.task_id, "t1");
+        assert_eq!(request.patch.archived, Some(true));
+        assert_eq!(request.now, 1712345678901);
+    }
+
+    /// The regression this pins: the nested `{ "patch": … }` body handed the `patch` key to the
+    /// flattened `StatePatch`, whose `deny_unknown_fields` failed every archive/pin/delete/unread
+    /// write with `unknown field \`patch\`` (server log: `zcode-task.archiveTask FAIL`).
+    #[test]
+    fn state_request_rejects_the_nested_patch_body() {
+        let json = r#"{"workspaceKey":"ws","taskId":"t1","patch":{"archived":true},"now":1}"#;
+        let error = decode::<StateRequest>(json).expect_err("a nested patch must be rejected");
+        assert!(
+            error.to_string().contains("unknown field `patch`"),
+            "unexpected error: {error}"
+        );
+    }
+}

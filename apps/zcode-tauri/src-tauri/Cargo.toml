@@ -35,6 +35,18 @@ zcode-mcp-config = { path = "../../../packages/rust/crates/zcode-mcp-config" }
 # resolved here instead of above a renderer-supplied URL (PORT_STATUS.md:161).
 # See docs/specs/rust-native-url-guard.md.
 zcode-url-guard = { path = "../../../packages/rust/crates/zcode-url-guard" }
+# Task index sqlite read: `onboarding-record` checks `listTaskMetas` for
+# `shouldOnboard` (existing_local_task decision). rlib, same reason as zcode-cron —
+# the crate is already the schema owner (scheduler_store.rs cites its AUTOMATION_SCHEMA),
+# so the host links it instead of duplicating SQL.
+zcode-task-index = { path = "../../../packages/rust/crates/zcode-task-index" }
+zcode-private-file = { path = "../../../packages/rust/crates/zcode-private-file" }
+# Provider config runtime (built-in + personal provider/model settings) for the
+# `provider-settings` and `model-selection` channels. rlib for the same reason as
+# zcode-rpc-server — the Tauri host links it and serves the channels in-process.
+# See docs/specs/rust-native-server.md rung 3.
+zcode-provider-config = { path = "../../../packages/rust/crates/zcode-provider-config" }
+zcode-fs = { path = "../../../packages/rust/crates/zcode-fs" }
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-fs = "2"
 tauri-plugin-os = "2"
@@ -53,7 +65,9 @@ base64 = "0.22"
 # Scheduler persistence: the Electron scheduler claimed `automations` and
 # `off_peak_tasks` rows directly. Bundled sqlite keeps the storage layer
 # independent of the host system libsqlite.
-rusqlite = { version = "0.32", features = ["bundled"] }
+# Must stay on the same major as packages/rust (0.37): two libsqlite3-sys versions
+# both claim `links = "sqlite3"` and cargo refuses the graph (zcode-task-index dep).
+rusqlite = { version = "0.37", features = ["bundled"] }
 
 # Already in the lock file (pulled in by the Tauri plugin tree); listed directly
 # because the ported `system` channel performs HTTP service probes. `rustls` is
@@ -74,6 +88,11 @@ portable-pty = "0.8"
 # be tracked in-process to stay reproducible.
 notify-rust = "4"
 crossbeam-channel = "0.5"
+# Cross-platform file watching for the `file-watcher` channel. std has no
+# stable watch API; notify wraps inotify/FSEvents/ReadDirectoryChanges behind
+# one callback. Non-recursive is what the renderer actually uses
+# (`useWatchedReaddir` watches a single directory).
+notify = "6"
 rand = "0.8"
 sha2 = "0.10"
 serde = { version = "1", features = ["derive"] }

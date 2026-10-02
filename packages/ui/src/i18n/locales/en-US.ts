@@ -160,8 +160,6 @@ const enUS: Record<string, string> = {
   "offPeak.chatCreated.queued": "Queued for idle-time compute",
   "offPeak.chatCreated.queuedAt": "#{position} in queue",
   "offPeak.chatCreated.open": "Go to idle-time tasks",
-  "settings.computerUse.disabledToast":
-    "Computer Use is disabled. Existing conversations require a ZCode restart to take effect.",
   "settings.modelProvider.connectionUnavailableNotice": "The current plan is unavailable.",
   "settings.modelProvider.switchConnection": "Switch to “{connection}”",
   "settings.modelProvider.connectionSuggestionStale":
@@ -2369,79 +2367,6 @@ const enUS: Record<string, string> = {
     "Unclassified files and stale copies left after changing the data directory.",
   "resourceManager.storage.confirmDescription.backups":
     "These copies allow recovery if an upgrade or migration goes wrong; deleting them cannot be undone.",
-  "settings.browser.title": "Browser Use",
-  "settings.browser.control.title": "Enable built-in browser control",
-  "settings.browser.control.description":
-    "Enable the official Browser Use plugin so new sessions can access and control web pages in the built-in browser.",
-  "settings.browser.control.enabledToast": "Built-in browser control enabled",
-  "settings.browser.control.disabledToast": "Built-in browser control disabled",
-  "settings.browser.security.section": "Security",
-  "settings.embeddedBrowserAllowInsecureCertificates": "Ignore certificate errors",
-  "settings.embeddedBrowserAllowInsecureCertificatesDescription":
-    "When enabled, the built-in browser stops verifying HTTPS certificates. Affects the built-in browser only. Restart to take effect.",
-  "settings.embeddedBrowserAllowInsecureCertificatesSavedHint":
-    "Certificate setting saved. Restart the app to take effect.",
-  "settings.browser.data.section": "Browser data",
-  "settings.browser.desktopOnly": "Browser data can only be managed in the ZCode desktop app.",
-  "settings.browser.import.title": "Import Chrome sign-in state",
-  "settings.browser.import.description":
-    "Bring your Chrome sign-in state into the built-in browser once, so the AI can open sites you are already signed in to and work more smoothly.",
-  "settings.browser.import.action": "Import browser data",
-  "settings.browser.import.notFound":
-    "No importable Chrome profile was found. Open Chrome and make sure the profile contains browsing data.",
-  "settings.browser.import.ambiguous":
-    "Multiple Chrome profiles were found, but the most recently used profile could not be determined. Open the profile you want to import and try again.",
-  "settings.browser.import.executableNotFound":
-    "Chrome was not found. Install Chrome and try again.",
-  "settings.browser.import.accessDenied":
-    "Import canceled: access to Chrome Safe Storage in the macOS Keychain was not allowed. No Chrome data was imported.",
-  "settings.browser.import.elevationRequired":
-    "Confirm administrator access before importing Chrome cookies protected by App-Bound encryption.",
-  "settings.browser.import.elevationCancelled":
-    "Windows administrator access was canceled. No cookies were imported.",
-  "settings.browser.import.helperVerificationFailed":
-    "ZCode could not verify its Windows secure import component. Reinstall or update ZCode before importing cookies.",
-  "settings.browser.import.appBoundFailed":
-    "Windows could not unlock Chrome's App-Bound cookies. No cookies were imported.",
-  "settings.browser.import.adminConfirmTitle":
-    "Allow administrator access to import Chrome cookies?",
-  "settings.browser.import.adminConfirmDescription":
-    "Chrome protects cookies with App-Bound encryption on Windows. For this import only, ZCode will request administrator access, start a temporary system service, and delete it immediately afterward. Chrome passwords are never read or imported.",
-  "settings.browser.import.adminConsent":
-    "I confirm administrator access for this cookie import only",
-  "settings.browser.import.adminConfirmAction": "Continue and request access",
-  "settings.browser.import.cookieProtected":
-    "Chrome cookies are protected by application-bound encryption and cannot be imported safely. No LocalStorage data was available to import.",
-  "settings.browser.import.profileLocked":
-    "The Chrome profile is in use and a consistent snapshot could not be created. Close Chrome and try again.",
-  "settings.browser.import.localStorageFailed":
-    "The Chrome LocalStorage snapshot could not be read. Close Chrome and try again.",
-  "settings.browser.import.failed": "Chrome browser data import failed.",
-  "settings.browser.import.success":
-    "Imported {cookies} cookies and {entries} LocalStorage entries from {origins} sites.",
-  "settings.browser.import.successWithSkipped":
-    "Imported {cookies} cookies and {entries} LocalStorage entries from {origins} sites; {skipped} cookies were not imported.",
-  "settings.browser.import.partialCookieProtected":
-    "Imported {cookies} cookies and {entries} LocalStorage entries from {origins} sites; {skipped} cookies were protected by Chrome and were not imported.",
-  "settings.browser.import.partialAppBound":
-    "Imported {entries} LocalStorage entries from {origins} sites, but Windows App-Bound cookies were not imported.",
-  "settings.browser.import.partialLocalStorage":
-    "Imported {cookies} cookies, but some LocalStorage data was not imported. Closing Chrome before retrying may improve the result.",
-  "settings.browser.clearCache.title": "Clear built-in browser cache",
-  "settings.browser.clearCache.description":
-    "Clear HTTP cache, Cache Storage, and service workers while keeping cookies and local site data.",
-  "settings.browser.clearCache.action": "Clear cache",
-  "settings.browser.clearCache.success": "Built-in browser cache cleared",
-  "settings.browser.clearAll.title": "Clear all browser data",
-  "settings.browser.clearAll.description":
-    "Delete cookies, site data, and cache from the built-in browser. This cannot be undone.",
-  "settings.browser.clearAll.action": "Clear all",
-  "settings.browser.clearAll.success": "All built-in browser data cleared",
-  "settings.browser.clear.failed": "Failed to clear built-in browser data.",
-  "settings.browser.clearAll.confirmTitle": "Clear all built-in browser data?",
-  "settings.browser.clearAll.confirmDescription":
-    "This signs you out of sites in the built-in browser and deletes cookies, site data, and cache. This cannot be undone.",
-  "settings.browser.clearAll.confirmAction": "Clear data",
   "settings.lightTheme": "Light code theme",
   "settings.lightThemeDescription":
     "Highlighting theme used for code content in the light interface.",
@@ -3357,7 +3282,6 @@ const enUS: Record<string, string> = {
   "settings.modelProvider.advanced": "Advanced settings",
   "settings.modelProvider.advancedConfig": "Advanced settings",
   "settings.modelProvider.reasoning": "Reasoning settings",
-  "settings.hooks.advanced": "Advanced",
   "settings.modelProvider.maxOutputTokens": "Max output tokens",
   "settings.modelProvider.inputModalities": "Input types",
   "settings.modelProvider.outputModalities": "Output types",
@@ -3913,7 +3837,6 @@ const enUS: Record<string, string> = {
   "settings.plugin.tab.plugins": "Plugins",
   "settings.plugin.tab.mcps": "MCP",
   "settings.plugin.tab.skills": "Skills",
-  "settings.plugin.tab.commands": "Commands",
   "settings.search.clear": "Clear search",
   "settings.plugin.plugins.installed": "Installed",
   "settings.plugin.plugins.builtIn": "Built-in",
@@ -4174,98 +4097,7 @@ const enUS: Record<string, string> = {
   "settings.plugins.import.resultList": "Plugin results",
   "settings.plugins.import.resultEmpty": "No plugin results were returned.",
   "settings.plugins.import.finish": "Done",
-  "settings.commands.title": "Commands",
-  "settings.commands.description":
-    "Manage ZCode Agent .md command files. Commands can be invoked with /command-name in chat.",
-  "settings.commands.sourceFilterLabel": "Source filter",
-  "settings.commands.source.zcodeAgent": "ZCode Agent",
-  "settings.commands.add": "New",
-  "settings.commands.addNew": "New command",
-  "settings.commands.addDescription":
-    "Fill in the command name and prompt, then save to return to the list.",
-  "settings.commands.edit": "Edit command",
-  "settings.commands.editDescription": "Modify the command and save to return to the list.",
-  "settings.commands.backToList": "Back",
-  "settings.commands.delete.title": "Delete command",
-  "settings.commands.delete.description":
-    'Are you sure you want to delete the command "{name}"? This action cannot be undone.',
-  "settings.commands.empty": "No user commands",
-  "settings.commands.searchPlaceholder": "Search commands...",
-  "settings.commands.group.local": "User commands",
-  "settings.commands.group.plugin": "Plugin commands",
-  "settings.commands.openUserCommandsFolder": "Open user commands folder",
-  "settings.commands.noDescription": "No description",
-  "settings.commands.form.name.label": "Name",
-  "settings.commands.form.name.placeholder": "my-command",
-  "settings.commands.form.description.label": "Description (optional)",
-  "settings.commands.form.description.placeholder": "Short description shown in command picker",
-  "settings.commands.form.argumentHint.label": "Argument hint (optional)",
-  "settings.commands.form.argumentHint.placeholder": "e.g. <file-path>",
-  "settings.commands.form.prompt.label": "Prompt",
-  "settings.commands.form.prompt.placeholder":
-    "Write the prompt that will be sent when this command is invoked...",
-  "settings.commands.form.validation.nameLength": "Length must be between {min} and {max}",
-  "settings.commands.form.validation.nameCharacters":
-    "Only letters, numbers, hyphens, and underscores allowed",
-  "settings.commands.form.validation.promptRequired": "Prompt is required",
-  "settings.commands.import.open": "Import commands from external agents",
-  "settings.commands.import.action": "Import",
-  "settings.commands.import.title": "Import external agent commands",
-  "settings.commands.import.scanning": "Scanning importable commands...",
-  "settings.commands.import.empty":
-    "No importable commands found. Check the external agent commands directories and scan again.",
-  "settings.commands.import.summary": "Found {count} importable commands",
-  "settings.commands.import.scopeLabel": "Scope",
-  "settings.commands.import.scope.global": "Global",
-  "settings.commands.import.scope.project": "Project",
-  "settings.commands.import.scopeEmpty": "No commands found in this scope.",
-  "settings.commands.import.selectAll": "Select all",
-  "settings.commands.import.clearAll": "Clear all",
-  "settings.commands.import.selectionCount": "{selected}/{total} selected",
-  "settings.commands.import.expandSource": "Show commands",
-  "settings.commands.import.collapseSource": "Hide commands",
-  "settings.commands.import.selectSource": "Select all commands from this source",
-  "settings.commands.import.deselectSource": "Deselect all commands from this source",
-  "settings.commands.import.itemCount": "{count} commands",
-  "settings.commands.import.skipReason.targetExists": "File exists",
-  "settings.commands.import.skipReason.sameNameExists": "Name exists",
-  "settings.commands.import.start": "Import selected commands",
-  "settings.commands.import.targetLabel": "Import target",
-  "settings.commands.import.target.global": "Import to Global",
-  "settings.commands.import.target.project": "Import to Project",
-  "settings.commands.import.modeLabel": "Import mode",
-  "settings.commands.import.modeHelp": "Import mode help",
-  "settings.commands.import.mode.copy": "Copy",
-  "settings.commands.import.mode.symlink": "Symlink",
-  "settings.commands.import.mode.copy.description":
-    "Copy the command file into ZCode. Later changes in the external agent file will not sync automatically.",
-  "settings.commands.import.mode.symlink.description":
-    "Create a file link to the external agent command. ZCode follows later source changes, but the command depends on that source path remaining available.",
-  "settings.commands.import.importing": "Importing commands into ZCode",
-  "settings.commands.import.imported": "Imported",
-  "settings.commands.import.skipped": "Skipped",
-  "settings.commands.import.failed": "Failed",
-  "settings.commands.import.resultList": "Command results",
-  "settings.commands.import.resultEmpty": "No command results were returned.",
-  "settings.commands.import.finish": "Done",
 
-  "settings.hooks.review.trust": "Trust",
-  "settings.hooks.review.notice":
-    "Hooks can run outside of the sandbox so we ask you to review any recently installed or modified hooks",
-  "settings.hooks.review.unavailable": "This connection cannot trust this Hook.",
-  "settings.hooks.review.reason.review_superseded": "Review was updated — please confirm again",
-  "settings.hooks.review.reason.snapshot_mismatch": "Hook configuration changed — review required",
-  "settings.hooks.review.reason.bundle_changed": "Hook configuration changed — review required",
-  "settings.hooks.review.reason.config_unreadable": "Hook configuration could not be read",
-  "settings.hooks.review.reason.config_write_failed": "Failed to write Hook configuration",
-  "settings.hooks.review.reason.config_rebuild_failed": "Failed to rebuild Hook configuration",
-  "settings.hooks.review.reason.trust_store_corrupt": "Trust store is corrupted — review required",
-  "settings.hooks.review.reason.blocked_by_policy": "Blocked by policy",
-  "settings.hooks.review.reason.policy_requires_pretrust": "Policy requires pre-established trust",
-  "settings.hooks.review.reason.interaction_timeout": "Review timed out",
-  "settings.hooks.review.reason.host_unavailable": "This connection cannot review this Hook",
-  "settings.hooks.review.reason.rejected": "Request rejected",
-  "settings.hooks.title": "Hooks",
   "settings.workspaceFileSearch.title": "Workspace Search Scope",
   "settings.workspaceFileSearch.description":
     "Edit .zcodeignore rules (gitignore syntax) that scope workspace file search. Takes effect on the next search after saving.",
@@ -4285,50 +4117,6 @@ const enUS: Record<string, string> = {
   "settings.workspaceFileSearch.unsaved": "Unsaved changes",
   "settings.workspaceFileSearch.noWorkspace":
     "No workspace is open, so search ignore rules cannot be configured.",
-  "settings.hooks.description":
-    "Manage task lifecycle hooks to automatically execute commands on specific events.",
-  "settings.hooks.enabled": "Enabled",
-  "settings.hooks.disabled": "Disabled",
-  "settings.hooks.scopeUnknown": "Scope unknown",
-  "settings.hooks.add": "New hook",
-  "settings.hooks.edit": "Edit hook",
-  "settings.hooks.delete": "Delete hook",
-  "settings.hooks.deleteDescription": "Delete the {event} hook?",
-  "settings.hooks.empty": "No hooks configured",
-  "settings.hooks.matchAll": "Match all",
-  "settings.hooks.sessionSnapshot": "Hook changes apply to new sessions.",
-  "settings.hooks.group.configured": "Configured hooks",
-  "settings.hooks.group.compatibility": "Available to import",
-  "settings.hooks.group.plugins": "Plugin hooks",
-  "settings.hooks.group.installed": "Installed",
-  "settings.hooks.group.legacy": "Legacy",
-  "settings.hooks.import": "Import",
-  "settings.hooks.imported": "Hook imported",
-  "settings.hooks.event": "Event",
-  "settings.hooks.type": "Runner",
-  "settings.hooks.type.process": "Process",
-  "settings.hooks.type.command": "Shell command",
-  "settings.hooks.matcher": "Matcher",
-  "settings.hooks.command": "Command",
-  "settings.hooks.timeout": "Timeout (seconds)",
-  "settings.hooks.searchPlaceholder": "Search hooks...",
-  "settings.hooks.searchEmpty": "No hooks match your search.",
-  "settings.hooks.backToList": "Back",
-  "settings.hooks.matcherPlaceholder": "e.g. Write, Edit, Bash",
-  "settings.hooks.matcherHint": "Leave blank to match all input for this event.",
-  "settings.hooks.commandPlaceholder": "e.g. echo 'Hello from hook'",
-  "settings.hooks.args": "Arguments",
-  "settings.hooks.argsPlaceholder": "One argv argument per line",
-  "settings.hooks.argsHint": "One argv argument per line.",
-  "settings.hooks.shell": "Shell",
-  "settings.hooks.shellPlaceholder": "System default",
-  "settings.hooks.async": "Run in background",
-  "settings.hooks.statusMessage": "Status message",
-  "settings.hooks.statusMessagePlaceholder": "e.g. Checking workspace",
-  "settings.hooks.timeoutHint": "Timeout in seconds",
-  "settings.hooks.customJson": "Custom fields JSON",
-  "settings.hooks.customJsonObjectError": "Custom fields must be a JSON object.",
-  "settings.hooks.customJsonParseError": "Custom fields JSON parsing failed.",
   "settingsSync.dialog.title": "Import Settings",
   "settingsSync.dialog.description":
     "Only missing items will be imported. Existing settings will be skipped automatically.",
@@ -6751,17 +6539,6 @@ const enUS: Record<string, string> = {
   "cuaPermission.ready.sessionValidationHint":
     "ZCode will verify the Computer Use tools against the exact session when your first session starts.",
   "settings.computerUse.title": "Computer Use",
-  "settings.computerUse.toggleLabel": "Enable Computer Use",
-  "settings.computerUse.toggleDescription":
-    "Turning this on enables Computer Use — its MCP server and skills.",
-  "settings.computerUse.composerEntry.label": "Show Computer Use button in the composer",
-  "settings.computerUse.composerEntry.description": "When off, the composer button is hidden.",
-  "settings.computerUse.composerEntry.requiresEnabled":
-    "Turn on Computer Use first to show this button in the composer.",
-  "settings.computerUse.composerEntry.saveFailed": "Failed to save: {error}",
-  "settings.computerUse.pluginDisabledHint":
-    "The Computer Use plugin is not enabled. Enable it in Plugins to use Computer Use.",
-  "settings.computerUse.unsupported.title": "Computer Use is unavailable here",
   "settings.computerUse.unsupported.remoteDescription":
     "Computer Use is not yet supported for SSH or other remote environments. Switch to a local macOS or Windows workspace.",
   "settings.computerUse.unsupported.linuxDescription":

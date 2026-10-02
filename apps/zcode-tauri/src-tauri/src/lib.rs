@@ -13,6 +13,7 @@
 pub mod app_state;
 pub mod commands;
 pub mod events;
+pub mod rendering;
 pub mod rpc;
 pub mod scheduler_store;
 pub mod services;
@@ -52,6 +53,9 @@ fn scheduler_db_path() -> std::path::PathBuf {
 
 /// Build and run the application.
 pub fn run() {
+    // Before anything opens a display: the NVIDIA explicit-sync opt-out has to
+    // be in the environment when `libEGL_nvidia` initializes. See `rendering`.
+    rendering::apply_webkit_graphics_env();
     init_tracing();
 
     let state: SharedAppState = Arc::new(AppState::new());
@@ -83,7 +87,13 @@ pub fn run() {
         // registry is process-wide rather than per-window because a pty outlives the
         // window that opened it — the same lifetime rule the Electron scheduler
         // needed supervision for (`PORT_STATUS.md:39-44`).
-        .manage(commands::terminal::TerminalRegistry::default());
+        .manage(commands::terminal::TerminalRegistry::default())
+        // Trusted-host ticket store (`/api/rpc-host-capability` replacement).
+        // Process-wide, in memory only: tickets live 30 s and are single-use,
+        // so losing them on restart is correct, not a migration concern.
+        .manage(std::sync::Mutex::new(
+            services::host_capability::HostCapabilityStore::default(),
+        ));
 
     // Deep-link handler. Electron routed `zcode://` through
     // `app.on("open-url")` plus a Linux `.desktop` registration
@@ -112,7 +122,17 @@ pub fn run() {
         .setup(move |app| {
             let handle = app.handle().clone();
 
-            // 0. The in-process RPC listener. Bound first so its address is
+            // 0. The Built-in Provider Config. `@zcode/server` materialised it in
+            // `entry-http.ts` before serving; the Tauri host is now the sole
+            // embedder, so the file must exist before anything spawns the agent.
+            // A failure here is fatal to the provider runtime, so log it loudly
+            // rather than degrade to a half-ready config plane.
+            match services::builtin_provider_config::materialize_for_host() {
+                Ok(path) => tracing::info!(file = %path.display(), "builtin provider config materialised"),
+                Err(error) => tracing::error!(%error, "builtin provider config materialisation failed"),
+            }
+
+            // 0b. The in-process RPC listener. Bound first so its address is
             //    settled before anything can ask for it, and before the window
             //    that will ask. A bind failure is logged and tolerated: the UI is
             //    still served by `@zcode/server` until channels are ported, so a
@@ -277,6 +297,7 @@ pub fn run() {
             commands::urls::is_coding_plan_webview,
             commands::urls::is_payment_callback,
             commands::urls::is_trusted_webview_origin,
+            commands::capability::issue_rpc_host_capability,
         ])
         .build(tauri::generate_context!())
         .expect("failed to build zcode-tauri")

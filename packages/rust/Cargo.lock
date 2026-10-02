@@ -3731,12 +3731,44 @@ dependencies = [
 ]
 
 [[package]]
+name = "zcode-model-option-map"
+version = "0.0.0"
+dependencies = [
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "zcode-packaging"
 version = "0.0.0"
 dependencies = [
  "serde",
  "serde_json",
  "sha2",
+]
+
+[[package]]
+name = "zcode-private-file"
+version = "0.0.0"
+dependencies = [
+ "rand 0.8.8",
+ "serde_json",
+ "sha2",
+ "tracing",
+]
+
+[[package]]
+name = "zcode-provider-config"
+version = "0.0.0"
+dependencies = [
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.21",
+ "url",
+ "zcode-model-option-map",
+ "zcode-private-file",
 ]
 
 [[package]]

@@ -16,7 +16,7 @@
 //! serialization.
 
 use serde_json::Value as JsonValue;
-use zcode_codec::serialization::{deserialize_option, serialize_option};
+use zcode_codec::serialization::{deserialize_option, serialize_binary, serialize_option};
 use zcode_codec::vql::{VqlReader, VqlWriter};
 
 /// Mirrors `RequestType` in `packages/rpc/src/channels.shared.ts`.
@@ -91,6 +91,10 @@ pub struct Response {
     /// `None` for `Initialize`, which carries no id.
     pub id: Option<u32>,
     pub data: Option<JsonValue>,
+    /// A top-level binary payload (the raw byte channel). When present it is
+    /// encoded instead of `data` — a method like `readFileRange` returns bytes,
+    /// not a JSON value.
+    pub binary: Option<Vec<u8>>,
 }
 
 impl Response {
@@ -99,6 +103,7 @@ impl Response {
             response_type: ResponseType::Initialize,
             id: None,
             data: None,
+            binary: None,
         }
     }
 
@@ -107,6 +112,17 @@ impl Response {
             response_type: ResponseType::PromiseSuccess,
             id: Some(id),
             data: Some(data),
+            binary: None,
+        }
+    }
+
+    /// `PromiseSuccess` carrying a top-level binary payload.
+    pub fn success_binary(id: u32, bytes: Vec<u8>) -> Self {
+        Self {
+            response_type: ResponseType::PromiseSuccess,
+            id: Some(id),
+            data: None,
+            binary: Some(bytes),
         }
     }
 
@@ -117,6 +133,7 @@ impl Response {
             response_type: ResponseType::PromiseError,
             id: Some(id),
             data: Some(data),
+            binary: None,
         }
     }
 
@@ -126,6 +143,7 @@ impl Response {
             response_type: ResponseType::PromiseErrorObj,
             id: Some(id),
             data: Some(data),
+            binary: None,
         }
     }
 
@@ -133,6 +151,7 @@ impl Response {
         Self {
             response_type: ResponseType::EventFire,
             id: Some(id),
+            binary: None,
             data: Some(data),
         }
     }
@@ -199,7 +218,11 @@ pub fn encode_response(response: &Response) -> Result<Vec<u8>, EnvelopeError> {
         ])?,
     };
     serialize_option(&mut writer, Some(&header))?;
-    serialize_option(&mut writer, response.data.as_ref())?;
+    if let Some(bytes) = &response.binary {
+        serialize_binary(&mut writer, bytes)?;
+    } else {
+        serialize_option(&mut writer, response.data.as_ref())?;
+    }
     Ok(writer.into_bytes())
 }
 
@@ -288,6 +311,10 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, EnvelopeError> {
         response_type,
         id,
         data,
+        // The Rust client (proxy/relay) does not consume a top-level binary
+        // response today; a Node binary answer is not relayed. This is the
+        // dev-only proxy path, off by default.
+        binary: None,
     })
 }
 

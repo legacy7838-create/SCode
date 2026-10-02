@@ -647,6 +647,48 @@ fn the_remote_follow_up_members_refuse_with_the_same_code() {
 
 use ssh_config as ssh;
 
+/// The TS port resolved aliases through `mapWithConcurrency(…, SSH_G_CONCURRENCY, …)`
+/// (`sshConfigAlias.ts:674`). The first Rust draft made it a sequential `.map()`,
+/// leaving the constant the spec calls for unused. This pins both halves of the
+/// contract: never more than the cap in flight, and results in *input* order
+/// rather than whichever worker finished first.
+#[test]
+fn ssh_g_queries_run_at_the_capped_concurrency_and_stay_in_order() {
+    const CAP: usize = 3;
+    let current = std::sync::atomic::AtomicUsize::new(0);
+    let peak = std::sync::atomic::AtomicUsize::new(0);
+    let items: Vec<usize> = (0..12).collect();
+
+    let results = ssh::map_with_concurrency(&items, CAP, |index| {
+        let inflight = current.fetch_add(1, Ordering::Relaxed) + 1;
+        peak.fetch_max(inflight, Ordering::Relaxed);
+        // Item 0 finishes last on purpose: completion order then disagrees with
+        // input order, so a map that collected as workers finished fails below.
+        std::thread::sleep(std::time::Duration::from_millis(if *index == 0 { 40 } else { 5 }));
+        current.fetch_sub(1, Ordering::Relaxed);
+        index * 10
+    });
+
+    assert_eq!(
+        results,
+        (0..12).map(|index| index * 10).collect::<Vec<_>>(),
+        "results follow input order, not completion order"
+    );
+    let peak = peak.load(Ordering::Relaxed);
+    assert!(peak <= CAP, "at most {CAP} ssh -G runs at once, saw {peak}");
+    assert!(peak >= 2, "the pass must overlap; a sequential map regresses to {peak} at a time");
+}
+
+#[test]
+fn an_empty_alias_list_maps_to_nothing_and_the_worker_floor_is_one() {
+    let nothing: Vec<usize> = Vec::new();
+    assert!(ssh::map_with_concurrency(&nothing, 3, |_| 1).is_empty());
+
+    // A cap of zero must not deadlock the pool: one worker is the floor.
+    let four: Vec<usize> = (0..4).collect();
+    assert_eq!(ssh::map_with_concurrency(&four, 0, |value| value + 1), vec![1, 2, 3, 4]);
+}
+
 /// A throwaway directory, unique per test name and pid so the suite (which runs
 /// in one process) cannot collide with itself. Env vars are off-limits here
 /// because they would race other tests.
@@ -833,6 +875,37 @@ fn an_alias_with_no_directives_falls_back_to_its_own_name() {
     assert_eq!(options[0].host, "bare");
     assert_eq!(options[0].port, None);
     assert_eq!(options[0].username, None);
+}
+
+/// `resolve_config` confirms every alias with `ssh -G`, so what a test observes
+/// there depends on the ssh build the machine happens to have — which is exactly
+/// why four sibling tests fail on some hosts and not others (CUTOVER_SPEC §8.7).
+/// `parse_config_only` is the half that is ours: enumeration, `HostName`
+/// resolution and port inheritance, with no `ssh` binary in the loop.
+///
+/// Deliberately asserts nothing about `User` precedence — that expectation is
+/// what `a_typical_config_resolves_its_aliases` is arguing with, and it is
+/// recorded as a known failure rather than re-decided in two places.
+#[test]
+fn the_parse_stage_resolves_host_and_port_without_ssh() {
+    let dir = temp_dir("config-parse-only");
+    let config = dir.join("config");
+    std::fs::write(
+        &config,
+        "Host *\n  Port 2200\n\
+\n\
+Host build\n  HostName build.example.com\n  User deploy\n",
+    )
+    .expect("write config");
+
+    let options = ssh::parse_config_only(&config);
+    let build = options
+        .iter()
+        .find(|option| option.alias == "build")
+        .expect("the alias is enumerated");
+    assert_eq!(build.host, "build.example.com");
+    assert_eq!(build.port, Some(2200), "inherited from the first matching `Host *`");
+    assert_eq!(build.username.as_deref(), Some("deploy"), "the first `User` value obtained wins");
 }
 
 #[test]

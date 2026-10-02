@@ -21,6 +21,8 @@ import {
 import type { RegistryProviderConfig } from "@zcode/provider";
 import { withOpenRouterAttributionHeaders } from "@zcode/shared";
 import { createAnthropicCompatFetch } from "./anthropic-stream-compat.js";
+import { createOpencodeFreeFetch } from "./opencode-free-fetch.js";
+import { isOpencodeFreeProvider } from "./opencode-session.js";
 import { createOpenAIResponsesJsonCompatFetch } from "./openai-responses-json-compat.js";
 import { createModelOptionMapFetch, type RawRequestBodyCapture } from "./model-option-map-fetch.js";
 import { createNetworkProxyFetch } from "../network/proxy-fetch.js";
@@ -290,10 +292,15 @@ export class AiSdkModelExecution {
       }
 
       case "anthropic": {
+        const anthropicFetch = createAnthropicCompatFetch(optionFetch);
         const provider = createAnthropic({
           apiKey,
           baseURL: normalizeAnthropicBaseURL(providerConfig.baseURL),
-          fetch: createAnthropicCompatFetch(optionFetch),
+          // The anonymous OpenCode Free lane fingerprints the tool signature; the cloak is scoped to
+          // it so the keyed opencode-zen-* providers keep their untouched request path.
+          fetch: isOpencodeFreeProvider({ baseURL: providerConfig.baseURL, apiKey })
+            ? createOpencodeFreeFetch(anthropicFetch)
+            : anthropicFetch,
           headers: withAnthropicAuthorizationHeader(apiKey, headers),
         });
         return provider as LanguageModelFactory;
@@ -304,7 +311,11 @@ export class AiSdkModelExecution {
           name: providerConfig.name ?? providerId,
           baseURL: providerConfig.baseURL,
           apiKey,
-          fetch: optionFetch,
+          // Same anonymous OpenCode Free gate as the Anthropic lane: cloak the quartet signature on
+          // request and restore the caller's tool spelling on response; keyed providers keep theirs.
+          fetch: isOpencodeFreeProvider({ baseURL: providerConfig.baseURL, apiKey })
+            ? createOpencodeFreeFetch(optionFetch)
+            : optionFetch,
           headers,
           // OpenAI Compatible streaming usage requires an explicit request, and Usage is part of the execution result.
           includeUsage: true,

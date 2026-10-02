@@ -25,26 +25,26 @@ migration, and the grouped-task-view bookkeeping the UI reads on every task-list
 
 Structural facts, verified at file:line:
 
-| Fact | Evidence |
-|---|---|
-| Synchronous SQLite handle | `new DatabaseSync(path)` — `taskIndexRepo.ts:524` (5 occurrences) |
-| Durability is FULL, not relaxed | `PRAGMA synchronous = NORMAL` requested at `:530`, but the **real database on this host reports `synchronous = 2` (FULL)** |
-| WAL, so writers serialise | `PRAGMA journal_mode = WAL` at `:529`, `busy_timeout` at `:527`, `foreign_keys = ON` at `:528` |
-| **32 implicit-commit write sites** | 32 `.run(` calls; `writeRecord` (`:1141`) is **one `.run()` per call — one durable commit** |
-| Explicit transaction blocks on top | `BEGIN IMMEDIATE` / `COMMIT` at `:632/639`, `:787/803`, `:847/860`, `:934/939` |
-| Called per snapshot, not batched | `zcodeTaskIndexSyncer.ts:1693/1695` — `syncTaskMetaAtGroupedTop` / `syncTaskMeta` inside `syncSnapshotAndBroadcast` |
+| Fact                               | Evidence                                                                                                                   |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Synchronous SQLite handle          | `new DatabaseSync(path)` — `taskIndexRepo.ts:524` (5 occurrences)                                                          |
+| Durability is FULL, not relaxed    | `PRAGMA synchronous = NORMAL` requested at `:530`, but the **real database on this host reports `synchronous = 2` (FULL)** |
+| WAL, so writers serialise          | `PRAGMA journal_mode = WAL` at `:529`, `busy_timeout` at `:527`, `foreign_keys = ON` at `:528`                             |
+| **32 implicit-commit write sites** | 32 `.run(` calls; `writeRecord` (`:1141`) is **one `.run()` per call — one durable commit**                                |
+| Explicit transaction blocks on top | `BEGIN IMMEDIATE` / `COMMIT` at `:632/639`, `:787/803`, `:847/860`, `:934/939`                                             |
+| Called per snapshot, not batched   | `zcodeTaskIndexSyncer.ts:1693/1695` — `syncTaskMetaAtGroupedTop` / `syncTaskMeta` inside `syncSnapshotAndBroadcast`        |
 
 The events port measured the cost of exactly this class of commit on this host:
 **6–11 ms per `fdatasync`** (`rust-native-events.md` §1, "Durable commit floor"). With
 `synchronous = FULL`, every `writeRecord` is one of those. The store's own `synchronous = NORMAL`
 request is not in effect on the real file, so the floor applies.
 
-### 1.2 The scale — stated honestly, because it is *not* the same as the events port
+### 1.2 The scale — stated honestly, because it is _not_ the same as the events port
 
-| Database | Size | Rows |
-|---|---|---|
+| Database                                             | Size       | Rows                                               |
+| ---------------------------------------------------- | ---------- | -------------------------------------------------- |
 | `~/.zcode/cli/db/db.sqlite` (ported, `zcode-events`) | **287 MB** | 4,412 messages / 26,232 parts / 14,020 tool usages |
-| `~/.zcode/v2/tasks-index.sqlite` (this port) | **0.4 MB** | 27 tasks, 5 group-node orders, 0 automations |
+| `~/.zcode/v2/tasks-index.sqlite` (this port)         | **0.4 MB** | 27 tasks, 5 group-node orders, 0 automations       |
 
 So **the win here is not read volume.** The 72.8 ms `messages()` figure that justified
 `zcode-events` has no analogue here. What this port buys is:
@@ -58,7 +58,7 @@ So **the win here is not read volume.** The 72.8 ms `messages()` figure that jus
 Anyone reading this spec should not expect a `zcode-events`-scale win. §11 R4 records the risk
 that the win turns out to be small enough that deletion is not worth the churn.
 
-### 1.3 What is *not* claimed
+### 1.3 What is _not_ claimed
 
 No read-volume claim, no benchmark number, and no comparison against the TypeScript. The
 justification is the commit count and the capability gap, and it is restated here so a reviewer
@@ -91,8 +91,8 @@ does not have to infer it.
 ### 2.2a The three repos share one file — the port unit is all three
 
 Correcting §2.2 after verifying the real schema. `automationRepo.ts:222` states it outright:
-*"sharing tasks-index.sqlite with the task index (WAL, multi-process safe)"*, and
-`offPeakTaskRepo.ts:9`: *"It shares tasks-index.sqlite and the Repo pattern with automation."*
+_"sharing tasks-index.sqlite with the task index (WAL, multi-process safe)"_, and
+`offPeakTaskRepo.ts:9`: _"It shares tasks-index.sqlite and the Repo pattern with automation."_
 The live database confirms it — `automations`, `automation_runs` and `off_peak_tasks` are tables
 in `tasks-index.sqlite` itself, not separate files.
 
@@ -110,12 +110,12 @@ owning one persisted file**:
 
 So **invariant 1 settles the boundary**: one file, one implementation. The port is:
 
-| Repo | Lines | In scope |
-|---|---|---|
-| `taskIndexRepo.ts` | 2,567 | ✅ |
-| `automationRepo.ts` | 1,489 | ✅ |
-| `offPeakTaskRepo.ts` | 839 | ✅ |
-| **total** | **4,895** | one `zcode-task-index` crate, one connection owner, three facades |
+| Repo                 | Lines     | In scope                                                          |
+| -------------------- | --------- | ----------------------------------------------------------------- |
+| `taskIndexRepo.ts`   | 2,567     | ✅                                                                |
+| `automationRepo.ts`  | 1,489     | ✅                                                                |
+| `offPeakTaskRepo.ts` | 839       | ✅                                                                |
+| **total**            | **4,895** | one `zcode-task-index` crate, one connection owner, three facades |
 
 This is larger than the `zcode-events` port and is the largest single wave in the programme. It is
 split into ordered, separately-mergeable steps in §4.5 so the parity surface stays auditable
@@ -131,8 +131,8 @@ rather than one 4,895-line change.
 - **`InMemorySessionEventStore`** — stays TS, exactly as in `zcode-events` §0: a per-runtime `Map`
   with zero I/O, where porting buys nothing.
 - **The syncer** (`zcodeTaskIndexSyncer.ts`, 1,972 lines) — orchestration and broadcast, not
-  computation. It becomes a *consumer*, switching import to the crate; its own logic stays TS.
-- **The `automations` / `off_peak_tasks` *scheduling* semantics** — cron computation is already
+  computation. It becomes a _consumer_, switching import to the crate; its own logic stays TS.
+- **The `automations` / `off_peak_tasks` _scheduling_ semantics** — cron computation is already
   `zcode-cron`; the claim/retry state machines move, the scheduling policy does not.
 - **`zcodeTaskServiceAdapter` / `zcodeAgentService`** — RPC surface and glue.
 - **The renderer-facing projection** — presentation.
@@ -150,13 +150,13 @@ Two exceptions, both I/O-free, mirroring `zcode-events` §2.3:
 
 ### 2.4 Ownership
 
-| Piece | Owner |
-|---|---|
-| `packages/rust/crates/zcode-task-index/**`, `packages/rust/src/taskIndex.ts`, this spec | TaskIndexSpecAuthor |
-| `packages/rust/Cargo.toml`, `packages/rust/package.json` (subpath), `pnpm-lock.yaml` | main session — requests in §10 |
-| `packages/services/src/session/taskIndexRepo.ts` (deletion), `zcodeTaskIndexSyncer.ts` (import swap) | TaskIndexSpecAuthor |
-| `apps/zcode-tauri/src-tauri/**` | **untouched in this wave** — the Tauri host reaches the store through the Node server, exactly as the session store is reached. Adding Tauri commands here would be a second port. |
-| `packages/shared/src/*` (the `ZCodeTaskMeta` wire type) | **untouched** — already carried verbatim into `scheduler_store.rs` |
+| Piece                                                                                                | Owner                                                                                                                                                                              |
+| ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/rust/crates/zcode-task-index/**`, `packages/rust/src/taskIndex.ts`, this spec              | TaskIndexSpecAuthor                                                                                                                                                                |
+| `packages/rust/Cargo.toml`, `packages/rust/package.json` (subpath), `pnpm-lock.yaml`                 | main session — requests in §10                                                                                                                                                     |
+| `packages/services/src/session/taskIndexRepo.ts` (deletion), `zcodeTaskIndexSyncer.ts` (import swap) | TaskIndexSpecAuthor                                                                                                                                                                |
+| `apps/zcode-tauri/src-tauri/**`                                                                      | **untouched in this wave** — the Tauri host reaches the store through the Node server, exactly as the session store is reached. Adding Tauri commands here would be a second port. |
+| `packages/shared/src/*` (the `ZCodeTaskMeta` wire type)                                              | **untouched** — already carried verbatim into `scheduler_store.rs`                                                                                                                 |
 
 ### 2.5 Invariants
 
@@ -167,7 +167,7 @@ Two exceptions, both I/O-free, mirroring `zcode-events` §2.3:
    `node:sqlite` imports are deleted only when the last of the three moves.
 2. **Legacy deleted, not disabled** — but see §7's deletion condition, which is stricter here
    because the store is shared with the still-shipping Electron app.
-3. **The database file is the contract.** This is a *persisted* store, unlike
+3. **The database file is the contract.** This is a _persisted_ store, unlike
    `zcode-mcp-config`'s hand-edited config. Schema, migration ledger, checksums and pragmas must
    match the file on disk exactly, or an existing install cannot open its own database.
 4. **`searchable_text` preservation.** `writeRecord` (`:1141`) reads the existing row precisely so
@@ -183,7 +183,7 @@ Two exceptions, both I/O-free, mirroring `zcode-events` §2.3:
 
 ### 3.1 `searchable_text` — the silent data loss
 
-`writeRecord` (`:1141-1150`) does a read *before* the upsert, with the reason in the comment:
+`writeRecord` (`:1141-1150`) does a read _before_ the upsert, with the reason in the comment:
 `ON CONFLICT … excluded.searchable_text` would otherwise assign `""` and clear the indexed text.
 `undefined` means "leave it alone"; that is a three-state contract (`undefined` / `string` /
 `""`) that a Rust `Option<String>` maps onto naturally — and the port must not collapse it to
@@ -191,8 +191,8 @@ Two exceptions, both I/O-free, mirroring `zcode-events` §2.3:
 
 ### 3.2 The NUL-truncation workaround
 
-`:421` records: *"When node:sqlite reads TEXT, it will truncate the taskId after NUL, causing the
-query to not match the grouped view after sorting and writing."* There is an existing workaround in
+`:421` records: _"When node:sqlite reads TEXT, it will truncate the taskId after NUL, causing the
+query to not match the grouped view after sorting and writing."_ There is an existing workaround in
 the SQL. A Rust port reads `TEXT` as a real `String` and does not truncate — so the workaround
 becomes unnecessary, and **carrying it over verbatim would be a latent bug**: it would keep
 encoding values in a shape only the workaround needs. §6.2 requires deciding this explicitly
@@ -224,10 +224,10 @@ string, and a backfill marker.
 
 Reproduced against the real ledger to confirm the contract, all three matching exactly:
 
-| Migration | Declared | Real ledger |
-|---|---|---|
-| `0001_adopt_task_schema` | `3e8337b015d94b05…` | `3e8337b015d94b05…` ✅ |
-| `0002_provider_selection` | `7244ef7c351f8d02…` | `7244ef7c351f8d02…` ✅ |
+| Migration                     | Declared            | Real ledger            |
+| ----------------------------- | ------------------- | ---------------------- |
+| `0001_adopt_task_schema`      | `3e8337b015d94b05…` | `3e8337b015d94b05…` ✅ |
+| `0002_provider_selection`     | `7244ef7c351f8d02…` | `7244ef7c351f8d02…` ✅ |
 | `0003_official_glm_selection` | `8987adb50ae412a4…` | `8987adb50ae412a4…` ✅ |
 
 So the port must reproduce **`JSON.stringify` byte-for-byte**, which is a harder requirement
@@ -245,7 +245,7 @@ values, not by a round-trip through the port's own serialiser.
 **The fourth row is still absent from this checkout.** `0004_code_plan_modes`
 (`6cd402653cf95eef…`) is on disk but not declared in `migrations.ts`, exactly as
 `0023_code_plan_execution_state` was for the session store. The runner must therefore read only
-*known* ids and take the baseline via `ORDER BY id DESC LIMIT 1`, so an unknown row is ignored
+_known_ ids and take the baseline via `ORDER BY id DESC LIMIT 1`, so an unknown row is ignored
 rather than treated as a mismatch or a baseline to re-apply.
 
 ---
@@ -317,14 +317,14 @@ the grouped view can never be left half-written.
 
 ### 4.5 Ordered steps, each separately mergeable
 
-| Step | Content | Why it is a safe boundary |
-|---|---|---|
-| **1** | Crate skeleton, schema DDL, migration runner, `ensure_ready`, `close` | Opens a copy of the **real** database and asserts the schema and ledger match. Nothing else can start until this passes, so it is the natural gate |
-| **2** | `TaskIndexStore`: `write_key`, `write_record`, `get_task_row`, grouped-order normalisation, write batching | The measured win (§1.1). Switches `zcodeTaskIndexSyncer` — the only per-snapshot writer |
-| **3** | Read path: `list_grouped_tasks`, `search`, `build_search_snippets` | The UI's path. Switches the task-list surface |
-| **4** | `AutomationStore` facade over the same connection | Same file, same migration, no new schema |
-| **5** | `OffPeakStore` facade over the same connection | As above |
-| **6** | Delete `taskIndexRepo.ts`, `automationRepo.ts`, `offPeakTaskRepo.ts` | Only legal once Electron no longer calls them (§7) |
+| Step  | Content                                                                                                    | Why it is a safe boundary                                                                                                                          |
+| ----- | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1** | Crate skeleton, schema DDL, migration runner, `ensure_ready`, `close`                                      | Opens a copy of the **real** database and asserts the schema and ledger match. Nothing else can start until this passes, so it is the natural gate |
+| **2** | `TaskIndexStore`: `write_key`, `write_record`, `get_task_row`, grouped-order normalisation, write batching | The measured win (§1.1). Switches `zcodeTaskIndexSyncer` — the only per-snapshot writer                                                            |
+| **3** | Read path: `list_grouped_tasks`, `search`, `build_search_snippets`                                         | The UI's path. Switches the task-list surface                                                                                                      |
+| **4** | `AutomationStore` facade over the same connection                                                          | Same file, same migration, no new schema                                                                                                           |
+| **5** | `OffPeakStore` facade over the same connection                                                             | As above                                                                                                                                           |
+| **6** | Delete `taskIndexRepo.ts`, `automationRepo.ts`, `offPeakTaskRepo.ts`                                       | Only legal once Electron no longer calls them (§7)                                                                                                 |
 
 Steps 1–3 are the task index proper and complete the invariant-1 story for two of the three
 repos. Steps 4–5 finish it. If the wave is cut short after step 3, the correct outcome is that
@@ -341,7 +341,7 @@ flowchart LR
   R --> D
 ```
 
-- **Owner:** the store owns the connection; the syncer owns *when* to write; the UI owns *when*
+- **Owner:** the store owns the connection; the syncer owns _when_ to write; the UI owns _when_
   to read. No cache, so a read after an awaited write always observes it.
 - **Event order:** totally ordered by the JS caller's `await` order. One in-flight task at a
   time, so a batch is never interleaved with another batch.
@@ -381,7 +381,7 @@ The acceptance core, mirroring `zcode-events` §6.
    add a checksum-drift surface for no gain, and the crate's `migrate_step` validates the id
    format so a malformed id fails loudly.
    **But the checksum input is not a SQL string** — it is the `checksumInput` array, and the
-   crate must hash `JSON.stringify` of it (§3.4). The TS therefore passes the *input array*, not
+   crate must hash `JSON.stringify` of it (§3.4). The TS therefore passes the _input array_, not
    the assembled SQL, or the two sides would hash different things and every existing install
    would report `checksum_mismatch` on first launch.
 3. **`searchable_text` is a three-state `Option<Option<String>>`** at the boundary: absent means
@@ -400,11 +400,11 @@ Node-side. The three repositories here are consumed by `packages/services`, whic
 
 Those drafts asserted the TypeScript had to stay until the Electron cutover, on the grounds
 that Electron calls the store in-process and could not use the crate. **That was too strong,
-and the repository says so itself.** Electron's main process *is* Node:
+and the repository says so itself.** Electron's main process _is_ Node:
 
 - `packages/desktop/src/host/index.ts:17` already does
   `import { installNativeRpcBytesPort } from "@zcode/rpc/native"`.
-- `packages/desktop/tsup.config.ts:172,234` inlines the `@zcode/rust` wrapper *specifically* so
+- `packages/desktop/tsup.config.ts:172,234` inlines the `@zcode/rust` wrapper _specifically_ so
   `loadNative()` can resolve the `.node` binary at runtime.
 - `prepare:rust-native` already stages those binaries into
   `bundled-agents/<os>-<arch>/native/`.
@@ -451,13 +451,13 @@ path is intact while it is being rewired.
 
 ## 10. Shared-file change requests (main session)
 
-| File | Exact change | Why |
-|---|---|---|
-| `packages/rust/Cargo.toml` | **no change** — `rusqlite` and `sha2` are already workspace dependencies (`zcode-events`) | verified; also keeps `THIRD-PARTY-NOTICES.md` untouched |
-| `packages/rust/package.json` | add `"./task-index": "./src/taskIndex.ts"` | the Node server needs a subpath |
-| root `package.json` | **no change** — `packages/rust` is already in the typecheck project list | verified |
-| `architecture-policy.yaml` | **no change** — the `rust` module already owns `packages/rust`; `services` gains no new dependency edge, it already depends on `@zcode/rust` | verified |
-| `pnpm-lock.yaml` | **no change expected** — no new npm dependency (`node:sqlite` is a Node builtin, and it is being removed) | verified |
+| File                         | Exact change                                                                                                                                 | Why                                                     |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| `packages/rust/Cargo.toml`   | **no change** — `rusqlite` and `sha2` are already workspace dependencies (`zcode-events`)                                                    | verified; also keeps `THIRD-PARTY-NOTICES.md` untouched |
+| `packages/rust/package.json` | add `"./task-index": "./src/taskIndex.ts"`                                                                                                   | the Node server needs a subpath                         |
+| root `package.json`          | **no change** — `packages/rust` is already in the typecheck project list                                                                     | verified                                                |
+| `architecture-policy.yaml`   | **no change** — the `rust` module already owns `packages/rust`; `services` gains no new dependency edge, it already depends on `@zcode/rust` | verified                                                |
+| `pnpm-lock.yaml`             | **no change expected** — no new npm dependency (`node:sqlite` is a Node builtin, and it is being removed)                                    | verified                                                |
 
 ---
 
@@ -494,15 +494,15 @@ path is intact while it is being rewired.
 thing that actually matters: that an existing install can still be opened by this build. Seven
 tests, **all ran, none skipped**:
 
-| Test | Result |
-|---|---|
-| every declared table exists (9, including the sibling repos' `automations`, `automation_runs`, `off_peak_tasks`) | ✅ |
-| every declared index exists (11) | ✅ |
-| `0001` nested-`string[][]` checksum equals the real ledger (`3e8337b0…`) | ✅ |
-| `0002` checksum equals the real ledger (`7244ef7c…`) | ✅ |
-| `0003` checksum equals the real ledger (`8987adb5…`) | ✅ |
-| re-running this build's migrations on a copy of the real file is a **no-op** | ✅ |
-| the undeclared `0004_code_plan_modes` row is tolerated and untouched | ✅ |
+| Test                                                                                                             | Result |
+| ---------------------------------------------------------------------------------------------------------------- | ------ |
+| every declared table exists (9, including the sibling repos' `automations`, `automation_runs`, `off_peak_tasks`) | ✅     |
+| every declared index exists (11)                                                                                 | ✅     |
+| `0001` nested-`string[][]` checksum equals the real ledger (`3e8337b0…`)                                         | ✅     |
+| `0002` checksum equals the real ledger (`7244ef7c…`)                                                             | ✅     |
+| `0003` checksum equals the real ledger (`8987adb5…`)                                                             | ✅     |
+| re-running this build's migrations on a copy of the real file is a **no-op**                                     | ✅     |
+| the undeclared `0004_code_plan_modes` row is tolerated and untouched                                             | ✅     |
 
 That last group is the one that would have caught a wrong checksum rule. With the events port's
 `sha256(trimmed SQL)` instead of this store's `sha256(JSON.stringify(checksumInput))`, all three
@@ -549,18 +549,18 @@ costs **one** commit, the same collapse the events store got from 3–7 commits 
 
 ### Verified against a copy of the real database — 6 tests, none skipped
 
-`tests/real_write.rs` writes to a *copy* of `~/.zcode/v2/tasks-index.sqlite`, because a schema
+`tests/real_write.rs` writes to a _copy_ of `~/.zcode/v2/tasks-index.sqlite`, because a schema
 that parses is not a schema the upsert agrees with, and that difference only shows up when the
 statement runs.
 
-| Test | Result |
-|---|---|
-| the upsert runs against the real schema, existing rows untouched | ✅ |
-| omitting `searchable_text` preserves the stored value (silent-data-loss guard) | ✅ |
-| setting and clearing `searchable_text` work | ✅ |
-| a written `node_key` matches the format of the rows already on disk, and writing one does not disturb the others | ✅ |
-| normalising the real rows is stable and a fixed point | ✅ |
-| a three-table batch commits together | ✅ |
+| Test                                                                                                             | Result |
+| ---------------------------------------------------------------------------------------------------------------- | ------ |
+| the upsert runs against the real schema, existing rows untouched                                                 | ✅     |
+| omitting `searchable_text` preserves the stored value (silent-data-loss guard)                                   | ✅     |
+| setting and clearing `searchable_text` work                                                                      | ✅     |
+| a written `node_key` matches the format of the rows already on disk, and writing one does not disturb the others | ✅     |
+| normalising the real rows is stable and a fixed point                                                            | ✅     |
+| a three-table batch commits together                                                                             | ✅     |
 
 ### Two real bugs the tests caught
 
@@ -569,7 +569,7 @@ statement runs.
    column name in `INSERT … VALUES` has no row to read, and SQLite answers `no such column`.
    The three states need **two different expressions**: on `INSERT` there is nothing to keep, so
    `Keep` and `Clear` both write `''` and only `Set` writes text; on `UPDATE` the existing row
-   *is* addressable as `tasks.searchable_text`, which is what makes `Keep` mean "leave it alone".
+   _is_ addressable as `tasks.searchable_text`, which is what makes `Keep` mean "leave it alone".
    Collapsing them is exactly the silent-data-loss bug §3.1 describes — the task list keeps
    working and search silently returns nothing.
 2. **`SearchableTextMode::Set` was `2`, but the insert branch tested for "not Keep".** After the
@@ -578,7 +578,7 @@ statement runs.
 ### An assumption of mine that was simply wrong
 
 I wrote the real-schema rollback test expecting an empty `node_type` to breach `NOT NULL`. It
-does not — `''` is a valid empty `TEXT` value, so the batch *succeeded* and the test failed.
+does not — `''` is a valid empty `TEXT` value, so the batch _succeeded_ and the test failed.
 
 Rather than weaken the test to something that passes, the rollback proof stayed where it can be
 made honestly: the unit test `a_failing_batch_rolls_back_completely`, which references a table
@@ -620,7 +620,7 @@ WHERE off_peak_task_id = ?id AND claim_running = 0
 That guard is what makes two schedulers safe — the loser sees `changes == 0` and does not report
 the task. Batching the claims into one statement, or moving the check into the calling code
 instead of the SQL, would let both dispatchers run the same task. `a_claim_is_a_compare_and_swap_and_only_one_claimer_wins`
-proves the behaviour and `the_claim_statement_keeps_its_guard` pins the guard *in the statement*,
+proves the behaviour and `the_claim_statement_keeps_its_guard` pins the guard _in the statement_,
 so a later refactor cannot quietly drop it.
 
 Also preserved: the stale-claim release (without it a crashed scheduler holds a task forever,
@@ -641,13 +641,13 @@ has no provider family and cannot be migrated, so such rows are **skipped**, not
 `tests/real_offpeak.rs` runs on a copy of the live file, because the unit tests use a
 hand-transcribed schema, which is exactly what drifts.
 
-| Test | Result |
-|---|---|
-| the counters agree with a direct query on the real table | ✅ |
-| the claim runs and is a compare-and-swap on the real schema | ✅ |
-| `claim_due` runs against the real schema, skipping the unusable row without blocking the good one | ✅ |
-| `idx_off_peak_bound_active` behaves on the real schema | ✅ |
-| every `status` present in the live data is one the crate knows | ✅ |
+| Test                                                                                              | Result |
+| ------------------------------------------------------------------------------------------------- | ------ |
+| the counters agree with a direct query on the real table                                          | ✅     |
+| the claim runs and is a compare-and-swap on the real schema                                       | ✅     |
+| `claim_due` runs against the real schema, skipping the unusable row without blocking the good one | ✅     |
+| `idx_off_peak_bound_active` behaves on the real schema                                            | ✅     |
+| every `status` present in the live data is one the crate knows                                    | ✅     |
 
 That last one is the guard against a silent drift: an unknown status would make the
 non-terminal count wrong, and the test fails rather than reporting a plausible number.
@@ -673,8 +673,8 @@ migration ledger.
 `claimDue` (`automationRepo.ts:724-786`) selects due rows with an `OR`, and the split is the
 whole point:
 
-* a row in backoff (`retry_at IS NOT NULL`) becomes due when **`retry_at`** expires;
-* otherwise it becomes due on **`next_run_at`**.
+- a row in backoff (`retry_at IS NOT NULL`) becomes due when **`retry_at`** expires;
+- otherwise it becomes due on **`next_run_at`**.
 
 `next_run_at` is then deliberately left alone. The original comment is explicit: a retry that
 also consumed `next_run_at` would leave it stuck in the past, so backoff would be bypassed and
@@ -688,7 +688,7 @@ the same one the Tauri host derives at `supervisor/scheduler.rs:67`.
 
 ### Also preserved
 
-the expired-task retirement that runs *before* the claim pass (otherwise an expired-but-enabled
+the expired-task retirement that runs _before_ the claim pass (otherwise an expired-but-enabled
 task is claimed forever), the zombie-claim reclaim, and the compare-and-swap claim with the
 `running = 0` guard **in the SQL** — pinned by
 `the_claim_statement_keeps_its_guard`, for the same reason as the off-peak one.
@@ -702,15 +702,15 @@ returns.
 
 ### Verified against the real schema — 7 tests, none skipped
 
-| Test | Result |
-|---|---|
-| the claim runs and is a compare-and-swap on the real schema | ✅ |
-| the backoff guard holds there | ✅ |
-| `claim_due` runs, retiring the expired automation first | ✅ |
-| the run id survives entering backoff | ✅ |
-| a zombie claim is reclaimed | ✅ |
-| every `lifecycle_status` / `dispatch_status` in the live data is one the crate knows | ✅ |
-| every column the crate reads exists on the real table | ✅ |
+| Test                                                                                 | Result |
+| ------------------------------------------------------------------------------------ | ------ |
+| the claim runs and is a compare-and-swap on the real schema                          | ✅     |
+| the backoff guard holds there                                                        | ✅     |
+| `claim_due` runs, retiring the expired automation first                              | ✅     |
+| the run id survives entering backoff                                                 | ✅     |
+| a zombie claim is reclaimed                                                          | ✅     |
+| every `lifecycle_status` / `dispatch_status` in the live data is one the crate knows | ✅     |
+| every column the crate reads exists on the real table                                | ✅     |
 
 The last two are the drift guards: an unknown status or a renamed column would make a
 comparison silently wrong, and both fail rather than report a plausible result.
@@ -732,14 +732,14 @@ and the read path.
 ### The snippet builder's three rules
 
 1. **Near-duplicate windows are merged.** Each match is windowed (20 before, 72 after), and a
-   candidate that *overlaps* a window already kept is dropped. Showing four copies of one
+   candidate that _overlaps_ a window already kept is dropped. Showing four copies of one
    sentence is worse than showing one — that is the original's stated reason, and without the
    merge a repeated keyword fills the summary with duplicates.
 2. **The overlap test is strictly `> 0`**, on the unadjusted bounds. Two windows that merely
-   *abut* both survive; one that overlaps by a single character merges. A pair of tests pins both
+   _abut_ both survive; one that overlaps by a single character merges. A pair of tests pins both
    sides of that boundary, because an off-by-one here silently drops or duplicates results.
 3. **Nothing matched → a whole paragraph, still capped.** The hit may have been on the
-   *title*, and returning an empty list leaves a blank space under it. So the fallback is the
+   _title_, and returning an empty list leaves a blank space under it. So the fallback is the
    normalised full text. A consequence worth stating: with a search active, **every** row
    survives, because the fallback is always non-empty. That matches the original
    (`rowToTaskListItem` filters on `snippets.length === 0`), and it is why
@@ -754,7 +754,7 @@ because `İ` lowercases to two code points and the lengths diverge —
 
 - I asserted a snippet must not end on a space. **The original cannot promise that**: its order is
   `replace → trim → slice(140)`, so a truncation can land on a space. Trimming again after the
-  slice would be a *behaviour change*. The test now pins the real order — collapse and trim
+  slice would be a _behaviour change_. The test now pins the real order — collapse and trim
   first, cap second, no leading space — and says why.
 - My "abutting windows" spacing was simply wrong: a window runs 20 before and 72 after, so
   consecutive windows touch only when the matches are at least `72 + 20 + match_length` apart.
@@ -763,7 +763,7 @@ because `İ` lowercases to two code points and the lengths diverge —
 
 ### Still open
 
-The **consumer switch** — which, per the correction in §7, is *not* gated on the Electron
+The **consumer switch** — which, per the correction in §7, is _not_ gated on the Electron
 cutover. `zcode-task-index` is `["cdylib", "rlib"]`, the Electron host already loads
 `@zcode/rpc/native` the same way, and `tsup.config.ts` already inlines the wrapper so
 `loadNative()` resolves the binary. The three TypeScript repositories can become thin wrappers
@@ -803,7 +803,7 @@ most: it is the checksum contract proven through the napi boundary, not just ins
 ### Four bugs this found, three of them only reachable through napi
 
 1. **`loadNative` returns a module object, not a constructor.** `#[napi]` on an `impl` block
-   exports the class as a *property*, so the interface must be
+   exports the class as a _property_, so the interface must be
    `{ TaskIndexStore: new (…) => … }`. Declaring the module itself as constructible yields
    "NativeTaskIndexStore is not a constructor".
 2. **`new module()(options)` parses as `(new module())(options)`.** A member-less `new` binds
@@ -819,8 +819,8 @@ at all.
 
 ### The chicken-and-egg, stated plainly
 
-`zcode-packaging` correctly refused to stage `zcode-task-index`: *"no importer of
-`@zcode/rust/task-index`"*. The wrapper existed, but no consumer imported it, and the tool's rule
+`zcode-packaging` correctly refused to stage `zcode-task-index`: _"no importer of
+`@zcode/rust/task-index`"_. The wrapper existed, but no consumer imported it, and the tool's rule
 is to ship only what is used. So the binary was built directly to prove the path, and it becomes
 **live the moment the first repository imports the wrapper** — which is the next step, and the
 one that finally removes `node:sqlite`.
@@ -847,7 +847,7 @@ migration list was being handed to `ensureReady` with a `sql` of `""`.
 return definitions.map((migration) => ({ id, sql: "", checksumInputJson: … }));
 ```
 
-That was defensible while the harness's job looked like *checksum parity* — the checksum is
+That was defensible while the harness's job looked like _checksum parity_ — the checksum is
 `sha256(JSON.stringify(checksumInput))`, so only the input array had to cross the boundary, and the
 end-to-end check that passed (`verify-task-index-native.mts`) opens a **copy of the real database**,
 which already has the tables. Nothing needed the DDL there, so the empty payload went unnoticed.
@@ -855,11 +855,11 @@ which already has the tables. Nothing needed the DDL there, so the empty payload
 The JavaScript runner it replaces never worked that way. `runTasksDatabaseMigrations` dispatches on
 the id and applies a body:
 
-| id | body |
-|---|---|
-| `0001_adopt_task_schema` | `adoptSchema(db)` — three schemas, the `ALTER TABLE` columns, indexes, bound index |
-| `0002_provider_selection` | `importLegacyAutomationSelections(db)` |
-| `0003_official_glm_selection` | `db.exec(OFFICIAL_GLM_SELECTION_MIGRATION_SQL)` |
+| id                            | body                                                                               |
+| ----------------------------- | ---------------------------------------------------------------------------------- |
+| `0001_adopt_task_schema`      | `adoptSchema(db)` — three schemas, the `ALTER TABLE` columns, indexes, bound index |
+| `0002_provider_selection`     | `importLegacyAutomationSelections(db)`                                             |
+| `0003_official_glm_selection` | `db.exec(OFFICIAL_GLM_SELECTION_MIGRATION_SQL)`                                    |
 
 So on a **fresh** file the JS created nine tables and the Rust created none. The parity harness opens
 a fresh file, the off-peak facade's first call reads `off_peak_tasks`, and the store failed — correct
@@ -878,7 +878,7 @@ single source of truth:
   `boundIndex`. `adoptSchema()` itself calls the same builder and then `exec`s the result, so the
   native path and the legacy path cannot drift into two descriptions of one migration.
 - **`0002` is frozen data SQL.** `importLegacyAutomationSelections` is a decoder: it read the legacy
-  `model`/`provider`/`thought_level` columns and wrote `model_selection`. That decode is a *frozen*
+  `model`/`provider`/`thought_level` columns and wrote `model_selection`. That decode is a _frozen_
   historical fact, so the equivalent `UPDATE` is emitted from the same frozen rules
   (`decodeLegacySelection`, the escape order, the `NULL`-on-undecidable rule). The runtime helper is
   restructured into those rules plus a thin loop that applies them, and **nothing on the live path
@@ -901,12 +901,12 @@ assertions. Only the body of `sql` changed.
 
 ### What verifies it
 
-| Check | What it proves |
-|---|---|
+| Check                               | What it proves                                                                                                                 |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | `scripts/verify-offpeak-parity.mts` | 29 replays of the captured JS transcript — now on a **fresh** file, so it also proves `0001` created the schema the JS created |
-| `cargo test -p zcode-task-index` | the crate's own migration tests still apply, roll back and re-run correctly |
-| `real_database.rs` | a copy of the real file still opens with no `checksum_mismatch` |
-| `grep` gate | `importLegacyAutomationSelections` has no live-path caller |
+| `cargo test -p zcode-task-index`    | the crate's own migration tests still apply, roll back and re-run correctly                                                    |
+| `real_database.rs`                  | a copy of the real file still opens with no `checksum_mismatch`                                                                |
+| `grep` gate                         | `importLegacyAutomationSelections` has no live-path caller                                                                     |
 
 The lesson is the same one §17 records: three of those four bugs were only reachable through a real
 `require()`. This one was only reachable on a file that did not already have the schema — which is
@@ -935,7 +935,7 @@ slice of one.
 ### The port unit stays all three
 
 §4.4 is unchanged: all three share `~/.zcode/v2/tasks-index.sqlite` and one migration ledger. This
-step is a *sequencing* decision, not a narrowing of scope. Nothing is finished until all three are
+step is a _sequencing_ decision, not a narrowing of scope. Nothing is finished until all three are
 switched, and until the Electron cutover, nothing is deleted.
 
 ### Ground truth is captured from the JavaScript before it is deleted
@@ -974,7 +974,7 @@ against Rust. Four real differences, none of which any unit test in the crate co
    `rowToTask({ ...row, claim_running: 1, claimed_at: now })` — the row **as it was read**, with
    only the two claim columns overlaid. Re-reading the row after the UPDATE reports the claim's own
    `updated_at` instead, so every dispatched task looked like it had just changed. Fixed by
-   capturing the domain task *before* the write; `claim_due` now returns both shapes
+   capturing the domain task _before_ the write; `claim_due` now returns both shapes
    (`ClaimedOffPeak { row, task }`) so no caller has to re-read.
 2. **`offpeakGet` and `offpeakClaimDue` returned the internal `OffPeakRow`.** That row carries
    `claim_running` and `claimed_at` and lacks `title`, `permission_mode` and `model_selection`, and
@@ -1029,12 +1029,12 @@ off-peak repository was switched smallest-first; this one is switched **by conce
 methods are not independent and a partial switch would leave the file holding two write paths over
 one sqlite file.
 
-| Batch | Methods | Depends on |
-|---|---|---|
-| A — read | `getTaskMeta`, `listTaskMetas`, `listDeletedTaskIds`, `listSessionsByAutomation`, `queryTaskList`, `hasGroupedWorkspaceBootstrapRun`, `archiveStaleTasks` | the `meta_json` schema |
-| B — groups | `createTaskGroup`, `renameTaskGroup`, `updateTaskGroupColor`, `deleteTaskGroup`, `initializeGroupedTaskAtTop` | `grouped.rs`, which exists |
-| C — grouped view | `queryGroupedTaskView`, `queryGroupedTaskViewStructure`, `applyGroupedTaskViewOrder` | B, and the bootstrap logic |
-| D — sync/write | `syncTaskMeta`, `syncTaskMetaAtGroupedTop`, `seedTaskMetaIfMissing`, `clearTaskUnreadIfMatches`, `deleteArchivedTask`, `updateTaskState`, `applyAgentPatch` | `apply_batch`, which exists |
+| Batch            | Methods                                                                                                                                                     | Depends on                  |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
+| A — read         | `getTaskMeta`, `listTaskMetas`, `listDeletedTaskIds`, `listSessionsByAutomation`, `queryTaskList`, `hasGroupedWorkspaceBootstrapRun`, `archiveStaleTasks`   | the `meta_json` schema      |
+| B — groups       | `createTaskGroup`, `renameTaskGroup`, `updateTaskGroupColor`, `deleteTaskGroup`, `initializeGroupedTaskAtTop`                                               | `grouped.rs`, which exists  |
+| C — grouped view | `queryGroupedTaskView`, `queryGroupedTaskViewStructure`, `applyGroupedTaskViewOrder`                                                                        | B, and the bootstrap logic  |
+| D — sync/write   | `syncTaskMeta`, `syncTaskMetaAtGroupedTop`, `seedTaskMetaIfMissing`, `clearTaskUnreadIfMatches`, `deleteArchivedTask`, `updateTaskState`, `applyAgentPatch` | `apply_batch`, which exists |
 
 B, C and D are each internally coherent. A is first because it is the surface everything else reads
 and because it forces the one genuinely new piece: **`zcodeTaskMetaSchema`**.
@@ -1048,7 +1048,7 @@ columns on top. Three behaviours make it more than a parse:
    this build does not know, is not rejected — the extra keys are silently dropped from the result.
    A strict parse would fail the whole task.
 2. **`summaryTitle` has `.default(null)`.** Every pre-2.15.0 `/goal` task omits it. Without the
-   default the *entire task list* would fail the runtime schema, which is exactly the failure the
+   default the _entire task list_ would fail the runtime schema, which is exactly the failure the
    comment there warns about.
 3. **The overlay is not symmetric.** `cronAutomationId` and `offPeakTaskId` are `meta_json ?? column`,
    but `unreadAt` and `titleOverridden` are **column-only** — the column wins even when `meta_json`
@@ -1072,7 +1072,7 @@ rather than left to a merge, because a merge would get it backwards.
 `#[serde(rename_all = "camelCase")]` produces `sessionId`, so **every goal-bearing task failed
 validation** and silently fell back to the row-derived meta. The task still appeared in the list,
 because the fallback is designed to keep it visible; its `target` was simply gone, with no error
-anywhere. Only a test that asserts the field *round-trips* catches this — a "does it parse" test
+anywhere. Only a test that asserts the field _round-trips_ catches this — a "does it parse" test
 passes, because the fallback parses.
 
 #### Two more, both from the same class of mistake
@@ -1096,7 +1096,7 @@ zod's required field. Being lenient would accept a document the original refuses
 `scripts/verify-task-read-parity.mts` replays a **46-entry** captured transcript against the Rust
 engine. **46/46 match.**
 
-#### Why the consumer switch is deliberately *not* in this commit
+#### Why the consumer switch is deliberately _not_ in this commit
 
 Switching the reads now would leave `taskIndexRepo.ts` with a JavaScript **write** path and a Rust
 **read** path over the same file — two connections in two languages, both running the same migration
@@ -1113,7 +1113,7 @@ in the product calls it — and it is the honest state of the work.
 
 #### What the transcript pinned, and the three things it caught
 
-The 46 entries are chosen for the cases where a read *silently* returns the wrong thing rather than
+The 46 entries are chosen for the cases where a read _silently_ returns the wrong thing rather than
 throwing:
 
 - **A deleted task that reads as live.** `get.deleted` is `null` while `deleted.ws` still lists the
@@ -1125,7 +1125,7 @@ throwing:
   `listView.default`, because the match falls through to "unpinned and unarchived" — an unknown
   kind is not an error.
 - **`hasMore` comparing the page against itself.** `limit: 2` against `total: 4` is `hasMore: true`;
-  `limit: 0` is **not** a zero-length page but *no limit*, so all 4 rows come back.
+  `limit: 0` is **not** a zero-length page but _no limit_, so all 4 rows come back.
 - **A search that matches the body, the title, nothing, and a case fold.** `searchBody` finds a
   task whose hit is only in `searchable_text`; `searchWhitespace` is not a search; `searchMixedCase`
   matches because the column side is `LOWER(…)` while the pattern side is `toLocaleLowerCase`.
@@ -1137,11 +1137,11 @@ Three findings, two of them harness bugs and one a real omission:
 1. **`workspacePurpose` was collected and never applied.** The query carried the per-workspace
    purpose map and the engine dropped it, so every item lost a field the sidebar renders. Now
    attached on the way out — it is per **workspace**, not per task, and is not stored on the row.
-2. **The committed fixture was captured *after* the archive sweep**, so the file on disk disagreed
+2. **The committed fixture was captured _after_ the archive sweep**, so the file on disk disagreed
    with the transcript recorded before it. The seed dump moved to immediately after the fixture
    rows are written, which is the state the reads start from.
 3. **The WAL was never checkpointed before the dump.** The database runs in WAL mode, so the
-   `completed` status updates — written *after* the last checkpoint — lived in the `-wal` sidecar
+   `completed` status updates — written _after_ the last checkpoint — lived in the `-wal` sidecar
    and were not in the main file. Copying the main file alone produced a fixture silently missing
    every task the sweep selects: 18 mismatches, all of the form "the Rust replay is missing a row".
 
@@ -1160,7 +1160,7 @@ and `initializeGroupedTaskAtTop`, on the napi surface and behind `taskGroupRepos
 
 ### The two things that are easy to get backwards
 
-**A new group goes to the *front*.** `next_top_sort_order` takes `MIN(sort_order)` and subtracts one
+**A new group goes to the _front_.** `next_top_sort_order` takes `MIN(sort_order)` and subtracts one
 step, not `MAX` and adds one. New content must appear immediately at the top; relying on the
 interleaving of `created_at` and the existing `sort_order` makes positions drift after a refresh,
 because the two coordinate systems have different magnitudes. An empty table gives `MIN = NULL`,
@@ -1180,7 +1180,7 @@ order would depend on completion timing rather than on creation.
 There is a `task_group_transcript.json` **not** committed, and the reason is a real interaction
 rather than an omission.
 
-`queryGroupedTaskView` performs the **workspace bootstrap** on first sight: it creates groups *and*
+`queryGroupedTaskView` performs the **workspace bootstrap** on first sight: it creates groups _and_
 memberships for the active tasks. So any capture that observes the grouped view before exercising
 admission finds every admission already satisfied by a membership the bootstrap itself created, and
 every deletion target replaced. The capture produced `admit.first = false` and a delete that threw
@@ -1191,7 +1191,7 @@ without the bootstrap firing. Committing a transcript that is mostly harness art
 worse than committing none, because it would look like evidence.
 
 What **is** verified here is the eight unit tests in `groups.rs`, which cover the closed colour set,
-the blank-title fallback, the missing-group refusals, the invalid-colour refusal happening *before*
+the blank-title fallback, the missing-group refusals, the invalid-colour refusal happening _before_
 the write, a stored colour outside the set reading as the default, the delete taking its order row
 with it, admission happening once, and the three invisible cases plus the missing task.
 
@@ -1249,14 +1249,14 @@ positioned. It is now `normalize_group_member_orders`, and the discard is gone.
 
 Both are recorded because the same mistake twice is a pattern:
 
-- **A lower step is a higher position.** The bootstrap gives the *newest* task the *lowest* step.
+- **A lower step is a higher position.** The bootstrap gives the _newest_ task the _lowest_ step.
   My expectation had it inverted, and the code was right.
 - **The shared fixture pins `createdAt: 1`.** `test_support::meta_json` hardcodes it, so three cron
   tasks tied on creation and the tiebreak — the node key — decided the order. The test was
   exercising the tiebreak, not the comparator it claimed to test. It now writes the rows directly so
   the dates actually vary.
 
-The second one is the more useful lesson: a shared fixture that is *convenient* can quietly remove
+The second one is the more useful lesson: a shared fixture that is _convenient_ can quietly remove
 the very variation a test depends on, and the test still passes — against the wrong property.
 
 ---
@@ -1351,17 +1351,17 @@ exists to prevent, and it would have been introduced by the very change meant to
 
 ### What is verified, and how much
 
-| Check | Result |
-|---|---|
-| `verify-task-read-parity` | 46/46 against a transcript captured from the deleted TypeScript |
-| `verify-offpeak-parity` | 72/72, same discipline |
-| `verify-task-index-native` | 10/10 against a **copy of the real** database |
-| `verify-mcp-config-native` | 9/9 |
-| Rust tests | 504, zero build warnings |
-| Tauri tests | 142 |
+| Check                      | Result                                                          |
+| -------------------------- | --------------------------------------------------------------- |
+| `verify-task-read-parity`  | 46/46 against a transcript captured from the deleted TypeScript |
+| `verify-offpeak-parity`    | 72/72, same discipline                                          |
+| `verify-task-index-native` | 10/10 against a **copy of the real** database                   |
+| `verify-mcp-config-native` | 9/9                                                             |
+| Rust tests                 | 504, zero build warnings                                        |
+| Tauri tests                | 142                                                             |
 
 The read transcript is the one that matters for this switch: 46 entries recorded from the
-JavaScript *before* it was removed, covering the cases where a read silently returns the wrong
+JavaScript _before_ it was removed, covering the cases where a read silently returns the wrong
 thing — a deleted task reading as live, an absent filter narrowing, a `kind` that is not the closed
 set it looks like, a `hasMore` comparing the page against itself, a search matching the body but
 not the title.
@@ -1398,36 +1398,36 @@ so the backoff guard has **one owner**.
 
 What remains in `automationRepo.ts` is exactly what cannot move:
 
-* the `ensureReady` handshake;
-* the identity rule (`workspaceIdentity?.trim() || workspacePath`), resolved **here** so the
+- the `ensureReady` handshake;
+- the identity rule (`workspaceIdentity?.trim() || workspacePath`), resolved **here** so the
   wrapper and every other repository agree on a scope;
-* the `Date.now()` defaults (the native side stays pure);
-* the id minting (`automation-<uuid>`, `<automationId>:manual:<uuid>`), because the crate does not
+- the `Date.now()` defaults (the native side stays pure);
+- the id minting (`automation-<uuid>`, `<automationId>:manual:<uuid>`), because the crate does not
   own randomness;
-* the `AutomationRepo` **name and method signatures** — 31 of them — so no call site changed.
+- the `AutomationRepo` **name and method signatures** — 31 of them — so no call site changed.
 
 ### The parts that are easy to get wrong, and were reproduced
 
-* **Backoff is not bypassed.** `claim_due` retires expired rows first, reclaims zombie claims,
+- **Backoff is not bypassed.** `claim_due` retires expired rows first, reclaims zombie claims,
   then takes each due row with a `running = 0` compare-and-swap in the SQL. A retry keeps
   `next_run_at`, so the run id is stable and the retry upserts its run row rather than creating a
   second one.
-* **`enabled` is derived from `lifecycle_status`** on update, but only when the caller changes the
+- **`enabled` is derived from `lifecycle_status`** on update, but only when the caller changes the
   lifecycle. Retaining the old value on `completed` / `failed` is the stored bug the original
   comment records.
-* **`mark_run_outcome` never regresses a settled result to `running`.** Both `CASE` branches read
+- **`mark_run_outcome` never regresses a settled result to `running`.** Both `CASE` branches read
   the old `outcome` column, which SQLite provides during an UPDATE.
-* **`mark_manual_run_dispatched` is idempotent at `dispatched`.** A direct host, a scheduler crash
+- **`mark_manual_run_dispatched` is idempotent at `dispatched`.** A direct host, a scheduler crash
   recovery and a late report can all settle the same run; only the first increments `run_count`.
-* **`claimManualRuns` will not re-claim a fresh `runNow`.** `runNow` writes `attempts = 1`,
+- **`claimManualRuns` will not re-claim a fresh `runNow`.** `runNow` writes `attempts = 1`,
   because the run was already handed to the direct dispatcher; the scheduler's `(attempts = 0 OR
-  updated_at <= stale)` predicate is the crash-recovery window, not a normal dispatch. The unit
+updated_at <= stale)` predicate is the crash-recovery window, not a normal dispatch. The unit
   test pins both sides of that boundary.
-* **The tri-state edit.** `undefined` leaves a field alone, `null` clears it, a value sets it. At
+- **The tri-state edit.** `undefined` leaves a field alone, `null` clears it, a value sets it. At
   the boundary this is `JSON.stringify`, which drops `undefined` keys and keeps `null`; in Rust it
   is `Option<Option<T>>` with a `double_option` deserialiser. Collapsing those is a silent
   data-loss bug, so `update_clears_and_keeps_fields_by_tri_state` pins it.
-* **The creation ceiling is a transaction.** `SELECT COUNT(*)` and the `INSERT` are one
+- **The creation ceiling is a transaction.** `SELECT COUNT(*)` and the `INSERT` are one
   `BEGIN IMMEDIATE`, so two windows creating at once cannot both pass the old count. The error
   carries `[AUTOMATION_CREATE_LIMIT_REACHED]`, and the wrapper re-throws it as
   `AutomationCreateLimitError`.
@@ -1443,15 +1443,15 @@ owns the call, which keeps the live-set derivation honest and lets the binary st
 
 ### Verified
 
-| Check | Result |
-|---|---|
-| `cargo test -p zcode-task-index` | 145 lib + 25 integration, 0 failed |
-| direct-load smoke | create / list / claimDue / runNow / selection / binding / listRuns through the staged `.node` |
-| `pnpm typecheck` | 0 errors |
-| `pnpm lint` | 0 errors / 72 warnings — exactly the baseline |
-| `pnpm architecture:check --changed` | 0 new violations |
-| `node packages/shared/scripts/check-native-graph.mjs` | OK |
-| `pnpm --filter @zcode/rust build:native` | stages `zcode-task-index.linux-x64-gnu.node` |
+| Check                                                 | Result                                                                                        |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `cargo test -p zcode-task-index`                      | 145 lib + 25 integration, 0 failed                                                            |
+| direct-load smoke                                     | create / list / claimDue / runNow / selection / binding / listRuns through the staged `.node` |
+| `pnpm typecheck`                                      | 0 errors                                                                                      |
+| `pnpm lint`                                           | 0 errors / 72 warnings — exactly the baseline                                                 |
+| `pnpm architecture:check --changed`                   | 0 new violations                                                                              |
+| `node packages/shared/scripts/check-native-graph.mjs` | OK                                                                                            |
+| `pnpm --filter @zcode/rust build:native`              | stages `zcode-task-index.linux-x64-gnu.node`                                                  |
 
 **What is not verified differentially:** like the task-index write path, this port has unit tests
 (the claim CAS, the backoff guard, the terminal-at-cap rule, the idempotent manual settlement, the
@@ -1484,17 +1484,17 @@ and no file under `packages/services` imports `node:sqlite`.
 
 ### What moved, and why each piece can move
 
-| JavaScript today | Where it went | Why it can leave JS |
-|---|---|---|
-| `schema-v1.ts` (three DDL template literals) | `crate::schema` constants | DDL is data. The only variable is `${terminalStatuses}`, substituted once in Rust. |
-| `migrations.ts` `columns` / `indexes` / `boundIndex` | `crate::schema` constants | Data, and it feeds the checksum. |
-| `migrations.ts` `adoptTaskSchemaSql()` | `crate::schema::adopt_task_schema_sql()` | Pure string assembly; the `schemaAlreadyDeclares` filter is a substring scan, not IO. |
-| `provider-selection-v2.ts` decoder + SQL emitter | `crate::schema::legacy_selection_*` | Pure decode + string assembly. The live rows are read by `import_legacy_automation_selections`, which already has the connection in Rust. |
-| `official-glm-selection-v3.ts` SQL | `crate::schema::OFFICIAL_GLM_SELECTION_SQL` | A frozen constant. |
-| the `checksumInput` serialisation | `crate::schema::MIGRATIONS` | See "The checksum contract, satisfied in Rust" below. |
-| `startup.ts` lock-wait + progress + pragmas | `napi::TaskIndexStore::prepare_storage` | The connection, the `PRAGMA`s and the `BEGIN IMMEDIATE` are all in Rust already. |
-| `prepared.ts` process-level handover set | deleted | It was a `Set<string>` of paths guarded by a re-read of the ledger. `ensure_ready` re-reads the ledger every time; the set only skipped a check that is now a single native call. |
-| `migrations.ts` `runTasksDatabaseMigrations` / `areTasksDatabaseMigrationsApplied` / `inspectTasksMigrationKind` | `crate::migrate` + `crate::schema` | The runner already exists in Rust; `inspectTasksMigrationKind` becomes `crate::schema::inspect_kind`. |
+| JavaScript today                                                                                                 | Where it went                               | Why it can leave JS                                                                                                                                                               |
+| ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `schema-v1.ts` (three DDL template literals)                                                                     | `crate::schema` constants                   | DDL is data. The only variable is `${terminalStatuses}`, substituted once in Rust.                                                                                                |
+| `migrations.ts` `columns` / `indexes` / `boundIndex`                                                             | `crate::schema` constants                   | Data, and it feeds the checksum.                                                                                                                                                  |
+| `migrations.ts` `adoptTaskSchemaSql()`                                                                           | `crate::schema::adopt_task_schema_sql()`    | Pure string assembly; the `schemaAlreadyDeclares` filter is a substring scan, not IO.                                                                                             |
+| `provider-selection-v2.ts` decoder + SQL emitter                                                                 | `crate::schema::legacy_selection_*`         | Pure decode + string assembly. The live rows are read by `import_legacy_automation_selections`, which already has the connection in Rust.                                         |
+| `official-glm-selection-v3.ts` SQL                                                                               | `crate::schema::OFFICIAL_GLM_SELECTION_SQL` | A frozen constant.                                                                                                                                                                |
+| the `checksumInput` serialisation                                                                                | `crate::schema::MIGRATIONS`                 | See "The checksum contract, satisfied in Rust" below.                                                                                                                             |
+| `startup.ts` lock-wait + progress + pragmas                                                                      | `napi::TaskIndexStore::prepare_storage`     | The connection, the `PRAGMA`s and the `BEGIN IMMEDIATE` are all in Rust already.                                                                                                  |
+| `prepared.ts` process-level handover set                                                                         | deleted                                     | It was a `Set<string>` of paths guarded by a re-read of the ledger. `ensure_ready` re-reads the ledger every time; the set only skipped a check that is now a single native call. |
+| `migrations.ts` `runTasksDatabaseMigrations` / `areTasksDatabaseMigrationsApplied` / `inspectTasksMigrationKind` | `crate::migrate` + `crate::schema`          | The runner already exists in Rust; `inspectTasksMigrationKind` becomes `crate::schema::inspect_kind`.                                                                             |
 
 ### The checksum contract, satisfied in Rust
 
@@ -1506,15 +1506,15 @@ divergence whose failure mode is a `checksum_mismatch` on every existing install
 The removal is safe because the inputs are **frozen constants**, not computed values, and the
 serialisation is now pinned by a real-ledger test rather than trusted:
 
-* `0001`'s input is `[TASK_INDEX_SCHEMA, AUTOMATION_SCHEMA, OFF_PEAK_SCHEMA, columns, indexes,
-  boundIndex, "scheduled-count-backfill-v1"]` — three strings, a `string[][]`, two strings, one
+- `0001`'s input is `[TASK_INDEX_SCHEMA, AUTOMATION_SCHEMA, OFF_PEAK_SCHEMA, columns, indexes,
+boundIndex, "scheduled-count-backfill-v1"]` — three strings, a `string[][]`, two strings, one
   string. Rust builds the `serde_json::Value` and serialises it. `serde_json` emits non-ASCII raw
   and escapes `"`/`\`/control characters exactly as `JSON.stringify` does; the test asserts the
   resulting hex against the **real ledger row** (`3e8337b0…`), so a divergence is a red test, never
   a user's failed launch.
-* `0002` and `0003` are one-element string arrays. Their checksums are asserted against the real
+- `0002` and `0003` are one-element string arrays. Their checksums are asserted against the real
   ledger values (`7244ef7c…`, `8987adb5…`).
-* The `0001` payload's `columns` is the nested `string[][]`, which is the case that distinguishes
+- The `0001` payload's `columns` is the nested `string[][]`, which is the case that distinguishes
   this store from the events port's `sha256(trimmed SQL)` rule; the same test covers it.
 
 The three checksums are additionally asserted as **literals** in a unit test that does not need a
@@ -1540,26 +1540,26 @@ prepareStorage(
 ): Promise<MigrationFacts>
 ```
 
-* `StorageProgress` is `{ phase, migration: { kind, executedCount, committedCount,
-  lastAppliedMigrationId } }`, exactly the `DatabaseMigrationFacts` shape the desktop worker
+- `StorageProgress` is `{ phase, migration: { kind, executedCount, committedCount,
+lastAppliedMigrationId } }`, exactly the `DatabaseMigrationFacts` shape the desktop worker
   forwards to the renderer. The callback is a `ThreadsafeFunction<String>` (JSON) with
   `CalleeHandled = false`, so the payload is the **first** argument rather than the Node
   error-first `null`. `compute` runs on a libuv threadpool thread and emits without touching the
   event loop.
-* `ready` is the one phase the **wrapper** emits, synchronously after the native call resolves and
+- `ready` is the one phase the **wrapper** emits, synchronously after the native call resolves and
   before its promise returns. A worker-thread emit would be queued behind the promise's own
   microtask, so the desktop worker could post `done` before the last progress frame. The phase is
   a UI contract, not a storage fact, so it belongs to the caller.
-* `migrate` gains the busy-retry: `wait_for_lock` takes the write lock with `BEGIN IMMEDIATE` and
+- `migrate` gains the busy-retry: `wait_for_lock` takes the write lock with `BEGIN IMMEDIATE` and
   retries on SQLITE_BUSY, reporting `waiting_for_lock` through the same hook. The startup store is
   opened with `busy_timeout = 25` (as the deleted `startup.ts` did), so a held lock fails fast and
   the phase is reported on the first attempt; the asynchronous wait is the retry loop, not the busy
   timeout. An expired wait throws with `kind: "lock_timeout"` and the extended `errcode` (5).
-* The progress frames and the returned facts carry the **real** `kind` / `executedCount` /
+- The progress frames and the returned facts carry the **real** `kind` / `executedCount` /
   `committedCount` / `lastAppliedMigrationId`: the baseline is the newest ledger row read before
   the run (the same value the deleted runner used), and the kind flips `none → upgrade` only when a
   migration was actually applied.
-* Native errors use the same JSON envelope as `zcode-events`
+- Native errors use the same JSON envelope as `zcode-events`
   (`{"z":1,"m":…,"k":…,"c":…,"i":…,"sm":…}`), decoded by
   `packages/rust/src/nativeError.ts::fromNativeError`. That is what makes the desktop classification
   work: `classifyDatabaseStartupError` reads `error.kind` / `error.errcode`, **not** the message — a
@@ -1572,12 +1572,12 @@ three `ensureReady` call sites and from the two parity harnesses.
 
 ### What stays in TypeScript, and why it is not a fallback
 
-* `packages/desktop/src/host/tasksStorageWorker.ts` — the worker *shell*: it owns `workerData`,
+- `packages/desktop/src/host/tasksStorageWorker.ts` — the worker _shell_: it owns `workerData`,
   `parentPort` and the progress `postMessage`. It forwards the callback; it does not own a
   connection. This is a platform boundary (Electron worker), not a SQL path.
-* `packages/services/src/storage-startup.ts` — the re-export barrel named by the desktop host. It
+- `packages/services/src/storage-startup.ts` — the re-export barrel named by the desktop host. It
   now re-exports the native `prepareTasksIndexStorage` facade and nothing else.
-* `tasksStorageWorker`'s failure classification (`classifyDatabaseStartupError`) reads the error's
+- `tasksStorageWorker`'s failure classification (`classifyDatabaseStartupError`) reads the error's
   `kind`/`errcode`; `@zcode/rust/task-index` rebuilds those properties from the native envelope
   (see above), so the classification is unchanged without parsing any message text.
 
@@ -1585,24 +1585,64 @@ three `ensureReady` call sites and from the two parity harnesses.
 
 Removed in this change, not disabled:
 
-* `packages/services/src/session/tasksDatabase/schema-v1.ts`
-* `packages/services/src/session/tasksDatabase/migrations.ts`
-* `packages/services/src/session/tasksDatabase/provider-selection-v2.ts`
-* `packages/services/src/session/tasksDatabase/official-glm-selection-v3.ts`
-* `packages/services/src/session/tasksDatabase/startup.ts`
-* `packages/services/src/session/tasksDatabase/prepared.ts`
+- `packages/services/src/session/tasksDatabase/schema-v1.ts`
+- `packages/services/src/session/tasksDatabase/migrations.ts`
+- `packages/services/src/session/tasksDatabase/provider-selection-v2.ts`
+- `packages/services/src/session/tasksDatabase/official-glm-selection-v3.ts`
+- `packages/services/src/session/tasksDatabase/startup.ts`
+- `packages/services/src/session/tasksDatabase/prepared.ts`
 
 `packages/services/src/session/tasksDatabase/` is an empty directory afterwards and is removed.
 
 ### Acceptance
 
-* `rg "node:sqlite|DatabaseSync" packages/services` → zero hits.
-* `cargo test -p zcode-task-index` — including the new real-ledger checksum assertions and the
+- `rg "node:sqlite|DatabaseSync" packages/services` → zero hits.
+- `cargo test -p zcode-task-index` — including the new real-ledger checksum assertions and the
   `0002` decode parity vectors transcribed from the deleted TypeScript.
-* `packages/rust/crates/zcode-task-index/tests/real_database.rs` — every existing assertion plus
+- `packages/rust/crates/zcode-task-index/tests/real_database.rs` — every existing assertion plus
   the three checksum literals.
-* `verify-task-read-parity.mts` / `verify-offpeak-parity.mts` — 46/46 and 72/72, now calling the
+- `verify-task-read-parity.mts` / `verify-offpeak-parity.mts` — 46/46 and 72/72, now calling the
   native `ensureReady()` with no argument.
-* `pnpm typecheck`, `pnpm lint`, `pnpm architecture:check --changed`, `check-native-graph.mjs`.
-* A fresh-database smoke: the `.node` opens an empty file, applies `0001`–`0003`, and the ledger
+- `pnpm typecheck`, `pnpm lint`, `pnpm architecture:check --changed`, `check-native-graph.mjs`.
+- A fresh-database smoke: the `.node` opens an empty file, applies `0001`–`0003`, and the ledger
   checksums equal the three literals.
+
+## 29. Wire fix: `updateTaskState` sends the patch flat
+
+`StateRequest` (`napi.rs`) declares `#[serde(flatten)] patch: StatePatch` next to
+`deny_unknown_fields`, so the request body is **flat**: `workspaceKey`, `taskId`, `now`, and the
+patch fields at the top level — the same shape `applyAgentPatch` already takes. The TypeScript glue
+(`taskWriteRepository.ts`, landed with §25/§26) serialized the patch **nested**
+(`{"workspaceKey":…,"taskId":…,"patch":{"archived":true},"now":…}`). Serde hands the leftover
+`patch` key to the flattened `StatePatch`, whose `deny_unknown_fields` rejects it:
+
+```
+GenericFailure, unknown field `patch` at line 1 column 146
+```
+
+One mismatch failed every state write on the wire: `zcode-task.archiveTask` (and pin/delete/unread)
+surfaced as `FAIL` in the server log, and the on-demand index seeding logged the very same error
+while trying to repair a missing row — because both paths end in `updateTaskState`.
+
+### Fix
+
+- `TaskWriteRepository.updateTaskState` spreads the patch into the body it stringifies. The public
+  TypeScript signature keeps the nested `patch` object, so no caller changes: `taskIndexRepo`,
+  `repairSubagentTaskIndex`, `zcodeTaskIndexSyncer` and `zcodeTaskServiceAdapter` all keep passing
+  `{ patch: … }` and only the serializer moved.
+- `undefined` leaves still disappear during `JSON.stringify`, which is what "leave alone" means for
+  `StatePatch`, and `unreadAt: null` still travels as `null` ("clear it").
+
+### Contract pinned on both sides
+
+- Rust (`napi.rs` decode tests): the flat body decodes; the nested `{ "patch": … }` body is rejected
+  with exactly `unknown field \`patch\`` — the failure this fix removes.
+- TypeScript (`packages/rust/test/taskWriteRepository.test.ts`): the glue emits the flat body, keeps
+  `null`, drops `undefined`, and `applyAgentPatch` stays flat.
+
+### Acceptance
+
+- `cargo test -p zcode-task-index state_request` passes.
+- `node --import tsx --test packages/rust/test/taskWriteRepository.test.ts` passes.
+- `pnpm typecheck`, `pnpm lint`, `pnpm architecture:check --changed` stay green.
+- The server log no longer shows `zcode-task.archiveTask FAIL … unknown field 'patch'`.

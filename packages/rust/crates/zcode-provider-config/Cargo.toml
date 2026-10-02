@@ -1,0 +1,21 @@
+[package]
+name = "zcode-provider-config"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Provider Config personal file plane: strict schema, legacy normalisation, atomic lock-protected persistence. Port of packages/provider-node so the desktop host needs no Node. docs/specs/rust-native-server.md rung 3."
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+zcode-model-option-map = { path = "../zcode-model-option-map" }
+zcode-private-file = { path = "../zcode-private-file" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+regex = "1"
+url = "2"
+thiserror = { workspace = true }
+

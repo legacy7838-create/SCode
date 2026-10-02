@@ -25,6 +25,7 @@ import {
   ITerminalService,
   IBotsService,
   IProviderProvisioningTargetService,
+  ZCODE_AGENT_RUNTIME_UNAVAILABLE_CODE,
 } from "@zcode/services";
 import {
   botProviders,
@@ -33,6 +34,7 @@ import {
   remoteTargetSchema,
   SERVER_REMOTE_PROTOCOL_VERSION,
   ZCODE_RPC_HOST_CAPABILITY_HEADER,
+  ZCODE_AGENT_PROVIDER_NOT_READY_CODE,
   ZCODE_VERSION,
   type BotProvider,
   type ServerRemoteInfo,
@@ -83,6 +85,24 @@ function wrapWebSocket(ws: WebSocket): ISocket {
 const log = (...args: unknown[]) =>
   console.log(formatLogPrefix("zcode-server:http", process.pid), ...args);
 
+/**
+ * Control-flow rejections, not faults: a dormant workspace with no runtime (`existing-only`
+ * subscriptions) or an unconfigured provider. The renderer and the task-index syncer handle these
+ * as dormant/suspended states, so the generic RPC logger must not report them as `FAIL`.
+ * See docs/specs/rpc-expected-error-logging.md.
+ */
+const expectedRpcErrorCodes = new Set<string>([
+  ZCODE_AGENT_RUNTIME_UNAVAILABLE_CODE,
+  ZCODE_AGENT_PROVIDER_NOT_READY_CODE,
+]);
+function isExpectedRpcError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) {
+    return false;
+  }
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" && expectedRpcErrorCodes.has(code);
+}
+
 function setupChannelServer(
   ws: WebSocket,
   services: ServiceCollection,
@@ -92,7 +112,7 @@ function setupChannelServer(
   const protocol = new SocketProtocol(socket);
   const rawServer = new ChannelServer(protocol, "server");
   // Wrap with logging middleware to uniformly log all RPC calls
-  const server = new LoggingChannelServer(rawServer, log);
+  const server = new LoggingChannelServer(rawServer, log, { isExpectedError: isExpectedRpcError });
   const agentService = services.getOptional(IZCodeAgentService);
   const connectionScope = agentService
     ? createZCodeAgentConnectionScope(agentService, {

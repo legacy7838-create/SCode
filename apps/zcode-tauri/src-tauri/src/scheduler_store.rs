@@ -996,8 +996,9 @@ mod tests {
     #[test]
     fn a_missed_recurring_fire_is_rescheduled_rather_than_re_claimed_forever() {
         let mut store = store();
-        // A daily rule at 09:00, anchored well before the missed fire.
-        let anchor_at = NOW - 86_400_000;
+        // A daily rule at 09:00 with a fixed origin — the JSON anchor is 1970-01-01
+        // (`anchorAt`), i.e. long before the missed fire, so the recurrence has one
+        // reference point to compute the next fire from.
         let missed_at = NOW - 60_000; // the fire slipped one minute into the past
         store
             .conn

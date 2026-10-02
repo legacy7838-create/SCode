@@ -129,6 +129,97 @@ impl RpcHost {
                 "credential channel not registered; the cipher key could not be derived"
             ),
         }
+        registry.register_shared(
+            "client-scenes",
+            Arc::new(crate::services::ClientScenesService::new()) as Arc<dyn ChannelHandler>,
+        );
+        registry.register_shared(
+            "client-config",
+            Arc::new(crate::services::ClientConfigService::new()) as Arc<dyn ChannelHandler>,
+        );
+        registry.register_shared(
+            "onboarding-record",
+            Arc::new(crate::services::OnboardingRecordService::new())
+                as Arc<dyn ChannelHandler>,
+        );
+        // `provider-settings` / `model-selection` back the provider settings and
+        // model picker. Construction reads no files (paths only); the first call
+        // lazily reads the materialised built-in release and personal config. A
+        // build failure leaves the channel unregistered — it fails loudly rather
+        // than serving a stub — matching the credential channel's discipline.
+        match crate::services::ProviderSettingsService::new() {
+            Ok(service) => registry.register_shared(
+                "provider-settings",
+                Arc::new(service) as Arc<dyn ChannelHandler>,
+            ),
+            Err(error) => tracing::error!(
+                %error,
+                "provider-settings channel not registered; the provider runtime could not build"
+            ),
+        }
+        match crate::services::ModelSelectionService::new() {
+            Ok(service) => registry.register_shared(
+                "model-selection",
+                Arc::new(service) as Arc<dyn ChannelHandler>,
+            ),
+            Err(error) => tracing::error!(
+                %error,
+                "model-selection channel not registered; the provider runtime could not build"
+            ),
+        }
+        registry.register_shared(
+            "file",
+            Arc::new(crate::services::FileService::new()) as Arc<dyn ChannelHandler>,
+        );
+        registry.register_shared(
+            "file-watcher",
+            Arc::new(crate::services::FileWatcherService::new()) as Arc<dyn ChannelHandler>,
+        );
+        registry.register_shared(
+            "git",
+            Arc::new(crate::services::GitService::new()) as Arc<dyn ChannelHandler>,
+        );
+        registry.register_shared(
+            "git-checkpoint",
+            Arc::new(crate::services::GitCheckpointService::new()) as Arc<dyn ChannelHandler>,
+        );
+        registry.register_shared(
+            "media-preview",
+            Arc::new(crate::services::MediaPreviewService::new()) as Arc<dyn ChannelHandler>,
+        );
+        // `zcode-agent` registers only when the zcode-cli entrypoint resolves;
+        // otherwise it stays unregistered (fails loudly at the call site) rather
+        // than registered as a broken stub with no agent command.
+        if let Some(command) = crate::services::zcode_agent_channel::resolve_agent_command() {
+            registry.register_shared(
+                "zcode-agent",
+                Arc::new(crate::services::ZCodeAgentService::new(command)) as Arc<dyn ChannelHandler>,
+            );
+        }
+        registry.register_shared(
+            "broadcast",
+            Arc::new(crate::services::BroadcastService::new()) as Arc<dyn ChannelHandler>,
+        );
+        match crate::services::OffPeakTaskService::new() {
+            Ok(service) => registry.register_shared(
+                "off-peak-task",
+                Arc::new(service) as Arc<dyn ChannelHandler>,
+            ),
+            Err(error) => tracing::error!(
+                %error,
+                "off-peak-task channel not registered; the task index could not open"
+            ),
+        }
+        match crate::services::ZCodeTaskService::new() {
+            Ok(service) => registry.register_shared(
+                "zcode-task",
+                Arc::new(service) as Arc<dyn ChannelHandler>,
+            ),
+            Err(error) => tracing::error!(
+                %error,
+                "zcode-task channel not registered; the task index could not open"
+            ),
+        }
         Self {
             endpoint: Mutex::new(None),
             registry,
@@ -330,7 +421,24 @@ mod tests {
     ///
     /// Listing them explicitly means adding a channel surfaces here as a failing
     /// test rather than as a silent count change nobody notices.
-    const PORTED_CHANNELS: [&str; 3] = ["system", "setting", "credential"];
+    const PORTED_CHANNELS: [&str; 16] = [
+        "system",
+        "setting",
+        "credential",
+        "client-scenes",
+        "client-config",
+        "onboarding-record",
+        "provider-settings",
+        "model-selection",
+        "file",
+        "file-watcher",
+        "git",
+        "git-checkpoint",
+        "media-preview",
+        "zcode-task",
+        "broadcast",
+        "off-peak-task",
+    ];
 
     #[test]
     fn the_credential_channel_is_registered_whenever_the_key_is_derivable() {
@@ -358,7 +466,15 @@ mod tests {
             "must be loopback only, got {}",
             endpoint.ws_url
         );
-        assert_eq!(endpoint.channel_count, PORTED_CHANNELS.len());
+        // Every ported channel must be registered. The count may exceed the
+        // list because a conditional channel (`zcode-agent`, which registers
+        // only when the zcode-cli entrypoint resolves) can add one; the
+        // per-channel `contains` check below is the real pin.
+        assert!(
+            endpoint.channel_count >= PORTED_CHANNELS.len(),
+            "at least the ported channels must be registered, got {}",
+            endpoint.channel_count
+        );
         for channel in PORTED_CHANNELS {
             assert!(
                 host.registry().contains(channel),
@@ -379,8 +495,8 @@ mod tests {
             "the JS fallback must be opt-in, never the default"
         );
         assert!(
-            !host.registry().contains("file"),
-            "no unported channel may be registered"
+            !host.registry().contains("conversation-share"),
+            "no unported channel may be registered (conversation-share is the current example)"
         );
     }
 

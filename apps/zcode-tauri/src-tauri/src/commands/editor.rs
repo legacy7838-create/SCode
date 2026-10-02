@@ -785,17 +785,14 @@ fn percent_encode(value: &str) -> String {
 ///
 /// Mirrors `resolveVSCodeSshRemoteAuthority` (`main/openInEditor.ts:93-105`).
 fn resolve_vscode_ssh_remote_authority(target: &RemoteTarget) -> CommandResult<String> {
+    // `RemoteTarget` has a single `Ssh` variant, so this destructure is
+    // irrefutable — a `let … else` here would have an unreachable `else`.
     let RemoteTarget::Ssh {
         host,
         port,
         username,
         ssh_config_alias,
-    } = target
-    else {
-        return Err(CommandError::InvalidPayload(
-            "expected an ssh remote target".to_string(),
-        ));
-    };
+    } = target;
     if let Some(alias) = ssh_config_alias.as_deref().map(str::trim) {
         if !alias.is_empty() {
             return Ok(alias.to_string());
@@ -1504,8 +1501,6 @@ mod tests {
             "vscode-remote://ssh-remote+dev%40corp%3Aexample.com%3A2222/home/u/ws"
         );
     }
-
-    #[test]
 
     // -- Wire shape ---------------------------------------------------------
 
