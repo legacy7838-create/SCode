@@ -120,6 +120,11 @@ fn current_uid() -> u32 {
 /// first short or non-numeric line anywhere in the file, and the caller cannot
 /// tell that apart from "this user genuinely has no passwd entry" — the two
 /// look identical from out here, and only one of them is correct.
+// 中文：`/etc/passwd` 扫描是 unix 专属逻辑（依赖 `#[cfg(unix)]` 的
+// `current_uid`）。此函数之前缺少 cfg 门控，Windows 上与下方
+// `#[cfg(not(unix))]` 的桩函数重复定义（E0428），且调用了不存在的
+// `current_uid`（E0425）—— issue #2 errors 3/4，现已门控。
+#[cfg(unix)]
 fn username_from_passwd_file() -> Option<String> {
     let uid = current_uid();
     let passwd = std::fs::read_to_string("/etc/passwd").ok()?;

@@ -774,6 +774,23 @@ impl BoundedOrder {
     }
 }
 
+/// The platform notification handle, cfg'd to notify-rust's export surface.
+///
+/// notify-rust 4.x only re-exports `NotificationHandle` at the crate root on
+/// macOS and unix; the Windows module is private, so the concrete type
+/// `show()` returns there cannot be named outside the crate. On Windows this
+/// alias is `()` — the entry is bookkeeping-only and the real handle travels
+/// straight to the waiter thread (see `show_task_notification`).
+///
+/// 中文：notify-rust 4.x 只在 macOS/unix 的 crate 根导出 `NotificationHandle`；
+/// Windows 的 windows 模块是私有的，`show()` 返回的句柄类型在 crate 外无法
+/// 命名（issue #2 error 1）。因此 Windows 上别名为 `()`：路由表条目只做记账，
+/// 真实句柄直接交给 waiter 线程（类型推断仍可调用其方法）。
+#[cfg(not(target_os = "windows"))]
+type PlatformNotificationHandle = notify_rust::NotificationHandle;
+#[cfg(target_os = "windows")]
+type PlatformNotificationHandle = ();
+
 /// A live platform notification, kept so its default action still arrives.
 #[derive(Debug)]
 struct ActiveNotification {
@@ -781,10 +798,12 @@ struct ActiveNotification {
     ///
     /// `Option` rather than a plain handle so the router's bookkeeping — dedupe
     /// window, live cap, eviction order, re-tagging — is testable without a live
-    /// notification server, which `notify_rust::NotificationHandle` requires.
-    /// Every production entry is `Some`: the only constructor is
+    /// notification server, which `PlatformNotificationHandle` requires.
+    /// Non-Windows production entries are `Some`: the only constructor is
     /// [`show_task_notification`], which builds it straight from `show()`.
-    handle: Option<notify_rust::NotificationHandle>,
+    /// Windows production entries are `None` — the unnameable real handle is
+    /// captured directly by the waiter thread instead.
+    handle: Option<PlatformNotificationHandle>,
     window_label: String,
     task_id: String,
 }
@@ -1038,21 +1057,39 @@ pub fn show_task_notification(
     notification
         .summary(title)
         .body(body)
-        .appname("ZCode")
-        // `silent: true` in the Electron original
-        // (`desktopNotifications.ts:145`) — the agent already produced a sound.
-        .hint(notify_rust::Hint::SuppressSound(true))
-        // Electron's `tag`, expressed through the platform's own replacement
-        // mechanism. On macOS the notification server ignores the id, so
-        // same-tag *replacement* is NO_NATIVE_EQUIV there; the route and the
-        // dedupe still behave.
-        .id(platform_tag(&tag));
-    let handle = notification
+        .appname("ZCode");
+    // `silent: true` in the Electron original
+    // (`desktopNotifications.ts:145`) — the agent already produced a sound.
+    //
+    // 中文：`.hint()` 是 XDG/D-Bus 专用 API —— notify-rust 将其门控在
+    // `all(unix, not(target_os = "macos"))`。Windows/macOS 的通知后端没有该
+    // 方法，必须用相同的 cfg 门控，否则这两个平台的构建直接失败
+    // （issue #2 error 2）。
+    #[cfg(all(unix, not(target_os = "macos")))]
+    notification.hint(notify_rust::Hint::SuppressSound(true));
+    // Electron's `tag`, expressed through the platform's own replacement
+    // mechanism. On macOS the notification server ignores the id, so
+    // same-tag *replacement* is NO_NATIVE_EQUIV there; the route and the
+    // dedupe still behave. `.id(u32)` is cross-platform in notify-rust
+    // (XDG + Windows + legacy macOS), so it needs no cfg gate.
+    notification.id(platform_tag(&tag));
+    let shown = notification
         .show()
         .map_err(|e| CommandError::Platform(format!("show task notification: {e}")))?;
 
+    // Non-Windows keeps the real handle in the router entry (the waiter below
+    // takes it from the live map). On Windows the entry is bookkeeping-only:
+    // the real handle cannot be named in a field, so it travels straight to
+    // the waiter thread via closure capture.
+    // 中文：非 Windows 把真实句柄存入路由表条目；Windows 的句柄类型不可命名，
+    // 条目仅做记账，真实句柄通过闭包捕获直接交给 waiter 线程。
+    #[cfg(not(target_os = "windows"))]
+    let handle = Some(shown);
+    #[cfg(target_os = "windows")]
+    let handle = None;
+
     let entry = ActiveNotification {
-        handle: Some(handle),
+        handle,
         window_label: window.label().to_string(),
         task_id: payload.task_id.clone(),
     };
@@ -1063,40 +1100,78 @@ pub fn show_task_notification(
     // One waiter per live notification, mirroring Electron's one
     // `once("click")` listener per `Notification`. It exits as soon as the
     // platform reports an action or a close.
-    let waiter_tag = tag.clone();
-    let waiter_app = app.clone();
-    std::thread::Builder::new()
-        .name("zcode-task-notification-wait".to_string())
-        .spawn(move || {
-            // Take ownership of the handle here rather than in the command: the
-            // handle keeps the platform connection alive, and dropping it before
-            // the action arrives is exactly how the action gets lost.
-            let Some(ActiveNotification { handle, window_label, task_id }) = waiter_app
-                .state::<SessionState>()
-                .notifications
-                .lock()
-                .live
-                .remove(&waiter_tag)
-            else {
-                // Evicted by the cap, or already routed: nothing to wait on.
-                return;
-            };
-            // An entry with no platform handle has no action to wait for. Every
-            // production entry has one, so this is the test-shaped path.
-            let Some(handle) = handle else {
-                return;
-            };
-            let mut clicked = false;
-            handle.wait_for_action(|action| {
-                // `"default"` is a click on the notification body; `"__closed"`
-                // is the library's internal close marker, not an action.
-                if action == "default" && !clicked {
-                    clicked = true;
-                    let _ = clicks.send(TaskClick { window_label: window_label.clone(), task_id });
-                }
-            });
-        })
-        .map_err(|e| CommandError::Platform(format!("spawn notification waiter: {e}")))?;
+    //
+    // 中文：点击等待需要平台句柄，两个平台的取法不同但语义一致（"default" =
+    // 点击本体 → 路由到所属窗口；"__closed" = 关闭）：非 Windows 从 live map
+    // 取出（容量驱逐即放弃等待，语义不变）；Windows 在线程闭包中直接捕获。
+    #[cfg(not(target_os = "windows"))]
+    {
+        let waiter_tag = tag.clone();
+        let waiter_app = app.clone();
+        std::thread::Builder::new()
+            .name("zcode-task-notification-wait".to_string())
+            .spawn(move || {
+                // Take ownership of the handle here rather than in the command: the
+                // handle keeps the platform connection alive, and dropping it before
+                // the action arrives is exactly how the action gets lost.
+                let Some(ActiveNotification { handle, window_label, task_id }) = waiter_app
+                    .state::<SessionState>()
+                    .notifications
+                    .lock()
+                    .live
+                    .remove(&waiter_tag)
+                else {
+                    // Evicted by the cap, or already routed: nothing to wait on.
+                    return;
+                };
+                // An entry with no platform handle has no action to wait for. Every
+                // production entry has one, so this is the test-shaped path.
+                let Some(handle) = handle else {
+                    return;
+                };
+                let mut clicked = false;
+                handle.wait_for_action(|action| {
+                    // `"default"` is a click on the notification body; `"__closed"`
+                    // is the library's internal close marker, not an action.
+                    if action == "default" && !clicked {
+                        clicked = true;
+                        let _ = clicks.send(TaskClick { window_label: window_label.clone(), task_id });
+                    }
+                });
+            })
+            .map_err(|e| CommandError::Platform(format!("spawn notification waiter: {e}")))?;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let waiter_tag = tag.clone();
+        let waiter_app = app.clone();
+        let waiter_click = TaskClick {
+            window_label: window.label().to_string(),
+            task_id: payload.task_id.clone(),
+        };
+        std::thread::Builder::new()
+            .name("zcode-task-notification-wait".to_string())
+            .spawn(move || {
+                // Bookkeeping parity with the non-Windows path: the entry leaves
+                // the live map when its waiter starts.
+                // 中文：与非 Windows 路径保持一致，waiter 启动时将条目移出 live map。
+                let _ = waiter_app
+                    .state::<SessionState>()
+                    .notifications
+                    .lock()
+                    .live
+                    .remove(&waiter_tag);
+                // 中文：句柄的具体类型在 crate 外不可命名，但方法调用可以通过
+                // 类型推断完成；`wait_for_action` 在 Windows 后端的语义与 XDG
+                // 相同（Action → 动作 id，关闭 → "__closed"）。
+                shown.wait_for_action(|action| {
+                    if action == "default" {
+                        let _ = clicks.send(waiter_click.clone());
+                    }
+                });
+            })
+            .map_err(|e| CommandError::Platform(format!("spawn notification waiter: {e}")))?;
+    }
 
     tracing::debug!(task_id, window = window.label(), tag, "task notification shown");
     Ok(TaskNotificationResult::delivered(tag))

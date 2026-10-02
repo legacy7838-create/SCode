@@ -2,14 +2,20 @@
 /**
  * `pnpm dev:tauri` launcher.
  *
- * This is a thin supervisor, not a rendering fallback. It does exactly two
+ * This is a thin supervisor, not a rendering fallback. It does exactly three
  * things that `tauri dev` alone cannot:
  *
- *   1. boot `@zcode/server` on :3030 unless something is already listening, so
+ *   1. build the Rust napi binaries (`packages/rust/*.node`) when this checkout
+ *      has none, so a fresh `git clone && pnpm i && pnpm dev:tauri` boots —
+ *      `pnpm i` does not compile them (root `prepare` is only `husky`) and
+ *      `@zcode/server` loads them at startup; 中文：fresh clone 后 .node
+ *      二进制不存在，启动器自动执行 build:native，三步流程开箱即用
+ *      （docs/specs/tauri-windows-boot.md，issue #2 验收路径）;
+ *   2. boot `@zcode/server` on :3030 unless something is already listening, so
  *      `dev:tauri` stays a single command (the renderer mounts the real
  *      `@zcode/ui` `<Root>`, which needs the business-service channel over `/ws`
  *      exactly like the Web client), and
- *   2. run the Tauri/Vite tree in its own process group so one Ctrl-C tears the
+ *   3. run the Tauri/Vite tree in its own process group so one Ctrl-C tears the
  *      whole thing down instead of orphaning Vite on :5199.
  *
  * The WebKitGTK/NVIDIA `Error 71` startup abort is handled **inside the app**,
@@ -22,14 +28,18 @@
  * Escape hatches (native, read by `rendering::apply_webkit_graphics_env`):
  *   ZCODE_WEBKIT_SOFTWARE=1  force CPU rendering from the start
  *   ZCODE_WEBKIT_HARDWARE=1  skip the NVIDIA workaround, test the stock path
+ *   ZCODE_TAURI_SKIP_NATIVE_BUILD=1  skip the automatic build:native step
  */
 import { spawn } from "node:child_process";
 import net from "node:net";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+
+/** Where `build:native` stages the compiled napi binaries (`zcode-*.node`). */
+const NATIVE_DIR = join(REPO_ROOT, "packages", "rust");
 
 /** The port the business-service server (`@zcode/server`) listens on; Vite proxies `/ws` + `/api` here. */
 const SERVER_PORT = Number(process.env.PORT) || 3030;
@@ -79,6 +89,43 @@ function isPortOpen(port) {
 }
 
 /**
+ * Does this checkout already have compiled napi binaries?
+ *
+ * 中文：`@zcode/server` 启动时加载 packages/rust 下的 .node 二进制，
+ * 但 `pnpm i` 不会构建它们 —— fresh clone 直接 `pnpm dev:tauri` 会在
+ * server 阶段失败。启动器在缺失时自动补跑 build:native。
+ */
+function hasNativeBinaries() {
+  try {
+    return readdirSync(NATIVE_DIR).some((name) => /^zcode-.*\.node$/.test(name));
+  } catch {
+    return false;
+  }
+}
+
+/** Run `pnpm --filter @zcode/rust build:native`, resolving with its exit code. */
+function runBuildNative() {
+  return new Promise((resolve) => {
+    console.log(
+      "[dev-tauri] native .node binaries missing — running " +
+        "`pnpm --filter @zcode/rust build:native` (first run compiles for several minutes)…",
+    );
+    const child = spawnPnpm(["--filter", "@zcode/rust", "build:native"], {
+      stdio: "inherit",
+      env: process.env,
+    });
+    child.on("error", (error) => {
+      console.error(`[dev-tauri] build:native failed to launch: ${error.message}`);
+      resolve(1);
+    });
+    child.on("exit", (code, signal) => {
+      if (code !== 0) logChildExit("build:native", code, signal);
+      resolve(code ?? (signal ? 1 : 0));
+    });
+  });
+}
+
+/**
  * The Tauri renderer mounts the real `@zcode/ui` `<Root>`, which needs the
  * business-service channel over WebSocket — exactly like the Web client. That
  * channel is served by `@zcode/server`. Boot it here (unless one is already
@@ -97,10 +144,9 @@ async function startServerIfNeeded() {
   // checkout they live in packages/rust after `pnpm --filter @zcode/rust
   // build:native`; point the loader there so the bundled server finds them.
   // The loader still emits its own actionable error if a binary is missing.
-  const nativeDir = join(REPO_ROOT, "packages", "rust");
   const serverEnv = { ...process.env, PORT: String(SERVER_PORT) };
-  if (!serverEnv.ZCODE_NATIVE_DIR && existsSync(nativeDir)) {
-    serverEnv.ZCODE_NATIVE_DIR = nativeDir;
+  if (!serverEnv.ZCODE_NATIVE_DIR && existsSync(NATIVE_DIR)) {
+    serverEnv.ZCODE_NATIVE_DIR = NATIVE_DIR;
   }
   const child = spawnPnpm(["--filter", "@zcode/server", "dev"], {
     stdio: ["inherit", "inherit", "inherit"],
@@ -156,6 +202,20 @@ function launchTauri() {
       resolve(code ?? (signal ? 1 : 0));
     });
   });
+}
+
+// 中文：fresh clone 后 packages/rust 下没有 .node 二进制，而 `pnpm i` 不会
+// 编译它们（root prepare 只有 husky）。若缺失则先自动执行 build:native，
+// 使 `git clone → pnpm i → pnpm dev:tauri` 三步开箱即用（issue #2 验收路径）。
+if (process.env.ZCODE_TAURI_SKIP_NATIVE_BUILD !== "1" && !hasNativeBinaries()) {
+  const buildCode = await runBuildNative();
+  if (buildCode !== 0) {
+    console.error(
+      "[dev-tauri] native build failed — @zcode/server cannot boot without " +
+        "packages/rust/*.node. On Windows this step needs bash (Git for Windows).",
+    );
+    process.exit(buildCode);
+  }
 }
 
 const server = await startServerIfNeeded();

@@ -246,7 +246,11 @@ pub fn expand_home_token(raw: &str) -> PathBuf {
     };
     if let Ok(rest) = with_home_variable.strip_prefix("~") {
         // A bare `~` is the home directory itself, not a child named `~`.
-        if rest.is_empty() {
+        // 中文：`rest` 是 `&Path`，而 `Path::is_empty()` 是不稳定 API
+        // （`path_is_empty`，rust-lang/rust#148494），旧版工具链直接编译失败
+        // （issue #2 error 5）。改用稳定的 `as_os_str().is_empty()`，任何
+        // 工具链都能编译。
+        if rest.as_os_str().is_empty() {
             return home;
         }
         // `rest` is a `Path` here, and `Path::starts_with`/`trim_start_matches`
