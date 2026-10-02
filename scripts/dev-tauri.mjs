@@ -34,6 +34,13 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 /** The port the business-service server (`@zcode/server`) listens on; Vite proxies `/ws` + `/api` here. */
 const SERVER_PORT = Number(process.env.PORT) || 3030;
 
+/**
+ * On Windows `pnpm` is a `pnpm.cmd` shim, which Node's `spawn` cannot execute
+ * directly (it raises `ENOENT`). Running through `shell: true` lets cmd.exe
+ * resolve the shim; on POSIX it is a no-op because `pnpm` is a real binary.
+ */
+const isWindows = process.platform === "win32";
+
 const args = process.argv.slice(2);
 
 /** Resolves true when something is already listening on the server port. */
@@ -79,6 +86,7 @@ async function startServerIfNeeded() {
     stdio: ["inherit", "inherit", "inherit"],
     env: serverEnv,
     detached: true,
+    shell: isWindows,
   });
   const stop = () => {
     try {
@@ -102,6 +110,7 @@ function launchTauri() {
       stdio: "inherit",
       env: process.env,
       detached: true,
+      shell: isWindows,
     });
 
     const stopGroup = () => {
