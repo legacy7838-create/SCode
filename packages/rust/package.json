@@ -28,7 +28,7 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "build:native": "bash scripts/build-native.sh",
+    "build:native": "node scripts/build-native.mjs",
     "build:packaging": "cargo build --release -p zcode-packaging",
     "gen:targets": "cargo run -p zcode-packaging -- gen-targets",
     "check:targets": "cargo run -p zcode-packaging -- gen-targets --check",

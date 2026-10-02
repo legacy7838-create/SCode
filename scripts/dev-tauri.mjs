@@ -212,7 +212,7 @@ if (process.env.ZCODE_TAURI_SKIP_NATIVE_BUILD !== "1" && !hasNativeBinaries()) {
   if (buildCode !== 0) {
     console.error(
       "[dev-tauri] native build failed — @zcode/server cannot boot without " +
-        "packages/rust/*.node. On Windows this step needs bash (Git for Windows).",
+        "packages/rust/*.node. 通过 node scripts/build-native.mjs 驱动 cargo，无需 bash 环境。",
     );
     process.exit(buildCode);
   }
