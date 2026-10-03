@@ -68,7 +68,6 @@ fn default_settings() -> JsonValue {
         "providerFamilyConnectionSelections": {},
         "providerFamilyDomainMigrated": false,
         "nativeSearchEnhancementsEnabled": true,
-        "memoryEnabled": false,
         "lastWorkspaceSession": [],
         "lastActiveTabIndex": 0,
         "receivePreviewUpdates": false,

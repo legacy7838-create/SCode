@@ -120,15 +120,43 @@ impl RpcHost {
         // stored login into garbage: an unregistered channel fails loudly at the
         // call site, whereas a wrong key fails as "signed out" with no cause.
         // Startup itself must not abort, so this is reported and skipped.
-        match crate::services::CredentialService::new() {
+        // `onboarding-record` reads two stores that are already native: the
+        // credential store for the signed-in userId, and the task index for the
+        // `existing_local_task` decision. Both are built once here and shared
+        // with their own channel below, so the process holds one credential
+        // instance and one task-index connection rather than a second of each.
+        //
+        // `zcode-task` is registered at construction for the same reason the
+        // credential channel is: if the index cannot open, the channel must be
+        // absent (loud at the call site) rather than present and broken.
+        let credential_service = match crate::services::CredentialService::new() {
             Ok(service) => {
-                registry.register_shared("credential", Arc::new(service) as Arc<dyn ChannelHandler>)
+                let shared = Arc::new(service);
+                registry.register_shared("credential", shared.clone() as Arc<dyn ChannelHandler>);
+                Some(shared)
             }
-            Err(error) => tracing::error!(
-                %error,
-                "credential channel not registered; the cipher key could not be derived"
-            ),
-        }
+            Err(error) => {
+                tracing::error!(
+                    %error,
+                    "credential channel not registered; the cipher key could not be derived"
+                );
+                None
+            }
+        };
+        let task_index = match crate::services::ZCodeTaskService::new() {
+            Ok(service) => {
+                let shared = Arc::new(service);
+                registry.register_shared("zcode-task", shared.clone() as Arc<dyn ChannelHandler>);
+                Some(shared)
+            }
+            Err(error) => {
+                tracing::error!(
+                    %error,
+                    "zcode-task channel not registered; the task index could not open"
+                );
+                None
+            }
+        };
         registry.register_shared(
             "client-scenes",
             Arc::new(crate::services::ClientScenesService::new()) as Arc<dyn ChannelHandler>,
@@ -137,11 +165,27 @@ impl RpcHost {
             "client-config",
             Arc::new(crate::services::ClientConfigService::new()) as Arc<dyn ChannelHandler>,
         );
-        registry.register_shared(
-            "onboarding-record",
-            Arc::new(crate::services::OnboardingRecordService::new())
-                as Arc<dyn ChannelHandler>,
-        );
+        // Both dependencies must exist: an unregistered channel fails loudly at
+        // the call site, which is what a placeholder that answered every method
+        // with "not implemented" did not do.
+        match (credential_service, task_index) {
+            (Some(credentials), Some(task_index)) => {
+                match crate::services::OnboardingRecordService::new(credentials, task_index) {
+                    Ok(service) => registry.register_shared(
+                        "onboarding-record",
+                        Arc::new(service) as Arc<dyn ChannelHandler>,
+                    ),
+                    Err(error) => tracing::error!(
+                        %error,
+                        "onboarding-record channel not registered; the record store could not be built"
+                    ),
+                }
+            }
+            _ => tracing::error!(
+                "onboarding-record channel not registered; it needs the credential store and the \
+                 task index, neither of which could be opened"
+            ),
+        }
         // `provider-settings` / `model-selection` back the provider settings and
         // model picker. Construction reads no files (paths only); the first call
         // lazily reads the materialised built-in release and personal config. A
@@ -200,6 +244,11 @@ impl RpcHost {
             "broadcast",
             Arc::new(crate::services::BroadcastService::new()) as Arc<dyn ChannelHandler>,
         );
+        registry.register_shared(
+            "prompt-attachment-transfer",
+            Arc::new(crate::services::PromptAttachmentTransferService::new())
+                as Arc<dyn ChannelHandler>,
+        );
         match crate::services::OffPeakTaskService::new() {
             Ok(service) => registry.register_shared(
                 "off-peak-task",
@@ -208,16 +257,6 @@ impl RpcHost {
             Err(error) => tracing::error!(
                 %error,
                 "off-peak-task channel not registered; the task index could not open"
-            ),
-        }
-        match crate::services::ZCodeTaskService::new() {
-            Ok(service) => registry.register_shared(
-                "zcode-task",
-                Arc::new(service) as Arc<dyn ChannelHandler>,
-            ),
-            Err(error) => tracing::error!(
-                %error,
-                "zcode-task channel not registered; the task index could not open"
             ),
         }
         Self {
@@ -421,7 +460,7 @@ mod tests {
     ///
     /// Listing them explicitly means adding a channel surfaces here as a failing
     /// test rather than as a silent count change nobody notices.
-    const PORTED_CHANNELS: [&str; 16] = [
+    const PORTED_CHANNELS: [&str; 17] = [
         "system",
         "setting",
         "credential",
@@ -438,6 +477,7 @@ mod tests {
         "zcode-task",
         "broadcast",
         "off-peak-task",
+        "prompt-attachment-transfer",
     ];
 
     #[test]
@@ -454,6 +494,29 @@ mod tests {
             derivable,
             "registration must track whether the key could be derived"
         );
+    }
+
+    #[test]
+    fn the_onboarding_record_channel_serves_instead_of_refusing() {
+        // The placeholder this replaces was counted in `PORTED_CHANNELS` while
+        // answering every method with "not implemented". Registration alone is
+        // therefore not evidence; a call that comes back `Ok` is. Only read-only
+        // methods are called here — the write paths are covered in
+        // `services::onboarding_record::tests`, against a temp file.
+        let host = RpcHost::new();
+        let handler = host
+            .registry()
+            .get("onboarding-record")
+            .expect("the channel must be registered");
+        for method in ["getRecords", "getLatestEntry"] {
+            let value = handler.call("", method, &[]).unwrap_or_else(|error| {
+                panic!("{method} must be served by the port, not refused: {error}")
+            });
+            assert!(
+                value.is_null() || value.is_object(),
+                "{method} must answer a record or no record, got {value}"
+            );
+        }
     }
 
     #[test]

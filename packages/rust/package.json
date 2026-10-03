@@ -18,6 +18,7 @@
     "./task-write-repository": "./src/taskWriteRepository.ts",
     "./automation-repository": "./src/automationRepository.ts",
     "./mcp-config": "./src/mcpConfig.ts",
+    "./subagent-profile": "./src/subagentProfile.ts",
     "./events": "./src/events.ts",
     "./chrome-cookies": "./src/chromeCookies.ts",
     "./event-coalescer": "./src/eventCoalescer.ts",
@@ -25,7 +26,9 @@
     "./fs": "./src/fs.ts",
     "./terminal-profile": "./src/terminalProfile.ts",
     "./sysinfo": "./src/sysinfo.ts",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./subagent-bash-semantics": "./src/subagentBashSemantics.ts",
+    "./subagent-result-budget": "./src/subagentResultBudget.ts"
   },
   "scripts": {
     "build:native": "node scripts/build-native.mjs",

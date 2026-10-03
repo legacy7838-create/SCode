@@ -402,6 +402,21 @@ impl CredentialService {
         }
     }
 
+    /// Read one stored value as text for a *reader* outside this channel.
+    ///
+    /// `None` is a miss (the interface's `null`). A decryption failure is an
+    /// `Err`, not `None`: "not signed in" and "this login cannot be trusted"
+    /// are different facts, and only the caller can decide what each means —
+    /// `onboarding-record` logs and treats both as signed-out, while a
+    /// write path must not.
+    pub(crate) fn load_string(&self, key: &str) -> Result<Option<String>, String> {
+        match self.load(key)? {
+            JsonValue::String(text) => Ok(Some(text)),
+            JsonValue::Null => Ok(None),
+            other => Err(format!("credential `{key}` is not a string: {other}")),
+        }
+    }
+
     /// Read, modify, and replace the store under the shared lock.
     ///
     /// The whole read-modify-write has to be inside the lock, not just the

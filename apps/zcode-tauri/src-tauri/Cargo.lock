@@ -6785,6 +6785,7 @@ version = "3.14.3"
 dependencies = [
  "aes-gcm",
  "base64 0.22.1",
+ "chrono",
  "crossbeam-channel",
  "notify",
  "notify-rust",

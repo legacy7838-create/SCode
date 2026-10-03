@@ -95,6 +95,12 @@ crossbeam-channel = "0.5"
 notify = "6"
 rand = "0.8"
 sha2 = "0.10"
+# Onboarding decisions carry `decidedAt`, which the original writes as
+# `new Date().toISOString()` — UTC, millisecond precision, `Z` suffix. A
+# hand-rolled date formatter would be a second implementation of a format a
+# reader (the server upload path) already parses, and `chrono` is already in
+# this lock file through `zcode-cron`.
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }

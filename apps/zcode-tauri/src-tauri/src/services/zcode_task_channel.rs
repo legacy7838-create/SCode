@@ -181,6 +181,38 @@ impl ZCodeTaskService {
         let metas = archive_stale_tasks(&mut conn, &key, cutoff, None).map_err(handler_error)?;
         serde_json::to_value(&metas).map_err(handler_error)
     }
+
+    /// `listTaskMetas({}).length > 0` — the `hasExistingLocalTask` probe the
+    /// `onboarding-record` channel runs before recording `existing_local_task`.
+    ///
+    /// A call with no path is a **full query** in the original (`taskIndexRepo`
+    /// only resolves a workspace key when a path was given), so the scope is
+    /// `None`, deleted rows are excluded, and no flag filters on pinned or
+    /// archived. The whole set is materialised rather than `EXISTS`-ed because
+    /// that is the query the original runs, and the difference is not worth a
+    /// second query shape to keep in parity.
+    ///
+    /// Shared with that channel rather than re-opened: one task-index
+    /// connection per process, so the decision and the list it feeds read the
+    /// same file through the same handle.
+    pub fn has_any_task(&self) -> Result<bool, String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "task index lock poisoned".to_owned())?;
+        let metas = list_task_metas(
+            &conn,
+            &ListQuery {
+                workspace_key: None,
+                include_deleted: false,
+                provider: None,
+                pinned: None,
+                archived: None,
+            },
+        )
+        .map_err(|error| error.to_string())?;
+        Ok(!metas.is_empty())
+    }
 }
 
 impl Default for ZCodeTaskService {
