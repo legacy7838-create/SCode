@@ -11,6 +11,7 @@ import {
   BugIcon,
   FileCode2Icon,
   FileDiffIcon,
+  FolderGit2Icon,
   MapIcon,
   MessageSquareTextIcon,
   ListTreeIcon,
@@ -315,6 +316,10 @@ export function SidePaneTabIcon({ tab }: { tab: WorkspaceSidePaneTab }) {
     return <FileDiffIcon className="size-3.5" />;
   }
 
+  if (tab.type === "github-repos") {
+    return <FolderGit2Icon className="size-3.5" />;
+  }
+
   if (tab.type === "treemapping") {
     return <MapIcon className="size-3.5" />;
   }
@@ -521,6 +526,10 @@ export function getSidePaneTabTitle(
 
   if (tab.type === "git") {
     return formatMessage({ id: "sidePane.review" });
+  }
+
+  if (tab.type === "github-repos") {
+    return "Repositories";
   }
 
   if (tab.type === "treemapping") {

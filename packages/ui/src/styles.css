@@ -812,6 +812,38 @@ body {
   height: 0;
 }
 
+/*
+ * GitHub Activity Popover: 3px mini scrollbar
+ * 修复说明（中）：覆盖全局 14px 粗滚动条，专用于紧凑型弹出卡片，尺寸压缩至 3px，隐藏上下箭头按钮。
+ */
+.zcode-mini-scrollbar {
+  scrollbar-width: thin !important;
+  scrollbar-color: var(--color-border) transparent !important;
+}
+
+.zcode-mini-scrollbar::-webkit-scrollbar {
+  width: 3px !important;
+  height: 3px !important;
+}
+
+.zcode-mini-scrollbar::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+.zcode-mini-scrollbar::-webkit-scrollbar-thumb {
+  min-height: 12px !important;
+  min-width: 3px !important;
+  border: none !important;
+  border-radius: 9999px !important;
+  background-color: var(--color-border) !important;
+}
+
+.zcode-mini-scrollbar::-webkit-scrollbar-button {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
 @layer utilities {
   .button-gradient {
     background-image: linear-gradient(to bottom right, #191a1d, #747689);
