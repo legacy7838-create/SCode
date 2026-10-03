@@ -1,6 +1,6 @@
 /* eslint-disable max-lines -- subagent runtime wiring centrally joins the child runtime, the tool pool, permissions, MCP and the activity watchdog; splitting it up requires a separate migration. */
 import { RESPOND_TO_COORDINATOR_TOOL_NAME } from "@zcode/contracts";
-import type { SubagentRunOptions } from "@zcode/contracts";
+import type { SessionEvent, SubagentRunOptions } from "@zcode/contracts";
 import {
   defaultScheduler,
   PermissionService,
@@ -35,8 +35,17 @@ import {
   extractRequiredMcpServerNames,
   matchesRequiredMcpServer,
 } from "../../subagent/mcp-config.js";
-import { mirrorSubagentToolEvent } from "../../subagent/tool-event-mirror.js";
+import { createSubagentEventMirror } from "@zcode/rust/subagent-profile";
 import { isBuiltInExploreAgentProfile } from "../../subagent/profile.js";
+import { finalizeSubagentYield } from "../../subagent/finalize-yield.js";
+import {
+  MAX_CHILD_YIELD_ITEMS,
+  YIELD_AGENT_PROMPT,
+  YIELD_TOOL_NAME,
+  createYieldTool,
+} from "../../tool/handlers/yield.js";
+import { SUBAGENT_WARNING_YIELD_TOOL_DISALLOWED } from "../../subagent/finalize-yield.js";
+import { invalidateToolCache } from "./config.js";
 import {
   buildSubagentChildDisallowRules,
   filterSubagentChildToolNames,
@@ -93,6 +102,9 @@ export function createDefaultSubagentPort(
     runExploreAgent: async (request, options) => {
       request.reportActivity?.();
       const builtInExplore = isBuiltInExploreAgentProfile(request.profile);
+      // Opt-in structured-result contract. `profile.yield` is absent for every
+      // legacy profile, so everything downstream of this stays inert by default.
+      const yieldContract = request.profile.yield;
       const agentsMdInstructions =
         request.profile.injectAgentsMd !== false
           ? this.contextSourceSnapshot?.userInstructions
@@ -138,7 +150,13 @@ export function createDefaultSubagentPort(
       });
       // An empty agent prompt is not a semantic segment; spelling `\n\n` first will break the boundaries of the missing segment.
       // Leak to the beginning of persistent Memory. Only non-empty text is combined here, and the left border of the block is added uniformly by the builder.
-      const agentPrompt = [baseAgentPrompt, persistentMemory?.prompt]
+      // The Yield reminder is the last segment and exists ONLY for opt-in profiles:
+      // legacy agents keep byte-identical prompts, so no existing agent sees churn.
+      const agentPrompt = [
+        baseAgentPrompt,
+        persistentMemory?.prompt,
+        ...(yieldContract ? [YIELD_AGENT_PROMPT] : []),
+      ]
         .filter((part): part is string => typeof part === "string" && part.length > 0)
         .join("\n\n");
       const childRuntimeEnvInfo = {
@@ -167,6 +185,10 @@ export function createDefaultSubagentPort(
         childMcpAccess.snapshot?.tools.map((descriptor) => toMcpToolName(descriptor)) ?? [],
       );
       validateSubagentMcpRequirements(request, childToolAllowlist, childMcpAccess);
+      // Yield 同样走「控制通道」先例（与 RespondToCoordinator 一致）：子代理控制类工具不由
+      // profile 的 tools 列表决定。当前它是在构造后直接注册进 registry，allowlist 对注册
+      // 无影响；显式写入是为了让意图可读，并防止未来新增「按 allowlist 生成模型可见工具集」
+      // 的层把 Yield 静默屏蔽掉。顺序上必须先算完 childToolAllowlist 再追加。
       const childMode = resolveSubagentPermissionMode(
         this.getPlanEnabled() ? "plan" : this.config.mode,
         request.permissionMode,
@@ -224,7 +246,21 @@ export function createDefaultSubagentPort(
             : { parentTurnId: request.traceContext.turnId }),
         },
       );
-      const mirroredToolNameByChildToolCallId = new Map<string, string>();
+      // One mirror per child run. It owns the tool-name cache (a `tool_call_started`
+      // carries no name; the name was learned from the matching `tool_call_scheduled`)
+      // and the mapping itself is Rust — see docs/specs/subagent-rust-port.md Phase 2.
+      const subagentEventMirror = createSubagentEventMirror({
+        agentId: request.agentId,
+        agentType: request.agentType,
+        background: request.background,
+        childSessionId: request.sessionId,
+        description: request.description,
+        parentSessionId: this.sessionId,
+        ...(parentToolCallId === undefined ? {} : { parentToolCallId }),
+        ...(request.traceContext.turnId === undefined
+          ? {}
+          : { parentTurnId: request.traceContext.turnId }),
+      });
       let sessionReadyNotified = false;
       const notifySessionReady = async () => {
         if (sessionReadyNotified) return;
@@ -236,6 +272,7 @@ export function createDefaultSubagentPort(
         childSessionId: request.sessionId,
         agentType: request.agentType,
       });
+      const childYieldItems: { data: unknown; attempts: number }[] = [];
       const childRuntime = new AgentRuntime(
         request.sessionId,
         {
@@ -277,7 +314,9 @@ export function createDefaultSubagentPort(
           // The default subagent has been adjusted from Explore to general-purpose.
           // The toolset can no longer rely on DEFAULT_SUBAGENT_TYPE, otherwise the default universal agent will be mistakenly downgraded to a read-only search tool surface.
           toolset: builtInExplore ? "explore" : "main",
-          toolAllowlist: childToolAllowlist,
+          toolAllowlist: yieldContract
+            ? [...childToolAllowlist, YIELD_TOOL_NAME]
+            : childToolAllowlist,
           toolDisallowlist: this.config.toolDisallowlist,
           embeddedSearchBackend: this.config.embeddedSearchBackend,
           nativeSearchEnhancementsEnabled: this.config.nativeSearchEnhancementsEnabled,
@@ -324,7 +363,6 @@ export function createDefaultSubagentPort(
           httpClientPort: deps.httpClientPort,
           imageProcessorPort: deps.imageProcessorPort,
           pdfDocumentPort: deps.pdfDocumentPort,
-          memoryRoot: persistentMemory?.rootDir,
           mcpPort: childMcpAccess.port,
           skillPort: childSkillPort,
           artifactStore: deps.artifactStore,
@@ -341,17 +379,7 @@ export function createDefaultSubagentPort(
                 ...request.traceContext,
                 sessionId: request.sessionId,
               });
-              const mirroredEvent = mirrorSubagentToolEvent(event, {
-                agentId: request.agentId,
-                agentType: request.agentType,
-                background: request.background,
-                childSessionId: request.sessionId,
-                description: request.description,
-                parentSessionId: this.sessionId,
-                parentToolCallId,
-                parentTurnId: request.traceContext.turnId,
-                toolNameByChildToolCallId: mirroredToolNameByChildToolCallId,
-              });
+              const mirroredEvent = subagentEventMirror.mirror(event) as SessionEvent | undefined;
               if (!mirroredEvent) return;
 
               // parent mirror retains the original semantics: the parent session only sees subagent summary/tool activities, raw child
@@ -366,6 +394,65 @@ export function createDefaultSubagentPort(
           traceContext: request.traceContext,
         },
       );
+
+      // Yield contract: registered ONLY for profiles that declared `yield: true`.
+      // The parent session never sees this tool, so the legacy tool surface is
+      // unchanged for every existing agent. Registration happens after the
+      // constructor because the constructor has already run registerBuiltInTools.
+      //
+      // `registry.register` bypasses the allowlist AND the disallow rules that
+      // `registerBuiltInTools` would have applied, so the rules are evaluated
+      // here explicitly through the repo's own engine. Without this, a profile
+      // writing `disallowedTools: [Yield]` — or a parent with Yield on its
+      // global `toolDisallowlist` — could not actually suppress it.
+      const yieldAllowed =
+        yieldContract !== undefined &&
+        filterSubagentChildToolNames(
+          [YIELD_TOOL_NAME],
+          buildSubagentChildDisallowRules([
+            ...(this.config.toolDisallowlist ?? []),
+            ...(request.disallowedTools ?? []),
+          ]),
+        ).length > 0;
+
+      if (yieldContract && !yieldAllowed) {
+        // A declared contract that cannot be enforced is reported as a failure
+        // below, never silently downgraded to prose.
+        this.logger?.warn(
+          "Subagent declared a yield contract but Yield is disallowed by tool rules",
+          {
+            agentId: request.agentId,
+            agentType: request.agentType,
+          },
+        );
+      }
+
+      if (yieldContract && yieldAllowed) {
+        // registry is private on AgentRuntime; the repo's runtime-internal view is
+        // the sanctioned accessor (see AgentRuntime's own constructor).
+        (childRuntime as unknown as AgentRuntimeInternal).registry.register(
+          createYieldTool({
+            schema: yieldContract.schema,
+            collector: {
+              // The tool's resultBudget bounds what the CHILD sees, not what the
+              // parent accumulates. Cap the accumulator too, so a runaway child
+              // cannot grow memory without bound and then get fully stringified
+              // by the parent-facing formatter.
+              record: (item) => {
+                if (childYieldItems.length < MAX_CHILD_YIELD_ITEMS) {
+                  childYieldItems.push(item);
+                }
+              },
+            },
+          }),
+        );
+        // The model-visible tool list is memoized in `cachedTools` and only
+        // `invalidateToolCache` clears it. Registering after the constructor
+        // without this works only by ordering luck: any earlier `getTools()`
+        // (a persistence or context call) would freeze a list without Yield and
+        // hide it from the model for the whole run.
+        invalidateToolCache.call(childRuntime as unknown as AgentRuntimeInternal);
+      }
 
       const resumesExistingChild = request.resumeFromStore === true;
       if (resumesExistingChild) {
@@ -396,7 +483,7 @@ export function createDefaultSubagentPort(
       }
       request.registerMessageSink?.(createSubagentMessageSink(childRuntime, request));
       try {
-        return await childRuntime.executeTurn(request.prompt, undefined, {
+        const turnResult = await childRuntime.executeTurn(request.prompt, undefined, {
           abortSignal: options?.signal,
           // The first round of input to the child Runtime comes from the parent Agent, rather than direct input from the real user; retain the source facts to avoid
           // Subagent Turn is misclassified as user in Trace and Success Rate reports.
@@ -404,6 +491,26 @@ export function createDefaultSubagentPort(
           inputPresentation: "coordinator_input",
           traceContext: request.traceContext,
         });
+        // Finalize happens AFTER the turn, on the child side, so the parent only
+        // ever sees one merged verdict. A contract violation is reported as
+        // ok:false rather than downgraded to the child's free text.
+        if (yieldContract) {
+          return {
+            ...turnResult,
+            structured: yieldAllowed
+              ? finalizeSubagentYield({
+                  items: childYieldItems,
+                  schema: yieldContract.schema,
+                })
+              // Declared but unenforceable (disallowed by tool rules): a failure,
+              // because a profile that promised a contract did not get one.
+              : {
+                  ok: false,
+                  warnings: [SUBAGENT_WARNING_YIELD_TOOL_DISALLOWED],
+                },
+          };
+        }
+        return turnResult;
       } finally {
         const cancelled = options?.signal?.aborted === true;
         childRuntime.sealBackgroundTaskNotifications({

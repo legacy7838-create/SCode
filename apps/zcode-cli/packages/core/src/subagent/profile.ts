@@ -2,10 +2,11 @@ import { basename } from "node:path";
 import { GENERAL_PURPOSE_AGENT_TYPE, buildGeneralPurposeSystemPrompt } from "./general-purpose.js";
 import { EXPLORE_AGENT_TYPE } from "./explore.js";
 import { formatExploreAllowedToolsForAgentDescription } from "./explore-tools.js";
-import { parseAgentFrontmatter, splitMarkdownFrontmatter } from "./profile-frontmatter.js";
 import { filterSubagentChildToolNames } from "./tool-policy.js";
 import type { ModelSelection } from "@zcode/shared";
+import type { JsonSchema } from "@zcode/contracts";
 import { resolveProfileModelSelection } from "./profile-model-selection.js";
+import { parseAgentProfileFromMarkdown as parseAgentProfileFromMarkdownNative } from "@zcode/rust/subagent-profile";
 
 export const DEFAULT_SUBAGENT_TYPE = GENERAL_PURPOSE_AGENT_TYPE;
 
@@ -28,6 +29,9 @@ export interface AgentProfile {
   mcpServers?: readonly string[];
   memory?: AgentMemoryScope;
   modelSelection?: ModelSelection;
+  /** The structured result contract: `yield: true` in frontmatter. When absent, the
+   *  agent keeps the legacy free-text report and no schema is enforced. */
+  yield?: { mode: "structured"; schema: JsonSchema };
   name: string;
   path?: string;
   permissionMode?: AgentPermissionMode;
@@ -48,20 +52,8 @@ export interface AgentProfileLoadResult {
   profiles: AgentProfile[];
 }
 
-const VALID_COLORS = new Set<NonNullable<AgentProfile["color"]>>([
-  "red",
-  "blue",
-  "green",
-  "yellow",
-  "purple",
-  "orange",
-  "pink",
-  "cyan",
-]);
 
-const VALID_PERMISSION_MODES = new Set<AgentPermissionMode>(["auto", "plan"]);
 
-const VALID_MEMORY_SCOPES = new Set<AgentMemoryScope>(["user", "project", "local"]);
 
 export function createBuiltInExploreAgentProfile(
   options: { modelSelection?: ModelSelection } = {},
@@ -155,182 +147,37 @@ export function parseAgentProfileFromMarkdown(input: {
   content: string;
   path?: string;
   source: AgentProfileSource;
-}): { diagnostic?: AgentProfileParseDiagnostic; profile?: AgentProfile } {
-  const parsed = splitMarkdownFrontmatter(input.content);
-  if (!parsed.frontmatter) {
-    return {
-      diagnostic: {
-        code: "agent_missing_frontmatter",
-        message: `Agent Markdown must include frontmatter: ${input.path ?? "<inline>"}`,
-        path: input.path,
-      },
-    };
-  }
-
-  const { mcpServers, values: frontmatter } = parseAgentFrontmatter(parsed.frontmatter);
-  const name = scalarString(frontmatter.name);
-  const description = scalarString(frontmatter.description)?.replace(/\\n/gu, "\n");
-  if (!name) {
-    return missingRequiredDiagnostic("name", input.path);
-  }
-  if (!description) {
-    return missingRequiredDiagnostic("description", input.path);
-  }
-
-  const modelSelection = resolveProfileModelSelection(frontmatter);
-  const color = normalizeColor(scalarString(frontmatter.color));
-  const parsedPermissionMode = normalizePermissionMode(scalarString(frontmatter.permissionMode));
-  // Project-level subagent markdown belongs to the warehouse input and cannot be passed through frontmatter.
-  // Child runtime promoted to bypass/yolo; permission mode only accepts user-level or trusted plugin configuration.
-  const permissionMode = input.source === "project" ? undefined : parsedPermissionMode;
-  const maxTurns = normalizePositiveInteger(frontmatter.maxTurns);
-  const memory = parseAgentMemoryScope(frontmatter.memory);
-  const memoryDiagnostic =
-    frontmatter.memory !== undefined && memory === undefined
+}): {
+  diagnostic?: AgentProfileParseDiagnostic;
+  diagnostics?: AgentProfileParseDiagnostic[];
+  profile?: AgentProfile;
+} {
+  // The frontmatter reader is Rust (`@zcode/rust/subagent-profile`); see
+  // docs/specs/subagent-rust-port.md Phase 1. The TypeScript reader is deleted, not
+  // disabled: two readers drift, and a dropped `outputSchema` fails SILENTLY — the
+  // agent would run with the yield contract declared in its file and nothing
+  // enforcing it.
+  const native = parseAgentProfileFromMarkdownNative({
+    content: input.content,
+    ...(input.path === undefined ? {} : { path: input.path }),
+    source: input.source,
+  });
+  const raw = native.profile;
+  // The raw frontmatter travels with the profile; model selection derives from it.
+  const modelSelection = resolveProfileModelSelection(raw?.frontmatter ?? {});
+  return {
+    ...(native.diagnostic ? { diagnostic: native.diagnostic } : {}),
+    ...(native.diagnostics ? { diagnostics: native.diagnostics } : {}),
+    ...(raw
       ? {
-          code: "agent_invalid_memory_scope",
-          message: `Agent frontmatter memory must be user, project, or local: ${input.path ?? "<inline>"}`,
-          path: input.path,
+          profile: {
+            ...raw,
+            source: raw.source as AgentProfileSource,
+            ...(modelSelection ? { modelSelection } : {}),
+          } as AgentProfile,
         }
-      : undefined;
-  if (mcpServers === null) {
-    return {
-      diagnostic: {
-        code: "agent_invalid_mcp_servers",
-        message: `Agent frontmatter mcpServers must be a list of parent server names: ${input.path ?? "<inline>"}`,
-        path: input.path,
-      },
-    };
-  }
-
-  return {
-    ...(memoryDiagnostic ? { diagnostic: memoryDiagnostic } : {}),
-    profile: {
-      name,
-      description,
-      source: input.source,
-      systemPrompt: parsed.body.trim(),
-      ...(input.path ? { path: input.path } : {}),
-      ...(modelSelection ? { modelSelection } : {}),
-      ...(color ? { color } : {}),
-      ...(permissionMode ? { permissionMode } : {}),
-      ...(maxTurns ? { maxTurns } : {}),
-      ...(memory ? { memory } : {}),
-      ...optionalList("tools", frontmatter.tools),
-      ...optionalList("disallowedTools", frontmatter.disallowedTools),
-      ...optionalList("skills", frontmatter.skills),
-      ...optionalBoolean("background", frontmatter.background),
-      ...optionalBoolean("injectAgentsMd", frontmatter.injectAgentsMd),
-      ...(mcpServers === undefined ? {} : { mcpServers }),
-    },
+      : {}),
   };
-}
-
-function parseAgentMemoryScope(value: unknown): AgentMemoryScope | undefined {
-  return typeof value === "string" && VALID_MEMORY_SCOPES.has(value as AgentMemoryScope)
-    ? (value as AgentMemoryScope)
-    : undefined;
-}
-
-function missingRequiredDiagnostic(
-  field: string,
-  path: string | undefined,
-): { diagnostic: AgentProfileParseDiagnostic } {
-  return {
-    diagnostic: {
-      code: "agent_missing_required_frontmatter",
-      message: `Agent frontmatter must include ${field}: ${path ?? "<inline>"}`,
-      path,
-    },
-  };
-}
-
-function parseToolList(value: unknown): string[] | undefined {
-  if (Array.isArray(value)) {
-    return normalizeToolNames(normalizeStringList(value));
-  }
-  if (typeof value !== "string") return undefined;
-  const result: string[] = [];
-  let current = "";
-  let parenDepth = 0;
-  for (const char of value) {
-    if (char === "(") parenDepth += 1;
-    if (char === ")") parenDepth = Math.max(0, parenDepth - 1);
-    if (parenDepth === 0 && (char === "," || /\s/u.test(char))) {
-      if (current.trim()) result.push(current.trim());
-      current = "";
-      continue;
-    }
-    current += char;
-  }
-  if (current.trim()) result.push(current.trim());
-  return normalizeToolNames(result);
-}
-
-function optionalList(
-  key: "disallowedTools" | "skills" | "tools",
-  value: unknown,
-): Partial<AgentProfile> {
-  const list = key === "skills" ? normalizeStringList(value) : parseToolList(value);
-  if (list && list.length > 0) return { [key]: list };
-  if (key === "tools" && Array.isArray(value)) {
-    return { tools: [] };
-  }
-  return {};
-}
-
-function optionalBoolean(
-  key: "background" | "injectAgentsMd",
-  value: unknown,
-): Partial<AgentProfile> {
-  if (typeof value === "boolean") return { [key]: value };
-  if (typeof value === "string") {
-    if (value.toLowerCase() === "true") return { [key]: true };
-    if (value.toLowerCase() === "false") return { [key]: false };
-  }
-  return {};
-}
-
-function normalizeStringList(value: unknown): string[] | undefined {
-  if (Array.isArray(value)) {
-    const list = value.filter(
-      (item): item is string => typeof item === "string" && item.length > 0,
-    );
-    return list.length > 0 ? list : undefined;
-  }
-  if (typeof value !== "string") return undefined;
-  const list = value
-    .split(/[,\s]+/u)
-    .map((item) => item.trim())
-    .filter(Boolean);
-  return list.length > 0 ? list : undefined;
-}
-
-function scalarString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
-}
-
-function normalizeColor(value: string | undefined): AgentProfile["color"] | undefined {
-  if (!value) return undefined;
-  return VALID_COLORS.has(value as NonNullable<AgentProfile["color"]>)
-    ? (value as NonNullable<AgentProfile["color"]>)
-    : undefined;
-}
-
-function normalizePermissionMode(value: string | undefined): AgentPermissionMode | undefined {
-  if (!value) return undefined;
-  return VALID_PERMISSION_MODES.has(value as AgentPermissionMode)
-    ? (value as AgentPermissionMode)
-    : undefined;
-}
-
-function normalizePositiveInteger(value: unknown): number | undefined {
-  if (typeof value === "number" && Number.isInteger(value) && value > 0) return value;
-  if (typeof value === "string" && /^\d+$/u.test(value)) {
-    const parsed = Number(value);
-    return parsed > 0 ? parsed : undefined;
-  }
-  return undefined;
 }
 
 export function agentProfileDisplayName(profile: AgentProfile): string {

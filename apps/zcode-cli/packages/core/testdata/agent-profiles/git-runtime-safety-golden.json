@@ -1,0 +1,48 @@
+{
+  "normal_work_tree": {
+    "cwd": "/tmp/git-runtime-safety-NeyOfL/trusted",
+    "unsafe": false
+  },
+  "nested_in_work_tree": {
+    "cwd": "/tmp/git-runtime-safety-NeyOfL/trusted/src/deep",
+    "unsafe": false
+  },
+  "no_git_at_all": {
+    "cwd": "/tmp/git-runtime-safety-NeyOfL/plain",
+    "unsafe": false
+  },
+  "gitdir_points_outside": {
+    "cwd": "/tmp/git-runtime-safety-NeyOfL/escaped",
+    "unsafe": true
+  },
+  "symlinked_git_dir": {
+    "cwd": "/tmp/git-runtime-safety-NeyOfL/symlinked",
+    "unsafe": true
+  },
+  "bare_repo_layout": {
+    "cwd": "/tmp/git-runtime-safety-NeyOfL/bare",
+    "unsafe": true
+  },
+  "incomplete_git_dir": {
+    "cwd": "/tmp/git-runtime-safety-NeyOfL/incomplete",
+    "unsafe": false
+  },
+  "no_working_directory": {
+    "cwd": null,
+    "unsafe": false
+  },
+  "missing_directory": {
+    "cwd": "/tmp/git-runtime-safety-NeyOfL/does-not-exist",
+    "unsafe": true
+  },
+  "predicates": {
+    "git_present": true,
+    "git_wrapped": true,
+    "no_git": false,
+    "git_and_cd": true,
+    "git_and_pushd": true,
+    "git_and_popd": true,
+    "cd_without_git": false,
+    "git_without_directory_change": false
+  }
+}

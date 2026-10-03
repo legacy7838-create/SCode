@@ -1,0 +1,422 @@
+{
+  "minimal": {
+    "source": "user",
+    "content": "---\nname: a\ndescription: d\n---\nbody",
+    "parsed": {
+      "diagnostic": null,
+      "diagnostics": null,
+      "profile": {
+        "frontmatter": {
+          "name": "a",
+          "description": "d"
+        },
+        "name": "a",
+        "description": "d",
+        "source": "user",
+        "systemPrompt": "body",
+        "path": "/golden/minimal.md"
+      }
+    }
+  },
+  "yield_structured": {
+    "source": "user",
+    "content": "---\nname: a\ndescription: d\nyield: true\noutputSchema: {\"type\":\"object\",\"required\":[\"verdict\"],\"properties\":{\"verdict\":{\"type\":\"string\"}}}\n---\nb",
+    "parsed": {
+      "diagnostic": null,
+      "diagnostics": null,
+      "profile": {
+        "frontmatter": {
+          "name": "a",
+          "description": "d",
+          "yield": true,
+          "outputSchema": {
+            "type": "object",
+            "required": [
+              "verdict"
+            ],
+            "properties": {
+              "verdict": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "name": "a",
+        "description": "d",
+        "source": "user",
+        "systemPrompt": "b",
+        "path": "/golden/yield_structured.md",
+        "yield": {
+          "mode": "structured",
+          "schema": {
+            "type": "object",
+            "required": [
+              "verdict"
+            ],
+            "properties": {
+              "verdict": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "yield_no_schema": {
+    "source": "user",
+    "content": "---\nname: a\ndescription: d\nyield: true\n---\nb",
+    "parsed": {
+      "diagnostic": {
+        "code": "agent_invalid_yield_schema",
+        "message": "Agent frontmatter 'yield: true' requires a non-empty 'outputSchema' object: /golden/yield_no_schema.md",
+        "path": "/golden/yield_no_schema.md"
+      },
+      "diagnostics": [
+        {
+          "code": "agent_invalid_yield_schema",
+          "message": "Agent frontmatter 'yield: true' requires a non-empty 'outputSchema' object: /golden/yield_no_schema.md",
+          "path": "/golden/yield_no_schema.md"
+        }
+      ],
+      "profile": null
+    }
+  },
+  "yield_schema_string": {
+    "source": "user",
+    "content": "---\nname: a\ndescription: d\nyield: true\noutputSchema: \"{\\\"type\\\":\\\"object\\\"}\"\n---\nb",
+    "parsed": {
+      "diagnostic": {
+        "code": "agent_invalid_yield_schema",
+        "message": "Agent frontmatter 'yield: true' requires a non-empty 'outputSchema' object: /golden/yield_schema_string.md",
+        "path": "/golden/yield_schema_string.md"
+      },
+      "diagnostics": [
+        {
+          "code": "agent_invalid_yield_schema",
+          "message": "Agent frontmatter 'yield: true' requires a non-empty 'outputSchema' object: /golden/yield_schema_string.md",
+          "path": "/golden/yield_schema_string.md"
+        }
+      ],
+      "profile": null
+    }
+  },
+  "yield_schema_array": {
+    "source": "user",
+    "content": "---\nname: a\ndescription: d\nyield: true\noutputSchema: [1,2]\n---\nb",
+    "parsed": {
+      "diagnostic": {
+        "code": "agent_invalid_yield_schema",
+        "message": "Agent frontmatter 'yield: true' requires a non-empty 'outputSchema' object: /golden/yield_schema_array.md",
+        "path": "/golden/yield_schema_array.md"
+      },
+      "diagnostics": [
+        {
+          "code": "agent_invalid_yield_schema",
+          "message": "Agent frontmatter 'yield: true' requires a non-empty 'outputSchema' object: /golden/yield_schema_array.md",
+          "path": "/golden/yield_schema_array.md"
+        }
+      ],
+      "profile": null
+    }
+  },
+  "memory_scope": {
+    "source": "user",
+    "content": "---\nname: a\ndescription: d\nmemory: project\n---\nb",
+    "parsed": {
+      "diagnostic": null,
+      "diagnostics": null,
+      "profile": {
+        "frontmatter": {
+          "name": "a",
+          "description": "d",
+          "memory": "project"
+        },
+        "name": "a",
+        "description": "d",
+        "source": "user",
+        "systemPrompt": "b",
+        "path": "/golden/memory_scope.md",
+        "memory": "project"
+      }
+    }
+  },
+  "memory_bad_scope": {
+    "source": "user",
+    "content": "---\nname: a\ndescription: d\nmemory: bogus\n---\nb",
+    "parsed": {
+      "diagnostic": {
+        "code": "agent_invalid_memory_scope",
+        "message": "Agent frontmatter memory must be user, project, or local: /golden/memory_bad_scope.md",
+        "path": "/golden/memory_bad_scope.md"
+      },
+      "diagnostics": [
+        {
+          "code": "agent_invalid_memory_scope",
+          "message": "Agent frontmatter memory must be user, project, or local: /golden/memory_bad_scope.md",
+          "path": "/golden/memory_bad_scope.md"
+        }
+      ],
+      "profile": {
+        "frontmatter": {
+          "name": "a",
+          "description": "d",
+          "memory": "bogus"
+        },
+        "name": "a",
+        "description": "d",
+        "source": "user",
+        "systemPrompt": "b",
+        "path": "/golden/memory_bad_scope.md"
+      }
+    }
+  },
+  "memory_and_yield": {
+    "source": "user",
+    "content": "---\nname: a\ndescription: d\nmemory: user\nyield: true\noutputSchema: {\"type\":\"object\"}\n---\nb",
+    "parsed": {
+      "diagnostic": null,
+      "diagnostics": null,
+      "profile": {
+        "frontmatter": {
+          "name": "a",
+          "description": "d",
+          "memory": "user",
+          "yield": true,
+          "outputSchema": {
+            "type": "object"
+          }
+        },
+        "name": "a",
+        "description": "d",
+        "source": "user",
+        "systemPrompt": "b",
+        "path": "/golden/memory_and_yield.md",
+        "memory": "user",
+        "yield": {
+          "mode": "structured",
+          "schema": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  },
+  "memory_bad_and_yield_bad": {
+    "source": "user",
+    "content": "---\nname: a\ndescription: d\nmemory: bogus\nyield: true\n---\nb",
+    "parsed": {
+      "diagnostic": {
+        "code": "agent_invalid_yield_schema",
+        "message": "Agent frontmatter 'yield: true' requires a non-empty 'outputSchema' object: /golden/memory_bad_and_yield_bad.md",
+        "path": "/golden/memory_bad_and_yield_bad.md"
+      },
+      "diagnostics": [
+        {
+          "code": "agent_invalid_yield_schema",
+          "message": "Agent frontmatter 'yield: true' requires a non-empty 'outputSchema' object: /golden/memory_bad_and_yield_bad.md",
+          "path": "/golden/memory_bad_and_yield_bad.md"
+        },
+        {
+          "code": "agent_invalid_memory_scope",
+          "message": "Agent frontmatter memory must be user, project, or local: /golden/memory_bad_and_yield_bad.md",
+          "path": "/golden/memory_bad_and_yield_bad.md"
+        }
+      ],
+      "profile": null
+    }
+  },
+  "no_frontmatter": {
+    "source": "user",
+    "content": "just body text",
+    "parsed": {
+      "diagnostic": {
+        "code": "agent_missing_frontmatter",
+        "message": "Agent Markdown must include frontmatter: /golden/no_frontmatter.md",
+        "path": "/golden/no_frontmatter.md"
+      },
+      "diagnostics": null,
+      "profile": null
+    }
+  },
+  "mcp_servers_list": {
+    "source": "user",
+    "content": "---\nname: a\ndescription: d\nmcpServers:\n  - one\n  - two\n---\nb",
+    "parsed": {
+      "diagnostic": null,
+      "diagnostics": null,
+      "profile": {
+        "frontmatter": {
+          "name": "a",
+          "description": "d",
+          "mcpServers": [
+            "one",
+            "two"
+          ]
+        },
+        "name": "a",
+        "description": "d",
+        "source": "user",
+        "systemPrompt": "b",
+        "path": "/golden/mcp_servers_list.md",
+        "mcpServers": [
+          "one",
+          "two"
+        ]
+      }
+    }
+  },
+  "tools_list": {
+    "source": "user",
+    "content": "---\nname: a\ndescription: d\ntools:\n  - Read\n  - Grep\n---\nb",
+    "parsed": {
+      "diagnostic": null,
+      "diagnostics": null,
+      "profile": {
+        "frontmatter": {
+          "name": "a",
+          "description": "d",
+          "tools": [
+            "Read",
+            "Grep"
+          ]
+        },
+        "name": "a",
+        "description": "d",
+        "source": "user",
+        "systemPrompt": "b",
+        "path": "/golden/tools_list.md",
+        "tools": [
+          "Read",
+          "Grep"
+        ]
+      }
+    }
+  },
+  "booleans": {
+    "source": "user",
+    "content": "---\nname: a\ndescription: d\nbackground: true\ninjectAgentsMd: false\n---\nb",
+    "parsed": {
+      "diagnostic": null,
+      "diagnostics": null,
+      "profile": {
+        "frontmatter": {
+          "name": "a",
+          "description": "d",
+          "background": true,
+          "injectAgentsMd": false
+        },
+        "name": "a",
+        "description": "d",
+        "source": "user",
+        "systemPrompt": "b",
+        "path": "/golden/booleans.md",
+        "background": true,
+        "injectAgentsMd": false
+      }
+    }
+  },
+  "max_turns": {
+    "source": "user",
+    "content": "---\nname: a\ndescription: d\nmaxTurns: 7\n---\nb",
+    "parsed": {
+      "diagnostic": null,
+      "diagnostics": null,
+      "profile": {
+        "frontmatter": {
+          "name": "a",
+          "description": "d",
+          "maxTurns": 7
+        },
+        "name": "a",
+        "description": "d",
+        "source": "user",
+        "systemPrompt": "b",
+        "path": "/golden/max_turns.md",
+        "maxTurns": 7
+      }
+    }
+  },
+  "project_scope_permission_stripped": {
+    "source": "project",
+    "content": "---\nname: a\ndescription: d\npermissionMode: bypassPermissions\n---\nb",
+    "parsed": {
+      "diagnostic": null,
+      "diagnostics": null,
+      "profile": {
+        "frontmatter": {
+          "name": "a",
+          "description": "d",
+          "permissionMode": "bypassPermissions"
+        },
+        "name": "a",
+        "description": "d",
+        "source": "project",
+        "systemPrompt": "b",
+        "path": "/golden/project_scope_permission_stripped.md"
+      }
+    }
+  },
+  "user_scope_permission_kept": {
+    "source": "user",
+    "content": "---\nname: a\ndescription: d\npermissionMode: plan\n---\nb",
+    "parsed": {
+      "diagnostic": null,
+      "diagnostics": null,
+      "profile": {
+        "frontmatter": {
+          "name": "a",
+          "description": "d",
+          "permissionMode": "plan"
+        },
+        "name": "a",
+        "description": "d",
+        "source": "user",
+        "systemPrompt": "b",
+        "path": "/golden/user_scope_permission_kept.md",
+        "permissionMode": "plan"
+      }
+    }
+  },
+  "model_pinned": {
+    "source": "user",
+    "content": "---\nname: a\ndescription: d\nmodel: anthropic/claude-opus-5\nthoughtLevel: high\n---\nb",
+    "parsed": {
+      "diagnostic": null,
+      "diagnostics": null,
+      "profile": {
+        "frontmatter": {
+          "name": "a",
+          "description": "d",
+          "model": "anthropic/claude-opus-5",
+          "thoughtLevel": "high"
+        },
+        "name": "a",
+        "description": "d",
+        "source": "user",
+        "systemPrompt": "b",
+        "path": "/golden/model_pinned.md",
+        "modelSelection": {
+          "providerId": "anthropic",
+          "modelId": "claude-opus-5",
+          "options": {
+            "reasoningLevel": "high"
+          }
+        }
+      }
+    }
+  },
+  "mcp_servers_bare": {
+    "source": "user",
+    "content": "---\nname: a\ndescription: d\nmcpServers: notalist\n---\nb",
+    "parsed": {
+      "diagnostic": {
+        "code": "agent_invalid_mcp_servers",
+        "message": "Agent frontmatter mcpServers must be a list of parent server names: /golden/mcp_servers_bare.md",
+        "path": "/golden/mcp_servers_bare.md"
+      },
+      "diagnostics": null,
+      "profile": null
+    }
+  }
+}

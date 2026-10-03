@@ -1,50 +1,7 @@
-import type { PermissionRuleBehavior, PermissionRuleValue } from "@zcode/contracts";
-import { wildcardToRegExp } from "../../permission/rule-matching.js";
-
-interface BashRuleEvaluationInput {
-  allSubjectGroups: readonly (readonly string[])[];
-  behavior: PermissionRuleBehavior;
-  exactCommands: readonly string[];
-  requiredSubjectGroups: readonly (readonly string[])[];
-  rules: readonly PermissionRuleValue[];
-  safe: boolean;
-}
-
-export function evaluateBashRules(input: BashRuleEvaluationInput): boolean {
-  if (input.rules.some((rule) => !rule.ruleContent)) return true;
-  if (
-    input.exactCommands.some((command) => command.length > 0) &&
-    input.rules.some((rule) => input.exactCommands.includes(rule.ruleContent ?? ""))
-  ) {
-    return true;
-  }
-  if (!input.safe) return false;
-
-  const subjectGroups =
-    input.behavior === "allow" ? input.requiredSubjectGroups : input.allSubjectGroups;
-  if (subjectGroups.length === 0) return false;
-  if (input.behavior !== "allow") {
-    return subjectGroups.some((subjects) =>
-      subjects.some((subject) =>
-        input.rules.some((rule) => matchesInvocationRule(subject, rule.ruleContent)),
-      ),
-    );
-  }
-  return subjectGroups.every((subjects) =>
-    subjects.some((subject) =>
-      input.rules.some((rule) => matchesInvocationRule(subject, rule.ruleContent)),
-    ),
-  );
-}
-
-function matchesInvocationRule(subject: string, ruleContent: string | undefined): boolean {
-  if (!ruleContent) return true;
-  if (ruleContent.endsWith(":*")) {
-    const prefix = ruleContent.slice(0, -2);
-    return (
-      subject === prefix || subject.startsWith(`${prefix} `) || subject.startsWith(`${prefix}\t`)
-    );
-  }
-  if (ruleContent.includes("*")) return wildcardToRegExp(ruleContent).test(subject);
-  return subject === ruleContent;
-}
+// The bash permission rule matcher: the rule has one owner, Rust.
+//
+// Spec: docs/specs/subagent-rust-port.md (Phase 3). This file is only a re-export so the
+// permission flow's callers stay where they are. `bash-rules-golden.json` pins the 18 rule
+// cases plus the wildcard grammar; `matchesInvocationRule`'s three shapes — `:*` prefix,
+// `*` wildcard, exact string — live in `zcode-subagent-profile`.
+export { evaluateBashRules } from "@zcode/rust/subagent-profile";

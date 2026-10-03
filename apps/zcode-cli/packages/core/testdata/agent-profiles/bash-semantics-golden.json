@@ -1,0 +1,730 @@
+{
+  "single_read": {
+    "command": "ls",
+    "permissionSafe": true,
+    "readOnly": true,
+    "silent": false,
+    "commands": [
+      {
+        "name": "ls",
+        "argv": [
+          "ls"
+        ],
+        "commandText": "ls",
+        "envAssignments": [],
+        "redirects": [],
+        "operatorBefore": null
+      }
+    ],
+    "hasParseErrors": false,
+    "hasRedirects": false,
+    "hasDynamicWords": false,
+    "hasUnsupportedSyntax": false
+  },
+  "git_status": {
+    "command": "git status",
+    "permissionSafe": true,
+    "readOnly": true,
+    "silent": false,
+    "commands": [
+      {
+        "name": "git",
+        "argv": [
+          "git",
+          "status"
+        ],
+        "commandText": "git status",
+        "envAssignments": [],
+        "redirects": [],
+        "operatorBefore": null
+      }
+    ],
+    "hasParseErrors": false,
+    "hasRedirects": false,
+    "hasDynamicWords": false,
+    "hasUnsupportedSyntax": false
+  },
+  "chained_and": {
+    "command": "ls && git status",
+    "permissionSafe": true,
+    "readOnly": true,
+    "silent": false,
+    "commands": [
+      {
+        "name": "ls",
+        "argv": [
+          "ls"
+        ],
+        "commandText": "ls",
+        "envAssignments": [],
+        "redirects": [],
+        "operatorBefore": null
+      },
+      {
+        "name": "git",
+        "argv": [
+          "git",
+          "status"
+        ],
+        "commandText": "git status",
+        "envAssignments": [],
+        "redirects": [],
+        "operatorBefore": "&&"
+      }
+    ],
+    "hasParseErrors": false,
+    "hasRedirects": false,
+    "hasDynamicWords": false,
+    "hasUnsupportedSyntax": false
+  },
+  "chained_or": {
+    "command": "ls || rm -rf /",
+    "permissionSafe": true,
+    "readOnly": false,
+    "silent": false,
+    "commands": [
+      {
+        "name": "ls",
+        "argv": [
+          "ls"
+        ],
+        "commandText": "ls",
+        "envAssignments": [],
+        "redirects": [],
+        "operatorBefore": null
+      },
+      {
+        "name": "rm",
+        "argv": [
+          "rm",
+          "-rf",
+          "/"
+        ],
+        "commandText": "rm -rf /",
+        "envAssignments": [],
+        "redirects": [],
+        "operatorBefore": "||"
+      }
+    ],
+    "hasParseErrors": false,
+    "hasRedirects": false,
+    "hasDynamicWords": false,
+    "hasUnsupportedSyntax": false
+  },
+  "pipeline": {
+    "command": "cat file | grep pattern",
+    "permissionSafe": true,
+    "readOnly": true,
+    "silent": false,
+    "commands": [
+      {
+        "name": "cat",
+        "argv": [
+          "cat",
+          "file"
+        ],
+        "commandText": "cat file",
+        "envAssignments": [],
+        "redirects": [],
+        "operatorBefore": null
+      },
+      {
+        "name": "grep",
+        "argv": [
+          "grep",
+          "pattern"
+        ],
+        "commandText": "grep pattern",
+        "envAssignments": [],
+        "redirects": [],
+        "operatorBefore": "|"
+      }
+    ],
+    "hasParseErrors": false,
+    "hasRedirects": false,
+    "hasDynamicWords": false,
+    "hasUnsupportedSyntax": false
+  },
+  "git_push_denied": {
+    "command": "git push",
+    "permissionSafe": true,
+    "readOnly": false,
+    "silent": false,
+    "commands": [
+      {
+        "name": "git",
+        "argv": [
+          "git",
+          "push"
+        ],
+        "commandText": "git push",
+        "envAssignments": [],
+        "redirects": [],
+        "operatorBefore": null
+      }
+    ],
+    "hasParseErrors": false,
+    "hasRedirects": false,
+    "hasDynamicWords": false,
+    "hasUnsupportedSyntax": false
+  },
+  "redirect_output": {
+    "command": "cat file > out.txt",
+    "permissionSafe": true,
+    "readOnly": false,
+    "silent": false,
+    "commands": [
+      {
+        "name": "cat",
+        "argv": [
+          "cat",
+          "file"
+        ],
+        "commandText": "cat file > out.txt",
+        "envAssignments": [],
+        "redirects": [
+          {
+            "operator": ">",
+            "target": "out.txt"
+          }
+        ],
+        "operatorBefore": null
+      }
+    ],
+    "hasParseErrors": false,
+    "hasRedirects": true,
+    "hasDynamicWords": false,
+    "hasUnsupportedSyntax": false
+  },
+  "redirect_input": {
+    "command": "cat < file",
+    "permissionSafe": true,
+    "readOnly": true,
+    "silent": false,
+    "commands": [
+      {
+        "name": "cat",
+        "argv": [
+          "cat"
+        ],
+        "commandText": "cat < file",
+        "envAssignments": [],
+        "redirects": [
+          {
+            "operator": "<",
+            "target": "file"
+          }
+        ],
+        "operatorBefore": null
+      }
+    ],
+    "hasParseErrors": false,
+    "hasRedirects": true,
+    "hasDynamicWords": false,
+    "hasUnsupportedSyntax": false
+  },
+  "subshell": {
+    "command": "(cd /tmp && ls)",
+    "permissionSafe": false,
+    "readOnly": false,
+    "silent": false,
+    "commands": [],
+    "hasParseErrors": false,
+    "hasRedirects": false,
+    "hasDynamicWords": false,
+    "hasUnsupportedSyntax": true
+  },
+  "command_substitution": {
+    "command": "echo $(rm -rf /)",
+    "permissionSafe": false,
+    "readOnly": false,
+    "silent": false,
+    "commands": [
+      {
+        "name": "echo",
+        "argv": [
+          "echo",
+          "$(rm -rf /)"
+        ],
+        "commandText": "echo $(rm -rf /)",
+        "envAssignments": [],
+        "redirects": [],
+        "operatorBefore": null
+      }
+    ],
+    "hasParseErrors": false,
+    "hasRedirects": false,
+    "hasDynamicWords": true,
+    "hasUnsupportedSyntax": false
+  },
+  "dynamic_var": {
+    "command": "ls $HOME",
+    "permissionSafe": false,
+    "readOnly": false,
+    "silent": false,
+    "commands": [
+      {
+        "name": "ls",
+        "argv": [
+          "ls",
+          "$HOME"
+        ],
+        "commandText": "ls $HOME",
+        "envAssignments": [],
+        "redirects": [],
+        "operatorBefore": null
+      }
+    ],
+    "hasParseErrors": false,
+    "hasRedirects": false,
+    "hasDynamicWords": true,
+    "hasUnsupportedSyntax": false
+  },
+  "glob": {
+    "command": "ls *.ts",
+    "permissionSafe": true,
+    "readOnly": true,
+    "silent": false,
+    "commands": [
+      {
+        "name": "ls",
+        "argv": [
+          "ls",
+          "*.ts"
+        ],
+        "commandText": "ls *.ts",
+        "envAssignments": [],
+        "redirects": [],
+        "operatorBefore": null
+      }
+    ],
+    "hasParseErrors": false,
+    "hasRedirects": false,
+    "hasDynamicWords": false,
+    "hasUnsupportedSyntax": false
+  },
+  "env_prefix": {
+    "command": "LANG=C ls",
+    "permissionSafe": true,
+    "readOnly": true,
+    "silent": false,
+    "commands": [
+      {
+        "name": "ls",
+        "argv": [
+          "ls"
+        ],
+        "commandText": "LANG=C ls",
+        "envAssignments": [
+          {
+            "name": "LANG",
+            "value": "C"
+          }
+        ],
+        "redirects": [],
+        "operatorBefore": null
+      }
+    ],
+    "hasParseErrors": false,
+    "hasRedirects": false,
+    "hasDynamicWords": false,
+    "hasUnsupportedSyntax": false
+  },
+  "empty": {
+    "command": "",
+    "permissionSafe": true,
+    "readOnly": false,
+    "silent": false,
+    "commands": [],
+    "hasParseErrors": false,
+    "hasRedirects": false,
+    "hasDynamicWords": false,
+    "hasUnsupportedSyntax": false
+  },
+  "only_whitespace": {
+    "command": "   ",
+    "permissionSafe": true,
+    "readOnly": false,
+    "silent": false,
+    "commands": [],
+    "hasParseErrors": false,
+    "hasRedirects": false,
+    "hasDynamicWords": false,
+    "hasUnsupportedSyntax": false
+  },
+  "parse_error": {
+    "command": "ls | | |",
+    "permissionSafe": true,
+    "readOnly": true,
+    "silent": false,
+    "commands": [
+      {
+        "name": "ls",
+        "argv": [
+          "ls"
+        ],
+        "commandText": "ls",
+        "envAssignments": [],
+        "redirects": [],
+        "operatorBefore": null
+      }
+    ],
+    "hasParseErrors": false,
+    "hasRedirects": false,
+    "hasDynamicWords": false,
+    "hasUnsupportedSyntax": false
+  },
+  "unbalanced_quote": {
+    "command": "echo 'unterminated",
+    "permissionSafe": false,
+    "readOnly": false,
+    "silent": false,
+    "commands": [
+      {
+        "name": "echo",
+        "argv": [
+          "echo",
+          "unterminated"
+        ],
+        "commandText": "echo 'unterminated",
+        "envAssignments": [],
+        "redirects": [],
+        "operatorBefore": null
+      }
+    ],
+    "hasParseErrors": true,
+    "hasRedirects": false,
+    "hasDynamicWords": false,
+    "hasUnsupportedSyntax": false
+  },
+  "background_and": {
+    "command": "ls & git status",
+    "permissionSafe": false,
+    "readOnly": false,
+    "silent": false,
+    "commands": [
+      {
+        "name": "ls",
+        "argv": [
+          "ls"
+        ],
+        "commandText": "ls",
+        "envAssignments": [],
+        "redirects": [],
+        "operatorBefore": null
+      },
+      {
+        "name": "git",
+        "argv": [
+          "git",
+          "status"
+        ],
+        "commandText": "git status",
+        "envAssignments": [],
+        "redirects": [],
+        "operatorBefore": "sequence"
+      }
+    ],
+    "hasParseErrors": false,
+    "hasRedirects": false,
+    "hasDynamicWords": false,
+    "hasUnsupportedSyntax": true
+  },
+  "semicolon": {
+    "command": "ls; git status",
+    "permissionSafe": true,
+    "readOnly": true,
+    "silent": false,
+    "commands": [
+      {
+        "name": "ls",
+        "argv": [
+          "ls"
+        ],
+        "commandText": "ls",
+        "envAssignments": [],
+        "redirects": [],
+        "operatorBefore": null
+      },
+      {
+        "name": "git",
+        "argv": [
+          "git",
+          "status"
+        ],
+        "commandText": "git status",
+        "envAssignments": [],
+        "redirects": [],
+        "operatorBefore": "sequence"
+      }
+    ],
+    "hasParseErrors": false,
+    "hasRedirects": false,
+    "hasDynamicWords": false,
+    "hasUnsupportedSyntax": false
+  },
+  "cd_then_git": {
+    "command": "cd /tmp && git status",
+    "permissionSafe": true,
+    "readOnly": false,
+    "silent": false,
+    "commands": [
+      {
+        "name": "cd",
+        "argv": [
+          "cd",
+          "/tmp"
+        ],
+        "commandText": "cd /tmp",
+        "envAssignments": [],
+        "redirects": [],
+        "operatorBefore": null
+      },
+      {
+        "name": "git",
+        "argv": [
+          "git",
+          "status"
+        ],
+        "commandText": "git status",
+        "envAssignments": [],
+        "redirects": [],
+        "operatorBefore": "&&"
+      }
+    ],
+    "hasParseErrors": false,
+    "hasRedirects": false,
+    "hasDynamicWords": false,
+    "hasUnsupportedSyntax": false
+  },
+  "find_delete": {
+    "command": "find . -delete",
+    "permissionSafe": true,
+    "readOnly": false,
+    "silent": false,
+    "commands": [
+      {
+        "name": "find",
+        "argv": [
+          "find",
+          ".",
+          "-delete"
+        ],
+        "commandText": "find . -delete",
+        "envAssignments": [],
+        "redirects": [],
+        "operatorBefore": null
+      }
+    ],
+    "hasParseErrors": false,
+    "hasRedirects": false,
+    "hasDynamicWords": false,
+    "hasUnsupportedSyntax": false
+  },
+  "sed_in_place": {
+    "command": "sed -i 's/a/b/' file",
+    "permissionSafe": true,
+    "readOnly": false,
+    "silent": false,
+    "commands": [
+      {
+        "name": "sed",
+        "argv": [
+          "sed",
+          "-i",
+          "s/a/b/",
+          "file"
+        ],
+        "commandText": "sed -i 's/a/b/' file",
+        "envAssignments": [],
+        "redirects": [],
+        "operatorBefore": null
+      }
+    ],
+    "hasParseErrors": false,
+    "hasRedirects": false,
+    "hasDynamicWords": false,
+    "hasUnsupportedSyntax": false
+  },
+  "cat_only": {
+    "command": "cat file.txt",
+    "permissionSafe": true,
+    "readOnly": true,
+    "silent": false,
+    "commands": [
+      {
+        "name": "cat",
+        "argv": [
+          "cat",
+          "file.txt"
+        ],
+        "commandText": "cat file.txt",
+        "envAssignments": [],
+        "redirects": [],
+        "operatorBefore": null
+      }
+    ],
+    "hasParseErrors": false,
+    "hasRedirects": false,
+    "hasDynamicWords": false,
+    "hasUnsupportedSyntax": false
+  },
+  "true_command": {
+    "command": "true",
+    "permissionSafe": true,
+    "readOnly": true,
+    "silent": false,
+    "commands": [
+      {
+        "name": "true",
+        "argv": [
+          "true"
+        ],
+        "commandText": "true",
+        "envAssignments": [],
+        "redirects": [],
+        "operatorBefore": null
+      }
+    ],
+    "hasParseErrors": false,
+    "hasRedirects": false,
+    "hasDynamicWords": false,
+    "hasUnsupportedSyntax": false
+  },
+  "false_command": {
+    "command": "false",
+    "permissionSafe": true,
+    "readOnly": true,
+    "silent": false,
+    "commands": [
+      {
+        "name": "false",
+        "argv": [
+          "false"
+        ],
+        "commandText": "false",
+        "envAssignments": [],
+        "redirects": [],
+        "operatorBefore": null
+      }
+    ],
+    "hasParseErrors": false,
+    "hasRedirects": false,
+    "hasDynamicWords": false,
+    "hasUnsupportedSyntax": false
+  },
+  "echo_only": {
+    "command": "echo hi",
+    "permissionSafe": true,
+    "readOnly": true,
+    "silent": false,
+    "commands": [
+      {
+        "name": "echo",
+        "argv": [
+          "echo",
+          "hi"
+        ],
+        "commandText": "echo hi",
+        "envAssignments": [],
+        "redirects": [],
+        "operatorBefore": null
+      }
+    ],
+    "hasParseErrors": false,
+    "hasRedirects": false,
+    "hasDynamicWords": false,
+    "hasUnsupportedSyntax": false
+  },
+  "colon_only": {
+    "command": ":",
+    "permissionSafe": true,
+    "readOnly": false,
+    "silent": false,
+    "commands": [
+      {
+        "name": ":",
+        "argv": [
+          ":"
+        ],
+        "commandText": ":",
+        "envAssignments": [],
+        "redirects": [],
+        "operatorBefore": null
+      }
+    ],
+    "hasParseErrors": false,
+    "hasRedirects": false,
+    "hasDynamicWords": false,
+    "hasUnsupportedSyntax": false
+  },
+  "unknown_command": {
+    "command": "zzz-not-a-command",
+    "permissionSafe": true,
+    "readOnly": false,
+    "silent": false,
+    "commands": [
+      {
+        "name": "zzz-not-a-command",
+        "argv": [
+          "zzz-not-a-command"
+        ],
+        "commandText": "zzz-not-a-command",
+        "envAssignments": [],
+        "redirects": [],
+        "operatorBefore": null
+      }
+    ],
+    "hasParseErrors": false,
+    "hasRedirects": false,
+    "hasDynamicWords": false,
+    "hasUnsupportedSyntax": false
+  },
+  "nested_wrappers": {
+    "command": "command env ls",
+    "permissionSafe": true,
+    "readOnly": false,
+    "silent": false,
+    "commands": [
+      {
+        "name": "command",
+        "argv": [
+          "command",
+          "env",
+          "ls"
+        ],
+        "commandText": "command env ls",
+        "envAssignments": [],
+        "redirects": [],
+        "operatorBefore": null
+      }
+    ],
+    "hasParseErrors": false,
+    "hasRedirects": false,
+    "hasDynamicWords": false,
+    "hasUnsupportedSyntax": false
+  },
+  "sudo_denied": {
+    "command": "sudo ls",
+    "permissionSafe": true,
+    "readOnly": false,
+    "silent": false,
+    "commands": [
+      {
+        "name": "sudo",
+        "argv": [
+          "sudo",
+          "ls"
+        ],
+        "commandText": "sudo ls",
+        "envAssignments": [],
+        "redirects": [],
+        "operatorBefore": null
+      }
+    ],
+    "hasParseErrors": false,
+    "hasRedirects": false,
+    "hasDynamicWords": false,
+    "hasUnsupportedSyntax": false
+  }
+}

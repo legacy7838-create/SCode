@@ -6,6 +6,14 @@ import {
 import { findOfficialCuaFrameContentPair } from "@zcode/zcode-cua/frame-contract";
 import type { ToolResultSerialization } from "../types.js";
 
+// The byte budget is Rust: `fitStringToBytes` walks JavaScript code points, and the naive Rust
+// translation either panics on a code-point boundary or splits one. See
+// docs/specs/subagent-rust-port.md Phase 4 and result-budget-golden.json (307 cases).
+import { fitContentWithSuffix, fitStringToBytes } from "@zcode/rust/subagent-result-budget";
+
+export { fitContentWithSuffix, fitStringToBytes };
+
+
 interface HookStringProjection {
   content: string;
   truncated: boolean;
@@ -178,19 +186,6 @@ export function projectHookAugmentedModelContent(input: {
   ];
 }
 
-export function fitContentWithSuffix(
-  content: string,
-  maxBytes: number,
-  suffix: string,
-  direction: "head" | "tail",
-): string {
-  if (maxBytes <= 0) return "";
-  const suffixContent = fitStringToBytes(suffix, maxBytes, "head");
-  const remainingBytes = maxBytes - Buffer.byteLength(suffixContent, "utf8");
-  if (remainingBytes <= 0) return suffixContent;
-  return `${fitStringToBytes(content, remainingBytes, direction)}${suffixContent}`;
-}
-
 function joinTextBlocks(content: ModelMessageContentBlock[]): string {
   return content
     .filter(
@@ -239,23 +234,4 @@ function budgetedTextFromStructuredContent(content: ModelMessageContentBlock[]):
     .join("\n\n");
 }
 
-function fitStringToBytes(value: string, maxBytes: number, direction: "head" | "tail"): string {
-  if (maxBytes <= 0) return "";
-  if (Buffer.byteLength(value, "utf8") <= maxBytes) return value;
 
-  const chars = Array.from(value);
-  let low = 0;
-  let high = chars.length;
-  while (low < high) {
-    const mid = Math.ceil((low + high) / 2);
-    const candidate =
-      direction === "tail"
-        ? chars.slice(chars.length - mid).join("")
-        : chars.slice(0, mid).join("");
-    if (Buffer.byteLength(candidate, "utf8") <= maxBytes) low = mid;
-    else high = mid - 1;
-  }
-  return direction === "tail"
-    ? chars.slice(chars.length - low).join("")
-    : chars.slice(0, low).join("");
-}

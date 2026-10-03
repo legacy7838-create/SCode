@@ -1,0 +1,869 @@
+{
+  "allow_any_permits_everything": {
+    "allowed": true,
+    "case": {
+      "name": "allow_any_permits_everything",
+      "policy": "allowAny",
+      "commandName": "anything",
+      "argv": [
+        "anything",
+        "--whatever",
+        "-x",
+        "rm -rf"
+      ]
+    },
+    "policy": {
+      "allowAnyArgs": true
+    }
+  },
+  "allow_any_on_empty_argv": {
+    "allowed": false,
+    "case": {
+      "name": "allow_any_on_empty_argv",
+      "policy": "allowAny",
+      "commandName": "anything",
+      "argv": []
+    },
+    "policy": {
+      "allowAnyArgs": true
+    }
+  },
+  "command_only_rejects_arguments": {
+    "allowed": false,
+    "case": {
+      "name": "command_only_rejects_arguments",
+      "policy": "commandOnly",
+      "commandName": "git",
+      "argv": [
+        "git",
+        "status"
+      ]
+    },
+    "policy": {
+      "commandOnly": true
+    }
+  },
+  "command_only_accepts_bare": {
+    "allowed": true,
+    "case": {
+      "name": "command_only_accepts_bare",
+      "policy": "commandOnly",
+      "commandName": "git",
+      "argv": [
+        "git"
+      ]
+    },
+    "policy": {
+      "commandOnly": true
+    }
+  },
+  "command_only_empty_argv": {
+    "allowed": false,
+    "case": {
+      "name": "command_only_empty_argv",
+      "policy": "commandOnly",
+      "commandName": "git",
+      "argv": []
+    },
+    "policy": {
+      "commandOnly": true
+    }
+  },
+  "git_log_clean": {
+    "allowed": true,
+    "case": {
+      "name": "git_log_clean",
+      "policy": "gitLog",
+      "commandName": "git",
+      "argv": [
+        "git",
+        "--oneline",
+        "--graph"
+      ]
+    },
+    "policy": {
+      "safeFlags": {
+        "--oneline": "none",
+        "--graph": "none",
+        "-n": "string",
+        "--since": "string",
+        "--max-count": "number"
+      }
+    }
+  },
+  "git_log_with_string_value": {
+    "allowed": true,
+    "case": {
+      "name": "git_log_with_string_value",
+      "policy": "gitLog",
+      "commandName": "git",
+      "argv": [
+        "git",
+        "--since",
+        "yesterday"
+      ]
+    },
+    "policy": {
+      "safeFlags": {
+        "--oneline": "none",
+        "--graph": "none",
+        "-n": "string",
+        "--since": "string",
+        "--max-count": "number"
+      }
+    }
+  },
+  "git_log_with_inline_value": {
+    "allowed": true,
+    "case": {
+      "name": "git_log_with_inline_value",
+      "policy": "gitLog",
+      "commandName": "git",
+      "argv": [
+        "git",
+        "--since=yesterday"
+      ]
+    },
+    "policy": {
+      "safeFlags": {
+        "--oneline": "none",
+        "--graph": "none",
+        "-n": "string",
+        "--since": "string",
+        "--max-count": "number"
+      }
+    }
+  },
+  "git_log_string_value_missing": {
+    "allowed": false,
+    "case": {
+      "name": "git_log_string_value_missing",
+      "policy": "gitLog",
+      "commandName": "git",
+      "argv": [
+        "git",
+        "--since"
+      ]
+    },
+    "policy": {
+      "safeFlags": {
+        "--oneline": "none",
+        "--graph": "none",
+        "-n": "string",
+        "--since": "string",
+        "--max-count": "number"
+      }
+    }
+  },
+  "git_log_number_value": {
+    "allowed": true,
+    "case": {
+      "name": "git_log_number_value",
+      "policy": "gitLog",
+      "commandName": "git",
+      "argv": [
+        "git",
+        "--max-count",
+        "10"
+      ]
+    },
+    "policy": {
+      "safeFlags": {
+        "--oneline": "none",
+        "--graph": "none",
+        "-n": "string",
+        "--since": "string",
+        "--max-count": "number"
+      }
+    }
+  },
+  "git_log_number_value_wrong_kind": {
+    "allowed": false,
+    "case": {
+      "name": "git_log_number_value_wrong_kind",
+      "policy": "gitLog",
+      "commandName": "git",
+      "argv": [
+        "git",
+        "--max-count",
+        "ten"
+      ]
+    },
+    "policy": {
+      "safeFlags": {
+        "--oneline": "none",
+        "--graph": "none",
+        "-n": "string",
+        "--since": "string",
+        "--max-count": "number"
+      }
+    }
+  },
+  "git_log_unknown_flag_rejected": {
+    "allowed": false,
+    "case": {
+      "name": "git_log_unknown_flag_rejected",
+      "policy": "gitLog",
+      "commandName": "git",
+      "argv": [
+        "git",
+        "--output=/etc/passwd"
+      ]
+    },
+    "policy": {
+      "safeFlags": {
+        "--oneline": "none",
+        "--graph": "none",
+        "-n": "string",
+        "--since": "string",
+        "--max-count": "number"
+      }
+    }
+  },
+  "git_log_unknown_flag_at_command": {
+    "allowed": false,
+    "case": {
+      "name": "git_log_unknown_flag_at_command",
+      "policy": "gitLog",
+      "commandName": "git",
+      "argv": [
+        "git",
+        "log",
+        "--force"
+      ]
+    },
+    "policy": {
+      "safeFlags": {
+        "--oneline": "none",
+        "--graph": "none",
+        "-n": "string",
+        "--since": "string",
+        "--max-count": "number"
+      }
+    }
+  },
+  "git_log_none_flag_with_inline_value": {
+    "allowed": false,
+    "case": {
+      "name": "git_log_none_flag_with_inline_value",
+      "policy": "gitLog",
+      "commandName": "git",
+      "argv": [
+        "git",
+        "--oneline=x"
+      ]
+    },
+    "policy": {
+      "safeFlags": {
+        "--oneline": "none",
+        "--graph": "none",
+        "-n": "string",
+        "--since": "string",
+        "--max-count": "number"
+      }
+    }
+  },
+  "git_log_positional_is_skipped": {
+    "allowed": true,
+    "case": {
+      "name": "git_log_positional_is_skipped",
+      "policy": "gitLog",
+      "commandName": "git",
+      "argv": [
+        "git",
+        "HEAD",
+        "--oneline"
+      ],
+      "startIndex": 2
+    },
+    "policy": {
+      "safeFlags": {
+        "--oneline": "none",
+        "--graph": "none",
+        "-n": "string",
+        "--since": "string",
+        "--max-count": "number"
+      }
+    }
+  },
+  "git_log_option_like_string_value": {
+    "allowed": false,
+    "case": {
+      "name": "git_log_option_like_string_value",
+      "policy": "gitLog",
+      "commandName": "git",
+      "argv": [
+        "git",
+        "--since",
+        "--not-a-date"
+      ]
+    },
+    "policy": {
+      "safeFlags": {
+        "--oneline": "none",
+        "--graph": "none",
+        "-n": "string",
+        "--since": "string",
+        "--max-count": "number"
+      }
+    }
+  },
+  "git_log_double_dash_stops": {
+    "allowed": true,
+    "case": {
+      "name": "git_log_double_dash_stops",
+      "policy": "gitLog",
+      "commandName": "git",
+      "argv": [
+        "git",
+        "--",
+        "--oneline"
+      ]
+    },
+    "policy": {
+      "safeFlags": {
+        "--oneline": "none",
+        "--graph": "none",
+        "-n": "string",
+        "--since": "string",
+        "--max-count": "number"
+      }
+    }
+  },
+  "compact_count_allowed": {
+    "allowed": true,
+    "case": {
+      "name": "compact_count_allowed",
+      "policy": "compactCount",
+      "commandName": "wc",
+      "argv": [
+        "wc",
+        "-10"
+      ]
+    },
+    "policy": {
+      "safeFlags": {
+        "-n": "number"
+      },
+      "allowCompactNumericCountFlag": true
+    }
+  },
+  "compact_count_not_declared": {
+    "allowed": false,
+    "case": {
+      "name": "compact_count_not_declared",
+      "policy": "gitLog",
+      "commandName": "wc",
+      "argv": [
+        "wc",
+        "-10"
+      ]
+    },
+    "policy": {
+      "safeFlags": {
+        "--oneline": "none",
+        "--graph": "none",
+        "-n": "string",
+        "--since": "string",
+        "--max-count": "number"
+      }
+    }
+  },
+  "head_compact_count_always": {
+    "allowed": true,
+    "case": {
+      "name": "head_compact_count_always",
+      "policy": "headTail",
+      "commandName": "head",
+      "argv": [
+        "head",
+        "-20"
+      ]
+    },
+    "policy": {
+      "safeFlags": {}
+    }
+  },
+  "head_compact_count_negative": {
+    "allowed": false,
+    "case": {
+      "name": "head_compact_count_negative",
+      "policy": "headTail",
+      "commandName": "head",
+      "argv": [
+        "head",
+        "--20"
+      ]
+    },
+    "policy": {
+      "safeFlags": {}
+    }
+  },
+  "tail_compact_count": {
+    "allowed": true,
+    "case": {
+      "name": "tail_compact_count",
+      "policy": "headTail",
+      "commandName": "tail",
+      "argv": [
+        "tail",
+        "-5"
+      ]
+    },
+    "policy": {
+      "safeFlags": {}
+    }
+  },
+  "double_dash_respected": {
+    "allowed": true,
+    "case": {
+      "name": "double_dash_respected",
+      "policy": "noDoubleDash",
+      "commandName": "sort",
+      "argv": [
+        "sort",
+        "--",
+        "file"
+      ]
+    },
+    "policy": {
+      "safeFlags": {
+        "--": "none"
+      },
+      "respectsDoubleDash": false
+    }
+  },
+  "unknown_flag_after_double_dash_ignored": {
+    "allowed": true,
+    "case": {
+      "name": "unknown_flag_after_double_dash_ignored",
+      "policy": "gitLog",
+      "commandName": "git",
+      "argv": [
+        "git",
+        "--",
+        "--output=/x"
+      ]
+    },
+    "policy": {
+      "safeFlags": {
+        "--oneline": "none",
+        "--graph": "none",
+        "-n": "string",
+        "--since": "string",
+        "--max-count": "number"
+      }
+    }
+  },
+  "xargs_safe_target": {
+    "allowed": true,
+    "case": {
+      "name": "xargs_safe_target",
+      "policy": "xargs",
+      "commandName": "xargs",
+      "argv": [
+        "xargs",
+        "grep",
+        "pattern"
+      ]
+    },
+    "policy": {
+      "safeFlags": {
+        "-n": "string",
+        "-0": "none",
+        "-I": "string"
+      }
+    }
+  },
+  "xargs_dangerous_target": {
+    "allowed": false,
+    "case": {
+      "name": "xargs_dangerous_target",
+      "policy": "xargs",
+      "commandName": "xargs",
+      "argv": [
+        "xargs",
+        "rm",
+        "-rf"
+      ]
+    },
+    "policy": {
+      "safeFlags": {
+        "-n": "string",
+        "-0": "none",
+        "-I": "string"
+      }
+    }
+  },
+  "xargs_double_dash_target": {
+    "allowed": true,
+    "case": {
+      "name": "xargs_double_dash_target",
+      "policy": "xargs",
+      "commandName": "xargs",
+      "argv": [
+        "xargs",
+        "--",
+        "echo",
+        "hi"
+      ]
+    },
+    "policy": {
+      "safeFlags": {
+        "-n": "string",
+        "-0": "none",
+        "-I": "string"
+      }
+    }
+  },
+  "xargs_flags_only_accepted": {
+    "allowed": true,
+    "case": {
+      "name": "xargs_flags_only_accepted",
+      "policy": "xargs",
+      "commandName": "xargs",
+      "argv": [
+        "xargs",
+        "-n",
+        "1",
+        "echo"
+      ]
+    },
+    "policy": {
+      "safeFlags": {
+        "-n": "string",
+        "-0": "none",
+        "-I": "string"
+      }
+    }
+  },
+  "xargs_no_target": {
+    "allowed": true,
+    "case": {
+      "name": "xargs_no_target",
+      "policy": "xargs",
+      "commandName": "xargs",
+      "argv": [
+        "xargs",
+        "-n",
+        "1"
+      ]
+    },
+    "policy": {
+      "safeFlags": {
+        "-n": "string",
+        "-0": "none",
+        "-I": "string"
+      }
+    }
+  },
+  "kind_number_ok": {
+    "allowed": true,
+    "case": {
+      "name": "kind_number_ok",
+      "policy": "valueKinds",
+      "commandName": "k",
+      "argv": [
+        "k",
+        "--num",
+        "42"
+      ]
+    },
+    "policy": {
+      "safeFlags": {
+        "--num": "number",
+        "--ch": "char",
+        "--braces": "{}",
+        "--eof": "EOF",
+        "--opt": "optionalString",
+        "--any": "string",
+        "--bare": "none"
+      }
+    }
+  },
+  "kind_char_ok": {
+    "allowed": true,
+    "case": {
+      "name": "kind_char_ok",
+      "policy": "valueKinds",
+      "commandName": "k",
+      "argv": [
+        "k",
+        "--ch",
+        "x"
+      ]
+    },
+    "policy": {
+      "safeFlags": {
+        "--num": "number",
+        "--ch": "char",
+        "--braces": "{}",
+        "--eof": "EOF",
+        "--opt": "optionalString",
+        "--any": "string",
+        "--bare": "none"
+      }
+    }
+  },
+  "kind_char_too_long": {
+    "allowed": false,
+    "case": {
+      "name": "kind_char_too_long",
+      "policy": "valueKinds",
+      "commandName": "k",
+      "argv": [
+        "k",
+        "--ch",
+        "xy"
+      ]
+    },
+    "policy": {
+      "safeFlags": {
+        "--num": "number",
+        "--ch": "char",
+        "--braces": "{}",
+        "--eof": "EOF",
+        "--opt": "optionalString",
+        "--any": "string",
+        "--bare": "none"
+      }
+    }
+  },
+  "kind_braces_ok": {
+    "allowed": true,
+    "case": {
+      "name": "kind_braces_ok",
+      "policy": "valueKinds",
+      "commandName": "k",
+      "argv": [
+        "k",
+        "--braces",
+        "{}"
+      ]
+    },
+    "policy": {
+      "safeFlags": {
+        "--num": "number",
+        "--ch": "char",
+        "--braces": "{}",
+        "--eof": "EOF",
+        "--opt": "optionalString",
+        "--any": "string",
+        "--bare": "none"
+      }
+    }
+  },
+  "kind_braces_wrong": {
+    "allowed": false,
+    "case": {
+      "name": "kind_braces_wrong",
+      "policy": "valueKinds",
+      "commandName": "k",
+      "argv": [
+        "k",
+        "--braces",
+        "x"
+      ]
+    },
+    "policy": {
+      "safeFlags": {
+        "--num": "number",
+        "--ch": "char",
+        "--braces": "{}",
+        "--eof": "EOF",
+        "--opt": "optionalString",
+        "--any": "string",
+        "--bare": "none"
+      }
+    }
+  },
+  "kind_eof_ok": {
+    "allowed": true,
+    "case": {
+      "name": "kind_eof_ok",
+      "policy": "valueKinds",
+      "commandName": "k",
+      "argv": [
+        "k",
+        "--eof",
+        "EOF"
+      ]
+    },
+    "policy": {
+      "safeFlags": {
+        "--num": "number",
+        "--ch": "char",
+        "--braces": "{}",
+        "--eof": "EOF",
+        "--opt": "optionalString",
+        "--any": "string",
+        "--bare": "none"
+      }
+    }
+  },
+  "kind_eof_wrong": {
+    "allowed": false,
+    "case": {
+      "name": "kind_eof_wrong",
+      "policy": "valueKinds",
+      "commandName": "k",
+      "argv": [
+        "k",
+        "--eof",
+        "END"
+      ]
+    },
+    "policy": {
+      "safeFlags": {
+        "--num": "number",
+        "--ch": "char",
+        "--braces": "{}",
+        "--eof": "EOF",
+        "--opt": "optionalString",
+        "--any": "string",
+        "--bare": "none"
+      }
+    }
+  },
+  "kind_optional_string": {
+    "allowed": true,
+    "case": {
+      "name": "kind_optional_string",
+      "policy": "valueKinds",
+      "commandName": "k",
+      "argv": [
+        "k",
+        "--opt",
+        "anything"
+      ]
+    },
+    "policy": {
+      "safeFlags": {
+        "--num": "number",
+        "--ch": "char",
+        "--braces": "{}",
+        "--eof": "EOF",
+        "--opt": "optionalString",
+        "--any": "string",
+        "--bare": "none"
+      }
+    }
+  },
+  "kind_string_any": {
+    "allowed": false,
+    "case": {
+      "name": "kind_string_any",
+      "policy": "valueKinds",
+      "commandName": "k",
+      "argv": [
+        "k",
+        "--any",
+        "--weird"
+      ]
+    },
+    "policy": {
+      "safeFlags": {
+        "--num": "number",
+        "--ch": "char",
+        "--braces": "{}",
+        "--eof": "EOF",
+        "--opt": "optionalString",
+        "--any": "string",
+        "--bare": "none"
+      }
+    }
+  },
+  "short_attached_value": {
+    "allowed": false,
+    "case": {
+      "name": "short_attached_value",
+      "policy": "valueKinds",
+      "commandName": "k",
+      "argv": [
+        "k",
+        "--chx"
+      ]
+    },
+    "policy": {
+      "safeFlags": {
+        "--num": "number",
+        "--ch": "char",
+        "--braces": "{}",
+        "--eof": "EOF",
+        "--opt": "optionalString",
+        "--any": "string",
+        "--bare": "none"
+      }
+    }
+  },
+  "short_cluster_all_none": {
+    "allowed": false,
+    "case": {
+      "name": "short_cluster_all_none",
+      "policy": "valueKinds",
+      "commandName": "k",
+      "argv": [
+        "k",
+        "-abc"
+      ]
+    },
+    "policy": {
+      "safeFlags": {
+        "--num": "number",
+        "--ch": "char",
+        "--braces": "{}",
+        "--eof": "EOF",
+        "--opt": "optionalString",
+        "--any": "string",
+        "--bare": "none"
+      }
+    }
+  },
+  "short_cluster_with_value_flag": {
+    "allowed": false,
+    "case": {
+      "name": "short_cluster_with_value_flag",
+      "policy": "valueKinds",
+      "commandName": "k",
+      "argv": [
+        "k",
+        "-ac",
+        "x"
+      ]
+    },
+    "policy": {
+      "safeFlags": {
+        "--num": "number",
+        "--ch": "char",
+        "--braces": "{}",
+        "--eof": "EOF",
+        "--opt": "optionalString",
+        "--any": "string",
+        "--bare": "none"
+      }
+    }
+  },
+  "single_dash_is_not_a_flag": {
+    "allowed": true,
+    "case": {
+      "name": "single_dash_is_not_a_flag",
+      "policy": "valueKinds",
+      "commandName": "k",
+      "argv": [
+        "k",
+        "-"
+      ]
+    },
+    "policy": {
+      "safeFlags": {
+        "--num": "number",
+        "--ch": "char",
+        "--braces": "{}",
+        "--eof": "EOF",
+        "--opt": "optionalString",
+        "--any": "string",
+        "--bare": "none"
+      }
+    }
+  }
+}

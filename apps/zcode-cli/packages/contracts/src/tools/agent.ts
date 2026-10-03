@@ -52,6 +52,11 @@ export interface AgentCompletedOutput {
   totalDurationMs: number;
   totalTokens?: number;
   usage?: ModelUsage;
+  /**
+   * Structured result of a yield-enabled subagent. Absent for legacy agents,
+   * whose parent-facing output stays byte-identical.
+   */
+  structured?: AgentStructuredResult;
 }
 
 export interface AgentBackgroundedOutput {
@@ -76,6 +81,21 @@ export const AgentTextContentBlockSchema = z
   })
   .strict();
 
+/**
+ * Structured result of a yield-enabled subagent.
+ * `ok:false` means the child violated its outputSchema (or never yielded); the
+ * failure is reported to the parent instead of being downgraded to raw text.
+ */
+export const AgentStructuredResultSchema = z
+  .object({
+    ok: z.boolean(),
+    data: z.unknown().optional(),
+    warnings: z.array(z.string()).optional(),
+    issues: z.array(z.string()).optional(),
+  })
+  .strict();
+export type AgentStructuredResult = z.infer<typeof AgentStructuredResultSchema>;
+
 export const AgentCompletedOutputSchema = z
   .object({
     status: z.literal("completed"),
@@ -88,6 +108,8 @@ export const AgentCompletedOutputSchema = z
     totalDurationMs: z.number().int().nonnegative(),
     totalTokens: z.number().int().nonnegative().optional(),
     usage: z.record(z.unknown()).optional(),
+    /** Absent for legacy (non-yield) agents; their output stays byte-identical. */
+    structured: AgentStructuredResultSchema.optional(),
   })
   .strict();
 

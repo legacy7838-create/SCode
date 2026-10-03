@@ -1,3 +1,4 @@
+import { selectTasksToCancel } from "@zcode/rust/subagent-profile";
 import { SessionEventType, traceContextToLogContext } from "../deps.js";
 import type {
   BackgroundExecutionSnapshot,
@@ -297,22 +298,21 @@ export async function cancelRunningRuntimeBackgroundTasks(
 ): Promise<void> {
   if (this.config.taskType !== "subagent_child") return;
   const traceContext = input.traceContext ?? this.rootTraceContext;
-  const tasks = Object.values(this.runtimeTaskRegistry.all()).filter(
-    (task) =>
-      task.type === "local_bash" &&
-      task.isBackgrounded === true &&
-      task.status === "running",
-  );
+  // The SELECTION is Rust (`@zcode/rust/subagent-profile`, spec
+  // docs/specs/subagent-rust-port.md Phase 2); stopping the task stays here because it
+  // goes through the scheduler and the task index. One owner for the rule: two copies
+  // would let a cancelled run leave a stray process behind.
+  const taskIds = selectTasksToCancel(Object.values(this.runtimeTaskRegistry.all()));
 
-  for (const task of tasks) {
+  for (const taskId of taskIds) {
     this.logger?.info?.("Cancelling subagent background task during runtime cleanup", {
       ...traceContextToLogContext(traceContext),
       event: "runtime.background_task.cleanup_cancel",
       module: "core.runtime",
       reason: input.reason,
-      taskId: task.taskId,
+      taskId,
     });
-    await this.stopBackgroundTask(task.taskId, {
+    await this.stopBackgroundTask(taskId, {
       traceContext,
     });
   }

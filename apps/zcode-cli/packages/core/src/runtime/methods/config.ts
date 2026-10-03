@@ -240,7 +240,6 @@ export function getContextBuilder(this: AgentRuntimeInternal): ContextBuilder {
   if (!this.contextBuilder) {
     this.contextBuilder = this.createContextBuilderFromSnapshot(
       this.createConfigOnlyContextSnapshot(this.workingDirectory),
-      undefined,
       { persistEnvInfo: false },
     );
   }

@@ -1,0 +1,188 @@
+{
+  "man_clean": {
+    "dangerous": false,
+    "args": [
+      "bash"
+    ]
+  },
+  "man_page_name": {
+    "dangerous": false,
+    "args": [
+      "1",
+      "bash"
+    ]
+  },
+  "man_path_operand": {
+    "dangerous": true,
+    "args": [
+      "/etc/man/bash.1"
+    ]
+  },
+  "man_apropos_allows_path": {
+    "dangerous": false,
+    "args": [
+      "-k",
+      "/usr/share/man/bash"
+    ]
+  },
+  "man_after_double_dash": {
+    "dangerous": true,
+    "args": [
+      "--",
+      "/etc/man/bash.1"
+    ]
+  },
+  "man_value_flag_consumes": {
+    "dangerous": true,
+    "args": [
+      "-S",
+      "1",
+      "/etc/man/bash.1"
+    ]
+  },
+  "man_single_dash": {
+    "dangerous": false,
+    "args": [
+      "-",
+      "bash"
+    ]
+  },
+  "tput_clean": {
+    "dangerous": false,
+    "args": [
+      "cols",
+      "lines"
+    ]
+  },
+  "tput_set_store": {
+    "dangerous": true,
+    "args": [
+      "-S"
+    ]
+  },
+  "tput_attached_s": {
+    "dangerous": true,
+    "args": [
+      "-Scaps"
+    ]
+  },
+  "tput_dangerous_capability": {
+    "dangerous": true,
+    "args": [
+      "clear"
+    ]
+  },
+  "tput_safe_capability": {
+    "dangerous": false,
+    "args": [
+      "bel"
+    ]
+  },
+  "tput_termtype_consumes": {
+    "dangerous": true,
+    "args": [
+      "-T",
+      "xterm",
+      "clear"
+    ]
+  },
+  "tput_after_double_dash": {
+    "dangerous": true,
+    "args": [
+      "--",
+      "clear"
+    ]
+  },
+  "ss_clean": {
+    "dangerous": true,
+    "args": [
+      "-t",
+      "tcp"
+    ]
+  },
+  "ss_listening": {
+    "dangerous": false,
+    "args": [
+      "-ltn"
+    ]
+  },
+  "ss_state_keyword": {
+    "dangerous": false,
+    "args": [
+      "state",
+      "listening"
+    ]
+  },
+  "ss_hex_mask": {
+    "dangerous": true,
+    "args": [
+      "dst",
+      "0100007F"
+    ]
+  },
+  "ss_port_keyword": {
+    "dangerous": false,
+    "args": [
+      "dport",
+      ":22"
+    ]
+  },
+  "ss_value_flag_consumes": {
+    "dangerous": false,
+    "args": [
+      "-f",
+      "inet",
+      "state",
+      "established"
+    ]
+  },
+  "ss_after_double_dash": {
+    "dangerous": false,
+    "args": [
+      "--",
+      "state",
+      "listening"
+    ]
+  },
+  "xargs_clean": {
+    "dangerous": false,
+    "args": [
+      "-n",
+      "1",
+      "echo"
+    ]
+  },
+  "xargs_safe_target": {
+    "dangerous": false,
+    "args": [
+      "echo"
+    ]
+  },
+  "xargs_dangerous_target": {
+    "dangerous": true,
+    "args": [
+      "rm"
+    ]
+  },
+  "xargs_value_flag_consumes": {
+    "dangerous": false,
+    "args": [
+      "-I",
+      "{}",
+      "wc"
+    ]
+  },
+  "xargs_double_dash_target": {
+    "dangerous": false,
+    "args": [
+      "--",
+      "grep"
+    ]
+  },
+  "xargs_only_flags": {
+    "dangerous": false,
+    "args": [
+      "-0"
+    ]
+  }
+}

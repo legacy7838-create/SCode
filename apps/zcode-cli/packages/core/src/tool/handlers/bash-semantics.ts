@@ -1,5 +1,9 @@
 import type { ExecutionResult } from "@zcode/contracts";
-import { analyzeBashCommand, isBashCommandPermissionSafe } from "./bash-command-parser.js";
+import { analyzeBashCommand, type BashCommandAnalysis } from "./bash-command-parser.js";
+import {
+  evaluateBashSemantics,
+  type BashAnalysis,
+} from "@zcode/rust/subagent-bash-semantics";
 import {
   analysisContainsGitAndDirectoryChange,
   analysisContainsGitCommand,
@@ -40,29 +44,42 @@ export function isRuntimeReadOnlyBashCommand(
   command: string,
   context?: BashReadonlyRuntimeContext,
 ): boolean {
-  const analysis = analyzeBashCommand(command);
-  if (!isBashCommandPermissionSafe(analysis)) return false;
-  if (analysis.commands.length === 0) return false;
-  if (analysisContainsGitAndDirectoryChange(analysis.commands)) return false;
-  if (analysisContainsGitCommand(analysis.commands) && isGitRuntimeContextUnsafe(context))
-    return false;
+  return isRuntimeReadOnlyBashCommandForAnalysis(analyzeBashCommand(command), context);
+}
 
-  let hasReadOnlyCommand = false;
+/**
+ * The read-only decision for an ALREADY-PARSED command line.
+ *
+ * Exported so the Rust owner can be golden-tested against it
+ * (docs/specs/subagent-rust-port.md Phase 4): this is the whole post-parse policy, and only
+ * the grammar parse itself is left in TypeScript.
+ */
+export function isRuntimeReadOnlyBashCommandForAnalysis(
+  analysis: BashCommandAnalysis,
+  context?: BashReadonlyRuntimeContext,
+): boolean {
+  return evaluateBashSemantics(toNativeAnalysis(analysis), context?.workingDirectory).readOnly;
+}
 
-  for (const commandPart of analysis.commands) {
-    if (hasKnownBashWriteOption(commandPart)) return false;
-
-    const policyResult = evaluateBashReadonlyPolicy(commandPart);
-    if (policyResult === false) return false;
-    if (policyResult === true) {
-      hasReadOnlyCommand = true;
-      continue;
-    }
-
-    return false;
-  }
-
-  return hasReadOnlyCommand;
+/**
+ * The grammar's `BashCommandAnalysis` in the shape the Rust boundary takes. Only the fields
+ * the policy reads are carried; the grammar stays the owner of parsing.
+ */
+function toNativeAnalysis(analysis: BashCommandAnalysis): BashAnalysis {
+  return {
+    commands: analysis.commands.map((part) => ({
+      name: part.name,
+      argv: part.argv,
+      commandText: part.commandText,
+      envAssignments: part.envAssignments,
+      redirects: part.redirects,
+      ...(part.operatorBefore === undefined ? {} : { operatorBefore: part.operatorBefore }),
+    })),
+    hasParseErrors: analysis.hasParseErrors,
+    hasRedirects: analysis.hasRedirects,
+    hasDynamicWords: analysis.hasDynamicWords,
+    hasUnsupportedSyntax: analysis.hasUnsupportedSyntax,
+  };
 }
 
 export function isSedInPlaceBashCommand(command: string): boolean {
@@ -74,25 +91,7 @@ export function isSedInPlaceBashCommand(command: string): boolean {
 }
 
 export function isSilentBashCommand(command: string): boolean {
-  const analysis = analyzeBashCommand(command);
-  if (analysis.hasParseErrors || analysis.hasUnsupportedSyntax || analysis.hasDynamicWords)
-    return false;
-  if (analysis.commands.length === 0) return false;
-
-  let hasNonFallbackCommand = false;
-
-  for (const commandPart of analysis.commands) {
-    const commandName = commandPart.name;
-    if (!commandName) continue;
-    if (commandPart.operatorBefore === "||" && BASH_SEMANTIC_NEUTRAL_COMMANDS.has(commandName)) {
-      continue;
-    }
-
-    hasNonFallbackCommand = true;
-    if (!BASH_SILENT_COMMANDS.has(commandName)) return false;
-  }
-
-  return hasNonFallbackCommand;
+  return evaluateBashSemantics(toNativeAnalysis(analyzeBashCommand(command))).silent;
 }
 
 export function interpretBashReturnCode(

@@ -1,0 +1,227 @@
+{
+  "tool_scheduled": {
+    "id": "766f655b-729d-4f3b-a500-5f34dc2037a5",
+    "sessionId": "sess_parent",
+    "turnId": "turn_parent_1",
+    "type": "tool_call_scheduled",
+    "timestamp": "2026-10-03T08:53:51.352Z",
+    "traceId": "trace_abc",
+    "sequenceNumber": 0,
+    "payload": {
+      "toolCallId": "tool_subagent_agent_abc_child_tc_1",
+      "toolName": "Bash",
+      "agentId": "agent_abc",
+      "agentType": "general-purpose",
+      "childSessionId": "sess_subagent_agent_abc",
+      "childToolCallId": "child_tc_1",
+      "description": "Review the diff",
+      "parentToolCallId": "call_parent_1",
+      "source": "subagent"
+    }
+  },
+  "tool_started_without_name_learns_from_cache": {
+    "id": "940c7e09-3712-414b-b54b-5185ba355047",
+    "sessionId": "sess_parent",
+    "turnId": "turn_parent_1",
+    "type": "tool_call_started",
+    "timestamp": "2026-10-03T08:53:51.352Z",
+    "traceId": "trace_abc",
+    "sequenceNumber": 0,
+    "payload": {
+      "toolCallId": "tool_subagent_agent_abc_child_tc_1",
+      "toolName": "Read",
+      "agentId": "agent_abc",
+      "agentType": "general-purpose",
+      "childSessionId": "sess_subagent_agent_abc",
+      "childToolCallId": "child_tc_1",
+      "description": "Review the diff",
+      "parentToolCallId": "call_parent_1",
+      "source": "subagent"
+    }
+  },
+  "tool_result": {
+    "id": "5fdd3f65-2e8a-4024-81f6-f8350d8a05b9",
+    "sessionId": "sess_parent",
+    "turnId": "turn_parent_1",
+    "type": "tool_call_result",
+    "timestamp": "2026-10-03T08:53:51.352Z",
+    "traceId": "trace_abc",
+    "sequenceNumber": 0,
+    "payload": {
+      "toolCallId": "tool_subagent_agent_abc_child_tc_2",
+      "toolName": "Grep",
+      "ok": true,
+      "output": "3 matches",
+      "agentId": "agent_abc",
+      "agentType": "general-purpose",
+      "childSessionId": "sess_subagent_agent_abc",
+      "childToolCallId": "child_tc_2",
+      "description": "Review the diff",
+      "parentToolCallId": "call_parent_1",
+      "source": "subagent"
+    }
+  },
+  "tool_error_background": {
+    "id": "07428b03-c128-4eb6-9b9f-74ac7e1d42ac",
+    "sessionId": "sess_parent",
+    "turnId": "turn_parent_1",
+    "type": "tool_call_error",
+    "timestamp": "2026-10-03T08:53:51.352Z",
+    "traceId": "trace_abc",
+    "sequenceNumber": 0,
+    "payload": {
+      "toolCallId": "tool_subagent_agent_abc_child_tc_3",
+      "toolName": "Bash",
+      "error": "boom",
+      "agentId": "agent_abc",
+      "agentType": "general-purpose",
+      "background": true,
+      "childSessionId": "sess_subagent_agent_abc",
+      "childToolCallId": "child_tc_3",
+      "description": "Review the diff",
+      "parentToolCallId": "call_parent_1",
+      "source": "subagent"
+    }
+  },
+  "schedule_with_dependencies_and_groups": {
+    "id": "e3a99915-a561-4158-9525-1c132536fd54",
+    "sessionId": "sess_parent",
+    "turnId": "turn_parent_1",
+    "type": "tool_call_scheduled",
+    "timestamp": "2026-10-03T08:53:51.352Z",
+    "traceId": "trace_abc",
+    "sequenceNumber": 0,
+    "payload": {
+      "toolCallId": "tool_subagent_agent_abc_child_tc_4",
+      "toolName": "Bash",
+      "dependencies": [
+        "tool_subagent_agent_abc_child_tc_1",
+        "tool_subagent_agent_abc_child_tc_2"
+      ],
+      "schedule": {
+        "executionOrder": [
+          "tool_subagent_agent_abc_child_tc_1",
+          "tool_subagent_agent_abc_child_tc_2"
+        ],
+        "parallelGroups": [
+          [
+            "tool_subagent_agent_abc_child_tc_3",
+            "tool_subagent_agent_abc_child_tc_4"
+          ],
+          [
+            "tool_subagent_agent_abc_child_tc_5"
+          ]
+        ],
+        "note": "kept"
+      },
+      "agentId": "agent_abc",
+      "agentType": "general-purpose",
+      "childSessionId": "sess_subagent_agent_abc",
+      "childToolCallId": "child_tc_4",
+      "description": "Review the diff",
+      "parentToolCallId": "call_parent_1",
+      "source": "subagent"
+    }
+  },
+  "schedule_empty_object_ignored": {
+    "id": "c41e8fd1-9dfe-4589-99a7-08a17c3e2bb1",
+    "sessionId": "sess_parent",
+    "turnId": "turn_parent_1",
+    "type": "tool_call_scheduled",
+    "timestamp": "2026-10-03T08:53:51.352Z",
+    "traceId": "trace_abc",
+    "sequenceNumber": 0,
+    "payload": {
+      "toolCallId": "tool_subagent_agent_abc_child_tc_5",
+      "toolName": "Read",
+      "schedule": {},
+      "agentId": "agent_abc",
+      "agentType": "general-purpose",
+      "childSessionId": "sess_subagent_agent_abc",
+      "childToolCallId": "child_tc_5",
+      "description": "Review the diff",
+      "parentToolCallId": "call_parent_1",
+      "source": "subagent"
+    }
+  },
+  "permission_requested_with_origin": {
+    "id": "c524ba2a-18a1-4510-ab39-e2f99b379e90",
+    "sessionId": "sess_parent",
+    "turnId": "turn_parent_1",
+    "type": "permission_requested",
+    "timestamp": "2026-10-03T08:53:51.352Z",
+    "traceId": "trace_abc",
+    "sequenceNumber": 0,
+    "payload": {
+      "toolCallId": "tool_subagent_agent_abc_child_tc_6",
+      "toolName": "Bash",
+      "childSessionId": "sess_subagent_agent_abc",
+      "origin": {
+        "kind": "subagent",
+        "agentId": "agent_abc",
+        "agentType": "general-purpose",
+        "childSessionId": "sess_subagent_agent_abc",
+        "childTurnId": "turn_child_1",
+        "description": "Review the diff",
+        "parentSessionId": "sess_parent",
+        "parentToolCallId": "call_parent_1",
+        "parentTurnId": "turn_parent_1"
+      }
+    }
+  },
+  "permission_resolved": {
+    "id": "9a23ac6f-a444-456e-a12c-93e7681e257a",
+    "sessionId": "sess_parent",
+    "turnId": "turn_parent_1",
+    "type": "permission_resolved",
+    "timestamp": "2026-10-03T08:53:51.352Z",
+    "traceId": "trace_abc",
+    "sequenceNumber": 0,
+    "payload": {
+      "toolCallId": "tool_subagent_agent_abc_child_tc_6",
+      "decision": "allow",
+      "childSessionId": "sess_subagent_agent_abc"
+    }
+  },
+  "permission_denied_background": {
+    "id": "824bf614-aabe-4766-a50c-2fe8e7e31041",
+    "sessionId": "sess_parent",
+    "turnId": "turn_parent_1",
+    "type": "permission_denied",
+    "timestamp": "2026-10-03T08:53:51.352Z",
+    "traceId": "trace_abc",
+    "sequenceNumber": 0,
+    "payload": {
+      "toolCallId": "tool_subagent_agent_abc_child_tc_7",
+      "reason": "policy",
+      "childSessionId": "sess_subagent_agent_abc",
+      "background": true
+    }
+  },
+  "unmirrored_type_returns_nothing": null,
+  "missing_tool_call_id_returns_nothing": null,
+  "non_string_tool_call_id_returns_nothing": null,
+  "origin_without_parent_tool_use_id": {
+    "id": "ae7c0f92-025e-45bb-a51a-cb874a3af501",
+    "sessionId": "sess_parent",
+    "turnId": "turn_parent_1",
+    "type": "permission_requested",
+    "timestamp": "2026-10-03T08:53:51.353Z",
+    "traceId": "trace_abc",
+    "sequenceNumber": 0,
+    "payload": {
+      "toolCallId": "tool_subagent_agent_abc_child_tc_9",
+      "childSessionId": "sess_subagent_agent_abc",
+      "origin": {
+        "kind": "subagent",
+        "agentId": "agent_abc",
+        "agentType": "general-purpose",
+        "childSessionId": "sess_subagent_agent_abc",
+        "childTurnId": "turn_child_1",
+        "description": "Review the diff",
+        "parentSessionId": "sess_parent",
+        "parentTurnId": "turn_parent_1"
+      }
+    }
+  }
+}

@@ -3,6 +3,7 @@
 // Subagent Runner
 // ============================================================
 
+import { buildAgentMetadataDocument, deriveLifecyclePaths } from "@zcode/rust/subagent-profile";
 import {
   AgentErrorCode,
   CoreErrorType,
@@ -20,6 +21,7 @@ import {
   type AgentBackgroundedOutput,
   type BackgroundResultOriginMeta,
   type AgentCompletedOutput,
+  type AgentStructuredResult,
   type AgentOutput,
   type Logger,
   type ModelUsage,
@@ -93,6 +95,12 @@ export interface ExploreSubagentRuntimeResult {
   response: string;
   traceId: TraceContext["traceId"];
   events: SessionEvent[];
+  /**
+   * Structured result of a yield-enabled agent profile. Produced by the child runtime
+   * after its Yield tool calls are finalized. Absent for legacy agents, so their
+   * parent-facing output stays byte-identical.
+   */
+  structured?: AgentStructuredResult;
 }
 
 export interface ParentTaskNotificationCommand {
@@ -805,14 +813,11 @@ function createSubagentLifecycle(
   const agentId = options.createAgentId?.() ?? `agent_${crypto.randomUUID()}`;
   const childSessionId = createSessionId(`subagent_${agentId}`);
   const startedAt = Date.now();
-  const agentOutputDir = join(
-    options.outputRootDir ?? join(tmpdir(), "zcode-agents"),
-    request.sessionId,
+  const paths = deriveLifecyclePaths({
+    outputRootDir: options.outputRootDir,
+    sessionId: request.sessionId,
     agentId,
-  );
-  const metadataFile = join(agentOutputDir, "metadata.json");
-  const outputFile = join(agentOutputDir, "output.txt");
-  const taskOutputFile = join(agentOutputDir, "task.output");
+  });
   const runTraceContext = createChildTraceContext(request.trace, {
     sessionId: request.sessionId,
     turnId: request.turnId,
@@ -836,9 +841,9 @@ function createSubagentLifecycle(
   return {
     agentId,
     childSessionId,
-    metadataFile,
-    outputFile,
-    taskOutputFile,
+    metadataFile: paths.metadataFile,
+    outputFile: paths.outputFile,
+    taskOutputFile: paths.taskOutputFile,
     profile,
     startedAt,
     runTraceContext,
@@ -856,12 +861,12 @@ function createSubagentLifecycleFromTask(
   const agentId = task.agentId;
   const childSessionId = task.childSessionId;
   const startedAt = Date.now();
-  const agentOutputDir = task.outputFile
-    ? dirname(task.outputFile)
-    : join(options.outputRootDir ?? join(tmpdir(), "zcode-agents"), request.sessionId, agentId);
-  const metadataFile = join(agentOutputDir, "metadata.json");
-  const outputFile = join(agentOutputDir, "output.txt");
-  const taskOutputFile = join(agentOutputDir, "task.output");
+  const paths = deriveLifecyclePaths({
+    outputRootDir: options.outputRootDir,
+    sessionId: request.sessionId,
+    agentId,
+    recordedOutputFile: task.outputFile,
+  });
   const runTraceContext = createChildTraceContext(request.trace, {
     sessionId: request.sessionId,
     turnId: request.turnId,
@@ -887,9 +892,9 @@ function createSubagentLifecycleFromTask(
   return {
     agentId,
     childSessionId,
-    metadataFile,
-    outputFile,
-    taskOutputFile,
+    metadataFile: paths.metadataFile,
+    outputFile: paths.outputFile,
+    taskOutputFile: paths.taskOutputFile,
     profile,
     startedAt,
     runTraceContext,
@@ -1183,6 +1188,9 @@ async function runAgentToCompletion(
     totalDurationMs,
     ...(totalTokens === undefined ? {} : { totalTokens }),
     ...(usage === undefined ? {} : { usage }),
+    // Structured contract result. Only present for profiles that declared
+    // `yield: true` in frontmatter; legacy profiles keep byte-identical output.
+    ...(childResult.structured === undefined ? {} : { structured: childResult.structured }),
   };
 
   return { events: childResult.events, output };
@@ -1927,6 +1935,12 @@ async function writeCompletedAgentArtifacts(
 ): Promise<void> {
   const text = output.content.map((block) => block.text).join("\n\n");
   await writeAgentOutputFiles(lifecycle, text);
+  // The parent-facing envelope bounds a yield result to a preview, so the FULL payload
+  // has to land on disk. `SendMessage` resumes the agent; it does not retrieve stored
+  // sections, so this file is the actual retrieval surface.
+  if (output.structured) {
+    await writeStructuredResultFile(lifecycle, output.structured);
+  }
   // Sub-agent events have been persisted by the session event store and are no longer written to the transcript sidecar repeatedly.
   await writeAgentMetadataFile(lifecycle, request, "completed", {
     completedAt: new Date().toISOString(),
@@ -1934,6 +1948,7 @@ async function writeCompletedAgentArtifacts(
     totalTokens: output.totalTokens,
     totalToolUseCount: output.totalToolUseCount,
     usage: output.usage,
+    ...(output.structured ? { structured: output.structured } : {}),
   });
 }
 
@@ -1978,6 +1993,17 @@ async function writeStoppedAgentArtifacts(task: RuntimeTaskSnapshot): Promise<vo
   );
 }
 
+async function writeStructuredResultFile(
+  lifecycle: Pick<SubagentLifecycle, "outputFile">,
+  structured: AgentStructuredResult,
+): Promise<void> {
+  // Sibling of output.txt, derived from outputFile so there is one owner for the path.
+  await writeTextFile(
+    `${lifecycle.outputFile}.structured.json`,
+    `${JSON.stringify(structured, null, 2)}\n`,
+  );
+}
+
 async function writeAgentOutputFiles(
   lifecycle: Pick<SubagentLifecycle, "outputFile" | "taskOutputFile">,
   content: string,
@@ -1992,31 +2018,31 @@ async function writeAgentMetadataFile(
   status: "running" | "completed" | "failed" | "stopped",
   extra: Record<string, unknown> = {},
 ): Promise<void> {
+  // The document itself is built by Rust (`@zcode/rust/subagent-profile`); see
+  // docs/specs/subagent-rust-port.md Phase 2. The byte format is load-bearing — the key
+  // order, the 2-space indent and the trailing newline are all part of it — and
+  // `metadata-golden.json` pins it against the implementation this replaced.
   await writeTextFile(
     lifecycle.metadataFile,
-    `${JSON.stringify(
-      {
-        agentId: lifecycle.agentId,
-        childSessionId: lifecycle.childSessionId,
-        createdAt: new Date(lifecycle.startedAt).toISOString(),
-        cwd: request.workingDirectory,
-        description: request.description,
-        metadataFile: lifecycle.metadataFile,
-        outputFile: lifecycle.outputFile,
-        parentSessionId: request.sessionId,
-        parentToolUseId: request.parentToolCallId,
-        profileId: request.agentType,
-        profileSnapshot: lifecycle.profile,
-        prompt: request.prompt,
-        status,
-        taskOutputFile: lifecycle.taskOutputFile,
-        updatedAt: new Date().toISOString(),
-        workspaceRoot: request.workspaceRoot,
-        ...extra,
-      },
-      null,
-      2,
-    )}\n`,
+    buildAgentMetadataDocument({
+      agentId: lifecycle.agentId,
+      childSessionId: lifecycle.childSessionId,
+      createdAt: new Date(lifecycle.startedAt).toISOString(),
+      cwd: request.workingDirectory,
+      description: request.description,
+      metadataFile: lifecycle.metadataFile,
+      outputFile: lifecycle.outputFile,
+      parentSessionId: request.sessionId,
+      parentToolUseId: request.parentToolCallId,
+      profileId: request.agentType,
+      profileSnapshot: lifecycle.profile,
+      prompt: request.prompt,
+      status,
+      taskOutputFile: lifecycle.taskOutputFile,
+      updatedAt: new Date().toISOString(),
+      workspaceRoot: request.workspaceRoot,
+      extra,
+    }),
   );
 }
 

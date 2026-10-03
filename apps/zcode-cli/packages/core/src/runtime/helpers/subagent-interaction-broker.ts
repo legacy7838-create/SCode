@@ -4,13 +4,28 @@ import type {
   PermissionBrokerRequestOptions,
   PermissionBrokerResult,
 } from "../deps.js";
-import {
-  buildSubagentInteractionOrigin,
-  type SubagentInteractionOriginContext,
-} from "../../subagent/interaction-origin.js";
+import { buildSubagentInteractionOrigin } from "@zcode/rust/subagent-profile";
+import type {
+  InteractionRequestOrigin,
+  SessionId,
+  ToolCallId,
+  TurnId,
+} from "@zcode/contracts";
 
-interface SubagentInteractionBrokerContext extends SubagentInteractionOriginContext {
-  parentToolCallId?: PermissionBrokerRequest["toolCallId"] | string;
+/**
+ * The branded ids stay here; the Rust boundary takes and returns plain strings. The cast
+ * on the result is safe because `build_interaction_origin` builds the same fields from
+ * the same inputs — and the mirror's own `permission_requested` origin is checked against
+ * the TypeScript implementation by `subagent-mirror-golden.json`.
+ */
+export interface SubagentInteractionBrokerContext {
+  agentId: string;
+  agentType: string;
+  childSessionId: SessionId;
+  description: string;
+  parentSessionId: SessionId;
+  parentToolCallId?: ToolCallId | string;
+  parentTurnId?: TurnId;
 }
 
 export function createSubagentInteractionBroker(
@@ -32,7 +47,17 @@ export function createSubagentInteractionBroker(
         {
           ...request,
           sessionId: context.parentSessionId,
-          origin: request.origin ?? buildSubagentInteractionOrigin(context, request.turnId),
+          origin:
+            request.origin ??
+            (buildSubagentInteractionOrigin(
+              {
+                ...context,
+                background: false,
+                parentToolCallId: context.parentToolCallId as string | undefined,
+                parentTurnId: context.parentTurnId as string | undefined,
+              },
+              request.turnId as string | undefined,
+            ) as InteractionRequestOrigin),
         },
         options,
       );

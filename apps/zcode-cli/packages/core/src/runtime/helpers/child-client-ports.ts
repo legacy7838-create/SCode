@@ -15,7 +15,7 @@
 
 import type { PermissionBrokerPort, SessionId } from "../deps.js";
 import type { ProviderRuntimeHeadersPort } from "../types.js";
-import type { SubagentInteractionOriginContext } from "../../subagent/interaction-origin.js";
+import type { SubagentInteractionBrokerContext } from "./subagent-interaction-broker.js";
 import { createSubagentInteractionBroker } from "./subagent-interaction-broker.js";
 
 /** The set of ports one runtime exposes to protocol clients. */
@@ -28,7 +28,7 @@ export interface ClientFacingPorts {
  * The ownership information needed to mint a child. `parentSessionId` is not here -- it can only be supplied by the parent runtime,
  * which is the mechanical guarantee against "picking the wrong routing identity".
  */
-export type ChildClientPortsContext = Omit<SubagentInteractionOriginContext, "parentSessionId">;
+export type ChildClientPortsContext = Omit<SubagentInteractionBrokerContext, "parentSessionId">;
 
 /**
  * Derives the child's outward-facing ports from the parent's.

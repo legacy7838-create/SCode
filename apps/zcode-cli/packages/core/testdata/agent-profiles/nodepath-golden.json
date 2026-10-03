@@ -1,0 +1,260 @@
+{
+  "join": [
+    {
+      "input": [
+        "/a/b",
+        "c"
+      ],
+      "output": "/a/b/c"
+    },
+    {
+      "input": [
+        "/a/b/",
+        "c"
+      ],
+      "output": "/a/b/c"
+    },
+    {
+      "input": [
+        "/a/b",
+        "/c"
+      ],
+      "output": "/a/b/c"
+    },
+    {
+      "input": [
+        "/a/b",
+        "../c"
+      ],
+      "output": "/a/c"
+    },
+    {
+      "input": [
+        "/a/b",
+        ".."
+      ],
+      "output": "/a"
+    },
+    {
+      "input": [
+        "a",
+        "b",
+        "c"
+      ],
+      "output": "a/b/c"
+    },
+    {
+      "input": [
+        "/a//b",
+        "c"
+      ],
+      "output": "/a/b/c"
+    },
+    {
+      "input": [
+        "",
+        "c"
+      ],
+      "output": "c"
+    },
+    {
+      "input": [
+        "/a",
+        "."
+      ],
+      "output": "/a"
+    },
+    {
+      "input": [
+        "/a/b",
+        "./c"
+      ],
+      "output": "/a/b/c"
+    },
+    {
+      "input": [
+        "/",
+        "c"
+      ],
+      "output": "/c"
+    },
+    {
+      "input": [
+        "/a/b",
+        "c/"
+      ],
+      "output": "/a/b/c/"
+    },
+    {
+      "input": [
+        ".",
+        "b"
+      ],
+      "output": "b"
+    },
+    {
+      "input": [
+        "/",
+        "..",
+        "x"
+      ],
+      "output": "/x"
+    },
+    {
+      "input": [
+        "/a",
+        "..",
+        "..",
+        "x"
+      ],
+      "output": "/x"
+    },
+    {
+      "input": [
+        "..",
+        "x"
+      ],
+      "output": "../x"
+    },
+    {
+      "input": [
+        "/a/b",
+        "../../../c"
+      ],
+      "output": "/c"
+    },
+    {
+      "input": [
+        "/a",
+        "",
+        "b"
+      ],
+      "output": "/a/b"
+    },
+    {
+      "input": [
+        "/a/b",
+        "..",
+        ""
+      ],
+      "output": "/a"
+    },
+    {
+      "input": [
+        "//",
+        "a"
+      ],
+      "output": "/a"
+    },
+    {
+      "input": [
+        "/a/b/",
+        "../c"
+      ],
+      "output": "/a/c"
+    },
+    {
+      "input": [
+        "/tmp",
+        "zcode-agents"
+      ],
+      "output": "/tmp/zcode-agents"
+    },
+    {
+      "input": [
+        "/data",
+        "sess_1",
+        "agent_x"
+      ],
+      "output": "/data/sess_1/agent_x"
+    },
+    {
+      "input": [
+        "/home/u/.zcode/cli",
+        "agents",
+        "sess_9",
+        "agent_1"
+      ],
+      "output": "/home/u/.zcode/cli/agents/sess_9/agent_1"
+    },
+    {
+      "input": [
+        "/x/",
+        "",
+        "y"
+      ],
+      "output": "/x/y"
+    },
+    {
+      "input": [
+        "/a/b/c",
+        "../../d"
+      ],
+      "output": "/a/d"
+    },
+    {
+      "input": [
+        "a/b",
+        "../c"
+      ],
+      "output": "a/c"
+    },
+    {
+      "input": [
+        "/a",
+        "b/../c"
+      ],
+      "output": "/a/c"
+    },
+    {
+      "input": [
+        "/tmp/zcode-agents",
+        "sess",
+        "agent_12345678-1234-1234-1234-123456789012"
+      ],
+      "output": "/tmp/zcode-agents/sess/agent_12345678-1234-1234-1234-123456789012"
+    }
+  ],
+  "dirname": [
+    {
+      "input": "/a/b/c.txt",
+      "output": "/a/b"
+    },
+    {
+      "input": "/a/b/",
+      "output": "/a"
+    },
+    {
+      "input": "c.txt",
+      "output": "."
+    },
+    {
+      "input": "/",
+      "output": "/"
+    },
+    {
+      "input": ".",
+      "output": "."
+    },
+    {
+      "input": "/a",
+      "output": "/"
+    },
+    {
+      "input": "/a/b/../c",
+      "output": "/a/b/.."
+    },
+    {
+      "input": "",
+      "output": "."
+    },
+    {
+      "input": "//a//b",
+      "output": "//a/"
+    },
+    {
+      "input": "/a/b/c/",
+      "output": "/a/b"
+    }
+  ]
+}

@@ -1,0 +1,382 @@
+{
+  "sed_clean": {
+    "dangerous": false,
+    "args": [
+      "-n",
+      "s/a/b/p",
+      "file.txt"
+    ]
+  },
+  "sed_in_place_short": {
+    "dangerous": true,
+    "args": [
+      "-i",
+      "s/a/b/",
+      "file.txt"
+    ]
+  },
+  "sed_in_place_long": {
+    "dangerous": true,
+    "args": [
+      "--in-place",
+      "s/a/b/",
+      "file.txt"
+    ]
+  },
+  "sed_in_place_suffix": {
+    "dangerous": true,
+    "args": [
+      "-i.bak",
+      "s/a/b/",
+      "file.txt"
+    ]
+  },
+  "sed_expression_inline": {
+    "dangerous": false,
+    "args": [
+      "-e",
+      "s/a/b/",
+      "file.txt"
+    ]
+  },
+  "sed_expression_write": {
+    "dangerous": false,
+    "args": [
+      "-e",
+      "s/a/b/ w out.txt",
+      "file.txt"
+    ]
+  },
+  "sed_expression_inline_write": {
+    "dangerous": false,
+    "args": [
+      "--expression=s/a/b/ w out.txt",
+      "file.txt"
+    ]
+  },
+  "sed_expression_clean": {
+    "dangerous": false,
+    "args": [
+      "--expression=s/a/b/",
+      "file.txt"
+    ]
+  },
+  "sed_write_command": {
+    "dangerous": false,
+    "args": [
+      "s/a/b/w out.txt",
+      "file.txt"
+    ]
+  },
+  "sed_write_after_semicolon": {
+    "dangerous": true,
+    "args": [
+      "s/a/b/; w out.txt",
+      "file.txt"
+    ]
+  },
+  "sed_write_in_double_quotes_only": {
+    "dangerous": false,
+    "args": [
+      "s/w/word/",
+      "file.txt"
+    ]
+  },
+  "sed_line_length_skips": {
+    "dangerous": false,
+    "args": [
+      "-l",
+      "80",
+      "s/a/b/",
+      "file.txt"
+    ]
+  },
+  "sed_after_double_dash": {
+    "dangerous": false,
+    "args": [
+      "--",
+      "s/a/b/w out.txt"
+    ]
+  },
+  "sed_multiple_scripts": {
+    "dangerous": false,
+    "args": [
+      "-n",
+      "p",
+      "-e",
+      "s/a/b/ w out.txt",
+      "file.txt"
+    ]
+  },
+  "jq_clean": {
+    "dangerous": false,
+    "args": [
+      ".name",
+      "file.json"
+    ]
+  },
+  "jq_rawfile": {
+    "dangerous": true,
+    "args": [
+      "--rawfile",
+      "x",
+      "/etc/shadow"
+    ]
+  },
+  "jq_rawfile_inline": {
+    "dangerous": true,
+    "args": [
+      "--rawfile=x:/etc/shadow",
+      ".name"
+    ]
+  },
+  "jq_slurpfile": {
+    "dangerous": true,
+    "args": [
+      "--slurpfile",
+      "x",
+      "/etc/shadow"
+    ]
+  },
+  "jq_argfile": {
+    "dangerous": true,
+    "args": [
+      "--argfile",
+      "x",
+      "/etc/shadow"
+    ]
+  },
+  "jq_from_file": {
+    "dangerous": true,
+    "args": [
+      "--from-file",
+      "/tmp/f.jq"
+    ]
+  },
+  "jq_library_path": {
+    "dangerous": true,
+    "args": [
+      "--library-path",
+      "/tmp/libs"
+    ]
+  },
+  "jq_run_tests": {
+    "dangerous": true,
+    "args": [
+      "--run-tests"
+    ]
+  },
+  "jq_f_flag": {
+    "dangerous": true,
+    "args": [
+      "-f",
+      "/tmp/f.jq"
+    ]
+  },
+  "jq_env_in_filter": {
+    "dangerous": true,
+    "args": [
+      "$ENV.PATH"
+    ]
+  },
+  "jq_env_object_in_filter": {
+    "dangerous": true,
+    "args": [
+      ".a | env.PATH"
+    ]
+  },
+  "jq_include_in_filter": {
+    "dangerous": true,
+    "args": [
+      "include \"x\""
+    ]
+  },
+  "jq_import_in_filter": {
+    "dangerous": true,
+    "args": [
+      "import \"x\" as y"
+    ]
+  },
+  "jq_environment_word_is_not_env": {
+    "dangerous": false,
+    "args": [
+      ".environment"
+    ]
+  },
+  "jq_indent_skips_value": {
+    "dangerous": false,
+    "args": [
+      "--indent",
+      "4",
+      ".name"
+    ]
+  },
+  "jq_double_dash_filter": {
+    "dangerous": true,
+    "args": [
+      "--",
+      "$ENV.HOME"
+    ]
+  },
+  "date_clean": {
+    "dangerous": false,
+    "args": [
+      "-u"
+    ]
+  },
+  "date_writes_file": {
+    "dangerous": true,
+    "args": [
+      "/tmp/out.txt"
+    ]
+  },
+  "date_output_operand": {
+    "dangerous": false,
+    "args": [
+      "+%Y"
+    ]
+  },
+  "date_format_is_allowed": {
+    "dangerous": false,
+    "args": [
+      "+%Y-%m-%d"
+    ]
+  },
+  "date_value_flag_consumes": {
+    "dangerous": false,
+    "args": [
+      "-d",
+      "yesterday",
+      "+%s"
+    ]
+  },
+  "date_inline_value_flag": {
+    "dangerous": false,
+    "args": [
+      "--date=yesterday",
+      "+%s"
+    ]
+  },
+  "lsof_clean": {
+    "dangerous": false,
+    "args": [
+      "-i",
+      "TCP:80"
+    ]
+  },
+  "lsof_remote_host": {
+    "dangerous": true,
+    "args": [
+      "-i@evil.example.com:22"
+    ]
+  },
+  "lsof_remote_host_value_next": {
+    "dangerous": true,
+    "args": [
+      "-i",
+      "@evil.example.com:22"
+    ]
+  },
+  "lsof_port_no_host": {
+    "dangerous": false,
+    "args": [
+      "-i",
+      ":80"
+    ]
+  },
+  "lsof_plus_m": {
+    "dangerous": true,
+    "args": [
+      "+m"
+    ]
+  },
+  "ps_everything": {
+    "dangerous": true,
+    "args": [
+      "e",
+      "-"
+    ]
+  },
+  "ps_clean": {
+    "dangerous": false,
+    "args": [
+      "aux"
+    ]
+  },
+  "ps_flag_e": {
+    "dangerous": false,
+    "args": [
+      "-e"
+    ]
+  },
+  "pyright_watch_long": {
+    "dangerous": true,
+    "args": [
+      "--watch",
+      "src"
+    ]
+  },
+  "pyright_watch_short": {
+    "dangerous": true,
+    "args": [
+      "-w",
+      "src"
+    ]
+  },
+  "pyright_clean": {
+    "dangerous": false,
+    "args": [
+      "--outputjson",
+      "src"
+    ]
+  },
+  "test_clean": {
+    "dangerous": false,
+    "args": [
+      "1",
+      "-eq",
+      "1"
+    ]
+  },
+  "test_bracket": {
+    "dangerous": true,
+    "args": [
+      "[",
+      "1",
+      "=",
+      "1",
+      "]"
+    ]
+  },
+  "test_and_or": {
+    "dangerous": true,
+    "args": [
+      "1",
+      "-a",
+      "2"
+    ]
+  },
+  "test_numeric_ok": {
+    "dangerous": false,
+    "args": [
+      "5",
+      "-gt",
+      "3"
+    ]
+  },
+  "test_numeric_with_command": {
+    "dangerous": true,
+    "args": [
+      "5",
+      "-gt",
+      "$(rm -rf /)"
+    ]
+  },
+  "test_tty_flag": {
+    "dangerous": false,
+    "args": [
+      "-t",
+      "0"
+    ]
+  }
+}

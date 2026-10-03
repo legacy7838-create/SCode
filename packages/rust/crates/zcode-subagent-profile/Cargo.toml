@@ -1,0 +1,27 @@
+[package]
+name = "zcode-subagent-profile"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Subagent agent-profile frontmatter parsing: the Rust owner of the profile contract."
+
+[lib]
+# cdylib + rlib, for the reason recorded in `zcode-mcp-config/Cargo.toml` §18:
+# a crate with a Node consumer MUST be require()-able. With rlib only, Node cannot
+# reach the port, the TypeScript parser stays alive as a second implementation,
+# and the two drift. That dual implementation is exactly what this port forbids.
+#
+# The TypeScript parser is deleted in the same change that switches the consumer
+# over (spec: docs/specs/subagent-rust-port.md Phase 1). Until then the cdylib
+# exists precisely so the switch is possible without keeping a JS fallback.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+napi.workspace = true
+napi-derive.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

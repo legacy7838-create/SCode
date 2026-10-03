@@ -1,3 +1,4 @@
+import { shouldSealBackgroundTaskNotifications } from "@zcode/rust/subagent-profile";
 import { createMessageId, traceContextToLogContext } from "../deps.js";
 import type { MessageId, TraceContext } from "../deps.js";
 import type { BackgroundResultOriginMeta } from "@zcode/contracts";
@@ -86,7 +87,10 @@ export function sealBackgroundTaskNotifications(
   this: AgentRuntimeInternal,
   input: SealBackgroundTaskNotificationsInput,
 ): void {
-  if (this.config.taskType !== "subagent_child") return;
+  // The gate is Rust (`@zcode/rust/subagent-profile`): only a subagent child seals its
+  // background-task notifications. A main or workflow runtime keeps notifying, because
+  // that background work belongs to the user rather than to a child.
+  if (!shouldSealBackgroundTaskNotifications(this.config.taskType ?? "")) return;
   this.backgroundTaskNotificationsSealed = true;
   this.backgroundTaskNotificationSealReason = input.reason;
   this.logger?.info?.("Subagent runtime background task notifications sealed", {

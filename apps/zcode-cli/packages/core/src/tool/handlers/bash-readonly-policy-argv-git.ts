@@ -1,13 +1,11 @@
 import {
-  GIT_GLOBAL_DANGEROUS_FLAGS,
   GIT_GLOBAL_NO_VALUE_FLAGS,
   GIT_GLOBAL_VALUE_FLAGS,
   GIT_READONLY_SUBCOMMAND_POLICIES,
 } from "./bash-readonly-policy-commands.js";
+import { hasDangerousGitGlobalOptionWord } from "@zcode/rust/subagent-profile";
 import type { BashReadonlyCommandPolicy } from "./bash-readonly-policy-types.js";
 import { isArgvAllowedByPolicy } from "./bash-readonly-policy-argv-flags.js";
-
-const GIT_ATTACHED_DANGEROUS_SHORT_FLAGS = ["-c", "-C"];
 
 export function isGitReadOnlyCommand(argv: readonly string[]): boolean {
   const normalized = normalizeGitArgv(argv);
@@ -47,26 +45,6 @@ function normalizeGitArgv(argv: readonly string[]): readonly string[] | undefine
   }
 
   return undefined;
-}
-
-export function hasDangerousGitGlobalOption(argv: readonly string[]): boolean {
-  return argv.some(hasDangerousGitGlobalOptionWord);
-}
-
-function hasDangerousGitGlobalOptionWord(word: string): boolean {
-  if (hasDangerousAttachedGitShortOptionWord(word)) return true;
-  if (GIT_GLOBAL_DANGEROUS_FLAGS.has(word)) return true;
-  return [...GIT_GLOBAL_DANGEROUS_FLAGS].some((flag) => word.startsWith(`${flag}=`));
-}
-
-function hasDangerousAttachedGitShortOptionWord(word: string): boolean {
-  return GIT_ATTACHED_DANGEROUS_SHORT_FLAGS.some((flag) => {
-    return (
-      word.length > flag.length &&
-      word.startsWith(flag) &&
-      (flag === "-C" || word[flag.length] !== "-")
-    );
-  });
 }
 
 let gitPoliciesByLength: Array<[string, BashReadonlyCommandPolicy]> | undefined;

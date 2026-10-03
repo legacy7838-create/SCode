@@ -1,0 +1,237 @@
+{
+  "revision_format_plain": {
+    "dangerous": false,
+    "args": [
+      "--format=%H",
+      "HEAD"
+    ]
+  },
+  "revision_format_signature": {
+    "dangerous": true,
+    "args": [
+      "--format=%G",
+      "HEAD"
+    ]
+  },
+  "revision_format_signature_paren": {
+    "dangerous": true,
+    "args": [
+      "--format=%(*signature)",
+      "HEAD"
+    ]
+  },
+  "revision_format_hash_with_G": {
+    "dangerous": true,
+    "args": [
+      "--pretty=%G"
+    ]
+  },
+  "revision_format_safe_format": {
+    "dangerous": false,
+    "args": [
+      "--format=%h %s",
+      "HEAD"
+    ]
+  },
+  "revision_format_inline": {
+    "dangerous": true,
+    "args": [
+      "--pretty=%G"
+    ]
+  },
+  "revision_format_pretty_inline": {
+    "dangerous": false,
+    "args": [
+      "--pretty=oneline"
+    ]
+  },
+  "revision_format_no_value": {
+    "dangerous": false,
+    "args": [
+      "--format"
+    ]
+  },
+  "reflog_list": {
+    "dangerous": false,
+    "args": [
+      "list"
+    ]
+  },
+  "reflog_show": {
+    "dangerous": false,
+    "args": [
+      "show",
+      "HEAD"
+    ]
+  },
+  "reflog_expire": {
+    "dangerous": true,
+    "args": [
+      "expire"
+    ]
+  },
+  "reflog_delete": {
+    "dangerous": true,
+    "args": [
+      "delete"
+    ]
+  },
+  "reflog_unknown_subcommand": {
+    "dangerous": true,
+    "args": [
+      "frobnicate"
+    ]
+  },
+  "reflog_dangerous_later": {
+    "dangerous": true,
+    "args": [
+      "show",
+      "expire"
+    ]
+  },
+  "ls_remote_flag_only": {
+    "dangerous": false,
+    "args": [
+      "--heads"
+    ]
+  },
+  "ls_remote_no_pattern": {
+    "dangerous": false,
+    "args": []
+  },
+  "ls_remote_with_pattern": {
+    "dangerous": true,
+    "args": [
+      "origin"
+    ]
+  },
+  "ls_remote_sort_consumes": {
+    "dangerous": true,
+    "args": [
+      "--sort",
+      "refname",
+      "origin"
+    ]
+  },
+  "ls_remote_after_double_dash": {
+    "dangerous": true,
+    "args": [
+      "--",
+      "origin"
+    ]
+  },
+  "remote_show_clean": {
+    "dangerous": false,
+    "args": [
+      "-n",
+      "origin"
+    ]
+  },
+  "remote_show_without_n": {
+    "dangerous": true,
+    "args": [
+      "origin"
+    ]
+  },
+  "remote_show_two_positionals": {
+    "dangerous": true,
+    "args": [
+      "-n",
+      "origin",
+      "extra"
+    ]
+  },
+  "remote_show_bad_name": {
+    "dangerous": true,
+    "args": [
+      "-n",
+      "-bad name"
+    ]
+  },
+  "remote_show_double_dash_name": {
+    "dangerous": false,
+    "args": [
+      "-n",
+      "--",
+      "origin"
+    ]
+  },
+  "tag_without_list": {
+    "dangerous": true,
+    "args": [
+      "v1.0"
+    ]
+  },
+  "tag_with_list": {
+    "dangerous": false,
+    "args": [
+      "--list"
+    ]
+  },
+  "tag_short_list": {
+    "dangerous": false,
+    "args": [
+      "-l"
+    ]
+  },
+  "tag_with_merged": {
+    "dangerous": false,
+    "args": [
+      "--merged",
+      "main"
+    ]
+  },
+  "tag_with_no_merged": {
+    "dangerous": false,
+    "args": [
+      "--no-merged",
+      "main"
+    ]
+  },
+  "tag_points_at_is_a_value_flag": {
+    "dangerous": false,
+    "args": [
+      "--points-at",
+      "abc"
+    ]
+  },
+  "tag_after_double_dash": {
+    "dangerous": true,
+    "args": [
+      "--",
+      "v1.0"
+    ]
+  },
+  "branch_without_list": {
+    "dangerous": true,
+    "args": [
+      "main"
+    ]
+  },
+  "branch_with_list": {
+    "dangerous": false,
+    "args": [
+      "--list"
+    ]
+  },
+  "branch_with_merged_is_not_a_branch_value_flag": {
+    "dangerous": false,
+    "args": [
+      "--merged",
+      "main"
+    ]
+  },
+  "branch_contains_consumes": {
+    "dangerous": false,
+    "args": [
+      "--contains",
+      "abc"
+    ]
+  },
+  "branch_cluster_list": {
+    "dangerous": false,
+    "args": [
+      "-al"
+    ]
+  }
+}

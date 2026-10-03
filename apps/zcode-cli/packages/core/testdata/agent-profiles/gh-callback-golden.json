@@ -1,0 +1,80 @@
+{
+  "gh_empty": {
+    "dangerous": false,
+    "args": []
+  },
+  "gh_bare": {
+    "dangerous": false,
+    "args": [
+      "status"
+    ]
+  },
+  "gh_auth_status": {
+    "dangerous": false,
+    "args": [
+      "auth",
+      "status"
+    ]
+  },
+  "gh_owner_repo": {
+    "dangerous": false,
+    "args": [
+      "cli/cli"
+    ]
+  },
+  "gh_owner_repo_two_slashes": {
+    "dangerous": true,
+    "args": [
+      "a/b/c"
+    ]
+  },
+  "gh_single_slash": {
+    "dangerous": false,
+    "args": [
+      "cli/"
+    ]
+  },
+  "gh_url": {
+    "dangerous": true,
+    "args": [
+      "https://evil.example.com"
+    ]
+  },
+  "gh_at_host": {
+    "dangerous": true,
+    "args": [
+      "user@evil.example.com"
+    ]
+  },
+  "gh_eq_repo": {
+    "dangerous": false,
+    "args": [
+      "--repo=other/other"
+    ]
+  },
+  "gh_eq_url": {
+    "dangerous": true,
+    "args": [
+      "--repo=https://evil"
+    ]
+  },
+  "gh_eq_empty": {
+    "dangerous": false,
+    "args": [
+      "--repo="
+    ]
+  },
+  "gh_flag_no_eq": {
+    "dangerous": false,
+    "args": [
+      "--json"
+    ]
+  },
+  "gh_dash_prefix_ignored": {
+    "dangerous": false,
+    "args": [
+      "-R",
+      "owner/repo"
+    ]
+  }
+}

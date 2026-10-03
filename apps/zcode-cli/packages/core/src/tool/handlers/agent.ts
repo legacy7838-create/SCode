@@ -46,6 +46,20 @@ const AGENT_TOOL_OUTPUT_SCHEMA = {
         totalDurationMs: { type: "integer", minimum: 0 },
         totalTokens: { type: "integer", minimum: 0 },
         usage: { type: "object", additionalProperties: true },
+        // Structured result of a yield-enabled agent profile. Declared here because
+        // this object is additionalProperties:false — without it a valid structured
+        // result would be rejected by the executor.
+        structured: {
+          type: "object",
+          properties: {
+            ok: { type: "boolean" },
+            data: {},
+            warnings: { type: "array", items: { type: "string" } },
+            issues: { type: "array", items: { type: "string" } },
+          },
+          required: ["ok"],
+          additionalProperties: false,
+        },
       },
       required: ["status", "agentId", "prompt", "content", "totalToolUseCount", "totalDurationMs"],
       additionalProperties: false,
@@ -127,6 +141,50 @@ function buildAgentProviderDescription(
 
 const AGENT_PROVIDER_DESCRIPTION = buildAgentProviderDescription();
 
+// Parent-facing size bound for a structured subagent result. A child can produce
+// tens of KB of structured data; only a head preview enters the parent context,
+// and the rest stays retrievable through the agent's own output file. The bound
+// lives ONLY here — the child's own context is never truncated.
+const AGENT_RESULT_PREVIEW_LIMIT = 5_000;
+
+function previewHead(text: string, limit: number): { preview: string; truncated: boolean } {
+  if (text.length <= limit) return { preview: text, truncated: false };
+  return { preview: text.slice(0, limit), truncated: true };
+}
+
+function formatStructuredResult(
+  structured: { ok: boolean; data?: unknown; warnings?: string[]; issues?: string[] },
+  agentId: string,
+): string[] {
+  if (!structured.ok) {
+    return [
+      "<structured-result>",
+      "ok: false",
+      ...(structured.issues ?? []).map((issue) => `schema-error: ${issue}`),
+      ...(structured.warnings ?? []).map((warning) => `warning: ${warning}`),
+      "</structured-result>",
+    ];
+  }
+
+  const serialized = JSON.stringify(structured.data ?? null, null, 2) ?? "null";
+  const { preview, truncated } = previewHead(serialized, AGENT_RESULT_PREVIEW_LIMIT);
+  const lines = ["<structured-result>", "ok: true"];
+  if (truncated) {
+    // Point at the artifact, not at SendMessage: resuming the agent does NOT
+    // retrieve stored sections. The full payload is written next to the agent's
+    // output file as `<outputFile>.structured.json`.
+    lines.push(
+      `full-output="${agentId}": ${preview}`,
+      `Truncated above. The complete structured result is stored next to this agent's output file as \`<outputFile>.structured.json\`; read that file for the remaining sections.`,
+    );
+  } else {
+    lines.push(preview);
+  }
+  lines.push(...(structured.warnings ?? []).map((warning) => `warning: ${warning}`));
+  lines.push("</structured-result>");
+  return lines;
+}
+
 function formatAgentOutputForModel(output: unknown): string {
   const parsed = AgentOutputSchema.safeParse(output);
   if (!parsed.success) {
@@ -135,19 +193,29 @@ function formatAgentOutputForModel(output: unknown): string {
 
   const data = parsed.data as AgentOutput;
   if (data.status !== "async_launched") {
-    const childText = data.content.map((block) => block.text).join("\n");
-    const childContent =
-      childText.trim().length > 0 ? [childText] : ["(Subagent completed but returned no output.)"];
     const usageLines = [
       ...(data.totalTokens === undefined ? [] : [`subagent_tokens: ${data.totalTokens}`]),
       `tool_uses: ${data.totalToolUseCount}`,
       `duration_ms: ${data.totalDurationMs}`,
     ];
-    return [
-      ...childContent,
+    const trailer = [
       `agentId: ${data.agentId} (use SendMessage with to: '${data.agentId}' to continue this agent)`,
       `<usage>${usageLines.join("\n")}</usage>`,
-    ].join("\n");
+    ];
+
+    // Yield-enabled agents: the contract result REPLACES the child's prose.
+    // Appending it would leave the unbounded prose (up to 120 KB) in front of
+    // the 5 KB preview, so the bound would be cosmetic and the executor's own
+    // truncation could cut the warnings off. It is also what keeps `ok:false`
+    // from shipping the very prose the contract rejected.
+    if (data.structured) {
+      return [...formatStructuredResult(data.structured, data.agentId), ...trailer].join("\n");
+    }
+
+    const childText = data.content.map((block) => block.text).join("\n");
+    const childContent =
+      childText.trim().length > 0 ? [childText] : ["(Subagent completed but returned no output.)"];
+    return [...childContent, ...trailer].join("\n");
   }
 
   const launchLines = [

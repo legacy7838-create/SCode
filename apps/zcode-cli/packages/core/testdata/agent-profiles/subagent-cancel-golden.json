@@ -1,0 +1,21 @@
+{
+  "empty_registry": [],
+  "running_backgrounded_bash_is_selected": [
+    "t1"
+  ],
+  "foreground_bash_is_kept": [],
+  "finished_bash_is_kept": [],
+  "failed_bash_is_kept": [],
+  "missing_is_backgrounded_is_kept": [],
+  "other_task_types_are_kept": [
+    "t3"
+  ],
+  "mixed_selects_only_the_match": [
+    "kill_1",
+    "kill_2"
+  ],
+  "is_backgrounded_truthy_but_not_true_is_kept": [],
+  "extra_fields_do_not_matter": [
+    "t1"
+  ]
+}
