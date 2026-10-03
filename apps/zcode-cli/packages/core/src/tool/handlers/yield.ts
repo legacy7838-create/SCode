@@ -23,7 +23,7 @@ import {
 } from "../../subagent/finalize-yield.js";
 
 export const YIELD_TOOL_NAME = "Yield";
-export const MAX_SCHEMA_RETRIES = 3;
+const MAX_SCHEMA_RETRIES = 3;
 
 /**
  * Ceiling on the yields one subagent run may accumulate. A child that yields
@@ -48,7 +48,7 @@ export const YIELD_AGENT_PROMPT = [
   "- Do not write the structured result as prose: prose is not read by your caller.",
 ].join("\n");
 
-export interface YieldToolInput {
+interface YieldToolInput {
   /** The structured payload. Must satisfy the agent profile's outputSchema. */
   readonly data: unknown;
   /** Optional human-readable note; not part of the contract payload. */
@@ -101,12 +101,12 @@ const YIELD_TOOL_METADATA: ToolMetadata = {
   needsApproval: false,
 };
 
-export interface YieldCollector {
+interface YieldCollector {
   /** Called once per accepted yield, in call order. */
   readonly record: (item: { data: unknown; attempts: number }) => void;
 }
 
-export interface YieldToolDeps {
+interface YieldToolDeps {
   readonly schema: JsonSchema | undefined;
   readonly collector: YieldCollector;
 }

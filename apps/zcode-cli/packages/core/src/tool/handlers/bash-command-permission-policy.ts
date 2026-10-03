@@ -2,10 +2,10 @@ import type { PermissionRuleValue, PermissionUpdate } from "@zcode/contracts";
 import type { ToolPermissionRulePolicy, ToolRuntimePermissionCapabilityContext } from "../types.js";
 import {
   analyzeBashCommand,
-  isBashCommandPermissionSafe,
   type BashCommandAnalysis,
   type BashCommandInvocation,
 } from "./bash-command-parser.js";
+import { isBashCommandPermissionSafe } from "@zcode/rust/subagent-bash-semantics";
 import { evaluateBashRules } from "./bash-command-rule-evaluator.js";
 import {
   BASH_COMMAND_REGISTRY,

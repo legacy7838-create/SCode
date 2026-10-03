@@ -17,7 +17,7 @@
 //! 3. **Absent is absent.** A field the caller does not supply is *omitted*, not
 //!    written as `null` — that is what `JSON.stringify` does with `undefined`.
 
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value};
 
 use crate::nodepath::{node_dirname, node_join};
 use crate::DEFAULT_OUTPUT_ROOT;
@@ -113,45 +113,6 @@ pub fn build_structured_result_document(structured: &Value) -> String {
     text
 }
 
-/// Companion builder kept next to the metadata one so both documents share one place.
-pub fn metadata_for_completed(
-    input: &MetadataInput,
-    completed: CompletedArtifacts,
-) -> String {
-    let mut merged = input.clone();
-    let mut extra = Map::new();
-    extra.insert("completedAt".into(), Value::String(completed.completed_at));
-    extra.insert(
-        "totalDurationMs".into(),
-        json!(completed.total_duration_ms),
-    );
-    if let Some(tokens) = completed.total_tokens {
-        extra.insert("totalTokens".into(), json!(tokens));
-    }
-    extra.insert(
-        "totalToolUseCount".into(),
-        json!(completed.total_tool_use_count),
-    );
-    if let Some(usage) = completed.usage {
-        extra.insert("usage".into(), usage);
-    }
-    if let Some(structured) = completed.structured {
-        extra.insert("structured".into(), structured);
-    }
-    merged.extra = extra;
-    build_metadata_document(&merged)
-}
-
-/// The `extra` block `writeCompletedAgentArtifacts` passes.
-pub struct CompletedArtifacts {
-    pub completed_at: String,
-    pub total_duration_ms: i64,
-    pub total_tokens: Option<i64>,
-    pub total_tool_use_count: i64,
-    pub usage: Option<Value>,
-    pub structured: Option<Value>,
-}
-
 /// One artifact write: the text outputs plus the metadata document.
 #[derive(Debug, Default, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -228,7 +189,7 @@ pub fn derive_lifecycle_paths(
 
 /// Same, but under an explicit root that already includes the default or the
 /// configured directory.
-pub fn derive_lifecycle_paths_in(root: &str, session_id: &str, agent_id: &str) -> LifecyclePaths {
+pub(crate) fn derive_lifecycle_paths_in(root: &str, session_id: &str, agent_id: &str) -> LifecyclePaths {
     let dir = node_join(&[root, session_id, agent_id]);
     LifecyclePaths {
         metadata_file: node_join(&[&dir, "metadata.json"]),

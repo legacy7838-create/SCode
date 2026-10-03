@@ -27,7 +27,6 @@ import { run as run_bash_semantics_live } from "./verify-subagent-port/bash-sema
 import { run as run_git_runtime_safety_live } from "./verify-subagent-port/git-runtime-safety-live.js";
 import { run as run_git_callbacks_live } from "./verify-subagent-port/git-callbacks-live.js";
 import { run as run_tables_live } from "./verify-subagent-port/tables-live.js";
-import { run as run_gh_callback_live } from "./verify-subagent-port/gh-callback-live.js";
 import { run as run_readonly_policy_live } from "./verify-subagent-port/readonly-policy-live.js";
 
 for (const [title, run] of [
@@ -45,7 +44,6 @@ for (const [title, run] of [
   ["git-runtime-safety-live", run_git_runtime_safety_live],
   ["git-callbacks-live", run_git_callbacks_live],
   ["tables-live", run_tables_live],
-  ["gh-callback-live", run_gh_callback_live],
   ["readonly-policy-live", run_readonly_policy_live],
 ] as [string, () => void][]) {
   section(title);

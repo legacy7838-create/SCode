@@ -16,7 +16,7 @@
 import type { JsonSchema } from "@zcode/contracts";
 import { validateJsonSchemaValue } from "../tool/json-schema.js";
 
-export const SUBAGENT_WARNING_NULL_YIELD =
+const SUBAGENT_WARNING_NULL_YIELD =
   "SUBAGENT_NULL_YIELD: subagent returned no Yield result";
 export const SUBAGENT_WARNING_YIELD_TOOL_DISALLOWED =
   "SUBAGENT_YIELD_TOOL_DISALLOWED: profile declared yield but the Yield tool was disallowed";
@@ -24,14 +24,14 @@ export const SUBAGENT_WARNING_SCHEMA_OVERRIDDEN =
   "SUBAGENT_YIELD_SCHEMA_OVERRIDDEN: Yield schema stayed invalid after the retry budget";
 
 /** One accepted Yield call, as recorded by the child-side tool. */
-export interface SubagentYieldItem {
+interface SubagentYieldItem {
   /** Array-typed sections are appended; scalar sections replace. */
   readonly data: unknown;
   /** Retry attempts the model burned before this call was accepted. */
   readonly attempts?: number;
 }
 
-export interface FinalizedSubagentYield {
+interface FinalizedSubagentYield {
   readonly ok: boolean;
   /** Present only when ok is true. */
   readonly data?: unknown;

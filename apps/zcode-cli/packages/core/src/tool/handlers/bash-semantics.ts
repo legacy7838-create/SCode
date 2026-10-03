@@ -13,8 +13,8 @@ import {
 import {
   evaluateBashReadonlyPolicy,
   hasKnownBashWriteOption,
-  isSedInPlaceOption,
 } from "./bash-readonly-policy.js";
+import { isSedInPlaceOption } from "@zcode/rust/subagent-profile";
 const BASH_SEMANTIC_NEUTRAL_COMMANDS = new Set(["", ":", "echo", "false", "printf", "true"]);
 const BASH_SILENT_COMMANDS = new Set([
   "cd",

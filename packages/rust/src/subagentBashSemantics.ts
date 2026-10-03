@@ -56,3 +56,19 @@ export function evaluateBashSemantics(
     ),
   ) as { permissionSafe: boolean; readOnly: boolean; silent: boolean };
 }
+
+/**
+ * `isBashCommandPermissionSafe` — Rust.
+ *
+ * The analysis type is the grammar's, so the conversion happens here; the rule itself is
+ * `zcode-subagent-profile::gitruntimesafety`.
+ */
+export function isBashCommandPermissionSafe(analysis: {
+  hasParseErrors: boolean;
+  hasRedirects: boolean;
+  hasDynamicWords: boolean;
+  hasUnsupportedSyntax: boolean;
+  commands: readonly ParsedBashCommand[];
+}): boolean {
+  return evaluateBashSemantics(analysis).permissionSafe;
+}

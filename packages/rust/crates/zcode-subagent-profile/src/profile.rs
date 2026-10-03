@@ -12,16 +12,14 @@ use serde_json::{json, Map, Value};
 
 use crate::frontmatter::{parse_loose_frontmatter, split_markdown_frontmatter, FrontmatterValues};
 
-pub const AGENT_SOURCE_BUILT_IN: &str = "built-in";
-pub const AGENT_SOURCE_PROJECT: &str = "project";
-pub const AGENT_SOURCE_USER: &str = "user";
+const AGENT_SOURCE_PROJECT: &str = "project";
 
 pub const DIAGNOSTIC_MISSING_FRONTMATTER: &str = "agent_missing_frontmatter";
-pub const DIAGNOSTIC_MISSING_NAME: &str = "agent_missing_name";
-pub const DIAGNOSTIC_MISSING_DESCRIPTION: &str = "agent_missing_description";
-pub const DIAGNOSTIC_INVALID_MEMORY_SCOPE: &str = "agent_invalid_memory_scope";
+const DIAGNOSTIC_MISSING_NAME: &str = "agent_missing_name";
+const DIAGNOSTIC_MISSING_DESCRIPTION: &str = "agent_missing_description";
+const DIAGNOSTIC_INVALID_MEMORY_SCOPE: &str = "agent_invalid_memory_scope";
 pub const DIAGNOSTIC_INVALID_YIELD_SCHEMA: &str = "agent_invalid_yield_schema";
-pub const DIAGNOSTIC_INVALID_MCP_SERVERS: &str = "agent_invalid_mcp_servers";
+const DIAGNOSTIC_INVALID_MCP_SERVERS: &str = "agent_invalid_mcp_servers";
 
 #[derive(Debug, Clone)]
 pub struct Diagnostic {

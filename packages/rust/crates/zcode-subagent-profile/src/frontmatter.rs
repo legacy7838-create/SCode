@@ -14,7 +14,7 @@
 /// including key order (the workspace enables `preserve_order` for this reason).
 pub type FrontmatterValues = serde_json::Map<String, serde_json::Value>;
 
-pub struct LooseFrontmatter {
+pub(crate) struct LooseFrontmatter {
     pub values: FrontmatterValues,
     /// Keys written as `key:` with nothing after them.
     pub bare_value_keys: Vec<String>,
@@ -51,7 +51,7 @@ pub fn split_markdown_frontmatter(content: &str) -> (Option<String>, String) {
 }
 
 /// Port of `parseLooseFrontmatter`.
-pub fn parse_loose_frontmatter(frontmatter: &str) -> LooseFrontmatter {
+pub(crate) fn parse_loose_frontmatter(frontmatter: &str) -> LooseFrontmatter {
     let mut bare_value_keys: Vec<String> = Vec::new();
     let mut invalid_nested_list_keys: Vec<String> = Vec::new();
     let mut values = FrontmatterValues::new();
@@ -162,7 +162,7 @@ fn match_key_value(line: &str) -> Option<(String, &str)> {
 }
 
 /// Port of `stripInlineComment`: a `#` that follows whitespace and is outside quotes.
-pub fn strip_inline_comment(value: &str) -> String {
+pub(crate) fn strip_inline_comment(value: &str) -> String {
     let chars: Vec<char> = value.chars().collect();
     let mut quote: Option<char> = None;
     for (index, &c) in chars.iter().enumerate() {
@@ -178,7 +178,7 @@ pub fn strip_inline_comment(value: &str) -> String {
 }
 
 /// Port of `unquoteScalar`.
-pub fn unquote_scalar(value: &str) -> String {
+pub(crate) fn unquote_scalar(value: &str) -> String {
     let bytes = value.as_bytes();
     if bytes.len() >= 2 {
         let first = bytes[0] as char;
@@ -191,7 +191,7 @@ pub fn unquote_scalar(value: &str) -> String {
 }
 
 /// Port of `parseScalarValue`.
-pub fn parse_scalar_value(raw_value: &str, parse_inline_item_scalars: bool) -> serde_json::Value {
+pub(crate) fn parse_scalar_value(raw_value: &str, parse_inline_item_scalars: bool) -> serde_json::Value {
     let value = strip_inline_comment(raw_value.trim());
     if value == "true" {
         return serde_json::Value::Bool(true);

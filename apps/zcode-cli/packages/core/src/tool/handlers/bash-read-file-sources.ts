@@ -1,8 +1,8 @@
 import {
   analyzeBashCommand,
-  isBashCommandPermissionSafe,
   type BashCommandInvocation,
 } from "./bash-command-parser.js";
+import { isBashCommandPermissionSafe } from "@zcode/rust/subagent-bash-semantics";
 
 const DEFAULT_HEAD_LINES = 10;
 const DEFAULT_TAIL_LINES = 10;

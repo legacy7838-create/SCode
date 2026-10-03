@@ -89,10 +89,6 @@ export function analyzeBashCommand(command: string): BashCommandAnalysis {
   return freezeAnalysis(analysis);
 }
 
-export function isBashCommandPermissionSafe(analysis: BashCommandAnalysis): boolean {
-  return !analysis.hasParseErrors && !analysis.hasUnsupportedSyntax && !analysis.hasDynamicWords;
-}
-
 interface MutableBashCommandAnalysis {
   commands: BashCommandInvocation[];
   hasDynamicWords: boolean;

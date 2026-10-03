@@ -20,7 +20,7 @@
 use crate::tables::{matches_hostname, PolicyTables};
 
 /// `Option<bool>` — `None` is "no opinion", which the caller must not confuse with a denial.
-pub type PolicyVerdict = Option<bool>;
+pub(crate) type PolicyVerdict = Option<bool>;
 
 /// One redirect on the invocation.
 #[derive(Debug, Clone)]
