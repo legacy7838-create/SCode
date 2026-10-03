@@ -11,7 +11,7 @@ import type {
   PersonalProviderConfigRepository,
   ProviderConfigLayerSnapshot,
 } from "@zcode/provider";
-import { decodeProviderConfigFile, encodeProviderConfigFile } from "@zcode/provider-node";
+import { decodeProviderConfigFile, encodeProviderConfigFile } from "@zcode/rust/provider-node";
 import {
   createCredentialCipherProvider,
   type CredentialCipherProvider,

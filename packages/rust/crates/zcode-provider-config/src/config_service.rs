@@ -47,7 +47,7 @@ pub struct BuiltinSnapshot {
 /// snapshots without a file watcher for now.
 pub trait BuiltinSource: Send + Sync {
     fn read(&self) -> Result<BuiltinSnapshot, String>;
-    fn on_did_change(&self, listener: Box<dyn Fn(&str) + Send>);
+    fn on_did_change(&self, listener: Box<dyn Fn(&str) + Send + Sync>);
 }
 
 pub struct ProviderConfigService {

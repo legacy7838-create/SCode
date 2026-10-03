@@ -5,7 +5,7 @@ import {
   type PersonalProviderConfigRepository,
   type ProviderConfigLayerUpdate,
 } from "@zcode/provider";
-import { decodeProviderConfigFile, encodeProviderConfigFile } from "@zcode/provider-node";
+import { decodeProviderConfigFile, encodeProviderConfigFile } from "@zcode/rust/provider-node";
 import {
   providerProvisioningEnvelopeSchema,
   providerProvisioningResultSchema,

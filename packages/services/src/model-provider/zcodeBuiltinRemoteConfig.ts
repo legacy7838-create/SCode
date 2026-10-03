@@ -1,4 +1,4 @@
-import { downloadZCodeBuiltinRelease, type ZCodeBuiltinRelease } from "@zcode/provider-node";
+import { downloadZCodeBuiltinRelease, type ZCodeBuiltinRelease } from "@zcode/rust/provider-node";
 import type { ApiClient } from "@zcode/shared";
 
 interface FetchZCodeBuiltinRemoteReleaseOptions {

@@ -27,6 +27,8 @@
     "./terminal-profile": "./src/terminalProfile.ts",
     "./sysinfo": "./src/sysinfo.ts",
     "./package.json": "./package.json",
+    "./provider-node": "./src/providerNode.ts",
+    "./model-option-map": "./src/modelOptionMap.ts",
     "./subagent-bash-semantics": "./src/subagentBashSemantics.ts",
     "./subagent-result-budget": "./src/subagentResultBudget.ts"
   },
@@ -40,6 +42,10 @@
     "native:verify-desktop": "cargo run -p zcode-packaging -- verify --plan target/desktop-agent-plan.json",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix --fix-suggestions"
+  },
+  "dependencies": {
+    "@zcode/provider": "workspace:*",
+    "@zcode/shared": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^25.5.0"

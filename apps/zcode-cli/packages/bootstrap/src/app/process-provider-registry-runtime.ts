@@ -1,6 +1,8 @@
 import {
   AccountProviderService,
   MutableAccountProviderConfigSource,
+  ProviderRegistryService,
+  createFailClosedAccountProviderConfigSnapshot,
   parseAccountProviderConfigMap,
   type AccountProviderConfigSnapshot,
   type AccountProviderStates,
@@ -13,13 +15,13 @@ import {
 import { dirname, join } from "node:path";
 import {
   NodeModelSelectionConfigRepository,
-  NodeProviderRegistryRuntime,
+  NodeProviderConfigRuntime,
   resolveNodeProviderRuntimePaths,
   downloadZCodeBuiltinRelease,
   resolveZCodeBuiltinClientPlatform,
   ZCODE_BUILTIN_PROVIDER_BUNDLED_CONFIG_FILE_ENV,
   type ZCodeBuiltinRefreshEvent,
-} from "@zcode/provider-node";
+} from "@zcode/rust/provider-node";
 import {
   createSharedZCodeCredentialStore,
   type SharedZCodeCredentialStore,
@@ -59,7 +61,11 @@ export async function startProcessProviderRegistryRuntime(
   const bundledFile = options.standalone
     ? env[ZCODE_BUILTIN_PROVIDER_BUNDLED_CONFIG_FILE_ENV]?.trim()
     : undefined;
-  const runtime = new NodeProviderRegistryRuntime({
+  // `NodeProviderRegistryRuntime` was only ever this composition: the config
+  // runtime, the account source, the registry service and the start order
+  // (spec rust-native-provider-node.md §2). It is assembled here now, over the
+  // native-owned config runtime, so there is one owner for the file plane.
+  const configRuntime = new NodeProviderConfigRuntime({
     ...paths,
     ...(bundledFile
       ? {
@@ -84,33 +90,6 @@ export async function startProcessProviderRegistryRuntime(
         }
       : {}),
     onZCodeBuiltinRefreshError: options.standalone?.onBuiltinRefreshError,
-    accountSource,
-    ...(credentialStore
-      ? {
-          createAccountSource(configService) {
-            standaloneAccount = new AccountProviderService({
-              configSource: configService,
-              async resolve({ configRevision, configuredProviders }) {
-                // Use Built-in captured in this round instead of asynchronously reading another file and then just posting the new revision.
-                const snapshot = await readStandaloneAccountProviderConfigSnapshot(
-                  credentialStore,
-                  env,
-                  { revision: configRevision, providers: configuredProviders },
-                );
-                return { providers: snapshot.providers, states: snapshot.states ?? {} };
-              },
-            });
-            standaloneAccount.onDidRefreshError(({ error }) => {
-              try {
-                options.standalone?.onAccountInitializationError?.(error);
-              } catch {
-                /* Observability callbacks must not change account facts. */
-              }
-            });
-            return standaloneAccount;
-          },
-        }
-      : {}),
     ...(options.standalone
       ? {
           importLegacy: () =>
@@ -122,6 +101,79 @@ export async function startProcessProviderRegistryRuntime(
         }
       : {}),
   });
+  // With credentials, the account source is the standalone AccountService —
+  // it resolves this Environment's snapshot itself; otherwise the mutable
+  // host-driven source, which the fail-closed barrier initialises on start.
+  const accountSourceInstance = credentialStore
+    ? (standaloneAccount = new AccountProviderService({
+        configSource: configRuntime.configService,
+        async resolve({ configRevision, configuredProviders }) {
+          // Use Built-in captured in this round instead of asynchronously
+          // reading another file and then just posting the new revision.
+          const snapshot = await readStandaloneAccountProviderConfigSnapshot(
+            credentialStore,
+            env,
+            { revision: configRevision, providers: configuredProviders },
+          );
+          return { providers: snapshot.providers, states: snapshot.states ?? {} };
+        },
+      }))
+    : accountSource;
+  standaloneAccount?.onDidRefreshError(({ error }) => {
+    try {
+      options.standalone?.onAccountInitializationError?.(error);
+    } catch {
+      /* Observability callbacks must not change account facts. */
+    }
+  });
+  const registryService = new ProviderRegistryService({
+    configSource: configRuntime.configService,
+    accountSource: accountSourceInstance,
+  });
+  let startPromise: Promise<void> | null = null;
+  /** Config read → fail-closed account barrier → registry start, single-flight. */
+  const startRegistry = (): Promise<void> => {
+    if (startPromise) return startPromise;
+    startPromise = (async () => {
+      try {
+        await configRuntime.start();
+        // An account source that has never been populated must fail closed
+        // against the config revision it will be judged by, instead of
+        // publishing an uninitialized overlay.
+        if (accountSourceInstance instanceof MutableAccountProviderConfigSource) {
+          const account = await accountSourceInstance.read();
+          if (account.basedOnZCodeBuiltinRevision === "uninitialized") {
+            accountSourceInstance.replace(
+              createFailClosedAccountProviderConfigSnapshot(
+                await configRuntime.configService.read(),
+              ),
+              "initial-fail-closed",
+            );
+          }
+        }
+        await registryService.start();
+      } catch (error) {
+        startPromise = null;
+        throw error;
+      }
+    })();
+    return startPromise;
+  };
+  const runtime = {
+    configService: configRuntime.configService,
+    personalRepository: configRuntime.personalRepository,
+    registryService,
+    start: startRegistry,
+    refreshZCodeBuiltin: (refreshOptions?: { readonly force?: boolean }) =>
+      configRuntime.refreshZCodeBuiltin(refreshOptions),
+    onDidCheckZCodeBuiltin: (listener: () => Promise<void>) =>
+      configRuntime.onDidCheckZCodeBuiltin(listener),
+    resolveZCodeBuiltinActiveFilePath: () => configRuntime.resolveZCodeBuiltinActiveFilePath(),
+    dispose: () => {
+      registryService.dispose();
+      configRuntime.dispose();
+    },
+  };
   const disposeRecovery = standaloneAccount
     ? runtime.onDidCheckZCodeBuiltin(async () => {
         const [config, account] = await Promise.all([

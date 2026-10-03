@@ -366,6 +366,14 @@ pub fn assert_json_safe(value: f64, offset: usize) -> Result<(), RestrictedCelEr
 }
 
 pub fn number_value(value: f64) -> serde_json::Value {
+    // JS `JSON.stringify` prints an integer-valued double without a fraction
+    // ("4096", not "4096.0"); serde's f64 formatter writes "4096.0", which would
+    // change the request bytes the patch produces. Every integer that survives
+    // `assert_json_safe` is inside the safe-integer range, so it round-trips
+    // through i64 exactly. `-0.0` becomes `0`, as `JSON.stringify(-0)` does.
+    if value.is_finite() && value.fract() == 0.0 && value.abs() <= 9_007_199_254_740_992.0 {
+        return serde_json::Value::Number(serde_json::Number::from(value as i64));
+    }
     serde_json::Number::from_f64(value)
         .map(serde_json::Value::Number)
         .unwrap_or(serde_json::Value::Null)

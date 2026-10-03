@@ -14,7 +14,10 @@ pub struct ModelOptionMapSpecs<'a> {
 
 pub struct ModelOptionValues<'a> {
     pub reasoning_level: &'a str,
-    pub max_output_tokens: f64,
+    /// Carried as a JSON number, not an `f64`: `JSON.stringify(8192)` writes
+    /// `8192`, and re-wrapping it as an f64 would emit `8192.0` — different
+    /// request bytes for the same logical value.
+    pub max_output_tokens: serde_json::Value,
 }
 
 pub struct CompiledModelOptionMaps {
@@ -44,7 +47,12 @@ impl CompiledModelOptionMaps {
         values: &ModelOptionValues,
     ) -> Result<serde_json::Map<String, serde_json::Value>, ModelOptionMapError> {
         let reasoning_level = values.reasoning_level;
-        let max_output_tokens = values.max_output_tokens;
+        let max_output_tokens = &values.max_output_tokens;
+        if !max_output_tokens.is_number() {
+            return Err(ModelOptionMapError {
+                message: "maxOutputTokens must be a finite number".into(),
+            });
+        }
         let patches = vec![
             NamedJsonMergePatch {
                 option: "reasoningLevel".into(),
@@ -59,13 +67,7 @@ impl CompiledModelOptionMaps {
                 option: "maxOutputTokens".into(),
                 patch: self
                     .max_output_tokens
-                    .evaluate(
-                        &serde_json::Number::from_f64(max_output_tokens)
-                            .map(serde_json::Value::Number)
-                            .ok_or_else(|| ModelOptionMapError {
-                                message: "maxOutputTokens must be a finite number".into(),
-                            })?,
-                    )
+                    .evaluate(max_output_tokens)
                     .map_err(|error| ModelOptionMapError {
                         message: error.to_string(),
                     })?,

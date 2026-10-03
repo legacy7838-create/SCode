@@ -10,7 +10,7 @@ description = "Provider Config personal file plane: strict schema, legacy normal
 crate-type = ["rlib"]
 
 [dependencies]
-zcode-model-option-map = { path = "../zcode-model-option-map" }
+zcode-model-option-map = { path = "../zcode-model-option-map", default-features = false }
 zcode-private-file = { path = "../zcode-private-file" }
 serde = { workspace = true }
 serde_json = { workspace = true }

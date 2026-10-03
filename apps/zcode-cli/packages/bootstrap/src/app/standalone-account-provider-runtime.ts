@@ -12,7 +12,7 @@ import {
 import {
   NodeZCodeBuiltinProviderConfigSource,
   ZCODE_BUILTIN_PROVIDER_CONFIG_FILE_ENV,
-} from "@zcode/provider-node";
+} from "@zcode/rust/provider-node";
 import type { ProviderFamilyDomain } from "@zcode/shared";
 
 interface StandaloneCodingPlanProvider {

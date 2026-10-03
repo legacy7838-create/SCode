@@ -1662,6 +1662,49 @@ pub fn decode_builtin_release(
     })
 }
 
+/// Build the domain rule list from the file-form builtin model rules — the
+/// same construction `decode_builtin_release` performs, exposed so the legacy
+/// reasoning-level resolver can rebuild it from raw rule JSON.
+pub fn builtin_model_rules_to_domain(
+    data: &BuiltinModelConfigRulesData,
+) -> crate::domain::ModelConfigRules {
+    let mut rules = Vec::new();
+    for rule in &data.model_rules {
+        rules.push(crate::domain::ModelConfigRule::Model(rule.clone()));
+    }
+    for rule in &data.model_api_rules {
+        rules.push(crate::domain::ModelConfigRule::ModelApi(rule.clone()));
+    }
+    for rule in &data.provider_site_rules {
+        rules.push(crate::domain::ModelConfigRule::ProviderSite(rule.clone()));
+    }
+    for rule in &data.template_model_rules {
+        rules.push(crate::domain::ModelConfigRule::TemplateModel(rule.clone()));
+    }
+    for rule in &data.builtin_provider_model_rules {
+        rules.push(crate::domain::ModelConfigRule::ProviderModel(rule.clone()));
+    }
+    crate::domain::ModelConfigRules::new(rules)
+}
+
+/// Build the domain rule list from the file-form personal model rules.
+pub fn personal_model_rules_to_domain(
+    data: &PersonalModelConfigRulesData,
+) -> crate::domain::ModelConfigRules {
+    let mut rules: Vec<crate::domain::ModelConfigRule> = Vec::new();
+    rules.extend(
+        data.provider_model_rules
+            .iter()
+            .map(|rule| crate::domain::ModelConfigRule::ProviderModel(rule.clone())),
+    );
+    rules.extend(
+        data.manual_provider_model_rules
+            .iter()
+            .map(|rule| crate::domain::ModelConfigRule::ManualProviderModel(rule.clone())),
+    );
+    crate::domain::ModelConfigRules::new(rules)
+}
+
 pub fn encode_builtin_release(release: &BuiltinRelease) -> Result<Vec<u8>, BuiltinReleaseError> {
     let provider_rules: Vec<ProviderConfigRuleData> = release
         .providers

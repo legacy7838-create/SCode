@@ -22,7 +22,7 @@ impl BuiltinSource for FakeBuiltin {
     fn read(&self) -> Result<BuiltinSnapshot, String> {
         Ok(self.snapshot.clone())
     }
-    fn on_did_change(&self, _listener: Box<dyn Fn(&str) + Send>) {}
+    fn on_did_change(&self, _listener: Box<dyn Fn(&str) + Send + Sync>) {}
 }
 
 fn base_dir() -> std::path::PathBuf {

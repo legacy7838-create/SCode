@@ -8,7 +8,7 @@ import {
   createNodeProviderRuntimePathEnv,
   NodeModelSelectionConfigRepository,
   PERSONAL_PROVIDER_CONFIG_FILE_NAME,
-} from "@zcode/provider-node";
+} from "@zcode/rust/provider-node";
 import {
   getAppConfigDir as resolveAppConfigDir,
   getConversationWorkspaceDir as resolveConversationWorkspaceDir,
@@ -22,7 +22,7 @@ import {
 export {
   materializeZCodeBuiltinProviderConfig,
   ZCODE_BUILTIN_PROVIDER_CONFIG_FILE_ENV,
-} from "@zcode/provider-node";
+} from "@zcode/rust/provider-node";
 
 export { createFileService } from "./file/fileService.js";
 export {

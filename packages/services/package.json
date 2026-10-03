@@ -19,7 +19,6 @@
   "dependencies": {
     "@larksuiteoapi/node-sdk": "1.64.0",
     "@zcode/provider": "workspace:*",
-    "@zcode/provider-node": "workspace:*",
     "@zcode/rpc": "workspace:*",
     "@zcode/rust": "workspace:*",
     "@zcode/shared": "workspace:*",

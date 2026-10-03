@@ -2192,6 +2192,7 @@ dependencies = [
  "rustc-hash",
  "serde",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -3734,6 +3735,9 @@ dependencies = [
 name = "zcode-model-option-map"
 version = "0.0.0"
 dependencies = [
+ "napi",
+ "napi-derive",
+ "serde",
  "serde_json",
  "thiserror 2.0.21",
 ]
@@ -3769,6 +3773,21 @@ dependencies = [
  "url",
  "zcode-model-option-map",
  "zcode-private-file",
+]
+
+[[package]]
+name = "zcode-provider-node"
+version = "0.0.0"
+dependencies = [
+ "napi",
+ "napi-derive",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "url",
+ "zcode-private-file",
+ "zcode-provider-config",
 ]
 
 [[package]]

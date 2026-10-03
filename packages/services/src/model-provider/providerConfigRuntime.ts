@@ -4,7 +4,7 @@ import {
   PERSONAL_PROVIDER_CONFIG_FILE_NAME,
   type PersonalProviderConfigRecoveryEvent,
   type NodeProviderConfigRuntimeOptions,
-} from "@zcode/provider-node";
+} from "@zcode/rust/provider-node";
 import type { ModelProviderConfig } from "./legacyModelProviderSerialized.js";
 import { getAppConfigDir } from "../paths.js";
 import { importLegacyPersonalProviderConfig } from "./legacyPersonalProviderConfigImporter.js";
@@ -27,7 +27,7 @@ export interface ProviderConfigRuntimeOptions {
  * The Services assembly layer: provides the App config directory and the one-shot migration entry
  * point for already-published legacy config.
  * The config migration preserves ZCode users' provider data; the file runtime is implemented
- * solely by @zcode/provider-node.
+ * solely by the native @zcode/rust/provider-node surface.
  */
 export class ProviderConfigRuntime {
   readonly configService: NodeProviderConfigRuntime["configService"];

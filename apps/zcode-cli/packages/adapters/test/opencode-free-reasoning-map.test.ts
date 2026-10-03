@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { applyOrderedJsonMergePatches, compileModelOptionMap } from "@zcode/model-option-map";
+import { applyOrderedJsonMergePatches, compileModelOptionMap } from "@zcode/rust/model-option-map";
 
 /**
  * The generic Anthropic rule maps `reasoningLevel: "disabled"` to `{"thinking": {"type":"disabled"}}`,

@@ -42,22 +42,31 @@ export async function resolveBuiltinProviderBuildEnvironment({
 /** @param {{root?: string, env?: Record<string, string | undefined>}} options */
 export async function loadBuiltinProviderConfig({ root = repositoryRoot, env = process.env } = {}) {
   env = await loadEndpointEnv({ root, env });
-  const environment = await resolveBuiltinProviderBuildEnvironment({ root, env });
+  const environment = await resolveBuiltinProviderBuildEnvironment({
+    root,
+    env,
+  });
   const sourcePath = resolve(
     root,
     env.ZCODE_BUILTIN_PROVIDER_CONFIG_FILE?.trim() || "config/provider/zcode-builtin.json",
   );
   try {
     const content = await readFile(sourcePath, "utf8");
-    // The complete Release verification at runtime is reused during the build period to avoid discovering Schema incompatibility only after successful packaging.
-    // tsx is only used by the build tool to load the warehouse TS. It does not enter the product bundle or copy the verification rules.
-    // The drive letter of the Windows absolute path will be used as a protocol by ESM, and after being converted into a file URL, each platform will share the same loading entry.
-    const { decodeZCodeBuiltinRelease } = await tsImport(
-      pathToFileURL(resolve(repositoryRoot, "packages/provider-node/src/zcode-builtin-release.ts"))
-        .href,
+    // The complete Release verification at runtime is reused during the build
+    // period to avoid discovering Schema incompatibility only after successful
+    // packaging — and it is the same Rust codec the runtime loads, so the
+    // build-time gate cannot drift from it (docs/specs/rust-native-provider-node.md).
+    // tsx is only used by the build tool to load the loader TS. It does not
+    // enter the product bundle or copy the verification rules.
+    // The drive letter of the Windows absolute path will be used as a protocol
+    // by ESM, and after being converted into a file URL, each platform will
+    // share the same loading entry.
+    const { loadNative } = await tsImport(
+      pathToFileURL(resolve(repositoryRoot, "packages/rust/src/loader.ts")).href,
       import.meta.url,
     );
-    decodeZCodeBuiltinRelease(JSON.parse(content));
+    const { decodeZcodeBuiltinRelease } = loadNative("zcode-provider-node");
+    decodeZcodeBuiltinRelease(content);
     return { environment, sourcePath, content };
   } catch (error) {
     throw new Error(`Invalid Built-in Provider config (${environment}): ${sourcePath}`, {

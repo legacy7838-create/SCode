@@ -165,13 +165,15 @@ impl PersonalProviderConfigRepository {
 
     fn read_current(&self) -> Result<LayerSnapshot, String> {
         match read_json_file_if_exists(&self.shared.file_path) {
-            None => match (self.shared.import_legacy)
-                .as_ref()
-                .and_then(|import| import())
-            {
-                Some(imported) => Ok(snapshot_from_layer(&imported)),
-                None => Ok(snapshot_from_layer(&empty_layer())),
-            },
+            None => {
+                if self.shared.import_legacy.is_none() {
+                    return Ok(snapshot_from_layer(&empty_layer()));
+                }
+                // The import normalises and writes, so it happens under the
+                // lock after a re-read: another writer's content must never be
+                // overwritten with what this process read before the lock.
+                self.read_locked()
+            }
             Some(Err(error)) => Err(error),
             Some(Ok(value)) => {
                 let layer = decode_provider_config_file(&value).map_err(|e| e.to_string())?;

@@ -1,21 +1,18 @@
 import { z } from "zod";
-import { compileModelOptionMap } from "@zcode/model-option-map";
 import { sparseShape } from "./config-schema.js";
 
-function optionMapSchema(variableName: "reasoningLevel" | "maxOutputTokens") {
-  return z
-    .string()
-    .min(1)
-    .superRefine((source, context) => {
-      try {
-        compileModelOptionMap(source, variableName);
-      } catch (error) {
-        context.addIssue({
-          code: "custom",
-          message: error instanceof Error ? error.message : "Option map could not be compiled",
-        });
-      }
-    });
+/**
+ * `map` is a restricted-CEL expression. Its compile validation is **owned by
+ * the native boundary** (`zcode-provider-config`'s `check_model_option_map`
+ * runs it on every config decode and every persisted write), so this schema —
+ * which the renderer bundles — keeps only the shape constraints. The renderer
+ * cannot load a `.node` (invariant 9) and never executed the compile step
+ * itself: invalid maps are rejected natively with the same
+ * `{message} at offset {offset}` string the removed superRefine surfaced.
+ * Spec: docs/specs/rust-native-model-option-map.md §3.1.
+ */
+function optionMapSchema() {
+  return z.string().min(1);
 }
 
 export const completeEnumOptionSpecDataSchema = z
@@ -36,14 +33,14 @@ export const completeEnumOptionSpecDataSchema = z
         "reasoningLevel.values must not contain duplicates",
       )
       .readonly(),
-    map: optionMapSchema("reasoningLevel"),
+    map: optionMapSchema(),
   })
   .strict();
 
 export const completeLimitOptionSpecDataSchema = z
   .object({
     max: z.number().int().positive(),
-    map: optionMapSchema("maxOutputTokens"),
+    map: optionMapSchema(),
   })
   .strict();
 

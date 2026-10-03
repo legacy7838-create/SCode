@@ -7,6 +7,12 @@
 //! the TypeScript tokenizer/parser/evaluator, including error messages.
 
 pub mod compiler;
+
+/// The Node binding layer — only present when the crate is built for Node.
+/// Hosts that link the rlib (the Tauri host through `zcode-provider-config`)
+/// build with `default-features = false` and never see the Node ABI.
+#[cfg(feature = "napi")]
+pub mod napi;
 pub mod evaluator;
 pub mod merge_patch;
 pub mod option_maps;
@@ -87,6 +93,48 @@ mod tests {
         )
         .is_err());
         assert!(compile_map(r#"{"x": foo(1)}"#, ModelOptionName::ReasoningLevel).is_err());
+    }
+
+    #[test]
+    fn integer_results_serialise_in_js_spelling() {
+        // Regression: `JSON.stringify(4096)` writes "4096"; an f64-number would
+        // serialise as "4096.0" and change the request bytes the patch emits.
+        for (value, expected) in [
+            (4096.0, "4096"),
+            (-7.0, "-7"),
+            (0.0, "0"),
+            (-0.0, "0"),
+            (0.5, "0.5"),
+            (1.25, "1.25"),
+        ] {
+            let serialised =
+                serde_json::to_string(&parser::number_value(value)).expect("serialise");
+            assert_eq!(serialised, expected, "number_value({value})");
+        }
+    }
+
+    #[test]
+    fn an_integer_option_value_reaches_the_body_unscaled() {
+        let specs = ModelOptionMapSpecs {
+            reasoning_level_map: "{ \"effort\": reasoningLevel }",
+            max_output_tokens_map: "{ 'max_tokens': maxOutputTokens }",
+        };
+        let compiled = compile_model_option_maps(&specs).expect("compile");
+        let body: serde_json::Map<String, serde_json::Value> = serde_json::from_str("{}").unwrap();
+        let patched = compiled
+            .apply(
+                &body,
+                &ModelOptionValues {
+                    reasoning_level: "high",
+                    max_output_tokens: serde_json::json!(8192),
+                },
+            )
+            .expect("apply");
+        let bytes = serde_json::to_string(&serde_json::Value::Object(patched)).expect("bytes");
+        assert!(
+            bytes.contains("\"max_tokens\":8192"),
+            "integer value must not gain a fraction: {bytes}"
+        );
     }
 
     #[test]

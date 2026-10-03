@@ -1,5 +1,5 @@
 import { createConfig } from "@zcode/adapters/config";
-import { createNodeModelSelectionFacade } from "@zcode/provider-node";
+import { createNodeModelSelectionFacade } from "@zcode/rust/provider-node";
 import { createNodeLoggerFactory } from "@zcode/adapters/logging";
 import {
   createMcpAdapterConnectionPool,

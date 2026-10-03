@@ -2,7 +2,7 @@ import type {
   CompiledModelOptionMaps,
   JsonObject,
   ModelOptionValues,
-} from "@zcode/model-option-map";
+} from "@zcode/rust/model-option-map";
 
 type ProviderFetch = typeof globalThis.fetch;
 
@@ -19,10 +19,11 @@ export function createModelOptionMapFetch(input: {
   return async (request, init) => {
     const bodyText = await readRequestBody(request, init);
     if (bodyText === undefined) return input.fetch(request, init);
-    const body = parseJsonObject(bodyText);
-    const patched = input.maps.apply(body, input.values);
-    if (input.capture) input.capture.body = patched;
-    const patchedBody = JSON.stringify(patched);
+    // The native apply takes and returns the body as JSON text, so the normal
+    // path pays neither a JS `JSON.parse` nor a re-stringify; only a capture
+    // needs the object form back.
+    const patchedBody = input.maps.applyJson(bodyText, input.values);
+    if (input.capture) input.capture.body = parseJsonObject(patchedBody);
     if (request instanceof Request) {
       return input.fetch(new Request(request, { ...init, body: patchedBody }));
     }

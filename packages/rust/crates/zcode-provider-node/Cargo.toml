@@ -1,0 +1,34 @@
+[package]
+name = "zcode-provider-node"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "napi bindings for the ZCode provider-config file plane: the Node consumer surface of packages/provider-node, ported to Rust. docs/specs/rust-native-provider-node.md."
+
+[lib]
+# `cdylib` only: this crate exists to give Node a binary for the ported
+# provider-node surface. Every implementation lives in `zcode-provider-config`.
+crate-type = ["cdylib"]
+
+[dependencies]
+zcode-provider-config = { path = "../zcode-provider-config" }
+zcode-private-file = { path = "../zcode-private-file" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+url = { workspace = true }
+sha2 = { workspace = true }
+# `async` (tokio_rt) is what lets the boundary await an injected JS callback
+# mid-operation: the repository's `update` holds the file lock while the
+# host's transform runs, and the download boundary awaits the host's request
+# function under its own budget. See the spec §3.8.
+napi = { workspace = true, features = ["async"] }
+napi-derive = { workspace = true }
+# The runtime's periodic check and the repository's poll loop are plain
+# threads; `tokio` is here for the timeout the download budget needs and for
+# `spawn_blocking`, so a lock-holding callback wait never runs on a reactor
+# worker.
+tokio = { version = "1", features = ["rt-multi-thread", "time", "sync"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "time", "sync"] }

@@ -91,9 +91,9 @@ impl RefreshControl {
 pub struct ZCodeBuiltinRemoteSynchronizer {
     source: FileBuiltinSource,
     options: RemoteSynchronizerOptions,
-    resolve_endpoint_key: Box<dyn Fn() -> Result<String, String>>,
-    fetch_release: Box<dyn Fn(&str) -> Result<Option<BuiltinRelease>, String>>,
-    on_refresh_result: Option<Box<dyn Fn(&ZCodeBuiltinRefreshEvent) + Send>>,
+    resolve_endpoint_key: Box<dyn Fn() -> Result<String, String> + Send + Sync>,
+    fetch_release: Box<dyn Fn(&str) -> Result<Option<BuiltinRelease>, String> + Send + Sync>,
+    on_refresh_result: Option<Box<dyn Fn(&ZCodeBuiltinRefreshEvent) + Send + Sync>>,
     disposed: AtomicBool,
     in_flight: Mutex<bool>,
 }
@@ -192,9 +192,9 @@ impl ZCodeBuiltinRemoteSynchronizer {
     pub fn new(
         source: FileBuiltinSource,
         options: RemoteSynchronizerOptions,
-        resolve_endpoint_key: impl Fn() -> Result<String, String> + 'static,
-        fetch_release: impl Fn(&str) -> Result<Option<BuiltinRelease>, String> + 'static,
-        on_refresh_result: Option<Box<dyn Fn(&ZCodeBuiltinRefreshEvent) + Send>>,
+        resolve_endpoint_key: impl Fn() -> Result<String, String> + Send + Sync + 'static,
+        fetch_release: impl Fn(&str) -> Result<Option<BuiltinRelease>, String> + Send + Sync + 'static,
+        on_refresh_result: Option<Box<dyn Fn(&ZCodeBuiltinRefreshEvent) + Send + Sync>>,
     ) -> Self {
         Self {
             source,

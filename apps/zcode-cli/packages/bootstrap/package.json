@@ -30,7 +30,7 @@
     "@zcode/dynamic-workflow-runtime": "workspace:*",
     "@zcode/i18n": "workspace:*",
     "@zcode/provider": "workspace:*",
-    "@zcode/provider-node": "workspace:*",
+    "@zcode/rust": "workspace:*",
     "@zcode/shared": "workspace:*",
     "@zcode/telemetry": "workspace:*",
     "diff": "^9.0.0",

@@ -105,7 +105,6 @@
     "@modelcontextprotocol/client": "2.0.0",
     "@zcode/contracts": "workspace:*",
     "@zcode/dynamic-workflow": "workspace:*",
-    "@zcode/model-option-map": "workspace:*",
     "@zcode/provider": "workspace:*",
     "@zcode/rust": "workspace:*",
     "@zcode/shared": "workspace:*",

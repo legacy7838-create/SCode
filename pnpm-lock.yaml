@@ -148,9 +148,6 @@ importers:
       '@zcode/dynamic-workflow':
         specifier: workspace:*
         version: link:../dynamic-workflow
-      '@zcode/model-option-map':
-        specifier: workspace:*
-        version: link:../../../../packages/model-option-map
       '@zcode/provider':
         specifier: workspace:*
         version: link:../../../../packages/provider
@@ -227,9 +224,9 @@ importers:
       '@zcode/provider':
         specifier: workspace:*
         version: link:../../../../packages/provider
-      '@zcode/provider-node':
+      '@zcode/rust':
         specifier: workspace:*
-        version: link:../../../../packages/provider-node
+        version: link:../../../../packages/rust
       '@zcode/shared':
         specifier: workspace:*
         version: link:../../../../packages/shared
@@ -319,9 +316,6 @@ importers:
       '@zcode/i18n':
         specifier: workspace:*
         version: link:../i18n
-      '@zcode/provider-node':
-        specifier: workspace:*
-        version: link:../../../../packages/provider-node
       '@zcode/rpc':
         specifier: workspace:*
         version: link:../../../../packages/rpc
@@ -708,17 +702,8 @@ importers:
         specifier: ^8.0.2
         version: 8.0.8(@types/node@25.6.0)(esbuild@0.27.7)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0)
 
-  packages/model-option-map:
-    devDependencies:
-      typescript:
-        specifier: ^6.0.2
-        version: 6.0.2
-
   packages/provider:
     dependencies:
-      '@zcode/model-option-map':
-        specifier: workspace:*
-        version: link:../model-option-map
       '@zcode/shared':
         specifier: workspace:*
         version: link:../shared
@@ -726,28 +711,6 @@ importers:
         specifier: 4.6.5
         version: 4.6.5
     devDependencies:
-      typescript:
-        specifier: ^6.0.2
-        version: 6.0.2
-
-  packages/provider-node:
-    dependencies:
-      '@zcode/provider':
-        specifier: workspace:*
-        version: link:../provider
-      '@zcode/shared':
-        specifier: workspace:*
-        version: link:../shared
-      zod:
-        specifier: 4.6.5
-        version: 4.6.5
-    devDependencies:
-      '@types/node':
-        specifier: ^25.5.0
-        version: 25.6.0
-      '@zcode/model-option-map':
-        specifier: workspace:*
-        version: link:../model-option-map
       typescript:
         specifier: ^6.0.2
         version: 6.0.2
@@ -766,6 +729,13 @@ importers:
         version: 5.9.3
 
   packages/rust:
+    dependencies:
+      '@zcode/provider':
+        specifier: workspace:*
+        version: link:../provider
+      '@zcode/shared':
+        specifier: workspace:*
+        version: link:../shared
     devDependencies:
       '@types/node':
         specifier: ^25.5.0
@@ -876,9 +846,6 @@ importers:
       '@zcode/provider':
         specifier: workspace:*
         version: link:../provider
-      '@zcode/provider-node':
-        specifier: workspace:*
-        version: link:../provider-node
       '@zcode/rpc':
         specifier: workspace:*
         version: link:../rpc
@@ -931,9 +898,6 @@ importers:
 
   packages/shared:
     dependencies:
-      '@zcode/model-option-map':
-        specifier: workspace:*
-        version: link:../model-option-map
       '@zcode/rpc':
         specifier: workspace:*
         version: link:../rpc

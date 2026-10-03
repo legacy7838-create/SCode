@@ -1,7 +1,7 @@
 import {
   NodeModelSelectionConfigRepository,
   createNodeModelSelectionFacade,
-} from "@zcode/provider-node";
+} from "@zcode/rust/provider-node";
 import {
   ProviderRegistryService,
   ProviderSettingsFacade,

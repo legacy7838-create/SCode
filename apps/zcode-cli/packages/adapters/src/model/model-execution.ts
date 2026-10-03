@@ -11,7 +11,7 @@ import {
   compileModelOptionMaps,
   type CompiledModelOptionMaps,
   type ModelOptionValues,
-} from "@zcode/model-option-map";
+} from "@zcode/rust/model-option-map";
 import {
   type Logger,
   type ModelId,
