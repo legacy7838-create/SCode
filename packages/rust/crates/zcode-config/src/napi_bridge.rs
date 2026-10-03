@@ -247,3 +247,135 @@ mod tests {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Workspace-hook compute (spec §3.3, rows T7–T11 and T48–T58)
+// ---------------------------------------------------------------------------
+
+fn parse<T: serde::de::DeserializeOwned>(json: &str, what: &str) -> Result<T, napi::Error> {
+    serde_json::from_str(json)
+        .map_err(|error| napi::Error::new(napi::Status::InvalidArg, format!("{what}: {error}")))
+}
+
+fn emit(value: String) -> Result<String, napi::Error> {
+    Ok(value)
+}
+
+/// `buildWorkspaceHookBundleSnapshot` — `undefined` when the source set has no
+/// hooks (T8). `discoveredAt` is required in the input: the sync native side
+/// owns no clock, and the wrapper supplies the TS `new Date().toISOString()`.
+#[napi(js_name = "buildWorkspaceHookBundleSnapshot")]
+pub fn build_workspace_hook_bundle_snapshot_binding(
+    input_json: String,
+) -> Result<Option<String>, napi::Error> {
+    let input: crate::hooks::BundleSnapshotInput =
+        parse(&input_json, "bundle snapshot input")?;
+    Ok(crate::hooks::build_workspace_hook_bundle_snapshot(&input))
+}
+
+/// `fromProjectSnapshot` (T9–T11). A missing source throws with the
+/// predecessor's message — the provenance contract is not silently empty.
+#[napi(js_name = "projectHooksToServiceHooks")]
+pub fn project_hooks_to_service_hooks_binding(input_json: String) -> Result<String, napi::Error> {
+    let input: crate::hooks::ProjectionInput = parse(&input_json, "projection input")?;
+    crate::hooks::project_hooks_to_service_hooks(&input)
+        .map_err(|error| napi::Error::new(napi::Status::GenericFailure, error))
+}
+
+/// `fromUserZCodeSource` — entries for the single user source.
+#[napi(js_name = "hooksFromUserZCodeSource")]
+pub fn hooks_from_user_source_binding(input_json: String) -> Result<String, napi::Error> {
+    let value: serde_json::Value = parse(&input_json, "user projection input")?;
+    let sources: Vec<crate::hooks::SourceInput> =
+        parse(&value["sources"].to_string(), "sources")?;
+    let runtime_root: crate::hooks::RuntimeRootInput =
+        parse(&value["runtimeRoot"].to_string(), "runtime root")?;
+    let workspace_path = value["workspacePath"]
+        .as_str()
+        .ok_or_else(|| napi::Error::new(napi::Status::InvalidArg, "workspacePath".to_string()))?;
+    let location = value
+        .get("location")
+        .cloned()
+        .ok_or_else(|| napi::Error::new(napi::Status::InvalidArg, "location".to_string()))?;
+    crate::hooks::hooks_from_user_source(&sources, &runtime_root, workspace_path, &location)
+        .map_err(|error| napi::Error::new(napi::Status::GenericFailure, error))
+}
+
+/// `fromLegacyHooksConfig` — the agents/claude files. The predecessor took an
+/// `isHookEvent` predicate that was always the same seven names; the native
+/// side owns that list.
+#[napi(js_name = "hooksFromLegacyConfig")]
+pub fn hooks_from_legacy_config_binding(input_json: String) -> Result<String, napi::Error> {
+    let value: serde_json::Value = parse(&input_json, "legacy input")?;
+    let legacy = value
+        .get("legacyConfig")
+        .cloned()
+        .ok_or_else(|| napi::Error::new(napi::Status::InvalidArg, "legacyConfig".to_string()))?;
+    let location = value
+        .get("location")
+        .cloned()
+        .ok_or_else(|| napi::Error::new(napi::Status::InvalidArg, "location".to_string()))?;
+    crate::hooks::hooks_from_legacy_config(&legacy, &location)
+        .map_err(|error| napi::Error::new(napi::Status::GenericFailure, error))
+}
+
+/// `toZCodeHooksEvents` (T48–T50).
+#[napi(js_name = "hooksToZCodeHooksEvents")]
+pub fn hooks_to_zcode_events_binding(hooks_json: String) -> Result<String, napi::Error> {
+    let hooks: Vec<serde_json::Value> = parse(&hooks_json, "hooks")?;
+    Ok(crate::hooks::hooks_to_zcode_events(&hooks))
+}
+
+/// `resolveNextRootEnabled` (T52/T53). Returns `null` where the predecessor
+/// returned `undefined`; the wrapper maps it back so the caller's
+/// `enabled !== undefined` gate behaves identically.
+#[napi(js_name = "resolveNextRootEnabled")]
+pub fn resolve_next_root_enabled_binding(
+    existing_enabled: Option<bool>,
+    hooks_json: String,
+) -> Result<Option<bool>, napi::Error> {
+    let hooks: Vec<serde_json::Value> = parse(&hooks_json, "hooks")?;
+    Ok(crate::hooks::resolve_next_root_enabled(existing_enabled, &hooks))
+}
+
+/// `saveHooksImpl`'s user/project partition (T54).
+#[napi(js_name = "partitionWritableHooks")]
+pub fn partition_writable_hooks_binding(
+    hooks_json: String,
+    current_project_config_path: String,
+) -> Result<String, napi::Error> {
+    let hooks: Vec<serde_json::Value> = parse(&hooks_json, "hooks")?;
+    Ok(crate::hooks::partition_writable_hooks(
+        &hooks,
+        &current_project_config_path,
+    ))
+}
+
+/// `resolveWorkspaceHookRuntimeRoot` (T55–T57).
+#[napi(js_name = "resolveWorkspaceHookRuntimeRoot")]
+pub fn resolve_workspace_hook_runtime_root_binding(roots_json: String) -> Result<String, napi::Error> {
+    crate::hooks::resolve_workspace_hook_runtime_root(&roots_json)
+        .map_err(|error| napi::Error::new(napi::Status::InvalidArg, error))
+}
+
+/// `writeZCodeHooksConfig`'s merge (T51), returned as an object for the
+/// shared atomic-write layer (which re-stringifies with its own format).
+#[napi(js_name = "buildZCodeHooksConfig")]
+pub fn build_zcode_hooks_config_binding(
+    existing_json: String,
+    enabled: Option<bool>,
+    events_json: String,
+) -> Result<String, napi::Error> {
+    let existing: serde_json::Value = parse(&existing_json, "existing config")?;
+    let merged = crate::hooks::build_zcode_hooks_config(&existing, enabled, &events_json)
+        .map_err(|error| napi::Error::new(napi::Status::GenericFailure, error))?;
+    // The mutation layer wants an object; the byte form is its concern (T51
+    // pins the merge semantics, not the newline).
+    emit(merged)
+}
+
+/// `workspaceHooksConfigSchema` validation (T58): `{ok}` / `{ok, issues}`.
+#[napi(js_name = "validateWorkspaceHooksConfig")]
+pub fn validate_workspace_hooks_config_binding(config_json: String) -> String {
+    crate::hooks::validate_workspace_hooks_config(&config_json)
+}

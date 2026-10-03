@@ -27,6 +27,7 @@
 
 #[cfg(feature = "napi-exports")]
 mod napi_bridge;
+pub mod hooks;
 pub mod settings;
 pub mod settings_persist;
 

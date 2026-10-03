@@ -85,6 +85,19 @@ fn received_name(value: Option<&Value>) -> &'static str {
     }
 }
 
+/// The `{path, message}` issue shape, in zod v4's spelling.
+pub fn invalid_type_issue(path: &str, expected: &str, value: &Value) -> SettingsIssue {
+    invalid_type(path, expected, Some(value))
+}
+
+/// The `unrecognized_keys` issue, singular/plural per zod v4.
+pub fn unrecognized_keys_issue(path: &str, keys: &[String]) -> SettingsIssue {
+    SettingsIssue {
+        path: path.to_string(),
+        message: unrecognized_keys(keys),
+    }
+}
+
 fn invalid_type(path: &str, expected: &str, value: Option<&Value>) -> SettingsIssue {
     SettingsIssue {
         path: path.to_string(),

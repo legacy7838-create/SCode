@@ -1,0 +1,789 @@
+{
+ "inputs": {
+  "sources": [
+   {
+    "canonicalPath": "/ws/.zcode/config.json",
+    "baseDir": "/ws/.zcode",
+    "discoveryOrder": 0,
+    "configFileKind": ".zcode/config.json",
+    "explicitProjectConfig": false,
+    "editable": true,
+    "hooks": {
+     "events": {
+      "PreToolUse": [
+       {
+        "matcher": "Bash",
+        "hooks": [
+         {
+          "type": "command",
+          "command": "echo hi",
+          "async": true,
+          "shell": true,
+          "timeout": 5,
+          "enabled": true,
+          "statusMessage": "running"
+         }
+        ]
+       },
+       {
+        "hooks": [
+         {
+          "type": "command",
+          "command": "bare"
+         }
+        ]
+       }
+      ],
+      "Stop": [
+       {
+        "hooks": [
+         {
+          "type": "process",
+          "command": "/bin/cleanup",
+          "args": [
+           "--all"
+          ],
+          "timeoutMs": 2500,
+          "enabled": false
+         }
+        ]
+       }
+      ]
+     }
+    }
+   },
+   {
+    "canonicalPath": "/ws/zcode.json",
+    "baseDir": "/ws",
+    "discoveryOrder": 1,
+    "configFileKind": "zcode.json",
+    "explicitProjectConfig": true,
+    "editable": false,
+    "hooks": {
+     "events": {
+      "PostToolUse": [
+       {
+        "matcher": "Edit",
+        "hooks": [
+         {
+          "type": "command",
+          "command": "git add -A",
+          "timeoutMs": 3333
+         }
+        ]
+       }
+      ]
+     }
+    }
+   }
+  ],
+  "workspacePath": "/ws",
+  "workspaceIdentity": "ws-id",
+  "discoveredAt": "2026-10-03T00:00:00.000Z",
+  "roots": [
+   {
+    "enabled": true,
+    "timeoutMs": 0.4
+   },
+   {
+    "timeoutMs": 60000
+   },
+   {
+    "maxOutputBytes": 1234.6
+   },
+   null
+  ],
+  "userLocation": {
+   "source": "zcode",
+   "scope": "user",
+   "directoryPath": "/home/u/.zcode/cli"
+  },
+  "legacyConfig": {
+   "hooks": {
+    "Stop": [
+     {
+      "matcher": "",
+      "hooks": [
+       {
+        "type": "command",
+        "command": "legacy-cmd",
+        "timeoutMs": 4000
+       }
+      ]
+     }
+    ]
+   }
+  },
+  "legacyLocation": {
+   "source": "agents",
+   "scope": "user",
+   "directoryPath": "/home/u/.agents"
+  },
+  "partitionHooks": [
+   {
+    "editable": true,
+    "location": {
+     "source": "zcode",
+     "scope": "user",
+     "directoryPath": "/home/u/.zcode"
+    },
+    "command": "a"
+   },
+   {
+    "editable": true,
+    "location": {
+     "source": "zcode",
+     "scope": "project",
+     "directoryPath": "/ws/.zcode"
+    },
+    "configuredState": {
+     "sourcePath": "/ws/.zcode/config.json"
+    },
+    "command": "b"
+   },
+   {
+    "editable": true,
+    "location": {
+     "source": "zcode",
+     "scope": "project",
+     "directoryPath": "/ws/.zcode"
+    },
+    "configuredState": {
+     "sourcePath": "/other/config.json"
+    },
+    "command": "c"
+   },
+   {
+    "editable": false,
+    "location": {
+     "source": "agents",
+     "scope": "user",
+     "directoryPath": "/x"
+    },
+    "command": "d"
+   },
+   {
+    "command": "e"
+   },
+   {
+    "editable": true,
+    "location": {
+     "source": "claude",
+     "scope": "project",
+     "directoryPath": "/x"
+    },
+    "command": "f"
+   }
+  ],
+  "currentProjectConfigPath": "/ws/.zcode/config.json",
+  "trustedDigest": "b15194d08afa86279874bab16468879e63754f4c068688a186c819d7a0bdb171",
+  "existingConfig": {
+   "other": {
+    "keep": 1
+   },
+   "hooks": {
+    "maxOutputBytes": 99,
+    "events": {
+     "replaced": true
+    }
+   }
+  },
+  "buildEnabled": true,
+  "buildEvents": {
+   "Stop": [
+    {
+     "hooks": [
+      {
+       "type": "command",
+       "command": "wired",
+       "enabled": true
+      }
+     ]
+    }
+   ]
+  },
+  "deviatingHooks": [
+   {
+    "enabled": true,
+    "configuredState": {
+     "configuredEnabled": false
+    }
+   }
+  ],
+  "passiveHooks": [
+   {
+    "enabled": true,
+    "configuredState": {
+     "configuredEnabled": true
+    }
+   }
+  ]
+ },
+ "expected": {
+  "runtimeRoot": {
+   "enabled": true,
+   "timeoutMs": 60000,
+   "maxOutputBytes": 1235
+  },
+  "entries": [
+   {
+    "reviewItemId": "workspace-hook-0-PreToolUse-0-0",
+    "event": "PreToolUse",
+    "matcherIndex": 0,
+    "hookIndex": 0,
+    "sourceFileIndex": 0,
+    "sourceRelativePath": ".zcode/config.json",
+    "matcher": "Bash",
+    "command": "echo hi",
+    "resolvedTimeoutMs": 5000,
+    "resolvedMaxOutputBytes": 1235,
+    "statusMessage": "running",
+    "sourceRootEnabled": true,
+    "declarationEnabled": true,
+    "runtimeHooksEnabled": true,
+    "configuredEnabled": true,
+    "editable": true,
+    "declarationDigestAlgorithm": "sha256",
+    "hookDeclarationDigest": "b15194d08afa86279874bab16468879e63754f4c068688a186c819d7a0bdb171",
+    "type": "command",
+    "async": true,
+    "shell": true
+   },
+   {
+    "reviewItemId": "workspace-hook-0-PreToolUse-1-0",
+    "event": "PreToolUse",
+    "matcherIndex": 1,
+    "hookIndex": 0,
+    "sourceFileIndex": 0,
+    "sourceRelativePath": ".zcode/config.json",
+    "matcher": null,
+    "command": "bare",
+    "resolvedTimeoutMs": 60000,
+    "resolvedMaxOutputBytes": 1235,
+    "sourceRootEnabled": true,
+    "declarationEnabled": true,
+    "runtimeHooksEnabled": true,
+    "configuredEnabled": true,
+    "editable": true,
+    "declarationDigestAlgorithm": "sha256",
+    "hookDeclarationDigest": "d772cca73b9798817b4e2423384a4581afdac91b1ced902e192cd1cb4e0e0433",
+    "type": "command"
+   },
+   {
+    "reviewItemId": "workspace-hook-0-Stop-0-0",
+    "event": "Stop",
+    "matcherIndex": 0,
+    "hookIndex": 0,
+    "sourceFileIndex": 0,
+    "sourceRelativePath": ".zcode/config.json",
+    "matcher": null,
+    "command": "/bin/cleanup",
+    "resolvedTimeoutMs": 2500,
+    "resolvedMaxOutputBytes": 1235,
+    "sourceRootEnabled": true,
+    "declarationEnabled": false,
+    "runtimeHooksEnabled": true,
+    "configuredEnabled": false,
+    "editable": true,
+    "declarationDigestAlgorithm": "sha256",
+    "hookDeclarationDigest": "7f8a7398d0fecc39096bdcd4ba4f27cbfa3a7b638c8b99232ec1b77f9b436f43",
+    "type": "process",
+    "args": [
+     "--all"
+    ]
+   },
+   {
+    "reviewItemId": "workspace-hook-1-PostToolUse-0-0",
+    "event": "PostToolUse",
+    "matcherIndex": 0,
+    "hookIndex": 0,
+    "sourceFileIndex": 1,
+    "sourceRelativePath": "zcode.json",
+    "matcher": "Edit",
+    "command": "git add -A",
+    "resolvedTimeoutMs": 3333,
+    "resolvedMaxOutputBytes": 1235,
+    "sourceRootEnabled": true,
+    "declarationEnabled": true,
+    "runtimeHooksEnabled": true,
+    "configuredEnabled": true,
+    "editable": false,
+    "declarationDigestAlgorithm": "sha256",
+    "hookDeclarationDigest": "d631eb3b41eab4cb6e78781544585e7cb6705e43dc8f59add20d503c3b965eca",
+    "type": "command"
+   }
+  ],
+  "snapshot": {
+   "schemaVersion": 1,
+   "workspaceIdentity": "ws-id",
+   "discoveredAt": "2026-10-03T00:00:00.000Z",
+   "sourceFiles": [
+    {
+     "canonicalPath": "/ws/.zcode/config.json",
+     "baseDir": "/ws/.zcode",
+     "discoveryOrder": 0,
+     "configFileKind": ".zcode/config.json",
+     "explicitProjectConfig": false,
+     "editable": true,
+     "hooksRoot": {}
+    },
+    {
+     "canonicalPath": "/ws/zcode.json",
+     "baseDir": "/ws",
+     "discoveryOrder": 1,
+     "configFileKind": "zcode.json",
+     "explicitProjectConfig": true,
+     "editable": false,
+     "hooksRoot": {}
+    }
+   ],
+   "hooks": [
+    {
+     "reviewItemId": "workspace-hook-0-PreToolUse-0-0",
+     "event": "PreToolUse",
+     "matcherIndex": 0,
+     "hookIndex": 0,
+     "sourceFileIndex": 0,
+     "sourceRelativePath": ".zcode/config.json",
+     "matcher": "Bash",
+     "command": "echo hi",
+     "resolvedTimeoutMs": 5000,
+     "resolvedMaxOutputBytes": 1235,
+     "statusMessage": "running",
+     "sourceRootEnabled": true,
+     "declarationEnabled": true,
+     "runtimeHooksEnabled": true,
+     "configuredEnabled": true,
+     "editable": true,
+     "declarationDigestAlgorithm": "sha256",
+     "hookDeclarationDigest": "b15194d08afa86279874bab16468879e63754f4c068688a186c819d7a0bdb171",
+     "type": "command",
+     "async": true,
+     "shell": true
+    },
+    {
+     "reviewItemId": "workspace-hook-0-PreToolUse-1-0",
+     "event": "PreToolUse",
+     "matcherIndex": 1,
+     "hookIndex": 0,
+     "sourceFileIndex": 0,
+     "sourceRelativePath": ".zcode/config.json",
+     "matcher": null,
+     "command": "bare",
+     "resolvedTimeoutMs": 60000,
+     "resolvedMaxOutputBytes": 1235,
+     "sourceRootEnabled": true,
+     "declarationEnabled": true,
+     "runtimeHooksEnabled": true,
+     "configuredEnabled": true,
+     "editable": true,
+     "declarationDigestAlgorithm": "sha256",
+     "hookDeclarationDigest": "d772cca73b9798817b4e2423384a4581afdac91b1ced902e192cd1cb4e0e0433",
+     "type": "command"
+    },
+    {
+     "reviewItemId": "workspace-hook-0-Stop-0-0",
+     "event": "Stop",
+     "matcherIndex": 0,
+     "hookIndex": 0,
+     "sourceFileIndex": 0,
+     "sourceRelativePath": ".zcode/config.json",
+     "matcher": null,
+     "command": "/bin/cleanup",
+     "resolvedTimeoutMs": 2500,
+     "resolvedMaxOutputBytes": 1235,
+     "sourceRootEnabled": true,
+     "declarationEnabled": false,
+     "runtimeHooksEnabled": true,
+     "configuredEnabled": false,
+     "editable": true,
+     "declarationDigestAlgorithm": "sha256",
+     "hookDeclarationDigest": "7f8a7398d0fecc39096bdcd4ba4f27cbfa3a7b638c8b99232ec1b77f9b436f43",
+     "type": "process",
+     "args": [
+      "--all"
+     ]
+    },
+    {
+     "reviewItemId": "workspace-hook-1-PostToolUse-0-0",
+     "event": "PostToolUse",
+     "matcherIndex": 0,
+     "hookIndex": 0,
+     "sourceFileIndex": 1,
+     "sourceRelativePath": "zcode.json",
+     "matcher": "Edit",
+     "command": "git add -A",
+     "resolvedTimeoutMs": 3333,
+     "resolvedMaxOutputBytes": 1235,
+     "sourceRootEnabled": true,
+     "declarationEnabled": true,
+     "runtimeHooksEnabled": true,
+     "configuredEnabled": true,
+     "editable": false,
+     "declarationDigestAlgorithm": "sha256",
+     "hookDeclarationDigest": "d631eb3b41eab4cb6e78781544585e7cb6705e43dc8f59add20d503c3b965eca",
+     "type": "command"
+    }
+   ],
+   "digestAlgorithm": "sha256",
+   "bundleDigest": "408730b1128b085d1ae756b60d1bbf95e7ee6d70548705cc6fc647352ecdd0dc"
+  },
+  "projection": [
+   {
+    "id": "workspace-hook-0-PreToolUse-0-0",
+    "event": "PreToolUse",
+    "matcher": "Bash",
+    "type": "command",
+    "command": "echo hi",
+    "async": true,
+    "shell": true,
+    "statusMessage": "running",
+    "timeout": 5,
+    "enabled": true,
+    "editable": true,
+    "configuredState": {
+     "sourceRootEnabled": true,
+     "declarationEnabled": true,
+     "runtimeHooksEnabled": true,
+     "configuredEnabled": true,
+     "sourcePath": "/ws/.zcode/config.json"
+    },
+    "workspaceHook": {
+     "sourceRootEnabled": true,
+     "declarationEnabled": true,
+     "runtimeHooksEnabled": true,
+     "configuredEnabled": true,
+     "sourcePath": "/ws/.zcode/config.json",
+     "reviewItemId": "workspace-hook-0-PreToolUse-0-0",
+     "sourceFileIndex": 0,
+     "workspaceIdentity": "ws-id",
+     "bundleDigest": "408730b1128b085d1ae756b60d1bbf95e7ee6d70548705cc6fc647352ecdd0dc",
+     "hookDeclarationDigest": "b15194d08afa86279874bab16468879e63754f4c068688a186c819d7a0bdb171",
+     "trustState": "trusted_persistent"
+    },
+    "location": {
+     "source": "zcode",
+     "scope": "project",
+     "directoryPath": "/ws/.zcode",
+     "projectPath": "/ws"
+    }
+   },
+   {
+    "id": "workspace-hook-0-PreToolUse-1-0",
+    "event": "PreToolUse",
+    "type": "command",
+    "command": "bare",
+    "enabled": true,
+    "editable": true,
+    "configuredState": {
+     "sourceRootEnabled": true,
+     "declarationEnabled": true,
+     "runtimeHooksEnabled": true,
+     "configuredEnabled": true,
+     "sourcePath": "/ws/.zcode/config.json"
+    },
+    "workspaceHook": {
+     "sourceRootEnabled": true,
+     "declarationEnabled": true,
+     "runtimeHooksEnabled": true,
+     "configuredEnabled": true,
+     "sourcePath": "/ws/.zcode/config.json",
+     "reviewItemId": "workspace-hook-0-PreToolUse-1-0",
+     "sourceFileIndex": 0,
+     "workspaceIdentity": "ws-id",
+     "bundleDigest": "408730b1128b085d1ae756b60d1bbf95e7ee6d70548705cc6fc647352ecdd0dc",
+     "hookDeclarationDigest": "d772cca73b9798817b4e2423384a4581afdac91b1ced902e192cd1cb4e0e0433",
+     "trustState": "pending_trust"
+    },
+    "location": {
+     "source": "zcode",
+     "scope": "project",
+     "directoryPath": "/ws/.zcode",
+     "projectPath": "/ws"
+    }
+   },
+   {
+    "id": "workspace-hook-0-Stop-0-0",
+    "event": "Stop",
+    "type": "process",
+    "command": "/bin/cleanup",
+    "args": [
+     "--all"
+    ],
+    "timeout": 2.5,
+    "enabled": false,
+    "editable": true,
+    "configuredState": {
+     "sourceRootEnabled": true,
+     "declarationEnabled": false,
+     "runtimeHooksEnabled": true,
+     "configuredEnabled": false,
+     "sourcePath": "/ws/.zcode/config.json"
+    },
+    "workspaceHook": {
+     "sourceRootEnabled": true,
+     "declarationEnabled": false,
+     "runtimeHooksEnabled": true,
+     "configuredEnabled": false,
+     "sourcePath": "/ws/.zcode/config.json",
+     "reviewItemId": "workspace-hook-0-Stop-0-0",
+     "sourceFileIndex": 0,
+     "workspaceIdentity": "ws-id",
+     "bundleDigest": "408730b1128b085d1ae756b60d1bbf95e7ee6d70548705cc6fc647352ecdd0dc",
+     "hookDeclarationDigest": "7f8a7398d0fecc39096bdcd4ba4f27cbfa3a7b638c8b99232ec1b77f9b436f43",
+     "trustState": "pending_trust"
+    },
+    "location": {
+     "source": "zcode",
+     "scope": "project",
+     "directoryPath": "/ws/.zcode",
+     "projectPath": "/ws"
+    }
+   },
+   {
+    "id": "workspace-hook-1-PostToolUse-0-0",
+    "event": "PostToolUse",
+    "matcher": "Edit",
+    "type": "command",
+    "command": "git add -A",
+    "timeout": 3.333,
+    "enabled": true,
+    "editable": false,
+    "configuredState": {
+     "sourceRootEnabled": true,
+     "declarationEnabled": true,
+     "runtimeHooksEnabled": true,
+     "configuredEnabled": true,
+     "sourcePath": "/ws/zcode.json"
+    },
+    "workspaceHook": {
+     "sourceRootEnabled": true,
+     "declarationEnabled": true,
+     "runtimeHooksEnabled": true,
+     "configuredEnabled": true,
+     "sourcePath": "/ws/zcode.json",
+     "reviewItemId": "workspace-hook-1-PostToolUse-0-0",
+     "sourceFileIndex": 1,
+     "workspaceIdentity": "ws-id",
+     "bundleDigest": "408730b1128b085d1ae756b60d1bbf95e7ee6d70548705cc6fc647352ecdd0dc",
+     "hookDeclarationDigest": "d631eb3b41eab4cb6e78781544585e7cb6705e43dc8f59add20d503c3b965eca",
+     "trustState": "pending_trust"
+    },
+    "location": {
+     "source": "zcode",
+     "scope": "project",
+     "directoryPath": "/ws",
+     "projectPath": "/ws"
+    }
+   }
+  ],
+  "userHooks": [
+   {
+    "id": "hook-zcode-user-0",
+    "event": "PreToolUse",
+    "matcher": "Bash",
+    "type": "command",
+    "command": "echo hi",
+    "async": true,
+    "shell": true,
+    "statusMessage": "running",
+    "timeout": 5,
+    "enabled": true,
+    "editable": true,
+    "configuredState": {
+     "sourceRootEnabled": true,
+     "declarationEnabled": true,
+     "runtimeHooksEnabled": true,
+     "configuredEnabled": true,
+     "sourcePath": "/ws/.zcode/config.json"
+    },
+    "location": {
+     "source": "zcode",
+     "scope": "user",
+     "directoryPath": "/home/u/.zcode/cli"
+    }
+   },
+   {
+    "id": "hook-zcode-user-1",
+    "event": "PreToolUse",
+    "type": "command",
+    "command": "bare",
+    "enabled": true,
+    "editable": true,
+    "configuredState": {
+     "sourceRootEnabled": true,
+     "declarationEnabled": true,
+     "runtimeHooksEnabled": true,
+     "configuredEnabled": true,
+     "sourcePath": "/ws/.zcode/config.json"
+    },
+    "location": {
+     "source": "zcode",
+     "scope": "user",
+     "directoryPath": "/home/u/.zcode/cli"
+    }
+   },
+   {
+    "id": "hook-zcode-user-2",
+    "event": "Stop",
+    "type": "process",
+    "command": "/bin/cleanup",
+    "args": [
+     "--all"
+    ],
+    "timeout": 2.5,
+    "enabled": false,
+    "editable": true,
+    "configuredState": {
+     "sourceRootEnabled": true,
+     "declarationEnabled": false,
+     "runtimeHooksEnabled": true,
+     "configuredEnabled": false,
+     "sourcePath": "/ws/.zcode/config.json"
+    },
+    "location": {
+     "source": "zcode",
+     "scope": "user",
+     "directoryPath": "/home/u/.zcode/cli"
+    }
+   }
+  ],
+  "legacyHooks": [
+   {
+    "id": "hook-agents-user-0",
+    "event": "Stop",
+    "matcher": "",
+    "type": "command",
+    "command": "legacy-cmd",
+    "timeout": 4,
+    "enabled": false,
+    "editable": false,
+    "location": {
+     "source": "agents",
+     "scope": "user",
+     "directoryPath": "/home/u/.agents"
+    }
+   }
+  ],
+  "events": {
+   "PreToolUse": [
+    {
+     "matcher": "Bash",
+     "hooks": [
+      {
+       "type": "command",
+       "command": "echo hi",
+       "enabled": true,
+       "statusMessage": "running",
+       "async": true,
+       "shell": true,
+       "timeout": 5
+      },
+      {
+       "type": "command",
+       "command": "echo hi",
+       "enabled": true,
+       "statusMessage": "running",
+       "async": true,
+       "shell": true,
+       "timeout": 5
+      }
+     ]
+    },
+    {
+     "hooks": [
+      {
+       "type": "command",
+       "command": "bare",
+       "enabled": true
+      },
+      {
+       "type": "command",
+       "command": "bare",
+       "enabled": true
+      }
+     ]
+    }
+   ],
+   "Stop": [
+    {
+     "hooks": [
+      {
+       "type": "process",
+       "command": "/bin/cleanup",
+       "enabled": false,
+       "args": [
+        "--all"
+       ],
+       "timeoutMs": 2500
+      },
+      {
+       "type": "process",
+       "command": "/bin/cleanup",
+       "enabled": false,
+       "args": [
+        "--all"
+       ],
+       "timeoutMs": 2500
+      }
+     ]
+    }
+   ],
+   "PostToolUse": [
+    {
+     "matcher": "Edit",
+     "hooks": [
+      {
+       "type": "command",
+       "command": "git add -A",
+       "enabled": true,
+       "timeout": 3.333
+      }
+     ]
+    }
+   ]
+  },
+  "nextEnabled": {
+   "noDeviation": null,
+   "deviation": true,
+   "passThrough": true
+  },
+  "buildConfig": "{\"other\":{\"keep\":1},\"hooks\":{\"maxOutputBytes\":99,\"events\":{\"Stop\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"wired\",\"enabled\":true}]}]},\"enabled\":true}}",
+  "partition": {
+   "currentProjectConfigPath": "/ws/.zcode/config.json",
+   "user": [
+    {
+     "editable": true,
+     "location": {
+      "source": "zcode",
+      "scope": "user",
+      "directoryPath": "/home/u/.zcode"
+     },
+     "command": "a"
+    },
+    {
+     "command": "e"
+    }
+   ],
+   "project": [
+    {
+     "editable": true,
+     "location": {
+      "source": "zcode",
+      "scope": "project",
+      "directoryPath": "/ws/.zcode"
+     },
+     "configuredState": {
+      "sourcePath": "/ws/.zcode/config.json"
+     },
+     "command": "b"
+    }
+   ]
+  },
+  "timeoutProbes": {
+   "roundDown": 1,
+   "commandSeconds": 5000,
+   "default": 60000
+  }
+ }
+}

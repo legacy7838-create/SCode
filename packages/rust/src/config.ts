@@ -30,6 +30,16 @@ interface NativeConfig {
   parseWorkspaceHookTrustStoreAsync(content: string): Promise<string | null>;
   parseSettingsContent(content: string): string;
   parseSettingsPatch(patchJson: string): string;
+  buildWorkspaceHookBundleSnapshot(inputJson: string): string | null;
+  projectHooksToServiceHooks(inputJson: string): string;
+  hooksFromUserZCodeSource(inputJson: string): string;
+  hooksFromLegacyConfig(inputJson: string): string;
+  hooksToZCodeHooksEvents(hooksJson: string): string;
+  resolveNextRootEnabled(existingEnabled: boolean | null, hooksJson: string): boolean | null;
+  partitionWritableHooks(hooksJson: string, currentProjectConfigPath: string): string;
+  resolveWorkspaceHookRuntimeRoot(rootsJson: string): string;
+  buildZCodeHooksConfig(existingJson: string, enabled: boolean | null, eventsJson: string): string;
+  validateWorkspaceHooksConfig(configJson: string): string;
 }
 
 function native(): NativeConfig {
@@ -167,4 +177,172 @@ export function parseSettingsContent(content: string): SettingsParseResult {
  */
 export function parseSettingsPatch(patch: unknown): SettingsPatchParseResult {
   return JSON.parse(native().parseSettingsPatch(JSON.stringify(patch))) as SettingsPatchParseResult;
+}
+
+// ---------------------------------------------------------------------------
+// Workspace-hook compute (§3.3) — the host's single implementation. The four
+// `shared/src/workspace-hook-*.ts` modules stay TypeScript for the renderer
+// and CLI (spec §9.3); these functions are what `hooksService.ts` calls.
+// ---------------------------------------------------------------------------
+
+/** The dependency shapes are structural; the source/entry types are `@zcode/shared`'s. */
+interface WorkspaceHookSourceShape {
+  canonicalPath: string;
+  baseDir: string;
+  discoveryOrder: number;
+  configFileKind: string;
+  explicitProjectConfig: boolean;
+  editable: boolean;
+  hooks: Record<string, unknown>;
+}
+
+interface RuntimeRootShape {
+  enabled: boolean;
+  timeoutMs: number;
+  maxOutputBytes: number;
+}
+
+export interface WorkspaceHookBundleSnapshotShape<T> {
+  schemaVersion: 1;
+  workspaceIdentity: string;
+  discoveredAt: string;
+  sourceFiles: unknown[];
+  hooks: T[];
+  digestAlgorithm: string;
+  bundleDigest: string;
+}
+
+/**
+ * `buildWorkspaceHookBundleSnapshot` (T7/T8). The TS default
+ * `new Date().toISOString()` lives here: the sync native side owns no clock
+ * (spec §3.6), so `discoveredAt` is injected exactly as the predecessor read it.
+ * Returns `undefined` when the source set has no hooks.
+ */
+export function buildWorkspaceHookBundleSnapshot<T>(input: {
+  workspaceIdentity: string;
+  workspacePath: string;
+  sources: readonly WorkspaceHookSourceShape[];
+  runtimeRoot: RuntimeRootShape;
+  discoveredAt?: string;
+}): WorkspaceHookBundleSnapshotShape<T> | undefined {
+  const json = native().buildWorkspaceHookBundleSnapshot(
+    JSON.stringify({ ...input, discoveredAt: input.discoveredAt ?? new Date().toISOString() }),
+  );
+  return json === null ? undefined : (JSON.parse(json) as WorkspaceHookBundleSnapshotShape<T>);
+}
+
+/**
+ * `fromProjectSnapshot` (T9–T11): the trust digest set arrives as data, and a
+ * missing source throws with the predecessor's provenance message.
+ */
+export function projectHooksToServiceHooks<T>(input: {
+  sources: readonly WorkspaceHookSourceShape[];
+  snapshot: WorkspaceHookBundleSnapshotShape<unknown> | undefined;
+  workspaceIdentity: string;
+  workspacePath: string;
+  persistentTrustedDigests?: ReadonlySet<string>;
+}): T[] {
+  return JSON.parse(
+    native().projectHooksToServiceHooks(
+      JSON.stringify({
+        ...input,
+        snapshot: input.snapshot ?? null,
+        persistentTrustedDigests: input.persistentTrustedDigests
+          ? [...input.persistentTrustedDigests]
+          : [],
+      }),
+    ),
+  ) as T[];
+}
+
+/** `fromUserZCodeSource` — entries for the single user source. */
+export function hooksFromUserZCodeSource<T>(input: {
+  source: WorkspaceHookSourceShape;
+  runtimeRoot: RuntimeRootShape;
+  workspacePath: string;
+  location: unknown;
+}): T[] {
+  return JSON.parse(
+    native().hooksFromUserZCodeSource(
+      JSON.stringify({
+        sources: [input.source],
+        runtimeRoot: input.runtimeRoot,
+        workspacePath: input.workspacePath,
+        location: input.location,
+      }),
+    ),
+  ) as T[];
+}
+
+/**
+ * `fromLegacyHooksConfig`. The predecessor's `isHookEvent` predicate parameter
+ * is gone: it was always the same seven names, which the native side owns.
+ */
+export function hooksFromLegacyConfig<T>(input: { legacyConfig: unknown; location: unknown }): T[] {
+  return JSON.parse(native().hooksFromLegacyConfig(JSON.stringify(input))) as T[];
+}
+
+/** `toZCodeHooksEvents` (T48–T50). */
+export function hooksToZCodeHooksEvents<T>(hooks: readonly T[]): Record<string, unknown> {
+  return JSON.parse(native().hooksToZCodeHooksEvents(JSON.stringify(hooks))) as Record<
+    string,
+    unknown
+  >;
+}
+
+/**
+ * `resolveNextRootEnabled` (T52/T53). The native side answers `null` where
+ * the predecessor said `undefined`; mapping back keeps the caller's
+ * `enabled !== undefined` gate byte-for-byte (writing `null` would be a fork).
+ */
+export function resolveNextRootEnabled(
+  existingEnabled: boolean | undefined,
+  hooks: readonly unknown[],
+): boolean | undefined {
+  return (
+    native().resolveNextRootEnabled(existingEnabled ?? null, JSON.stringify(hooks)) ?? undefined
+  );
+}
+
+/** `saveHooksImpl`'s user/project partition (T54). */
+export function partitionWritableHooks<T>(
+  hooks: readonly T[],
+  currentProjectConfigPath: string,
+): { user: T[]; project: T[] } {
+  return JSON.parse(
+    native().partitionWritableHooks(JSON.stringify(hooks), currentProjectConfigPath),
+  ) as { user: T[]; project: T[] };
+}
+
+/** `resolveWorkspaceHookRuntimeRoot` (T55–T57): OR-enabled, last-defined wins. */
+export function resolveWorkspaceHookRuntimeRoot(
+  roots: readonly (Record<string, unknown> | undefined | null)[],
+): RuntimeRootShape {
+  return JSON.parse(
+    native().resolveWorkspaceHookRuntimeRoot(JSON.stringify(roots)),
+  ) as RuntimeRootShape;
+}
+
+/** `writeZCodeHooksConfig`'s merge (T51), as an object for the shared atomic write. */
+export function buildZCodeHooksConfig<T>(
+  existing: Record<string, unknown>,
+  enabled: boolean | undefined,
+  events: Record<string, unknown>,
+): T {
+  return JSON.parse(
+    native().buildZCodeHooksConfig(
+      JSON.stringify(existing),
+      enabled ?? null,
+      JSON.stringify(events),
+    ),
+  ) as T;
+}
+
+/** `workspaceHooksConfigSchema` validation (T58): `{ok}` / `{ok, issues}`. */
+export function validateWorkspaceHooksConfig(
+  configJson: string,
+): { ok: true } | { ok: false; issues: SettingsIssue[] } {
+  return JSON.parse(native().validateWorkspaceHooksConfig(configJson)) as
+    | { ok: true }
+    | { ok: false; issues: SettingsIssue[] };
 }

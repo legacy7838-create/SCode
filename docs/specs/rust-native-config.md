@@ -491,8 +491,32 @@ The boxes below are per-slice, and the unchecked ones name what is still outstan
       boundary). **Recorded differential: §5b — 94 checks, 0 divergences.**
       Consumer rewiring of `settingService`'s read/update paths and the
       `normalizeSettingsPatch.ts` deletion land with the remaining rows.
-- [ ] **The remaining §4 rows.** T7–T11 (digest / bundle snapshot / trust projection),
-      T48–T60 (hook events, config build, settings-sync).
+- [x] **Hooks slice (rows T7–T11, T48–T58), implemented and verified.** `hooks.rs`
+      carries `build_workspace_hook_bundle_snapshot` (both digests, the loop order,
+      `undefined` at zero hooks), the trust projection (`fromProjectSnapshot` +
+      `fromUserZCodeSource` + `fromLegacyHooksConfig`, including the provenance error
+      message and the digest-set-as-data rule that makes an empty set incapable of
+      producing `trusted_persistent`), `toZCodeHooksEvents` (grouping, seconds↔ms, the
+      declaration-enabled rewrite), `resolveNextRootEnabled`, the writable partition,
+      `buildZCodeHooksConfig`'s merge, `resolveWorkspaceHookRuntimeRoot` (OR-enabled,
+      last-defined wins, `max(1, round(x))`) and the strict `validateWorkspaceHooksConfig`.
+      Eleven integration tests replay `tests/fixtures/hook-config-expected.json` — vectors
+      captured from the LIVE predecessor before `workspaceHookSettingsModel.ts` was
+      deleted — and compare **byte-for-byte** (digests, key order, JS number spelling;
+      the capture found and pinned three defects: `5000.0` vs `5000` in the hashed
+      payload, `custom` read from the service hook instead of the Hook's own field, and
+      an empty legacy matcher being dropped).
+      The napi surface: `buildWorkspaceHookBundleSnapshot`, `projectHooksToServiceHooks`,
+      `hooksFromUserZCodeSource`, `hooksFromLegacyConfig`, `hooksToZCodeHooksEvents`,
+      `resolveNextRootEnabled`, `partitionWritableHooks`, `resolveWorkspaceHookRuntimeRoot`,
+      `buildZCodeHooksConfig`, `validateWorkspaceHooksConfig`.
+- [x] **`hooksService.ts` rewired; `workspaceHookSettingsModel.ts` deleted** (its only
+      consumer), along with the orphaned `isHookEvent`/`HOOK_EVENTS`. The discovery
+      orchestration, the atomic write and `readWorkspaceHookProjectSources` stay
+      TypeScript (§2.2 / §9.3).
+- [ ] **The remaining §4 rows.** T59–T60 (settings-sync ladders + skill metadata), then
+      the `settingService` / `settingsSyncService` rewiring and the
+      `normalizeSettingsPatch.ts` deletion.
 - [ ] **`@zcode/rust/config` staged into the desktop/SEA payload** — the packager only ships a
       crate with a live importer, and today the only importer is the services layer.
 

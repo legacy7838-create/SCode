@@ -2,50 +2,39 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
-import type {
-  Hook,
-  HookEvent,
-  SettingsDirectoryLocation,
-  SettingsDirectorySource,
-} from "@zcode/shared";
+import type { Hook, SettingsDirectoryLocation, SettingsDirectorySource } from "@zcode/shared";
 import {
-  buildWorkspaceHookBundleSnapshot,
   createWorkspaceHookSourceInput,
   readWorkspaceHookProjectSources,
-  resolveWorkspaceHookRuntimeRoot,
   workspaceHooksConfigSchema,
   type WorkspaceHookBundleSnapshotData,
   type WorkspaceHookSourceInput,
   type WorkspaceHooksConfig,
 } from "@zcode/shared/workspace-hook-discovery";
 import {
+  buildWorkspaceHookBundleSnapshot,
+  buildZCodeHooksConfig,
+  projectHooksToServiceHooks,
+  hooksFromLegacyConfig,
+  hooksFromUserZCodeSource,
+  hooksToZCodeHooksEvents,
+  partitionWritableHooks,
   readWorkspaceHookTrustDigests,
+  resolveNextRootEnabled,
+  resolveWorkspaceHookRuntimeRoot,
   resolveWorkspaceHookTrustStorePath,
 } from "@zcode/rust/config";
 import { createServiceLogger, type ServiceLogger } from "#src/logger/serviceLogger.js";
 import type { IHooksService } from "./hooks.js";
 import { atomicWriteWorkspaceHookConfig } from "./workspaceHookConfigMutation.js";
-import {
-  fromLegacyHooksConfig,
-  fromProjectSnapshot,
-  fromUserZCodeSource,
-  resolveNextRootEnabled,
-  toZCodeHooksEvents,
-  type LegacyHooksConfig,
-} from "./workspaceHookSettingsModel.js";
+/** The legacy agents/claude config shape, read by this service alone. */
+interface LegacyHooksConfig {
+  hooks?: Partial<Record<string, { matcher?: string; hooks?: unknown[] }[]>>;
+  [key: string]: unknown;
+}
 
 const SETTINGS_FILE = "settings.json";
 const ZCODE_CONFIG_FILE = "config.json";
-const HOOK_EVENTS: readonly HookEvent[] = [
-  "SessionStart",
-  "UserPromptSubmit",
-  "PreToolUse",
-  "PermissionRequest",
-  "PostToolUse",
-  "PostToolUseFailure",
-  "Stop",
-];
-
 interface ZCodeConfigFile {
   hooks?: WorkspaceHooksConfig;
   [key: string]: unknown;
@@ -87,10 +76,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isHookEvent(value: string): value is HookEvent {
-  return (HOOK_EVENTS as readonly string[]).includes(value);
-}
-
 function isNodeError(error: unknown, code: string): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error && error.code === code;
 }
@@ -126,10 +111,10 @@ async function loadLegacyHooksFromLocation(
   source: "agents" | "claude",
   workspacePath?: string,
 ): Promise<Hook[]> {
-  return fromLegacyHooksConfig({
-    legacyConfig: await readJsonFile<LegacyHooksConfig>(getConfigPath(source, workspacePath)),
+  return hooksFromLegacyConfig<Hook>({
+    legacyConfig:
+      (await readJsonFile<LegacyHooksConfig>(getConfigPath(source, workspacePath))) ?? {},
     location: buildLocation(source, workspacePath),
-    isHookEvent,
   });
 }
 
@@ -227,7 +212,7 @@ async function loadHooksImpl(
     userSource?.hooks,
     ...projectSources.map((source) => source.hooks),
   ]);
-  const workspaceHookSnapshot = buildWorkspaceHookBundleSnapshot({
+  const workspaceHookSnapshot = buildWorkspaceHookBundleSnapshot<Hook>({
     workspaceIdentity,
     workspacePath,
     sources: projectSources,
@@ -236,7 +221,7 @@ async function loadHooksImpl(
   const persistentTrust = await readPersistentWorkspaceHookTrustDigests(workspaceIdentity, logger);
   const persistentTrustedDigests = persistentTrust.digests;
   const hooks = [
-    ...fromProjectSnapshot({
+    ...projectHooksToServiceHooks<Hook>({
       sources: projectSources,
       snapshot: workspaceHookSnapshot,
       workspaceIdentity,
@@ -245,8 +230,8 @@ async function loadHooksImpl(
     }),
     ...(await loadLegacyHooksFromLocation("agents", workspacePath)),
     ...(await loadLegacyHooksFromLocation("claude", workspacePath)),
-    ...fromUserZCodeSource({
-      source: userSource,
+    ...hooksFromUserZCodeSource<Hook>({
+      source: userSource!,
       runtimeRoot,
       workspacePath,
       location: buildLocation("zcode"),
@@ -269,14 +254,13 @@ async function writeZCodeHooksConfig(
   const configPath = getConfigPath("zcode", workspacePath);
   const existingConfig = (await readJsonFile<ZCodeConfigFile>(configPath)) ?? {};
   const enabled = resolveNextRootEnabled(existingConfig.hooks?.enabled, hooks);
-  await atomicWriteWorkspaceHookConfig(configPath, {
-    ...existingConfig,
-    hooks: {
-      ...existingConfig.hooks,
-      ...(enabled !== undefined ? { enabled } : {}),
-      events: toZCodeHooksEvents(hooks),
-    },
-  });
+  // The whole merge — sibling keys surviving, `events` overwritten, `enabled`
+  // only when resolved — is the native `buildZCodeHooksConfig` (spec T51);
+  // this layer keeps only the read and the atomic write.
+  await atomicWriteWorkspaceHookConfig(
+    configPath,
+    buildZCodeHooksConfig<ZCodeConfigFile>(existingConfig, enabled, hooksToZCodeHooksEvents(hooks)),
+  );
 }
 
 async function saveHooksImpl(params: {
@@ -285,18 +269,12 @@ async function saveHooksImpl(params: {
   hooks: Hook[];
 }): Promise<void> {
   const currentProjectConfigPath = resolve(params.workspacePath, ".zcode", "config.json");
-  const userHooks = params.hooks.filter(
-    (hook) =>
-      hook.editable !== false &&
-      (!hook.location || (hook.location.source === "zcode" && hook.location.scope === "user")),
-  );
-  const projectHooks = params.hooks.filter(
-    (hook) =>
-      hook.editable !== false &&
-      hook.location?.source === "zcode" &&
-      hook.location.scope === "project" &&
-      (!hook.configuredState ||
-        resolve(hook.configuredState.sourcePath) === currentProjectConfigPath),
+  // The writable partition (editable/location/sourcePath gates) is native
+  // (spec T54); the current project path stays resolved here because this
+  // layer owns the workspace path.
+  const { user: userHooks, project: projectHooks } = partitionWritableHooks<Hook>(
+    params.hooks,
+    currentProjectConfigPath,
   );
   await writeZCodeHooksConfig(undefined, userHooks);
   await writeZCodeHooksConfig(params.workspacePath, projectHooks);
