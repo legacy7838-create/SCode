@@ -3,7 +3,6 @@ import { z } from "zod";
 /** Text and attachment sending share the same execution constraints; credentials belong to a single execution only and never enter Session configuration. */
 export const modelExecutionSchema = z
   .object({
-    memoryExtraction: z.literal("skip").optional(),
     selectionScope: z.literal("execution"),
     requestAuth: z
       .object({

@@ -133,8 +133,6 @@ export const ServiceChannels = {
   Commands: "commands",
   /** Hooks management service */
   Hooks: "hooks",
-  /** Memory management service */
-  Memory: "memory",
   /** First-launch settings sync service */
   SettingsSync: "settings-sync",
   /** Bots remote chat control service */

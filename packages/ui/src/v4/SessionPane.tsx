@@ -1573,7 +1573,6 @@ export function SessionPane({
             ...telemetrySeed,
             sessionId: acceptedSessionId,
             sourceCommandId: envelope.commandId,
-            memoryEnabled: ack.memoryEnabled,
           });
         }
       }

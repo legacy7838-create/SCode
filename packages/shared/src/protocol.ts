@@ -299,8 +299,6 @@ export interface AppSettings {
   providerFamilyDomainMigrated?: boolean;
   /** Whether newly created or cold-restored Sessions get the bfs/ugrep enhancements injected into Bash; enabled by default. */
   nativeSearchEnhancementsEnabled?: boolean;
-  /** Whether newly created or cold-restored Sessions enable Memory; disabled by default. */
-  memoryEnabled?: boolean;
   onboardingOccupation?:
     | "office"
     | "developer"

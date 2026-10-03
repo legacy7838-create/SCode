@@ -53,8 +53,6 @@ const wantsEventStream = (options: GlobalOptions): boolean =>
 const IMAGE_EXTENSIONS = new Set([".gif", ".jpeg", ".jpg", ".png", ".webp"]);
 const VIDEO_EXTENSIONS = new Set([".mp4", ".m4v", ".mov", ".webm", ".mkv", ".avi"]);
 const EMPTY_PROMPT_ERROR = "--prompt requires non-empty text.";
-const MEMORY_BENCH_DISABLED_ERROR =
-  "--memory-bench requires Project Memory to be enabled (features.memory=true and memory.use=true).";
 const TARGET_SELECTION_UNAVAILABLE_ERROR =
   "Headless goal commands cannot open an interactive replacement picker. Re-run with --target-replace or use /goal replace <objective>.";
 
@@ -231,7 +229,6 @@ export const runPrompt = async (
         ...(forceMcs ? { midConversationSystem: { mode: "force" as const } } : {}),
         // Headless is explicitly switched according to this call; the core default value is not changed, and the existing strategies of TUI and stdio are maintained.
         dynamicWorkflowEnabled: options.enableWorkflow === true,
-        memory: { extractionEnabled: options.memoryBench === true },
         modelStreaming: "on",
         presentationSurface,
         workingDirectory,
@@ -250,9 +247,6 @@ export const runPrompt = async (
       throw abortController.signal.reason;
     }
     traceId = app.traceId;
-    if (options.memoryBench && !app.runtime.isProjectMemoryEnabled()) {
-      throw new Error(MEMORY_BENCH_DISABLED_ERROR);
-    }
 
     // Triage by **parsability**, not by spelling.
     //
@@ -319,11 +313,6 @@ export const runPrompt = async (
         runtime: runtimeFacts,
         signal: abortController.signal,
       });
-    }
-    // Bench's normal waiting must precede close; close will cancel Extraction and have an independent cleanup time limit.
-    if (options.memoryBench) {
-      await app.runtime.drainMemoryExtractions(null);
-      abortController.signal.throwIfAborted();
     }
     // The result line must never be followed by an event line - stream-json's result is the terminator of the stream.
     stopObservingEvents();
@@ -530,11 +519,6 @@ async function runPromptCommandCenterCommand(
       `Error: ${result.response}\n${TARGET_SELECTION_UNAVAILABLE_ERROR}${nextTraceId ? ` (traceId: ${nextTraceId})` : ""}\n`,
     );
     return 1;
-  }
-
-  if (options.memoryBench) {
-    await app.runtime.drainMemoryExtractions(null);
-    abortSignal.throwIfAborted();
   }
 
   if (wantsJsonSummary(options)) {

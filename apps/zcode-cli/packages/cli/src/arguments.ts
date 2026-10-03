@@ -31,9 +31,6 @@ export const parseGlobalArgs = (argv: string[]) =>
         short: "p",
         type: "string",
       },
-      "memory-bench": {
-        type: "boolean",
-      },
       "enable-workflow": {
         type: "boolean",
       },

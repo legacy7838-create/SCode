@@ -50,7 +50,6 @@ const BROWSER_USE_SCOPE_ERROR =
   "--browser-use=headless can only be used with --prompt, --target, or tui.";
 const SURFACE_SCOPE_ERROR =
   "--surface can only be used with --prompt, --target, app-server, or agent-server.";
-const MEMORY_BENCH_SCOPE_ERROR = "--memory-bench can only be used with -p/--prompt.";
 const ENABLE_WORKFLOW_SCOPE_ERROR =
   "--enable-workflow can only be used with -p/--prompt or --target.";
 
@@ -105,7 +104,6 @@ const globalOptions = (
     force: values.force === true,
     json: values.json === true,
     locale,
-    ...(values["memory-bench"] === true ? { memoryBench: true } : {}),
     noColor: values["no-color"] === true,
     ...(outputFormat ? { outputFormat } : {}),
     verbose: values.verbose === true,
@@ -434,14 +432,6 @@ export const run = async (ctx: RunContext, deps: RunDependencies = {}): Promise<
       (typeof parsed.values.prompt !== "string" && targetRequest === undefined))
   ) {
     ctx.stderr.write(`${ENABLE_WORKFLOW_SCOPE_ERROR}\n`);
-    return 1;
-  }
-
-  if (
-    options.memoryBench &&
-    (typeof parsed.values.prompt !== "string" || parsed.positionals.length > 0)
-  ) {
-    ctx.stderr.write(`${MEMORY_BENCH_SCOPE_ERROR}\n`);
     return 1;
   }
 

@@ -16,7 +16,6 @@ export const ModelApiOperation = {
   GoalTitle: "goal_title_generation",
   GoalVerification: "goal_completion_verification",
   GitCommitMessage: "workspace_git_commit_message",
-  ProjectMemoryExtract: "project_memory_extract",
   ReadSessionContextExtract: "read_session_context_extract",
   ReadSessionContextSynthesize: "read_session_context_synthesize",
   SessionTitle: "session_title_generation",
@@ -191,11 +190,6 @@ function mapQuerySourceToModelApiOperation(querySource: string | undefined): {
       return {
         operation: ModelApiOperation.ReadSessionContextExtract,
         actorKind: ModelApiActorKind.Tool,
-      };
-    case "project_memory_extract":
-      return {
-        operation: ModelApiOperation.ProjectMemoryExtract,
-        actorKind: ModelApiActorKind.System,
       };
     default:
       return {

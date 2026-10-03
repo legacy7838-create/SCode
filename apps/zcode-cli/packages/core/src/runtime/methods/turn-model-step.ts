@@ -645,7 +645,7 @@ async function runModelBackedTurnStepImpl(
   const executableToolCalls = toolCalls.filter((toolCall) => !toolCall.providerExecuted);
   const streamedToolResults = await streamingToolCoordinator.drain(executableToolCalls);
   if (outputTokenContinuation !== "none") {
-    // When output-limit is hit for the first time, the current request may have a one-time project-memory attachment;
+    // When output-limit is hit for the first time, the current request may have a one-time context attachment;
     // The query-local state must be advanced from the actual request array and cannot be returned to the pre-request array.
     state.turnRequestState.entries = options.requestEntries;
     const assistantCommitted = await persistCompletedAssistantStep(this, state, {

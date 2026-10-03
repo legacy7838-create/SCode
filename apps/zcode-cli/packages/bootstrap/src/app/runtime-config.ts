@@ -12,7 +12,6 @@ import {
 } from "@zcode/contracts";
 import { omitMcpServers, resolveTrustedOfficialCuaServerNames } from "../mcp-config.js";
 import { resolveDefaultEmbeddedSearchBackend } from "./embedded-search-backend.js";
-import { getProjectMemoryRoot } from "./paths.js";
 import type { ZCodeAppOptions } from "./types.js";
 import {
   resolveRegistryOwnedModelSelection,
@@ -176,9 +175,6 @@ export function resolveAppRuntimeConfig(input: {
     memory: {
       cliStorageRoot,
       enabled: options.runtimeConfig?.memory?.enabled ?? configResult.config.features.memory,
-      ...(options.runtimeConfig?.memory?.extractionEnabled === undefined
-        ? {}
-        : { extractionEnabled: options.runtimeConfig.memory.extractionEnabled }),
       ...(input.storageRoot ? { storageRoot: input.storageRoot } : {}),
       use: options.runtimeConfig?.memory?.use ?? configResult.config.memory.use,
       workspaceIdentity: workspaceIdentity?.trim() || undefined,
@@ -272,19 +268,8 @@ export function runtimeConfigLogContext(
   runtimeConfig: AgentRuntimeConfig,
   workingDirectory: string,
 ) {
-  const memoryRoot = runtimeConfig.memory?.cliStorageRoot
-    ? getProjectMemoryRoot(
-        runtimeConfig.memory.cliStorageRoot,
-        workingDirectory,
-        runtimeConfig.memory.workspaceIdentity,
-      )
-    : undefined;
   return {
     mcpEnabled: runtimeConfig.mcp?.enabled !== false,
-    memoryEnabled: runtimeConfig.memory?.enabled !== false,
-    memoryExtractionEnabled: runtimeConfig.memory?.extractionEnabled !== false,
-    memoryRoot,
-    memoryUse: runtimeConfig.memory?.use !== false,
     mcsMode: runtimeConfig.midConversationSystem?.mode,
     mode: runtimeConfig.mode,
     model: runtimeConfig.modelSelection

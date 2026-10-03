@@ -11,7 +11,6 @@ import { createServiceDescriptor } from "../descriptors.js";
 export interface OnboardingSettingsSyncPatch {
   onboardingOccupation?: AppSettingsPatchOccupation;
   proactiveSuggestionsEnabled?: boolean;
-  memoryEnabled?: boolean;
 }
 
 type AppSettingsPatchOccupation = NonNullable<AppSettings["onboardingOccupation"]>;
@@ -55,7 +54,7 @@ export interface IOnboardingRecordService {
    */
   updateRecordPreferences(
     patch: Partial<
-      Pick<OnboardingRecordEntryInput, "memoryEnabled" | "proactiveSuggestionsEnabled">
+      Pick<OnboardingRecordEntryInput, "proactiveSuggestionsEnabled">
     >,
   ): Promise<void>;
   /** Reads the whole record file (for later upload to the server); null when the file does not exist. */

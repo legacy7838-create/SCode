@@ -108,8 +108,6 @@ export interface ContextBuilderConfig {
   currentDate?: string;
   userInstructions?: ResolvedUserInstructions;
   projectContext?: ProjectContext;
-  memoryRoot?: string;
-  memoryIndexContent?: string;
   skills?: SkillLoadOutcome;
   agentProfiles?: readonly AgentProfile[];
   embeddedSearchEnabled?: boolean;

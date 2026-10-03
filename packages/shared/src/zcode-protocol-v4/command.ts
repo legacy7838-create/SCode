@@ -428,8 +428,6 @@ export const commandResultSchema = z.discriminatedUnion("type", [
 export type CommandResult = z.infer<typeof commandResultSchema>;
 
 export const commandAckSchema = z.object({
-  /** The App Memory switch adopted at session creation time; absent from older senders means unknown. */
-  memoryEnabled: z.boolean().optional(),
   ttftExcluded: z.literal("capacity").optional(),
   commandId: z.string(),
   // accepted does not promise to survive across CLI processes; the final closure is subject to authoritative data (sourceCommandId).

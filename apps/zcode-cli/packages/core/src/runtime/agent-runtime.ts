@@ -121,7 +121,6 @@ import type {
 import type { AgentRuntimeInternal } from "./internal.js";
 import { InMemoryRuntimeTaskRegistry, type RuntimeTaskRegistry } from "../runtime-task/registry.js";
 import type { ChildClientPortsContext, ClientFacingPorts } from "./helpers/child-client-ports.js";
-import type { ProjectMemoryExtractionScheduler } from "./helpers/project-memory-extraction.js";
 import { projectPersistentAgentMemoryTools } from "../subagent/persistent-memory.js";
 import { RuntimeTelemetryFacade } from "../telemetry/runtime-telemetry.js";
 import type { WorkspaceHookRuntimeAdmissionPort } from "../hooks/workspace-hook-runtime-admission.js";
@@ -162,9 +161,6 @@ export class AgentRuntime {
   private contextInitialized = false;
   private contextSourceSnapshot?: ContextSourceSnapshot;
   private latestContextBuildResult?: ContextBuildResult;
-  private memoryRoot?: string;
-  private memoryIndexContent?: string;
-  private memoryExtractionScheduler?: ProjectMemoryExtractionScheduler;
   private contextSourcePort?: ContextSourcePort;
   private skillPort?: SkillPort;
   private mcpPort?: McpPort;
@@ -330,7 +326,6 @@ export class AgentRuntime {
     this.shuttingDown = true;
     // The process still survives after closing a single session,
     // Therefore, the Extraction of the runtime must be terminated first, and you cannot just give up waiting after the timeout.
-    this.memoryExtractionScheduler?.shutdown();
   }
 }
 
@@ -656,9 +651,6 @@ export interface AgentRuntime {
     input: ModelConnectivityTestInput,
     options?: { abortSignal?: AbortSignal; traceContext?: TraceContext },
   ): Promise<void>;
-  isProjectMemoryEnabled(): boolean;
-  /** The default wait is up to 60 seconds; null waits for all scheduled extractions to end without setting a drain deadline. */
-  drainMemoryExtractions(timeoutMs?: number | null): Promise<void>;
 }
 
 installAgentRuntimeMethods(AgentRuntime);

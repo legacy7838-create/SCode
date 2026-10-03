@@ -59,7 +59,6 @@ import {
   closeGoalStateChangeReminderDeferral,
   openGoalStateChangeReminderDeferral,
 } from "./goal-state-reminder.js";
-import { scheduleProjectMemoryExtraction } from "../helpers/project-memory-extraction.js";
 import { appendBrowserTurnScreenshot } from "./browser-turn-screenshot.js";
 import { clearBrowserTurnState } from "../../repl/browser-turn-state.js";
 import { applySubmissionExecutionState, createTurnModel } from "./turn-model.js";
@@ -695,14 +694,6 @@ export async function executeTurnCommand(
           status: "completed",
           toolCallCount: loopState.toolCallCount,
         });
-        // The single-round execution strategy only suppresses the background extraction of this successful Turn and does not modify the Session Memory configuration.
-        if (options?.modelExecution?.memoryExtraction !== "skip") {
-          scheduleProjectMemoryExtraction(this, {
-            model: loopState.model,
-            traceContext: turnTraceContext,
-          });
-        }
-
         const result: TurnResult = {
           response: loopState.modelResponse,
           turnId,

@@ -92,11 +92,6 @@ export interface ConversationPromptTelemetrySeed {
 type ConversationSendFailureReason = SendFunnelReasonCode;
 
 interface AcceptedConversationPromptTelemetrySeed extends ConversationPromptTelemetrySeed {
-  /**
-   * Toggle of the CLI session record; when missing it stays unknown and must not be filled in from
-   * the live settings.
-   */
-  memoryEnabled?: boolean;
   sessionId: string;
   sourceCommandId: string;
   /** The completion source of a standalone background wake is frozen at TurnStarted admission. */
@@ -220,7 +215,6 @@ function backgroundSeedFromTurnStarted(
  * with the completion.
  */
 const STEP_SOURCE_DETAIL_KEYS = [
-  "memory_enabled",
   "message_source",
   "task_trigger",
   "automation_id",
@@ -780,7 +774,6 @@ export class ConversationTelemetrySupervisor {
     const taskKey = this.taskKey(seed.sessionId);
     const extraDetail = {
       ...seed.extraDetail,
-      memory_enabled: seed.memoryEnabled === undefined ? "" : seed.memoryEnabled ? "1" : "0",
     };
     const eventExtraDetail = queuePromptTelemetry({
       workspacePath: this.workspaceScopeKey,
@@ -888,7 +881,7 @@ export class ConversationTelemetrySupervisor {
         // Reason: The background task does not go through renderer ACK; the seed is created using the non-text fact transparently transmitted by Host admission.
         // But you cannot fake send_btn which only represents user clicks.
         this.acceptPromptSeed(
-          { ...backgroundSeed, memoryEnabled: fact.memoryEnabled },
+          backgroundSeed,
           { reportSendButton: false },
         );
       }
@@ -935,7 +928,6 @@ export class ConversationTelemetrySupervisor {
           taskKey: this.taskKey(fact.childSessionId),
           // Child start fact may precede parent message ACK; use same-origin parent session fact directly to avoid missing switches.
           stepSourceDetail: parentLifecycle?.stepSourceDetail ?? {
-            memory_enabled: fact.memoryEnabled === undefined ? "" : fact.memoryEnabled ? "1" : "0",
           },
           startedToolCallIds: new Set(),
           usageReported: false,
@@ -1144,7 +1136,6 @@ export class ConversationTelemetrySupervisor {
         taskKey: this.taskKey(fact.childSessionId),
         // Child start fact may precede parent message ACK; use same-origin parent session fact directly to avoid missing switches.
         stepSourceDetail: parentLifecycle?.stepSourceDetail ?? {
-          memory_enabled: fact.memoryEnabled === undefined ? "" : fact.memoryEnabled ? "1" : "0",
         },
         startedToolCallIds: new Set(),
         usageReported: false,

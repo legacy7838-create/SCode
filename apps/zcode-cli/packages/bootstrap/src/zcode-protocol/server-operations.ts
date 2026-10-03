@@ -142,7 +142,6 @@ type ZCodeSessionRecordParams = (
 ) & { taskType?: SessionTaskType };
 
 interface SessionStartupPreferences {
-  memoryEnabled: boolean;
   modelContextBudgetStrategy: ZCodeModelContextBudgetStrategy;
   nativeSearchEnhancementsEnabled: boolean;
   resolveInitialBashShellSelection: () => Promise<ExecutionShellSelection | undefined>;
@@ -3220,11 +3219,10 @@ async function requestSessionRuntimePreferences(
       );
     }
     if (error instanceof ProtocolRequestError && (error.code === -32601 || error.code === -32020)) {
-      // Compatible with old Host or pure CLI creation path without Host; Memory is turned off by default by the product.
+      // Compatible with old Host or pure CLI creation path without Host.
       // Enhanced search remains enabled by default, and other protocol/transport errors still prevent runtime creation.
       return {
         askUserQuestionAutoResolutionEnabled: true,
-        memoryEnabled: false,
         modelContextBudgetStrategy: DEFAULT_ZCODE_MODEL_CONTEXT_BUDGET_STRATEGY,
         nativeSearchEnhancementsEnabled: true,
       };
@@ -3242,7 +3240,6 @@ async function resolveSessionStartupPreferences(
   if (source.kind === "inherit") {
     const inheritedShellSelection = source.parent.app.runtime.getSessionShellSelection();
     return {
-      memoryEnabled: source.parent.memoryEnabled,
       modelContextBudgetStrategy: DEFAULT_ZCODE_MODEL_CONTEXT_BUDGET_STRATEGY,
       nativeSearchEnhancementsEnabled: source.parent.nativeSearchEnhancementsEnabled,
       resolveInitialBashShellSelection: async () => inheritedShellSelection,
@@ -3260,7 +3257,6 @@ async function resolveSessionStartupPreferences(
     runtimePreferences.askUserQuestionAutoResolutionEnabled,
   );
   return {
-    memoryEnabled: runtimePreferences.memoryEnabled,
     modelContextBudgetStrategy: DEFAULT_ZCODE_MODEL_CONTEXT_BUDGET_STRATEGY,
     nativeSearchEnhancementsEnabled: runtimePreferences.nativeSearchEnhancementsEnabled,
     resolveInitialBashShellSelection: async () => {
@@ -3353,9 +3349,6 @@ async function createRecord(
       toolDisallowlist: "toolDenylist" in params ? params.toolDenylist : undefined,
       nativeSearchEnhancementsEnabled: startupPreferences.nativeSearchEnhancementsEnabled,
       modelContextBudgetStrategy: startupPreferences.modelContextBudgetStrategy,
-      // Memory Settings is a master switch in addition to the existing CLI features.memory/use. only when closed
-      // Write override to prevent the enable value from overwriting the user's existing CLI disable configuration.
-      ...(startupPreferences.memoryEnabled ? {} : { memory: { enabled: false } }),
       // desktop-continuous session/create first parses the enabled MCP of ~/.zcode/.agents by the UI,
       // But the protocol app-server itself will not read the MCP store on the UI/main side; createRecord did not read it before.
       // Params.mcpServers injects runtimeConfig, causing runtimeHasMcpConfig=false in the log and the tool never starts.
@@ -3411,7 +3404,6 @@ async function createRecord(
     app,
     createdAt: now,
     eventStore,
-    memoryEnabled: startupPreferences.memoryEnabled,
     modelContextBudgetStrategy: startupPreferences.modelContextBudgetStrategy,
     nativeSearchEnhancementsEnabled: startupPreferences.nativeSearchEnhancementsEnabled,
     ...(parentSessionId ? { parentSessionId } : {}),

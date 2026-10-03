@@ -299,14 +299,11 @@ export class ConversationTelemetryFactNormalizer {
   normalize(
     sessionId: string,
     event: SessionEvent,
-    runtimeMetadata?: { modelName?: string; modelProvider?: string; memoryEnabled?: boolean },
+    runtimeMetadata?: { modelName?: string; modelProvider?: string },
   ): ConversationTelemetryFact | null {
     const turnId = event.turnId ? String(event.turnId) : undefined;
     const turnKey = turnId ? `${sessionId}\0${turnId}` : undefined;
     const base = {
-      ...(runtimeMetadata?.memoryEnabled !== undefined
-        ? { memoryEnabled: runtimeMetadata.memoryEnabled }
-        : {}),
       version: 1 as const,
       eventId: String(event.id),
       eventSeq: Math.max(0, Math.floor(event.sequenceNumber)),

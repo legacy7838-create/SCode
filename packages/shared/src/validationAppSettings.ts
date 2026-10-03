@@ -424,7 +424,6 @@ const appSettingsObjectSchema = z.object({
   nativeSearchEnhancementsEnabled: z.boolean().default(true),
   onboardingOccupation: appSettingsOccupationSchema.nullish(),
   proactiveSuggestionsEnabled: z.boolean().optional(),
-  memoryEnabled: z.boolean().default(false),
   lastWorkspaceSession: z.array(appWorkspaceSessionEntrySchema).default([]),
   lastActiveTabIndex: z.number().int().nonnegative().default(0),
   lastActiveTaskByWorkspace: z.record(z.string(), z.string()).optional(),
@@ -505,7 +504,6 @@ export const appSettingsPatchSchema = z.object({
     ])
     .nullish(),
   proactiveSuggestionsEnabled: z.boolean().optional(),
-  memoryEnabled: z.boolean().optional(),
   lastWorkspaceSession: z.array(appWorkspaceSessionEntrySchema).optional(),
   lastActiveTabIndex: z.number().int().nonnegative().optional(),
   lastActiveTaskByWorkspace: z.record(z.string(), z.string()).optional(),

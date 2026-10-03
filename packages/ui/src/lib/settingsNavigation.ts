@@ -61,6 +61,9 @@ const HIDDEN_SETTINGS_SECTIONS = new Set<SettingsSectionId>([
   // The Computer Use page was removed from the Settings surface (docs/specs/settings-section-computer-use-removal.md);
   // the id stays valid so stored preferences and the composer entry's intent degrade to the fallback.
   "computerUse",
+  // The Stored Memory feature is removed from the product (docs/specs/workspace-memory-removal.md);
+  // the id stays valid only so stored preferences and one-shot intents degrade to the fallback.
+  "memory",
 ]);
 
 interface SettingsSectionIntentEventDetail {

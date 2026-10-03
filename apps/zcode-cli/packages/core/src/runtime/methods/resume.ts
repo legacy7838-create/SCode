@@ -122,18 +122,11 @@ export async function resumeFromStore(
 
   this.workingDirectory = session.directory;
   this.config.taskType = session.taskType;
-  if (this.config.memory) {
-    // The memory root must use the workspace identity when the session is dropped, and cannot use the process to start the workspace.
-    this.config.memory.workspaceIdentity = session.workspaceID
-      ? String(session.workspaceID)
-      : undefined;
-  }
   this.messageHistory = new MessageHistoryImpl();
   this.contextBuilder = null;
   this.contextInitialized = false;
   this.lastEmittedLocalDate = undefined;
   // The historical hydration of cold resume will first clear the runtime-local read-state; it must be
-  // Completed before Context initialization, ensuring that the state of MEMORY.md subsequently loaded in a single time is consistent with what the provider sees.
   const readFileStateHydration = await hydrateReadFileStateFromSession({
     branchCutAfterMessageId,
     messages,

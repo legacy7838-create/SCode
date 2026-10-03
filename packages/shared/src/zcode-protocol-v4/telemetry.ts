@@ -3,8 +3,6 @@ import { zcodeSyntheticUserMessageSourceSchema } from "../zcode-protocol-legacy-
 import { timestampSchema } from "./core.js";
 
 const factBaseFields = {
-  /** The App Memory switch used during session creation does not indicate memory read and write results. */
-  memoryEnabled: z.boolean().optional(),
   version: z.literal(1),
   eventId: z.string().min(1),
   eventSeq: z.number().int().nonnegative(),

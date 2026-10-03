@@ -1498,7 +1498,6 @@ export function createConversationV4Gateway(
     // Covers three seed sources: startup default (Workspace model preference + project persistence mode),
     // createSession.config (handler is applied to runtime first and then planted), historical session resume
     // (App recovery results can only have model identities, and cannot be bound to semi-finished execution models for projection).
-    getSessionMemoryEnabled: (sessionId) => context.sessions.get(sessionId)?.memoryEnabled,
     getSessionConfigSeed: (sessionId) => {
       const record = context.sessions.get(sessionId);
       if (!record) return null;

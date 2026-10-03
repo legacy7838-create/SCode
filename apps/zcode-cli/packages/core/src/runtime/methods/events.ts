@@ -579,13 +579,10 @@ export async function ensureSessionPersisted(
     // When the workspaceKey is checked in the provider registry, it will fall into another identity. Persistence must preserve the protocol entry path.
     const persistedWorkspacePath = this.config.workspacePath ?? directory;
     const title = titleFromInput(input);
-    const workspaceIdentity = this.config.memory?.workspaceIdentity?.trim();
     await this.sessionStore.createSession({
       id: this.sessionId,
       projectID: projectIdFromDirectory(directory),
-      // Memory workspaceIdentity is an opaque isolation key provided by upstream. We only do type branding here,
-      // You cannot call an ID generator that rewrites the string, otherwise the restored Memory root will drift.
-      workspaceID: this.config.workspaceIdentity ?? (workspaceIdentity as WorkspaceId | undefined),
+      workspaceID: this.config.workspaceIdentity as WorkspaceId | undefined,
       parentID: this.config.parentSessionId,
       traceID: traceContext.traceId,
       taskType: this.config.taskType,

@@ -431,7 +431,6 @@ async function executeToolCallImpl(
       remoteSessionId: deps.remoteSessionId,
       clientMode: deps.clientMode,
       deliveryKind: deps.deliveryKind,
-      memoryRoot: deps.getMemoryRoot?.(),
       runtimeScope: deps.runtimeScope,
       providerVisibleToolNames: deps.registry
         .list()

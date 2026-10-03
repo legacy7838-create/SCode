@@ -26,7 +26,7 @@ End state:
 | Layer | Today |
 |---|---|
 | Wire protocol | Shared: length-prefixed binary, `SocketProtocol`/`ChannelServer` (TS) ≈ `zcode-rpc-server` frame/message (Rust, ~2.5k LOC) — same wire format, loopback |
-| Channels | 40 service channels (`packages/shared/src/channels.ts`); **3 native**: `system`, `setting`, `credential` (`rpc.rs` `PORTED_CHANNELS`) |
+| Channels | 40 service channels (`packages/shared/src/channels.ts`; was 41 before the Workspace-Memory removal deleted the `memory` channel); **17 native**: exactly the `PORTED_CHANNELS` list in `rpc.rs`, which the Progress section below updates as each channel lands. Of those 17, `client-scenes` and `client-config` are still loud-error placeholders (rung 2 remainder) — registered, counted, but serving nothing |
 | Tauri host | In-process listener on 127.0.0.1 (random port); `ProxyFallback` → `ZCODE_TAURI_RPC_UPSTREAM_PORT` exists but off by default (`ZCODE_TAURI_RPC_PROXY=1` opt-in) |
 | Rust crates | 22 crates, ~60.5k LOC (fs, git, diff, cron, task-index, config, events, image, markdown, mcp-config, sysinfo, terminal-profile, url-guard, codec, browser, chrome-cookies, packaging, rpc-server, …) |
 | Node mass | `packages/services/src` ~95.7k LOC TS (the real port), `packages/server/src` ~9.3k LOC (mostly remote/), `packages/rpc/src` ~3.6k LOC (mostly already mirrored) |
@@ -103,7 +103,9 @@ replaces.
 6. **Agent plane (the core)**: port the `zcode-cli` process manager + stdio protocol
    client (spawning, per-workspace reuse/timeout recycle, owner/lease, stale-run
    protection) → native `zcode-agent`, `zcode-session`, `zcode-task` write paths,
-   `subagents`, `commands`, `hooks`, `memory`, `prompt-attachment-transfer`.
+   `subagents`, `commands`, `hooks`, `prompt-attachment-transfer`.
+   (The `memory` catalog channel is gone with the feature removal in
+   `docs/specs/workspace-memory-removal.md`, so it never reaches this ladder.)
 7. **Provider plane**: port provider runtime + `oauth`, `usage-stats`,
    `coding-plan-subscription`, `skills`/`skill-sync`, `mcp-sync`/`plugin-sync`/
    `plugins`/`plugin-management` (reuse `zcode-mcp-config`), `settings-sync`,
@@ -345,7 +347,7 @@ which is the only consumer `dev-tauri` boots today.
   (`cat`) and round-trip a JSON frame, dispose twice, and reject a missing
   command loudly. Still open in rung 6: the session runtime on top of this
   (`zcode-agent`/`zcode-session` channels, owner/lease, stale-run protection,
-  subagents/commands/hooks/memory), and the `zcode-protocol` message validation.
+  subagents/commands/hooks), and the `zcode-protocol` message validation.
 - **Rung 6 — protocol message validation**: `services/zcode_protocol.rs` ports
   the `zcodeProtocolMessageSchema` union (Request | Notification | Response |
   Error) — the validation every inbound agent line passes before anything acts
@@ -358,7 +360,7 @@ which is the only consumer `dev-tauri` boots today.
   tests decoding each message kind, rejecting unknown keys / blank methods /
   empty ids, and a request round-trip. Still open in rung 6: the session
   runtime channels on top of the process manager + protocol (owner/lease,
-  stale-run protection, subagents/commands/hooks/memory).
+  stale-run protection, subagents/commands/hooks).
 - **Rung 6 — request/response correlation (`agent_client`)**:
   `services/agent_client.rs` is the session-runtime core — the Rust equivalent
   of the TS `client.request(...)`. `AgentClient` wraps a spawned agent, sends a
@@ -440,3 +442,116 @@ which is the only consumer `dev-tauri` boots today.
   JSON+base64 object it would mis-decode). Verified by a test reading bytes
   2..6 of a real file and asserting `call_binary` answers only `readFileRange`.
   **Rung 4 `file` channel is fully served.**
+
+- **Rung 2 — `onboarding-record` channel (first real rung-2 channel)**: the module
+  `services/onboarding_record.rs` was a **38-line placeholder** that answered every method
+  with `onboarding-record.<method> is not implemented by the Rust host` while still being
+  counted in `PORTED_CHANNELS`. It is replaced by the real service, transcribed from
+  `packages/services/src/onboarding/onboardingRecordService.ts` and the zod schemas in
+  `packages/shared/src/onboardingRecord.ts`.
+  - **Owner / state.** One owner for `{appConfigDir}/onboarding-record.json`:
+    `OnboardingRecordService`. In-process writes are serialised by a `Mutex` — the TS
+    `writeQueue`, so an `appendRecord` racing a `shouldOnboard` cannot lose a record.
+    Cross-process writes take `with_file_lock` and land through
+    `atomic_write_private_text_file`, which is the same protocol as the TS
+    `atomicWriteText` default (`${file}.lock` directory of `owner-*.json`, temp + rename).
+    Reads are lock-free and lock-free reads see either the old or the new file, never a
+    half-written one.
+  - **Schema parity (the reason this needed care).** The zod object schemas *strip*
+    unknown keys, make every key **required** (a missing key is a parse error even when the
+    field is `.nullable()`), enforce `min(1)` and the two enums, and emit keys in **schema
+    shape order** — so `JSON.stringify(file, null, 2)` has a fixed key order regardless of
+    how the caller built the object. The Rust types therefore: derive `Serialize` with the
+    fields declared in the zod shape order (`version, deviceMid, entries, decisions` and
+    `userId, occupation, interfaceMode, proactiveSuggestionsEnabled,
+    completedAt, uploadState`), validate through a manual `Deserialize` over an
+    all-`JsonValue` raw struct (a `JsonValue` field is what makes a *missing* key an error —
+    `Option<T>` would silently accept it as `null`), and re-serialise with
+    `serde_json::to_string_pretty` (2-space, no trailing newline — the same bytes as
+    `JSON.stringify(_, null, 2)`). The v1/v2 file union is dispatched on the `version`
+    literal with v1 first, exactly like `z.union([v1, v2])`, and a v1 file is normalised to
+    `version: 2` with `decisions: []` (a `decisions` key present on a v1 file is dropped,
+    because zod's v1 object strips it before the transform spreads it).
+  - **Dependencies are both native, and both are shared rather than duplicated.**
+    `loadUserId` reads the credential store — `oauth:active_provider` →
+    `oauth:{provider}:user_info`, taking `.id` from the normalized profile shape or, for
+    `zai`, from the raw backend shape (`user_id`, guarded by the same
+    "name and email empty and id unknown ⇒ no profile" rule). It runs on **the same
+    `CredentialService` instance** the `credential` channel serves, not a second copy.
+    `hasExistingLocalTask` runs `listTaskMetas({})` (a full query, no scope, no deleted
+    rows) on **the same `ZCodeTaskService` connection** the `zcode-task` channel serves
+    (new `ZCodeTaskService::has_any_task`).
+  - **Registration is now conditional**, like `credential` and `zcode-task`: if the cipher
+    key cannot be derived or the task index cannot open, `onboarding-record` is *not*
+    registered and the host logs why. An unregistered channel fails loudly at the call site;
+    a registered stub that answers `not implemented` is what the placeholder did.
+  - **Deliberate, documented non-port (not a fallback):** the OAuth *corrupt-session clear*
+    that TS performs when a credential fails to decrypt (`clearCorruptOAuthSession` →
+    `clearProvider` for every provider + `delete active_provider` + the
+    `onCorruptOAuthSessionCleared` callback that deletes derived model-provider keys) is
+    **not** run here. A partial clear would itself be a fork — TS clears the derived keys
+    too, through a Node-only wiring. The immediate value matches TS (`null` = not signed
+    in) and a `tracing::warn` records the decrypt failure; the clear lands with rung 7's
+    oauth plane.
+  - **File mode:** `atomic_write_private_text_file` creates the record 0600 where the TS
+    `writeFile` used the umask (0644). Not observable through the JSON contract and read
+    back by the same user only; the private-file discipline is the shared one.
+  - **Input contract:** `deviceMid` is required to be a string. The typed client always
+    sends one (`platform.getDeviceId()`); the TS original would have written a file with
+    `deviceMid` omitted by `JSON.stringify` and made the next read treat it as corrupt,
+    which is not worth reproducing at an untyped boundary.
+  - Verified by tests in the module: byte-parity round trip against a fixture produced by
+    the real zod schemas (decode → encode is the identical file), append/overwrite-per-user
+    and `deviceMid` mismatch keeping the file's own value, corrupt/missing/missing-key reads
+    returning `null`, the v1 → v2 normalisation, `shouldOnboard`'s three branches (identity
+    record ⇒ false, no local task ⇒ true, existing local task ⇒ false + `existing_local_user`
+    decision written), `claimAnonymousRecord` rewriting (not copying) the anonymous entry,
+    `dismissOnboarding`, `getLatestEntry` / `syncSettingsFromRecord` (unknown occupation ⇒
+    `other`, `null` preference ⇒ `false`), `updateRecordPreferences` writing back only the
+    last matching entry, and `clearRecords`.
+  - **Still open in rung 2:** `client-scenes` and `client-config` remain loud-error
+    placeholders (they are counted in `PORTED_CHANNELS` but serve nothing). Both are the
+    network plane — endpoint origin resolution + the api client + `readApiJson`, and for
+    `client-config` the `parseClientConfigSnapshot` zod schema plus a 60 s TTL cache with
+    in-flight dedup — and are the rest of this rung.
+
+- **Rung 6 — `prompt-attachment-transfer` channel**: registered against `RpcHost::new` and
+  counted in `PORTED_CHANNELS` (16 → 17). The host serves the **local** transfer service
+  (`createLocalPromptAttachmentTransferService`, the only one `createLocalServices` ever
+  registers — `node.ts:2617`; the remote staging wrapper is client-side in
+  `packages/client/src/remoteServiceAccess.ts` and talks to the *remote* host's own local
+  service).
+  - **What the local service actually is:** a zero-copy pass-through. `stage` answers
+    `{operationId, ref: localPath, bytes, staged: false}` — `bytes` is the caller's own
+    `sizeBytes` when it is a number `> 0`, otherwise `stat(localPath).size`, otherwise `0` if
+    the file cannot be stat'ed. `adopt`, `cancel` and `cleanup` are no-ops. It **never
+    emits progress**: the `Emitter` it hands out is created per `operationId` and nothing in
+    the file ever fires it. The renderer only subscribes/calls `stage` for a *remote*
+    attachment target (and a `staged: false` answer there is the loud
+    `RemoteAttachmentNotStagedError` the client already raises) — for a local target
+    attachments are `localZeroCopy` and skip staging entirely.
+  - **The subscription is a real subscription that never fires**, which is the same fact the
+    TS emitter expresses: `subscribe("onDynamicProgress", arg = operationId)` returns a live
+    receiver held in a per-operation map, so the rpc-server's pump stays up exactly as the JS
+    listener does, and no frame is ever sent because no progress is ever produced. Returning
+    `None` instead would have been indistinguishable to the client but would have logged a
+    misleading `listener for an unknown event` for a listener that *is* known.
+  - **Sender lifetime:** only `cleanup` releases the sender, which ends the pump. `adopt` and
+    `cancel` are faithful no-ops, because they are no-ops in the Node original
+    (`packages/services/src/prompt-attachment-transfer/promptAttachmentTransferService.ts:39-41`
+    — `async adopt() {}`, `async cancel() {}`, `async cleanup() {}`); an earlier draft of this
+    spec claimed `cancel` also released, which was wrong. A cancelled operation therefore keeps
+    its pump alive until `cleanup` or the connection ends. The rpc-server gives native handlers no
+    `on_dispose` hook (only the Node-forwarding fallback path takes one), so a subscription
+    whose operation is never cleaned up keeps its sender until the connection ends — the same
+    bound as `file-watcher`'s per-watcher subscriber list.
+  - **Input contract:** `stage` requires `operationId` and `localPath` to be strings and
+    errors otherwise. The TS original would have returned `ref: undefined`, which
+    `JSON.stringify` drops — a result object with no `ref`, which the caller then stores as an
+    attachment reference. A missing path is a contract violation, and failing it loudly is
+    better than handing back a `ref` that names nothing.
+  - Verified by tests: the stage result for a real file (bytes from `sizeBytes`, from
+    `stat`, and `0` for a missing path), `staged` always `false`, `adopt`/`cancel`/`cleanup`
+    answering `null`, an unknown event name subscribing to nothing, and an operation-scoped
+    `onDynamicProgress` subscription that exists but delivers no frame.
+

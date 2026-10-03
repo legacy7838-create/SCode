@@ -263,9 +263,8 @@ export function createSessionFacade(deps: CreateSessionFacadeDeps): SessionFacad
   return {
     close: async () => {
       closePromise ??= (async () => {
-        // To close the entrance, first block new scheduling and cancel in-flight Memory Extraction, and then wait for the link closure to be canceled.
+        // To close the entrance, first block new scheduling, then wait for the link closure to be canceled.
         deps.runtime.beginShutdown();
-        await deps.runtime.drainMemoryExtractions(60_000);
         // The engine is owned by this App, so you must actively stop it to close it.
         // The position is sandwiched between two constraints: after beginShutdown **, the final notification brought out by the settlement will be discarded.
         // (background-notifications.ts is not enqueued during shuttingDown), and the model of the session being closed will not be

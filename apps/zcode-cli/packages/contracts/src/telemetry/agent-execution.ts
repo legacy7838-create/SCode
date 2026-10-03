@@ -8,7 +8,6 @@ export const AgentTelemetryOperation = {
   ContextCompaction: "context_compaction",
   GoalCompletionVerification: "goal_completion_verification",
   GoalTitleGeneration: "goal_title_generation",
-  ProjectMemoryExtract: "project_memory_extract",
   ReadSessionContextExtract: "read_session_context_extract",
   ReadSessionContextSynthesize: "read_session_context_synthesize",
   SessionTitleGeneration: "session_title_generation",
@@ -148,7 +147,7 @@ export interface CompactionTraceStart {
 
 export type DetachedExecutionKind = "foreground" | "queued" | "background";
 export type DetachedTrigger = "user" | "turn" | "tool" | "scheduler" | "recovery" | "other";
-export type DetachedTargetKind = "session" | "goal" | "workspace" | "project_memory" | "other";
+export type DetachedTargetKind = "session" | "goal" | "workspace" | "other";
 
 export interface DetachedOperationTraceStart {
   causation?: AgentTelemetryCausation;

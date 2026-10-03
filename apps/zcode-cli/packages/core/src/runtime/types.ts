@@ -299,8 +299,6 @@ export interface EnqueueSubagentMessageInput {
 export interface MemoryRuntimeConfig {
   cliStorageRoot?: string;
   enabled?: boolean;
-  /** Whether to schedule the automatic Extraction after a successful Main turn; absent is treated as true. */
-  extractionEnabled?: boolean;
   storageRoot?: string;
   use?: boolean;
   workspaceIdentity?: string;
@@ -374,7 +372,6 @@ export interface AgentRuntimeDeps {
   contextBuilder?: ContextBuilder; // Optional, will be created from config
   now?: () => Date;
   isRemoteWorkspace?: () => boolean;
-  memoryRoot?: string;
 }
 
 export interface RuntimeModelFactoryInput {
@@ -423,8 +420,6 @@ export interface TurnResult {
  * and it never becomes a second source for the Session Selection.
  */
 export interface ModelExecutionContext {
-  /** Skips the automatic Project Memory Extraction for the current Turn only; it does not modify the Session Memory configuration. */
-  memoryExtraction?: "skip";
   selectionScope: "execution";
   requestDependencies?: ModelRequestDependencies;
   subagents?: {

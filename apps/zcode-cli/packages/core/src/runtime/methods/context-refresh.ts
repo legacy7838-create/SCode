@@ -15,12 +15,7 @@ export function rebuildContextPrefix(
     if (runtime.contextBuilder) {
       runtime.contextBuilder = runtime.createContextBuilderFromSnapshot(
         runtime.createConfigOnlyContextSnapshot(runtime.workingDirectory),
-        runtime.memoryRoot,
-        {
-          memoryIndexContent: runtime.memoryIndexContent,
-          model: options.model,
-          persistEnvInfo: false,
-        },
+        { model: options.model, persistEnvInfo: false },
       );
     }
     return options.turnRequestEntries ?? runtime.messageHistory.borrowReadOnlyRuntimeEntries();
@@ -29,11 +24,9 @@ export function rebuildContextPrefix(
   const contextSnapshot =
     runtime.contextSourceSnapshot ??
     runtime.createConfigOnlyContextSnapshot(runtime.workingDirectory);
-  runtime.contextBuilder = runtime.createContextBuilderFromSnapshot(
-    contextSnapshot,
-    runtime.memoryRoot,
-    { memoryIndexContent: runtime.memoryIndexContent, model: options.model },
-  );
+  runtime.contextBuilder = runtime.createContextBuilderFromSnapshot(contextSnapshot, {
+    model: options.model,
+  });
   const effectiveContextResult = runtime.contextBuilder.build();
   const contextEntries = buildContextHistoryEntries(effectiveContextResult);
   const canonicalEntries = runtime.messageHistory.borrowReadOnlyRuntimeEntries();

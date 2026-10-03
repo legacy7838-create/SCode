@@ -209,14 +209,6 @@ export type {
 // Hooks service — IHooksService is both a type (interface) and value (descriptor).
 export { IHooksService } from "./hooks/hooks.js";
 
-// Memory service — IMemoryService is both a type (interface) and value (descriptor).
-export {
-  IMemoryService,
-  PROJECT_MEMORY_FILE_CHANGED_ERROR_CODE,
-  PROJECT_MEMORY_PREVIEW_LIMIT_EXCEEDED_ERROR_CODE,
-} from "./memory/memory.js";
-export type { ProjectMemoryFileSummary, ProjectMemoryWorkspaceSummary } from "./memory/memory.js";
-
 export type { SessionRealtimePort } from "./session/sessionRealtimePort.js";
 
 // FileWatcher service — IFileWatcherService is both a type (interface) and value (descriptor)

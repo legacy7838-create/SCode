@@ -209,13 +209,12 @@ export function createOnboardingRecordService(
       return {
         onboardingOccupation: (occupation.success ? occupation.data : null) ?? "other",
         proactiveSuggestionsEnabled: latest.proactiveSuggestionsEnabled ?? false,
-        memoryEnabled: latest.memoryEnabled ?? false,
       };
     },
 
     async updateRecordPreferences(
       patch: Partial<
-        Pick<OnboardingRecordEntryInput, "memoryEnabled" | "proactiveSuggestionsEnabled">
+        Pick<OnboardingRecordEntryInput, "proactiveSuggestionsEnabled">
       >,
     ): Promise<void> {
       const userId = await options.loadUserId();

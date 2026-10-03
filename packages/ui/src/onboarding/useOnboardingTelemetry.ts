@@ -38,7 +38,6 @@ export function useOnboardingTelemetry({
   step,
   occupation,
   mode,
-  memory,
   suggestions,
   migration,
 }: {
@@ -47,7 +46,6 @@ export function useOnboardingTelemetry({
   step: 0 | 1 | 2;
   occupation: OccupationValue | null;
   mode: InterfaceMode | null;
-  memory: boolean;
   suggestions: boolean;
   migration: boolean;
 }) {
@@ -57,7 +55,7 @@ export function useOnboardingTelemetry({
       exposure.current = null;
       return;
     }
-    const preferenceValues = `${memory}:${suggestions}:${migration}`;
+    const preferenceValues = `${suggestions}:${migration}`;
     if (!exposure.current) {
       exposure.current = {
         ended: false,
@@ -88,7 +86,7 @@ export function useOnboardingTelemetry({
     if (step === 1) current.modeVisited = true;
     if (step === 2) current.preferencesVisited = true;
     // Not reset in cleanup: StrictMode effect replay is not a new product exposure.
-  }, [visible, step, mode, platform, memory, suggestions, migration]);
+  }, [visible, step, mode, platform, suggestions, migration]);
 
   return useCallback(
     (action: ExitAction, eventText: string) => {
@@ -98,7 +96,6 @@ export function useOnboardingTelemetry({
         ui_mode: current?.modeVisited && mode ? (mode === "office" ? "work" : "code") : "null",
         proactive_task_recommendations_enabled:
           current?.preferencesVisited && mode === "office" ? String(suggestions) : "null",
-        workspace_memory_enabled: current?.preferencesVisited ? String(memory) : "null",
         claude_code_history_migration_selected: current?.preferencesVisited
           ? String(migration)
           : "null",
@@ -122,6 +119,6 @@ export function useOnboardingTelemetry({
         );
       };
     },
-    [platform, occupation, mode, memory, suggestions, migration, step],
+    [platform, occupation, mode, suggestions, migration, step],
   );
 }

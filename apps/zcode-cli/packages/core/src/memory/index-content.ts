@@ -1,14 +1,5 @@
-import { Lexer } from "marked";
-
 const MEMORY_INDEX_LINE_LIMIT = 200;
 const MEMORY_INDEX_CHARACTER_LIMIT = 25_000;
-const LEADING_FRONTMATTER_PATTERN = /^---\s*\n[\s\S]*?---\s*\n?/u;
-const HTML_COMMENT_PATTERN = /<!--[\s\S]*?-->/gu;
-
-export function formatProjectMemoryIndexContent(content: string): string {
-  const withoutFrontmatter = content.replace(LEADING_FRONTMATTER_PATTERN, "");
-  return formatMemoryIndexContent(stripTopLevelMarkdownHtmlComments(withoutFrontmatter));
-}
 
 export function formatMemoryIndexContent(content: string): string {
   const trimmed = content.trim();
@@ -44,24 +35,4 @@ function formatBytes(value: number): string {
   const megabytes = kilobytes / 1024;
   if (megabytes < 1024) return `${megabytes.toFixed(1).replace(/\.0$/u, "")}MB`;
   return `${(megabytes / 1024).toFixed(1).replace(/\.0$/u, "")}GB`;
-}
-
-function stripTopLevelMarkdownHtmlComments(content: string): string {
-  if (!content.includes("<!--")) return content;
-
-  let result = "";
-  for (const token of new Lexer({ gfm: false }).lex(content)) {
-    if (token.type === "html") {
-      const trimmedToken = token.raw.trimStart();
-      if (trimmedToken.startsWith("<!--") && trimmedToken.includes("-->")) {
-        const withoutComments = token.raw.replace(HTML_COMMENT_PATTERN, "");
-        // Only delete top-level HTML comment tokens recognized by the Markdown lexer;
-        // Comments within lists, blockquotes, paragraphs, and code tokens must remain provider-visible.
-        if (withoutComments.trim().length > 0) result += withoutComments;
-        continue;
-      }
-    }
-    result += token.raw;
-  }
-  return result;
 }

@@ -29,7 +29,6 @@ import { toast } from "@/components/ui/toast.js";
 import { DesktopWindowFrame } from "@/DesktopWindowFrame.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { usePlatform } from "@/hooks/usePlatform.js";
-import { getPathLeaf } from "@/lib/path.js";
 import { useProviderSettingsView } from "@/hooks/useProviderSettingsView.js";
 import { useUsageEntitlement } from "@/hooks/useUsageEntitlement.js";
 import {
@@ -65,7 +64,6 @@ import { AutomationsSection } from "@/settings/AutomationsSection.js";
 import { SegmentPill } from "@/settings/PluginStoreListView.js";
 import { PluginsSection } from "@/settings/PluginsSection.js";
 import { WorkspaceFileSearchSection } from "@/settings/WorkspaceFileSearchSection.js";
-import { MemorySettingsSection } from "@/settings/MemorySettingsSection.js";
 import { ShortcutSettingsSection } from "@/settings/ShortcutSettingsSection.js";
 import { MigrationSection } from "@/settings/MigrationSection.js";
 import { SETTINGS_FRAME_CONTENT_CLASSNAME } from "@/settings/SettingsPageParts.js";
@@ -642,24 +640,8 @@ export function SettingsPage({
   );
   const selectDirectory = useSelectDirectory();
   const services = useServices();
-  const onboardingRecordService = services.onboardingRecordService;
   const localHostServices = useBaseWorkspaceServices();
   const { settings: sharedSettings, update: updateSharedSettings } = useSettings();
-  const memoryWorkspaceDisplayNames = useMemo(() => {
-    const names = new Set<string>();
-    // The project order of Memory Scope is based on settings.json recentProjects; the open
-    // Workspace only replenishes projects that have not yet been persisted and cannot preempt the sorting of recent projects.
-    for (const path of sharedSettings?.recentProjects ?? []) {
-      const name = getPathLeaf(path).trim();
-      if (name) names.add(name);
-    }
-    for (const tab of workspaceTabs) {
-      const name = tab.label.trim() || getPathLeaf(tab.workspacePath).trim();
-      if (name) names.add(name);
-    }
-    return [...names];
-  }, [sharedSettings?.recentProjects, workspaceTabs]);
-  const memoryEnabled = sharedSettings?.memoryEnabled === true;
   const nativeSearchEnhancementsEnabled = sharedSettings?.nativeSearchEnhancementsEnabled !== false;
   const askUserQuestionAutoResolutionEnabled =
     sharedSettings?.askUserQuestionAutoResolutionEnabled !== false;
@@ -887,29 +869,6 @@ export function SettingsPage({
         action: "toggle_model_io_retention",
         trigger: "switch",
         operation: () => updateSharedSettings({ modelIoFullRetentionEnabled: enabled }),
-        completed: {
-          resultSource: "shared_settings",
-          stateAfter: enabled ? "enabled" : "disabled",
-        },
-      });
-    },
-    [updateSharedSettings],
-  );
-  const handleMemoryEnabledChange = useCallback(
-    async (enabled: boolean) => {
-      await runSettingsActionAsync({
-        featureId: "settings.memory",
-        action: "toggle_memory",
-        trigger: "switch",
-        operation: async () => {
-          await updateSharedSettings({ memoryEnabled: enabled });
-          // Manually modify the reverse writeback record, and the number change synchronization will not revive the old value; failure will not block the switch.
-          await onboardingRecordService
-            ?.updateRecordPreferences({ memoryEnabled: enabled })
-            .catch((cause: unknown) => {
-              console.warn("[settings] failed to write back onboarding record", String(cause));
-            });
-        },
         completed: {
           resultSource: "shared_settings",
           stateAfter: enabled ? "enabled" : "disabled",
@@ -1733,17 +1692,6 @@ export function SettingsPage({
                               onConsumePendingModelProviderTarget={() =>
                                 setPendingModelProviderTarget(undefined)
                               }
-                            />
-                          </ServiceProvider>
-                        ) : activeSection === "memory" ? (
-                          <ServiceProvider services={localHostServices}>
-                            {/* Memory catalog always uses the local host to prevent the remote workspace from misreading local data. */}
-                            <MemorySettingsSection
-                              memoryEnabled={memoryEnabled}
-                              memoryService={localHostServices.memoryService}
-                              onMemoryEnabledChange={handleMemoryEnabledChange}
-                              projectMemoryViewerAvailable={Boolean(isDesktop)}
-                              workspaceDisplayNames={memoryWorkspaceDisplayNames}
                             />
                           </ServiceProvider>
                         ) : activeSection === "mcp" ? (

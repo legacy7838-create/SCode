@@ -35,7 +35,6 @@ export type GlobalOptions = {
   force: boolean;
   json: boolean;
   locale?: GlobalLocale;
-  memoryBench?: boolean;
   noColor: boolean;
   outputFormat?: GlobalOutputFormat;
   verbose: boolean;

@@ -19,7 +19,6 @@ export const onboardingRecordEntrySchema = z.object({
   userId: z.string().min(1).nullable(),
   occupation: onboardingOccupationSchema,
   interfaceMode: onboardingInterfaceModeSchema,
-  memoryEnabled: z.boolean().nullable(),
   proactiveSuggestionsEnabled: z.boolean().nullable(),
   completedAt: z.string().min(1),
   uploadState: z.literal("pending"),

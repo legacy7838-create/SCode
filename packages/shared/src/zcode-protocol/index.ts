@@ -1706,7 +1706,6 @@ export type ZCodeModelContextBudgetStrategy = z.infer<typeof zcodeModelContextBu
 export const zcodeSessionRuntimePreferencesResultSchema = z
   .object({
     nativeSearchEnhancementsEnabled: z.boolean(),
-    memoryEnabled: z.boolean().default(false),
     askUserQuestionAutoResolutionEnabled: z.boolean().default(true),
     integratedTerminalShell: integratedTerminalShellSelectionSchema.optional(),
     // Compatible with older Hosts: Use the current default policy at protocol parsing boundaries when fields are missing.

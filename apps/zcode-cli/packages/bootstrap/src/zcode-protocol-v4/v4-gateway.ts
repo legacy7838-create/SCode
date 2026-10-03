@@ -260,8 +260,6 @@ export interface V4GatewayHost {
    * value); the same applies when not implemented (older host / test stub).
    */
   getSessionConfigSeed?(sessionId: string): SessionConfigSeed | null;
-  /** Reads only the App switch fixed at session creation time; it does not read live settings or infer Memory tool usage. */
-  getSessionMemoryEnabled?(sessionId: string): boolean | undefined;
   /**
    * Cold-restore usage seed: the transcript synthesis path may only be able to produce a placeholder
    * ModelComplete with 0 / the default window; the host can supply the real watermark from the
@@ -816,7 +814,6 @@ export class ConversationV4Gateway {
         this.host.getSessionConfigSeed?.(sessionId) ??
         undefined;
       const fact = this.telemetryNormalizer.normalize(sessionId, event, {
-        memoryEnabled: this.host.getSessionMemoryEnabled?.(sessionId),
         modelName: config?.model,
         modelProvider: config?.provider,
       });
@@ -2561,18 +2558,9 @@ export class ConversationV4Gateway {
         this.inbox.pinLiveInput(outcome.envelope.sessionId, durableInputIntent);
       }
       const result = await this.host.executeCommand(outcome.envelope, admission);
-      // The new/side chat command adopts the switch of the result session to avoid accidentally recording the parent session or current App settings to the new session.
-      const telemetrySessionId =
-        result?.type === "createSession" || result?.type === "createSelectionSideSession"
-          ? result.sessionId
-          : outcome.envelope.sessionId;
-      const memoryEnabled = telemetrySessionId
-        ? this.host.getSessionMemoryEnabled?.(telemetrySessionId)
-        : undefined;
       const final = {
         status: "accepted" as const,
         ...(result ? { result } : {}),
-        ...(memoryEnabled !== undefined ? { memoryEnabled } : {}),
       };
       return settleOnce(final);
     } catch (error) {

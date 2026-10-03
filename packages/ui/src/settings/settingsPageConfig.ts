@@ -9,7 +9,6 @@ import {
   Sun,
   BarChart3,
   AlarmClock,
-  Brain,
   Cable,
   WandSparkles,
   Keyboard,
@@ -68,12 +67,6 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     icon: Package,
     titleId: "settings.modelProviderTitle",
     groupId: "basics",
-  },
-  {
-    id: "memory",
-    icon: Brain,
-    titleId: "settings.memory",
-    groupId: "agentCapabilities",
   },
   {
     id: "subagents",

@@ -76,8 +76,6 @@ import { discardPersistedPendingSteerInputs } from "./steering.js";
 import { createDefaultSubagentPort } from "./subagent.js";
 import { ensureContextInitialized, getSkillCatalog } from "./context.js";
 import { createContextBuilderFromSnapshot } from "./context.js";
-import { loadProjectMemoryRoot } from "./context.js";
-import { logMemorySkipped } from "./context.js";
 import { injectPluginReferenceReminderFromTurn } from "./plugin-reference.js";
 import { initializeMcp } from "./mcp.js";
 import { startMcpStartup } from "./mcp.js";
@@ -189,11 +187,6 @@ import { generateWorkspaceText, testModelConnectivity } from "./workspace-genera
 import { maybeStartGoalSummaryTitleGeneration } from "./goal-summary-title.js";
 import { maybeStartSessionTitleGenerationFromExternalInput } from "./session-title.js";
 import { setCustomSessionTitle } from "./session-title.js";
-import {
-  drainMemoryExtractions,
-  isProjectMemoryEnabled,
-} from "../helpers/project-memory-extraction.js";
-
 type AgentRuntimeConstructor = { prototype: object };
 
 export function installAgentRuntimeMethods(ctor: AgentRuntimeConstructor): void {
@@ -278,8 +271,6 @@ export function installAgentRuntimeMethods(ctor: AgentRuntimeConstructor): void 
   proto.ensureContextInitialized = ensureContextInitialized;
   proto.getSkillCatalog = getSkillCatalog;
   proto.createContextBuilderFromSnapshot = createContextBuilderFromSnapshot;
-  proto.loadProjectMemoryRoot = loadProjectMemoryRoot;
-  proto.logMemorySkipped = logMemorySkipped;
   proto.injectPluginReferenceReminderFromTurn = injectPluginReferenceReminderFromTurn;
   proto.initializeMcp = initializeMcp;
   proto.startMcpStartup = startMcpStartup;
@@ -385,6 +376,4 @@ export function installAgentRuntimeMethods(ctor: AgentRuntimeConstructor): void 
   proto.persistPart = persistPart;
   proto.rebuildProjection = rebuildProjection;
   proto.generateWorkspaceText = generateWorkspaceText;
-  proto.drainMemoryExtractions = drainMemoryExtractions;
-  proto.isProjectMemoryEnabled = isProjectMemoryEnabled;
 }

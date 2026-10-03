@@ -358,39 +358,6 @@ export const TID_RESOURCE_MANAGER_STORAGE_CONFIRM_ACCEPT =
 /** Resource manager "Storage" tab: cancel button of the clean confirmation dialog */
 export const TID_RESOURCE_MANAGER_STORAGE_CONFIRM_CANCEL =
   "resource-manager-storage-confirm-cancel";
-/** Master switch in the Memory settings section */
-export const TID_SETTINGS_MEMORY_SWITCH = "settings-memory-switch";
-/** Refresh button in the Memory settings section */
-export const TID_SETTINGS_MEMORY_REFRESH = "settings-memory-refresh";
-/** Memory workspace scope menu trigger */
-export const TID_SETTINGS_MEMORY_SCOPE_TRIGGER = "settings-memory-scope-trigger";
-/** Memory workspace scope icon */
-export const TID_SETTINGS_MEMORY_SCOPE_ICON = "settings-memory-scope-icon";
-/** Number of files in the current Memory workspace */
-export const TID_SETTINGS_MEMORY_COUNT = "settings-memory-count";
-/** Memory file-name search input */
-export const TID_SETTINGS_MEMORY_SEARCH_INPUT = "settings-memory-search-input";
-/** Clear button for the Memory file-name search */
-export const TID_SETTINGS_MEMORY_SEARCH_CLEAR = "settings-memory-search-clear";
-/** Button that goes from the Memory project file list back to the project list */
-export const TID_SETTINGS_MEMORY_BACK_PROJECTS = "settings-memory-back-projects";
-/** Button that goes from a Memory file body back to the project file list */
-export const TID_SETTINGS_MEMORY_BACK_MEMORIES = "settings-memory-back-memories";
-/** Memory workspace row (dynamic suffix is the workspace id) */
-export const TID_SETTINGS_MEMORY_WORKSPACE = "settings-memory-workspace";
-
-/** Memory file row (dynamic suffix is the file name) */
-export const TID_SETTINGS_MEMORY_FILE = "settings-memory-file";
-/** Memory file type icon (dynamic suffix is the file name) */
-export const TID_SETTINGS_MEMORY_FILE_ICON = "settings-memory-file-icon";
-/** Memory file name (dynamic suffix is the file name) */
-export const TID_SETTINGS_MEMORY_FILE_NAME = "settings-memory-file-name";
-/** Memory file updated-at (dynamic suffix is the file name) */
-export const TID_SETTINGS_MEMORY_FILE_UPDATED_AT = "settings-memory-file-updated-at";
-/** Memory file editor action group (dynamic suffix is the file name) */
-export const TID_SETTINGS_MEMORY_FILE_EDITOR_ACTIONS = "settings-memory-file-editor-actions";
-/** Raw Markdown preview of a Memory file */
-export const TID_SETTINGS_MEMORY_PREVIEW = "settings-memory-preview";
 /** AskUserQuestion auto-continue toggle in General settings */
 export const TID_SETTINGS_ASK_USER_QUESTION_AUTO_RESOLUTION_SWITCH =
   "settings-ask-user-question-auto-resolution-switch";

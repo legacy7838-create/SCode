@@ -66,7 +66,6 @@ export function OccupationOnboarding({
   const preferences = step === 2;
   const requestOnboardingDialog = useZCodeStore((state) => state.requestOnboardingDialog);
   const [migration, setMigration] = useState(false);
-  const [memory, setMemory] = useState(savedInterfaceMode === "office");
   const [suggestions, setSuggestions] = useState(savedInterfaceMode === "office");
   const suggestionsEditedRef = useRef(false);
   const [saving, setSaving] = useState(false);
@@ -91,7 +90,6 @@ export function OccupationOnboarding({
     step,
     occupation,
     mode,
-    memory,
     suggestions,
     migration,
   });
@@ -123,7 +121,6 @@ export function OccupationOnboarding({
         setInterfaceMode(nextMode);
         setMode(nextMode);
         if (nextMode !== mode) {
-          setMemory(nextMode === "office");
           if (nextMode === "office" && !suggestionsEditedRef.current) setSuggestions(true);
         }
         return;
@@ -197,8 +194,6 @@ export function OccupationOnboarding({
     );
     const initialMode = entry?.interfaceMode ?? savedInterfaceMode;
     setMode(initialMode);
-    // Programming mode turns off active working memory by default; office mode only restores the user's previous check.
-    setMemory(initialMode === "office" && (entry?.memoryEnabled ?? true));
     setSuggestions(entry?.proactiveSuggestionsEnabled ?? initialMode === "office");
     setMigration(false);
     setError(false);
@@ -234,7 +229,6 @@ export function OccupationOnboarding({
         // The settings side maintains the existing semantics: skipping conservative default values (career other/preference level),
         // The distinction of "skipping counts as an answer" is only reflected in onboarding-record.json.
         onboardingOccupation: occupation ?? "other",
-        memoryEnabled: skip ? false : memory,
         proactiveSuggestionsEnabled: !skip && mode === "office" && suggestions,
       });
       reportEnd();
@@ -253,7 +247,6 @@ export function OccupationOnboarding({
           await appendOnboardingRecord(onboardingRecord, platform.getDeviceId(), {
             occupation,
             interfaceMode: mode,
-            memoryEnabled: skip ? null : memory,
             proactiveSuggestionsEnabled: skip ? null : mode === "office" && suggestions,
             completedAt: new Date().toISOString(),
           });
@@ -319,7 +312,6 @@ export function OccupationOnboarding({
                       onSelect={(value) => {
                         markUserEdited();
                         // Re-selecting the current programming mode should also clear the default check from the old record.
-                        setMemory(value === "office");
                         if (value !== mode) {
                           if (value === "office" && !suggestionsEditedRef.current)
                             setSuggestions(true);
@@ -331,7 +323,7 @@ export function OccupationOnboarding({
                     />
                   ) : preferences ? (
                     <div className="mt-8 space-y-3">
-                      {(["suggestions", "memory", "migration"] as const)
+                      {(["suggestions", "migration"] as const)
                         .filter((key) => key !== "suggestions" || mode === "office")
                         .map((key) => (
                           <label
@@ -339,18 +331,11 @@ export function OccupationOnboarding({
                             className="grid cursor-pointer grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2 rounded-xl border border-card-border bg-card dark:bg-surface/40 p-5 text-ui-base transition-colors hover:bg-surface-hover"
                           >
                             <Checkbox
-                              checked={
-                                key === "migration"
-                                  ? migration
-                                  : key === "memory"
-                                    ? memory
-                                    : suggestions
-                              }
+                              checked={key === "migration" ? migration : suggestions}
                               disabled={saving}
                               onCheckedChange={(checked) => {
                                 markUserEdited();
                                 if (key === "migration") setMigration(checked === true);
-                                else if (key === "memory") setMemory(checked === true);
                                 else {
                                   suggestionsEditedRef.current = true;
                                   setSuggestions(checked === true);

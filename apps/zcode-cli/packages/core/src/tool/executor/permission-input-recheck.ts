@@ -8,7 +8,6 @@ import {
 
 import type { PermissionDecisionResult, PermissionContext } from "../../permission/service.js";
 import type { ExecutableToolCall, ToolEntry } from "../types.js";
-import { applyMemoryFilePermission, targetsMemoryFile } from "./memory-file-permission.js";
 import {
   resolveRuntimePermissionCapability,
   resolveRuntimePermissionContext,
@@ -53,15 +52,6 @@ export async function recheckPermissionHookModifiedInput(input: {
     input.projectRules,
     rulePolicy,
   );
-  decision = applyMemoryFilePermission({
-    decision,
-    executionInput: input.modifiedInput,
-    memoryRoot: input.deps.getMemoryRoot?.(),
-    toolName: input.toolCall.name,
-    workingDirectory: input.deps.getWorkingDirectory(),
-    workspaceRoot: input.deps.getWorkspaceRoot(),
-  });
-
   if (decision.decision === "deny") {
     return {
       brokerResult: { decision: "deny", reason: decision.reason },
@@ -70,14 +60,7 @@ export async function recheckPermissionHookModifiedInput(input: {
   }
   if (
     decision.decision !== "ask" ||
-    (decision.ruleId !== "rule.project.ask" &&
-      !targetsMemoryFile({
-        executionInput: input.modifiedInput,
-        memoryRoot: input.deps.getMemoryRoot?.(),
-        toolName: input.toolCall.name,
-        workingDirectory: input.deps.getWorkingDirectory(),
-        workspaceRoot: input.deps.getWorkspaceRoot(),
-      }))
+    decision.ruleId !== "rule.project.ask"
   ) {
     return {};
   }
