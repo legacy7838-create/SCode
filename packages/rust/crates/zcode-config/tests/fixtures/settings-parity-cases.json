@@ -1,0 +1,526 @@
+{
+ "settings": {
+  "T27-scalar": 5,
+  "T27-array": [
+   1,
+   2
+  ],
+  "T27-null": null,
+  "T28-unknown-key": {
+   "totallyUnknown": 1,
+   "keepAwakeWhileRunning": false
+  },
+  "bool-string": {
+   "terminalInheritSystemProfile": "yes"
+  },
+  "int-float": {
+   "lastActiveTabIndex": 1.5
+  },
+  "zoom-over-max": {
+   "desktopZoomLevel": 6
+  },
+  "zoom-under-min": {
+   "desktopZoomLevel": -4
+  },
+  "archive-over": {
+   "taskAutoArchiveOlderThanDays": 366
+  },
+  "archive-zero": {
+   "taskAutoArchiveOlderThanDays": 0
+  },
+  "T29-window-not-object": {
+   "desktopWindowSize": "big"
+  },
+  "T29-window-small": {
+   "desktopWindowSize": {
+    "width": 479,
+    "height": 640,
+    "maximized": false
+   }
+  },
+  "T29-window-float": {
+   "desktopWindowSize": {
+    "width": 480.5,
+    "height": 640,
+    "maximized": false
+   }
+  },
+  "window-missing-max": {
+   "desktopWindowSize": {
+    "width": 800,
+    "height": 700
+   }
+  },
+  "T30-origin-empty": {
+   "zcodeEndpointOrigin": ""
+  },
+  "T30-origin-spaces": {
+   "zcodeEndpointOrigin": "   "
+  },
+  "T30-origin-ftp": {
+   "zcodeEndpointOrigin": "ftp://x"
+  },
+  "T30-origin-junk": {
+   "zcodeEndpointOrigin": "not a url"
+  },
+  "origin-url-path": {
+   "zcodeEndpointOrigin": "https://zcode.z.ai:8443/ignored/path"
+  },
+  "origin-relative": {
+   "zcodeEndpointOrigin": "zcode.z.ai"
+  },
+  "T31-tray-missing": {
+   "closeToTrayOnWindows": false
+  },
+  "T32-reasoning-missing": {
+   "messageStreamShowReasoning": false
+  },
+  "family-domain-enum": {
+   "providerFamilyDomain": "warp"
+  },
+  "family-domain-number": {
+   "providerFamilyDomain": 42
+  },
+  "shell-unknown-mode": {
+   "integratedTerminalShell": {
+    "mode": "powershell"
+   }
+  },
+  "shell-missing-fields": {
+   "integratedTerminalShell": {
+    "mode": "shell"
+   }
+  },
+  "shell-bad-dialect": {
+   "integratedTerminalShell": {
+    "mode": "shell",
+    "dialect": "fish",
+    "id": "x",
+    "label": "y",
+    "path": "z"
+   }
+  },
+  "shell-empty-id": {
+   "integratedTerminalShell": {
+    "mode": "shell",
+    "dialect": "cmd",
+    "id": "  ",
+    "label": "y",
+    "path": "z"
+   }
+  },
+  "session-array-empty-entry": {
+   "lastWorkspaceSession": [
+    {}
+   ]
+  },
+  "session-local-no-path": {
+   "lastWorkspaceSession": [
+    {
+     "kind": "local"
+    }
+   ]
+  },
+  "session-bad-kind": {
+   "lastWorkspaceSession": [
+    {
+     "kind": "weird"
+    }
+   ]
+  },
+  "session-remote-no-target": {
+   "lastWorkspaceSession": [
+    {
+     "kind": "remote",
+     "workspacePath": "/x",
+     "lastOpenedAt": 1,
+     "lastConnectionStatus": "connected"
+    }
+   ]
+  },
+  "session-local-ok": {
+   "lastWorkspaceSession": [
+    {
+     "kind": "local",
+     "workspacePath": "/x",
+     "workspacePurpose": "conversation"
+    }
+   ]
+  },
+  "session-local-bad-purpose": {
+   "lastWorkspaceSession": [
+    {
+     "kind": "local",
+     "workspacePath": "/x",
+     "workspacePurpose": "bogus"
+    }
+   ]
+  },
+  "session-remote-bad-status": {
+   "lastWorkspaceSession": [
+    {
+     "kind": "remote",
+     "workspacePath": "/x",
+     "target": {
+      "kind": "ssh",
+      "host": "h",
+      "username": "u",
+      "sshConfigAlias": "a"
+     },
+     "lastOpenedAt": -1,
+     "lastConnectionStatus": "maybe"
+    }
+   ]
+  },
+  "recent-string": {
+   "recentProjects": "nope"
+  },
+  "font-spaces": {
+   "terminalFontFamily": "   "
+  },
+  "font-ok": {
+   "terminalFontFamily": "  JetBrains  "
+  },
+  "font-number": {
+   "terminalFontFamily": 42
+  },
+  "basedir-spaces": {
+   "dataBaseDir": "   "
+  },
+  "basedir-ok": {
+   "dataBaseDir": " /data "
+  },
+  "behavior-enum": {
+   "zcodeInteractionBehavior": "rush"
+  },
+  "occupation-bad": {
+   "onboardingOccupation": "hacker"
+  },
+  "occupation-null": {
+   "onboardingOccupation": null
+  },
+  "shortcut-bad-value": {
+   "shortcutBindings": {
+    "save": 5
+   }
+  },
+  "task-map-bad-value": {
+   "lastActiveTaskByWorkspace": {
+    "/a": 5
+   }
+  },
+  "notes-empty-title": {
+   "pendingPostUpdateReleaseNotes": {
+    "version": "",
+    "title": "t",
+    "markdown": "m"
+   }
+  },
+  "notes-number-title": {
+   "pendingPostUpdateReleaseNotes": {
+    "version": "1",
+    "title": 5,
+    "markdown": "m"
+   }
+  },
+  "notes-unknown-key": {
+   "pendingPostUpdateReleaseNotes": {
+    "version": "1",
+    "title": "t",
+    "markdown": "m",
+    "extra": 1
+   }
+  },
+  "notes-bad-locale": {
+   "pendingPostUpdateReleaseNotes": {
+    "version": "1",
+    "title": "t",
+    "markdown": "m",
+    "releaseNotesByLocale": {
+     "fr-FR": {
+      "title": "x",
+      "markdown": "y"
+     }
+    }
+   }
+  },
+  "skipped-bad-channel": {
+   "skippedElectronUpdateVersions": {
+    "nightly": "1.0"
+   }
+  },
+  "skipped-empty-value": {
+   "skippedElectronUpdateVersions": {
+    "stable": ""
+   }
+  },
+  "family-selections-unknown-kind": {
+   "providerFamilyConnectionSelections": {
+    "zai": {
+     "kind": "half-plan"
+    }
+   }
+  },
+  "family-selections-empty-product": {
+   "providerFamilyConnectionSelections": {
+    "zai": {
+     "kind": "team-coding-plan",
+     "productId": "",
+     "organizationId": "o",
+     "projectId": "p"
+    }
+   }
+  },
+  "family-selections-unknown-family": {
+   "providerFamilyConnectionSelections": {
+    "warp": {
+     "kind": "start-plan"
+    }
+   }
+  },
+  "family-selections-ok": {
+   "providerFamilyConnectionSelections": {
+    "zai": {
+     "kind": "start-plan"
+    },
+    "bigmodel": {
+     "kind": "team-coding-plan",
+     "productId": "  p  ",
+     "organizationId": "o",
+     "projectId": "p2"
+    }
+   }
+  },
+  "viewport-bad-mode": {
+   "embeddedBrowserViewportPreference": {
+    "mode": "cinema",
+    "viewport": {
+     "width": 393,
+     "height": 852
+    },
+    "zoom": "fit"
+   }
+  },
+  "viewport-unknown-key": {
+   "embeddedBrowserViewportPreference": {
+    "mode": "normal",
+    "viewport": {
+     "width": 393,
+     "height": 852
+    },
+    "zoom": "fit",
+    "extra": 1
+   }
+  },
+  "viewport-width-low": {
+   "embeddedBrowserViewportPreference": {
+    "mode": "normal",
+    "viewport": {
+     "width": 319,
+     "height": 852
+    },
+    "zoom": "fit"
+   }
+  },
+  "viewport-ok": {
+   "embeddedBrowserViewportPreference": {
+    "mode": "responsive",
+    "viewport": {
+     "width": 393,
+     "height": 852
+    },
+    "zoom": "150"
+   }
+  },
+  "mixed-valid-full": {
+   "recentProjects": [
+    "/a"
+   ],
+   "terminalInheritSystemProfile": true,
+   "desktopZoomLevel": 2,
+   "desktopWindowSize": {
+    "width": 1200,
+    "height": 800,
+    "maximized": false
+   },
+   "zcodeEndpointOrigin": "https://zcode.z.ai:8443/ignored/path",
+   "closeToTrayOnWindows": false,
+   "closeToTrayOnWindowsMigrationInitialized": false,
+   "messageStreamShowReasoning": false,
+   "messageStreamShowReasoningMigrationInitialized": false,
+   "providerFamilyDomain": "zai",
+   "lastActiveTabIndex": 3,
+   "dataBaseDir": "/data",
+   "taskAutoArchiveOlderThanDays": 30,
+   "lastWorkspaceSession": [
+    {
+     "kind": "remote",
+     "workspacePath": "/r",
+     "target": {
+      "kind": "ssh",
+      "host": "h",
+      "username": "u",
+      "sshConfigAlias": "a",
+      "assetInstallMode": "remote-download"
+     },
+     "lastOpenedAt": 5,
+     "lastConnectionStatus": "failed",
+     "lastConnectionError": "x"
+    }
+   ]
+  },
+  "int-and-range": {
+   "taskAutoArchiveOlderThanDays": 0.5
+  },
+  "recent-non-string": {
+   "recentProjects": [
+    5
+   ]
+  },
+  "notes-bad-value-after-key": {
+   "pendingPostUpdateReleaseNotes": {
+    "version": "1",
+    "title": "t",
+    "markdown": "m",
+    "releaseNotesByLocale": {
+     "en-US": {
+      "title": "",
+      "markdown": 5
+     }
+    }
+   }
+  },
+  "occupation-number": {
+   "onboardingOccupation": 7
+  },
+  "shell-no-mode": {
+   "integratedTerminalShell": {}
+  },
+  "shell-mode-number": {
+   "integratedTerminalShell": {
+    "mode": 5
+   }
+  },
+  "family-no-kind": {
+   "providerFamilyConnectionSelections": {
+    "zai": {}
+   }
+  },
+  "shortcut-not-object": {
+   "shortcutBindings": 5
+  },
+  "task-map-number": {
+   "lastActiveTaskByWorkspace": 5
+  },
+  "task-map-bad-elem": {
+   "lastActiveTaskByWorkspace": {
+    "/a": 5
+   }
+  },
+  "notes-not-object": {
+   "pendingPostUpdateReleaseNotes": 5
+  },
+  "skipped-not-object": {
+   "skippedElectronUpdateVersions": 5
+  },
+  "viewport-not-object": {
+   "embeddedBrowserViewportPreference": 5
+  }
+ },
+ "patch": {
+  "patch-origin-bad-string": {
+   "zcodeEndpointOrigin": "ftp://x"
+  },
+  "patch-origin-number": {
+   "zcodeEndpointOrigin": 42
+  },
+  "patch-origin-empty": {
+   "zcodeEndpointOrigin": ""
+  },
+  "patch-unknown": {
+   "unknownKey": 1
+  },
+  "patch-domain-empty": {
+   "providerFamilyDomain": ""
+  },
+  "patch-domain-untrimmed": {
+   "providerFamilyDomain": "  zai  "
+  },
+  "patch-domain-bad": {
+   "providerFamilyDomain": "warp"
+  },
+  "patch-wrong-type": {
+   "lastActiveTabIndex": "3"
+  },
+  "patch-font-empty": {
+   "terminalFontFamily": ""
+  },
+  "patch-window-small": {
+   "desktopWindowSize": {
+    "width": 479,
+    "height": 640,
+    "maximized": false
+   }
+  },
+  "patch-viewport-unknown": {
+   "embeddedBrowserViewportPreference": {
+    "mode": "normal",
+    "viewport": {
+     "width": 393,
+     "height": 852
+    },
+    "zoom": "fit",
+    "extra": 1
+   }
+  },
+  "patch-shell-auto": {
+   "integratedTerminalShell": {
+    "mode": "auto"
+   }
+  },
+  "patch-family-selection-bad": {
+   "providerFamilyConnectionSelections": {
+    "zai": {
+     "kind": "half"
+    }
+   }
+  },
+  "patch-refine-package": {
+   "lastWorkspaceSession": [
+    {
+     "kind": "remote",
+     "workspacePath": "/x",
+     "target": {
+      "kind": "ssh",
+      "host": "h",
+      "username": "u",
+      "sshConfigAlias": "a",
+      "resourcePackages": {
+       "selectedPackageIds": [
+        "no-such-pkg"
+       ]
+      }
+     },
+     "lastOpenedAt": 1,
+     "lastConnectionStatus": "connected"
+    }
+   ]
+  },
+  "patch-two-bad-order": {
+   "providerFamilyDomain": "warp",
+   "desktopZoomLevel": 9
+  },
+  "patch-two-bad-order-rev": {
+   "desktopZoomLevel": 9,
+   "providerFamilyDomain": "warp"
+  },
+  "patch-strict-member-unknown": {
+   "providerFamilyConnectionSelections": {
+    "zai": {
+     "kind": "start-plan",
+     "extra": 1
+    }
+   }
+  }
+ }
+}

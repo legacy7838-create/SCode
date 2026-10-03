@@ -21,6 +21,7 @@ serde = { workspace = true }
 # re-serialising in sorted-key order would change the bytes of `setting.json` on
 # the next write. See docs/specs/rust-native-config.md §6 R4.
 serde_json = { workspace = true }
+url = { workspace = true }
 sha2 = { workspace = true }
 
 [features]
@@ -29,3 +30,4 @@ napi-exports = []
 
 [dev-dependencies]
 serde_json = { workspace = true }
+url = { workspace = true }

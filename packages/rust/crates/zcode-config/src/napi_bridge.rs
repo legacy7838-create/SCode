@@ -21,6 +21,33 @@ use crate::{
     StoreParseResult,
 };
 
+// ---------------------------------------------------------------------------
+// Settings schema (spec §3.4, rows T26–T41)
+// ---------------------------------------------------------------------------
+
+/// `appSettingsSchema` over file text. Synchronous by design (§3.6): a
+/// 51-field settings parse is pure compute over text the caller already holds
+/// and measures well under the 1 ms line.
+#[napi(js_name = "parseSettingsContent")]
+pub fn parse_settings_content_binding(content: String) -> String {
+    let result = crate::settings::parse_settings_content(&content);
+    serde_json::to_string(&result).expect("serialise")
+}
+
+/// `appSettingsPatchSchema` over a parsed patch. Returned as one JSON string —
+/// `{ "ok": true, "patch": … }` or `{ "ok": false, "issues": […] }` — so the
+/// caller branches instead of catching an exception across the boundary.
+#[napi(js_name = "parseSettingsPatch")]
+pub fn parse_settings_patch_binding(patch_json: String) -> Result<String, napi::Error> {
+    let patch: serde_json::Value =
+        serde_json::from_str(&patch_json).map_err(|error| napi::Error::new(napi::Status::InvalidArg, error.to_string()))?;
+    let encoded = match crate::settings::parse_settings_patch(&patch) {
+        Ok(patch) => serde_json::json!({ "ok": true, "patch": patch }),
+        Err(issues) => serde_json::json!({ "ok": false, "issues": issues }),
+    };
+    serde_json::to_string(&encoded).map_err(|error| napi::Error::new(napi::Status::GenericFailure, error.to_string()))
+}
+
 /// The wire shape returned to TypeScript.
 ///
 /// `status` is a string rather than the enum above because napi does not marshal a

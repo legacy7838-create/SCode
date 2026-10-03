@@ -28,6 +28,8 @@ interface NativeConfig {
   resolveWorkspaceHookTrustStorePath(home: string, storageDir: string | null): string;
   parseWorkspaceHookTrustStore(content: string): string | null;
   parseWorkspaceHookTrustStoreAsync(content: string): Promise<string | null>;
+  parseSettingsContent(content: string): string;
+  parseSettingsPatch(patchJson: string): string;
 }
 
 function native(): NativeConfig {
@@ -125,4 +127,44 @@ export function parseWorkspaceHookTrustStore(content: string): string | null {
  */
 export function parseWorkspaceHookTrustStoreAsync(content: string): Promise<string | null> {
   return native().parseWorkspaceHookTrustStoreAsync(content);
+}
+
+// ---------------------------------------------------------------------------
+// The AppSettings schema (§3.4)
+// ---------------------------------------------------------------------------
+
+/** One `{ path, message }` validation issue; `path` is dotted, "" is `<root>`. */
+export interface SettingsIssue {
+  readonly path: string;
+  readonly message: string;
+}
+
+export interface SettingsParseResult {
+  readonly status: "ok" | "invalid-json" | "schema-invalid";
+  /** The parsed settings with defaults applied; `null` unless `status` is `ok`. */
+  readonly settings: Record<string, unknown> | null;
+  /** The raw-value migration predicate (T33/T34); `false` unless `status` is `ok`. */
+  readonly needsMigrationPersist: boolean;
+  readonly issues: SettingsIssue[];
+}
+
+export type SettingsPatchParseResult =
+  | { readonly ok: true; readonly patch: Record<string, unknown> }
+  | { readonly ok: false; readonly issues: SettingsIssue[] };
+
+/**
+ * `appSettingsSchema` over file text: the six-step preprocess chain, the 51
+ * field validators and zod-v4-identical issues, all native. Synchronous —
+ * pure compute over text the caller already holds (spec §3.6).
+ */
+export function parseSettingsContent(content: string): SettingsParseResult {
+  return JSON.parse(native().parseSettingsContent(content)) as SettingsParseResult;
+}
+
+/**
+ * `appSettingsPatchSchema` over a patch object. Returns a branch instead of
+ * throwing so the caller stays exception-free across the boundary.
+ */
+export function parseSettingsPatch(patch: unknown): SettingsPatchParseResult {
+  return JSON.parse(native().parseSettingsPatch(JSON.stringify(patch))) as SettingsPatchParseResult;
 }

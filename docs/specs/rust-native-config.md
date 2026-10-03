@@ -480,10 +480,19 @@ The boxes below are per-slice, and the unchecked ones name what is still outstan
       compares the live predecessor against the crate over 80 checks; 1 enumerated divergence
       (lone surrogate, §5a). It caught five defects in the port that the Rust unit tests could not
       see. The settings/hook/settings-sync rows still have no replay — see the next box.
-- [ ] **The remaining §4 rows.** T7–T11 (digest / bundle snapshot / trust projection), T26–T34
-      (`parse_settings_content`), T35–T41 (patch normalisation), T42–T47 (merge / persist),
-      T48–T60 (hook events, config build, settings-sync). Roughly two thirds of the spec is
-      still unimplemented, and `appSettingsSchema` carries 50+ fields.
+- [x] **Settings slice (rows T26–T47), implemented and verified.** `settings.rs` carries
+      `parse_settings_content` / `parse_settings_patch` — the six-step preprocess chain, the
+      object schema in exact shape order, and zod-v4's message vocabulary (`expected int`,
+      `Invalid option: expected one of "a"|"b"`, discriminator issues at the discriminator
+      field, `unrecognized_keys` pluralisation) — and `settings_persist.rs` carries the
+      legacy-account functions, the eight normalisation rules, `merge_settings` and
+      `build_persisted_settings`. The napi exports are `parseSettingsContent` /
+      `parseSettingsPatch` (the wrapper returns a branch rather than throwing across the
+      boundary). **Recorded differential: §5b — 94 checks, 0 divergences.**
+      Consumer rewiring of `settingService`'s read/update paths and the
+      `normalizeSettingsPatch.ts` deletion land with the remaining rows.
+- [ ] **The remaining §4 rows.** T7–T11 (digest / bundle snapshot / trust projection),
+      T48–T60 (hook events, config build, settings-sync).
 - [ ] **`@zcode/rust/config` staged into the desktop/SEA payload** — the packager only ships a
       crate with a live importer, and today the only importer is the services layer.
 
@@ -505,6 +514,23 @@ A third defect was in the smoke harness rather than the crate: a fixture builder
 JSON *strings* produced a `records` array of strings, so a valid store was correctly rejected. The
 fail-closed classification being right is what made that visible immediately instead of after
 debugging the parser.
+
+## 5b. Recorded differential — settings slice (2026-10-03)
+
+`scripts/verify-settings-parity.mts` drives the live `appSettingsSchema` /
+`appSettingsPatchSchema` against `parseSettingsContent` / `parseSettingsPatch` over the
+committed corpus (74 settings inputs, 17 patch inputs, 3 raw-text inputs), comparing the
+verdict, the full `{path, message}` issue sequence (order included — the schema's shape
+order is part of the contract), the JSON-round-tripped output, and the output key
+sequence (the order `JSON.stringify(persisted, null, 2)` writes).
+
+**Result: 94 checks, 0 divergences.** The run caught one real defect before merge: a
+valid `lastWorkspaceSession` remote entry validated `lastOpenedAt` /
+`lastConnectionStatus` without inserting them, so a passing parse silently dropped both
+fields — invisible to the Rust unit tests (which asserted issues rather than the happy
+path's content), and exactly what the differential exists for. The probe harness that
+pinned the message vocabulary (`scripts/.settings-probe*.mts`) is deleted after the run;
+its corpus is committed as `tests/fixtures/settings-parity-cases.json`.
 
 ## 5a. Recorded differential — trust store slice
 
