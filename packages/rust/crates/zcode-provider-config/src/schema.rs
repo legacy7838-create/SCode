@@ -649,7 +649,9 @@ pub struct ProviderConfigData {
 // ---------------------------------------------------------------------------
 
 fn valid_pattern(pattern: &str) -> bool {
-    regex::Regex::new(&format!("^(?:{pattern})$")).is_ok()
+    // Cached: the builtin release validates 209 modelMatch patterns per decode
+    // (see `regex_cache`).
+    crate::regex_cache::compiled(pattern, false).is_some()
 }
 
 fn valid_url(value: &str) -> bool {

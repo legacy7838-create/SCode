@@ -19,6 +19,7 @@ pub mod endpoint_scoped;
 pub mod facades;
 pub mod legacy_reasoning;
 pub mod materialize;
+pub mod regex_cache;
 pub mod registry_service;
 pub mod remote_sync;
 pub mod repository;

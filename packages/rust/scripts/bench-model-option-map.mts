@@ -4,7 +4,7 @@
  * docs/specs/rust-native-model-option-map.md §3.3.
  *
  * The TS sources are recovered from git (`TS_REF`, default `HEAD` — they were
- * still present there at merge time), so the comparison stays reproducible
+ * present at the port commit (caeabc3)), so the comparison stays reproducible
  * after the package is deleted:
  *
  *   TS_REF=<pre-deletion-ref> npx tsx packages/rust/scripts/bench-model-option-map.mts
@@ -23,7 +23,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const TS_REF = process.env.TS_REF ?? "HEAD";
+const TS_REF = process.env.TS_REF ?? "caeabc3^"; // the pre-deletion state of packages/model-option-map
 const ROUNDS = 5;
 
 // ---------------------------------------------------------------------------

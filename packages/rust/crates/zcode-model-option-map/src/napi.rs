@@ -23,6 +23,8 @@ use napi_derive::napi;
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
+use std::sync::Arc;
+
 use crate::compiler::ModelOptionMapProgram as CoreProgram;
 use crate::merge_patch::NamedJsonMergePatch;
 use crate::option_maps::{
@@ -44,7 +46,7 @@ fn parse_object(document: &str, what: &str) -> Result<Map<String, Value>> {
 /// compile once (per model), evaluate per round.
 #[napi]
 pub struct ModelOptionMapProgram {
-    inner: CoreProgram,
+    inner: Arc<CoreProgram>,
 }
 
 #[napi]

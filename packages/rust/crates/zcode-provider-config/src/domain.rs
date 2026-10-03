@@ -894,14 +894,11 @@ fn is_exact_model_rule(rule: &ModelConfigRule) -> bool {
 }
 
 fn matches_rule(pattern: &str, value: &str, ignore_case: bool) -> bool {
-    let compiled = if ignore_case {
-        regex::RegexBuilder::new(&format!("^(?:{pattern})$"))
-            .case_insensitive(true)
-            .build()
-    } else {
-        regex::Regex::new(&format!("^(?:{pattern})$"))
-    };
-    compiled.map(|re| re.is_match(value)).unwrap_or(false)
+    // Cached: a registry resolve walks every rule's modelMatch/apiTypeMatch/
+    // baseUrlMatch, each of which used to compile its pattern from scratch
+    // (see `regex_cache`).
+    crate::regex_cache::compiled(pattern, ignore_case)
+        .is_some_and(|re| re.is_match(value))
 }
 
 fn normalize_base_url(value: &str) -> Option<String> {

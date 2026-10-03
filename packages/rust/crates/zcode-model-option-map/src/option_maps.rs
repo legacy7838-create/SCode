@@ -2,6 +2,8 @@
 //!
 //! Port of `packages/model-option-map/src/option-maps.ts`.
 
+use std::sync::Arc;
+
 use crate::compiler::{compile_model_option_map, ModelOptionMapProgram};
 use crate::merge_patch::{apply_ordered_json_merge_patches, NamedJsonMergePatch};
 use crate::types::{ModelOptionMapError, ModelOptionName};
@@ -21,8 +23,8 @@ pub struct ModelOptionValues<'a> {
 }
 
 pub struct CompiledModelOptionMaps {
-    reasoning_level: ModelOptionMapProgram,
-    max_output_tokens: ModelOptionMapProgram,
+    reasoning_level: Arc<ModelOptionMapProgram>,
+    max_output_tokens: Arc<ModelOptionMapProgram>,
 }
 
 pub fn compile_model_option_maps(

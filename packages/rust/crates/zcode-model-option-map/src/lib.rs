@@ -35,7 +35,7 @@ mod tests {
     fn compile_map(
         source: &str,
         variable: ModelOptionName,
-    ) -> Result<ModelOptionMapProgram, RestrictedCelError> {
+    ) -> Result<std::sync::Arc<ModelOptionMapProgram>, RestrictedCelError> {
         compile_model_option_map(source, variable)
     }
 
