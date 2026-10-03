@@ -149,11 +149,30 @@ fn has_trusted_git_directory(directory: &Path) -> bool {
 
 /// A directory is searchable when *some* execute bit is set. The original asks for `X_OK` on the
 /// directory, which on a POSIX system means the same thing.
+///
+/// 中文：修复 Windows 编译失败（E0433: cannot find `unix` in `os`）。这里原来无条件
+/// `use std::os::unix::fs::PermissionsExt`，Windows 上根本编译不过，一个 crate 挂掉就会
+/// 让整个 workspace `cargo build --release` 失败 → `build:native` 产不出任何 `.node` →
+/// `@zcode/server` 启动即死。零 JS fallback（umbrella invariant 1）意味着这是彻底不可用，
+/// 不是降级，所以修复是把平台分支补对，而不是加任何 JS 旁路。
+/// 语义依据（为什么非 unix 分支可以返回 true）：legacy TS 对这个检查**没有**
+/// `platform !== "win32"` 守卫（browser/executable.ts 才有），而 Node 在 Windows 上
+/// `accessSync(dir, X_OK)` 对普通目录是放行的（本机实测 PASS），所以“元数据可读”就是
+/// legacy 在 Windows 上给出的同一个判定；unix 分支保持“任一执行位被置位”。拆分形状
+/// 与 `zcode-git::is_executable_file` 的 `#[cfg(unix)]` / `#[cfg(not(unix))]` 一致，
+/// 判定写在 spec（subagent-rust-port.md §3.2i Platform rule）。
 fn is_searchable(path: &Path) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::metadata(path)
-        .map(|metadata| metadata.permissions().mode() & 0o111 != 0)
-        .unwrap_or(false)
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(path)
+            .map(|metadata| metadata.permissions().mode() & 0o111 != 0)
+            .unwrap_or(false)
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::metadata(path).is_ok()
+    }
 }
 
 fn has_valid_git_head(directory: &Path) -> bool {

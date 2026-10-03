@@ -428,6 +428,29 @@ pure predicates. The checks are `lstat` (not `stat`, so a symlink is seen *as* a
 bounded read of `HEAD`, and an executability probe on `objects/`/`refs/`; a mock would not have
 exercised any of those.
 
+**Platform rule: the executability probe on Windows.** `is_searchable` is cfg-split. An
+unguarded `use std::os::unix::fs::PermissionsExt` does not compile on Windows (`E0433`), and a
+single uncompilable crate fails the whole workspace `cargo build --release` — which fails
+`build:native`, and with zero JS fallback (umbrella invariant 1) that is a total outage, not a
+degradation: no `.node`, no `@zcode/server`. The split mirrors exactly what the legacy did: the
+TS original called `accessSync(childPath, X_OK)` **without** a `platform !== "win32"` guard
+(unlike `apps/zcode-cli/packages/adapters/src/browser/executable.ts`, which has one), and Node on
+Windows accepts `X_OK` for any existing directory (verified empirically: `accessSync(dir, X_OK)`
+→ PASS on win32). So the rule is: on unix, *some* execute bit must be set
+(`Permissions::mode() & 0o111`); on Windows, a readable `metadata` is the same verdict the
+legacy produced. The shape is the one `zcode-git::is_executable_file` already uses
+(`#[cfg(unix)]` / `#[cfg(not(unix))]`), and the golden fixtures are plain `create_dir_all` trees
+with default modes, so the pinned verdict is identical on both platforms.
+
+**Fixture rule: the symlinked `.git` case on Windows.** The nine-fixture golden includes a
+directory symlink (`symlinked_git_dir`). Creating one on Windows requires Administrator or
+Developer Mode (`symlink_dir` → `EPERM` otherwise), so the test fixture creates it with the
+platform's native API and, when the host refuses, **skips exactly that one golden case** with an
+explicit message instead of failing the suite or silently dropping the fixture. This is a
+capability of the test environment, not a product code path: `classify_dot_git_directory` still
+takes the symlink branch unconditionally at runtime, and privileged Windows / unix hosts run all
+nine cases.
+
 The two predicates take each command's **argv**, not the name the grammar reported, because the
 grammar reports `command`/`builtin`/`noglob` as the name — the unwrapping has to happen exactly
 once, and it happens in Rust.

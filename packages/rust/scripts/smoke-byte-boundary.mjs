@@ -146,98 +146,18 @@ check("codec.encodeWireFrames accepts Uint8Array", () => {
 });
 
 // ---------------------------------------------------------------------------
-// zcode-buffer
-// ---------------------------------------------------------------------------
-const buffer = load("zcode-buffer");
-
-check("buffer.alloc returns Uint8Array", () => {
-  assertUint8Array(buffer.alloc(8), "alloc result");
-});
-
-check("buffer.concat accepts Uint8Array[] and returns Uint8Array", () => {
-  const joined = buffer.concat([wireJson, wireJson]);
-  assertUint8Array(joined, "concat result");
-  assert.equal(joined.byteLength, wireJson.byteLength * 2);
-});
-
-check("buffer.slice returns Uint8Array", () => {
-  assertUint8Array(buffer.slice(wireJson, 0, 2), "slice result");
-});
-
-check("buffer.copyInto / readUint32Be / writeUint32Be accept Uint8Array", () => {
-  const written = buffer.writeUint32Be(wireJson, 0x11223344, 0);
-  assertUint8Array(written, "writeUint32Be result");
-  assert.equal(buffer.readUint32Be(written, 0), 0x11223344);
-  const copied = buffer.copyInto(wireJson, wireJson.subarray(0, 2), 4);
-  assertUint8Array(copied, "copyInto result");
-});
-
-check("buffer.stringToBytes returns Uint8Array and bytesToString accepts it", () => {
-  const bytes = buffer.stringToBytes("héllo");
-  assertUint8Array(bytes, "stringToBytes result");
-  assert.equal(buffer.bytesToString(bytes), "héllo");
-});
-
-// ---------------------------------------------------------------------------
-// zcode-protocol
-// ---------------------------------------------------------------------------
-const protocol = load("zcode-protocol");
-
-check("protocol.writeProtocolMessage accepts Uint8Array and returns Uint8Array", () => {
-  const raw = protocol.writeProtocolMessage(0, 7, 0, wireJson);
-  assertUint8Array(raw, "writeProtocolMessage result");
-  const parsed = protocol.parseProtocolHeader(raw, 0);
-  assert.equal(parsed.id, 7);
-  assert.equal(parsed.bodyLength, wireJson.byteLength);
-});
-
-check("protocol.parseProtocolHeader accepts Buffer", () => {
-  const raw = protocol.writeProtocolMessage(0, 9, 3, Buffer.from(wireJson));
-  assertUint8Array(raw, "writeProtocolMessage(Buffer) result");
-  assert.equal(protocol.parseProtocolHeader(Buffer.from(raw), 0).ack, 3);
-});
-
-// ---------------------------------------------------------------------------
-// zcode-chunkstream
-// ---------------------------------------------------------------------------
-const chunkstream = load("zcode-chunkstream");
-
-check("chunkstream accepts Uint8Array and returns Uint8Array", () => {
-  const stream = chunkstream.createChunkStream();
-  stream.acceptChunk(wireJson.subarray(0, 2));
-  stream.acceptChunk(Buffer.from(wireJson.subarray(2)));
-  assert.equal(stream.byteLength(), wireJson.byteLength);
-  assertUint8Array(stream.peek(4), "chunkstream.peek result");
-  assert.equal(stream.skip(4), true);
-  const rest = stream.read(wireJson.byteLength - 4);
-  assertUint8Array(rest, "chunkstream.read result");
-  assert.equal(
-    Buffer.from(rest).toString("hex"),
-    Buffer.from(wireJson.subarray(4)).toString("hex"),
-  );
-});
-
-// ---------------------------------------------------------------------------
-// zcode-channel
-// ---------------------------------------------------------------------------
-const channel = load("zcode-channel");
-
-check("channel.buildRequest returns Uint8Array / parseServerRequest accepts it", () => {
-  const raw = channel.buildRequest(1, 4, "chan", "method", JSON.stringify({ a: 1 }));
-  assertUint8Array(raw, "buildRequest result");
-  const parsed = channel.parseServerRequest(raw);
-  assert.equal(parsed.channelName, "chan");
-  assert.equal(parsed.methodName, "method");
-  assert.equal(parsed.id, 4);
-});
-
-check("channel.buildResponse returns Uint8Array / parseClientResponse accepts it", () => {
-  const raw = channel.buildResponse(2, 5, JSON.stringify({ ok: true }));
-  assertUint8Array(raw, "buildResponse result");
-  const parsed = channel.parseClientResponse(raw);
-  assert.equal(parsed.id, 5);
-  assert.deepEqual(JSON.parse(parsed.dataJson), { ok: true });
-});
+// 已删除的 crate 段落（bug fix 说明）
+//
+// 原来这里还有 zcode-buffer / zcode-protocol / zcode-chunkstream / zcode-channel 四段。
+// 6e896ec 把这 4 个 v4-wire crate 连同它们的 wrapper 一起删除（零消费者、每平台 5 MB 的
+// 死代码），但当时没有同步更新本脚本，导致脚本在加载 .node 时 MODULE_NOT_FOUND 直接崩溃 ——
+// invariant 8 的验收门禁形同虚设。
+//
+// 修复：移除这 4 段，而不是把 crate 加回来。它们的 renderer TS 孪生实现
+//（packages/shared/src/zcode-protocol-v4/）是无法承载 .node 的平台上的唯一实现
+//（invariant 9：这不是 fallback），那里已经没有跨边界的字节可冒烟；仍然跨边界收发字节的
+// 只剩 zcode-codec（wire 路径），由上面的段落覆盖。zcode-fs / zcode-image 的字节契约由
+// 各自 port spec 的 direct-load smoke 验收（见 rust-native-ports.md invariant 8）。
 
 if (failures.length > 0) {
   process.stdout.write(`\n${failures.length} byte-boundary check(s) failed\n`);

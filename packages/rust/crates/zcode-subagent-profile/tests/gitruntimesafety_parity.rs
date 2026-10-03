@@ -20,7 +20,7 @@ fn golden_path() -> PathBuf {
     path
 }
 
-fn fixture(root: &Path) -> Option<PathBuf> {
+fn fixture(root: &Path) -> Option<(PathBuf, bool)> {
     let dir = |name: &str| {
         let path = root.join(name);
         fs::create_dir_all(&path).unwrap();
@@ -50,7 +50,7 @@ fn fixture(root: &Path) -> Option<PathBuf> {
     fs::write(escaped.join(".git"), format!("gitdir: {}\n", outside.display())).unwrap();
 
     let symlinked = dir("symlinked");
-    std::os::unix::fs::symlink(&outside, symlinked.join(".git")).unwrap();
+    let symlink_ok = create_dir_symlink(&outside, &symlinked.join(".git"));
 
     let bare = dir("bare");
     fs::write(bare.join("HEAD"), "ref: refs/heads/main\n").unwrap();
@@ -62,7 +62,31 @@ fn fixture(root: &Path) -> Option<PathBuf> {
     fs::write(incomplete.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
 
     let _ = (escaped, symlinked, bare, incomplete, outside, trusted);
-    Some(root.to_path_buf())
+    Some((root.to_path_buf(), symlink_ok))
+}
+
+/// 中文：修复 Windows 编译失败（E0433）＋ 无权限时的用例处理。原实现无条件
+/// `std::os::unix::fs::symlink`，Windows 上根本编译不过；而 Windows 创建目录符号链接
+/// 需要管理员/开发者模式（本机实测 EPERM），所以这里按平台拆开：unix 上目录 symlink
+/// 必然可用（失败就是真回归，直接 unwrap），Windows 上用 `symlink_dir` 尝试、权限不足
+/// 时返回 false，由测试跳过 `symlinked_git_dir` 这一个 golden 用例并打印原因。
+/// 跳过的是测试环境的权限能力，不是产品行为分支——运行时的 symlink 判断无条件保留；
+/// 判定规则见 spec（subagent-rust-port.md §3.2i "Fixture rule"）。
+fn create_dir_symlink(target: &Path, link: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(target, link).unwrap();
+        true
+    }
+    #[cfg(windows)]
+    {
+        std::os::windows::fs::symlink_dir(target, link).is_ok()
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = (target, link);
+        false
+    }
 }
 
 #[test]
@@ -72,7 +96,7 @@ fn git_runtime_context_safety_matches_typescript() {
 
     let root = std::env::temp_dir().join(format!("git-runtime-safety-rust-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
-    fixture(&root).expect("fixtures");
+    let (_root, symlink_ok) = fixture(&root).expect("fixtures");
 
     // (golden case name, fixture sub-path inside `root`); `None` means "no working directory".
     let cases: [(&str, Option<&str>); 9] = [
@@ -88,6 +112,11 @@ fn git_runtime_context_safety_matches_typescript() {
     ];
     let mut failures = Vec::new();
     for (name, relative) in cases {
+        if name == "symlinked_git_dir" && !symlink_ok {
+            // 中文：本机没有创建目录符号链接的权限，仅跳过这一个用例，其余 8 个照常比对。
+            eprintln!("skip [{name}]: directory symlink unavailable on this host (EPERM)");
+            continue;
+        }
         let entry = corpus.get(name).unwrap_or_else(|| panic!("missing case {name}"));
         let expected = entry["unsafe"].as_bool().expect("verdict");
         let cwd = relative.map(|relative| root.join(relative).to_string_lossy().into_owned());
