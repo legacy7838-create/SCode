@@ -27,6 +27,7 @@
 
 #[cfg(feature = "napi-exports")]
 mod napi_bridge;
+pub mod settings_persist;
 
 use std::collections::HashSet;
 
