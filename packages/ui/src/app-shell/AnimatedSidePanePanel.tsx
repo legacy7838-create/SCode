@@ -28,6 +28,7 @@ import { findScreenshotSurfaceTabForRender } from "@/browser-use/useBrowserScree
 import { HumanBrowserView } from "@/browser-use/HumanBrowserView.js";
 import { ScopedErrorBoundary } from "@/ErrorBoundary.js";
 import { GitPane } from "@/GitPane.js";
+import { GitHubReposSidePane } from "@/app-shell/GitHubReposSidePane.js";
 import { TreemappingPane } from "@/TreemappingPane.js";
 import { WhiteboardPane } from "@/WhiteboardPane.js";
 import { ModelTrajectoryPane } from "@/ModelTrajectoryPane.js";
@@ -1245,6 +1246,8 @@ export function AnimatedSidePanePanel({
                             onRefresh={onRefreshGit}
                             onRevealFileInTree={onRevealGitFileInTree}
                           />
+                        ) : tab.type === "github-repos" ? (
+                          <GitHubReposSidePane onClose={() => onCloseTab(tab.id)} />
                         ) : tab.type === "treemapping" ? (
                           <TreemappingPane
                             activeTaskId={activeTaskId}

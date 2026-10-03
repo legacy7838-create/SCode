@@ -213,7 +213,6 @@ export function WorkspaceHeader({
           onToggleSidePane={onToggleSidePane}
           toggleSidePaneShortcutLabel={toggleSidePaneShortcutLabel}
           simplifyForNarrowRemote={simplifyForNarrowRemote}
-          hideHelpMenu={false}
           showWindowControls={usesInlineWindowControls}
           // The panel operation buttons follow the compact style of macOS, and the Windows/Linux window controls follow the rightmost header.
           onSelectedEditorChange={setSelectedEditor}

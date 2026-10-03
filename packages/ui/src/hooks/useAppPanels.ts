@@ -34,6 +34,7 @@ import {
   openWorkflowWorkspaceSidePane,
   openWorkflowArtifactSidePane,
   activateDeveloperToolsSidePane,
+  activateGitHubReposSidePane,
   openBrowserSidePane,
   openOrActivateBrowserSidePaneByUrl,
   findBrowserSidePaneTabByUrl,
@@ -79,6 +80,7 @@ import { getPathLeaf, joinFilePath, toFileUrl } from "@/lib/path.js";
 import { shouldOpenWorkflowArtifactInBrowser } from "@/lib/workflowArtifactOpen.js";
 import { useWhiteboardStore } from "@/store/whiteboardStore.js";
 import { useModelTrajectoryOpenBridge } from "@/hooks/useModelTrajectoryOpenBridge.js";
+import { useGitHubReposOpenBridge } from "@/hooks/useGitHubReposOpenBridge.js";
 import { useServices } from "@/hooks/useServices.js";
 import { useIsOfficeMode } from "@/hooks/useInterfaceMode.js";
 import { clearSelectionSideChat } from "@/lib/selectionSideChatRuntime.js";
@@ -790,6 +792,17 @@ export function useAppPanels(options: {
     });
   }, [commitOpenedSidePaneState, revealSidePaneForCurrentOwner, workspaceAbsPath]);
 
+  const handleOpenGitHubRepos = useCallback(() => {
+    revealSidePaneForCurrentOwner();
+    commitOpenedSidePaneState((current) => {
+      const next = activateGitHubReposSidePane(current);
+      logger.info(
+        `[App] open side pane mode=github-repos workspace=${workspaceAbsPath} tabs=${next.tabs.length}`,
+      );
+      return next;
+    });
+  }, [commitOpenedSidePaneState, revealSidePaneForCurrentOwner, workspaceAbsPath]);
+
   const handleOpenTerminalTab = useCallback(() => {
     if (isOfficeMode) return;
     revealSidePaneForCurrentOwner();
@@ -1233,6 +1246,12 @@ export function useAppPanels(options: {
   useModelTrajectoryOpenBridge(
     workspaceIdentity?.trim() || workspaceAbsPath,
     handleOpenModelTrajectory,
+  );
+
+  // 订阅打开 GitHub 仓库侧边栏请求：在 GitHub 活动卡片点击箭头按钮时触发，展开第 3 个 Toggle Panel 并聚焦至 Repositories Tab
+  useGitHubReposOpenBridge(
+    workspaceIdentity?.trim() || workspaceAbsPath,
+    handleOpenGitHubRepos,
   );
 
   const handleToggleTerminal = useCallback(() => {

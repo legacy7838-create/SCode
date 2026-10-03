@@ -3,7 +3,7 @@ import { WorkspaceSidePaneToggleButton } from "@/WorkspaceSidePaneToggleButton.j
 import { WorkspaceTerminalToggleButton } from "@/WorkspaceTerminalToggleButton.js";
 import { cn } from "@/components/lib/utils.js";
 import type { WorkspaceHeaderActionSectionProps } from "@/WorkspaceHeaderSections/shared.js";
-import { WorkspaceHelpMenuButton } from "@/WorkspaceHelpMenuButton.js";
+import { WorkspaceGitHubActivityButton } from "@/WorkspaceGitHubActivityButton.js";
 import { ConversationShareMenu } from "@/ConversationShareMenu.js";
 import { DesktopWindowControls } from "@/DesktopWindowControls.js";
 
@@ -25,7 +25,6 @@ export function WorkspaceHeaderActionSection({
   toggleSidePaneShortcutLabel,
   onSelectedEditorChange,
   simplifyForNarrowRemote = false,
-  hideHelpMenu = false,
   showWindowControls = false,
   useWindowsCaptionSpacing = false,
 }: WorkspaceHeaderActionSectionProps) {
@@ -56,7 +55,11 @@ export function WorkspaceHeaderActionSection({
       ) : null}
       {!simplifyForNarrowRemote ? (
         <>
-          {!hideHelpMenu ? <WorkspaceHelpMenuButton isDesktop={Boolean(isDesktop)} /> : null}
+          {/* GitHub 贡献热力图与提交活动按钮 */}
+          <WorkspaceGitHubActivityButton
+            isDesktop={Boolean(isDesktop)}
+            useWindowsCaptionSpacing={useWindowsCaptionSpacing}
+          />
           {/* The head space of the remote control mobile terminal is too narrow, and the terminal entrance will compete with the core operation for width.*/}
           <WorkspaceTerminalToggleButton
             isTerminalOpen={isTerminalOpen}

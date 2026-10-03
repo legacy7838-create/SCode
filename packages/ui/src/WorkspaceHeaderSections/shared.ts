@@ -72,6 +72,7 @@ export interface WorkspaceHeaderActionSectionProps {
   toggleSidePaneShortcutLabel?: string;
   onSelectedEditorChange?: (editor: EditorInfo | null) => void;
   simplifyForNarrowRemote?: boolean;
+  /** @deprecated 帮助按钮已从工作区顶部栏中移除 */
   hideHelpMenu?: boolean;
   showWindowControls?: boolean;
   useWindowsCaptionSpacing?: boolean;
