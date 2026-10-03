@@ -311,11 +311,22 @@ fn relative_imports(source: &str) -> Vec<String> {
 
 /// Extracts the first `loadNative<…>("name")` / `loadNative("name")` literal.
 fn find_load_native_call(source: &str) -> Option<String> {
+    find_all_load_native_calls(source).into_iter().next()
+}
+
+/// Every `loadNative("…")` binary literal in `source`, in order of appearance.
+///
+/// Both quote styles are accepted so a direct consumer may use either quoting
+/// convention; only literals naming a `zcode-*` crate are considered, matching
+/// `find_load_native_call`.
+fn find_all_load_native_calls(source: &str) -> Vec<String> {
     let needle = "loadNative";
+    let mut out = Vec::new();
     let mut search = 0usize;
     while let Some(offset) = source[search..].find(needle) {
         let start = search + offset;
-        let rest = &source[start + needle.len()..];
+        search = start + needle.len();
+        let rest = &source[search..];
         // Skip the generic parameter list, then the call's argument list.
         let mut cursor = 0usize;
         let bytes = rest.as_bytes();
@@ -330,20 +341,27 @@ fn find_load_native_call(source: &str) -> Option<String> {
             cursor += 1;
         }
         if cursor >= bytes.len() {
-            return None;
+            continue;
         }
         let args = &rest[cursor + 1..];
-        if let Some(open) = args.find('"') {
-            if let Some(close) = args[open + 1..].find('"') {
-                let name = &args[open + 1..open + 1 + close];
-                if name.starts_with("zcode-") {
-                    return Some(name.to_string());
-                }
+        for quote in [b'"', b'\''] {
+            let Some(open) = args.as_bytes().iter().position(|b| *b == quote) else {
+                continue;
+            };
+            let Some(close) = args[open + 1..]
+                .as_bytes()
+                .iter()
+                .position(|b| *b == quote)
+            else {
+                continue;
+            };
+            let name = &args[open + 1..open + 1 + close];
+            if name.starts_with("zcode-") {
+                out.push(name.to_string());
             }
         }
-        search = start + needle.len();
     }
-    None
+    out
 }
 
 /// Recursively collects scannable source files under `dir`.
@@ -377,6 +395,33 @@ fn collect_source_files(dir: &Path, repo_root: &Path, out: &mut Vec<PathBuf>) {
             out.push(path);
         }
     }
+}
+
+/// The set of **direct** `loadNative("<crate>")` references anywhere in the workspace,
+/// with the files that make them: a wrapperless consumer still ships its binary.
+///
+/// `packages/rust` is excluded from the scan (as for subpath importers), so a wrapper
+/// cannot mark its own crate live; `docs` is excluded so specifications that *describe*
+/// a reference do not count as one.
+pub fn find_direct_load_native_importers(repo_root: &Path) -> BTreeMap<String, BTreeSet<String>> {
+    let mut files = Vec::new();
+    collect_source_files(repo_root, repo_root, &mut files);
+    files.sort();
+
+    let mut hits: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for file in files {
+        let Ok(source) = fs::read_to_string(&file) else {
+            continue;
+        };
+        let Ok(relative) = file.strip_prefix(repo_root) else {
+            continue;
+        };
+        let relative = relative.to_string_lossy().replace('\\', "/");
+        for binary in find_all_load_native_calls(&source) {
+            hits.entry(binary).or_default().insert(relative.clone());
+        }
+    }
+    hits
 }
 
 /// The set of `@zcode/rust/<subpath>` specifiers imported anywhere in the workspace,
@@ -551,8 +596,14 @@ fn is_module_specifier_position(before: &str) -> bool {
 /// How a crate ended up in (or out of) the payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Classification {
-    /// Has at least one importer; ships.
-    Live { subpath: String, importers: Vec<String> },
+    /// Has at least one importer — an `@zcode/rust/<subpath>` import (whose
+    /// subpath is named here) or a direct `loadNative("<crate>")` reference
+    /// (`None`) — and ships. See `rust-native-model-option-map.md` §4 for the
+    /// wrapperless shape.
+    Live {
+        subpath: Option<String>,
+        importers: Vec<String>,
+    },
     /// Declared a subpath but nothing imports it; does not ship.
     NoConsumer { subpath: String },
     /// Not a `cdylib` crate, so cargo emits no shared object; does not ship.
@@ -703,6 +754,7 @@ pub fn build(repo_root: &Path) -> Result<Inventory, InventoryError> {
     let crates = read_crates(&rust_root)?;
     let exports = read_subpath_exports(&rust_root, repo_root)?;
     let importers = find_subpath_importers(repo_root);
+    let direct_importers = find_direct_load_native_importers(repo_root);
 
     let mut classifications: BTreeMap<String, Classification> = BTreeMap::new();
     let mut cdylib_without_subpath = Vec::new();
@@ -735,7 +787,7 @@ pub fn build(repo_root: &Path) -> Result<Inventory, InventoryError> {
                 classifications.insert(
                     export.binary_name.clone(),
                     Classification::Live {
-                        subpath: export.subpath.clone(),
+                        subpath: Some(export.subpath.clone()),
                         importers: files.iter().cloned().collect(),
                     },
                 );
@@ -755,15 +807,29 @@ pub fn build(repo_root: &Path) -> Result<Inventory, InventoryError> {
         if classifications.contains_key(&crate_info.name) {
             continue;
         }
-        // A crate with no subpath export cannot be loaded from TypeScript at all, so it
-        // never ships. Recording why keeps `inventory` honest instead of leaving these
-        // as unclassified noise.
-        if crate_info.is_cdylib {
-            cdylib_without_subpath.push(crate_info.name.clone());
-            classifications.insert(crate_info.name.clone(), Classification::NoSubpath);
-        } else {
+        if !crate_info.is_cdylib {
             classifications.insert(crate_info.name.clone(), Classification::NotCdylib);
+            continue;
         }
+        // Wrapperless direct consumer: the TypeScript loads the binary itself
+        // (`loadNative("<crate>")` in the consumer), so the absence of a subpath
+        // export means nothing — the reference is the importer (spec:
+        // rust-native-model-option-map.md §4).
+        if let Some(files) = direct_importers.get(&crate_info.name) {
+            classifications.insert(
+                crate_info.name.clone(),
+                Classification::Live {
+                    subpath: None,
+                    importers: files.iter().cloned().collect(),
+                },
+            );
+            continue;
+        }
+        // A crate with neither a subpath export nor a direct reference cannot be
+        // loaded from TypeScript at all, so it never ships. Recording why keeps
+        // `inventory` honest instead of leaving these as unclassified noise.
+        cdylib_without_subpath.push(crate_info.name.clone());
+        classifications.insert(crate_info.name.clone(), Classification::NoSubpath);
     }
 
     Ok(Inventory {
@@ -854,5 +920,131 @@ mod tests {
     fn single_and_backtick_quotes_count_too() {
         assert!(string_literals_in("invoke('decide_navigation')").contains("decide_navigation"));
         assert!(string_literals_in("invoke(`show_current_window`)").contains("show_current_window"));
+    }
+
+    /// Writes the minimal repository skeleton `inventory::build` requires:
+    /// `packages/rust/package.json` (with `exports`), one crate manifest, and
+    /// an optional consumer file. Returns the repo root path.
+    fn scaffold_repo(temp: &TempDir, crate_name: &str, cdylib: bool, consumer: Option<&str>) -> PathBuf {
+        let root = temp.path().to_path_buf();
+        let rust = root.join("packages/rust");
+        std::fs::create_dir_all(rust.join("crates").join(crate_name)).unwrap();
+        std::fs::write(
+            rust.join("package.json"),
+            r#"{ "name": "@zcode/rust", "exports": { ".": "./src/index.ts" } }"#,
+        )
+        .unwrap();
+        let crate_type = if cdylib { r#"["cdylib", "rlib"]"# } else { r#"["rlib"]"# };
+        std::fs::write(
+            rust.join("crates").join(crate_name).join("Cargo.toml"),
+            format!("[package]\nname = \"{crate_name}\"\n\n[lib]\ncrate-type = {crate_type}\n"),
+        )
+        .unwrap();
+        if let Some(body) = consumer {
+            let dir = root.join("apps/example");
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("consumer.ts"), body).unwrap();
+        }
+        root
+    }
+
+    #[test]
+    fn a_direct_load_native_reference_ships_a_cdylib_without_any_subpath() {
+        let temp = TempDir::new();
+        let root = scaffold_repo(
+            &temp,
+            "zcode-direct-load",
+            true,
+            Some(r#"import { loadNative } from "@zcode/rust"; loadNative("zcode-direct-load");"#),
+        );
+        let inventory = build(&root).expect("inventory");
+        assert_eq!(
+            inventory.classifications.get("zcode-direct-load"),
+            Some(&Classification::Live {
+                subpath: None,
+                importers: vec!["apps/example/consumer.ts".to_string()],
+            }),
+            "a wrapperless direct reference is a live importer"
+        );
+        assert_eq!(
+            inventory.live_binaries(),
+            vec!["zcode-direct-load".to_string()],
+            "the binary must reach the staging plan"
+        );
+        assert!(
+            inventory.cdylib_without_subpath.is_empty(),
+            "a direct consumer is not an orphan"
+        );
+    }
+
+    #[test]
+    fn a_single_quoted_and_a_second_reference_in_one_file_both_count() {
+        let temp = TempDir::new();
+        let root = scaffold_repo(
+            &temp,
+            "zcode-quoted",
+            true,
+            Some(
+                r#"loadNative('zcode-quoted'); loadNative("zcode-other"); loadNative("zcode-quoted");"#,
+            ),
+        );
+        let hits = find_direct_load_native_importers(&root);
+        assert_eq!(
+            hits.get("zcode-quoted").map(|files| files.len()),
+            Some(1),
+            "both references in one file collapse to one importer"
+        );
+        assert!(hits.contains_key("zcode-other"));
+    }
+
+    #[test]
+    fn a_cdylib_with_no_subpath_and_no_reference_still_never_ships() {
+        let temp = TempDir::new();
+        let root = scaffold_repo(&temp, "zcode-unwired", true, None);
+        let inventory = build(&root).expect("inventory");
+        assert_eq!(
+            inventory.classifications.get("zcode-unwired"),
+            Some(&Classification::NoSubpath)
+        );
+        assert!(inventory.live_binaries().is_empty());
+    }
+
+    #[test]
+    fn the_subpath_mechanism_is_unchanged_by_direct_detection() {
+        let temp = TempDir::new();
+        let root = temp.path().to_path_buf();
+        let rust = root.join("packages/rust");
+        std::fs::create_dir_all(rust.join("crates/zcode-wrapped")).unwrap();
+        std::fs::create_dir_all(rust.join("src")).unwrap();
+        std::fs::write(
+            rust.join("package.json"),
+            r#"{ "name": "@zcode/rust", "exports": { "./wrapped": "./src/wrapped.ts" } }"#,
+        )
+        .unwrap();
+        std::fs::write(
+            rust.join("crates/zcode-wrapped/Cargo.toml"),
+            "[lib]\ncrate-type = [\"cdylib\"]\n",
+        )
+        .unwrap();
+        std::fs::write(
+            rust.join("src/wrapped.ts"),
+            r#"import { loadNative } from "./loader.js"; export const n = () => loadNative("zcode-wrapped");"#,
+        )
+        .unwrap();
+        let dir = root.join("apps/example");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("consumer.ts"),
+            r#"import { n } from "@zcode/rust/wrapped"; n();"#,
+        )
+        .unwrap();
+        let inventory = build(&root).expect("inventory");
+        assert_eq!(
+            inventory.classifications.get("zcode-wrapped"),
+            Some(&Classification::Live {
+                subpath: Some("wrapped".to_string()),
+                importers: vec!["apps/example/consumer.ts".to_string()],
+            })
+        );
     }
 }

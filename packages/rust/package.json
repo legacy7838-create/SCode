@@ -28,7 +28,6 @@
     "./sysinfo": "./src/sysinfo.ts",
     "./package.json": "./package.json",
     "./provider-node": "./src/providerNode.ts",
-    "./model-option-map": "./src/modelOptionMap.ts",
     "./subagent-bash-semantics": "./src/subagentBashSemantics.ts",
     "./subagent-result-budget": "./src/subagentResultBudget.ts"
   },

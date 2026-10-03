@@ -1,10 +1,24 @@
-import type {
-  CompiledModelOptionMaps,
-  JsonObject,
-  ModelOptionValues,
-} from "@zcode/rust/model-option-map";
+/**
+ * The request seam of the option-map pipeline. The engine lives in the
+ * `zcode-model-option-map` binary and is loaded directly by `model-execution.ts`
+ * (no wrapper package — spec docs/specs/rust-native-model-option-map.md §4);
+ * this file owns only the structural shapes and the `fetch` glue, which is
+ * JavaScript by nature (`Request`/`fetch` objects cannot cross the FFI).
+ */
 
 type ProviderFetch = typeof globalThis.fetch;
+
+export type JsonObject = { readonly [key: string]: unknown };
+
+export interface ModelOptionValues {
+  readonly reasoningLevel: string;
+  readonly maxOutputTokens: number;
+}
+
+/** The compiled pair as the binary hands it over: JSON text in, patched text out. */
+export interface CompiledModelOptionMaps {
+  apply(bodyJson: string, valuesJson: string): string;
+}
 
 export interface RawRequestBodyCapture {
   body?: JsonObject;
@@ -22,7 +36,7 @@ export function createModelOptionMapFetch(input: {
     // The native apply takes and returns the body as JSON text, so the normal
     // path pays neither a JS `JSON.parse` nor a re-stringify; only a capture
     // needs the object form back.
-    const patchedBody = input.maps.applyJson(bodyText, input.values);
+    const patchedBody = input.maps.apply(bodyText, JSON.stringify(input.values));
     if (input.capture) input.capture.body = parseJsonObject(patchedBody);
     if (request instanceof Request) {
       return input.fetch(new Request(request, { ...init, body: patchedBody }));

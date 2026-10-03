@@ -92,12 +92,46 @@ taste:
   here and the binding is narrowed to `compileModelOptionMap` (compile-time work the TS
   caches today) — the port never ships a slower path silently.
 
-## 4. Wrapper (`packages/rust/src/modelOptionMap.ts`)
+## 4. Direct napi connection — no wrapper (second revision)
 
-Thin: `loadNative("zcode-model-option-map")`, JSON-string plumbing, and the TS types
-(`JsonObject`, `ModelOptionValues`, `ModelOptionMapSpecs`, `CompiledModelOptionMaps`,
-`ModelOptionMapProgram`) re-declared so consumer type positions do not change. Exported
-as `@zcode/rust/model-option-map`.
+This crate does **not** use the `packages/rust/src/<port>.ts` wrapper pattern every other
+native port follows. The CLI connects to the binary **directly through `loadNative`**,
+which `@zcode/rust`'s root export already exposes:
+
+- `model-execution.ts` loads the binary once (Node's `require`-cache makes later calls
+  free) and calls `compileModelOptionMaps(JSON.stringify(specs))`; the native object's
+  `apply(bodyJson, valuesJson)` is what the fetch seam calls per request.
+- `model-option-map-fetch.ts` holds only the two structural shapes
+  (`CompiledOptionMaps`, `ModelOptionValues`) — JSON primitives, no behaviour.
+- The differential test loads the binary itself for `compileModelOptionMap` /
+  `applyOrderedJsonMergePatches`.
+- `packages/rust/src/modelOptionMap.ts` and the `./model-option-map` subpath export are
+  **deleted**.
+
+Why this is legal here and not a fallback:
+
+1. The consumer is the Node-only CLI; the renderer-graph gate never sees it (invariant 9
+   is about renderer-reachable modules, and the gate's roots do not include `apps/zcode-cli`).
+2. Nothing falls back: a missing binary throws from `loadNative` exactly as before — the
+   wrapper contained zero decision logic, only `JSON.stringify`/`JSON.parse` around calls
+   that already speak JSON strings.
+3. The types that the wrapper re-declared are trivial JSON shapes; they now live beside
+   their two users instead of in a package layer.
+
+**Packaging contract extension (required, additive).** `zcode-packaging`'s inventory
+classified a cdylib as shippable *only* when its `@zcode/rust/<subpath>` export had an
+importer. A direct consumer does not reference a subpath, so without a change the crate
+would be dropped from the staging plan and the CLI would ship without its binary.
+`inventory::build` now also scans for direct `loadNative("<crate>")` references
+(`find_direct_load_native_importers`) and classifies such crates `Live { subpath: None }`.
+The subpath mechanism is untouched for the other seventeen crates; a crate with neither a
+subpath importer nor a direct reference still reports `NoSubpath` and never ships.
+`packages/rust` itself stays excluded from the scan, so a wrapper cannot mark its own
+crate live.
+
+The wrapper pattern remains the default for every other port — this exception is scoped
+to `zcode-model-option-map` because its boundary is two JSON-string calls with no
+hydration step (unlike `provider-node`, whose wrapper exists to rehydrate domain objects).
 
 ## 5. Consumer rewiring (same change)
 
@@ -105,14 +139,14 @@ as `@zcode/rust/model-option-map`.
   `@zcode/model-option-map` dep dropped from `packages/shared/package.json`.
 - `apps/zcode-cli/packages/adapters/src/model/model-execution.ts`,
   `…/model-option-map-fetch.ts` (types), `test/opencode-free-reasoning-map.test.ts` —
-  import swap to `@zcode/rust/model-option-map`; dependency swapped in the adapters'
-  `package.json`.
+  connected directly to the binary via `loadNative` (§4); `@zcode/rust/model-option-map`
+  subpath export removed from `packages/rust/package.json`.
 - The adapters test stays and runs against the **native** implementation — it is the
   differential corpus (real builtin config rule, disabled-deletes-thinking semantics,
   ordered merge patches).
 - `packages/model-option-map/` deleted; `zcode-model-option-map` becomes `cdylib + rlib`
   (the rlib keeps serving `zcode-provider-config`), staged by the packaging inventory
-  once the subpath export exists.
+  through the direct-reference detection of §4.
 
 ## 6. Invariants at risk, and how they are held
 
@@ -173,6 +207,15 @@ as `@zcode/rust/model-option-map`.
       `packages/shared/src` gains no native import (§3.1).
 - [x] `grep -r "@zcode/model-option-map"` yields no references; the package is deleted;
       the orphan dependency in `packages/provider/package.json` is dropped too.
+- [x] **Second revision — direct napi connection (§4):**
+      `packages/rust/src/modelOptionMap.ts` and the `./model-option-map` subpath export are
+      deleted; `grep -r "@zcode/rust/model-option-map"` yields zero references;
+      `zcode-packaging` classifies the crate `Live { subpath: None }` from the two direct
+      `loadNative(...)` references (inventory prints `ship zcode-model-option-map — 2
+      importer(s)`) and still stages all 16 binaries; three new packaging tests pin the
+      direct-detection, the no-reference `NoSubpath` floor, and the untouched subpath path
+      (43+5 pass); adapters typecheck clean; the differential test passes against the
+      directly-loaded binary (2/2).
 - Baseline-failing gates, unchanged by this port: `pnpm knip`, `pnpm fmt:check`
   (every file this change touches is `oxfmt --check` clean).
 

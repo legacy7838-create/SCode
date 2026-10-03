@@ -2,7 +2,27 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { applyOrderedJsonMergePatches, compileModelOptionMap } from "@zcode/rust/model-option-map";
+import { loadNative } from "@zcode/rust";
+
+/** The differential corpus runs against the binary directly (spec §4). */
+const engine = loadNative<{
+  compileModelOptionMap(
+    source: string,
+    variable: string,
+  ): { evaluate(input: string | number): unknown };
+  applyOrderedJsonMergePatches(bodyJson: string, patchesJson: string): string;
+}>("zcode-model-option-map");
+
+function applyOrderedJsonMergePatches(
+  body: Record<string, unknown>,
+  patches: readonly { option: string; patch: unknown }[],
+): Record<string, unknown> {
+  return JSON.parse(
+    engine.applyOrderedJsonMergePatches(JSON.stringify(body), JSON.stringify(patches)),
+  ) as Record<string, unknown>;
+}
+
+const compileModelOptionMap = engine.compileModelOptionMap.bind(engine);
 
 /**
  * The generic Anthropic rule maps `reasoningLevel: "disabled"` to `{"thinking": {"type":"disabled"}}`,

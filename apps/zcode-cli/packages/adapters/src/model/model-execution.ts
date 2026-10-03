@@ -7,11 +7,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { LanguageModel } from "ai";
-import {
-  compileModelOptionMaps,
-  type CompiledModelOptionMaps,
-  type ModelOptionValues,
-} from "@zcode/rust/model-option-map";
+import { loadNative } from "@zcode/rust";
 import {
   type Logger,
   type ModelId,
@@ -24,7 +20,29 @@ import { createAnthropicCompatFetch } from "./anthropic-stream-compat.js";
 import { createOpencodeFreeFetch } from "./opencode-free-fetch.js";
 import { isOpencodeFreeProvider } from "./opencode-session.js";
 import { createOpenAIResponsesJsonCompatFetch } from "./openai-responses-json-compat.js";
-import { createModelOptionMapFetch, type RawRequestBodyCapture } from "./model-option-map-fetch.js";
+import {
+  createModelOptionMapFetch,
+  type CompiledModelOptionMaps,
+  type ModelOptionValues,
+  type RawRequestBodyCapture,
+} from "./model-option-map-fetch.js";
+
+/**
+ * The option-map engine, loaded straight from the `zcode-model-option-map`
+ * binary — no wrapper package (spec docs/specs/rust-native-model-option-map.md
+ * §4). Node's `require` cache makes the handle free after the first call, and
+ * a missing binary throws: there is no JavaScript fallback by design.
+ */
+interface ModelOptionMapBinary {
+  compileModelOptionMaps(specsJson: string): CompiledModelOptionMaps;
+}
+
+let modelOptionMap: ModelOptionMapBinary | undefined;
+
+function modelOptionMapBinary(): ModelOptionMapBinary {
+  modelOptionMap ??= loadNative<ModelOptionMapBinary>("zcode-model-option-map");
+  return modelOptionMap;
+}
 import { createNetworkProxyFetch } from "../network/proxy-fetch.js";
 import { createOfficialCodingPlanGatewayFetch } from "./official-coding-plan-gateway.js";
 import { normalizeModelTlsFailure } from "./failure-tls.js";
@@ -186,7 +204,9 @@ export class AiSdkModelExecution {
     };
   }): AiSdkBoundModelResolution {
     const snapshot = this.captureModelSnapshot(input);
-    const optionMaps = compileModelOptionMaps(input.optionSpecs);
+    const optionMaps = modelOptionMapBinary().compileModelOptionMaps(
+      JSON.stringify(input.optionSpecs),
+    );
     return {
       // Here we only construct a basic model that does not execute requests; real requests must bind complete options through resolveRequest.
       resolved: this.resolveSnapshot(snapshot, undefined, undefined, undefined),
