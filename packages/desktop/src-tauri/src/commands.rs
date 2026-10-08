@@ -32,7 +32,8 @@
 // picker (`select_directory`) via `tauri-plugin-dialog` folder pickers (selectDirectory parity);
 // 26) desktop zoom GETTER via a managed `ZoomRegistry` (Tauri has no zoom getter); 31) sidecar
 // dynamic-port discovery (`spawn_sidecar_echo_discover_port` reads the `ZCODE_WS_READY <port>` line
-// from the sidecar stdout `Receiver` instead of dropping it).
+// from the sidecar stdout `Receiver` instead of dropping it); 34) window-title getter
+// (`get_window_title`, the companion read for `set_window_title`) via `WebviewWindow::title`.
 
 use tauri::{AppHandle, Manager, WebviewWindow};
 // Window background color for the slice-22 `set_window_background_color` command. `Color` is the
@@ -798,6 +799,32 @@ pub fn is_window_focused(app: AppHandle, label: String) -> Result<bool, String> 
 pub fn set_window_title(app: AppHandle, label: String, title: String) -> Result<(), String> {
     require_window(&app, &label)?
         .set_title(&title)
+        .map_err(|e| e.to_string())
+}
+
+/// Return the current title of the window identified by `label`.
+///
+/// Phase 2 slice 34 (window-title getter). The faithful companion READ for the slice-10
+/// `set_window_title` WRITE: reads the live title via `WebviewWindow::title`, the counterpart
+/// Electron exposes as `win.getTitle()` that the custom titlebar reads back. Reads real OS/window
+/// state — no binary, sync-IPC, or OS gate — so it is complete, not partial. `WebviewWindow::title`
+/// is fallible (`Result<String, Error>`), so it uses the standard `.map_err(|e| e.to_string())`
+/// seam (never `.unwrap()`). Requires a live GUI window, so it is compile-verified and exercised
+/// under `pnpm dev:tauri` (no fake-window unit test — no-stub rule).
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+///
+/// # Returns
+///
+/// `Ok(String)` with the window's current title; `Err(String)` when the window is missing or the
+/// OS cannot report the title.
+#[tauri::command]
+pub fn get_window_title(app: AppHandle, label: String) -> Result<String, String> {
+    require_window(&app, &label)?
+        .title()
         .map_err(|e| e.to_string())
 }
 

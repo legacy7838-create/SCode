@@ -74,6 +74,7 @@ fn main() {
             commands::is_window_visible,
             commands::is_window_focused,
             commands::set_window_title,
+            commands::get_window_title,
             commands::set_window_size,
             commands::set_window_position,
             commands::center_window,

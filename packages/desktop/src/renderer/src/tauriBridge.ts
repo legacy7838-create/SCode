@@ -447,6 +447,16 @@ export function setWindowTitle(title: string, label?: string): Promise<void> {
 }
 
 /**
+ * 读取窗口当前标题。对应 Rust 命令 `get_window_title`（`WebviewWindow::title`），是
+ * `setWindowTitle` 的配套读取接缝（对齐 Electron `win.getTitle()`）。label 缺省为主窗口。
+ *
+ * @param label - 目标窗口 label（缺省 `"main"`）。
+ */
+export function getWindowTitle(label?: string): Promise<string> {
+  return invoke<string>("get_window_title", { label: label ?? DEFAULT_WINDOW_LABEL });
+}
+
+/**
  * 调整窗口内部尺寸（物理像素）。对应 Rust 命令 `set_window_size`（`WebviewWindow::set_size`，
  * 使用与第九切片 `get_window_size` 相同的无符号像素单位）。
  *
