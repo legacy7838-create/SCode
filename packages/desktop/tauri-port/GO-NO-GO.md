@@ -69,10 +69,17 @@ Each remaining interface family is blocked on a specific decision, NOT on more s
   faithful (non-partial) versions of these.
 - **D4 size/security motivation** → determines whether the Node-sidecar bundling for
   Host/Agent (erodes size win) is acceptable at all.
-- **Also blocked (transport wiring, not a product decision per se):** `getHostPort`-style factory
-  selection + the renderer↔sidecar `connectViaWebSocket` glue + `executeDesktopCommand` router +
-  all `on*` push events + `notifyRendererReady` — need the Rust-spawns-Host-sidecar step, which needs
-  D1–D4 settled to know what the Host must expose.
+- **Also blocked (transport/factory wiring, not a product decision per se):** `getHostPort`-style
+  factory selection + `executeDesktopCommand` router + `notifyRendererReady` — need the
+  Rust-spawns-Host-sidecar step, which needs D1–D4 settled to know what the Host must expose.
+- **`on*` push events — mechanism PROVEN, not gated (correction).** Slice 33 landed the first
+  Rust→renderer push channel using **core Tauri events** (`Emitter::emit` + JS `listen`), no
+  plugin/decision needed: `onDesktopZoomLevelChanged` is fully wired + tested. The remaining `on*`
+  methods are NOT transport-gated; each just needs a COMPLETE emit source (e.g. `onWindowFullscreenChanged`
+  was skipped because fullscreen has OS-initiated paths a command-only emit can't observe → would be
+  partial; `onApplicationLocaleChanged` needs a `setApplicationLocale` command Tauri lacks). So they are
+  gated on *an emit source existing per event*, not on the transport — materially easier than previously
+  recorded.
 
 ## Honest status
 Foundation + 79 verified commands + 9-method adapter + transport proof + full blocker analysis are DONE
