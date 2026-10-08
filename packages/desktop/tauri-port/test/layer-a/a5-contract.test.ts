@@ -20,6 +20,7 @@ const commandsRs = fileURLToPath(new URL("../../../src-tauri/src/commands.rs", i
 const tauriBridgeTs = fileURLToPath(
   new URL("../../../src/renderer/src/tauriBridge.ts", import.meta.url),
 );
+const mainRs = fileURLToPath(new URL("../../../src-tauri/src/main.rs", import.meta.url));
 
 /**
  * Extract the declared command function name that follows each `#[tauri::command]`
@@ -116,5 +117,41 @@ test("A5: every invoke arg object key is camelCase (Rust snake_case → JS camel
     [],
     `invoke arg object keys must be camelCase; found snake_case key(s) whose Rust arg ` +
       `would silently never arrive: ${snakeKeys.join(", ")}`,
+  );
+});
+
+/**
+ * Extract every `commands::NAME` reference in `main.rs`'s `generate_handler![...]`. A command that
+ * is defined in `commands.rs` but not listed here is UNREACHABLE at runtime — the Rust-side twin of
+ * the slice-18 wrapper drift. `shell_kind` is defined in `main.rs` itself and registered bare (not
+ * `commands::shell_kind`), so it correctly does not appear in this set.
+ */
+function registeredCommands(mainSrc: string): Set<string> {
+  const names = new Set<string>();
+  for (const m of mainSrc.matchAll(/commands::([a-z_][a-z0-9_]*)/g)) {
+    names.add(m[1]);
+  }
+  return names;
+}
+
+test("A5: every #[tauri::command] fn is registered in main.rs generate_handler", () => {
+  const defined = rustCommandNames(readFileSync(commandsRs, "utf8"));
+  const registered = registeredCommands(readFileSync(mainRs, "utf8"));
+  const unregistered = symmetricDifference(defined, registered);
+  assert.deepEqual(
+    unregistered,
+    [],
+    `commands defined but NOT registered (renderer cannot reach them): ${unregistered.join(", ")}`,
+  );
+});
+
+test("A5: every commands::NAME registered in main.rs is a real #[tauri::command]", () => {
+  const defined = rustCommandNames(readFileSync(commandsRs, "utf8"));
+  const registered = registeredCommands(readFileSync(mainRs, "utf8"));
+  const dangling = symmetricDifference(registered, defined);
+  assert.deepEqual(
+    dangling,
+    [],
+    `main.rs registers a commands:: name with no matching #[tauri::command] (build break): ${dangling.join(", ")}`,
   );
 });
