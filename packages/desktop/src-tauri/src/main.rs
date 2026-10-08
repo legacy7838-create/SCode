@@ -11,7 +11,9 @@
 // group (minimize/maximize/unmaximize/toggle-fullscreen/close/focus/is-maximized), native
 // file/save/message dialogs via `tauri-plugin-dialog`, the shell/open group (open-url /
 // reveal-in-folder / open-path) via `tauri-plugin-opener`, and native OS notifications
-// (`show_notification`) via `tauri-plugin-notification`. See ./commands.rs and
+// (`show_notification`) via `tauri-plugin-notification`, plus the window-state queries and the
+// window-mutation group (set title/size/position, center, set/is fullscreen) via the existing
+// `WebviewWindow` API. See ./commands.rs and
 // ../tauri-port/BRIDGE.md for the contract.
 mod commands;
 
@@ -56,6 +58,12 @@ fn main() {
             commands::get_window_position,
             commands::is_window_visible,
             commands::is_window_focused,
+            commands::set_window_title,
+            commands::set_window_size,
+            commands::set_window_position,
+            commands::center_window,
+            commands::set_fullscreen,
+            commands::is_fullscreen,
             commands::show_open_dialog,
             commands::show_save_dialog,
             commands::show_message_dialog,

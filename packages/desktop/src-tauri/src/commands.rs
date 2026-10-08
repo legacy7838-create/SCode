@@ -8,7 +8,8 @@
 // 5) native file/save/message dialogs via `tauri-plugin-dialog`, 6) shell/open (URL, reveal,
 // path) via `tauri-plugin-opener`, 7) native OS notifications via `tauri-plugin-notification`,
 // 8) OS clipboard via `tauri-plugin-clipboard-manager`, 9) window-state queries (size, position,
-// visibility, focus) via the existing `WebviewWindow` API.
+// visibility, focus) via the existing `WebviewWindow` API, 10) window-mutation commands (set title,
+// size, position, center, fullscreen) via the same `WebviewWindow` API.
 
 use tauri::{AppHandle, Manager, WebviewWindow};
 // Native dialog API surface for the slice-5 commands: the `DialogExt` app-extension, the file
@@ -508,6 +509,143 @@ pub fn is_window_visible(app: AppHandle, label: String) -> Result<bool, String> 
 pub fn is_window_focused(app: AppHandle, label: String) -> Result<bool, String> {
     require_window(&app, &label)?
         .is_focused()
+        .map_err(|e| e.to_string())
+}
+
+/// Set the title of the window identified by `label`.
+///
+/// Phase 2 slice 10 (window mutations). Resolves the live window through [`require_window`] and
+/// applies the new title via `WebviewWindow::set_title`. Like the other window commands it needs a
+/// live GUI window, so no fake test is written; it is compile-verified here and exercised at runtime
+/// under `pnpm dev:tauri`.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+/// * `title` - New window title.
+///
+/// # Returns
+///
+/// `Ok(())` on success; `Err(String)` when the window is missing or the OS rejects the operation.
+#[tauri::command]
+pub fn set_window_title(app: AppHandle, label: String, title: String) -> Result<(), String> {
+    require_window(&app, &label)?
+        .set_title(&title)
+        .map_err(|e| e.to_string())
+}
+
+/// Resize the window identified by `label` to the given physical-pixel dimensions.
+///
+/// Phase 2 slice 10. Applies the size via `WebviewWindow::set_size` using a `PhysicalSize` (the same
+/// unsigned-pixel unit reported by the slice-9 `get_window_size`). Requires a live window, so it is
+/// compile-verified here.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+/// * `width` - New inner width in physical pixels.
+/// * `height` - New inner height in physical pixels.
+///
+/// # Returns
+///
+/// `Ok(())` on success; `Err(String)` when the window is missing or the OS rejects the operation.
+#[tauri::command]
+pub fn set_window_size(
+    app: AppHandle,
+    label: String,
+    width: u32,
+    height: u32,
+) -> Result<(), String> {
+    require_window(&app, &label)?
+        .set_size(tauri::PhysicalSize::new(width, height))
+        .map_err(|e| e.to_string())
+}
+
+/// Move the window identified by `label` to the given physical-pixel top-left position.
+///
+/// Phase 2 slice 10. Applies the origin via `WebviewWindow::set_position` using a `PhysicalPosition`
+/// (the same signed-pixel unit reported by the slice-9 `get_window_position`). Requires a live
+/// window, so it is compile-verified here.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+/// * `x` - New left-edge X coordinate in physical pixels.
+/// * `y` - New top-edge Y coordinate in physical pixels.
+///
+/// # Returns
+///
+/// `Ok(())` on success; `Err(String)` when the window is missing or the OS rejects the operation.
+#[tauri::command]
+pub fn set_window_position(app: AppHandle, label: String, x: i32, y: i32) -> Result<(), String> {
+    require_window(&app, &label)?
+        .set_position(tauri::PhysicalPosition::new(x, y))
+        .map_err(|e| e.to_string())
+}
+
+/// Center the window identified by `label` on its current monitor.
+///
+/// Phase 2 slice 10. Delegates to `WebviewWindow::center`. Requires a live window, so it is
+/// compile-verified here.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+///
+/// # Returns
+///
+/// `Ok(())` on success; `Err(String)` when the window is missing or the OS rejects the operation.
+#[tauri::command]
+pub fn center_window(app: AppHandle, label: String) -> Result<(), String> {
+    require_window(&app, &label)?
+        .center()
+        .map_err(|e| e.to_string())
+}
+
+/// Enter or leave fullscreen for the window identified by `label`.
+///
+/// Phase 2 slice 10. Unlike the slice-4 `window_toggle_fullscreen` (which reads then inverts), this
+/// sets an explicit state via `WebviewWindow::set_fullscreen`. Requires a live window, so it is
+/// compile-verified here.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+/// * `fullscreen` - `true` to enter fullscreen, `false` to leave it.
+///
+/// # Returns
+///
+/// `Ok(())` on success; `Err(String)` when the window is missing or the OS rejects the operation.
+#[tauri::command]
+pub fn set_fullscreen(app: AppHandle, label: String, fullscreen: bool) -> Result<(), String> {
+    require_window(&app, &label)?
+        .set_fullscreen(fullscreen)
+        .map_err(|e| e.to_string())
+}
+
+/// Report whether the window identified by `label` is currently fullscreen.
+///
+/// Phase 2 slice 10. Reads the real state through `WebviewWindow::is_fullscreen`; requires a live
+/// window, so no fake test is written.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+///
+/// # Returns
+///
+/// `Ok(bool)` with the current fullscreen state; `Err(String)` when the window is missing or the OS
+/// cannot report the state.
+#[tauri::command]
+pub fn is_fullscreen(app: AppHandle, label: String) -> Result<bool, String> {
+    require_window(&app, &label)?
+        .is_fullscreen()
         .map_err(|e| e.to_string())
 }
 

@@ -419,3 +419,104 @@ export function isWindowFocused(label?: string): Promise<boolean> {
     label: label ?? DEFAULT_WINDOW_LABEL,
   });
 }
+
+/**
+ * Phase 2 第十切片：窗口变更（mutation）命令的 TypeScript 接缝。
+ *
+ * 对应 Rust 命令 `set_window_title` / `set_window_size` / `set_window_position` /
+ * `center_window` / `set_fullscreen` / `is_fullscreen`，全部复用已导入的 `WebviewWindow` API
+ * （无需新增插件）。Rust 端通过 `app.get_webview_window(label)` 解析窗口，缺失时返回显式的
+ * `Err("window not found: {label}")`，这里以 rejected Promise 形式抛出（沿用第三切片的错误传播接缝）。
+ *
+ * 运行时约束：这些变更需要一个正在活动的窗口（GUI），因此本组接缝在此处只做“编译期”类型校验；
+ * 真实效果在 `pnpm dev:tauri` 下运行验证。保持导入零副作用。
+ */
+
+/**
+ * 设置窗口标题。对应 Rust 命令 `set_window_title`（`WebviewWindow::set_title`）。
+ *
+ * @param title - 新的窗口标题。
+ * @param label - 目标窗口 label，缺省为主窗口 `"main"`。
+ */
+export function setWindowTitle(title: string, label?: string): Promise<void> {
+  return invoke<void>("set_window_title", {
+    label: label ?? DEFAULT_WINDOW_LABEL,
+    title,
+  });
+}
+
+/**
+ * 调整窗口内部尺寸（物理像素）。对应 Rust 命令 `set_window_size`（`WebviewWindow::set_size`，
+ * 使用与第九切片 `get_window_size` 相同的无符号像素单位）。
+ *
+ * @param width - 新的内部宽度（物理像素）。
+ * @param height - 新的内部高度（物理像素）。
+ * @param label - 目标窗口 label，缺省为主窗口 `"main"`。
+ */
+export function setWindowSize(
+  width: number,
+  height: number,
+  label?: string,
+): Promise<void> {
+  return invoke<void>("set_window_size", {
+    label: label ?? DEFAULT_WINDOW_LABEL,
+    width,
+    height,
+  });
+}
+
+/**
+ * 移动窗口到指定的物理像素左上角坐标。对应 Rust 命令 `set_window_position`
+ * （`WebviewWindow::set_position`，使用与第九切片 `get_window_position` 相同的有符号像素单位）。
+ *
+ * @param x - 新的左上角 X 坐标（物理像素，可为负值）。
+ * @param y - 新的左上角 Y 坐标（物理像素，可为负值）。
+ * @param label - 目标窗口 label，缺省为主窗口 `"main"`。
+ */
+export function setWindowPosition(
+  x: number,
+  y: number,
+  label?: string,
+): Promise<void> {
+  return invoke<void>("set_window_position", {
+    label: label ?? DEFAULT_WINDOW_LABEL,
+    x,
+    y,
+  });
+}
+
+/**
+ * 将窗口在当前显示器上居中。对应 Rust 命令 `center_window`（`WebviewWindow::center`）。
+ *
+ * @param label - 目标窗口 label，缺省为主窗口 `"main"`。
+ */
+export function centerWindow(label?: string): Promise<void> {
+  return invoke<void>("center_window", {
+    label: label ?? DEFAULT_WINDOW_LABEL,
+  });
+}
+
+/**
+ * 显式进入或退出全屏。对应 Rust 命令 `set_fullscreen`（`WebviewWindow::set_fullscreen`）。
+ * 与第四切片的 `windowToggleFullscreen`（读取后取反）不同，本函数直接设定目标状态。
+ *
+ * @param fullscreen - `true` 进入全屏，`false` 退出全屏。
+ * @param label - 目标窗口 label，缺省为主窗口 `"main"`。
+ */
+export function setFullscreen(fullscreen: boolean, label?: string): Promise<void> {
+  return invoke<void>("set_fullscreen", {
+    label: label ?? DEFAULT_WINDOW_LABEL,
+    fullscreen,
+  });
+}
+
+/**
+ * 查询窗口当前是否处于全屏状态。对应 Rust 命令 `is_fullscreen`（`WebviewWindow::is_fullscreen`）。
+ *
+ * @param label - 目标窗口 label，缺省为主窗口 `"main"`。
+ */
+export function isFullscreen(label?: string): Promise<boolean> {
+  return invoke<boolean>("is_fullscreen", {
+    label: label ?? DEFAULT_WINDOW_LABEL,
+  });
+}
