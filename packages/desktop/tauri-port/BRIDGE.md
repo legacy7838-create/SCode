@@ -396,3 +396,23 @@ Managed state + commands (`commands.rs`):
 TS bridge: `getTauriDesktopZoomLevel(label)` → `invoke<number>("get_desktop_zoom_level", { label })`.
 The `get_desktop_zoom_level` name is a real command so the A5 wrapper-exists guard covers it. Requires
 a live GUI window (compile-verified; exercised under `pnpm dev:tauri`).
+
+## Slice 31 contract — sidecar dynamic-port discovery (transport building block)
+
+`spawn_sidecar_echo` (PoC) used a caller-supplied fixed port and dropped the `Receiver`, so the shell
+could not learn an OS-chosen port — the multi-instance agent needs ephemeral ports (fixed ports collide).
+The echo already prints `ZCODE_WS_READY <port> has_secret=<bool>` when bound (SIDECAR-PACKAGING.md §6);
+this slice READS that line. Confirmed in `tauri-plugin-shell-2.4.1/src/process/mod.rs`: `spawn()` →
+`(Receiver<CommandEvent>, CommandChild)` (:305); `CommandEvent::Stdout(Vec<u8>)` is line-delimited (:49)
+and the enum is `#[non_exhaustive]` (:43) so the match needs a `_` arm.
+
+| Command | Args | Returns | Behavior |
+| --- | --- | --- | --- |
+| `spawn_sidecar_echo_discover_port` | none | `Result<u32,String>` | spawn with `ZCODE_WS_PORT=0`, retain child in `SidecarRegistry`, await stdout until `parse_ready_port` yields the bound port |
+
+Pure `parse_ready_port(line) -> Option<u32}` (unit-tested) extracts the port from the handshake,
+returning `None` on any non-ready line so the async reader loops. On `Error`/`Terminated`/stdout-close
+it returns `Err` (never hangs on a crash); a live-but-silent process would await indefinitely — bounded
+readiness timeout is documented as production hardening, deliberately not added to avoid masking a real
+handshake failure (PORTING.md). TS bridge: `spawnTauriSidecarDiscoverPort()`. Compile-verified; the WS
+round-trip over a dynamically-bound port is proven out-of-band by the a4 Layer-A test.

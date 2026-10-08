@@ -30,7 +30,9 @@
 // visibility + cursor grab/visibility (three boolean `WebviewWindow` mutators); 24) application
 // lifecycle (relaunch + exit) via the core `AppHandle::restart` / `AppHandle::exit`; 25) directory
 // picker (`select_directory`) via `tauri-plugin-dialog` folder pickers (selectDirectory parity);
-// 26) desktop zoom GETTER via a managed `ZoomRegistry` (Tauri has no zoom getter).
+// 26) desktop zoom GETTER via a managed `ZoomRegistry` (Tauri has no zoom getter); 31) sidecar
+// dynamic-port discovery (`spawn_sidecar_echo_discover_port` reads the `ZCODE_WS_READY <port>` line
+// from the sidecar stdout `Receiver` instead of dropping it).
 
 use tauri::{AppHandle, Manager, WebviewWindow};
 // Window background color for the slice-22 `set_window_background_color` command. `Color` is the
@@ -54,6 +56,9 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_shell::ShellExt;
 // The retained child handle for the slice-20 sidecar lifecycle registry; `kill(self)` consumes it.
 use tauri_plugin_shell::process::CommandChild;
+// Stdout/stderr/termination events streamed from a spawned sidecar's `Receiver`, read by the
+// slice-31 dynamic-port discovery command to parse the sidecar's `ZCODE_WS_READY <port>` line.
+use tauri_plugin_shell::process::CommandEvent;
 // Managed-state registry for live sidecars: a process-id keyed map guarded by a `Mutex` so the whole
 // struct is `Send + Sync` (the Tauri managed-state bound), since `CommandChild` is `Send` but not
 // `Sync` (it owns a stdin pipe handle).
@@ -2331,6 +2336,90 @@ pub fn spawn_sidecar_echo(app: AppHandle, port: u16) -> Result<u32, String> {
     Ok(pid)
 }
 
+/// Parse the sidecar's stdout ready-handshake line for the TCP port it actually bound.
+///
+/// Phase 2 slice 31 (dynamic-port discovery). The `zcode-echo` sidecar binds an OS-ephemeral port when
+/// given `ZCODE_WS_PORT=0` and prints `ZCODE_WS_READY <port> has_secret=<bool>` on stdout (see
+/// `SIDECAR-PACKAGING.md` §6 "print ready port"). Because the port is chosen by the OS, the renderer
+/// cannot learn it from the spawn-time env — it MUST read the emitted line. This is the pure,
+/// unit-testable parse: split on whitespace, require the `ZCODE_WS_READY` tag, then parse the next
+/// token as the bound port, ignoring the trailing fields. Returns `None` for any non-ready line
+/// (e.g. incidental stdout) so the reader can keep looping until the handshake arrives.
+///
+/// # Arguments
+///
+/// * `line` - One stdout line from the sidecar.
+///
+/// # Returns
+///
+/// `Some(port)` when `line` is a valid ready handshake, otherwise `None`.
+pub fn parse_ready_port(line: &str) -> Option<u32> {
+    let mut tokens = line.split_whitespace();
+    if tokens.next()? == "ZCODE_WS_READY" {
+        tokens.next()?.parse::<u32>().ok()
+    } else {
+        None
+    }
+}
+
+/// Launch the `zcode-echo` sidecar on an OS-chosen ephemeral port and return that port.
+///
+/// Phase 2 slice 31 (dynamic-port discovery) — the transport building block the fixed-port
+/// [`spawn_sidecar_echo`] cannot provide for concurrent agent instances. Injects `ZCODE_WS_PORT=0` so
+/// the sidecar binds a free port, retains the `CommandChild` in the [`SidecarRegistry`] (slice-20
+/// lifecycle), then consumes the previously-dropped `Receiver`: it awaits stdout events until a line
+/// yields `Some(port)` via [`parse_ready_port`], and returns that port to the renderer. On a plugin
+/// `Error` event or process `Terminated` before the handshake it returns `Err` (never hangs on a crash
+/// or stdout close). The echo prints the ready line immediately on listening, so in the happy path the
+/// await resolves promptly; a bounded readiness timeout is a documented production hardening (not added
+/// here to avoid masking a genuine handshake failure — PORTING.md). Errors use `.map_err`/explicit
+/// `Err` (never `.unwrap()`). Requires a live app + built externalBin, so it is compile-verified and
+/// exercised under `pnpm dev:tauri`; the parse logic is unit-tested via [`parse_ready_port`].
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the shell extension and [`SidecarRegistry`].
+///
+/// # Returns
+///
+/// `Ok(u32)` with the ephemeral port the sidecar bound, or `Err(String)` if spawn failed, the child
+/// errored/terminated before reporting ready, stdout closed, or the registry lock poisoned.
+#[tauri::command]
+pub async fn spawn_sidecar_echo_discover_port(app: AppHandle) -> Result<u32, String> {
+    let (mut rx, child) = app
+        .shell()
+        .sidecar("zcode-echo")
+        .map_err(|e| e.to_string())?
+        .env("ZCODE_WS_PORT", "0")
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    let pid = child.pid();
+    app.state::<SidecarRegistry>()
+        .0
+        .lock()
+        .map_err(|e| format!("sidecar registry lock poisoned: {e}"))?
+        .insert(pid, child);
+    while let Some(event) = rx.recv().await {
+        match event {
+            CommandEvent::Stdout(bytes) => {
+                if let Ok(line) = String::from_utf8(bytes) {
+                    if let Some(port) = parse_ready_port(&line) {
+                        return Ok(port);
+                    }
+                }
+            }
+            CommandEvent::Error(e) => return Err(format!("sidecar error before ready: {e}")),
+            CommandEvent::Terminated(_) => {
+                return Err("sidecar terminated before reporting ready".to_string());
+            }
+            // `CommandEvent` is #[non_exhaustive]: ignore Stderr and any future variant while we
+            // wait for the ready line.
+            _ => {}
+        }
+    }
+    Err("sidecar stdout closed before reporting ready".to_string())
+}
+
 /// Terminate a previously-spawned sidecar by its OS pid.
 ///
 /// Phase 2 slice 20 (sidecar lifecycle). Removes the `CommandChild` from the [`SidecarRegistry`]
@@ -2606,5 +2695,27 @@ mod tests {
         // Assert
         assert!((round_trip - 3.0).abs() < 1e-9);
         assert!((known_level - (1.5_f64.ln() / 1.2_f64.ln())).abs() < 1e-12);
+    }
+
+    #[test]
+    fn parse_ready_port_extracts_port_from_ready_line() {
+        // Arrange / Act / Assert: the real handshake format (with the trailing has_secret field).
+        assert_eq!(
+            parse_ready_port("ZCODE_WS_READY 41234 has_secret=false"),
+            Some(41234)
+        );
+        assert_eq!(
+            parse_ready_port("ZCODE_WS_READY 0 has_secret=true"),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn parse_ready_port_is_none_for_non_ready_or_malformed_lines() {
+        // The reader loops until a real handshake, so any other line must yield None (not panic).
+        assert_eq!(parse_ready_port("some incidental stdout"), None);
+        assert_eq!(parse_ready_port(""), None);
+        assert_eq!(parse_ready_port("ZCODE_WS_READY"), None);
+        assert_eq!(parse_ready_port("ZCODE_WS_READY notanumber"), None);
     }
 }

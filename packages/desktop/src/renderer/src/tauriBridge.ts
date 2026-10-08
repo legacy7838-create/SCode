@@ -895,6 +895,20 @@ export function killTauriSidecar(pid: number): Promise<void> {
 }
 
 /**
+ * 启动 `zcode-echo` sidecar 并返回它实际绑定的临时端口（Phase 2 第三十一切片：动态端口发现）。对应 Rust
+ * 命令 `spawn_sidecar_echo_discover_port`。与固定端口的 `spawnTauriSidecarEcho(port)` 不同：这里注入
+ * `ZCODE_WS_PORT=0` 让 OS 选择空闲端口，读取子进程 stdout 的 `ZCODE_WS_READY <port>` 握手行解析出真实端口，
+ * 是并行多实例 agent 所需的传输基础（固定端口无法支持并发实例）。子进程仍登记到 `SidecarRegistry`，可用
+ * `killTauriSidecar(pid)` 终止。sidecar 崩溃或提前关闭 stdout 时 Rust 端返回 `Err`（不会悬挂）。运行时需
+ * 已构建的 externalBin + 活动窗口，真实效果在 `pnpm dev:tauri` 下验证。
+ *
+ * @returns sidecar 绑定的端口号（Rust 端 `Result<u32, String>`，失败为 rejected Promise）。
+ */
+export function spawnTauriSidecarDiscoverPort(): Promise<number> {
+  return invoke<number>("spawn_sidecar_echo_discover_port");
+}
+
+/**
  * Phase 2 第二十一切片：窗口边框与交互的 TypeScript 接缝（装饰、点击穿透、最小/最大尺寸设置与清除）。
  *
  * 对应 Rust 命令 `set_window_decorations` / `set_window_ignore_cursor_events` /
