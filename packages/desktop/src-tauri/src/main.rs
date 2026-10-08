@@ -65,6 +65,9 @@ fn main() {
         // Task-notification dedupe state (slice 38) so `show_task_notification` collapses rapid
         // repeats exactly like Electron. Distinct managed type, safe to manage alongside the others.
         .manage(commands::NotificationDedupeRegistry::default())
+        // Cross-window workspace bookkeeping (slice: batch 1) so `activate_or_set_workspace` can detect
+        // a folder already open in another window. Distinct managed type; safe to manage alongside.
+        .manage(commands::WindowTabsRegistry::default())
         .invoke_handler(tauri::generate_handler![
             shell_kind,
             commands::get_app_version,
@@ -148,7 +151,9 @@ fn main() {
             commands::kill_sidecar,
             commands::read_clipboard_text,
             commands::write_clipboard_text,
-            commands::create_temp_text_attachment
+            commands::create_temp_text_attachment,
+            commands::sync_window_tabs,
+            commands::activate_or_set_workspace
         ])
         .run(tauri::generate_context!())
         .expect("error while running the ZCode Tauri shell");

@@ -412,6 +412,25 @@ export function createTempTextAttachment(
 }
 
 /**
+ * 记录某窗口当前打开的工作区路径（替换旧集合），供 `activate_or_set_workspace` 跨窗口去重。对应
+ * Rust 命令 `sync_window_tabs`（需目标窗口存在）。`label` 缺省主窗口。camelCase 参数由 a5 契约守卫。
+ */
+export function syncWindowTabs(paths: string[], label?: string): Promise<void> {
+  return invoke<void>("sync_window_tabs", {
+    label: label ?? "main",
+    paths,
+  });
+}
+
+/**
+ * 若该工作区路径已在别的窗口打开，则激活（show+unminimize+focus）该窗口并返回 true，否则 false。
+ * 对应 Rust 命令 `activate_or_set_workspace`（Electron `activateOrSetWorkspace` 的 shell 侧移植）。
+ */
+export function activateOrSetWorkspace(path: string): Promise<boolean> {
+  return invoke<boolean>("activate_or_set_workspace", { path });
+}
+
+/**
  * Phase 2 第八切片：操作系统剪贴板的 TypeScript 接缝（`tauri-plugin-clipboard-manager`）。
  *
  * 对应 Rust 命令 `read_clipboard_text` / `write_clipboard_text`，委托给

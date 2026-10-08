@@ -2939,6 +2939,93 @@ pub fn create_temp_text_attachment(
     )
 }
 
+/// Per-window list of workspace paths the renderer has open, keyed by window label. Mirrors the
+/// module-level tab bookkeeping Electron's main keeps to answer "is this folder already open in another
+/// window" (`desktopMainIpcHelpers`/`activateOrSetWorkspace`). Stored in managed state;
+/// `Mutex<HashMap<String,Vec<String>>>` is `Send + Sync` (the managed-state bound), same pattern as
+/// [`ZoomRegistry`].
+#[derive(Default)]
+pub struct WindowTabsRegistry(Mutex<HashMap<String, Vec<String>>>);
+
+/// Find the window label whose synced tab list contains `path`. Returns the lexicographically smallest
+/// matching label so the result is deterministic (HashMap iteration order is not). Pure + unit-tested.
+///
+/// # Arguments
+///
+/// * `tabs` - The window-label → open-paths map.
+/// * `path` - The workspace path to locate.
+///
+/// # Returns
+///
+/// `Some(label)` for the first window already showing that path, else `None`.
+fn find_window_for_path<'a>(tabs: &'a HashMap<String, Vec<String>>, path: &str) -> Option<&'a str> {
+    tabs.iter()
+        .filter(|(_, paths)| paths.iter().any(|p| p == path))
+        .map(|(label, _)| label.as_str())
+        .min()
+}
+
+/// Record the workspace paths currently open in the window `label` (replaces any prior set), so
+/// [`activate_or_set_workspace`] can detect cross-window duplicates. Requires the window to exist.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle (window validation + registry state).
+/// * `label` - The window reporting its open workspace paths.
+/// * `paths` - The workspace paths open in that window.
+///
+/// # Returns
+///
+/// `Ok(())`, or `Err(String)` if the window is missing or the registry lock is poisoned.
+#[tauri::command]
+pub fn sync_window_tabs(app: AppHandle, label: String, paths: Vec<String>) -> Result<(), String> {
+    require_window(&app, &label)?;
+    let registry = app.state::<WindowTabsRegistry>();
+    registry
+        .0
+        .lock()
+        .map_err(|e| format!("window tabs registry lock poisoned: {e}"))?
+        .insert(label, paths);
+    Ok(())
+}
+
+/// Activate the window that already has `path` open, if one exists. Faithful to Electron's
+/// `activateOrSetWorkspace`: show + un-minimize + focus the matching window and report `activated: true`;
+/// otherwise `false` (the caller then opens it in the current window). The matching window must still
+/// exist (a stale label is skipped).
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle (window registry + tabs state).
+/// * `path` - The workspace path to locate across open windows.
+///
+/// # Returns
+///
+/// `Ok(true)` when a window was activated, `Ok(false)` when none matched, or `Err(String)` on a
+/// poisoned lock / failed window operation.
+#[tauri::command]
+pub fn activate_or_set_workspace(app: AppHandle, path: String) -> Result<bool, String> {
+    let registry = app.state::<WindowTabsRegistry>();
+    let target = {
+        let tabs = registry
+            .0
+            .lock()
+            .map_err(|e| format!("window tabs registry lock poisoned: {e}"))?;
+        find_window_for_path(&tabs, &path).map(|label| label.to_string())
+    };
+    let Some(label) = target else {
+        return Ok(false);
+    };
+    // A matching window that has since closed must not error — fall through to "not activated".
+    let Some(window) = app.get_webview_window(&label) else {
+        return Ok(false);
+    };
+    let _ = window.unminimize();
+    let _ = window.show();
+    window.set_focus().map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3292,5 +3379,19 @@ mod tests {
             .local_path
             .ends_with(".zcode/tmp/paste-attachments/2024-01-01/note-cafe0000.txt"));
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn find_window_for_path_picks_smallest_matching_label_deterministically() {
+        let mut tabs: HashMap<String, Vec<String>> = HashMap::new();
+        tabs.insert("main".to_string(), vec!["/repo/a".to_string()]);
+        tabs.insert(
+            "extra".to_string(),
+            vec!["/repo/b".to_string(), "/repo/a".to_string()],
+        );
+        // "/repo/a" is open in both -> smallest label wins (deterministic, not HashMap order).
+        assert_eq!(find_window_for_path(&tabs, "/repo/a"), Some("extra"));
+        assert_eq!(find_window_for_path(&tabs, "/repo/b"), Some("extra"));
+        assert_eq!(find_window_for_path(&tabs, "/repo/missing"), None);
     }
 }
