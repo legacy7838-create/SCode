@@ -113,7 +113,13 @@ their binary semantics over WS; no JSON-only limitation.
    behind a flag for Electron rollback.
 2. Package Host + Agent as externalBin sidecars (Node SEA/pkg); confirm they run standalone.
 3. Rust: spawn Host on window-create (port+token via env), print ready port; kill tree on exit.
+   **[LANDED — partial]** slice 31 `spawn_sidecar_echo_discover_port` binds `ZCODE_WS_PORT=0` and reads
+   the `ZCODE_WS_READY <port>` stdout via the `Receiver`; slice 20 `kill_sidecar` reaps it (registry).
+   Remaining: spawn the REAL Host externalBin + hand the auth token (gated on D1–D4).
 4. Renderer/`tauriPlatform.ts`: `connectViaWebSocket(wsUrl)` in place of `connectViaMessagePort`.
+   **[LANDED — partial]** `tauriHostConnection.ts` `connectTauriHost()` discovers the port then calls the
+   production `@zcode/client` `connectViaWebSocket("ws://127.0.0.1:<port>")` (Layer-B `b2-transport`);
+   remaining: token-in-URL + factory wiring under `isTauriRuntime()` (gated).
 5. **Smallest end-to-end proof:** one command `subagents.list` round-tripping
    renderer→WS→host→`ServiceCollection`→back (ISubagentsService registration intact per guardrail).
 6. Then expand to session/agent flows and the low/med `IPlatformService` methods (P2 scope).
