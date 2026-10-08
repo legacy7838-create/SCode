@@ -334,6 +334,42 @@ export function showNotification(title: string, body: string): Promise<void> {
 }
 
 /**
+ * Phase 3 第三十八切片：任务通知（带 Electron 派发策略）的 TypeScript 接缝。
+ *
+ * 对应 Rust 命令 `show_task_notification`：在主进程复刻 Electron `dispatchTaskNotification` 的三条
+ * 抑制规则（空文案拒绝、任一窗口聚焦时抑制、3 秒去重），仅当通过后才经 `tauri-plugin-notification`
+ * 投递原生通知。被抑制时命令返回 `Ok(())`（对齐接口 `showTaskNotification(): void`——调用方不 await
+ * 结果，抑制非错误）。参数以 camelCase 传入，Rust 端 snake_case 由 Tauri 自动映射（a5 契约守卫）。
+ * `requestId` 省略时传 `null`，反序列化为 Rust `Option::None`。
+ *
+ * 忠实性残留（Rust `show_task_notification` 文档同步说明）：桌面端 `tauri-plugin-notification` 2.5.1
+ * 忽略 action 选项且 Linux `notify-rust` 后端无点击回调，故 `onTaskNotificationClick`（点击跳转任务）
+ * 在 Tauri 桌面不可移植；`.silent` 与配套的 `TaskNotificationSound` 通道本切片暂未接入。二者记入
+ * GO-NO-GO。需活动桌面会话与已授予系统通知权限，故此处仅做编译期类型校验。保持导入零副作用。
+ *
+ * @param taskId - 归属任务 id（非阻塞状态的去重键，亦为潜在点击目标）。
+ * @param status - 通知状态标签。
+ * @param title - 已本地化的通知标题；为空则抑制。
+ * @param body - 已本地化的通知正文；为空则抑制。
+ * @param requestId - 可选请求 id；仅对 permission/elicitation 阻塞请求替代 taskId 去重。
+ */
+export function showTaskNotification(
+  taskId: string,
+  status: string,
+  title: string,
+  body: string,
+  requestId?: string,
+): Promise<void> {
+  return invoke<void>("show_task_notification", {
+    taskId,
+    status,
+    title,
+    body,
+    requestId: requestId ?? null,
+  });
+}
+
+/**
  * Phase 2 第八切片：操作系统剪贴板的 TypeScript 接缝（`tauri-plugin-clipboard-manager`）。
  *
  * 对应 Rust 命令 `read_clipboard_text` / `write_clipboard_text`，委托给

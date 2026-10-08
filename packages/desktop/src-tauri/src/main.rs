@@ -46,6 +46,9 @@ fn main() {
         // Last-set zoom factor per window, so slice 26 can read the zoom level back (Tauri has no
         // zoom getter). Distinct managed type from SidecarRegistry, so a second `.manage` is fine.
         .manage(commands::ZoomRegistry::default())
+        // Task-notification dedupe state (slice 38) so `show_task_notification` collapses rapid
+        // repeats exactly like Electron. Distinct managed type, safe to manage alongside the others.
+        .manage(commands::NotificationDedupeRegistry::default())
         .invoke_handler(tauri::generate_handler![
             shell_kind,
             commands::get_app_version,
@@ -123,6 +126,7 @@ fn main() {
             commands::reveal_in_folder,
             commands::open_path,
             commands::show_notification,
+            commands::show_task_notification,
             commands::spawn_sidecar_echo,
             commands::spawn_sidecar_echo_discover_port,
             commands::kill_sidecar,

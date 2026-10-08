@@ -483,3 +483,35 @@ GO-NO-GO de-scope item, not a hidden stub — `is_fullscreen` stays the authorit
 
 Verification: `cargo test` 20 units; clippy/fmt green; a5 7th invariant auto-covers the new literal in
 both files; layer-b surface-lock now lists 11 keys. Live delivery exercised under `pnpm dev:tauri`.
+
+## Slice 38 contract — `showTaskNotification` dispatch policy (over-fire fix)
+
+The landed [`show_notification`] dispatched unconditionally; Electron's `dispatchTaskNotification`
+(`packages/desktop/src/main/desktopNotifications.ts`) applies three suppressions first, so the naive
+Tauri command over-notified. This slice ports that **policy** faithfully; the notification still
+displays via `tauri-plugin-notification`, now gated by the same rules.
+
+| Command | Args | Behavior |
+| --- | --- | --- |
+| `show_task_notification` | `task_id,status,title,body,request_id?` | reject empty title/body → suppress if ANY window focused → 3s dedupe → else `notification().builder().show()` |
+
+- Pure, unit-tested helpers mirror `desktopNotifications.ts`: `notification_dedupe_target` (blocking
+  `permission_request`/`elicitation_request` dedupe by `requestId` else `taskId`; others by `taskId`),
+  `notification_dedupe_key`, `should_suppress_task_notification` (prune >3s window, suppress <3s).
+- State: `NotificationDedupeRegistry` (managed `Mutex<HashMap<String,u64>>`, like the other registries).
+- Suppression returns `Ok(())` (no notification) — matches the interface `showTaskNotification(): void`;
+  the caller never awaits a result and suppression is not an error.
+- Bridge: `showTaskNotification(taskId,status,title,body,requestId?)`; `requestId` omitted → `null` →
+  Rust `Option::None`; camelCase args a5-guarded.
+
+**Evidence-based residuals (not silent stubs):** `onTaskNotificationClick` (click-to-jump) is **not
+portable on Tauri desktop** — `tauri-plugin-notification` 2.5.1 `desktop.rs:31` states action options
+are ignored on desktop and the Linux `notify-rust` backend delivers no click callback. Electron's
+`.silent(true)` + the `TaskNotificationSound` send are also omitted (no per-notification silent control;
+the sound is an internal channel with no ported consumer). Both are recorded in
+`PLATFORM-ADAPTER-PLAN.md` (§1h, corrected from a prior `LOW-MED` assumption) as GO-NO-GO decision
+inputs. The command needs a live desktop session + granted OS permission, so it is compile-verified +
+the pure policy is unit-tested here; delivery exercised under `pnpm dev:tauri`.
+
+Verification: `cargo test` 23 units (was 20); clippy/fmt green; a5 12 pass/1 skip (new command↔wrapper↔
+registration↔camelCase all covered); renderer `tsc` 0 errors in changed files.

@@ -2376,6 +2376,162 @@ pub fn show_notification(app: AppHandle, title: String, body: String) -> Result<
         .map_err(|e| e.to_string())
 }
 
+/// Task-notification dedupe window (ms). Identical to `desktopNotifications.ts:6`
+/// `TASK_NOTIFICATION_DEDUPE_WINDOW_MS`; two identical notifications inside this span collapse to one.
+const TASK_NOTIFICATION_DEDUPE_WINDOW_MS: u64 = 3000;
+
+/// Choose the dedupe TARGET for a task notification. `permission_request` and `elicitation_request`
+/// each represent a distinct human-in-the-loop prompt, so consecutive prompts for the SAME task must
+/// NOT collapse — they dedupe by `requestId` (trimmed, falling back to `taskId` when absent/blank);
+/// every other status dedupes by `taskId`. Mirrors `desktopNotifications.ts:32-35`.
+///
+/// # Arguments
+///
+/// * `status` - The notification status tag.
+/// * `task_id` - The owning task id.
+/// * `request_id` - Optional request id (only meaningful for the two blocking-request statuses).
+///
+/// # Returns
+///
+/// The string used to build the dedupe key.
+pub fn notification_dedupe_target<'a>(
+    status: &str,
+    task_id: &'a str,
+    request_id: Option<&'a str>,
+) -> &'a str {
+    if status == "permission_request" || status == "elicitation_request" {
+        request_id
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or(task_id)
+    } else {
+        task_id
+    }
+}
+
+/// Build the dedupe map key `{status}:{target}`, mirroring `desktopNotifications.ts:36`.
+pub fn notification_dedupe_key(status: &str, target: &str) -> String {
+    format!("{status}:{target}")
+}
+
+/// Decide whether a notification is a duplicate within the dedupe window, mutating the recent-seen map.
+/// Prunes entries older than the window, suppresses (`true`) when the same key was seen < window ago,
+/// otherwise records `now_ms` for `key` and allows (`false`). Pure (the clock is passed in) so the
+/// 3-second boundary is unit-tested. Mirrors `desktopNotifications.ts:17-44`.
+///
+/// # Arguments
+///
+/// * `recent` - The mutable dedupe map (key -> last-seen epoch millis).
+/// * `key` - The dedupe key for this notification.
+/// * `now_ms` - Current wall-clock milliseconds since the UNIX epoch.
+///
+/// # Returns
+///
+/// `true` if the notification should be suppressed as a duplicate, else `false`.
+pub fn should_suppress_task_notification(
+    recent: &mut HashMap<String, u64>,
+    key: &str,
+    now_ms: u64,
+) -> bool {
+    recent.retain(|_, ts| now_ms.saturating_sub(*ts) <= TASK_NOTIFICATION_DEDUPE_WINDOW_MS);
+    if let Some(last) = recent.get(key) {
+        if now_ms.saturating_sub(*last) < TASK_NOTIFICATION_DEDUPE_WINDOW_MS {
+            return true;
+        }
+    }
+    recent.insert(key.to_string(), now_ms);
+    false
+}
+
+/// Wall-clock milliseconds since the UNIX epoch, saturating to `0` if the system clock predates it
+/// (never panics). Used by [`show_task_notification`]'s dedupe.
+fn now_millis() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64)
+}
+
+/// Per-notification dedupe state (key -> last-shown epoch millis), mirroring the module-level
+/// `recentTaskNotificationTimestamps` in `desktopNotifications.ts:8`. Stored in Tauri managed state;
+/// `Mutex<HashMap<String,u64>>` is `Send + Sync` (the managed-state bound), same pattern as
+/// [`SidecarRegistry`] and [`ZoomRegistry`].
+#[derive(Default)]
+pub struct NotificationDedupeRegistry(Mutex<HashMap<String, u64>>);
+
+/// Show a task notification through Electron's dispatch POLICY, via `tauri-plugin-notification`.
+///
+/// Phase 3 slice 38. The existing [`show_notification`] dispatches unconditionally; Electron's
+/// `dispatchTaskNotification` first runs three suppressions that the naive command lacks, so the
+/// Tauri shell would over-notify: (1) an empty title/body means the renderer failed to supply
+/// localized copy — main has no i18n context so it must REFUSE, not hard-code fallback text
+/// (`desktopNotifications.ts:106-116`); (2) suppress while ANY app window is focused — the user is
+/// already looking at the app (`desktopNotifications.ts:99-101`); (3) a 3-second dedupe window
+/// (`desktopNotifications.ts:118`, pure logic unit-tested here). Suppressed cases return `Ok(())` with
+/// no notification, matching the interface's `showTaskNotification(): void` (the caller never awaits a
+/// result; suppression is not an error).
+///
+/// Documented residuals (evidence-based, not silent stubs): (a) Electron's `.silent(true)` + the
+/// `TaskNotificationSound` send to the originating window are omitted — `tauri-plugin-notification`
+/// 2.5.1's desktop builder has no per-notification silent control and the sound is an internal channel
+/// with no ported renderer consumer yet; (b) the click-to-jump routing (`onTaskNotificationClick`) is
+/// NOT portable on Tauri desktop — `desktop.rs:31` states action options are ignored on desktop and
+/// the Linux `notify-rust` backend delivers no click callback. Both are recorded for the GO-NO-GO
+/// decision. Requires a live desktop session + granted OS notification permission, so the command is
+/// compile-verified here and exercised under `pnpm dev:tauri`; only the pure policy is unit-tested.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle (window registry, notification extension, dedupe state).
+/// * `task_id` - The owning task id (dedupe fallback key and would-be click target).
+/// * `status` - Notification status tag.
+/// * `title` - Localized notification title; blank suppresses.
+/// * `body` - Localized notification body; blank suppresses.
+/// * `request_id` - Optional request id, used instead of `task_id` for the blocking-request statuses.
+///
+/// # Returns
+///
+/// `Ok(())` when shown OR deliberately suppressed; `Err(String)` only when the OS rejected the
+/// notification dispatch.
+#[tauri::command]
+pub fn show_task_notification(
+    app: AppHandle,
+    task_id: String,
+    status: String,
+    title: String,
+    body: String,
+    request_id: Option<String>,
+) -> Result<(), String> {
+    if title.trim().is_empty() || body.trim().is_empty() {
+        return Ok(());
+    }
+    if app
+        .webview_windows()
+        .values()
+        .any(|w| w.is_focused().unwrap_or(false))
+    {
+        return Ok(());
+    }
+    let key = notification_dedupe_key(
+        &status,
+        notification_dedupe_target(&status, &task_id, request_id.as_deref()),
+    );
+    let registry = app.state::<NotificationDedupeRegistry>();
+    let mut recent = registry
+        .0
+        .lock()
+        .map_err(|e| format!("notification dedupe lock poisoned: {e}"))?;
+    if should_suppress_task_notification(&mut recent, &key, now_millis()) {
+        return Ok(());
+    }
+    drop(recent);
+    app.notification()
+        .builder()
+        .title(&title)
+        .body(&body)
+        .show()
+        .map_err(|e| e.to_string())
+}
+
 /// Registry of live sidecar child processes, keyed by their OS pid.
 ///
 /// Phase 2 slice 20 (sidecar lifecycle). Electron's `utilityProcess` is auto-killed when the main
@@ -2838,5 +2994,51 @@ mod tests {
         assert_eq!(fullscreen_changed_payload(true), serde_json::json!(true));
         assert_eq!(fullscreen_changed_payload(false), serde_json::json!(false));
         assert!(fullscreen_changed_payload(true).is_boolean());
+    }
+
+    #[test]
+    fn notification_dedupe_target_uses_request_id_only_for_blocking_requests() {
+        // Blocking-request statuses must dedupe by requestId so consecutive prompts for the SAME
+        // task are not collapsed; every other status dedupes by taskId. (desktopNotifications.ts:32)
+        assert_eq!(
+            notification_dedupe_target("permission_request", "task-1", Some("req-9")),
+            "req-9"
+        );
+        assert_eq!(
+            notification_dedupe_target("elicitation_request", "task-1", Some("  ")),
+            "task-1",
+            "a blank requestId must fall back to taskId"
+        );
+        assert_eq!(
+            notification_dedupe_target("completed", "task-1", Some("req-9")),
+            "task-1",
+            "non-blocking statuses ignore requestId"
+        );
+    }
+
+    #[test]
+    fn notification_dedupe_key_formats_status_and_target() {
+        assert_eq!(notification_dedupe_key("failed", "task-1"), "failed:task-1");
+    }
+
+    #[test]
+    fn should_suppress_task_notification_collapses_within_window_only() {
+        let mut recent: HashMap<String, u64> = HashMap::new();
+        let key = "completed:task-1";
+        // First occurrence is allowed and recorded.
+        assert!(!should_suppress_task_notification(&mut recent, key, 1_000));
+        // A second within 3000ms is suppressed.
+        assert!(should_suppress_task_notification(&mut recent, key, 2_500));
+        // Past the window it is allowed again (and the stale entry refreshed to the new timestamp).
+        assert!(!should_suppress_task_notification(&mut recent, key, 4_001));
+        // A different key seen later than the window also prunes the now-stale first entry, so the
+        // map stays bounded (7500 - 4001 > 3000).
+        assert!(!should_suppress_task_notification(
+            &mut recent,
+            "failed:task-2",
+            7_500
+        ));
+        assert!(!recent.contains_key("completed:task-1"));
+        assert!(recent.contains_key("failed:task-2"));
     }
 }

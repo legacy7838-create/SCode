@@ -179,8 +179,12 @@ mechanism not yet confirmed against source/Rust.
 
 | method | signature (ret) | cat | mechanism | risk | phase |
 | --- | --- | --- | --- | --- | --- |
-| `showTaskNotification` | `(TaskNotificationPayload) => void` (:657) | notify | `plugin:notification` | LOW | P4 |
-| `onTaskNotificationClick` | `(taskId) => () => void` (:777) | notify event | `event:notification-click` (action payload) | LOW-MED | P4 |
+| `showTaskNotification` | `(TaskNotificationPayload) => void` (:657) | notify + main-side dispatch policy | `plugin:notification` + managed dedupe state | MED (policy ported slice 38; sound deferred) | P4 |
+| `onTaskNotificationClick` | `(taskId) => () => void` (:777) | **NOT portable on Tauri desktop** | `tauri-plugin-notification` 2.5.1 ignores action options on desktop (`desktop.rs:31`); Linux `notify-rust` delivers no click callback | BLOCKED (capability gap) | D-decision |
+
+> Correction (slice 38 evidence): this row previously read `LOW-MED / P4`, assuming a notification-click
+> event existed. It does NOT on desktop — actions are ignored by the plugin and the Linux backend has no
+> click callback, so click-to-jump is a real capability gap for the GO-NO-GO decision, not pending work.
 
 ### 1i. Device / identity / locale
 
