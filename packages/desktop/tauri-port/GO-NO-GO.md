@@ -84,12 +84,30 @@ Each remaining interface family is blocked on a specific decision, NOT on more s
   Rust-spawns-Host-sidecar step, which needs D1–D4 settled to know what the Host must expose.
 - **`on*` push events — mechanism PROVEN, not gated (correction).** Slice 33 landed the first
   Rust→renderer push channel using **core Tauri events** (`Emitter::emit` + JS `listen`), no
-  plugin/decision needed: `onDesktopZoomLevelChanged` is fully wired + tested. The remaining `on*`
-  methods are NOT transport-gated; each just needs a COMPLETE emit source (e.g. `onWindowFullscreenChanged`
-  was skipped because fullscreen has OS-initiated paths a command-only emit can't observe → would be
-  partial; `onApplicationLocaleChanged` needs a `setApplicationLocale` command Tauri lacks). So they are
-  gated on *an emit source existing per event*, not on the transport — materially easier than previously
-  recorded.
+  plugin/decision needed. Since then **two more events landed**: `onWindowFullscreenChanged` (slice 37,
+  via a command-boundary emit — Tauri `WindowEvent` has no fullscreen variant, so OS/WM-driven
+  transitions are a *documented* residual, not a skip) and the notification/attachment family
+  (slices 38–41). The remaining `on*` methods are NOT transport-gated; each just needs a COMPLETE emit
+  source (e.g. `onApplicationLocaleChanged` needs a locale-set command; the browser-view events fold
+  into D1). So they are gated on *an emit source existing per event*, not on the transport — materially
+  easier than previously recorded.
+
+## Core-path unblock — next concrete code steps (independent of D1–D4)
+The CORE app (everything except browser D1 and updater D2) does not need the product decisions to
+progress; it needs the **runtime factory + Host sidecar transport** wired. Execution-ready first steps,
+grounded in already-landed seams:
+1. **Tauri-only renderer bootstrap** (NEW file, e.g. `src/renderer/src/main.tauri.tsx`) — must NOT be
+   imported by Electron's shipped entry (`a6` isolation guard enforces this). It calls `isTauriRuntime()`
+   then installs the platform.
+2. **Platform selector** assembling `createTauriPlatformSubset()` behind `isTauriRuntime()`; it returns
+   the 13-method subset now and grows as methods land (the `Pick` prevents half-wiring).
+3. **Host connection at boot**: compose the landed `spawnTauriSidecarDiscoverPort` (slice 31) +
+   `connectTauriHost` (slice 32) to reach `IServiceAccessor` BEFORE the UI mounts — the same
+   await-init-before-use ordering the sync-getter prefetch (blocker #7, `SYNC-GETTER-SPIKE.md`) relies on.
+4. **Blocker #7** (`getDeviceId` etc.) unblocks inside step 3's bootstrap once the factory exists — not a
+   product decision.
+These 4 steps make the Tauri shell actually BOOT and serve the core app, and they are gated on *build
+authorization* (the factory + Host wiring), not on D1–D4.
 
 ## Honest status
 Foundation + 82 verified commands + a 13-method adapter subset (`createTauriPlatformSubset`, b1-locked) +
