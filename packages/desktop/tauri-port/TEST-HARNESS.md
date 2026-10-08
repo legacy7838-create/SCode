@@ -228,6 +228,27 @@ never silently green.
 
 Any violation blocks the parity claim. This operationalizes AGENTS.md Phase 1.
 
+### 4.5 Actual runnable gate today (grounded, updated)
+
+The full cross-runtime `test:parity` (§4.4) is the target, but not all of it is wired yet. The
+concrete, currently-executed gate per code slice is:
+
+- `pnpm test:tauri` → runs `test:tauri:layer-a` + `test:tauri:layer-b` + `test:tauri:rust`.
+  Current: layer-a 11 pass / 1 skip (a4 sidecar needs a built `zcode-echo`; skipped headless),
+  layer-b 14 pass (adapter conformance), rust 18 pass.
+- `cargo clippy --manifest-path packages/desktop/src-tauri/Cargo.toml -- -D warnings` and
+  `cargo fmt --check` (Rust style/lint).
+- `npx tsc --noEmit -p packages/desktop/tsconfig.renderer.json` for the **bridge + adapter**.
+
+**Critical caveat (verified):** the repo's canonical `pnpm typecheck` is
+`tsc -b packages/rpc … packages/desktop/tsconfig.host.json` — it does **NOT** include
+`tsconfig.renderer.json`, so it never type-checks `tauriBridge.ts` / `tauriPlatform.ts` / the
+`renderer/src` files. `pnpm typecheck` passing (EXIT 0) is necessary-but-NOT-sufficient for the
+bridge/adapter: the renderer project MUST be checked separately via `tsconfig.renderer.json`, or
+the seam's types go unverified (a false-green). `tauriPlatform.ts` deliberately imports the
+`@zcode/shared` types (`IPlatformService`, `Locale`, `DesktopTitleBarTheme`) so the renderer `tsc`
+is the real contract check for the adapter.
+
 ---
 
 ## 5. Smallest first harness to build NOW (recommended)
