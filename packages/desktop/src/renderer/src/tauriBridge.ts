@@ -569,3 +569,24 @@ export function getAppConfigDir(): Promise<string> {
 export function getExePath(): Promise<string> {
   return invoke<string>("get_exe_path");
 }
+
+/**
+ * Phase 2 第十三切片：桌面缩放（设置）的 TypeScript 接缝。
+ *
+ * 对应 Rust 命令 `set_desktop_zoom_level`（`WebviewWindow::set_zoom`）。Electron/Chromium 的缩放
+ * 采用对数“等级”（`ZoomIn`/`ZoomOut`/`ResetZoom` 菜单命令与 `getDesktopZoomLevel` 契约），而 Tauri
+ * 接收线性缩放因子；Rust 端以纯函数 `factor = 1.2^level` 完成换算（等级 0 == 100% == 因子 1.0）。
+ *
+ * 偏差说明（已记录，非桩实现）：Tauri 2.12.1 没有缩放 getter，故本切片仅接入设置路径；读取当前等级
+ * 需由 `tauriPlatform` 适配器以受管状态跟踪，留待后续切片，不在此伪造。Rust 端 `Err(String)` 在这里
+ * 以 rejected Promise 抛出（沿用第三切片的错误传播接缝）。保持导入零副作用。
+ *
+ * @param label - 目标窗口 label。
+ * @param level - 目标缩放等级（Electron 对数单位，`0` 表示 100%）。
+ */
+export function setTauriDesktopZoomLevel(
+  label: string,
+  level: number,
+): Promise<void> {
+  return invoke<void>("set_desktop_zoom_level", { label, level });
+}

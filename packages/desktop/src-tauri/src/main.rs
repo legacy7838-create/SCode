@@ -73,6 +73,7 @@ fn main() {
             commands::is_fullscreen,
             commands::get_window_theme,
             commands::set_window_theme,
+            commands::set_desktop_zoom_level,
             commands::show_open_dialog,
             commands::show_save_dialog,
             commands::show_message_dialog,

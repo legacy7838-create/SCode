@@ -12,7 +12,8 @@
 // size, position, center, fullscreen) via the same `WebviewWindow` API; 11) app-path commands
 // (home/temp/app-data/app-config dirs via the existing `app.path().resolve`, plus the current
 // executable via `std::env::current_exe`); 12) window theme (get/set) via the existing
-// `WebviewWindow::theme` / `set_theme` API (no new plugin).
+// `WebviewWindow::theme` / `set_theme` API (no new plugin); 13) desktop zoom (set) via
+// `WebviewWindow::set_zoom`, with a pure Electron level↔Tauri factor mapping.
 
 use tauri::{AppHandle, Manager, WebviewWindow};
 // Native dialog API surface for the slice-5 commands: the `DialogExt` app-extension, the file
@@ -861,6 +862,78 @@ pub fn set_window_theme(
         .map_err(|e| e.to_string())
 }
 
+/// Convert an Electron/Chromium zoom *level* into a Tauri zoom *factor* (scale factor).
+///
+/// Phase 2 slice 13 (desktop zoom). Chromium exposes zoom as a logarithmic "level" where each step
+/// multiplies the scale by `1.2` (`level 0 == factor 1.0 == 100%`), while Tauri's
+/// `WebviewWindow::set_zoom` takes a linear scale factor. The documented Electron relation
+/// `zoomFactor = 1.2^zoomLevel` is inverted by [`zoom_factor_to_level`]. Kept pure so the
+/// float/unit conversion (a PORTING.md Phase-6 trap) is unit-testable without a live window.
+///
+/// # Arguments
+///
+/// * `level` - Zoom level, e.g. `0.0` for 100%, `1.0` for 120%.
+///
+/// # Returns
+///
+/// The multiplicative scale factor `1.2^level` understood by `set_zoom`.
+pub fn zoom_level_to_factor(level: f64) -> f64 {
+    1.2_f64.powf(level)
+}
+
+/// Convert a Tauri zoom *factor* (scale factor) back into an Electron/Chromium zoom *level*.
+///
+/// Phase 2 slice 13. The exact inverse of [`zoom_level_to_factor`]: `ln(factor) / ln(1.2)`. Tauri
+/// 2.12.1 has no zoom getter, so reading the live level is deferred; this helper exists so the
+/// eventual getter (adapter-managed state) can round-trip through the same mapping.
+///
+/// # Arguments
+///
+/// * `factor` - Multiplicative scale factor, e.g. `1.0` for level `0`, `1.2` for level `1`.
+///
+/// # Returns
+///
+/// The logarithmic zoom level `ln(factor) / ln(1.2)` used by the Electron platform contract.
+// 该反向映射当前仅由 `set_zoom` 设置路径的单测覆盖；读取当前等级的 getter 留待 tauriPlatform
+// 适配器（见 slice 13 偏差说明），故在二进制构建中暂无运行时调用者。
+#[allow(dead_code)]
+pub fn zoom_factor_to_level(factor: f64) -> f64 {
+    factor.ln() / 1.2_f64.ln()
+}
+
+/// Set the zoom level of the window identified by `label`.
+///
+/// Phase 2 slice 13 (desktop zoom). The Electron platform contract and the `ZoomIn`/`ZoomOut`/
+/// `ResetZoom` menu commands (`platform.ts` `DesktopCommandIds`) speak in logarithmic zoom *levels*,
+/// while Tauri's `WebviewWindow::set_zoom` takes a linear scale factor, so the level is converted
+/// through [`zoom_level_to_factor`] (`factor = 1.2^level`) before being applied. The `set_zoom`
+/// `Err` is converted with `.map_err(|e| e.to_string())` (never `.unwrap()`), surfacing on the
+/// TypeScript side as a rejected `Promise`. Requires a live GUI window, so it is compile-verified
+/// here and exercised under `pnpm dev:tauri`; the pure conversion is covered by unit tests.
+///
+/// Deviation note (documented, not stubbed): Tauri 2.12.1 provides no zoom *getter*, so
+/// `getDesktopZoomLevel` cannot read the live level through this seam. Reading it back requires the
+/// `tauriPlatform` adapter to track the last-set level in managed state — that getter is deliberately
+/// NOT implemented or faked here; only the setter path (which zoom-in/out/reset all funnel through)
+/// ships in this slice.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+/// * `level` - Desired zoom level in Electron's logarithmic unit (`0.0` == 100%).
+///
+/// # Returns
+///
+/// `Ok(())` on success; `Err(String)` when the window is missing or the OS rejects the operation.
+#[tauri::command]
+pub fn set_desktop_zoom_level(app: AppHandle, label: String, level: f64) -> Result<(), String> {
+    let factor = zoom_level_to_factor(level);
+    require_window(&app, &label)?
+        .set_zoom(factor)
+        .map_err(|e| e.to_string())
+}
+
 /// A file-type filter for the open dialog, mirroring the plugin's `{ name, extensions }` shape.
 ///
 /// Deserialized from the renderer's camelCase `DialogFilter` object; Tauri maps the JS fields onto
@@ -1414,5 +1487,28 @@ mod tests {
         // Assert
         assert_eq!(dir, None);
         assert_eq!(name.as_deref(), Some("report.txt"));
+    }
+
+    #[test]
+    fn zoom_level_to_factor_maps_known_levels() {
+        // Act: level 0 is 100% (factor 1.0); level 1 is one Chromium step (factor 1.2).
+        let zero = zoom_level_to_factor(0.0);
+        let one = zoom_level_to_factor(1.0);
+
+        // Assert: compare within a tight float epsilon for the powf conversion.
+        assert!((zero - 1.0).abs() < 1e-12);
+        assert!((one - 1.2).abs() < 1e-12);
+    }
+
+    #[test]
+    fn zoom_factor_to_level_round_trips_and_matches_known_value() {
+        // Act: an inverse composition recovers the original level despite float drift.
+        let round_trip = zoom_factor_to_level(zoom_level_to_factor(3.0));
+        // A known Chromium data point: factor 1.5 corresponds to ln(1.5)/ln(1.2).
+        let known_level = zoom_factor_to_level(1.5);
+
+        // Assert
+        assert!((round_trip - 3.0).abs() < 1e-9);
+        assert!((known_level - (1.5_f64.ln() / 1.2_f64.ln())).abs() < 1e-12);
     }
 }
