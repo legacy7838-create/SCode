@@ -5,6 +5,7 @@ import {
   openExternal as bridgeOpenExternal,
   selectDirectory as bridgeSelectDirectory,
   setWindowTheme as bridgeSetWindowTheme,
+  showItemInFolder as bridgeShowItemInFolder,
   showOpenDialog as bridgeShowOpenDialog,
 } from "./tauriBridge.js";
 
@@ -42,6 +43,7 @@ export interface TauriPlatformDeps {
   openExternal: typeof bridgeOpenExternal;
   getDesktopZoomLevel: typeof getTauriDesktopZoomLevel;
   setWindowTheme: typeof bridgeSetWindowTheme;
+  showItemInFolder: typeof bridgeShowItemInFolder;
 }
 
 const realDeps: TauriPlatformDeps = {
@@ -50,6 +52,7 @@ const realDeps: TauriPlatformDeps = {
   openExternal: bridgeOpenExternal,
   getDesktopZoomLevel: getTauriDesktopZoomLevel,
   setWindowTheme: bridgeSetWindowTheme,
+  showItemInFolder: bridgeShowItemInFolder,
 };
 
 /** The subset of `IPlatformService` currently ported; expand the `Pick` keys as slices land. */
@@ -59,6 +62,7 @@ export type TauriPlatformSubset = Pick<
   | "selectFile"
   | "selectFiles"
   | "openExternal"
+  | "openInFileManager"
   | "getDesktopZoomLevel"
   | "setTitleBarTheme"
 >;
@@ -90,6 +94,16 @@ export function createTauriPlatformSubset(deps: TauriPlatformDeps = realDeps): T
       // rejection is swallowed deliberately so a failed OS launch never becomes an unhandled
       // promise rejection; the interface contract is that callers do not await this.
       void deps.openExternal(url).catch(() => {});
+    },
+    async openInFileManager(path: string) {
+      // Maps the command's `Result<(),String>` seam to the interface's `{success,error?}` result
+      // object (the exact contract Electron's shell.showItemInFolder-based method returns).
+      try {
+        await deps.showItemInFolder(path);
+        return { success: true };
+      } catch (e) {
+        return { success: false, error: String(e) };
+      }
     },
     async getDesktopZoomLevel() {
       const zoomLevel = await deps.getDesktopZoomLevel(MAIN_LABEL);

@@ -13,11 +13,12 @@
 > marked DONE must be additive and flag-gated.
 
 > **STATUS — Part 1 landed** (`src/renderer/src/tauriPlatform.ts`): `createTauriPlatformSubset(deps?)`
-> returns a `Pick<IPlatformService, …>` — NOT the full interface — implementing only 6 fully-backed
-> methods (`selectDirectory`, `selectFile`, `selectFiles`, `openExternal`, `getDesktopZoomLevel`,
-> `setTitleBarTheme`), each delegating to a verified `tauriBridge` wrapper with real transformation
-> (single-path unwrap, `"system"`→clear-override, level→`{zoomLevel}` wrap, fire-and-forget). It is
-> **additive and not wired into the Electron factory** (Electron stays intact). The sync-return
+> returns a `Pick<IPlatformService, …>` — NOT the full interface — implementing only 7 fully-backed
+> methods (`selectDirectory`, `selectFile`, `selectFiles`, `openExternal`, `openInFileManager`,
+> `getDesktopZoomLevel`, `setTitleBarTheme`), each delegating to a verified `tauriBridge` wrapper with
+> real transformation (single-path unwrap, reveal→`{success,error?}` result object, `"system"`→clear
+> override, level→`{zoomLevel}` wrap, fire-and-forget). It is **additive and not wired into the
+> Electron factory** (Electron stays intact). The sync-return
 > `getDeviceId` is deliberately excluded (PORTING.md sync-IPC trap → needs a prewarm cache). Conformance
 > is asserted headless by `tauri-port/test/layer-b/b1-adapter.test.ts` (injectable deps). Expand the
 > `Pick` keys + `createTauriPlatformSubset` body as gated rows land; wire the factory once the seam is
