@@ -592,6 +592,20 @@ export function setTauriDesktopZoomLevel(
 }
 
 /**
+ * 读取指定窗口当前的桌面缩放等级（Electron 对数单位，`0` 表示 100%）。对应 Rust 命令
+ * `get_desktop_zoom_level`（第二十六切片，补齐第十三切片因 Tauri 无缩放 getter 而暂缓的读取）。
+ *
+ * 因 Tauri 2.12.1 没有缩放 getter，Rust 端通过受管 `ZoomRegistry` 记录 `setTauriDesktopZoomLevel` 应用过的
+ * 因子，再经 `zoom_factor_to_level` 换算回等级；从未缩放过返回 `0.0`（初始默认 100%）。label 不存在时
+ * Rust 端返回 `Err`，以 rejected Promise 抛出（沿用第三切片错误传播接缝）。
+ *
+ * @param label - 目标窗口 label。
+ */
+export function getTauriDesktopZoomLevel(label: string): Promise<number> {
+  return invoke<number>("get_desktop_zoom_level", { label });
+}
+
+/**
  * Phase 2 第十四切片：窗口装饰附加能力的 TypeScript 接缝（缩放因子、置顶、可调整大小）。
  *
  * 对应 Rust 命令 `get_window_scale_factor` / `is_window_always_on_top` /

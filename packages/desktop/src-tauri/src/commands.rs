@@ -29,7 +29,8 @@
 // background color (set RGBA + clear) via `WebviewWindow::set_background_color`; 23) window Spaces
 // visibility + cursor grab/visibility (three boolean `WebviewWindow` mutators); 24) application
 // lifecycle (relaunch + exit) via the core `AppHandle::restart` / `AppHandle::exit`; 25) directory
-// picker (`select_directory`) via `tauri-plugin-dialog` folder pickers (selectDirectory parity).
+// picker (`select_directory`) via `tauri-plugin-dialog` folder pickers (selectDirectory parity);
+// 26) desktop zoom GETTER via a managed `ZoomRegistry` (Tauri has no zoom getter).
 
 use tauri::{AppHandle, Manager, WebviewWindow};
 // Window background color for the slice-22 `set_window_background_color` command. `Color` is the
@@ -1028,12 +1029,19 @@ pub fn zoom_level_to_factor(level: f64) -> f64 {
 /// # Returns
 ///
 /// The logarithmic zoom level `ln(factor) / ln(1.2)` used by the Electron platform contract.
-// 该反向映射当前仅由 `set_zoom` 设置路径的单测覆盖；读取当前等级的 getter 留待 tauriPlatform
-// 适配器（见 slice 13 偏差说明），故在二进制构建中暂无运行时调用者。
-#[allow(dead_code)]
+// 第二十六切片起，本反向映射由 `get_desktop_zoom_level` 运行时调用（把受管状态里记录的因子换算回等级）。
 pub fn zoom_factor_to_level(factor: f64) -> f64 {
     factor.ln() / 1.2_f64.ln()
 }
+
+/// Last-set desktop zoom factor per window label, for the slice-26 getter.
+///
+/// Phase 2 slice 26. Tauri 2.12.1 exposes `WebviewWindow::set_zoom` but **no zoom getter**, so
+/// Electron's live `getDesktopZoomLevel` is ported by remembering the factor applied by
+/// [`set_desktop_zoom_level`] in this managed registry and converting it back on read. `Mutex<HashMap>`
+/// keeps the struct `Send + Sync` (the managed-state bound) even though the value is a plain `f64`.
+#[derive(Default)]
+pub struct ZoomRegistry(Mutex<HashMap<String, f64>>);
 
 /// Set the zoom level of the window identified by `label`.
 ///
@@ -1045,27 +1053,70 @@ pub fn zoom_factor_to_level(factor: f64) -> f64 {
 /// TypeScript side as a rejected `Promise`. Requires a live GUI window, so it is compile-verified
 /// here and exercised under `pnpm dev:tauri`; the pure conversion is covered by unit tests.
 ///
-/// Deviation note (documented, not stubbed): Tauri 2.12.1 provides no zoom *getter*, so
-/// `getDesktopZoomLevel` cannot read the live level through this seam. Reading it back requires the
-/// `tauriPlatform` adapter to track the last-set level in managed state — that getter is deliberately
-/// NOT implemented or faked here; only the setter path (which zoom-in/out/reset all funnel through)
-/// ships in this slice.
+/// On success the applied `factor` is also recorded in the [`ZoomRegistry`] under `label`, so
+/// [`get_desktop_zoom_level`] can report the current level back (slice 26 closes the slice-13
+/// deferral). A poisoned registry lock is surfaced as `Err` via `.map_err`, not `.unwrap()` — the zoom
+/// is applied first, so a registry failure still reports the operation's own outcome ordering below.
 ///
 /// # Arguments
 ///
-/// * `app` - The Tauri application handle providing the window registry.
+/// * `app` - The Tauri application handle providing the window registry and [`ZoomRegistry`].
 /// * `label` - Target window label (the main window is `"main"`).
 /// * `level` - Desired zoom level in Electron's logarithmic unit (`0.0` == 100%).
 ///
 /// # Returns
 ///
-/// `Ok(())` on success; `Err(String)` when the window is missing or the OS rejects the operation.
+/// `Ok(())` on success; `Err(String)` when the window is missing, the OS rejects the operation, or the
+/// registry lock is poisoned.
 #[tauri::command]
 pub fn set_desktop_zoom_level(app: AppHandle, label: String, level: f64) -> Result<(), String> {
     let factor = zoom_level_to_factor(level);
     require_window(&app, &label)?
         .set_zoom(factor)
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    let registry = app.state::<ZoomRegistry>();
+    registry
+        .0
+        .lock()
+        .map_err(|e| format!("zoom registry lock poisoned: {e}"))?
+        .insert(label, factor);
+    Ok(())
+}
+
+/// Return the current desktop zoom level of the window identified by `label`.
+///
+/// Phase 2 slice 26 (desktop zoom getter; closes the slice-13 deferral of `getDesktopZoomLevel`).
+/// Tauri 2.12.1 has no zoom getter, so the level is recovered by reading the factor that
+/// [`set_desktop_zoom_level`] recorded in the [`ZoomRegistry`] and converting it through
+/// [`zoom_factor_to_level`] (`level = ln(factor)/ln(1.2)`). The live window is resolved through
+/// [`require_window`] first so an unknown label errors exactly like the sibling getters. A window that
+/// has never been zoomed returns `0.0` (== 100%), the documented initial default. This is the
+/// platform's best-effort port of Electron's live read — a real implementation, not a stub; the only
+/// residual (a zoom set outside this shell is invisible to the registry) is inherent to Tauri's missing
+/// getter and is documented rather than hidden. Lock poisoning is mapped to `Err` (never `.unwrap()`).
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry and [`ZoomRegistry`].
+/// * `label` - Target window label (the main window is `"main"`).
+///
+/// # Returns
+///
+/// `Ok(f64)` with the current Electron zoom level (`0.0` if never set); `Err(String)` when the window is
+/// missing or the registry lock is poisoned.
+#[tauri::command]
+pub fn get_desktop_zoom_level(app: AppHandle, label: String) -> Result<f64, String> {
+    // Validate the label resolves to a live window (parity with the other getters), then read the
+    // tracked factor; `0.0` is the initial default when this window has never been zoomed.
+    require_window(&app, &label)?;
+    let registry = app.state::<ZoomRegistry>();
+    let guard = registry
+        .0
+        .lock()
+        .map_err(|e| format!("zoom registry lock poisoned: {e}"))?;
+    Ok(guard
+        .get(&label)
+        .map_or(0.0, |factor| zoom_factor_to_level(*factor)))
 }
 
 /// Return the device-pixel-ratio (HiDPI scale factor) of the window identified by `label`.

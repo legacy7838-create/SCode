@@ -43,6 +43,9 @@ fn main() {
         // Sidecar child registry for the slice-20 lifecycle commands (spawn retains a child by pid,
         // kill reaps it). Managed exactly once — a second `.manage` of the same type would panic.
         .manage(commands::SidecarRegistry::default())
+        // Last-set zoom factor per window, so slice 26 can read the zoom level back (Tauri has no
+        // zoom getter). Distinct managed type from SidecarRegistry, so a second `.manage` is fine.
+        .manage(commands::ZoomRegistry::default())
         .invoke_handler(tauri::generate_handler![
             shell_kind,
             commands::get_app_version,
@@ -79,6 +82,7 @@ fn main() {
             commands::get_window_theme,
             commands::set_window_theme,
             commands::set_desktop_zoom_level,
+            commands::get_desktop_zoom_level,
             commands::get_window_scale_factor,
             commands::is_window_always_on_top,
             commands::set_window_always_on_top,

@@ -368,3 +368,28 @@ multi pick, mirroring `show_open_dialog`. TS bridge: `selectDirectory(multiple =
 `invoke<string[] | null>("select_directory", { multiple })`. No new capability beyond the existing
 `dialog:default` already granting the file pickers. Requires a live GUI dialog (compile-verified;
 exercised under `pnpm dev:tauri`; no headless dialog unit test — no-stub rule).
+
+## Slice 26 contract — desktop zoom GETTER (supersedes the slice-13 deferral)
+
+Closes the one deviation slice 13 left open: `getDesktopZoomLevel` (`platform.ts:771`, `DesktopZoomState
+{ zoomLevel }`) was deferred because **Tauri 2.12.1 has no zoom getter** (`set_zoom` exists, no `zoom()`
+reader — confirmed in `webview_window.rs`). The only correct port is to track the last-set zoom in
+managed state (the same `Mutex<HashMap>` pattern as the slice-20 `SidecarRegistry`), then convert the
+stored factor back to a level through the already-tested `zoom_factor_to_level` helper — which this
+slice activates, removing its `#[allow(dead_code)]`.
+
+Managed state + commands (`commands.rs`):
+- `#[derive(Default)] pub struct ZoomRegistry(Mutex<HashMap<String /*label*/, f64 /*factor*/>>)` —
+  `Send + Sync` (the `Mutex<HashMap<_, f64>>` is).
+- `set_desktop_zoom_level(app, label, level)` — now **also records** the applied `factor` under `label`
+  after `set_zoom` succeeds (lock poisoning mapped to `Err`, never `.unwrap()`).
+- `get_desktop_zoom_level(app, label) -> Result<f64,String>` — resolves the live window via
+  [`require_window`] (so an unknown label errors, matching the sibling getters), then reads the
+  registry: a recorded factor is converted with `zoom_factor_to_level`; an unrecorded window returns
+  `0.0` (== 100%), the documented initial default. This is the platform's best-effort for Electron's
+  live read — a genuine implementation, not a stub; the residual (a zoom set outside this shell would
+  be invisible) is inherent to Tauri lacking a getter and is noted, not hidden.
+
+TS bridge: `getTauriDesktopZoomLevel(label)` → `invoke<number>("get_desktop_zoom_level", { label })`.
+The `get_desktop_zoom_level` name is a real command so the A5 wrapper-exists guard covers it. Requires
+a live GUI window (compile-verified; exercised under `pnpm dev:tauri`).
