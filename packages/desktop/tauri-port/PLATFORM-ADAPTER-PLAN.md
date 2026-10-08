@@ -121,7 +121,7 @@ mechanism not yet confirmed against source/Rust.
 | `selectFile` | `() => Promise<string \| null>` (:512) | dialog | `plugin:dialog` | LOW | P2 |
 | `selectFiles?` | `() => Promise<string[]>` (:515) | dialog | `plugin:dialog` multi | LOW | P2 |
 | `getPathForFile?` | `(file) => string \| null` — **SYNC** (:530) | dialog | **BLOCKED / no equivalent** — Electron `webUtils.getPathForFile`; Tauri drop has no host path (INVENTORY §2 "getPathForFile no equivalent") → ASSUMPTION: drag-drop file → `command:` resolve via a temp registration | HIGH | OUT(P4 spike) |
-| `saveFile?` | `(SaveFileRequest) => Promise<SaveFileResult>` — **ArrayBuffer in** (:518) | dialog/fs | `plugin:dialog` + `Channel`/`ArrayBuffer` command (binary; PORTING trap) | HIGH | P2 |
+| `saveFile?` | `(SaveFileRequest) => Promise<SaveFileResult>` — **ArrayBuffer in** (:518) | dialog/fs | Variant A (bytes) = landed `show_save_dialog` + fs write (LOW); Variant B (`sourceUrl`) = SSRF-hardened downloader — **M-HIGH, security-gated**, see [`SAVE-FILE-SPIKE.md`](./SAVE-FILE-SPIKE.md). Do NOT ship a data-only partial. | LOW(A)/HIGH(B) | P2 |
 
 ### 1d. Filesystem / temp attachment
 
