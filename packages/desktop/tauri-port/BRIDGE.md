@@ -236,3 +236,34 @@ number }` interface + three wrappers (`getTauriCurrentMonitor`, `getTauriPrimary
 GUI/OS is required to enumerate real displays, so these are compile-verified (exercised under
 `pnpm dev:tauri`); `monitor_to_info` needs a runtime `Monitor`, which a pure test cannot fabricate —
 no fake (no-stub rule), but the new wrappers are auto-covered by the A5 name + arg-parity guards.
+
+## Slice 20 contract — sidecar lifecycle (track spawned children + kill)
+
+Closes the orphan-sidecar gap PORTING.md flags ("process lifecycle: sidecars must be explicitly
+terminated; `utilityProcess` auto-kills with main but a Tauri sidecar does not"). The PoC
+`spawn_sidecar_echo` previously let the `CommandChild` drop, so a launched sidecar could never be
+stopped from the shell. This slice stores each spawned child in Tauri managed state and adds a kill
+command.
+
+Owned API facts (verified in `tauri-plugin-shell-2.4.1/src/process/mod.rs`): `CommandChild` is
+`{ inner: Arc<SharedChild>, stdin_writer: PipeWriter }` → `Send` (so it is `Sync` once wrapped in a
+`Mutex`); `kill(self)` **consumes** the child (:78); `pid(&self) -> u32` (:84). `spawn()` returns
+`Result<(Receiver, CommandChild), _>`; the `Receiver` stays deliberately dropped for this PoC
+stdout-free sidecar.
+
+Managed state + commands (`commands.rs`):
+- `#[derive(Default)] pub struct SidecarRegistry(Mutex<HashMap<u32, CommandChild>>)` — keyed by pid;
+  `Mutex<HashMap<_, CommandChild>>` is `Send + Sync` (Tauri managed-state requirement).
+- `spawn_sidecar_echo(app, port: u16) -> Result<u32,String>` — now locks the registry (`.map_err` on
+  a poisoned lock, never `.unwrap()`), inserts the child by pid, returns the pid.
+- `kill_sidecar(app, pid: u32) -> Result<(),String>` — removes the child from the registry (missing
+  pid ⇒ `Err("no such sidecar")`) and calls `child.kill()` (`.map_err(|e| e.to_string())`).
+- `main.rs` adds `.manage(commands::SidecarRegistry::default())` (managed exactly once — a duplicate
+  `manage` of the same type panics per `app.rs:1989`).
+
+TS bridge: `killTauriSidecar(pid: number)` → `invoke<void>("kill_sidecar", { pid })`; the existing
+`spawnTauriSidecarEcho` wrapper is unchanged. A poisoned-lock `Err` and a missing-pid `Err` both
+surface as rejected Promises (the slice-3 error seam). Sidecar child management needs a live process
+spawn (a real window + externalBin), so the commands are compile-verified and exercised under
+`pnpm dev:tauri`; the a4 Layer-A test already proves the standalone echo child can be killed without
+orphaning, which is the same guarantee these commands must hold inside the shell.

@@ -42,6 +42,13 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 // (`app.shell()`) resolves a bundled externalBin by stem and launches it as a child process. The
 // returned `CommandChild` reports the OS pid of the launched sidecar.
 use tauri_plugin_shell::ShellExt;
+// The retained child handle for the slice-20 sidecar lifecycle registry; `kill(self)` consumes it.
+use tauri_plugin_shell::process::CommandChild;
+// Managed-state registry for live sidecars: a process-id keyed map guarded by a `Mutex` so the whole
+// struct is `Send + Sync` (the Tauri managed-state bound), since `CommandChild` is `Send` but not
+// `Sync` (it owns a stdin pipe handle).
+use std::collections::HashMap;
+use std::sync::Mutex;
 
 /// BCP-47 fallback locale used when the host OS locale cannot be resolved.
 const FALLBACK_LOCALE: &str = "en-US";
@@ -1828,15 +1835,28 @@ pub fn show_notification(app: AppHandle, title: String, body: String) -> Result<
         .map_err(|e| e.to_string())
 }
 
+/// Registry of live sidecar child processes, keyed by their OS pid.
+///
+/// Phase 2 slice 20 (sidecar lifecycle). Electron's `utilityProcess` is auto-killed when the main
+/// process exits; a Tauri sidecar is NOT, so a spawned `CommandChild` must be retained and explicitly
+/// terminated or it orphans (PORTING.md Phase-6 process-lifecycle trap). Stored in Tauri managed
+/// state. `CommandChild` is `Send` but not `Sync` (it owns a stdin pipe handle), so wrapping it in a
+/// `Mutex<HashMap<..>>` makes the whole struct `Send + Sync` — the managed-state bound. Keyed by pid
+/// because [`kill_sidecar`] must take ownership back out of the map to call the consuming
+/// `CommandChild::kill(self)`.
+#[derive(Default)]
+pub struct SidecarRegistry(Mutex<HashMap<u32, CommandChild>>);
+
 /// Spawn the trivial `zcode-echo` sidecar so the renderer can drive a loopback WebSocket round-trip.
 ///
 /// Part of the sidecar-runtime PoC (see `../tauri-port/SIDECAR-PACKAGING.md` §4 and §7). Resolves the
 /// bundled externalBin by its **stem** (`zcode-echo`; Tauri appends the current Rust target triple and
 /// the OS `.exe` suffix itself), injects the loopback port via the `ZCODE_WS_PORT` environment variable
 /// (so the sidecar binds a port Rust and the renderer both know — the "fixed port" handoff in
-/// SIDECAR-PACKAGING.md §6), and launches it. The event `Receiver` returned by `spawn` is dropped
-/// deliberately: this PoC only proves spawn + env handoff + a live pid, and does not yet route the
-/// sidecar's stdout through the logger or wire lifecycle kill (both documented follow-ups).
+/// SIDECAR-PACKAGING.md §6), launches it, and **retains** the resulting `CommandChild` in the
+/// [`SidecarRegistry`] managed state so it can later be terminated by [`kill_sidecar`]. The event
+/// `Receiver` returned by `spawn` is still dropped deliberately: this PoC does not route the sidecar's
+/// stdout through the logger (documented follow-up), but lifecycle kill is now wired.
 ///
 /// Runtime behaviour of the sidecar (its WS echo round-trip) is UNVERIFIED here: a headless CI box has
 /// no desktop window to invoke this command from. It is compile-verified and exercised manually under
@@ -1845,14 +1865,15 @@ pub fn show_notification(app: AppHandle, title: String, body: String) -> Result<
 ///
 /// # Arguments
 ///
-/// * `app` - The Tauri application handle providing the shell extension.
+/// * `app` - The Tauri application handle providing the shell extension and managed state.
 /// * `port` - The loopback TCP port to hand to the sidecar via `ZCODE_WS_PORT`.
 ///
 /// # Returns
 ///
-/// `Ok(u32)` with the OS pid of the launched sidecar, or `Err(String)` if the sidecar could not be
-/// resolved (missing/wrongly-named externalBin) or the OS refused to spawn it. Each plugin `Err` is
-/// converted with `.map_err(|e| e.to_string())` (never `.unwrap()`), surfacing as a rejected `Promise`.
+/// `Ok(u32)` with the OS pid of the launched (and now-registered) sidecar, or `Err(String)` if the
+/// sidecar could not be resolved (missing/wrongly-named externalBin), the OS refused to spawn it, or
+/// the registry lock was poisoned. Each error is converted with `.map_err` (never `.unwrap()`),
+/// surfacing as a rejected `Promise`.
 #[tauri::command]
 pub fn spawn_sidecar_echo(app: AppHandle, port: u16) -> Result<u32, String> {
     let (_rx, child) = app
@@ -1862,7 +1883,44 @@ pub fn spawn_sidecar_echo(app: AppHandle, port: u16) -> Result<u32, String> {
         .env("ZCODE_WS_PORT", port.to_string())
         .spawn()
         .map_err(|e| e.to_string())?;
-    Ok(child.pid())
+    let pid = child.pid();
+    let registry = app.state::<SidecarRegistry>();
+    registry
+        .0
+        .lock()
+        .map_err(|e| format!("sidecar registry lock poisoned: {e}"))?
+        .insert(pid, child);
+    Ok(pid)
+}
+
+/// Terminate a previously-spawned sidecar by its OS pid.
+///
+/// Phase 2 slice 20 (sidecar lifecycle). Removes the `CommandChild` from the [`SidecarRegistry`]
+/// managed state and calls its consuming `kill(self)`, so the externalBin process is explicitly
+/// reaped. sidecar 不会随主进程自动回收(不同于 Electron 的 utilityProcess)，必须显式终止，否则残留孤儿进程——
+/// 这正是 PORTING.md Phase-6 记录的进程生命周期陷阱。
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the managed [`SidecarRegistry`].
+/// * `pid` - The OS pid returned by [`spawn_sidecar_echo`].
+///
+/// # Returns
+///
+/// `Ok(())` when the child was found and killed, or `Err(String)` when the pid is not registered
+/// (already killed or never spawned), the registry lock was poisoned, or the OS refused to kill it.
+/// Never `.unwrap()`s; each error surfaces as a rejected `Promise`.
+#[tauri::command]
+pub fn kill_sidecar(app: AppHandle, pid: u32) -> Result<(), String> {
+    let registry = app.state::<SidecarRegistry>();
+    let mut map = registry
+        .0
+        .lock()
+        .map_err(|e| format!("sidecar registry lock poisoned: {e}"))?;
+    let child = map
+        .remove(&pid)
+        .ok_or_else(|| format!("no such sidecar: {pid}"))?;
+    child.kill().map_err(|e| e.to_string())
 }
 
 /// Read the current text content of the OS clipboard via `tauri-plugin-clipboard-manager`.

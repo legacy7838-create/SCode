@@ -869,6 +869,18 @@ export function spawnTauriSidecarEcho(port: number): Promise<number> {
 }
 
 /**
+ * 终止指定 pid 的 sidecar 子进程（Phase 2 第二十切片）。对应 Rust 命令 `kill_sidecar`：从受管的
+ * `SidecarRegistry` 按 pid 取出并消耗 `CommandChild`，调用其 `kill()`。sidecar 不会随主进程自动回收
+ * （不同于 Electron 的 utilityProcess），必须显式终止以避免孤儿进程。pid 未注册（已杀或从未启动）时
+ * Rust 端返回 `Err("no such sidecar")`，以 rejected Promise 形式抛出（沿用第三切片错误传播接缝）。
+ *
+ * @param pid - `spawnTauriSidecarEcho` 返回的 OS 进程号。
+ */
+export function killTauriSidecar(pid: number): Promise<void> {
+  return invoke<void>("kill_sidecar", { pid });
+}
+
+/**
  * Phase 2 第十九切片：显示器信息（多屏 / HiDPI）的 TypeScript 接缝。
  *
  * 对应 Rust 命令 `get_window_current_monitor` / `get_primary_monitor` / `get_available_monitors`，

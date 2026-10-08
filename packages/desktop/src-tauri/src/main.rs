@@ -40,6 +40,9 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         // OS clipboard support for the slice-8 `read_clipboard_text` / `write_clipboard_text` commands.
         .plugin(tauri_plugin_clipboard_manager::init())
+        // Sidecar child registry for the slice-20 lifecycle commands (spawn retains a child by pid,
+        // kill reaps it). Managed exactly once — a second `.manage` of the same type would panic.
+        .manage(commands::SidecarRegistry::default())
         .invoke_handler(tauri::generate_handler![
             shell_kind,
             commands::get_app_version,
@@ -102,6 +105,7 @@ fn main() {
             commands::open_path,
             commands::show_notification,
             commands::spawn_sidecar_echo,
+            commands::kill_sidecar,
             commands::read_clipboard_text,
             commands::write_clipboard_text
         ])
