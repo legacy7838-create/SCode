@@ -348,3 +348,23 @@ TS bridge: `relaunchTauriApp()` → `invoke<void>("relaunch_app")` (no args); `e
 terminates the process (the `invoke` Promise never resolves because the runtime is gone) — the same
 behavior Electron's relaunch has; documented, not stubbed. Compile-verified; exercised under
 `pnpm dev:tauri`.
+
+## Slice 25 contract — directory picker (`selectDirectory` parity)
+
+Grounded directly in the `IPlatformService.selectDirectory` method (`platform.ts`), the workspace-open
+flow. Slice 5 shipped `show_open_dialog` (file picker) but not a **folder** picker. This uses the
+already-installed `tauri-plugin-dialog` (no new dependency): `FileDialogBuilder::blocking_pick_folder()
+-> Option<FilePath>` and `blocking_pick_folders() -> Option<Vec<FilePath>>`
+(`tauri-plugin-dialog-2.8.1/src/lib.rs:738`/`:761`), reusing the existing `file_path_to_string` helper
+and the slice-5 async-worker bridging pattern (async command so the blocking native picker never
+freezes the event loop).
+
+| Command | Args | Returns | Behavior |
+| --- | --- | --- | --- |
+| `select_directory` | `multiple: bool` | `Result<Option<Vec<String>>,String>` | folder picker; `None` on cancel; `Vec<String>` of chosen dir paths |
+
+No file-type filters (directory selection has none). Normalized to `Vec<String>` for both single and
+multi pick, mirroring `show_open_dialog`. TS bridge: `selectDirectory(multiple = false)` →
+`invoke<string[] | null>("select_directory", { multiple })`. No new capability beyond the existing
+`dialog:default` already granting the file pickers. Requires a live GUI dialog (compile-verified;
+exercised under `pnpm dev:tauri`; no headless dialog unit test — no-stub rule).

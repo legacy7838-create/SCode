@@ -28,7 +28,8 @@
 // click-through, min/max size set + clear) via the existing `WebviewWindow` mutators; 22) window
 // background color (set RGBA + clear) via `WebviewWindow::set_background_color`; 23) window Spaces
 // visibility + cursor grab/visibility (three boolean `WebviewWindow` mutators); 24) application
-// lifecycle (relaunch + exit) via the core `AppHandle::restart` / `AppHandle::exit`.
+// lifecycle (relaunch + exit) via the core `AppHandle::restart` / `AppHandle::exit`; 25) directory
+// picker (`select_directory`) via `tauri-plugin-dialog` folder pickers (selectDirectory parity).
 
 use tauri::{AppHandle, Manager, WebviewWindow};
 // Window background color for the slice-22 `set_window_background_color` command. `Color` is the
@@ -2006,6 +2007,44 @@ pub async fn show_open_dialog(
         builder.blocking_pick_file().map(|p| vec![p])
     };
 
+    Ok(picked.map(|paths| {
+        paths
+            .iter()
+            .map(file_path_to_string)
+            .collect::<Vec<String>>()
+    }))
+}
+
+/// Show a native directory (folder) picker and return the selected path(s), or `None` on cancel.
+///
+/// Phase 2 slice 25 (directory picker). Grounded in the `IPlatformService.selectDirectory` method
+/// (the workspace-open flow): slice 5 added the file picker but not a folder picker. Uses the same
+/// already-installed `tauri-plugin-dialog` (no new dependency) via `blocking_pick_folders()` (multi)
+/// or `blocking_pick_folder()` (single), reusing the slice-5 `file_path_to_string` helper. Like the
+/// file dialogs the command is `async`: Tauri runs it on a worker thread so the blocking native
+/// picker never freezes the event loop. A single selection is normalized to a `Vec<String>` so the
+/// result shape is uniform for `multiple` true/false; directory selection has no file-type filters.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the dialog extension.
+/// * `multiple` - Whether the user may select more than one folder.
+///
+/// # Returns
+///
+/// `Ok(Some(paths))` for the chosen directories, `Ok(None)` when the user cancels, or `Err(String)`
+/// if the native dialog cannot be shown. Cancellation is `None`, not an error.
+#[tauri::command]
+pub async fn select_directory(
+    app: AppHandle,
+    multiple: bool,
+) -> Result<Option<Vec<String>>, String> {
+    let builder = app.dialog().file();
+    let picked = if multiple {
+        builder.blocking_pick_folders()
+    } else {
+        builder.blocking_pick_folder().map(|p| vec![p])
+    };
     Ok(picked.map(|paths| {
         paths
             .iter()

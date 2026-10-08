@@ -1095,6 +1095,24 @@ export function exitTauriApp(code: number): Promise<void> {
 }
 
 /**
+ * Phase 2 第二十五切片：目录（文件夹）选择器的 TypeScript 接缝，对齐平台契约的
+ * `selectDirectory`（打开工作区流程）。
+ *
+ * 对应 Rust 命令 `select_directory`（复用已装的 `tauri-plugin-dialog` 的 `blocking_pick_folder(s)`，
+ * 无新增依赖）。第五切片只有文件选择器 `showOpenDialog`，缺少目录选择；本切片补齐目录选择，并把单选
+ * 归一化为 `string[]`（`multiple` 为真时可多选）。目录选择不带文件类型过滤器。用户取消返回 `null`，
+ * 非错误。Rust 端 `Err(String)` 以 rejected Promise 抛出（沿用第三切片错误传播接缝）。运行时需活动 GUI
+ * 对话框，本接缝在此只做编译期类型校验，真实效果在 `pnpm dev:tauri` 下验证。保持导入零副作用。
+ *
+ * @param multiple - 是否允许多选目录，缺省单选。
+ */
+export function selectDirectory(
+  multiple = false,
+): Promise<string[] | null> {
+  return invoke<string[] | null>("select_directory", { multiple });
+}
+
+/**
  * Phase 2 第十九切片：显示器信息（多屏 / HiDPI）的 TypeScript 接缝。
  *
  * 对应 Rust 命令 `get_window_current_monitor` / `get_primary_monitor` / `get_available_monitors`，

@@ -111,6 +111,7 @@ fn main() {
             commands::set_window_cursor_grab,
             commands::set_window_cursor_visible,
             commands::show_open_dialog,
+            commands::select_directory,
             commands::show_save_dialog,
             commands::show_message_dialog,
             commands::open_url,
