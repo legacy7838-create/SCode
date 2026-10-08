@@ -84,3 +84,26 @@ ship as "reduced on Tauri" rather than block the whole port:
 
 P1 harness green on BOTH Electron and Tauri for that subsystem's flows, on Linux/macOS/Windows where
 applicable, plus a manual side-by-side read of tricky paths. No "works on my machine" claims.
+
+## Current status (living checkpoint)
+
+Electron remains the shipped product; all Tauri work is additive and gated behind `isTauriRuntime()`.
+
+- **P0 foundation — DONE.** Inventory (`INVENTORY.md`), this plan, a compiling `src-tauri` scaffold, and
+  `pnpm dev:tauri` (loads the same Vite renderer on :5174). `cargo check` green.
+- **P1 test harness — IN PROGRESS.** Design being written (`TEST-HARNESS.md`); no code harness yet.
+  Parity is therefore NOT yet verifiable end-to-end — the binding gate before any cutover.
+- **P2 platform adapter + IPC — IN PROGRESS.**
+  - Transport reuse is **PROVEN** headlessly (`poc/ws-rpc-roundtrip.ts` → `POC PASS`); the localhost-WS
+    RPC stack already exists in the web/remote path. Packaging runbook: `SIDECAR-PACKAGING.md`.
+  - Command slices landed (each cargo test/clippy/fmt + tauriBridge tsc green): slice 1 (app version,
+    locale, device id), slice 2 (platform info, app name), slice 3 (fallible app-path dirs — error seam),
+    slice 4 (window controls). Slice 5 (native dialogs) in flight.
+  - Full 104-method `tauriPlatform` adapter NOT started; blueprint in `PLATFORM-ADAPTER-PLAN.md`.
+- **P4 hard-blocker spikes — IN PROGRESS.** #1 embedded-browser/CDP (`BROWSER-CDP-SPIKE.md`, verdict:
+  no byte-parity, product go/no-go), #3 printToPDF (`PRINT-PDF-SPIKE.md`, two-tier native+headless-Chrome),
+  #4/#5 webview-injection + session/media-protocol (`WEBVIEW-PROTOCOL-SPIKE.md`) in flight. #2 updater
+  (`UPDATER-SPIKE.md`) in flight.
+
+**Not done / open:** P1 harness code; the full adapter wiring + runtime-selection edit; sidecar runtime
+PoC; the embedded-browser product decision. Cutover (P5) is far off and gated on all of the above.
