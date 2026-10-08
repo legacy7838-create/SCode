@@ -13,7 +13,8 @@
 // reveal-in-folder / open-path) via `tauri-plugin-opener`, and native OS notifications
 // (`show_notification`) via `tauri-plugin-notification`, plus the window-state queries and the
 // window-mutation group (set title/size/position, center, set/is fullscreen) via the existing
-// `WebviewWindow` API. See ./commands.rs and
+// (`WebviewWindow`) API, and the app-path group (home / temp / app-data / app-config directories via
+// `app.path().resolve`, plus the current executable path via `std::env::current_exe`). See ./commands.rs and
 // ../tauri-port/BRIDGE.md for the contract.
 mod commands;
 
@@ -47,6 +48,11 @@ fn main() {
             commands::get_app_name,
             commands::get_download_directory,
             commands::get_documents_directory,
+            commands::get_home_dir,
+            commands::get_temp_dir,
+            commands::get_app_data_dir,
+            commands::get_app_config_dir,
+            commands::get_exe_path,
             commands::window_minimize,
             commands::window_maximize,
             commands::window_unmaximize,

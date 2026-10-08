@@ -520,3 +520,52 @@ export function isFullscreen(label?: string): Promise<boolean> {
     label: label ?? DEFAULT_WINDOW_LABEL,
   });
 }
+
+/**
+ * Phase 2 第十一切片：应用路径命令的 TypeScript 接缝（复用 Tauri 内置路径解析器，无需新增插件）。
+ *
+ * 对应 Rust 命令 `get_home_dir` / `get_temp_dir` / `get_app_data_dir` / `get_app_config_dir`
+ * （均通过 `app.path().resolve("", BaseDirectory::X)` 解析）与 `get_exe_path`（通过
+ * `std::env::current_exe()` 读取当前可执行文件路径）。Rust 端返回 `Result<String, String>`，
+ * 失败时的 `Err(String)` 会在这里以 rejected Promise 的形式抛出（沿用第三切片的错误传播接缝）。
+ * 调用方应通过 `.catch`/`try-catch` 处理目录无法解析的情况。保持导入零副作用。
+ */
+
+/**
+ * 读取当前用户的家目录，例如 `"/home/user"`。对应 Rust 命令 `get_home_dir`
+ * （`BaseDirectory::Home`）。
+ */
+export function getHomeDir(): Promise<string> {
+  return invoke<string>("get_home_dir");
+}
+
+/**
+ * 读取系统临时目录，例如 `"/tmp"`。对应 Rust 命令 `get_temp_dir`（`BaseDirectory::Temp`）。
+ */
+export function getTempDir(): Promise<string> {
+  return invoke<string>("get_temp_dir");
+}
+
+/**
+ * 读取应用数据目录，例如 `"/home/user/.local/share/com.zcode.app"`。对应 Rust 命令
+ * `get_app_data_dir`（`BaseDirectory::AppData`），对齐 Electron 的 `getPath("userData")`。
+ */
+export function getAppDataDir(): Promise<string> {
+  return invoke<string>("get_app_data_dir");
+}
+
+/**
+ * 读取应用配置目录，例如 `"/home/user/.config/com.zcode.app"`。对应 Rust 命令
+ * `get_app_config_dir`（`BaseDirectory::AppConfig`）。
+ */
+export function getAppConfigDir(): Promise<string> {
+  return invoke<string>("get_app_config_dir");
+}
+
+/**
+ * 读取当前运行可执行文件的绝对路径。对应 Rust 命令 `get_exe_path`
+ * （`std::env::current_exe()`，非 BaseDirectory，直接读取）。
+ */
+export function getExePath(): Promise<string> {
+  return invoke<string>("get_exe_path");
+}

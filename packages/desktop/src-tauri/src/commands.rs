@@ -9,7 +9,9 @@
 // path) via `tauri-plugin-opener`, 7) native OS notifications via `tauri-plugin-notification`,
 // 8) OS clipboard via `tauri-plugin-clipboard-manager`, 9) window-state queries (size, position,
 // visibility, focus) via the existing `WebviewWindow` API, 10) window-mutation commands (set title,
-// size, position, center, fullscreen) via the same `WebviewWindow` API.
+// size, position, center, fullscreen) via the same `WebviewWindow` API; 11) app-path commands
+// (home/temp/app-data/app-config dirs via the existing `app.path().resolve`, plus the current
+// executable via `std::env::current_exe`).
 
 use tauri::{AppHandle, Manager, WebviewWindow};
 // Native dialog API surface for the slice-5 commands: the `DialogExt` app-extension, the file
@@ -228,6 +230,125 @@ pub fn get_documents_directory(app: AppHandle) -> Result<String, String> {
             std::ffi::OsStr::new(""),
             tauri::path::BaseDirectory::Document,
         )
+        .map(directory_to_string)
+        .map_err(|e| e.to_string())
+}
+
+/// Return the host user's home directory, e.g. `"/home/user"`.
+///
+/// Phase 2 slice 11 (app-path commands). Resolved through Tauri's built-in path API
+/// (`app.path().resolve("", BaseDirectory::Home)`), reusing the slice-3 `resolve` + [`directory_to_string`]
+/// pattern so no extra crate is required and any trailing separator is trimmed. Shares the same
+/// fallible `Result<String, String>` contract as [`get_download_directory`]; the Rust `Err` becomes a
+/// rejected `Promise` on the TypeScript side.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the path resolver.
+///
+/// # Returns
+///
+/// `Ok(String)` with the absolute home directory, or `Err(String)` describing why the OS directory
+/// could not be resolved.
+#[tauri::command]
+pub fn get_home_dir(app: AppHandle) -> Result<String, String> {
+    app.path()
+        .resolve(std::ffi::OsStr::new(""), tauri::path::BaseDirectory::Home)
+        .map(directory_to_string)
+        .map_err(|e| e.to_string())
+}
+
+/// Return the host temporary directory, e.g. `"/tmp"`.
+///
+/// Phase 2 slice 11. Resolved through `app.path().resolve("", BaseDirectory::Temp)` using the same
+/// fallible contract as [`get_home_dir`].
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the path resolver.
+///
+/// # Returns
+///
+/// `Ok(String)` with the absolute temp directory, or `Err(String)` describing why it could not be
+/// resolved.
+#[tauri::command]
+pub fn get_temp_dir(app: AppHandle) -> Result<String, String> {
+    app.path()
+        .resolve(std::ffi::OsStr::new(""), tauri::path::BaseDirectory::Temp)
+        .map(directory_to_string)
+        .map_err(|e| e.to_string())
+}
+
+/// Return the application data directory, e.g. `"/home/user/.local/share/com.zcode.app"`.
+///
+/// Phase 2 slice 11. Resolved through `app.path().resolve("", BaseDirectory::AppData)` using the same
+/// fallible contract as [`get_home_dir`]. This is the app-scoped writable data location (Electron
+/// `app.getPath("userData")` parity).
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the path resolver.
+///
+/// # Returns
+///
+/// `Ok(String)` with the absolute app-data directory, or `Err(String)` describing why it could not be
+/// resolved.
+#[tauri::command]
+pub fn get_app_data_dir(app: AppHandle) -> Result<String, String> {
+    app.path()
+        .resolve(
+            std::ffi::OsStr::new(""),
+            tauri::path::BaseDirectory::AppData,
+        )
+        .map(directory_to_string)
+        .map_err(|e| e.to_string())
+}
+
+/// Return the application configuration directory, e.g. `"/home/user/.config/com.zcode.app"`.
+///
+/// Phase 2 slice 11. Resolved through `app.path().resolve("", BaseDirectory::AppConfig)` using the
+/// same fallible contract as [`get_home_dir`].
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the path resolver.
+///
+/// # Returns
+///
+/// `Ok(String)` with the absolute app-config directory, or `Err(String)` describing why it could not
+/// be resolved.
+#[tauri::command]
+pub fn get_app_config_dir(app: AppHandle) -> Result<String, String> {
+    app.path()
+        .resolve(
+            std::ffi::OsStr::new(""),
+            tauri::path::BaseDirectory::AppConfig,
+        )
+        .map(directory_to_string)
+        .map_err(|e| e.to_string())
+}
+
+/// Return the absolute path of the current running executable.
+///
+/// Phase 2 slice 11. Unlike the other slice-11 commands, the executable path is not a
+/// [`tauri::path::BaseDirectory`] variant, so it is read directly from the OS through
+/// `std::env::current_exe()`. The result is coerced to a lossy UTF-8 `String` via [`directory_to_string`]
+/// (a file path carries no trailing separator, so the trim is a no-op there). The OS `Err` is
+/// converted to `Err(String)` via `.map_err(|e| e.to_string())` (never `.unwrap()`), surfacing as a
+/// rejected `Promise` on the TypeScript side.
+///
+/// # Arguments
+///
+/// * `_app` - The Tauri application handle, kept for command-signature consistency with the other
+///   path commands; the executable path does not depend on it.
+///
+/// # Returns
+///
+/// `Ok(String)` with the absolute executable path, or `Err(String)` describing why the OS could not
+/// report it.
+#[tauri::command]
+pub fn get_exe_path(_app: AppHandle) -> Result<String, String> {
+    std::env::current_exe()
         .map(directory_to_string)
         .map_err(|e| e.to_string())
 }
