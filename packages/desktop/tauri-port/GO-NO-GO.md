@@ -33,6 +33,16 @@ this is a parallel-shell feasibility call, not a cutover yet.**
 | 3 | `printToPDF` | Two-tier: native per-OS webview print (Win/mac) + headless-Chrome sidecar on Linux. Renderer already emits an engine-agnostic print host. Effort/risk MED. | `PRINT-PDF-SPIKE.md` |
 | 4 | Main-world injection | Coding-plan page is **first-party** → port via wry `initialization_script` + eval/emit (LOW-MED). Third-party `alert/confirm` patching folds into #1. | `WEBVIEW-PROTOCOL-SPIKE.md` |
 | 5 | Session partitions + Range/seek media | Rust `register_asynchronous_uri_scheme_protocol` with manual Range→206; per-window `data_directory`. MED-HIGH; top risk Linux MP4/GStreamer. | `WEBVIEW-PROTOCOL-SPIKE.md` |
+| 6 | `saveFile` remote (`sourceUrl`) SSRF downloader | Union: variant A (bytes) is LOW (reuses landed `show_save_dialog` + slice-40 fs write); variant B (URL) is an **SSRF-hardened** downloader whose 6 invariants (scheme allow-list, public-IP blocklist, DNS-rebinding pin, per-hop redirect revalidation, streaming size cap, atomic temp move) must port **whole** or the method stays unported. reqwest `resolve_to_addrs` + `ip_network`. Data-only partial is a forbidden security regression. | `SAVE-FILE-SPIKE.md` |
+| 7 | Synchronous `IPlatformService` getters over async IPC | `getDeviceId(): string` (command `get_device_id` landed) + `getWindowControlsOverlayMetrics` (needs sync zoom) cannot map to always-async `invoke`. Fix = prefetch-at-init + sync cache with a **factory ordering contract** (await bootstrap before exposing the seam). `getPathForFile`/`createLocalMediaPreviewUrl` are separate capability gaps (#5/#8), not this. | `SYNC-GETTER-SPIKE.md` |
+
+### Confirmed capability gaps (NOT pending work — no Tauri equivalent on desktop)
+- **Notification click-to-jump** (`onTaskNotificationClick`): `tauri-plugin-notification` 2.5.1 ignores
+  action options on desktop (`desktop.rs:31`); Linux `notify-rust` has no click callback. The notification
+  *display* + policy landed (slice 38) with this residual documented (`BRIDGE.md` slice 38).
+- **Native fullscreen-change event** (`onWindowFullscreenChanged`): Tauri 2.12 `WindowEvent` has no
+  fullscreen variant (`app.rs:111`); emitted at the command boundary instead (slice 37) — external/WM-driven
+  transitions are invisible. Residual documented.
 
 ## Recommended posture
 **Continue the parallel port for the CORE app, and treat the embedded browser as a scoped product
@@ -82,9 +92,13 @@ Each remaining interface family is blocked on a specific decision, NOT on more s
   recorded.
 
 ## Honest status
-Foundation + 79 verified commands + 9-method adapter + transport proof + full blocker analysis are DONE
-and verified (all gates green). **The faithful, un-gated, non-partial command/adapter increments are now
-exhausted** — every remaining `IPlatformService` method is gated on D1–D4 or the Host-sidecar transport
-wiring (see the Decision→unblocks map), and forcing one now would ship a stub or a partial substitute,
-which AGENTS.md + the port playbook forbid. This is a multi-week effort gated on those decisions, **not**
-closeable by continuing to add slices blindly. Electron remains the shipped product, fully intact.
+Foundation + 82 verified commands + a 13-method adapter subset (`createTauriPlatformSubset`, b1-locked) +
+transport proof + full blocker analysis (now 7 blockers incl. `saveFile` SSRF #6 and sync-getters #7, plus
+documented desktop capability gaps: notification-click, native-fullscreen-event) are DONE and verified —
+all gates green (`cargo test` 27, clippy/fmt clean, layer-a/b green, renderer tsc clean on changed files).
+**The faithful, un-gated, non-partial command/adapter increments are now exhausted** — every remaining
+`IPlatformService` method is gated on D1–D4, the Host-sidecar transport wiring, the sync-getter bootstrap
+ordering (blocker #7, recipe in `SYNC-GETTER-SPIKE.md`), or a confirmed capability gap (see table), and
+forcing one now would ship a stub or a partial substitute, which AGENTS.md + the port playbook forbid.
+This is a multi-week effort gated on those decisions, **not** closeable by continuing to add slices
+blindly. Electron remains the shipped product, fully intact.
