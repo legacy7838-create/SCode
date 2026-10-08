@@ -825,3 +825,45 @@ export function getWindowOuterSize(label: string): Promise<TauriWindowSize> {
 export function getCursorPosition(label: string): Promise<{ x: number; y: number }> {
   return invoke<{ x: number; y: number }>("get_cursor_position", { label });
 }
+
+/**
+ * Phase 2 第十八切片：补齐既有 Rust 命令缺失的 TS 接缝（主题 get/set、sidecar 启动）。
+ *
+ * 这三个命令（slice 12 的 `get_window_theme` / `set_window_theme` 与 sidecar PoC 的
+ * `spawn_sidecar_echo`）此前只在 Rust 侧落地，`tauriBridge.ts` 一直没有对应包装，导致渲染端无法调用，
+ * 命令⇄接缝出现漂移。本次补齐使「每个 `#[tauri::command]` 都有一个 `invoke` 包装」这一不变式重新成立；
+ * 该不变式由 `tauri-port/test/layer-a/a5-contract.test.ts` 静态校验固化。
+ */
+
+/**
+ * 读取指定窗口当前的明暗主题。对应 Rust 命令 `get_window_theme`（`WebviewWindow::theme`）。
+ * Rust 端把 `tauri::Theme` 映射为 `"light"` / `"dark"`（未知主题回退 `"unknown"`）。缺失窗口或 OS
+ * 无法读取时返回 `Err(String)`，这里以 rejected Promise 抛出。
+ *
+ * @param label - 目标窗口 label。
+ */
+export function getWindowTheme(label: string): Promise<string> {
+  return invoke<string>("get_window_theme", { label });
+}
+
+/**
+ * 设置或清除指定窗口的主题。对应 Rust 命令 `set_window_theme`（`WebviewWindow::set_theme`）。
+ *
+ * @param label - 目标窗口 label。
+ * @param theme - `"light"` / `"dark"`；传 `null` 清除显式覆盖（跟随系统）。Rust 形参 `theme:
+ *   Option<String>`，`null`/缺省即映射为 `None`。未知字符串在 Rust 侧返回 `Err("invalid theme")`。
+ */
+export function setWindowTheme(label: string, theme: string | null): Promise<void> {
+  return invoke<void>("set_window_theme", { label, theme });
+}
+
+/**
+ * 启动内置的 `zcode-echo` sidecar 子进程（sidecar-runtime PoC）。对应 Rust 命令
+ * `spawn_sidecar_echo`（`tauri-plugin-shell` 的 externalBin）。
+ *
+ * @param port - 通过 `ZCODE_WS_PORT` 传给 sidecar 的回环 WebSocket 端口。
+ * @returns 被拉起子进程的 OS pid（Rust 端 `Result<u32, String>`，失败时为 rejected Promise）。
+ */
+export function spawnTauriSidecarEcho(port: number): Promise<number> {
+  return invoke<number>("spawn_sidecar_echo", { port });
+}

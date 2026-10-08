@@ -173,3 +173,22 @@ on the window; it returns the desktop-wide cursor, per the crate doc at `:2018`)
 `invoke` wrappers, `get_window_outer_size` mirroring the slice-9 `get_window_size` object shape. No
 new plugin/capability. Both require a live GUI window (compile-verified; exercised under
 `pnpm dev:tauri`; no fake-window unit test per the no-stub rule).
+
+## Slice 18 contract — seam-drift closure + 1:1 contract guard
+
+A static audit (`comm` over the two files) found three Rust commands that shipped WITHOUT a TS
+`invoke` wrapper — the renderer could not reach them: `get_window_theme` / `set_window_theme` (slice
+12) and `spawn_sidecar_echo` (sidecar PoC). This slice closes that drift and locks the invariant so
+it cannot silently recur.
+
+TS bridge (new wrappers): `getWindowTheme(label)` → `invoke<string>("get_window_theme", { label })`;
+`setWindowTheme(label, theme)` → `invoke<void>("set_window_theme", { label, theme })` where `theme:
+string | null` maps to Rust `Option<String>` (null/omitted ⇒ `None`); `spawnTauriSidecarEcho(port)` →
+`invoke<number>("spawn_sidecar_echo", { port })` (returns the OS pid). No Rust change.
+
+Contract guard: `tauri-port/test/layer-a/a5-contract.test.ts` parses BOTH languages and asserts
+(a) every `#[tauri::command] fn` name appears in some `invoke("…")` call in `tauriBridge.ts`, (b)
+every `invoke("…")` target is a real command, and (c) the Rust parse yields ≥40 commands (a
+false-green tripwire if the layout breaks). It is headless-safe and wired into
+`pnpm test:tauri:layer-a` (glob `*.test.ts`). This is the Phase-1 "tests are the contract" gate for
+the invoke seam.
