@@ -347,3 +347,75 @@ export function readClipboardText(): Promise<string> {
 export function writeClipboardText(text: string): Promise<void> {
   return invoke<void>("write_clipboard_text", { text });
 }
+
+/**
+ * Phase 2 第九切片：窗口状态查询的 TypeScript 接缝。
+ *
+ * 对应 Rust 命令 `get_window_size` / `get_window_position` / `is_window_visible` /
+ * `is_window_focused`，全部复用已导入的 `WebviewWindow` API（无需新增插件）。Rust 端通过
+ * `app.get_webview_window(label)` 解析窗口，缺失时返回显式的 `Err("window not found: {label}")`，
+ * 这里以 rejected Promise 形式抛出（沿用第三切片的错误传播接缝）。
+ *
+ * 运行时约束：这些查询需要一个正在活动的窗口（GUI），因此本组接缝在此处只做“编译期”类型校验；
+ * 真实读取在 `pnpm dev:tauri` 下运行验证。保持导入零副作用。
+ */
+
+/** 窗口内部（客户区）尺寸，物理像素，映射 Rust 端 `WindowSize { width, height }`。 */
+export interface TauriWindowSize {
+  /** 内部宽度（物理像素）。 */
+  width: number;
+  /** 内部高度（物理像素）。 */
+  height: number;
+}
+
+/** 窗口外部（含边框）位置，物理像素，映射 Rust 端 `WindowPosition { x, y }`。 */
+export interface TauriWindowPosition {
+  /** 左上角 X 坐标（物理像素，可为负值）。 */
+  x: number;
+  /** 左上角 Y 坐标（物理像素，可为负值）。 */
+  y: number;
+}
+
+/**
+ * 读取窗口内部尺寸。对应 Rust 命令 `get_window_size`（`WebviewWindow::inner_size`）。
+ *
+ * @param label - 目标窗口 label，缺省为主窗口 `"main"`。
+ */
+export function getWindowSize(label?: string): Promise<TauriWindowSize> {
+  return invoke<TauriWindowSize>("get_window_size", {
+    label: label ?? DEFAULT_WINDOW_LABEL,
+  });
+}
+
+/**
+ * 读取窗口外部位置。对应 Rust 命令 `get_window_position`（`WebviewWindow::outer_position`）。
+ *
+ * @param label - 目标窗口 label，缺省为主窗口 `"main"`。
+ */
+export function getWindowPosition(label?: string): Promise<TauriWindowPosition> {
+  return invoke<TauriWindowPosition>("get_window_position", {
+    label: label ?? DEFAULT_WINDOW_LABEL,
+  });
+}
+
+/**
+ * 查询窗口当前是否可见。对应 Rust 命令 `is_window_visible`（`WebviewWindow::is_visible`）。
+ *
+ * @param label - 目标窗口 label，缺省为主窗口 `"main"`。
+ */
+export function isWindowVisible(label?: string): Promise<boolean> {
+  return invoke<boolean>("is_window_visible", {
+    label: label ?? DEFAULT_WINDOW_LABEL,
+  });
+}
+
+/**
+ * 查询窗口当前是否聚焦。对应 Rust 命令 `is_window_focused`（`WebviewWindow::is_focused`）。
+ *
+ * @param label - 目标窗口 label，缺省为主窗口 `"main"`。
+ */
+export function isWindowFocused(label?: string): Promise<boolean> {
+  return invoke<boolean>("is_window_focused", {
+    label: label ?? DEFAULT_WINDOW_LABEL,
+  });
+}

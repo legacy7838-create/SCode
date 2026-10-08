@@ -6,7 +6,9 @@
 // contract. Slices: 1) version/locale/device id, 2) platform info/app name, 3) OS directories
 // (first fallible `Result` commands), 4) window management via Tauri's `WebviewWindow` API,
 // 5) native file/save/message dialogs via `tauri-plugin-dialog`, 6) shell/open (URL, reveal,
-// path) via `tauri-plugin-opener`, 7) native OS notifications via `tauri-plugin-notification`.
+// path) via `tauri-plugin-opener`, 7) native OS notifications via `tauri-plugin-notification`,
+// 8) OS clipboard via `tauri-plugin-clipboard-manager`, 9) window-state queries (size, position,
+// visibility, focus) via the existing `WebviewWindow` API.
 
 use tauri::{AppHandle, Manager, WebviewWindow};
 // Native dialog API surface for the slice-5 commands: the `DialogExt` app-extension, the file
@@ -375,6 +377,137 @@ pub fn window_set_focus(app: AppHandle, label: String) -> Result<(), String> {
 pub fn window_is_maximized(app: AppHandle, label: String) -> Result<bool, String> {
     require_window(&app, &label)?
         .is_maximized()
+        .map_err(|e| e.to_string())
+}
+
+/// The inner (client-area) size of a webview window in physical pixels.
+///
+/// Serialized to the renderer as `{ width, height }`, matching the slice-9 bridge contract. Width
+/// and height use `u32` because Tauri's `PhysicalSize` reports unsigned pixel dimensions.
+#[derive(serde::Serialize, Debug, PartialEq, Eq)]
+pub struct WindowSize {
+    /// Inner width in physical pixels.
+    pub width: u32,
+    /// Inner height in physical pixels.
+    pub height: u32,
+}
+
+/// The outer (window-frame) position of a webview window in physical pixels.
+///
+/// Serialized to the renderer as `{ x, y }`. Coordinates use `i32` because `outer_position` returns
+/// a signed offset that may be negative when the window straddles a secondary monitor placed to the
+/// top-left of the primary display.
+#[derive(serde::Serialize, Debug, PartialEq, Eq)]
+pub struct WindowPosition {
+    /// Left edge X coordinate in physical pixels.
+    pub x: i32,
+    /// Top edge Y coordinate in physical pixels.
+    pub y: i32,
+}
+
+/// Build a [`WindowSize`] from a raw `(width, height)` pair.
+///
+/// Kept as a pure helper so the field wiring is unit-testable without a live window; the command
+/// itself feeds it the values read from `WebviewWindow::inner_size`.
+///
+/// # Arguments
+///
+/// * `width` - Inner width in physical pixels.
+/// * `height` - Inner height in physical pixels.
+///
+/// # Returns
+///
+/// A [`WindowSize`] carrying the given dimensions.
+pub fn build_window_size(width: u32, height: u32) -> WindowSize {
+    WindowSize { width, height }
+}
+
+/// Return the inner size of the window identified by `label`.
+///
+/// Phase 2 slice 9 (window-state queries). Resolves the live window through [`require_window`] and
+/// reads its physical client-area dimensions via `WebviewWindow::inner_size`. Like the slice-4 state
+/// query it cannot be unit-tested without a live window, so no fake test is written; the pure wiring
+/// is covered through [`build_window_size`].
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+///
+/// # Returns
+///
+/// `Ok(WindowSize)` with the physical dimensions; `Err(String)` when the window is missing or the
+/// OS cannot report the size.
+#[tauri::command]
+pub fn get_window_size(app: AppHandle, label: String) -> Result<WindowSize, String> {
+    let size = require_window(&app, &label)?
+        .inner_size()
+        .map_err(|e| e.to_string())?;
+    Ok(build_window_size(size.width, size.height))
+}
+
+/// Return the outer position of the window identified by `label`.
+///
+/// Phase 2 slice 9. Reads the physical top-left frame coordinate via `WebviewWindow::outer_position`;
+/// the signed result is exposed through [`WindowPosition`]. Requires a live window, so it is
+/// compile-verified here and exercised at runtime under `pnpm dev:tauri`.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+///
+/// # Returns
+///
+/// `Ok(WindowPosition)` with the physical frame origin; `Err(String)` when the window is missing or
+/// the OS cannot report the position.
+#[tauri::command]
+pub fn get_window_position(app: AppHandle, label: String) -> Result<WindowPosition, String> {
+    let pos = require_window(&app, &label)?
+        .outer_position()
+        .map_err(|e| e.to_string())?;
+    Ok(WindowPosition { x: pos.x, y: pos.y })
+}
+
+/// Report whether the window identified by `label` is currently visible.
+///
+/// Phase 2 slice 9. Reads the real state through `WebviewWindow::is_visible`; requires a live window,
+/// so no fake test is written.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+///
+/// # Returns
+///
+/// `Ok(bool)` with the current visibility; `Err(String)` when the window is missing or the OS cannot
+/// report the state.
+#[tauri::command]
+pub fn is_window_visible(app: AppHandle, label: String) -> Result<bool, String> {
+    require_window(&app, &label)?
+        .is_visible()
+        .map_err(|e| e.to_string())
+}
+
+/// Report whether the window identified by `label` currently has focus.
+///
+/// Phase 2 slice 9. Reads the real state through `WebviewWindow::is_focused`; requires a live window,
+/// so no fake test is written.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+///
+/// # Returns
+///
+/// `Ok(bool)` with the current focus state; `Err(String)` when the window is missing or the OS cannot
+/// report the state.
+#[tauri::command]
+pub fn is_window_focused(app: AppHandle, label: String) -> Result<bool, String> {
+    require_window(&app, &label)?
+        .is_focused()
         .map_err(|e| e.to_string())
 }
 
@@ -896,6 +1029,18 @@ mod tests {
         // Assert
         assert_eq!(dir.as_deref(), Some("/home/user/output"));
         assert_eq!(name.as_deref(), Some("report.txt"));
+    }
+
+    #[test]
+    fn window_size_carries_width_and_height() {
+        // Arrange
+        let (width, height) = (1280, 720);
+
+        // Act
+        let size = build_window_size(width, height);
+
+        // Assert
+        assert_eq!(size, WindowSize { width, height });
     }
 
     #[test]
