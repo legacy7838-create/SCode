@@ -25,6 +25,16 @@
 > is asserted headless by `tauri-port/test/layer-b/b1-adapter.test.ts` (injectable deps). Expand the
 > `Pick` keys + `createTauriPlatformSubset` body as gated rows land; wire the factory once the seam is
 > complete.
+>
+> **Delegation audit (slice 35).** Each of the 10 adapter methods was checked against its Electron IPC
+> handler in `desktopMainIpcPlatform.ts` — not assumed. Found + fixed ONE defect: `openInFileManager`
+> was mapped to `showItemInFolder` (reveal) but Electron's `openPathInFileManager` calls
+> `shell.openPath` (opens) → corrected to the `openPath` command. Confirmed faithful: `selectFile`
+> (→`filePaths[0]`), `selectFiles` (→`filePaths`/`[]`), `selectDirectory` (→`filePaths[0]`) all match the
+> adapter's `?.[0] ?? null` / `?? []` unwrapping; `openExternalFile`→`openPath`
+> (`openPathInDefaultApp`); `getDesktopZoomLevel`→`{zoomLevel}` wrap; `setTitleBarTheme`→`set_theme`
+> (Electron `nativeTheme.themeSource`+`applyWindowsTitleBarTheme` ⇔ Tauri per-window theme of webview +
+> decorations); `getSystemLocale` reuses Electron's exact `startsWith("zh")` narrowing rule.
 
 ## Legend
 
