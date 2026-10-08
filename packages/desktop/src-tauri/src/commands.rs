@@ -17,7 +17,9 @@
 // 14) window chrome extras (scale factor, always-on-top, resizable) via the existing
 // `WebviewWindow` getters/setters;
 // 15) window visibility & protection (show/hide/skip-taskbar/focusable/content-protected) via the
-// existing `WebviewWindow` mutators.
+// existing `WebviewWindow` mutators;
+// 16) window state completion (unminimize, is_minimized, inner_position, is/set_enabled) via the
+// existing `WebviewWindow` API.
 
 use tauri::{AppHandle, Manager, WebviewWindow};
 // Native dialog API surface for the slice-5 commands: the `DialogExt` app-extension, the file
@@ -1195,6 +1197,130 @@ pub fn set_window_content_protected(
 ) -> Result<(), String> {
     require_window(&app, &label)?
         .set_content_protected(is_protected)
+        .map_err(|e| e.to_string())
+}
+
+/// Restore (un-minimize) the window identified by `label`.
+///
+/// Phase 2 slice 16 (window state completion). Resolves the live window through [`require_window`]
+/// and calls the real `WebviewWindow::unminimize`, the mirror of Electron's restore-from-minimized.
+/// The fallible `Result<()>` is converted with `.map_err(|e| e.to_string())` (never `.unwrap()`),
+/// surfacing on the TypeScript side as a rejected `Promise`. Requires a live GUI window, so it is
+/// compile-verified here and exercised under `pnpm dev:tauri` (no fake-window unit test — faking one
+/// violates the no-stub rule).
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+///
+/// # Returns
+///
+/// `Ok(())` on success; `Err(String)` when the window is missing or the OS rejects the operation.
+#[tauri::command]
+pub fn window_unminimize(app: AppHandle, label: String) -> Result<(), String> {
+    require_window(&app, &label)?
+        .unminimize()
+        .map_err(|e| e.to_string())
+}
+
+/// Report whether the window identified by `label` is currently minimized.
+///
+/// Phase 2 slice 16 (window state completion). Reads the real state through
+/// `WebviewWindow::is_minimized`; like the slice-9/10/14 queries it needs a live GUI window, so it is
+/// compile-verified here and exercised under `pnpm dev:tauri` (no fake-window unit test). The
+/// fallible `Result` is converted with `.map_err(|e| e.to_string())` (never `.unwrap()`), surfacing
+/// on the TypeScript side as a rejected `Promise`.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+///
+/// # Returns
+///
+/// `Ok(bool)` with the current minimized state; `Err(String)` when the window is missing or the OS
+/// cannot report the state.
+#[tauri::command]
+pub fn is_window_minimized(app: AppHandle, label: String) -> Result<bool, String> {
+    require_window(&app, &label)?
+        .is_minimized()
+        .map_err(|e| e.to_string())
+}
+
+/// Return the inner (client-area) position of the window identified by `label`.
+///
+/// Phase 2 slice 16 (window state completion). Reads the physical top-left of the window's client
+/// area via `WebviewWindow::inner_position`, which reports a signed `PhysicalPosition<i32>` mapped
+/// onto the SAME [`WindowPosition`] struct the slice-9 [`get_window_position`] uses for
+/// `outer_position`. The two differ only in origin: this is the inner client-area origin, the slice-9
+/// command is the outer frame origin. Requires a live GUI window, so it is compile-verified here and
+/// exercised under `pnpm dev:tauri` (no fake-window unit test). The fallible `Result` is converted
+/// with `.map_err(|e| e.to_string())` (never `.unwrap()`), surfacing on the TypeScript side as a
+/// rejected `Promise`.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+///
+/// # Returns
+///
+/// `Ok(WindowPosition)` with the physical client-area origin; `Err(String)` when the window is
+/// missing or the OS cannot report the position.
+#[tauri::command]
+pub fn get_window_inner_position(app: AppHandle, label: String) -> Result<WindowPosition, String> {
+    let pos = require_window(&app, &label)?
+        .inner_position()
+        .map_err(|e| e.to_string())?;
+    Ok(WindowPosition { x: pos.x, y: pos.y })
+}
+
+/// Report whether user interaction with the window identified by `label` is enabled.
+///
+/// Phase 2 slice 16 (window state completion). Reads the real state through
+/// `WebviewWindow::is_enabled`, the flag toggled by [`set_window_enabled`]; needs a live GUI window,
+/// so it is compile-verified here and exercised under `pnpm dev:tauri` (no fake-window unit test).
+/// The fallible `Result` is converted with `.map_err(|e| e.to_string())` (never `.unwrap()`),
+/// surfacing on the TypeScript side as a rejected `Promise`.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+///
+/// # Returns
+///
+/// `Ok(bool)` with the current enabled state; `Err(String)` when the window is missing or the OS
+/// cannot report the state.
+#[tauri::command]
+pub fn is_window_enabled(app: AppHandle, label: String) -> Result<bool, String> {
+    require_window(&app, &label)?
+        .is_enabled()
+        .map_err(|e| e.to_string())
+}
+
+/// Enable or disable user interaction with the window identified by `label`.
+///
+/// Phase 2 slice 16 (window state completion). Applies the flag via `WebviewWindow::set_enabled`,
+/// letting the shell block or unblock user input on the window (e.g. while a modal is shown). Requires
+/// a live GUI window, so it is compile-verified here and exercised under `pnpm dev:tauri` (no
+/// fake-window unit test). The fallible `Result<()>` is converted with `.map_err(|e| e.to_string())`
+/// (never `.unwrap()`), surfacing on the TypeScript side as a rejected `Promise`.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+/// * `enabled` - `true` to allow user interaction, `false` to block it.
+///
+/// # Returns
+///
+/// `Ok(())` on success; `Err(String)` when the window is missing or the OS rejects the operation.
+#[tauri::command]
+pub fn set_window_enabled(app: AppHandle, label: String, enabled: bool) -> Result<(), String> {
+    require_window(&app, &label)?
+        .set_enabled(enabled)
         .map_err(|e| e.to_string())
 }
 

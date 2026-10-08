@@ -130,3 +130,24 @@ TS bridge: one typed `invoke` wrapper per command; Rust snake_case args map to J
 deliberately excluded: its `UserAttentionType` public re-export path is not confirmed in this crate
 and the behavior is a platform-specific no-op/error on Linux — it is not stubbed (no-stub rule). All
 five require a live GUI window, so they are compile-verified and exercised under `pnpm dev:tauri`.
+
+## Slice 16 contract — window state completion (minimize/inner-position/enabled)
+
+Finishes the window-state family by covering the gaps left by slices 4/9/10. All confirmed present
+and `crate::Result`-returning in `tauri-2.12.1/src/webview/webview_window.rs` (`unminimize` :2103,
+`is_minimized` :1853, `inner_position` :1824, `is_enabled` :1878 / `set_enabled` :2324). The
+`inner_position` command reuses the existing `WindowPosition { x: i32, y: i32 }` struct from slice 9
+(both `outer_position` and `inner_position` report a signed physical origin).
+
+| Command | Args | Returns | Behavior |
+| --- | --- | --- | --- |
+| `window_unminimize` | `label` | `Result<(),String>` | `window.unminimize()` (Electron `restore`-from-minimized) |
+| `is_window_minimized` | `label` | `Result<bool,String>` | `window.is_minimized()` |
+| `get_window_inner_position` | `label` | `Result<WindowPosition,String>` | `window.inner_position()` → `{x,y}` |
+| `is_window_enabled` | `label` | `Result<bool,String>` | `window.is_enabled()` (user-interaction enabled) |
+| `set_window_enabled` | `label`, `enabled: bool` | `Result<(),String>` | `window.set_enabled(enabled)` |
+
+TS bridge: one typed `invoke` wrapper per command; `get_window_inner_position` returns the same
+`{ x, y }` object shape as the slice-9 `get_window_position`. No new plugin/capability. `inner_size`
+is NOT re-added (slice 9 already exposes `get_window_size`). All require a live GUI window
+(compile-verified; exercised under `pnpm dev:tauri`; no fake-window unit test per the no-stub rule).

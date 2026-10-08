@@ -730,3 +730,66 @@ export function setWindowContentProtected(
 ): Promise<void> {
   return invoke<void>("set_window_content_protected", { label, isProtected });
 }
+
+/**
+ * Phase 2 第十六切片：窗口状态补全的 TypeScript 接缝（取消最小化、最小化状态、内部位置、启用状态）。
+ *
+ * 对应 Rust 命令 `window_unminimize` / `is_window_minimized` / `get_window_inner_position` /
+ * `is_window_enabled` / `set_window_enabled`，全部复用已导入的 `WebviewWindow` API（无需新增插件或
+ * capability）。Rust 端通过 `require_window(label)` 解析窗口，缺失时返回显式的
+ * `Err("window not found: {label}")`，这里以 rejected Promise 形式抛出（沿用第三切片的错误传播接缝）。
+ * `get_window_inner_position` 复用第九切片 `get_window_position` 相同的 `{ x, y }` 对象形状（内部客户区
+ * 原点 vs 外部边框原点）。运行时需活动 GUI 窗口，因此本组接缝在此处只做编译期类型校验，真实效果在
+ * `pnpm dev:tauri` 下验证。保持导入零副作用。
+ */
+
+/**
+ * 取消最小化（还原）指定窗口。对应 Rust 命令 `window_unminimize`（`WebviewWindow::unminimize`），
+ * 对齐 Electron 的从最小化还原。
+ *
+ * @param label - 目标窗口 label。
+ */
+export function windowUnminimize(label: string): Promise<void> {
+  return invoke<void>("window_unminimize", { label });
+}
+
+/**
+ * 查询窗口当前是否处于最小化状态。对应 Rust 命令 `is_window_minimized`
+ * （`WebviewWindow::is_minimized`）。
+ *
+ * @param label - 目标窗口 label。
+ */
+export function isWindowMinimized(label: string): Promise<boolean> {
+  return invoke<boolean>("is_window_minimized", { label });
+}
+
+/**
+ * 读取窗口内部（客户区）位置。对应 Rust 命令 `get_window_inner_position`
+ * （`WebviewWindow::inner_position`），返回与 `get_window_position` 相同的 `{ x, y }` 形状。
+ *
+ * @param label - 目标窗口 label。
+ */
+export function getWindowInnerPosition(label: string): Promise<{ x: number; y: number }> {
+  return invoke<{ x: number; y: number }>("get_window_inner_position", { label });
+}
+
+/**
+ * 查询窗口当前是否允许用户交互。对应 Rust 命令 `is_window_enabled`
+ * （`WebviewWindow::is_enabled`）。
+ *
+ * @param label - 目标窗口 label。
+ */
+export function isWindowEnabled(label: string): Promise<boolean> {
+  return invoke<boolean>("is_window_enabled", { label });
+}
+
+/**
+ * 设置窗口是否允许用户交互。对应 Rust 命令 `set_window_enabled`
+ * （`WebviewWindow::set_enabled`）。
+ *
+ * @param label - 目标窗口 label。
+ * @param enabled - `true` 允许交互，`false` 屏蔽交互。
+ */
+export function setWindowEnabled(label: string, enabled: boolean): Promise<void> {
+  return invoke<void>("set_window_enabled", { label, enabled });
+}
