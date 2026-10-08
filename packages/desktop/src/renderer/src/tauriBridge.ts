@@ -971,6 +971,51 @@ export function clearWindowMaxSize(label: string): Promise<void> {
 }
 
 /**
+ * Phase 2 第二十二切片：窗口背景色的 TypeScript 接缝（设置 RGBA / 清除）。
+ *
+ * 对应 Rust 命令 `set_window_background_color` / `clear_window_background_color`
+ * （`WebviewWindow::set_background_color`），对齐 Electron 的 `setBackgroundColor`。四个通道为独立
+ * 单词形参（red/green/blue/alpha，均为 0..=255 的 number，Rust 侧反序列化为 `u8` 组成
+ * `tauri::webview::Color(r,g,b,a)`），故 camelCase 不变式自然满足。运行时需活动 GUI 窗口，本组接缝在此
+ * 只做编译期类型校验，真实效果在 `pnpm dev:tauri` 下验证。保持导入零副作用。
+ */
+
+/**
+ * 设置窗口背景色（RGBA）。对应 Rust 命令 `set_window_background_color`。用于加载期与透明区域底色。
+ *
+ * @param label - 目标窗口 label。
+ * @param red - 红通道 0..=255。
+ * @param green - 绿通道 0..=255。
+ * @param blue - 蓝通道 0..=255。
+ * @param alpha - Alpha 通道 0..=255（255 为不透明）。
+ */
+export function setWindowBackgroundColor(
+  label: string,
+  red: number,
+  green: number,
+  blue: number,
+  alpha: number,
+): Promise<void> {
+  return invoke<void>("set_window_background_color", {
+    label,
+    red,
+    green,
+    blue,
+    alpha,
+  });
+}
+
+/**
+ * 清除窗口背景色覆盖，恢复系统/WebView 默认底色。对应 Rust 命令
+ * `clear_window_background_color`（`set_background_color(None)`）。
+ *
+ * @param label - 目标窗口 label。
+ */
+export function clearWindowBackgroundColor(label: string): Promise<void> {
+  return invoke<void>("clear_window_background_color", { label });
+}
+
+/**
  * Phase 2 第十九切片：显示器信息（多屏 / HiDPI）的 TypeScript 接缝。
  *
  * 对应 Rust 命令 `get_window_current_monitor` / `get_primary_monitor` / `get_available_monitors`，

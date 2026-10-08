@@ -289,3 +289,23 @@ TS bridge: one typed `invoke` wrapper per command; every Rust arg is single-word
 `ignore`, `width`, `height`, `label`) so the A5 camelCase guard is trivially satisfied. No new
 plugin/capability. All require a live GUI window (compile-verified; exercised under `pnpm dev:tauri`;
 no fake-window unit test per the no-stub rule).
+
+## Slice 22 contract — window background color
+
+Electron `win.setBackgroundColor` parity. `WebviewWindow::set_background_color(Option<Color>)`
+(confirmed `tauri-2.12.1/src/webview/webview_window.rs:2411`) sets the window/webview backdrop, which
+matters during load and behind any transparent region. `Color` is the tuple struct
+`tauri::webview::Color(pub u8, pub u8, pub u8, pub u8)` = `(r, g, b, a)` (re-exported from
+`tauri-utils` config, `webview/mod.rs:35`). Passing `None` restores the default (OS/webview) background
+— the clear path.
+
+| Command | Args | Returns | Behavior |
+| --- | --- | --- | --- |
+| `set_window_background_color` | `label`, `red: u8`, `green: u8`, `blue: u8`, `alpha: u8` | `Result<(),String>` | `set_background_color(Some(Color(r,g,b,a)))` |
+| `clear_window_background_color` | `label` | `Result<(),String>` | `set_background_color(None)` |
+
+The four channel args are separate single-word `u8` params (JS passes numbers 0..=255; Tauri
+deserializes each to `u8`), so the A5 camelCase guard is satisfied and no nested color object is
+needed. `clear_window_background_color` needs no turbofish: `set_background_color`'s parameter type
+`Option<Color>` fixes the `None`'s type. No new plugin/capability. Requires a live GUI window
+(compile-verified; exercised under `pnpm dev:tauri`; no fake-window unit test per the no-stub rule).

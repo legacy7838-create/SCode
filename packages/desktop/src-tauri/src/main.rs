@@ -103,6 +103,8 @@ fn main() {
             commands::set_window_max_size,
             commands::clear_window_min_size,
             commands::clear_window_max_size,
+            commands::set_window_background_color,
+            commands::clear_window_background_color,
             commands::show_open_dialog,
             commands::show_save_dialog,
             commands::show_message_dialog,

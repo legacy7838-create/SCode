@@ -25,9 +25,13 @@
 // 19) monitor information (current/primary/available monitors) via `WebviewWindow` display queries,
 // mapped through `monitor_to_info`; 20) sidecar lifecycle (spawn retains a `CommandChild` in a
 // managed `SidecarRegistry`, `kill_sidecar` reaps it); 21) window frame & interaction (decorations,
-// click-through, min/max size set + clear) via the existing `WebviewWindow` mutators.
+// click-through, min/max size set + clear) via the existing `WebviewWindow` mutators; 22) window
+// background color (set RGBA + clear) via `WebviewWindow::set_background_color`.
 
 use tauri::{AppHandle, Manager, WebviewWindow};
+// Window background color for the slice-22 `set_window_background_color` command. `Color` is the
+// tuple struct `Color(r, g, b, a)` re-exported by the public `tauri::webview` module.
+use tauri::webview::Color;
 // Native dialog API surface for the slice-5 commands: the `DialogExt` app-extension, the file
 // picker result type, and the message-dialog kinds/buttons.
 use tauri_plugin_dialog::{DialogExt, FilePath, MessageDialogButtons, MessageDialogKind};
@@ -1698,6 +1702,63 @@ pub fn clear_window_min_size(app: AppHandle, label: String) -> Result<(), String
 pub fn clear_window_max_size(app: AppHandle, label: String) -> Result<(), String> {
     require_window(&app, &label)?
         .set_max_size(None::<tauri::PhysicalSize<u32>>)
+        .map_err(|e| e.to_string())
+}
+
+/// Set the background (backdrop) color of the window identified by `label`.
+///
+/// Phase 2 slice 22 (window background color). Builds an RGBA `tauri::webview::Color` from four
+/// separate `u8` channel arguments and applies it via `WebviewWindow::set_background_color(Some(..))`,
+/// mirroring Electron's `win.setBackgroundColor`. The backdrop shows during load and behind any
+/// transparent region. The four channels are distinct single-word args (not a nested object) so the A5
+/// camelCase guard is satisfied. The `Err` uses `.map_err(|e| e.to_string())` (never `.unwrap()`).
+/// Requires a live GUI window, so it is compile-verified and exercised under `pnpm dev:tauri`.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+/// * `red` - Red channel, 0..=255.
+/// * `green` - Green channel, 0..=255.
+/// * `blue` - Blue channel, 0..=255.
+/// * `alpha` - Alpha channel, 0..=255 (255 = opaque).
+///
+/// # Returns
+///
+/// `Ok(())` on success; `Err(String)` when the window is missing or the OS rejects the operation.
+#[tauri::command]
+pub fn set_window_background_color(
+    app: AppHandle,
+    label: String,
+    red: u8,
+    green: u8,
+    blue: u8,
+    alpha: u8,
+) -> Result<(), String> {
+    require_window(&app, &label)?
+        .set_background_color(Some(Color(red, green, blue, alpha)))
+        .map_err(|e| e.to_string())
+}
+
+/// Clear the background color override of the window identified by `label`.
+///
+/// Phase 2 slice 22. Passes `None` to `WebviewWindow::set_background_color`, restoring the OS/webview
+/// default backdrop (the counterpart of [`set_window_background_color`]). The `None` needs no
+/// turbofish because the parameter type `Option<Color>` is already fixed by the method signature.
+/// Requires a live GUI window, so it is compile-verified and exercised under `pnpm dev:tauri`.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+///
+/// # Returns
+///
+/// `Ok(())` on success; `Err(String)` when the window is missing or the OS rejects the operation.
+#[tauri::command]
+pub fn clear_window_background_color(app: AppHandle, label: String) -> Result<(), String> {
+    require_window(&app, &label)?
+        .set_background_color(None)
         .map_err(|e| e.to_string())
 }
 
