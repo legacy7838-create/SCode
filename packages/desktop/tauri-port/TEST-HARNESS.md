@@ -249,6 +249,12 @@ the seam's types go unverified (a false-green). `tauriPlatform.ts` deliberately 
 `@zcode/shared` types (`IPlatformService`, `Locale`, `DesktopTitleBarTheme`) so the renderer `tsc`
 is the real contract check for the adapter.
 
+**Current green evidence (every AGENTS gate run on the port):** `pnpm typecheck` EXIT 0; `pnpm lint`
+EXIT 0 with **0 warnings in any `tauri*` / layer-a / layer-b file** (the 61 workspace warnings are all
+pre-existing in `packages/ui`, none from the port); `tsconfig.renderer.json` 0 errors for
+`tauriBridge.ts` / `tauriPlatform.ts` / `tauriHostConnection.ts`; `pnpm test:tauri` = layer-a
+11 pass/1 headless-skip, layer-b 16 pass (b1 adapter 14 + b2 transport 2), rust 18 pass.
+
 ---
 
 ## 5. Smallest first harness to build NOW (recommended)
