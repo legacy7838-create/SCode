@@ -1,0 +1,21 @@
+[package]
+name = "zcode-desktop-tauri"
+version = "0.0.0"
+description = "ZCode desktop shell (Tauri v2 port) — parallel to Electron, NOT yet feature-complete"
+edition = "2021"
+rust-version = "1.77"
+
+# Standalone crate for the Tauri shell. Electron remains the shipped product until
+# parity is verified (see ../PORTING.md). Do not wire into the Electron build.
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+codegen-units = 1
+lto = true

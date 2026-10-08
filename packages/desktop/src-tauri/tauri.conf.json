@@ -1,0 +1,37 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "ZCode (Tauri dev)",
+  "version": "0.0.0",
+  "identifier": "app.zcode.desktop.tauri.dev",
+  "build": {
+    "beforeDevCommand": "",
+    "devUrl": "http://localhost:5174",
+    "beforeBuildCommand": "",
+    "frontendDist": "../dist/renderer"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "ZCode (Tauri dev)",
+        "label": "main",
+        "width": 1200,
+        "height": 800,
+        "url": "http://localhost:5174"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": false,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.png",
+      "icons/icon.ico"
+    ]
+  }
+}
