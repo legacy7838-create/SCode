@@ -6,8 +6,8 @@
 // here, so the UI will render but native calls are no-op until Phase 2.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-// Phase 2 real (non-stub) commands: version, locale, device id. See ./commands.rs and
-// ../tauri-port/BRIDGE.md for the contract.
+// Phase 2 real (non-stub) commands: version, locale, device id, platform info, app name. See
+// ./commands.rs and ../tauri-port/BRIDGE.md for the contract.
 mod commands;
 
 /// Placeholder command to prove the `invoke()` seam exists for Phase 2.
@@ -22,7 +22,9 @@ fn main() {
             shell_kind,
             commands::get_app_version,
             commands::get_system_locale,
-            commands::get_device_id
+            commands::get_device_id,
+            commands::get_platform_info,
+            commands::get_app_name
         ])
         .run(tauri::generate_context!())
         .expect("error while running the ZCode Tauri shell");

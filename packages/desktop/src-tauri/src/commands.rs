@@ -1,8 +1,8 @@
 // Real (non-stub) Tauri v2 commands for the Phase 2 vertical slice.
 //
 // Contract source of truth: `../tauri-port/BRIDGE.md`. Each command resolves a value from a
-// genuine source (package metadata, OS locale, process environment); the only hardcoded values
-// are the documented fallbacks required by the contract.
+// genuine source (package metadata, OS locale, process environment, compile-time OS consts); the
+// only hardcoded values are the documented fallbacks required by the contract.
 
 use tauri::AppHandle;
 
@@ -75,6 +75,62 @@ pub fn get_device_id() -> String {
     device_id_from_env(std::env::var(DEVICE_ID_ENV).ok())
 }
 
+/// Operating system and CPU architecture of the host running the Tauri shell.
+///
+/// Sourced at compile time from `std::env::consts` (`OS`/`ARCH`), so no extra crate is required.
+/// Serialized to the renderer as `{ os, arch }` per the slice-2 bridge contract.
+#[derive(serde::Serialize)]
+pub struct PlatformInfo {
+    /// Operating system identifier, e.g. `"linux"`, `"macos"`, `"windows"`.
+    pub os: String,
+    /// CPU architecture identifier, e.g. `"x86_64"`, `"aarch64"`.
+    pub arch: String,
+}
+
+/// Build a [`PlatformInfo`] from raw OS and architecture strings.
+///
+/// Kept as a pure helper so the field wiring is unit-testable without a running app handle.
+///
+/// # Arguments
+///
+/// * `os` - Operating system identifier (typically `std::env::consts::OS`).
+/// * `arch` - CPU architecture identifier (typically `std::env::consts::ARCH`).
+///
+/// # Returns
+///
+/// A [`PlatformInfo`] carrying the given `os` and `arch` values.
+pub fn build_platform_info(os: &str, arch: &str) -> PlatformInfo {
+    PlatformInfo {
+        os: os.to_string(),
+        arch: arch.to_string(),
+    }
+}
+
+/// Return the host operating system and CPU architecture.
+///
+/// Values come from `std::env::consts::OS` and `std::env::consts::ARCH`, compiled into the binary.
+#[tauri::command]
+pub fn get_platform_info() -> PlatformInfo {
+    build_platform_info(std::env::consts::OS, std::env::consts::ARCH)
+}
+
+/// Return the application package name, e.g. `"ZCode"`.
+///
+/// Sourced from Tauri's embedded package metadata; requires a running app handle so it is not
+/// covered by the pure unit tests.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing package info.
+///
+/// # Returns
+///
+/// The display name of the running package as a string.
+#[tauri::command]
+pub fn get_app_name(app: AppHandle) -> String {
+    app.package_info().name.clone()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -125,5 +181,29 @@ mod tests {
 
         // Assert
         assert_eq!(result, "");
+    }
+
+    #[test]
+    fn platform_info_carries_os_and_arch() {
+        // Arrange
+        let os = "linux";
+        let arch = "x86_64";
+
+        // Act
+        let info = build_platform_info(os, arch);
+
+        // Assert
+        assert_eq!(info.os, "linux");
+        assert_eq!(info.arch, "x86_64");
+    }
+
+    #[test]
+    fn platform_info_matches_compile_time_consts() {
+        // Act: the command wires `std::env::consts` through the pure helper.
+        let info = get_platform_info();
+
+        // Assert
+        assert_eq!(info.os, std::env::consts::OS);
+        assert_eq!(info.arch, std::env::consts::ARCH);
     }
 }

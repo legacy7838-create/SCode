@@ -45,3 +45,34 @@ export function getTauriSystemLocale(): Promise<string> {
 export function getTauriDeviceId(): Promise<string> {
   return invoke<string>("get_device_id");
 }
+
+/**
+ * 宿主操作系统与 CPU 架构信息。
+ * 对应 Rust 端 `PlatformInfo { os, arch }`，源自 `std::env::consts`。
+ */
+export interface TauriPlatformInfo {
+  /** 操作系统标识，例如 `"linux"`、`"macos"`、`"windows"`。 */
+  os: string;
+  /** CPU 架构标识，例如 `"x86_64"`、`"aarch64"`。 */
+  arch: string;
+}
+
+/**
+ * 读取宿主操作系统与 CPU 架构。
+ * 对应 Rust 命令 `get_platform_info`，源自编译期常量 `std::env::consts::{OS, ARCH}`。
+ *
+ * Phase 2 第二切片：仅新增此命令与 `get_app_name`，保持叠加式接入、导入零副作用。
+ */
+export function getTauriPlatformInfo(): Promise<TauriPlatformInfo> {
+  return invoke<TauriPlatformInfo>("get_platform_info");
+}
+
+/**
+ * 读取应用包名称，例如 `"ZCode"`。
+ * 对应 Rust 命令 `get_app_name`，源自 `app.package_info().name`。
+ *
+ * Phase 2 第二切片：与 `getTauriPlatformInfo` 一同接入。
+ */
+export function getTauriAppName(): Promise<string> {
+  return invoke<string>("get_app_name");
+}
