@@ -26,6 +26,8 @@ interface FakeOptions {
   revealThrows?: boolean;
   /** Raw OS locale the `getSystemLocale` stub returns (defaults to a non-supported locale). */
   systemLocale?: string;
+  /** When true, the `openPath` stub rejects (exercises openExternalFile's error mapping). */
+  openFileThrows?: boolean;
 }
 
 /** A recording fake-deps bundle: captures calls and returns contract-shaped values per `FakeOptions`. */
@@ -65,6 +67,12 @@ function fakeDeps(opts: FakeOptions = {}): { deps: TauriPlatformDeps; calls: str
     getSystemLocale: async () => {
       calls.push("getSystemLocale");
       return opts.systemLocale ?? "de-DE";
+    },
+    openPath: async (path) => {
+      calls.push(`openPath:${path}`);
+      if (opts.openFileThrows) {
+        throw new Error("open failed");
+      }
     },
   };
   return { deps, calls };
@@ -140,6 +148,21 @@ test("B1: openInFileManager maps a rejected reveal to {success:false,error}", as
   const result = await platform.openInFileManager("/nope");
   assert.equal(result.success, false);
   assert.match(result.error ?? "", /reveal failed/);
+});
+
+test("B1: openExternalFile delegates to openPath and returns {success:true}", async () => {
+  const { deps, calls } = fakeDeps();
+  const platform = createTauriPlatformSubset(deps);
+  assert.deepEqual(await platform.openExternalFile!("/tmp/doc.pdf"), { success: true });
+  assert.deepEqual(calls, ["openPath:/tmp/doc.pdf"]);
+});
+
+test("B1: openExternalFile maps a rejected open to {success:false,error}", async () => {
+  const { deps } = fakeDeps({ openFileThrows: true });
+  const platform = createTauriPlatformSubset(deps);
+  const result = await platform.openExternalFile!("/nope");
+  assert.equal(result.success, false);
+  assert.match(result.error ?? "", /open failed/);
 });
 
 test("B1: getSystemLocale narrows a zh* locale to zh-CN and anything else to en-US", async () => {

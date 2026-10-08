@@ -4,6 +4,7 @@ import {
   getTauriDesktopZoomLevel,
   getTauriSystemLocale,
   openExternal as bridgeOpenExternal,
+  openPath as bridgeOpenPath,
   selectDirectory as bridgeSelectDirectory,
   setWindowTheme as bridgeSetWindowTheme,
   showItemInFolder as bridgeShowItemInFolder,
@@ -46,6 +47,7 @@ export interface TauriPlatformDeps {
   setWindowTheme: typeof bridgeSetWindowTheme;
   showItemInFolder: typeof bridgeShowItemInFolder;
   getSystemLocale: typeof getTauriSystemLocale;
+  openPath: typeof bridgeOpenPath;
 }
 
 const realDeps: TauriPlatformDeps = {
@@ -56,6 +58,7 @@ const realDeps: TauriPlatformDeps = {
   setWindowTheme: bridgeSetWindowTheme,
   showItemInFolder: bridgeShowItemInFolder,
   getSystemLocale: getTauriSystemLocale,
+  openPath: bridgeOpenPath,
 };
 
 /** The subset of `IPlatformService` currently ported; expand the `Pick` keys as slices land. */
@@ -66,6 +69,7 @@ export type TauriPlatformSubset = Pick<
   | "selectFiles"
   | "openExternal"
   | "openInFileManager"
+  | "openExternalFile"
   | "getDesktopZoomLevel"
   | "setTitleBarTheme"
   | "getSystemLocale"
@@ -104,6 +108,16 @@ export function createTauriPlatformSubset(deps: TauriPlatformDeps = realDeps): T
       // object (the exact contract Electron's shell.showItemInFolder-based method returns).
       try {
         await deps.showItemInFolder(path);
+        return { success: true };
+      } catch (e) {
+        return { success: false, error: String(e) };
+      }
+    },
+    async openExternalFile(path: string) {
+      // Maps the open-path command's `Result<(),String>` seam to the interface's
+      // `{success,error?}` result object (same contract shape as openInFileManager).
+      try {
+        await deps.openPath(path);
         return { success: true };
       } catch (e) {
         return { success: false, error: String(e) };
