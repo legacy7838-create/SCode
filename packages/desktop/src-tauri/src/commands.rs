@@ -5,12 +5,16 @@
 // webview windows); the only hardcoded values are the documented fallbacks required by the
 // contract. Slices: 1) version/locale/device id, 2) platform info/app name, 3) OS directories
 // (first fallible `Result` commands), 4) window management via Tauri's `WebviewWindow` API,
-// 5) native file/save/message dialogs via `tauri-plugin-dialog`.
+// 5) native file/save/message dialogs via `tauri-plugin-dialog`, 6) shell/open (URL, reveal,
+// path) via `tauri-plugin-opener`.
 
 use tauri::{AppHandle, Manager, WebviewWindow};
 // Native dialog API surface for the slice-5 commands: the `DialogExt` app-extension, the file
 // picker result type, and the message-dialog kinds/buttons.
 use tauri_plugin_dialog::{DialogExt, FilePath, MessageDialogButtons, MessageDialogKind};
+// Shell/open API surface for the slice-6 commands: the `OpenerExt` app-extension exposes the real
+// OS handlers (`open_url`, `open_path`, `reveal_item_in_dir`).
+use tauri_plugin_opener::OpenerExt;
 
 /// BCP-47 fallback locale used when the host OS locale cannot be resolved.
 const FALLBACK_LOCALE: &str = "en-US";
@@ -559,6 +563,72 @@ pub async fn show_message_dialog(
         .buttons(MessageDialogButtons::YesNo)
         .blocking_show();
     Ok(confirmed)
+}
+
+/// Open a URL in the system's default browser via `tauri-plugin-opener`.
+///
+/// Phase 2 slice 6 (shell/open). Delegates to the plugin's real OS handler
+/// (`app.opener().open_url(..)`); the `with` argument selects a specific application and is left
+/// unset (`None`) so the platform default browser is used. The plugin's `Err` is converted to
+/// `Err(String)` via `.map_err(|e| e.to_string())` (never `.unwrap()`), surfacing on the TypeScript
+/// side as a rejected `Promise`.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the opener extension.
+/// * `url` - The URL to open (scheme allow-listing is a documented P2 hardening item, not here).
+///
+/// # Returns
+///
+/// `Ok(())` when the OS launched a handler, or `Err(String)` describing why it could not.
+#[tauri::command]
+pub fn open_url(app: AppHandle, url: String) -> Result<(), String> {
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|e| e.to_string())
+}
+
+/// Reveal a filesystem path in the OS file manager via `tauri-plugin-opener`.
+///
+/// Phase 2 slice 6. Maps to Electron's `shell.showItemInFolder`. Delegates to the plugin's real
+/// handler `app.opener().reveal_item_in_dir(&path)`, which canonicalizes the path and opens the
+/// enclosing directory with the item selected. The `Err` becomes a rejected `Promise` on the
+/// TypeScript side.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the opener extension.
+/// * `path` - The file or directory path to reveal.
+///
+/// # Returns
+///
+/// `Ok(())` when the file manager opened, or `Err(String)` describing why it could not.
+#[tauri::command]
+pub fn reveal_in_folder(app: AppHandle, path: String) -> Result<(), String> {
+    app.opener()
+        .reveal_item_in_dir(&path)
+        .map_err(|e| e.to_string())
+}
+
+/// Open a file or directory with its default application via `tauri-plugin-opener`.
+///
+/// Phase 2 slice 6. Maps to Electron's `shell.openPath`. Delegates to the plugin's real handler
+/// `app.opener().open_path(&path, None)`; the `with` argument (a specific opener app) is left unset
+/// so the OS default is used. The `Err` becomes a rejected `Promise` on the TypeScript side.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the opener extension.
+/// * `path` - The filesystem path to open.
+///
+/// # Returns
+///
+/// `Ok(())` when the default app launched, or `Err(String)` describing why it could not.
+#[tauri::command]
+pub fn open_path(app: AppHandle, path: String) -> Result<(), String> {
+    app.opener()
+        .open_path(path, None::<&str>)
+        .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

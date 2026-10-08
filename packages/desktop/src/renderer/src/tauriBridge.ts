@@ -270,3 +270,46 @@ export function showMessageDialog(
     message: options.message,
   });
 }
+
+/**
+ * Phase 2 第六切片：shell / open 命令的 TypeScript 接缝（`tauri-plugin-opener`）。
+ *
+ * 这些函数在 Rust 端通过 `app.opener()` 调用真实的操作系统处理程序：默认浏览器打开 URL、
+ * 系统文件管理器中定位文件、默认应用打开文件/目录。参数以 camelCase 对象传入，Tauri 自动
+ * 映射为 Rust 的 snake_case 形参。
+ *
+ * 运行时约束：真实的 OS 处理程序需要一个正在运行的桌面会话（GUI），因此这些接缝在此处只做
+ * “编译期”类型校验；真实行为在 `pnpm dev:tauri` 下运行验证。Rust 端返回 `Result<(), String>`，
+ * 失败时的 `Err(String)` 在这里以 rejected Promise 抛出（沿用第三切片的错误传播接缝）。
+ * `open_url` 的 scheme 允许列表校验为已记录的 P2 加固项，不在本切片内。保持导入零副作用。
+ */
+
+/**
+ * 用系统默认浏览器/应用打开一个 URL。对应 Rust 命令 `open_url`
+ * （`tauri_plugin_opener::Opener::open_url`）。
+ *
+ * @param url - 要打开的 URL。
+ */
+export function openExternal(url: string): Promise<void> {
+  return invoke<void>("open_url", { url });
+}
+
+/**
+ * 在系统文件管理器中定位（选中）给定路径。对应 Rust 命令 `reveal_in_folder`
+ * （`tauri_plugin_opener::Opener::reveal_item_in_dir`），对齐 Electron 的 `showItemInFolder`。
+ *
+ * @param path - 要在文件管理器中显示的文件或目录路径。
+ */
+export function showItemInFolder(path: string): Promise<void> {
+  return invoke<void>("reveal_in_folder", { path });
+}
+
+/**
+ * 用默认应用打开文件或目录。对应 Rust 命令 `open_path`
+ * （`tauri_plugin_opener::Opener::open_path`），对齐 Electron 的 `shell.openPath`。
+ *
+ * @param path - 要打开的文件或目录路径。
+ */
+export function openPath(path: string): Promise<void> {
+  return invoke<void>("open_path", { path });
+}
