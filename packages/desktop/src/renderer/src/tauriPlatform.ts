@@ -8,6 +8,7 @@ import type {
 import {
   createTempTextAttachment as bridgeCreateTempTextAttachment,
   getTauriDesktopZoomLevel,
+  getTauriDeviceId,
   getTauriSystemLocale,
   listenTauriDesktopZoomChanged,
   listenTauriWindowFullscreenChanged,
@@ -54,6 +55,7 @@ export interface TauriPlatformDeps {
   showTaskNotification: typeof bridgeShowTaskNotification;
   openExternal: typeof bridgeOpenExternal;
   getDesktopZoomLevel: typeof getTauriDesktopZoomLevel;
+  getDeviceId: typeof getTauriDeviceId;
   setWindowTheme: typeof bridgeSetWindowTheme;
   getSystemLocale: typeof getTauriSystemLocale;
   openPath: typeof bridgeOpenPath;
@@ -68,6 +70,7 @@ const realDeps: TauriPlatformDeps = {
   showTaskNotification: bridgeShowTaskNotification,
   openExternal: bridgeOpenExternal,
   getDesktopZoomLevel: getTauriDesktopZoomLevel,
+  getDeviceId: getTauriDeviceId,
   setWindowTheme: bridgeSetWindowTheme,
   getSystemLocale: getTauriSystemLocale,
   openPath: bridgeOpenPath,
@@ -89,9 +92,37 @@ export type TauriPlatformSubset = Pick<
   | "onWindowFullscreenChanged"
   | "setTitleBarTheme"
   | "getSystemLocale"
+  | "getDeviceId"
   | "showTaskNotification"
   | "createTempTextAttachment"
 >;
+
+/**
+ * Synchronous-getter backing store (blocker #7, `SYNC-GETTER-SPIKE.md`). The interface exposes
+ * `getDeviceId(): string` synchronously, but Tauri IPC is always async; the faithful equivalent of
+ * Electron reading `process.env.ZCODE_DEVICE_ID` synchronously in main is to prefetch the value ONCE at
+ * bootstrap (async) and serve it from this cache. `null` = not bootstrapped yet.
+ */
+let deviceIdCache: string | null = null;
+
+/**
+ * Await-init-before-expose contract: the runtime factory MUST `await bootstrapTauriPlatform()` BEFORE
+ * it hands the platform object to the UI, so the synchronous getters are populated when first read
+ * (mirrors the slice-32 host-connection "await connect before use" ordering). Uses the bridge wrappers
+ * to fetch values that are needed synchronously downstream. Idempotent; safe to call once at boot.
+ *
+ * @param deps - Bridge wrappers to read from; defaults to the real `tauriBridge` functions.
+ */
+export async function bootstrapTauriPlatform(
+  deps: TauriPlatformDeps = realDeps,
+): Promise<void> {
+  deviceIdCache = await deps.getDeviceId();
+}
+
+/** Reset the synchronous-getter cache. Test-only seam to keep b1 cases order-independent. */
+export function resetTauriPlatformBootstrapForTesting(): void {
+  deviceIdCache = null;
+}
 
 /**
  * Build the Tauri platform-adapter subset backed by the verified command wrappers.
@@ -156,6 +187,13 @@ export function createTauriPlatformSubset(
     },
     async getSystemLocale() {
       return toSupportedLocale(await deps.getSystemLocale());
+    },
+    getDeviceId(): string {
+      // Sync getter backed by the bootstrap prefetch (blocker #7). Returns "" ONLY if
+      // bootstrapTauriPlatform() was not awaited before the platform was exposed — the runtime factory
+      // enforces that ordering, so in practice the value is always present. Not a stub: the data comes
+      // from the real `get_device_id` command, just delivered asynchronously and cached.
+      return deviceIdCache ?? "";
     },
     showTaskNotification(payload: TaskNotificationPayload): void {
       // Fire-and-forget like Electron's `window.zcode.showTaskNotification` (an `ipcRenderer.send`,

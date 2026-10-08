@@ -12,7 +12,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  bootstrapTauriPlatform,
   createTauriPlatformSubset,
+  resetTauriPlatformBootstrapForTesting,
   toSupportedLocale,
   type TauriPlatformDeps,
 } from "../../../src/renderer/src/tauriPlatform.ts";
@@ -29,6 +31,8 @@ interface FakeOptions {
   openExternalThrows?: boolean;
   /** Raw OS locale the `getSystemLocale` stub returns (defaults to a non-supported locale). */
   systemLocale?: string;
+  /** Device id the `getDeviceId` stub resolves to (defaults to `dev-abc`). */
+  deviceId?: string;
   /** When true, the `openPath` stub rejects (exercises openExternalFile's error mapping). */
   openFileThrows?: boolean;
   /** When true, the `showTaskNotification` stub rejects (exercises the fire-and-forget catch). */
@@ -87,6 +91,10 @@ function fakeDeps(opts: FakeOptions = {}): {
     getSystemLocale: async () => {
       calls.push("getSystemLocale");
       return opts.systemLocale ?? "de-DE";
+    },
+    getDeviceId: async () => {
+      calls.push("getDeviceId");
+      return opts.deviceId ?? "dev-abc";
     },
     openPath: async (path) => {
       calls.push(`openPath:${path}`);
@@ -218,6 +226,28 @@ test("B1: getSystemLocale narrows a zh* locale to zh-CN and anything else to en-
   assert.equal(await en.getSystemLocale!(), "en-US");
 });
 
+test("B1: getDeviceId serves the bootstrap prefetch (blocker #7 sync-getter)", async () => {
+  resetTauriPlatformBootstrapForTesting();
+  const { deps, calls } = fakeDeps({ deviceId: "dev-xyz" });
+  const platform = createTauriPlatformSubset(deps);
+  // Before bootstrap the sync getter yields the documented empty default (no invoke yet, no crash).
+  assert.equal(platform.getDeviceId!(), "");
+  assert.deepEqual(
+    calls,
+    [],
+    "getDeviceId getter must NOT call the bridge directly (it reads cache)",
+  );
+  // The await-init-before-expose contract populates the cache; the sync getter now serves the real value.
+  await bootstrapTauriPlatform(deps);
+  assert.deepEqual(
+    calls,
+    ["getDeviceId"],
+    "bootstrap must read device id via the bridge wrapper",
+  );
+  assert.equal(platform.getDeviceId!(), "dev-xyz");
+  resetTauriPlatformBootstrapForTesting();
+});
+
 test("B1: toSupportedLocale matches the Electron resolveSystemApplicationLocale rule", () => {
   assert.equal(toSupportedLocale("zh-CN"), "zh-CN");
   assert.equal(toSupportedLocale("ZH-Hans"), "zh-CN");
@@ -240,6 +270,7 @@ test("B1: createTauriPlatformSubset exposes EXACTLY the ported method set (publi
   assert.deepEqual(keys, [
     "createTempTextAttachment",
     "getDesktopZoomLevel",
+    "getDeviceId",
     "getSystemLocale",
     "onDesktopZoomLevelChanged",
     "onWindowFullscreenChanged",
