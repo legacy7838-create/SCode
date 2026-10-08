@@ -1,7 +1,8 @@
-import type { DesktopTitleBarTheme, IPlatformService } from "@zcode/shared";
+import type { DesktopTitleBarTheme, IPlatformService, Locale } from "@zcode/shared";
 
 import {
   getTauriDesktopZoomLevel,
+  getTauriSystemLocale,
   openExternal as bridgeOpenExternal,
   selectDirectory as bridgeSelectDirectory,
   setWindowTheme as bridgeSetWindowTheme,
@@ -44,6 +45,7 @@ export interface TauriPlatformDeps {
   getDesktopZoomLevel: typeof getTauriDesktopZoomLevel;
   setWindowTheme: typeof bridgeSetWindowTheme;
   showItemInFolder: typeof bridgeShowItemInFolder;
+  getSystemLocale: typeof getTauriSystemLocale;
 }
 
 const realDeps: TauriPlatformDeps = {
@@ -53,6 +55,7 @@ const realDeps: TauriPlatformDeps = {
   getDesktopZoomLevel: getTauriDesktopZoomLevel,
   setWindowTheme: bridgeSetWindowTheme,
   showItemInFolder: bridgeShowItemInFolder,
+  getSystemLocale: getTauriSystemLocale,
 };
 
 /** The subset of `IPlatformService` currently ported; expand the `Pick` keys as slices land. */
@@ -65,6 +68,7 @@ export type TauriPlatformSubset = Pick<
   | "openInFileManager"
   | "getDesktopZoomLevel"
   | "setTitleBarTheme"
+  | "getSystemLocale"
 >;
 
 /**
@@ -112,5 +116,23 @@ export function createTauriPlatformSubset(deps: TauriPlatformDeps = realDeps): T
     async setTitleBarTheme(theme: DesktopTitleBarTheme) {
       await deps.setWindowTheme(MAIN_LABEL, theme === "system" ? null : theme);
     },
+    async getSystemLocale() {
+      return toSupportedLocale(await deps.getSystemLocale());
+    },
   };
+}
+
+/**
+ * Narrow a raw OS locale string to the app's supported `Locale` union. Mirrors the exact rule in
+ * `desktopApplicationMenu.ts:resolveSystemApplicationLocale` (`startsWith("zh") ? "zh-CN" : "en-US"`).
+ * That Electron helper reads `app.getPreferredSystemLanguages()[0]` (a macOS quirk: `getLocale()` can
+ * return en-US on a Chinese macOS); Tauri's `sys_locale` exposes a single locale, so the SOURCE differs
+ * while the transformation rule is identical — a documented platform adaptation (PORTING.md), correct on
+ * Linux and any non-Chinese-macOS case.
+ *
+ * @param raw - The raw OS locale string from `get_system_locale`.
+ * @returns The supported `"zh-CN"` / `"en-US"` discriminator.
+ */
+export function toSupportedLocale(raw: string): Locale {
+  return raw.toLowerCase().startsWith("zh") ? "zh-CN" : "en-US";
 }

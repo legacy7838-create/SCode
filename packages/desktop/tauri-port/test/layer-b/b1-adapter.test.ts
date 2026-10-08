@@ -13,6 +13,7 @@ import test from "node:test";
 
 import {
   createTauriPlatformSubset,
+  toSupportedLocale,
   type TauriPlatformDeps,
 } from "../../../src/renderer/src/tauriPlatform.ts";
 
@@ -23,6 +24,8 @@ interface FakeOptions {
   openExternalThrows?: boolean;
   /** When true, the `showItemInFolder` stub rejects (exercises openInFileManager's error mapping). */
   revealThrows?: boolean;
+  /** Raw OS locale the `getSystemLocale` stub returns (defaults to a non-supported locale). */
+  systemLocale?: string;
 }
 
 /** A recording fake-deps bundle: captures calls and returns contract-shaped values per `FakeOptions`. */
@@ -58,6 +61,10 @@ function fakeDeps(opts: FakeOptions = {}): { deps: TauriPlatformDeps; calls: str
       if (opts.revealThrows) {
         throw new Error("reveal failed");
       }
+    },
+    getSystemLocale: async () => {
+      calls.push("getSystemLocale");
+      return opts.systemLocale ?? "de-DE";
     },
   };
   return { deps, calls };
@@ -133,4 +140,21 @@ test("B1: openInFileManager maps a rejected reveal to {success:false,error}", as
   const result = await platform.openInFileManager("/nope");
   assert.equal(result.success, false);
   assert.match(result.error ?? "", /reveal failed/);
+});
+
+test("B1: getSystemLocale narrows a zh* locale to zh-CN and anything else to en-US", async () => {
+  const zh = createTauriPlatformSubset(fakeDeps({ systemLocale: "zh-TW" }).deps);
+  const de = createTauriPlatformSubset(fakeDeps({ systemLocale: "de-DE" }).deps);
+  const en = createTauriPlatformSubset(fakeDeps({ systemLocale: "en-US" }).deps);
+  assert.equal(await zh.getSystemLocale!(), "zh-CN");
+  assert.equal(await de.getSystemLocale!(), "en-US");
+  assert.equal(await en.getSystemLocale!(), "en-US");
+});
+
+test("B1: toSupportedLocale matches the Electron resolveSystemApplicationLocale rule", () => {
+  assert.equal(toSupportedLocale("zh-CN"), "zh-CN");
+  assert.equal(toSupportedLocale("ZH-Hans"), "zh-CN");
+  assert.equal(toSupportedLocale("en-GB"), "en-US");
+  assert.equal(toSupportedLocale("fr"), "en-US");
+  assert.equal(toSupportedLocale(""), "en-US");
 });
