@@ -30,6 +30,10 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         // Native OS notification support for the slice-7 `show_notification` command.
         .plugin(tauri_plugin_notification::init())
+        // Shell/sidecar support for the sidecar-runtime PoC `spawn_sidecar_echo` command.
+        .plugin(tauri_plugin_shell::init())
+        // Sidecar (external child process) support for the `spawn_sidecar_echo` PoC command.
+        .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
             shell_kind,
             commands::get_app_version,
@@ -52,7 +56,8 @@ fn main() {
             commands::open_url,
             commands::reveal_in_folder,
             commands::open_path,
-            commands::show_notification
+            commands::show_notification,
+            commands::spawn_sidecar_echo
         ])
         .run(tauri::generate_context!())
         .expect("error while running the ZCode Tauri shell");

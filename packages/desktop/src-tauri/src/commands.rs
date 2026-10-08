@@ -18,6 +18,10 @@ use tauri_plugin_opener::OpenerExt;
 // Notification API surface for the slice-7 command: the `NotificationExt` app-extension returns a
 // builder (`app.notification().builder()`) whose `show()` sends a real OS notification.
 use tauri_plugin_notification::NotificationExt;
+// Sidecar-spawn API surface for the `spawn_sidecar_echo` command: the `ShellExt` app-extension
+// (`app.shell()`) resolves a bundled externalBin by stem and launches it as a child process. The
+// returned `CommandChild` reports the OS pid of the launched sidecar.
+use tauri_plugin_shell::ShellExt;
 
 /// BCP-47 fallback locale used when the host OS locale cannot be resolved.
 const FALLBACK_LOCALE: &str = "en-US";
@@ -663,6 +667,43 @@ pub fn show_notification(app: AppHandle, title: String, body: String) -> Result<
         .body(&body)
         .show()
         .map_err(|e| e.to_string())
+}
+
+/// Spawn the trivial `zcode-echo` sidecar so the renderer can drive a loopback WebSocket round-trip.
+///
+/// Part of the sidecar-runtime PoC (see `../tauri-port/SIDECAR-PACKAGING.md` §4 and §7). Resolves the
+/// bundled externalBin by its **stem** (`zcode-echo`; Tauri appends the current Rust target triple and
+/// the OS `.exe` suffix itself), injects the loopback port via the `ZCODE_WS_PORT` environment variable
+/// (so the sidecar binds a port Rust and the renderer both know — the "fixed port" handoff in
+/// SIDECAR-PACKAGING.md §6), and launches it. The event `Receiver` returned by `spawn` is dropped
+/// deliberately: this PoC only proves spawn + env handoff + a live pid, and does not yet route the
+/// sidecar's stdout through the logger or wire lifecycle kill (both documented follow-ups).
+///
+/// Runtime behaviour of the sidecar (its WS echo round-trip) is UNVERIFIED here: a headless CI box has
+/// no desktop window to invoke this command from. It is compile-verified and exercised manually under
+/// `pnpm dev:tauri` (see SIDECAR-PACKAGING.md §7); the standalone echo binary's own WS round-trip is
+/// proven out-of-band by `tauri-port/sidecar/build.sh` + a direct `node` run.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the shell extension.
+/// * `port` - The loopback TCP port to hand to the sidecar via `ZCODE_WS_PORT`.
+///
+/// # Returns
+///
+/// `Ok(u32)` with the OS pid of the launched sidecar, or `Err(String)` if the sidecar could not be
+/// resolved (missing/wrongly-named externalBin) or the OS refused to spawn it. Each plugin `Err` is
+/// converted with `.map_err(|e| e.to_string())` (never `.unwrap()`), surfacing as a rejected `Promise`.
+#[tauri::command]
+pub fn spawn_sidecar_echo(app: AppHandle, port: u16) -> Result<u32, String> {
+    let (_rx, child) = app
+        .shell()
+        .sidecar("zcode-echo")
+        .map_err(|e| e.to_string())?
+        .env("ZCODE_WS_PORT", port.to_string())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(child.pid())
 }
 
 #[cfg(test)]

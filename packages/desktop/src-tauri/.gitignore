@@ -1,3 +1,5 @@
 # Rust / Tauri build output
 /target/
 /gen/schemas/
+# Generated sidecar binaries (rebuilt by ../tauri-port/sidecar/build.sh per target-triple)
+/binaries/

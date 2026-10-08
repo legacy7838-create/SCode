@@ -8,6 +8,10 @@
     "dialog:default",
     "opener:default",
     "opener:allow-open-path",
-    "notification:default"
+    "notification:default",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [{ "name": "binaries/zcode-echo", "sidecar": true }]
+    }
   ]
 }
