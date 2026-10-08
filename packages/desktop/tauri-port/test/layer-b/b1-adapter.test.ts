@@ -31,14 +31,20 @@ interface FakeOptions {
   systemLocale?: string;
   /** When true, the `openPath` stub rejects (exercises openExternalFile's error mapping). */
   openFileThrows?: boolean;
+  /** When true, the `showTaskNotification` stub rejects (exercises the fire-and-forget catch). */
+  showTaskNotificationThrows?: boolean;
 }
 
 /** A recording fake-deps bundle: captures calls and returns contract-shaped values per `FakeOptions`. */
-function fakeDeps(opts: FakeOptions = {}): { deps: TauriPlatformDeps; calls: string[] } {
+function fakeDeps(opts: FakeOptions = {}): {
+  deps: TauriPlatformDeps;
+  calls: string[];
+} {
   const calls: string[] = [];
   // Explicit `null` (cancelled) must survive, so distinguish it from an omitted option (`undefined`)
   // rather than using `??`, which would collapse `null` back to the default.
-  const dialogResult = opts.openDialogResult === undefined ? ["picked"] : opts.openDialogResult;
+  const dialogResult =
+    opts.openDialogResult === undefined ? ["picked"] : opts.openDialogResult;
   const deps: TauriPlatformDeps = {
     selectDirectory: async (multiple) => {
       calls.push(`selectDirectory:${multiple}`);
@@ -47,6 +53,14 @@ function fakeDeps(opts: FakeOptions = {}): { deps: TauriPlatformDeps; calls: str
     showOpenDialog: async (options) => {
       calls.push(`showOpenDialog:${options.multiple === true}`);
       return dialogResult;
+    },
+    showTaskNotification: async (taskId, status, title, body, requestId) => {
+      calls.push(
+        `showTaskNotification:${taskId}|${status}|${title}|${body}|${String(requestId)}`,
+      );
+      if (opts.showTaskNotificationThrows) {
+        throw new Error("permission denied");
+      }
     },
     openExternal: async (url) => {
       calls.push(`openExternal:${url}`);
@@ -140,13 +154,18 @@ test("B1: setTitleBarTheme maps light/dark directly and system to a null overrid
   const platform = createTauriPlatformSubset(deps);
   await platform.setTitleBarTheme("dark");
   await platform.setTitleBarTheme("system");
-  assert.deepEqual(calls, ["setWindowTheme:main:dark", "setWindowTheme:main:null"]);
+  assert.deepEqual(calls, [
+    "setWindowTheme:main:dark",
+    "setWindowTheme:main:null",
+  ]);
 });
 
 test("B1: openInFileManager delegates to openPath and returns {success:true}", async () => {
   const { deps, calls } = fakeDeps();
   const platform = createTauriPlatformSubset(deps);
-  assert.deepEqual(await platform.openInFileManager("/tmp/x"), { success: true });
+  assert.deepEqual(await platform.openInFileManager("/tmp/x"), {
+    success: true,
+  });
   assert.deepEqual(calls, ["openPath:/tmp/x"]);
 });
 
@@ -161,7 +180,9 @@ test("B1: openInFileManager maps a rejected open to {success:false,error}", asyn
 test("B1: openExternalFile delegates to openPath and returns {success:true}", async () => {
   const { deps, calls } = fakeDeps();
   const platform = createTauriPlatformSubset(deps);
-  assert.deepEqual(await platform.openExternalFile!("/tmp/doc.pdf"), { success: true });
+  assert.deepEqual(await platform.openExternalFile!("/tmp/doc.pdf"), {
+    success: true,
+  });
   assert.deepEqual(calls, ["openPath:/tmp/doc.pdf"]);
 });
 
@@ -174,9 +195,15 @@ test("B1: openExternalFile maps a rejected open to {success:false,error}", async
 });
 
 test("B1: getSystemLocale narrows a zh* locale to zh-CN and anything else to en-US", async () => {
-  const zh = createTauriPlatformSubset(fakeDeps({ systemLocale: "zh-TW" }).deps);
-  const de = createTauriPlatformSubset(fakeDeps({ systemLocale: "de-DE" }).deps);
-  const en = createTauriPlatformSubset(fakeDeps({ systemLocale: "en-US" }).deps);
+  const zh = createTauriPlatformSubset(
+    fakeDeps({ systemLocale: "zh-TW" }).deps,
+  );
+  const de = createTauriPlatformSubset(
+    fakeDeps({ systemLocale: "de-DE" }).deps,
+  );
+  const en = createTauriPlatformSubset(
+    fakeDeps({ systemLocale: "en-US" }).deps,
+  );
   assert.equal(await zh.getSystemLocale!(), "zh-CN");
   assert.equal(await de.getSystemLocale!(), "en-US");
   assert.equal(await en.getSystemLocale!(), "en-US");
@@ -191,7 +218,8 @@ test("B1: toSupportedLocale matches the Electron resolveSystemApplicationLocale 
 });
 
 /** Flush pending microtasks (the async-listen → sync-disposer bridge). */
-const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+const flush = (): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, 0));
 
 test("B1: createTauriPlatformSubset exposes EXACTLY the ported method set (public-surface lock)", () => {
   // With DEFAULT deps this only builds the object (no invoke is called at construction, and the
@@ -212,6 +240,7 @@ test("B1: createTauriPlatformSubset exposes EXACTLY the ported method set (publi
     "selectFile",
     "selectFiles",
     "setTitleBarTheme",
+    "showTaskNotification",
   ]);
 });
 
@@ -228,7 +257,10 @@ test("B1: onDesktopZoomLevelChanged wires the handler and its disposer unlistens
   assert.deepEqual(seen, [{ zoomLevel: 2.5 }]);
 
   dispose();
-  assert.ok(calls.includes("unlisten"), "disposer must invoke the unlisten the fake returned");
+  assert.ok(
+    calls.includes("unlisten"),
+    "disposer must invoke the unlisten the fake returned",
+  );
 });
 
 test("B1: onDesktopZoomLevelChanged unlistens even if disposed before listen resolves (no leak)", async () => {
@@ -250,7 +282,11 @@ test("B1: onDesktopZoomLevelChanged unlistens even if disposed before listen res
     unlistenCalls += 1;
   });
   await flush();
-  assert.equal(unlistenCalls, 1, "late-arriving unlisten must be invoked to avoid a leaked subscription");
+  assert.equal(
+    unlistenCalls,
+    1,
+    "late-arriving unlisten must be invoked to avoid a leaked subscription",
+  );
 });
 
 test("B1: onWindowFullscreenChanged forwards the bare boolean and its disposer unlistens", async () => {
@@ -274,6 +310,40 @@ test("B1: onWindowFullscreenChanged forwards the bare boolean and its disposer u
   );
 });
 
+test("B1: showTaskNotification destructures the payload onto the command's flat args", async () => {
+  const { deps, calls } = fakeDeps();
+  const platform = createTauriPlatformSubset(deps);
+  // The interface takes a TaskNotificationPayload object; the command takes positional args. This
+  // locks the mapping (including the requestId passthrough) so a field-order bug can't slip through.
+  platform.showTaskNotification!({
+    taskId: "task-1",
+    status: "permission_request",
+    title: "Approval",
+    body: "needs you",
+    requestId: "req-9",
+  });
+  await flush();
+  assert.deepEqual(calls, [
+    "showTaskNotification:task-1|permission_request|Approval|needs you|req-9",
+  ]);
+});
+
+test("B1: showTaskNotification omits requestId and never surfaces a delivery rejection", async () => {
+  const { deps } = fakeDeps({ showTaskNotificationThrows: true });
+  const platform = createTauriPlatformSubset(deps);
+  // void return + fire-and-forget: a rejected invoke (e.g. denied OS permission) must not throw to
+  // the caller (mirrors Electron's `ipcRenderer.send`, which cannot reject). requestId absent -> "undefined".
+  assert.doesNotThrow(() =>
+    platform.showTaskNotification!({
+      taskId: "t",
+      status: "completed",
+      title: "x",
+      body: "y",
+    }),
+  );
+  await flush();
+});
+
 test("B1: onWindowFullscreenChanged unlistens even if disposed before listen resolves (no leak)", async () => {
   let unlistenCalls = 0;
   let resolveListen: (fn: () => void) => void = () => {};
@@ -292,5 +362,9 @@ test("B1: onWindowFullscreenChanged unlistens even if disposed before listen res
     unlistenCalls += 1;
   });
   await flush();
-  assert.equal(unlistenCalls, 1, "late-arriving unlisten must be invoked to avoid a leaked subscription");
+  assert.equal(
+    unlistenCalls,
+    1,
+    "late-arriving unlisten must be invoked to avoid a leaked subscription",
+  );
 });

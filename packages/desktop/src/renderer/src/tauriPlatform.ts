@@ -1,4 +1,9 @@
-import type { DesktopTitleBarTheme, IPlatformService, Locale } from "@zcode/shared";
+import type {
+  DesktopTitleBarTheme,
+  IPlatformService,
+  Locale,
+  TaskNotificationPayload,
+} from "@zcode/shared";
 
 import {
   getTauriDesktopZoomLevel,
@@ -10,6 +15,7 @@ import {
   selectDirectory as bridgeSelectDirectory,
   setWindowTheme as bridgeSetWindowTheme,
   showOpenDialog as bridgeShowOpenDialog,
+  showTaskNotification as bridgeShowTaskNotification,
 } from "./tauriBridge.js";
 
 /**
@@ -43,6 +49,7 @@ const MAIN_LABEL = "main";
 export interface TauriPlatformDeps {
   selectDirectory: typeof bridgeSelectDirectory;
   showOpenDialog: typeof bridgeShowOpenDialog;
+  showTaskNotification: typeof bridgeShowTaskNotification;
   openExternal: typeof bridgeOpenExternal;
   getDesktopZoomLevel: typeof getTauriDesktopZoomLevel;
   setWindowTheme: typeof bridgeSetWindowTheme;
@@ -55,6 +62,7 @@ export interface TauriPlatformDeps {
 const realDeps: TauriPlatformDeps = {
   selectDirectory: bridgeSelectDirectory,
   showOpenDialog: bridgeShowOpenDialog,
+  showTaskNotification: bridgeShowTaskNotification,
   openExternal: bridgeOpenExternal,
   getDesktopZoomLevel: getTauriDesktopZoomLevel,
   setWindowTheme: bridgeSetWindowTheme,
@@ -78,6 +86,7 @@ export type TauriPlatformSubset = Pick<
   | "onWindowFullscreenChanged"
   | "setTitleBarTheme"
   | "getSystemLocale"
+  | "showTaskNotification"
 >;
 
 /**
@@ -88,7 +97,9 @@ export type TauriPlatformSubset = Pick<
  * @returns An object whose members each satisfy the corresponding `IPlatformService` method
  *   signature (enforced by the `TauriPlatformSubset` `Pick`), delegating to a real Tauri `invoke`.
  */
-export function createTauriPlatformSubset(deps: TauriPlatformDeps = realDeps): TauriPlatformSubset {
+export function createTauriPlatformSubset(
+  deps: TauriPlatformDeps = realDeps,
+): TauriPlatformSubset {
   return {
     async selectDirectory() {
       const paths = await deps.selectDirectory(false);
@@ -141,6 +152,22 @@ export function createTauriPlatformSubset(deps: TauriPlatformDeps = realDeps): T
     },
     async getSystemLocale() {
       return toSupportedLocale(await deps.getSystemLocale());
+    },
+    showTaskNotification(payload: TaskNotificationPayload): void {
+      // Fire-and-forget like Electron's `window.zcode.showTaskNotification` (an `ipcRenderer.send`,
+      // interface return is `void`): destructure the payload onto the command's flat args and swallow
+      // any delivery rejection, so a denied OS-permission never becomes an unhandled rejection. The
+      // command itself applies the copy/focus/dedupe suppressions (slice 38). requestId is forwarded
+      // verbatim (undefined stays undefined → bridge maps to null → Rust Option::None).
+      void deps
+        .showTaskNotification(
+          payload.taskId,
+          payload.status,
+          payload.title,
+          payload.body,
+          payload.requestId,
+        )
+        .catch(() => {});
     },
     onDesktopZoomLevelChanged(handler) {
       // The interface returns a SYNCHRONOUS disposer, but Tauri's `listen` is async. Bridge them with

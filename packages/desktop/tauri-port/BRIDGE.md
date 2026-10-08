@@ -515,3 +515,18 @@ the pure policy is unit-tested here; delivery exercised under `pnpm dev:tauri`.
 
 Verification: `cargo test` 23 units (was 20); clippy/fmt green; a5 12 pass/1 skip (new command↔wrapper↔
 registration↔camelCase all covered); renderer `tsc` 0 errors in changed files.
+
+## Slice 39 contract — `showTaskNotification` adapter mapping (Pick 11→12)
+
+Wires the slice-38 command into the `tauriPlatform` `Pick` subset — no new Rust/bridge, only the
+adapter delegation that the runtime factory will call. `showTaskNotification(payload:
+TaskNotificationPayload): void` destructures the interface's object arg onto the command's positional
+args (`taskId,status,title,body,requestId`), forwarding `requestId` verbatim (absent → `undefined` →
+bridge null → Rust `Option::None`). Fire-and-forget + `.catch(() => {})`: Electron's
+`window.zcode.showTaskNotification` is an `ipcRenderer.send` (void, cannot reject), so a denied OS
+permission must not surface as an unhandled rejection — same shape as `openExternal`. The blocked
+`onTaskNotificationClick` is deliberately NOT added to the `Pick` (the subset lists only implemented
+methods; the click gap stays an honest un-implemented residual, not a stub).
+
+Verification: layer-b 23 tests (was 21 — adds payload-destructure mapping + no-throw cases; surface-lock
+now 12 keys); renderer `tsc` 0 errors; prettier clean. No Rust change, so `cargo`/a5 unaffected.
