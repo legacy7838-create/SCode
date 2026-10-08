@@ -253,3 +253,27 @@ test("A5: every Serialize return struct with snake_case fields declares camelCas
     `expected >=5 Serialize structs parsed, got ${count} (parser likely broke)`,
   );
 });
+
+/**
+ * Enforce AGENTS.md "NEVER use `.unwrap()` in production code paths" across the Rust commands. The
+ * required seams are `.map_err(|e| e.to_string())` / `?` / `let _ =` (best-effort emits); `.expect()`
+ * stays allowed for genuine invariant violations. Strips comments first (the phrase "never `.unwrap()`"
+ * appears throughout the doc-comments and MUST NOT be counted), then cuts at `#[cfg(test)]` so the test
+ * module — where unwrap is permitted — is excluded. Production `commands.rs` is currently clean, so this
+ * locks the rule against future regressions rather than reporting an existing violation.
+ */
+test("A5: commands.rs production code contains no .unwrap() (AGENTS.md)", () => {
+  const stripped = stripComments(readFileSync(commandsRs, "utf8"));
+  const marker = stripped.indexOf("#[cfg(test)]");
+  assert.ok(
+    marker >= 0,
+    "a5 expected a #[cfg(test)] module boundary in commands.rs",
+  );
+  const production = stripped.slice(0, marker);
+  const unwraps = [...production.matchAll(/\.unwrap\(\)/g)];
+  assert.equal(
+    unwraps.length,
+    0,
+    `production commands.rs must not .unwrap() (${unwraps.length} found); use map_err / ? / let _ =`,
+  );
+});
