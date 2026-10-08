@@ -21,7 +21,9 @@
 // 16) window state completion (unminimize, is_minimized, inner_position, is/set_enabled) via the
 // existing `WebviewWindow` API;
 // 17) frame geometry & global cursor (get_window_outer_size reuses WindowSize; get_cursor_position
-// via new CursorPosition).
+// via new CursorPosition);
+// 19) monitor information (current/primary/available monitors) via `WebviewWindow` display queries,
+// mapped through `monitor_to_info`.
 
 use tauri::{AppHandle, Manager, WebviewWindow};
 // Native dialog API surface for the slice-5 commands: the `DialogExt` app-extension, the file
@@ -548,6 +550,54 @@ pub struct CursorPosition {
     pub x: f64,
     /// Cursor Y coordinate in physical pixels (f64 for sub-pixel precision).
     pub y: f64,
+}
+
+/// A serializable snapshot of one OS display (monitor), reusing the geometry structs.
+///
+/// `#[serde(rename_all = "camelCase")]` is REQUIRED: Tauri auto-camelCases command arguments but NOT
+/// returned struct fields (serde owns those), so without it the `scale_factor` field would arrive at
+/// the renderer as snake_case `scale_factor` and break the bridge's camelCase invariant.
+#[derive(serde::Serialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MonitorInfo {
+    /// Human-readable monitor name when the OS provides one.
+    pub name: Option<String>,
+    /// Physical pixel dimensions.
+    pub size: WindowSize,
+    /// Physical pixel origin (top-left) on the virtual desktop.
+    pub position: WindowPosition,
+    /// Device-pixel-ratio of this monitor.
+    pub scale_factor: f64,
+}
+
+/// Project a live `tauri::Monitor` into a transportable [`MonitorInfo`].
+///
+/// Kept as a single pure mapper so all three monitor commands share one field-wiring path (DRY).
+/// It cannot be unit-tested without a runtime `Monitor` value (a pure harness cannot fabricate one),
+/// so it is compile-verified and exercised under `pnpm dev:tauri`; no fake `Monitor` is built
+/// (no-stub rule). Accessors confirmed in tauri 2.12.1: `name()->Option<&String>` (:81),
+/// `size()->&PhysicalSize<u32>` (:86), `position()->&PhysicalPosition<i32>` (:91),
+/// `scale_factor()->f64` (:101).
+///
+/// # Arguments
+///
+/// * `monitor` - The live `tauri::Monitor` to project.
+///
+/// # Returns
+///
+/// A [`MonitorInfo`] carrying the monitor's name, size, position and scale factor.
+pub fn monitor_to_info(monitor: &tauri::Monitor) -> MonitorInfo {
+    let size = monitor.size();
+    let position = monitor.position();
+    MonitorInfo {
+        name: monitor.name().cloned(),
+        size: build_window_size(size.width, size.height),
+        position: WindowPosition {
+            x: position.x,
+            y: position.y,
+        },
+        scale_factor: monitor.scale_factor(),
+    }
 }
 
 /// Build a [`WindowSize`] from a raw `(width, height)` pair.
@@ -1394,6 +1444,94 @@ pub fn get_cursor_position(app: AppHandle, label: String) -> Result<CursorPositi
         .cursor_position()
         .map_err(|e| e.to_string())?;
     Ok(CursorPosition { x: pos.x, y: pos.y })
+}
+
+/// Return the monitor currently hosting the window identified by `label`, if any.
+///
+/// Phase 2 slice 19 (monitor information). Resolves the live window through [`require_window`] and
+/// reads its display via `WebviewWindow::current_monitor`, projecting the resulting
+/// `tauri::Monitor` through the shared [`monitor_to_info`] mapper. The fallible `Result` is converted
+/// with `.map_err(|e| e.to_string())` FIRST (never `.unwrap()`), then the `Ok` value's `Option` is
+/// mapped — surfacing the `Err` on the TypeScript side as a rejected `Promise`. Requires a live GUI
+/// window and a real OS display, so it is compile-verified here and exercised under `pnpm dev:tauri`;
+/// a pure test cannot fabricate a `Monitor`, so no fake unit test is written (no-stub rule).
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+///
+/// # Returns
+///
+/// `Ok(Some(MonitorInfo))` for the hosting monitor, `Ok(None)` when the OS reports none, or
+/// `Err(String)` when the window is missing or the OS cannot enumerate displays.
+#[tauri::command]
+pub fn get_window_current_monitor(
+    app: AppHandle,
+    label: String,
+) -> Result<Option<MonitorInfo>, String> {
+    require_window(&app, &label)?
+        .current_monitor()
+        .map_err(|e| e.to_string())
+        .map(|m| m.as_ref().map(monitor_to_info))
+}
+
+/// Return the primary monitor of the display identified through the window `label`.
+///
+/// Phase 2 slice 19 (monitor information). Resolves the live window through [`require_window`] and
+/// reads the primary display via `WebviewWindow::primary_monitor`, projected through [`monitor_to_info`].
+/// Shares the same slice-19 contract as [`get_window_current_monitor`]: the `.map_err` seam FIRST,
+/// never `.unwrap()`, with the `Err` surfacing as a rejected `Promise`. Requires a live GUI window and
+/// OS display, so it is compile-verified here and exercised under `pnpm dev:tauri` (no fake `Monitor`
+/// unit test — no-stub rule).
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+///
+/// # Returns
+///
+/// `Ok(Some(MonitorInfo))` for the primary monitor, `Ok(None)` when the OS reports none, or
+/// `Err(String)` when the window is missing or the OS cannot enumerate displays.
+#[tauri::command]
+pub fn get_primary_monitor(app: AppHandle, label: String) -> Result<Option<MonitorInfo>, String> {
+    require_window(&app, &label)?
+        .primary_monitor()
+        .map_err(|e| e.to_string())
+        .map(|m| m.as_ref().map(monitor_to_info))
+}
+
+/// Return every monitor available to the window identified by `label`.
+///
+/// Phase 2 slice 19 (monitor information). Resolves the live window through [`require_window`] and
+/// enumerates all displays via `WebviewWindow::available_monitors`, mapping each `tauri::Monitor`
+/// through [`monitor_to_info`] (`iter()` yields `&Monitor`, matching the mapper's borrow). The
+/// fallible `Result` uses the `.map_err(|e| e.to_string())` seam FIRST (never `.unwrap()`), then the
+/// `Ok` `Vec` is projected — the `Err` surfacing as a rejected `Promise`. Requires a live GUI window
+/// and OS display, so it is compile-verified here and exercised under `pnpm dev:tauri` (no fake
+/// `Monitor` unit test — no-stub rule).
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+///
+/// # Returns
+///
+/// `Ok(Vec<MonitorInfo>)` with one entry per display; `Err(String)` when the window is missing or
+/// the OS cannot enumerate displays.
+#[tauri::command]
+pub fn get_available_monitors(app: AppHandle, label: String) -> Result<Vec<MonitorInfo>, String> {
+    require_window(&app, &label)?
+        .available_monitors()
+        .map_err(|e| e.to_string())
+        .map(|monitors| {
+            monitors
+                .iter()
+                .map(monitor_to_info)
+                .collect::<Vec<MonitorInfo>>()
+        })
 }
 
 /// A file-type filter for the open dialog, mirroring the plugin's `{ name, extensions }` shape.

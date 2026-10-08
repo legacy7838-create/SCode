@@ -196,3 +196,43 @@ key still containing an underscore (e.g. `default_path:`) is the signature of fo
 (quoted, followed by `,`/`)`) and `/** … */` docs never false-positive. It is headless-safe and
 wired into `pnpm test:tauri:layer-a` (glob `*.test.ts`). This is the Phase-1 "tests are the contract"
 gate for the invoke seam.
+
+## Slice 19 contract — monitor information (multi-display / HiDPI)
+
+Real `screen.getAllDisplays()`/`getPrimaryDisplay()` parity. `WebviewWindow` exposes three
+display queries returning `tauri::Monitor` (confirmed in `tauri-2.12.1/src/webview/webview_window.rs`:
+`current_monitor` :1931, `primary_monitor` :1938, `available_monitors` :1948; `Monitor` accessors
+`name` :81, `size` :86, `position` :91, `scale_factor` :101 in `src/window/mod.rs`). All three resolve
+a live window through the shared `require_window` helper (so they take `label`), and map `Monitor`
+through one pure `monitor_to_info` helper for DRY field wiring.
+
+New serialized shape (reuses the existing `WindowSize`/`WindowPosition` structs):
+
+```
+#[derive(serde::Serialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MonitorInfo {
+  pub name: Option<String>,
+  pub size: WindowSize,
+  pub position: WindowPosition,
+  pub scale_factor: f64,
+}
+```
+
+The `#[serde(rename_all = "camelCase")]` is deliberate: Tauri auto-camelCases command **arguments**
+but NOT returned struct fields (serde controls those), so without the rename the JSON key would be
+`scale_factor`. Renaming keeps every bridge identifier camelCase, which the A5 guard (d) enforces
+bridge-wide — a returned snake_case field would (correctly) fail that guard.
+
+| Command | Args | Returns | Behavior |
+| --- | --- | --- | --- |
+| `get_window_current_monitor` | `label` | `Result<Option<MonitorInfo>,String>` | `window.current_monitor()` |
+| `get_primary_monitor` | `label` | `Result<Option<MonitorInfo>,String>` | `window.primary_monitor()` |
+| `get_available_monitors` | `label` | `Result<Vec<MonitorInfo>,String>` | `window.available_monitors()` |
+
+TS bridge: `TauriMonitor { name: string | null; size: TauriWindowSize; position: {x,y}; scaleFactor:
+number }` interface + three wrappers (`getTauriCurrentMonitor`, `getTauriPrimaryMonitor` →
+`Promise<TauriMonitor | null>`, `getTauriAvailableMonitors` → `Promise<TauriMonitor[]>`). A live
+GUI/OS is required to enumerate real displays, so these are compile-verified (exercised under
+`pnpm dev:tauri`); `monitor_to_info` needs a runtime `Monitor`, which a pure test cannot fabricate —
+no fake (no-stub rule), but the new wrappers are auto-covered by the A5 name + arg-parity guards.

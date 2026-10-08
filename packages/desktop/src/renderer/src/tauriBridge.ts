@@ -867,3 +867,59 @@ export function setWindowTheme(label: string, theme: string | null): Promise<voi
 export function spawnTauriSidecarEcho(port: number): Promise<number> {
   return invoke<number>("spawn_sidecar_echo", { port });
 }
+
+/**
+ * Phase 2 第十九切片：显示器信息（多屏 / HiDPI）的 TypeScript 接缝。
+ *
+ * 对应 Rust 命令 `get_window_current_monitor` / `get_primary_monitor` / `get_available_monitors`，
+ * 全部复用已导入的 `WebviewWindow` 显示器查询 API（无需新增插件或 capability），对齐 Electron 的
+ * `screen.getAllDisplays()` / `getPrimaryDisplay()`。Rust 端通过 `require_window(label)` 解析窗口，
+ * 再把 `tauri::Monitor` 经纯映射函数 `monitor_to_info` 转为 `MonitorInfo`。Rust 端返回 `Result<..,
+ * String>`，缺失窗口或 OS 无法枚举显示器时以 rejected Promise 抛出（沿用第三切片的错误传播接缝）。
+ *
+ * 字段命名：Rust `MonitorInfo` 带 `#[serde(rename_all = "camelCase")]`，故返回对象的缩放字段为
+ * `scaleFactor`（camelCase）而非 snake_case，以契合桥接层的 camelCase 不变式（由 a5 契约守卫校验）。
+ * 运行时需活动 GUI 窗口与真实 OS 显示器，因此本组接缝在此处只做编译期类型校验，真实枚举在
+ * `pnpm dev:tauri` 下验证。保持导入零副作用。
+ */
+
+/** 单个显示器（monitor）的序列化形状；字段名与 Rust `MonitorInfo` 的 camelCase serde 输出一致。 */
+export interface TauriMonitor {
+  /** OS 提供的可读名称，缺失时为 `null`。 */
+  name: string | null;
+  /** 物理像素尺寸，复用第九切片的 `TauriWindowSize` 形状。 */
+  size: TauriWindowSize;
+  /** 物理像素原点（左上角）在虚拟桌面上的位置。 */
+  position: { x: number; y: number };
+  /** 该显示器的设备像素比（HiDPI 缩放因子）；Rust 字段 `scale_factor` 经 serde 重命名为 camelCase。 */
+  scaleFactor: number;
+}
+
+/**
+ * 读取承载指定窗口的显示器，OS 无返回时为 `null`。对应 Rust 命令 `get_window_current_monitor`
+ * （`WebviewWindow::current_monitor`）。
+ *
+ * @param label - 目标窗口 label。
+ */
+export function getTauriCurrentMonitor(label: string): Promise<TauriMonitor | null> {
+  return invoke<TauriMonitor | null>("get_window_current_monitor", { label });
+}
+
+/**
+ * 读取主显示器。对应 Rust 命令 `get_primary_monitor`（`WebviewWindow::primary_monitor`）。
+ *
+ * @param label - 目标窗口 label（用于触达窗口的显示器查询）。
+ */
+export function getTauriPrimaryMonitor(label: string): Promise<TauriMonitor | null> {
+  return invoke<TauriMonitor | null>("get_primary_monitor", { label });
+}
+
+/**
+ * 枚举指定窗口所在桌面的全部显示器。对应 Rust 命令 `get_available_monitors`
+ * （`WebviewWindow::available_monitors`），对齐 Electron 的 `screen.getAllDisplays()`。
+ *
+ * @param label - 目标窗口 label。
+ */
+export function getTauriAvailableMonitors(label: string): Promise<TauriMonitor[]> {
+  return invoke<TauriMonitor[]>("get_available_monitors", { label });
+}
