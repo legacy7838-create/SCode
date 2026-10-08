@@ -182,3 +182,91 @@ export function windowIsMaximized(label?: string): Promise<boolean> {
     label: label ?? DEFAULT_WINDOW_LABEL,
   });
 }
+
+/**
+ * Phase 2 第五切片：原生对话框命令的 TypeScript 接缝（`tauri-plugin-dialog`）。
+ *
+ * 这些函数在 Rust 端通过 `app.dialog()` 的真实阻塞式原生对话框 API 实现（文件选择、保存、
+ * 消息框）。参数以 camelCase 对象传入，Tauri 自动映射为 Rust 的 snake_case 形参。
+ *
+ * 运行时约束：原生对话框需要一个正在运行的窗口（GUI），因此这些接缝只在此处做“编译期”类型
+ * 校验；真实交互在 `pnpm dev:tauri` 下运行验证。Rust 端为 `async` 命令，在 worker 线程阻塞
+ * 等待主线程弹出的原生对话框结果（避免冻结事件循环）。保持导入零副作用。
+ */
+
+/** 文件类型过滤器，映射 Rust 端 `DialogFilter { extensions, name }`。 */
+export interface TauriDialogFilter {
+  /** 不含前导点的扩展名列表，例如 `["rs", "toml"]`。 */
+  extensions: string[];
+  /** 原生对话框中展示的可读名称，例如 `"Source"`。 */
+  name: string;
+}
+
+/** `showOpenDialog` 选项。 */
+export interface TauriOpenDialogOptions {
+  /** 是否允许多选。缺省为 `false`（单选）。 */
+  multiple?: boolean;
+  /** 文件类型过滤器列表。 */
+  filters?: TauriDialogFilter[];
+}
+
+/**
+ * 打开原生“选择文件”对话框，返回用户选中的路径数组；取消时返回 `null`。
+ * 对应 Rust 命令 `show_open_dialog`（`blocking_pick_files` / `blocking_pick_file`）。
+ *
+ * @param options - 多选与过滤条件；缺省为单选、无过滤。
+ */
+export function showOpenDialog(
+  options: TauriOpenDialogOptions = {},
+): Promise<string[] | null> {
+  return invoke<string[] | null>("show_open_dialog", {
+    multiple: options.multiple ?? false,
+    filters: options.filters ?? [],
+  });
+}
+
+/** `showSaveDialog` 选项。 */
+export interface TauriSaveDialogOptions {
+  /** 建议的默认保存路径（目录 + 文件名）；缺省不预设。 */
+  defaultPath?: string;
+}
+
+/**
+ * 打开原生“另存为”对话框，返回用户选择的目标路径；取消时返回 `null`。
+ * 对应 Rust 命令 `show_save_dialog`（`blocking_save_file`）。
+ *
+ * @param options - 默认路径建议。
+ */
+export function showSaveDialog(
+  options: TauriSaveDialogOptions = {},
+): Promise<string | null> {
+  return invoke<string | null>("show_save_dialog", {
+    defaultPath: options.defaultPath ?? null,
+  });
+}
+
+/** `showMessageDialog` 选项。 */
+export interface TauriMessageDialogOptions {
+  /** 对话框严重级别，决定图标；缺省 `"info"`。 */
+  kind?: "info" | "warning" | "error";
+  /** 标题。 */
+  title: string;
+  /** 正文消息。 */
+  message: string;
+}
+
+/**
+ * 打开原生模态消息对话框（Yes/No 按钮），返回用户是否确认。
+ * 对应 Rust 命令 `show_message_dialog`（`blocking_show`）：`true` 表示点击 Yes，`false` 表示 No。
+ *
+ * @param options - 严重级别、标题与消息文本。
+ */
+export function showMessageDialog(
+  options: TauriMessageDialogOptions,
+): Promise<boolean> {
+  return invoke<boolean>("show_message_dialog", {
+    kind: options.kind ?? "info",
+    title: options.title,
+    message: options.message,
+  });
+}

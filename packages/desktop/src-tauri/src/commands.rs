@@ -4,9 +4,13 @@
 // genuine source (package metadata, OS locale, process environment, compile-time OS consts, live
 // webview windows); the only hardcoded values are the documented fallbacks required by the
 // contract. Slices: 1) version/locale/device id, 2) platform info/app name, 3) OS directories
-// (first fallible `Result` commands), 4) window management via Tauri's `WebviewWindow` API.
+// (first fallible `Result` commands), 4) window management via Tauri's `WebviewWindow` API,
+// 5) native file/save/message dialogs via `tauri-plugin-dialog`.
 
 use tauri::{AppHandle, Manager, WebviewWindow};
+// Native dialog API surface for the slice-5 commands: the `DialogExt` app-extension, the file
+// picker result type, and the message-dialog kinds/buttons.
+use tauri_plugin_dialog::{DialogExt, FilePath, MessageDialogButtons, MessageDialogKind};
 
 /// BCP-47 fallback locale used when the host OS locale cannot be resolved.
 const FALLBACK_LOCALE: &str = "en-US";
@@ -360,6 +364,203 @@ pub fn window_is_maximized(app: AppHandle, label: String) -> Result<bool, String
         .map_err(|e| e.to_string())
 }
 
+/// A file-type filter for the open dialog, mirroring the plugin's `{ name, extensions }` shape.
+///
+/// Deserialized from the renderer's camelCase `DialogFilter` object; Tauri maps the JS fields onto
+/// these snake_case Rust fields automatically.
+#[derive(serde::Deserialize)]
+pub struct DialogFilter {
+    /// File-name extensions without a leading dot, e.g. `["rs", "toml"]`.
+    extensions: Vec<String>,
+    /// Human-readable filter name shown in the native dialog, e.g. `"Source"`.
+    name: String,
+}
+
+/// Render a plugin [`FilePath`] into an owned UTF-8 string for transport to the renderer.
+///
+/// Kept pure so the path/URL coercion is unit-testable without a live dialog. The `Path` variant is
+/// stringified with a lossy UTF-8 conversion (never `.unwrap()`), while the `Url` variant (e.g. a
+/// `file://` or Android `content://` picker result) falls back to its `Display` form rather than
+/// panicking on a failed filesystem conversion.
+///
+/// # Arguments
+///
+/// * `path` - The picker result path to stringify.
+///
+/// # Returns
+///
+/// The filesystem path (lossy) or URL string of the given file path.
+fn file_path_to_string(path: &FilePath) -> String {
+    match path.as_path() {
+        Some(p) => p.to_string_lossy().into_owned(),
+        None => path.to_string(),
+    }
+}
+
+/// Map a renderer-supplied dialog kind string onto the plugin's [`MessageDialogKind`].
+///
+/// Pure helper so the case-insensitive parsing is unit-testable. Unknown or empty inputs fall back
+/// to [`MessageDialogKind::Info`] (the plugin default) rather than erroring, since the kind only
+/// affects the icon shown and never the user's yes/no decision.
+///
+/// # Arguments
+///
+/// * `kind` - Kind discriminator: `"info"`, `"warning"` or `"error"` (case-insensitive).
+///
+/// # Returns
+///
+/// The matching [`MessageDialogKind`], or `Info` when unrecognized.
+fn parse_message_kind(kind: &str) -> MessageDialogKind {
+    match kind.to_ascii_lowercase().as_str() {
+        "warning" => MessageDialogKind::Warning,
+        "error" => MessageDialogKind::Error,
+        _ => MessageDialogKind::Info,
+    }
+}
+
+/// Split a save-dialog `default_path` into its parent directory and file name components.
+///
+/// Pure helper backing the save dialog's default suggestion; mirrors the plugin's own default-path
+/// handling (a path that is not an existing directory is treated as a suggested file name). Returns
+/// the parent directory when it has at least one component, plus the file name, so the caller can
+/// feed them to `FileDialogBuilder::set_directory` / `set_file_name`.
+///
+/// # Arguments
+///
+/// * `default_path` - The absolute or relative path suggested as the save target.
+///
+/// # Returns
+///
+/// `(directory, file_name)` where either element may be `None` when the path has no such component.
+fn split_default_path(default_path: &std::path::Path) -> (Option<String>, Option<String>) {
+    let directory = default_path
+        .parent()
+        .filter(|p| p.components().count() > 0)
+        .map(|p| p.to_string_lossy().into_owned());
+    let file_name = default_path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned());
+    (directory, file_name)
+}
+
+/// Show a native open-file dialog and return the selected path(s), or `None` on cancel.
+///
+/// Uses the `tauri-plugin-dialog` blocking API (`app.dialog().file().blocking_pick_files()`), which
+/// internally schedules the native picker on the main thread and blocks the calling thread on a
+/// sync channel. The command is therefore `async`: Tauri runs `async fn` commands on a worker
+/// thread, so the blocking call never freezes the event loop (calling it on the main thread would
+/// deadlock). A single selection is requested when `multiple` is false, and the result is normalized
+/// to a `Vec<String>`; `serde_json` transports it to the renderer as an array or `null`.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the dialog extension.
+/// * `multiple` - Whether the user may select more than one file.
+/// * `filters` - File-type filters shown by the native dialog.
+///
+/// # Returns
+///
+/// `Ok(Some(paths))` for the chosen files, `Ok(None)` when the user cancels, or `Err(String)` if the
+/// native dialog cannot be shown. The dialog itself surfaces user cancellation as `None`, not an
+/// error; the `Err` arm covers a runtime that refuses to present a native dialog at all.
+#[tauri::command]
+pub async fn show_open_dialog(
+    app: AppHandle,
+    multiple: bool,
+    filters: Vec<DialogFilter>,
+) -> Result<Option<Vec<String>>, String> {
+    let mut builder = app.dialog().file();
+    for filter in &filters {
+        let extensions: Vec<&str> = filter.extensions.iter().map(|s| &**s).collect();
+        builder = builder.add_filter(filter.name.clone(), &extensions);
+    }
+
+    let picked = if multiple {
+        builder.blocking_pick_files()
+    } else {
+        builder.blocking_pick_file().map(|p| vec![p])
+    };
+
+    Ok(picked.map(|paths| {
+        paths
+            .iter()
+            .map(file_path_to_string)
+            .collect::<Vec<String>>()
+    }))
+}
+
+/// Show a native save-file dialog and return the chosen path, or `None` on cancel.
+///
+/// Uses `app.dialog().file().blocking_save_file()`, bridged the same way as [`show_open_dialog`]
+/// (worker-thread blocking, native picker on the main thread). When `default_path` is provided it is
+/// split into a suggested directory and file name via [`split_default_path`].
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the dialog extension.
+/// * `default_path` - Optional path suggested as the initial save target.
+///
+/// # Returns
+///
+/// `Ok(Some(path))` for the chosen save target, `Ok(None)` on cancel, or `Err(String)` if the native
+/// dialog cannot be shown.
+#[tauri::command]
+pub async fn show_save_dialog(
+    app: AppHandle,
+    default_path: Option<String>,
+) -> Result<Option<String>, String> {
+    let mut builder = app.dialog().file();
+    if let Some(path) = default_path.as_deref() {
+        let (directory, file_name) = split_default_path(std::path::Path::new(path));
+        if let Some(dir) = directory {
+            builder = builder.set_directory(std::path::PathBuf::from(dir));
+        }
+        if let Some(name) = file_name {
+            builder = builder.set_file_name(name);
+        }
+    }
+
+    Ok(builder
+        .blocking_save_file()
+        .as_ref()
+        .map(file_path_to_string))
+}
+
+/// Show a native modal message dialog and return whether the user confirmed.
+///
+/// Uses `app.dialog().message(..).blocking_show()`, bridged the same way as the file dialogs. The
+/// dialog is presented with `YesNo` buttons so the boolean result is meaningful: the plugin's
+/// `blocking_show` returns `true` for the affirmative (Yes/Ok) button and `false` otherwise. The
+/// `kind` string selects the icon via [`parse_message_kind`] (unknown kinds default to info).
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the dialog extension.
+/// * `kind` - Dialog severity: `"info"`, `"warning"` or `"error"`.
+/// * `title` - Window/dialog title.
+/// * `message` - Primary message text.
+///
+/// # Returns
+///
+/// `Ok(true)` when the user confirms (Yes), `Ok(false)` when they decline (No), or `Err(String)` if
+/// the native dialog cannot be shown.
+#[tauri::command]
+pub async fn show_message_dialog(
+    app: AppHandle,
+    kind: String,
+    title: String,
+    message: String,
+) -> Result<bool, String> {
+    let confirmed = app
+        .dialog()
+        .message(message)
+        .title(title)
+        .kind(parse_message_kind(&kind))
+        .buttons(MessageDialogButtons::YesNo)
+        .blocking_show();
+    Ok(confirmed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -458,5 +659,61 @@ mod tests {
 
         // Assert
         assert_eq!(result, "/");
+    }
+
+    #[test]
+    fn file_path_to_string_renders_path_variant() {
+        // Arrange: a plain filesystem path picker result.
+        let path = FilePath::Path(std::path::PathBuf::from("/home/user/report.pdf"));
+
+        // Act
+        let result = file_path_to_string(&path);
+
+        // Assert
+        assert_eq!(result, "/home/user/report.pdf");
+    }
+
+    #[test]
+    fn parse_message_kind_maps_known_and_unknown_values() {
+        // Act / Assert: recognized kinds map case-insensitively, everything else falls back to Info.
+        assert!(matches!(
+            parse_message_kind("warning"),
+            MessageDialogKind::Warning
+        ));
+        assert!(matches!(
+            parse_message_kind("ERROR"),
+            MessageDialogKind::Error
+        ));
+        assert!(matches!(parse_message_kind(""), MessageDialogKind::Info));
+        assert!(matches!(
+            parse_message_kind("nonsense"),
+            MessageDialogKind::Info
+        ));
+    }
+
+    #[test]
+    fn split_default_path_yields_directory_and_file_name() {
+        // Arrange
+        let path = std::path::Path::new("/home/user/output/report.txt");
+
+        // Act
+        let (dir, name) = split_default_path(path);
+
+        // Assert
+        assert_eq!(dir.as_deref(), Some("/home/user/output"));
+        assert_eq!(name.as_deref(), Some("report.txt"));
+    }
+
+    #[test]
+    fn split_default_path_handles_bare_file_name() {
+        // Arrange: a path with only a file name has no parent directory to suggest.
+        let path = std::path::Path::new("report.txt");
+
+        // Act
+        let (dir, name) = split_default_path(path);
+
+        // Assert
+        assert_eq!(dir, None);
+        assert_eq!(name.as_deref(), Some("report.txt"));
     }
 }

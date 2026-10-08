@@ -7,9 +7,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 // Phase 2 real (non-stub) commands: version, locale, device id, platform info, app name, the OS
-// downloads/documents directories (the first fallible `Result` commands), and the window-management
-// group (minimize/maximize/unmaximize/toggle-fullscreen/close/focus/is-maximized). See ./commands.rs
-// and ../tauri-port/BRIDGE.md for the contract.
+// downloads/documents directories (the first fallible `Result` commands), the window-management
+// group (minimize/maximize/unmaximize/toggle-fullscreen/close/focus/is-maximized), and native
+// file/save/message dialogs via `tauri-plugin-dialog`. See ./commands.rs and ../tauri-port/BRIDGE.md
+// for the contract.
 mod commands;
 
 /// Placeholder command to prove the `invoke()` seam exists for Phase 2.
@@ -20,6 +21,8 @@ fn shell_kind() -> &'static str {
 
 fn main() {
     tauri::Builder::default()
+        // Native dialog support for the slice-5 `show_*_dialog` commands.
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             shell_kind,
             commands::get_app_version,
@@ -35,7 +38,10 @@ fn main() {
             commands::window_toggle_fullscreen,
             commands::window_close,
             commands::window_set_focus,
-            commands::window_is_maximized
+            commands::window_is_maximized,
+            commands::show_open_dialog,
+            commands::show_save_dialog,
+            commands::show_message_dialog
         ])
         .run(tauri::generate_context!())
         .expect("error while running the ZCode Tauri shell");
