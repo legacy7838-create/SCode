@@ -9,8 +9,9 @@
 // Phase 2 real (non-stub) commands: version, locale, device id, platform info, app name, the OS
 // downloads/documents directories (the first fallible `Result` commands), the window-management
 // group (minimize/maximize/unmaximize/toggle-fullscreen/close/focus/is-maximized), native
-// file/save/message dialogs via `tauri-plugin-dialog`, and the shell/open group (open-url /
-// reveal-in-folder / open-path) via `tauri-plugin-opener`. See ./commands.rs and
+// file/save/message dialogs via `tauri-plugin-dialog`, the shell/open group (open-url /
+// reveal-in-folder / open-path) via `tauri-plugin-opener`, and native OS notifications
+// (`show_notification`) via `tauri-plugin-notification`. See ./commands.rs and
 // ../tauri-port/BRIDGE.md for the contract.
 mod commands;
 
@@ -27,6 +28,8 @@ fn main() {
         // OS open/reveal support for the slice-6 `open_url` / `open_path` / `reveal_in_folder`
         // commands.
         .plugin(tauri_plugin_opener::init())
+        // Native OS notification support for the slice-7 `show_notification` command.
+        .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
             shell_kind,
             commands::get_app_version,
@@ -48,7 +51,8 @@ fn main() {
             commands::show_message_dialog,
             commands::open_url,
             commands::reveal_in_folder,
-            commands::open_path
+            commands::open_path,
+            commands::show_notification
         ])
         .run(tauri::generate_context!())
         .expect("error while running the ZCode Tauri shell");

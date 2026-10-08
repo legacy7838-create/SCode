@@ -24,6 +24,9 @@ tauri-plugin-dialog = "2"
 # Open URLs / filesystem paths and reveal items in the OS file manager for the slice-6 shell
 # commands (`open_url` / `open_path` / `reveal_in_folder`) via `tauri_plugin_opener::OpenerExt`.
 tauri-plugin-opener = "2"
+# Native OS notifications for the slice-7 `show_notification` command via
+# `tauri_plugin_notification::NotificationExt` (`app.notification()`).
+tauri-plugin-notification = "2"
 
 [profile.release]
 codegen-units = 1

@@ -6,7 +6,7 @@
 // contract. Slices: 1) version/locale/device id, 2) platform info/app name, 3) OS directories
 // (first fallible `Result` commands), 4) window management via Tauri's `WebviewWindow` API,
 // 5) native file/save/message dialogs via `tauri-plugin-dialog`, 6) shell/open (URL, reveal,
-// path) via `tauri-plugin-opener`.
+// path) via `tauri-plugin-opener`, 7) native OS notifications via `tauri-plugin-notification`.
 
 use tauri::{AppHandle, Manager, WebviewWindow};
 // Native dialog API surface for the slice-5 commands: the `DialogExt` app-extension, the file
@@ -15,6 +15,9 @@ use tauri_plugin_dialog::{DialogExt, FilePath, MessageDialogButtons, MessageDial
 // Shell/open API surface for the slice-6 commands: the `OpenerExt` app-extension exposes the real
 // OS handlers (`open_url`, `open_path`, `reveal_item_in_dir`).
 use tauri_plugin_opener::OpenerExt;
+// Notification API surface for the slice-7 command: the `NotificationExt` app-extension returns a
+// builder (`app.notification().builder()`) whose `show()` sends a real OS notification.
+use tauri_plugin_notification::NotificationExt;
 
 /// BCP-47 fallback locale used when the host OS locale cannot be resolved.
 const FALLBACK_LOCALE: &str = "en-US";
@@ -628,6 +631,37 @@ pub fn reveal_in_folder(app: AppHandle, path: String) -> Result<(), String> {
 pub fn open_path(app: AppHandle, path: String) -> Result<(), String> {
     app.opener()
         .open_path(path, None::<&str>)
+        .map_err(|e| e.to_string())
+}
+
+/// Show a native OS notification with the given `title` and `body` via `tauri-plugin-notification`.
+///
+/// Phase 2 slice 7 (native notifications). Delegates to the plugin's real builder API
+/// `app.notification().builder().title(..).body(..).show()`, which dispatches an OS notification
+/// (Linux/libnotify, macOS User Notifications, Windows toast). The plugin's `show()` returns
+/// `Result<(), tauri_plugin_notification::Error>`; the `Err` is converted to `Err(String)` via
+/// `.map_err(|e| e.to_string())` (never `.unwrap()`), surfacing on the TypeScript side as a
+/// rejected `Promise`. Not unit-tested: delivering a notification requires a live desktop session
+/// and OS notification daemon, which a pure test harness cannot provide; faking one would violate
+/// the no-stub rule. The command is compile-verified here and exercised at runtime under
+/// `pnpm dev:tauri` (a real window and granted OS permission are required).
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the notification extension.
+/// * `title` - Notification title shown by the OS.
+/// * `body` - Notification body text shown by the OS.
+///
+/// # Returns
+///
+/// `Ok(())` when the notification was dispatched, or `Err(String)` describing why it could not.
+#[tauri::command]
+pub fn show_notification(app: AppHandle, title: String, body: String) -> Result<(), String> {
+    app.notification()
+        .builder()
+        .title(&title)
+        .body(&body)
+        .show()
         .map_err(|e| e.to_string())
 }
 

@@ -313,3 +313,21 @@ export function showItemInFolder(path: string): Promise<void> {
 export function openPath(path: string): Promise<void> {
   return invoke<void>("open_path", { path });
 }
+
+/**
+ * Phase 2 第七切片：原生系统通知的 TypeScript 接缝（`tauri-plugin-notification`）。
+ *
+ * 对应 Rust 命令 `show_notification`，通过 `app.notification().builder()` 的真实构建器 API
+ * （`.title(..).body(..).show()`）向操作系统投递通知（Linux/libnotify、macOS 用户通知、Windows
+ * toast）。Rust 端返回 `Result<(), String>`，失败时的 `Err(String)` 在这里以 rejected Promise
+ * 抛出（沿用第三切片的错误传播接缝）。
+ *
+ * 运行时约束：原生通知需要一个正在运行的窗口与已授予的操作系统通知权限，因此此接缝在此处只做
+ * “编译期”类型校验；真实投递在 `pnpm dev:tauri` 下运行验证。保持导入零副作用。
+ *
+ * @param title - 通知标题。
+ * @param body - 通知正文。
+ */
+export function showNotification(title: string, body: string): Promise<void> {
+  return invoke<void>("show_notification", { title, body });
+}
