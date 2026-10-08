@@ -194,6 +194,27 @@ test("B1: toSupportedLocale matches the Electron resolveSystemApplicationLocale 
 /** Flush pending microtasks (the async-listen → sync-disposer bridge). */
 const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
+test("B1: createTauriPlatformSubset exposes EXACTLY the ported method set (public-surface lock)", () => {
+  // With DEFAULT deps this only builds the object (no invoke is called at construction, and the
+  // module import is side-effect-free per a6), so it is safe headless. This locks the adapter's
+  // public surface: adding a method without a conformance case, or silently dropping one, fails here.
+  // Every key MUST be a real IPlatformService member (the Pick enforces it) AND have a delegation
+  // case above — the union of both is the ported set.
+  const keys = Object.keys(createTauriPlatformSubset()).sort();
+  assert.deepEqual(keys, [
+    "getDesktopZoomLevel",
+    "getSystemLocale",
+    "onDesktopZoomLevelChanged",
+    "openExternal",
+    "openExternalFile",
+    "openInFileManager",
+    "selectDirectory",
+    "selectFile",
+    "selectFiles",
+    "setTitleBarTheme",
+  ]);
+});
+
 test("B1: onDesktopZoomLevelChanged wires the handler and its disposer unlistens", async () => {
   capturedZoomHandler = undefined;
   const { deps, calls } = fakeDeps();
