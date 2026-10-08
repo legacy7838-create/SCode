@@ -3,6 +3,7 @@ import type { DesktopTitleBarTheme, IPlatformService, Locale } from "@zcode/shar
 import {
   getTauriDesktopZoomLevel,
   getTauriSystemLocale,
+  listenTauriDesktopZoomChanged,
   openExternal as bridgeOpenExternal,
   openPath as bridgeOpenPath,
   selectDirectory as bridgeSelectDirectory,
@@ -48,6 +49,7 @@ export interface TauriPlatformDeps {
   showItemInFolder: typeof bridgeShowItemInFolder;
   getSystemLocale: typeof getTauriSystemLocale;
   openPath: typeof bridgeOpenPath;
+  listenDesktopZoomChanged: typeof listenTauriDesktopZoomChanged;
 }
 
 const realDeps: TauriPlatformDeps = {
@@ -59,6 +61,7 @@ const realDeps: TauriPlatformDeps = {
   showItemInFolder: bridgeShowItemInFolder,
   getSystemLocale: getTauriSystemLocale,
   openPath: bridgeOpenPath,
+  listenDesktopZoomChanged: listenTauriDesktopZoomChanged,
 };
 
 /** The subset of `IPlatformService` currently ported; expand the `Pick` keys as slices land. */
@@ -71,6 +74,7 @@ export type TauriPlatformSubset = Pick<
   | "openInFileManager"
   | "openExternalFile"
   | "getDesktopZoomLevel"
+  | "onDesktopZoomLevelChanged"
   | "setTitleBarTheme"
   | "getSystemLocale"
 >;
@@ -132,6 +136,25 @@ export function createTauriPlatformSubset(deps: TauriPlatformDeps = realDeps): T
     },
     async getSystemLocale() {
       return toSupportedLocale(await deps.getSystemLocale());
+    },
+    onDesktopZoomLevelChanged(handler) {
+      // The interface returns a SYNCHRONOUS disposer, but Tauri's `listen` is async. Bridge them with
+      // a settled flag: if the caller unsubscribes before `listen` resolves, invoke the unlisten the
+      // moment it arrives (no leaked subscription); otherwise stash it for the disposer. Faithful to
+      // Electron's sync-subscribe/async-teardown contract, not a no-op.
+      let unlisten: (() => void) | undefined;
+      let disposed = false;
+      void deps.listenDesktopZoomChanged(handler).then((fn) => {
+        if (disposed) {
+          fn();
+        } else {
+          unlisten = fn;
+        }
+      });
+      return () => {
+        disposed = true;
+        unlisten?.();
+      };
     },
   };
 }

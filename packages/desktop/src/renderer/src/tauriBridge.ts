@@ -1,3 +1,4 @@
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 
 /**
@@ -906,6 +907,37 @@ export function killTauriSidecar(pid: number): Promise<void> {
  */
 export function spawnTauriSidecarDiscoverPort(): Promise<number> {
   return invoke<number>("spawn_sidecar_echo_discover_port");
+}
+
+/**
+ * Phase 2 第三十三切片：桌面缩放变更事件（推送通道）的 TypeScript 接缝。
+ *
+ * 这是首个 Rust→渲染端「事件推送」通道，验证 Tauri 原生事件机制（`app.emit` ⇄
+ * `@tauri-apps/api/event` 的 `listen`，均为 core，无需新增插件/依赖），为后续 `on*` 事件族打样。
+ * Rust 端 `set_desktop_zoom_level` 在应用并记录缩放后广播 `ZOOM_CHANGED_EVENT`，载荷为
+ * `DesktopZoomState = { zoomLevel: number }`（与平台契约 getDesktopZoomLevel 返回形状一致）。
+ * `ZOOM_CHANGED_EVENT` 字面量与 Rust `commands.rs` 的同名常量必须逐字一致，由 a5 契约守卫校验防漂移。
+ * 需运行时活动窗口才有真实推送，此处只做编译期类型校验，真实效果在 `pnpm dev:tauri` 下验证。
+ */
+export const ZOOM_CHANGED_EVENT = "zcode:desktop-zoom-changed";
+
+/** 桌面缩放状态（与 `packages/shared` 的 `DesktopZoomState` 形状一致）。 */
+export interface TauriDesktopZoomState {
+  zoomLevel: number;
+}
+
+/**
+ * 订阅桌面缩放变更事件。对应 Rust 广播 `ZOOM_CHANGED_EVENT`（`set_desktop_zoom_level` 触发）。
+ *
+ * @param handler - 每次缩放变更时以 `{ zoomLevel }` 调用。
+ * @returns 解析为退订函数；调用它停止监听。
+ */
+export function listenTauriDesktopZoomChanged(
+  handler: (state: TauriDesktopZoomState) => void,
+): Promise<UnlistenFn> {
+  return listen<TauriDesktopZoomState>(ZOOM_CHANGED_EVENT, (event) =>
+    handler(event.payload),
+  );
 }
 
 /**

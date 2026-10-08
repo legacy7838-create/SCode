@@ -13,10 +13,11 @@
 > marked DONE must be additive and flag-gated.
 
 > **STATUS — Part 1 landed** (`src/renderer/src/tauriPlatform.ts`): `createTauriPlatformSubset(deps?)`
-> returns a `Pick<IPlatformService, …>` — NOT the full interface — implementing only 9 fully-backed
+> returns a `Pick<IPlatformService, …>` — NOT the full interface — implementing only 10 fully-backed
 > methods (`selectDirectory`, `selectFile`, `selectFiles`, `openExternal`, `openInFileManager`,
-> `openExternalFile`, `getDesktopZoomLevel`, `setTitleBarTheme`, `getSystemLocale`), each delegating to
-> a verified `tauriBridge` wrapper with
+> `openExternalFile`, `getDesktopZoomLevel`, `onDesktopZoomLevelChanged`, `setTitleBarTheme`,
+> `getSystemLocale`), each delegating to a
+> verified `tauriBridge` wrapper with
 > real transformation (single-path unwrap, reveal→`{success,error?}` result object, `"system"`→clear
 > override, level→`{zoomLevel}` wrap, fire-and-forget). It is **additive and not wired into the
 > Electron factory** (Electron stays intact). The sync-return

@@ -155,3 +155,17 @@ test("A5: every commands::NAME registered in main.rs is a real #[tauri::command]
     `main.rs registers a commands:: name with no matching #[tauri::command] (build break): ${dangling.join(", ")}`,
   );
 });
+
+/**
+ * Push-event channel guard (slice 33): a Rust `app.emit(NAME, ..)` and a JS `listen(NAME, ..)` must
+ * use the IDENTICAL event-name string, else the renderer silently never receives the event. Asserts
+ * every event literal shared between the two languages is present on both sides. Currently one event.
+ */
+test("A5: shared push-event names appear in BOTH commands.rs and tauriBridge.ts", () => {
+  const commands = readFileSync(commandsRs, "utf8");
+  const bridge = readFileSync(tauriBridgeTs, "utf8");
+  for (const name of ["zcode:desktop-zoom-changed"]) {
+    assert.ok(commands.includes(`"${name}"`), `commands.rs must emit "${name}"`);
+    assert.ok(bridge.includes(`"${name}"`), `tauriBridge.ts must listen on "${name}"`);
+  }
+});

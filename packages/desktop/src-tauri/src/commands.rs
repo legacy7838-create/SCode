@@ -38,6 +38,9 @@ use tauri::{AppHandle, Manager, WebviewWindow};
 // Window background color for the slice-22 `set_window_background_color` command. `Color` is the
 // tuple struct `Color(r, g, b, a)` re-exported by the public `tauri::webview` module.
 use tauri::webview::Color;
+// Event-push API for the slice-33 zoom-changed channel: `AppHandle::emit` broadcasts a serde payload
+// to every listener; the renderer subscribes via `@tauri-apps/api/event` `listen`.
+use tauri::Emitter;
 // Native dialog API surface for the slice-5 commands: the `DialogExt` app-extension, the file
 // picker result type, and the message-dialog kinds/buttons.
 use tauri_plugin_dialog::{DialogExt, FilePath, MessageDialogButtons, MessageDialogKind};
@@ -1073,6 +1076,11 @@ pub struct ZoomRegistry(Mutex<HashMap<String, f64>>);
 ///
 /// `Ok(())` on success; `Err(String)` when the window is missing, the OS rejects the operation, or the
 /// registry lock is poisoned.
+/// Event name broadcast whenever [`set_desktop_zoom_level`] changes a window's zoom. The renderer's
+/// `tauriBridge.listenTauriDesktopZoomChanged` subscribes to this exact string (a5-contract guards the
+/// literal against drift). Payload shape is `DesktopZoomState` = `{ zoomLevel: number }`.
+pub const ZOOM_CHANGED_EVENT: &str = "zcode:desktop-zoom-changed";
+
 #[tauri::command]
 pub fn set_desktop_zoom_level(app: AppHandle, label: String, level: f64) -> Result<(), String> {
     let factor = zoom_level_to_factor(level);
@@ -1085,6 +1093,14 @@ pub fn set_desktop_zoom_level(app: AppHandle, label: String, level: f64) -> Resu
         .lock()
         .map_err(|e| format!("zoom registry lock poisoned: {e}"))?
         .insert(label, factor);
+    // Push the change so subscribers of `onDesktopZoomLevelChanged` update. Best-effort by design:
+    // the authoritative value lives in `ZoomRegistry` (readable via `get_desktop_zoom_level`), so a
+    // dropped emit is recoverable and must NOT fail a zoom that already applied — hence `let _ =`,
+    // not `?` and never `.unwrap()`.
+    let _ = app.emit(
+        ZOOM_CHANGED_EVENT,
+        serde_json::json!({ "zoomLevel": level }),
+    );
     Ok(())
 }
 

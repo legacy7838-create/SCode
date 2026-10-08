@@ -416,3 +416,24 @@ it returns `Err` (never hangs on a crash); a live-but-silent process would await
 readiness timeout is documented as production hardening, deliberately not added to avoid masking a real
 handshake failure (PORTING.md). TS bridge: `spawnTauriSidecarDiscoverPort()`. Compile-verified; the WS
 round-trip over a dynamically-bound port is proven out-of-band by the a4 Layer-A test.
+
+## Slice 33 contract — push-event channel (`onDesktopZoomLevelChanged`) — first of the `on*` family
+
+Proves the Rust→renderer event-push mechanism using **core Tauri events** (`Emitter::emit` +
+`@tauri-apps/api/event` `listen`) — no new plugin/dependency and no product decision, so it de-risks
+the whole `on*` method family (previously classed "gated"). Chosen to pair with the already-backed
+zoom commands (`getDesktopZoomLevel`/`setDesktopZoomLevel`), completing a get/set/changed triad.
+
+- Rust: `set_desktop_zoom_level` best-effort emits `ZOOM_CHANGED_EVENT` = `"zcode:desktop-zoom-changed"`
+  with payload `serde_json::json!({ "zoomLevel": level })` (matches `DesktopZoomState`). Ignored via
+  `let _ =` (not `.unwrap()`, not `?`): the authoritative value is in `ZoomRegistry`, so a dropped emit
+  must not fail a zoom that already applied.
+- Bridge: `listenTauriDesktopZoomChanged(handler): Promise<UnlistenFn>` wraps `listen<TauriDesktopZoomState>`.
+- Adapter: `onDesktopZoomLevelChanged(handler): () => void` — the interface's **sync** disposer bridged
+  to the **async** `listen` via a settled flag (early-dispose still tears down the late unlisten; no
+  leak). Injectable-deps Layer-B-tested (b1, incl. the early-dispose path).
+
+`a5-contract.test.ts` gained a 7th invariant: the shared event literal must appear in BOTH `commands.rs`
+and `tauriBridge.ts` (prevents name drift that would silently drop the event). Full runtime delivery is
+exercised under `pnpm dev:tauri`; the emit + serde payload + listener wiring are compile/type-verified,
+and the subscribe/forward/dispose logic is headless-tested.

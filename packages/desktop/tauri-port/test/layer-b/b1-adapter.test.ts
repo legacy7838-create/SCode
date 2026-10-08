@@ -17,6 +17,9 @@ import {
   type TauriPlatformDeps,
 } from "../../../src/renderer/src/tauriPlatform.ts";
 
+/** Captures the handler the adapter passes into `listenDesktopZoomChanged` (set by the fake below). */
+let capturedZoomHandler: ((state: { zoomLevel: number }) => void) | undefined;
+
 interface FakeOptions {
   /** Value the file/dir pickers resolve to (array = selection, `null` = cancel). */
   openDialogResult?: string[] | null;
@@ -73,6 +76,12 @@ function fakeDeps(opts: FakeOptions = {}): { deps: TauriPlatformDeps; calls: str
       if (opts.openFileThrows) {
         throw new Error("open failed");
       }
+    },
+    listenDesktopZoomChanged: async (handler) => {
+      calls.push("listenDesktopZoomChanged");
+      // Hand the caller's handler straight back so the test can assert it was wired through.
+      capturedZoomHandler = handler;
+      return () => calls.push("unlisten");
     },
   };
   return { deps, calls };
@@ -180,4 +189,45 @@ test("B1: toSupportedLocale matches the Electron resolveSystemApplicationLocale 
   assert.equal(toSupportedLocale("en-GB"), "en-US");
   assert.equal(toSupportedLocale("fr"), "en-US");
   assert.equal(toSupportedLocale(""), "en-US");
+});
+
+/** Flush pending microtasks (the async-listen → sync-disposer bridge). */
+const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+test("B1: onDesktopZoomLevelChanged wires the handler and its disposer unlistens", async () => {
+  capturedZoomHandler = undefined;
+  const { deps, calls } = fakeDeps();
+  const platform = createTauriPlatformSubset(deps);
+  const seen: { zoomLevel: number }[] = [];
+
+  const dispose = platform.onDesktopZoomLevelChanged!((s) => seen.push(s));
+  await flush();
+  // The adapter handed our handler to listen(); firing it like a real push must reach the caller.
+  capturedZoomHandler?.({ zoomLevel: 2.5 });
+  assert.deepEqual(seen, [{ zoomLevel: 2.5 }]);
+
+  dispose();
+  assert.ok(calls.includes("unlisten"), "disposer must invoke the unlisten the fake returned");
+});
+
+test("B1: onDesktopZoomLevelChanged unlistens even if disposed before listen resolves (no leak)", async () => {
+  let unlistenCalls = 0;
+  let resolveListen: (fn: () => void) => void = () => {};
+  const deps = {
+    ...fakeDeps().deps,
+    listenDesktopZoomChanged: () =>
+      new Promise<() => void>((resolve) => {
+        resolveListen = (fn) => resolve(fn);
+      }),
+  } as unknown as TauriPlatformDeps;
+  const platform = createTauriPlatformSubset(deps);
+
+  const dispose = platform.onDesktopZoomLevelChanged!(() => {});
+  // Dispose BEFORE the listen promise settles — the adapter must still tear down on arrival.
+  dispose();
+  resolveListen(() => {
+    unlistenCalls += 1;
+  });
+  await flush();
+  assert.equal(unlistenCalls, 1, "late-arriving unlisten must be invoked to avoid a leaked subscription");
 });
