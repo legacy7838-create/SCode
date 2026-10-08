@@ -6,9 +6,10 @@
 // here, so the UI will render but native calls are no-op until Phase 2.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-// Phase 2 real (non-stub) commands: version, locale, device id, platform info, app name, and the
-// OS downloads/documents directories (the first fallible `Result` commands). See ./commands.rs and
-// ../tauri-port/BRIDGE.md for the contract.
+// Phase 2 real (non-stub) commands: version, locale, device id, platform info, app name, the OS
+// downloads/documents directories (the first fallible `Result` commands), and the window-management
+// group (minimize/maximize/unmaximize/toggle-fullscreen/close/focus/is-maximized). See ./commands.rs
+// and ../tauri-port/BRIDGE.md for the contract.
 mod commands;
 
 /// Placeholder command to prove the `invoke()` seam exists for Phase 2.
@@ -27,7 +28,14 @@ fn main() {
             commands::get_platform_info,
             commands::get_app_name,
             commands::get_download_directory,
-            commands::get_documents_directory
+            commands::get_documents_directory,
+            commands::window_minimize,
+            commands::window_maximize,
+            commands::window_unmaximize,
+            commands::window_toggle_fullscreen,
+            commands::window_close,
+            commands::window_set_focus,
+            commands::window_is_maximized
         ])
         .run(tauri::generate_context!())
         .expect("error while running the ZCode Tauri shell");

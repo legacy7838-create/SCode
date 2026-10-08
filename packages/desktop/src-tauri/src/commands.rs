@@ -1,10 +1,12 @@
-// Real (non-stub) Tauri v2 commands for the Phase 2 vertical slice.
+// Real (non-stub) Tauri v2 commands for the Phase 2 vertical slices.
 //
 // Contract source of truth: `../tauri-port/BRIDGE.md`. Each command resolves a value from a
-// genuine source (package metadata, OS locale, process environment, compile-time OS consts); the
-// only hardcoded values are the documented fallbacks required by the contract.
+// genuine source (package metadata, OS locale, process environment, compile-time OS consts, live
+// webview windows); the only hardcoded values are the documented fallbacks required by the
+// contract. Slices: 1) version/locale/device id, 2) platform info/app name, 3) OS directories
+// (first fallible `Result` commands), 4) window management via Tauri's `WebviewWindow` API.
 
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, WebviewWindow};
 
 /// BCP-47 fallback locale used when the host OS locale cannot be resolved.
 const FALLBACK_LOCALE: &str = "en-US";
@@ -206,6 +208,155 @@ pub fn get_documents_directory(app: AppHandle) -> Result<String, String> {
             tauri::path::BaseDirectory::Document,
         )
         .map(directory_to_string)
+        .map_err(|e| e.to_string())
+}
+
+/// Resolve a live webview window by its label or produce a renderer-visible error string.
+///
+/// Shared by the window-management commands so the "missing window" error text stays consistent.
+/// Not unit-tested: it needs a running app with real windows, which a pure test harness cannot
+/// provide; faking one would violate the no-stub rule.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle owning the window registry.
+/// * `label` - Window label as registered in `tauri.conf.json` (the main window is `"main"`).
+///
+/// # Returns
+///
+/// `Ok(WebviewWindow)` when the label resolves, otherwise `Err` with a "window not found" message.
+fn require_window(app: &AppHandle, label: &str) -> Result<WebviewWindow, String> {
+    app.get_webview_window(label)
+        .ok_or_else(|| format!("window not found: {label}"))
+}
+
+/// Minimize the window identified by `label`.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+///
+/// # Returns
+///
+/// `Ok(())` on success; `Err(String)` when the window is missing or the OS rejects the operation.
+/// The `Err` surfaces on the TypeScript side as a rejected `Promise`.
+#[tauri::command]
+pub fn window_minimize(app: AppHandle, label: String) -> Result<(), String> {
+    require_window(&app, &label)?
+        .minimize()
+        .map_err(|e| e.to_string())
+}
+
+/// Maximize the window identified by `label`.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+///
+/// # Returns
+///
+/// `Ok(())` on success; `Err(String)` when the window is missing or the OS rejects the operation.
+#[tauri::command]
+pub fn window_maximize(app: AppHandle, label: String) -> Result<(), String> {
+    require_window(&app, &label)?
+        .maximize()
+        .map_err(|e| e.to_string())
+}
+
+/// Restore (un-maximize) the window identified by `label`.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+///
+/// # Returns
+///
+/// `Ok(())` on success; `Err(String)` when the window is missing or the OS rejects the operation.
+#[tauri::command]
+pub fn window_unmaximize(app: AppHandle, label: String) -> Result<(), String> {
+    require_window(&app, &label)?
+        .unmaximize()
+        .map_err(|e| e.to_string())
+}
+
+/// Toggle fullscreen state of the window identified by `label`.
+///
+/// Deviation note: Tauri 2.12's `WebviewWindow` has no `toggle_fullscreen`; the toggle is
+/// implemented as a real read (`is_fullscreen`) followed by the inverted `set_fullscreen`, so the
+/// command enters fullscreen when windowed and leaves it when fullscreen.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+///
+/// # Returns
+///
+/// `Ok(())` on success; `Err(String)` when the window is missing or the OS rejects the operation.
+#[tauri::command]
+pub fn window_toggle_fullscreen(app: AppHandle, label: String) -> Result<(), String> {
+    let window = require_window(&app, &label)?;
+    let fullscreen = window.is_fullscreen().map_err(|e| e.to_string())?;
+    window
+        .set_fullscreen(!fullscreen)
+        .map_err(|e| e.to_string())
+}
+
+/// Close the window identified by `label`.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+///
+/// # Returns
+///
+/// `Ok(())` on success; `Err(String)` when the window is missing or the OS rejects the operation.
+#[tauri::command]
+pub fn window_close(app: AppHandle, label: String) -> Result<(), String> {
+    require_window(&app, &label)?
+        .close()
+        .map_err(|e| e.to_string())
+}
+
+/// Focus (bring to front and activate) the window identified by `label`.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+///
+/// # Returns
+///
+/// `Ok(())` on success; `Err(String)` when the window is missing or the OS rejects the operation.
+#[tauri::command]
+pub fn window_set_focus(app: AppHandle, label: String) -> Result<(), String> {
+    require_window(&app, &label)?
+        .set_focus()
+        .map_err(|e| e.to_string())
+}
+
+/// Report whether the window identified by `label` is currently maximized.
+///
+/// Reads the real window state through Tauri's `is_maximized`; unlike the slice-1..3 helpers it
+/// cannot be unit-tested without a live window, so no fake test is written.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+///
+/// # Returns
+///
+/// `Ok(bool)` with the current maximized state; `Err(String)` when the window is missing or the
+/// OS cannot report the state.
+#[tauri::command]
+pub fn window_is_maximized(app: AppHandle, label: String) -> Result<bool, String> {
+    require_window(&app, &label)?
+        .is_maximized()
         .map_err(|e| e.to_string())
 }
 
