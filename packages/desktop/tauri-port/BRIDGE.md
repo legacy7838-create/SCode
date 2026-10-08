@@ -40,3 +40,20 @@ this. Keep it small: 3 low-risk, self-contained capabilities that prove the
 
 - The full `IPlatformService` adapter, window mgmt, dialogs, binary streams, MessagePort→WS RPC
   transport, embedded browser/CDP, updater, deep links. Those are later phases per PORTING.md.
+
+## Slice 6 contract — shell / open (via `tauri-plugin-opener`) — READY to dispatch when `src-tauri` is free
+
+Real `IPlatformService` capabilities (`openExternal`, `showItemInFolder`, `openPath`). Adds the
+`tauri-plugin-opener` crate; commands wrap its Rust API (no `.unwrap()`; `Result<(),String>` via
+`.map_err`). Register plugin in `main.rs` + add `opener:default` (or `allow-open-url`/`allow-reveal-item-in-dir`/
+`allow-open-path`) to `capabilities/default.json`.
+
+| Command | Args | Returns | Behavior |
+| --- | --- | --- | --- |
+| `open_url` | `url: String` | `Result<(),String>` | open in system default browser |
+| `reveal_in_folder` | `path: String` | `Result<(),String>` | reveal file in OS file manager |
+| `open_path` | `path: String` | `Result<(),String>` | open a file/dir with its default app |
+
+TS bridge: `openExternal(url)`, `showItemInFolder(path)`, `openPath(path)` → `invoke(cmd, {…})`;
+reject on Rust `Err`. URL/path validation (scheme allow-list for `open_url`) noted as a P2 hardening
+item, not blocking this slice.
