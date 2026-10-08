@@ -590,3 +590,72 @@ export function setTauriDesktopZoomLevel(
 ): Promise<void> {
   return invoke<void>("set_desktop_zoom_level", { label, level });
 }
+
+/**
+ * Phase 2 第十四切片：窗口装饰附加能力的 TypeScript 接缝（缩放因子、置顶、可调整大小）。
+ *
+ * 对应 Rust 命令 `get_window_scale_factor` / `is_window_always_on_top` /
+ * `set_window_always_on_top` / `is_window_resizable` / `set_window_resizable`，全部复用已导入的
+ * `WebviewWindow` getter/setter（无需新增插件或 capability）。Rust 端通过 `require_window(label)`
+ * 解析窗口，缺失时返回显式的 `Err("window not found: {label}")`，这里以 rejected Promise 形式抛出
+ * （沿用第三切片的错误传播接缝）。
+ *
+ * 参数命名：Tauri v2 自动把 Rust 的 snake_case 形参映射为 JS 的 camelCase，故 Rust 形参
+ * `always_on_top` 在此以 `alwaysOnTop` 传入，`resizable`、`label` 保持不变。运行时需活动 GUI
+ * 窗口，因此本组接缝在此处只做编译期类型校验，真实效果在 `pnpm dev:tauri` 下验证。保持导入零副作用。
+ */
+
+/**
+ * 读取窗口的设备像素比（HiDPI 缩放因子），用于高 DPI 布局。对应 Rust 命令
+ * `get_window_scale_factor`（`WebviewWindow::scale_factor`）。
+ *
+ * @param label - 目标窗口 label。
+ */
+export function getWindowScaleFactor(label: string): Promise<number> {
+  return invoke<number>("get_window_scale_factor", { label });
+}
+
+/**
+ * 查询窗口当前是否始终置顶。对应 Rust 命令 `is_window_always_on_top`
+ * （`WebviewWindow::is_always_on_top`）。
+ *
+ * @param label - 目标窗口 label。
+ */
+export function isWindowAlwaysOnTop(label: string): Promise<boolean> {
+  return invoke<boolean>("is_window_always_on_top", { label });
+}
+
+/**
+ * 设置窗口是否始终置顶。对应 Rust 命令 `set_window_always_on_top`
+ * （`WebviewWindow::set_always_on_top`）。注意 Rust 形参 `always_on_top` 映射为 `alwaysOnTop`。
+ *
+ * @param label - 目标窗口 label。
+ * @param alwaysOnTop - `true` 置顶，`false` 取消置顶。
+ */
+export function setWindowAlwaysOnTop(
+  label: string,
+  alwaysOnTop: boolean,
+): Promise<void> {
+  return invoke<void>("set_window_always_on_top", { label, alwaysOnTop });
+}
+
+/**
+ * 查询窗口当前是否可由用户调整大小。对应 Rust 命令 `is_window_resizable`
+ * （`WebviewWindow::is_resizable`）。
+ *
+ * @param label - 目标窗口 label。
+ */
+export function isWindowResizable(label: string): Promise<boolean> {
+  return invoke<boolean>("is_window_resizable", { label });
+}
+
+/**
+ * 设置窗口是否可由用户调整大小。对应 Rust 命令 `set_window_resizable`
+ * （`WebviewWindow::set_resizable`）。
+ *
+ * @param label - 目标窗口 label。
+ * @param resizable - `true` 允许调整大小，`false` 锁定当前尺寸。
+ */
+export function setWindowResizable(label: string, resizable: boolean): Promise<void> {
+  return invoke<void>("set_window_resizable", { label, resizable });
+}

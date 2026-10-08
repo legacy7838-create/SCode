@@ -85,3 +85,24 @@ from Tauri (no `zoom()` getter in 2.12.1). Electron reads it live; Tauri parity 
 to track the last-set level in managed state. That belongs to the gated `tauriPlatform` adapter
 (Task #45) and is deliberately NOT faked here (no-stub rule). Only the setter path (which
 `zoomIn`/`zoomOut`/`resetZoom` all funnel through) ships in this slice.
+
+## Slice 14 contract — window chrome extras (HiDPI scale factor, always-on-top, resizable)
+
+Completes the window-management family (slices 4/9/10/12) with three real, stable
+`WebviewWindow` capabilities that the frameless custom-titlebar shell needs. All confirmed present
+and ungated for the default desktop build in `tauri-2.12.1/src/webview/webview_window.rs`
+(`scale_factor` :1819, `is_always_on_top` :1887 / `set_always_on_top` :2168, `is_resizable` :1873 /
+`set_resizable` :2319). Each returns a scalar through the existing fallible seam
+(`Result<_, String>` via `.map_err`), resolved through the shared `require_window` helper.
+
+| Command | Args | Returns | Behavior |
+| --- | --- | --- | --- |
+| `get_window_scale_factor` | `label` | `Result<f64,String>` | device-pixel-ratio via `scale_factor()` (HiDPI layout) |
+| `is_window_always_on_top` | `label` | `Result<bool,String>` | read `is_always_on_top()` |
+| `set_window_always_on_top` | `label`, `always_on_top: bool` | `Result<(),String>` | apply `set_always_on_top(..)` |
+| `is_window_resizable` | `label` | `Result<bool,String>` | read `is_resizable()` |
+| `set_window_resizable` | `label`, `resizable: bool` | `Result<(),String>` | apply `set_resizable(..)` |
+
+TS bridge: one typed `invoke` wrapper per command, mirroring the existing wrappers. No new plugin or
+capability entry (these are custom commands called from Rust, not JS-facing core APIs). Min/max-size
+setters are deliberately deferred (they take `Option<Size>` with clear semantics — a separate slice).

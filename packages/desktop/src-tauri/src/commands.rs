@@ -13,7 +13,9 @@
 // (home/temp/app-data/app-config dirs via the existing `app.path().resolve`, plus the current
 // executable via `std::env::current_exe`); 12) window theme (get/set) via the existing
 // `WebviewWindow::theme` / `set_theme` API (no new plugin); 13) desktop zoom (set) via
-// `WebviewWindow::set_zoom`, with a pure Electron level↔Tauri factor mapping.
+// `WebviewWindow::set_zoom`, with a pure Electron level↔Tauri factor mapping;
+// 14) window chrome extras (scale factor, always-on-top, resizable) via the existing
+// `WebviewWindow` getters/setters.
 
 use tauri::{AppHandle, Manager, WebviewWindow};
 // Native dialog API surface for the slice-5 commands: the `DialogExt` app-extension, the file
@@ -931,6 +933,131 @@ pub fn set_desktop_zoom_level(app: AppHandle, label: String, level: f64) -> Resu
     let factor = zoom_level_to_factor(level);
     require_window(&app, &label)?
         .set_zoom(factor)
+        .map_err(|e| e.to_string())
+}
+
+/// Return the device-pixel-ratio (HiDPI scale factor) of the window identified by `label`.
+///
+/// Phase 2 slice 14 (window chrome extras). Resolves the live window through [`require_window`] and
+/// reads its real scale factor via `WebviewWindow::scale_factor`, the value the frameless custom
+/// titlebar uses to lay out HiDPI geometry. `scale_factor` is fallible (it reports a per-window
+/// `Err` when the OS cannot be queried), so it uses the same `.map_err(|e| e.to_string())` seam as
+/// the slice-9/10/12 queries — never `.unwrap()` — surfacing the `Err` on the TypeScript side as a
+/// rejected `Promise`. Requires a live GUI window, so it is compile-verified here and exercised at
+/// runtime under `pnpm dev:tauri`; faking a window in a unit test would violate the no-stub rule.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+///
+/// # Returns
+///
+/// `Ok(f64)` with the device-pixel-ratio (`1.0` on a standard display); `Err(String)` when the
+/// window is missing or the OS cannot report the scale factor.
+#[tauri::command]
+pub fn get_window_scale_factor(app: AppHandle, label: String) -> Result<f64, String> {
+    require_window(&app, &label)?
+        .scale_factor()
+        .map_err(|e| e.to_string())
+}
+
+/// Report whether the window identified by `label` is currently kept above all others.
+///
+/// Phase 2 slice 14. Reads the real state through `WebviewWindow::is_always_on_top`; like the
+/// slice-9/10 queries it needs a live GUI window, so it is compile-verified here and exercised under
+/// `pnpm dev:tauri` (no fake window test is written — faking one violates the no-stub rule). The
+/// fallible `Result` is converted with `.map_err(|e| e.to_string())` (never `.unwrap()`), surfacing
+/// on the TypeScript side as a rejected `Promise`.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+///
+/// # Returns
+///
+/// `Ok(bool)` with the current always-on-top state; `Err(String)` when the window is missing or the
+/// OS cannot report the state.
+#[tauri::command]
+pub fn is_window_always_on_top(app: AppHandle, label: String) -> Result<bool, String> {
+    require_window(&app, &label)?
+        .is_always_on_top()
+        .map_err(|e| e.to_string())
+}
+
+/// Set whether the window identified by `label` stays above all others.
+///
+/// Phase 2 slice 14. Applies the flag via `WebviewWindow::set_always_on_top`, the behavior the
+/// frameless shell needs for "pin on top". Requires a live GUI window, so it is compile-verified
+/// here and exercised under `pnpm dev:tauri`. The `Err` is converted with
+/// `.map_err(|e| e.to_string())` (never `.unwrap()`), surfacing on the TypeScript side as a
+/// rejected `Promise`.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+/// * `always_on_top` - `true` to pin the window above others, `false` to unpin.
+///
+/// # Returns
+///
+/// `Ok(())` on success; `Err(String)` when the window is missing or the OS rejects the operation.
+#[tauri::command]
+pub fn set_window_always_on_top(
+    app: AppHandle,
+    label: String,
+    always_on_top: bool,
+) -> Result<(), String> {
+    require_window(&app, &label)?
+        .set_always_on_top(always_on_top)
+        .map_err(|e| e.to_string())
+}
+
+/// Report whether the window identified by `label` is currently user-resizable.
+///
+/// Phase 2 slice 14. Reads the real state through `WebviewWindow::is_resizable`; needs a live GUI
+/// window, so it is compile-verified here and exercised under `pnpm dev:tauri` (no fake window test
+/// is written). The fallible `Result` is converted with `.map_err(|e| e.to_string())` (never
+/// `.unwrap()`), surfacing on the TypeScript side as a rejected `Promise`.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+///
+/// # Returns
+///
+/// `Ok(bool)` with the current resizable state; `Err(String)` when the window is missing or the OS
+/// cannot report the state.
+#[tauri::command]
+pub fn is_window_resizable(app: AppHandle, label: String) -> Result<bool, String> {
+    require_window(&app, &label)?
+        .is_resizable()
+        .map_err(|e| e.to_string())
+}
+
+/// Set whether the window identified by `label` may be resized by the user.
+///
+/// Phase 2 slice 14. Applies the flag via `WebviewWindow::set_resizable`, letting the frameless
+/// shell lock or unlock window geometry (e.g. while a fixed-size panel is shown). Requires a live
+/// GUI window, so it is compile-verified here and exercised under `pnpm dev:tauri`. The `Err` is
+/// converted with `.map_err(|e| e.to_string())` (never `.unwrap()`), surfacing on the TypeScript
+/// side as a rejected `Promise`.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+/// * `resizable` - `true` to allow user resizing, `false` to lock the current size.
+///
+/// # Returns
+///
+/// `Ok(())` on success; `Err(String)` when the window is missing or the OS rejects the operation.
+#[tauri::command]
+pub fn set_window_resizable(app: AppHandle, label: String, resizable: bool) -> Result<(), String> {
+    require_window(&app, &label)?
+        .set_resizable(resizable)
         .map_err(|e| e.to_string())
 }
 
