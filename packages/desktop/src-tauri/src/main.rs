@@ -40,8 +40,6 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         // OS clipboard support for the slice-8 `read_clipboard_text` / `write_clipboard_text` commands.
         .plugin(tauri_plugin_clipboard_manager::init())
-        // Sidecar (external child process) support for the `spawn_sidecar_echo` PoC command.
-        .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
             shell_kind,
             commands::get_app_version,
