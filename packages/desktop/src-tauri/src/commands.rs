@@ -23,7 +23,9 @@
 // 17) frame geometry & global cursor (get_window_outer_size reuses WindowSize; get_cursor_position
 // via new CursorPosition);
 // 19) monitor information (current/primary/available monitors) via `WebviewWindow` display queries,
-// mapped through `monitor_to_info`.
+// mapped through `monitor_to_info`; 20) sidecar lifecycle (spawn retains a `CommandChild` in a
+// managed `SidecarRegistry`, `kill_sidecar` reaps it); 21) window frame & interaction (decorations,
+// click-through, min/max size set + clear) via the existing `WebviewWindow` mutators.
 
 use tauri::{AppHandle, Manager, WebviewWindow};
 // Native dialog API surface for the slice-5 commands: the `DialogExt` app-extension, the file
@@ -1539,6 +1541,164 @@ pub fn get_available_monitors(app: AppHandle, label: String) -> Result<Vec<Monit
                 .map(monitor_to_info)
                 .collect::<Vec<MonitorInfo>>()
         })
+}
+
+/// Toggle the native title bar / window frame of the window identified by `label`.
+///
+/// Phase 2 slice 21 (window frame & interaction). Resolves the live window through [`require_window`]
+/// and applies the flag via `WebviewWindow::set_decorations`, the mirror of Electron's `setFrame` —
+/// the frameless custom-titlebar shell toggles this to swap between native chrome and a drawn one.
+/// The `Err` is converted with `.map_err(|e| e.to_string())` (never `.unwrap()`), surfacing on the
+/// TypeScript side as a rejected `Promise`. Requires a live GUI window, so it is compile-verified here
+/// and exercised under `pnpm dev:tauri` (no fake-window unit test — no-stub rule).
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+/// * `decorations` - `true` to show the native frame, `false` for a frameless window.
+///
+/// # Returns
+///
+/// `Ok(())` on success; `Err(String)` when the window is missing or the OS rejects the operation.
+#[tauri::command]
+pub fn set_window_decorations(
+    app: AppHandle,
+    label: String,
+    decorations: bool,
+) -> Result<(), String> {
+    require_window(&app, &label)?
+        .set_decorations(decorations)
+        .map_err(|e| e.to_string())
+}
+
+/// Make the window identified by `label` pass mouse events through to what is behind it.
+///
+/// Phase 2 slice 21. Applies `WebviewWindow::set_ignore_cursor_events`, the capability the overlay /
+/// tooltip surfaces need for a click-through window (the pointer lands on the window beneath instead
+/// of being consumed). The `Err` uses the standard `.map_err(|e| e.to_string())` seam (never
+/// `.unwrap()`). Requires a live GUI window, so it is compile-verified and exercised under
+/// `pnpm dev:tauri`.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+/// * `ignore` - `true` to ignore (pass through) cursor events, `false` to capture them.
+///
+/// # Returns
+///
+/// `Ok(())` on success; `Err(String)` when the window is missing or the OS rejects the operation.
+#[tauri::command]
+pub fn set_window_ignore_cursor_events(
+    app: AppHandle,
+    label: String,
+    ignore: bool,
+) -> Result<(), String> {
+    require_window(&app, &label)?
+        .set_ignore_cursor_events(ignore)
+        .map_err(|e| e.to_string())
+}
+
+/// Set the minimum size of the window identified by `label` in physical pixels.
+///
+/// Phase 2 slice 21. Builds a `PhysicalSize<u32>` (the same unsigned-pixel unit as the slice-9/10
+/// size commands) and passes it as `Some(..)` to `WebviewWindow::set_min_size`, which takes an
+/// `Option<S: Into<Size>>`. To lift a previously-set minimum use [`clear_window_min_size`]. The `Err`
+/// uses `.map_err(|e| e.to_string())` (never `.unwrap()`). Requires a live GUI window, so it is
+/// compile-verified and exercised under `pnpm dev:tauri`.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+/// * `width` - Minimum inner width in physical pixels.
+/// * `height` - Minimum inner height in physical pixels.
+///
+/// # Returns
+///
+/// `Ok(())` on success; `Err(String)` when the window is missing or the OS rejects the operation.
+#[tauri::command]
+pub fn set_window_min_size(
+    app: AppHandle,
+    label: String,
+    width: u32,
+    height: u32,
+) -> Result<(), String> {
+    require_window(&app, &label)?
+        .set_min_size(Some(tauri::PhysicalSize::new(width, height)))
+        .map_err(|e| e.to_string())
+}
+
+/// Set the maximum size of the window identified by `label` in physical pixels.
+///
+/// Phase 2 slice 21. Mirrors [`set_window_min_size`] via `WebviewWindow::set_max_size`. To lift the
+/// cap use [`clear_window_max_size`]. Requires a live GUI window, so it is compile-verified and
+/// exercised under `pnpm dev:tauri`.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+/// * `width` - Maximum inner width in physical pixels.
+/// * `height` - Maximum inner height in physical pixels.
+///
+/// # Returns
+///
+/// `Ok(())` on success; `Err(String)` when the window is missing or the OS rejects the operation.
+#[tauri::command]
+pub fn set_window_max_size(
+    app: AppHandle,
+    label: String,
+    width: u32,
+    height: u32,
+) -> Result<(), String> {
+    require_window(&app, &label)?
+        .set_max_size(Some(tauri::PhysicalSize::new(width, height)))
+        .map_err(|e| e.to_string())
+}
+
+/// Clear the minimum-size constraint on the window identified by `label`.
+///
+/// Phase 2 slice 21. Passes `None::<PhysicalSize<u32>>` to `WebviewWindow::set_min_size`, which the
+/// Option-carrying signature interprets as "no minimum" (the turbofish fixes the `Into<Size>` type so
+/// the `None` is unambiguous). Requires a live GUI window; compile-verified and exercised under
+/// `pnpm dev:tauri`.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+///
+/// # Returns
+///
+/// `Ok(())` on success; `Err(String)` when the window is missing or the OS rejects the operation.
+#[tauri::command]
+pub fn clear_window_min_size(app: AppHandle, label: String) -> Result<(), String> {
+    require_window(&app, &label)?
+        .set_min_size(None::<tauri::PhysicalSize<u32>>)
+        .map_err(|e| e.to_string())
+}
+
+/// Clear the maximum-size constraint on the window identified by `label`.
+///
+/// Phase 2 slice 21. Passes `None::<PhysicalSize<u32>>` to `WebviewWindow::set_max_size` to lift the
+/// cap (the counterpart of [`set_window_max_size`]). Requires a live GUI window; compile-verified and
+/// exercised under `pnpm dev:tauri`.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+///
+/// # Returns
+///
+/// `Ok(())` on success; `Err(String)` when the window is missing or the OS rejects the operation.
+#[tauri::command]
+pub fn clear_window_max_size(app: AppHandle, label: String) -> Result<(), String> {
+    require_window(&app, &label)?
+        .set_max_size(None::<tauri::PhysicalSize<u32>>)
+        .map_err(|e| e.to_string())
 }
 
 /// A file-type filter for the open dialog, mirroring the plugin's `{ name, extensions }` shape.

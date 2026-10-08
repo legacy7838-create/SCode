@@ -267,3 +267,25 @@ surface as rejected Promises (the slice-3 error seam). Sidecar child management 
 spawn (a real window + externalBin), so the commands are compile-verified and exercised under
 `pnpm dev:tauri`; the a4 Layer-A test already proves the standalone echo child can be killed without
 orphaning, which is the same guarantee these commands must hold inside the shell.
+
+## Slice 21 contract — window frame & interaction (decorations, click-through, min/max size)
+
+Completes window geometry constraints and the frameless/overlay controls. All confirmed present and
+ungated in `tauri-2.12.1/src/webview/webview_window.rs` (`set_decorations` :2110,
+`set_ignore_cursor_events` :2260, `set_min_size` :2364, `set_max_size` :2369). `set_min_size`/
+`set_max_size` take `Option<S: Into<Size>>`, so a concrete size is `Some(PhysicalSize<u32>)` and a
+clear is `None::<PhysicalSize<u32>>` (the deferred Option semantics from slice 14).
+
+| Command | Args | Returns | Behavior |
+| --- | --- | --- | --- |
+| `set_window_decorations` | `label`, `decorations: bool` | `Result<(),String>` | native title bar/frame on/off (Electron `setFrame`) |
+| `set_window_ignore_cursor_events` | `label`, `ignore: bool` | `Result<(),String>` | click-through window (overlays/tooltips) |
+| `set_window_min_size` | `label`, `width: u32`, `height: u32` | `Result<(),String>` | `set_min_size(Some(PhysicalSize))` |
+| `set_window_max_size` | `label`, `width: u32`, `height: u32` | `Result<(),String>` | `set_max_size(Some(PhysicalSize))` |
+| `clear_window_min_size` | `label` | `Result<(),String>` | `set_min_size(None::<PhysicalSize<u32>>)` |
+| `clear_window_max_size` | `label` | `Result<(),String>` | `set_max_size(None::<PhysicalSize<u32>>)` |
+
+TS bridge: one typed `invoke` wrapper per command; every Rust arg is single-word (`decorations`,
+`ignore`, `width`, `height`, `label`) so the A5 camelCase guard is trivially satisfied. No new
+plugin/capability. All require a live GUI window (compile-verified; exercised under `pnpm dev:tauri`;
+no fake-window unit test per the no-stub rule).

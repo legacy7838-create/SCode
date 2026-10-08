@@ -881,6 +881,96 @@ export function killTauriSidecar(pid: number): Promise<void> {
 }
 
 /**
+ * Phase 2 第二十一切片：窗口边框与交互的 TypeScript 接缝（装饰、点击穿透、最小/最大尺寸设置与清除）。
+ *
+ * 对应 Rust 命令 `set_window_decorations` / `set_window_ignore_cursor_events` /
+ * `set_window_min_size` / `set_window_max_size` / `clear_window_min_size` / `clear_window_max_size`，
+ * 全部复用已导入的 `WebviewWindow` mutator（无需新增插件或 capability）。所有 Rust 形参均为单词
+ * （decorations/ignore/width/height/label），camelCase 不变式自然满足（由 a5 契约守卫校验）。运行时需
+ * 活动 GUI 窗口，因此本组接缝在此处只做编译期类型校验，真实效果在 `pnpm dev:tauri` 下验证。保持导入零副作用。
+ */
+
+/**
+ * 开/关窗口原生标题栏与边框。对应 Rust 命令 `set_window_decorations`
+ * （`WebviewWindow::set_decorations`），对齐 Electron 的 `setFrame`。
+ *
+ * @param label - 目标窗口 label。
+ * @param decorations - `true` 显示原生边框，`false` 无边框。
+ */
+export function setWindowDecorations(
+  label: string,
+  decorations: boolean,
+): Promise<void> {
+  return invoke<void>("set_window_decorations", { label, decorations });
+}
+
+/**
+ * 设置窗口是否点击穿透（鼠标事件透传到下层窗口）。对应 Rust 命令
+ * `set_window_ignore_cursor_events`（`WebviewWindow::set_ignore_cursor_events`），用于浮层/提示窗。
+ *
+ * @param label - 目标窗口 label。
+ * @param ignore - `true` 忽略（穿透）鼠标事件，`false` 捕获。
+ */
+export function setWindowIgnoreCursorEvents(
+  label: string,
+  ignore: boolean,
+): Promise<void> {
+  return invoke<void>("set_window_ignore_cursor_events", { label, ignore });
+}
+
+/**
+ * 设置窗口最小尺寸（物理像素）。对应 Rust 命令 `set_window_min_size`
+ * （`WebviewWindow::set_min_size(Some(PhysicalSize))`）。用 `clearWindowMinSize` 解除约束。
+ *
+ * @param label - 目标窗口 label。
+ * @param width - 最小内部宽度（物理像素）。
+ * @param height - 最小内部高度（物理像素）。
+ */
+export function setWindowMinSize(
+  label: string,
+  width: number,
+  height: number,
+): Promise<void> {
+  return invoke<void>("set_window_min_size", { label, width, height });
+}
+
+/**
+ * 设置窗口最大尺寸（物理像素）。对应 Rust 命令 `set_window_max_size`
+ * （`WebviewWindow::set_max_size(Some(PhysicalSize))`）。用 `clearWindowMaxSize` 解除约束。
+ *
+ * @param label - 目标窗口 label。
+ * @param width - 最大内部宽度（物理像素）。
+ * @param height - 最大内部高度（物理像素）。
+ */
+export function setWindowMaxSize(
+  label: string,
+  width: number,
+  height: number,
+): Promise<void> {
+  return invoke<void>("set_window_max_size", { label, width, height });
+}
+
+/**
+ * 清除窗口最小尺寸约束。对应 Rust 命令 `clear_window_min_size`
+ * （`WebviewWindow::set_min_size(None)`）。
+ *
+ * @param label - 目标窗口 label。
+ */
+export function clearWindowMinSize(label: string): Promise<void> {
+  return invoke<void>("clear_window_min_size", { label });
+}
+
+/**
+ * 清除窗口最大尺寸约束。对应 Rust 命令 `clear_window_max_size`
+ * （`WebviewWindow::set_max_size(None)`）。
+ *
+ * @param label - 目标窗口 label。
+ */
+export function clearWindowMaxSize(label: string): Promise<void> {
+  return invoke<void>("clear_window_max_size", { label });
+}
+
+/**
  * Phase 2 第十九切片：显示器信息（多屏 / HiDPI）的 TypeScript 接缝。
  *
  * 对应 Rust 命令 `get_window_current_monitor` / `get_primary_monitor` / `get_available_monitors`，
