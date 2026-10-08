@@ -18,6 +18,9 @@ use tauri_plugin_opener::OpenerExt;
 // Notification API surface for the slice-7 command: the `NotificationExt` app-extension returns a
 // builder (`app.notification().builder()`) whose `show()` sends a real OS notification.
 use tauri_plugin_notification::NotificationExt;
+// Clipboard API surface for the slice-8 commands: the `ClipboardExt` app-extension (`app.clipboard()`)
+// exposes the real OS clipboard (`read_text` / `write_text`).
+use tauri_plugin_clipboard_manager::ClipboardExt;
 // Sidecar-spawn API surface for the `spawn_sidecar_echo` command: the `ShellExt` app-extension
 // (`app.shell()`) resolves a bundled externalBin by stem and launches it as a child process. The
 // returned `CommandChild` reports the OS pid of the launched sidecar.
@@ -704,6 +707,52 @@ pub fn spawn_sidecar_echo(app: AppHandle, port: u16) -> Result<u32, String> {
         .spawn()
         .map_err(|e| e.to_string())?;
     Ok(child.pid())
+}
+
+/// Read the current text content of the OS clipboard via `tauri-plugin-clipboard-manager`.
+///
+/// Phase 2 slice 8 (clipboard). Delegates to the plugin's real OS handler
+/// `app.clipboard().read_text()`, which returns the clipboard's plain-text content (or an empty
+/// string when the clipboard holds no text). The plugin's `Err` is converted to `Err(String)` via
+/// `.map_err(|e| e.to_string())` (never `.unwrap()`), surfacing on the TypeScript side as a rejected
+/// `Promise`. Not unit-tested: reading the clipboard requires a live desktop session and OS clipboard,
+/// which a pure test harness cannot provide; faking one would violate the no-stub rule. The command
+/// is compile-verified here and exercised at runtime under `pnpm dev:tauri`.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the clipboard extension.
+///
+/// # Returns
+///
+/// `Ok(String)` with the clipboard's text content, or `Err(String)` describing why the OS clipboard
+/// could not be read.
+#[tauri::command]
+pub fn read_clipboard_text(app: AppHandle) -> Result<String, String> {
+    app.clipboard().read_text().map_err(|e| e.to_string())
+}
+
+/// Write text content to the OS clipboard via `tauri-plugin-clipboard-manager`.
+///
+/// Phase 2 slice 8. Delegates to the plugin's real handler `app.clipboard().write_text(text)`, which
+/// replaces the clipboard's plain-text content. `write_text` accepts anything implementing
+/// `Into<Cow<str>>`, so the owned `String` from the renderer is moved in without an extra clone. The
+/// plugin's `Err` is converted to `Err(String)` via `.map_err(|e| e.to_string())` (never
+/// `.unwrap()`), surfacing on the TypeScript side as a rejected `Promise`. Not unit-tested for the
+/// same live-session reason as [`read_clipboard_text`].
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the clipboard extension.
+/// * `text` - The text to place on the clipboard.
+///
+/// # Returns
+///
+/// `Ok(())` when the clipboard was updated, or `Err(String)` describing why the OS clipboard could
+/// not be written.
+#[tauri::command]
+pub fn write_clipboard_text(app: AppHandle, text: String) -> Result<(), String> {
+    app.clipboard().write_text(text).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

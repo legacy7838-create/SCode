@@ -27,6 +27,9 @@ tauri-plugin-opener = "2"
 # Native OS notifications for the slice-7 `show_notification` command via
 # `tauri_plugin_notification::NotificationExt` (`app.notification()`).
 tauri-plugin-notification = "2"
+# OS clipboard read/write for the slice-8 `read_clipboard_text` / `write_clipboard_text` commands
+# via `tauri_plugin_clipboard_manager::ClipboardExt` (`app.clipboard()`).
+tauri-plugin-clipboard-manager = "2"
 # Spawn the Local-Host / echo sidecar as an external executable for the sidecar-runtime PoC via
 # `tauri_plugin_shell::ShellExt` (`app.shell().sidecar(..)`). See ../tauri-port/SIDECAR-PACKAGING.md §4.
 tauri-plugin-shell = "2"

@@ -32,6 +32,8 @@ fn main() {
         .plugin(tauri_plugin_notification::init())
         // Shell/sidecar support for the sidecar-runtime PoC `spawn_sidecar_echo` command.
         .plugin(tauri_plugin_shell::init())
+        // OS clipboard support for the slice-8 `read_clipboard_text` / `write_clipboard_text` commands.
+        .plugin(tauri_plugin_clipboard_manager::init())
         // Sidecar (external child process) support for the `spawn_sidecar_echo` PoC command.
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
@@ -57,7 +59,9 @@ fn main() {
             commands::reveal_in_folder,
             commands::open_path,
             commands::show_notification,
-            commands::spawn_sidecar_echo
+            commands::spawn_sidecar_echo,
+            commands::read_clipboard_text,
+            commands::write_clipboard_text
         ])
         .run(tauri::generate_context!())
         .expect("error while running the ZCode Tauri shell");

@@ -331,3 +331,19 @@ export function openPath(path: string): Promise<void> {
 export function showNotification(title: string, body: string): Promise<void> {
   return invoke<void>("show_notification", { title, body });
 }
+
+/**
+ * Phase 2 第八切片：操作系统剪贴板的 TypeScript 接缝（`tauri-plugin-clipboard-manager`）。
+ *
+ * 对应 Rust 命令 `read_clipboard_text` / `write_clipboard_text`，委托给
+ * `app.clipboard().read_text()` / `write_text(..)` 的真实系统剪贴板处理。Rust 端 `Err(String)`
+ * 在此以 rejected Promise 抛出（沿用第三切片的错误传播接缝）。运行时需活动桌面会话，
+ * 因此此处仅做编译期类型校验。保持导入零副作用。
+ */
+export function readClipboardText(): Promise<string> {
+  return invoke<string>("read_clipboard_text");
+}
+
+export function writeClipboardText(text: string): Promise<void> {
+  return invoke<void>("write_clipboard_text", { text });
+}
