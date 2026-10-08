@@ -126,7 +126,6 @@ export function createInputFacade(deps: CreateInputFacadeDeps): InputFacade {
         : {};
     return await deps.runtime.executeTurn(runtimePromptText, storedAttachments, {
       abortSignal: options?.abortSignal,
-      browserAmbientContext: options?.browserAmbientContext,
       continueActiveTargetAfterTurn: true,
       ...(resolvedCommandPrompt !== undefined ? { displayInput: promptInput.text } : {}),
       inputId: options?.inputId,

@@ -11,7 +11,7 @@ const executableFileMode = 0o755;
 const packageJsonFile = "package.json";
 const rootPackageVersionError = "Root package.json must define a non-empty string version.";
 const desktopAgentBuildFlag = "--desktop-agent";
-export const resolveBuildExternal = () => ["@zcode/tui", "playwright-core", "koffi"];
+export const resolveBuildExternal = () => ["@zcode/tui", "koffi"];
 
 export const readZodBuildVersion = async () => {
   const sharedPackage = JSON.parse(
@@ -235,8 +235,6 @@ export const buildCli = async ({
     entryPoints: [resolve(cliDirectory, "src/main.ts")],
     // Ink 7 and yoga-layout use top-level await, so the CJS CLI bundle loads the TUI
     // through Node's native dynamic import path instead of forcing esbuild to lower it.
-    // playwright-core 依赖运行时 package assets 与 require.resolve，相比内联 bundle 必须保持外置。
-    // managed headless adapter 只在显式 --browser-use=headless 时延迟加载，不影响 app-server/普通 CLI。
     // koffi 会按当前平台动态 require 原生 `.node` 文件；内联会让 esbuild 遍历所有
     // 平台产物并直接报 "No loader is configured for .node"。运行时仍从依赖包加载，
     // SEA 资源由 build-sea 的 native asset 收集阶段单独处理。

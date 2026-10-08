@@ -1,11 +1,9 @@
-import { useCallback, useEffect, useState, type MouseEvent } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
 import { ChevronDown, UploadCloud } from "lucide-react";
 import type { RemoteTarget } from "@zcode/shared";
 import type {
   IMcpSyncService,
-  IPluginSyncService,
   ISkillSyncService,
-  IZCodeAgentService,
 } from "@zcode/services";
 import { Button } from "@/components/ui/button.js";
 import {
@@ -16,16 +14,33 @@ import {
 } from "@/components/ui/dropdown-menu.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { RemoteMcpSyncDialog } from "@/settings/RemoteMcpSyncDialog.js";
-import { RemotePluginSyncDialog } from "@/settings/RemotePluginSyncDialog.js";
 import { RemoteSkillSyncDialog } from "@/settings/RemoteSkillSyncDialog.js";
 
 type RemoteSyncClientMode = "desktop-continuous" | "web-remote-replayable";
 const REMOTE_SYNC_PREFLIGHT_TIMEOUT_MS = 15_000;
 
-class RemoteSyncPreflightTimeoutError extends Error {
+export class RemoteSyncPreflightTimeoutError extends Error {
   constructor(readonly timeoutMs: number) {
     super(`Remote sync preflight timed out after ${timeoutMs}ms`);
     this.name = "RemoteSyncPreflightTimeoutError";
+  }
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(new RemoteSyncPreflightTimeoutError(timeoutMs));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) {
+      clearTimeout(timer);
+    }
   }
 }
 
@@ -35,98 +50,126 @@ export function isRemoteSyncPreflightTimeoutError(
   return error instanceof RemoteSyncPreflightTimeoutError;
 }
 
-export function shouldShowRemoteSyncActions(params: {
-  remoteSessionId?: string | null;
-  remoteTarget?: RemoteTarget | null;
-  clientMode?: RemoteSyncClientMode;
-  hasLocalSourceService?: boolean;
-}): boolean {
-  if (params.clientMode === "web-remote-replayable") {
-    return false;
-  }
-  if (params.hasLocalSourceService === false) {
-    return false;
-  }
-  return Boolean(
-    params.remoteSessionId?.trim() &&
-    (params.remoteTarget?.kind === "ssh" || params.remoteTarget?.kind === "wsl"),
-  );
+export async function runRemoteSyncPreflightWithTimeout<T>(
+  action: () => Promise<T>,
+  timeoutMs = REMOTE_SYNC_PREFLIGHT_TIMEOUT_MS,
+): Promise<T> {
+  return withTimeout(action(), timeoutMs);
 }
 
-export function shouldStartRemoteSyncOperation(params: {
+export function shouldStartRemoteSyncOperation({
+  inFlight,
+  selectedCount,
+}: {
   inFlight: boolean;
   selectedCount: number;
 }): boolean {
-  return !params.inFlight && params.selectedCount > 0;
+  return !inFlight && selectedCount > 0;
 }
 
-export function useRemoteSyncDialogIntent(params: { rpcReady: boolean; targetKey: string }): {
-  open: boolean;
-  setOpen: (open: boolean) => void;
-} {
-  const [openedTargetKey, setOpenedTargetKey] = useState<string | null>(null);
-  const open =
-    params.rpcReady && params.targetKey.length > 0 && openedTargetKey === params.targetKey;
-
-  useEffect(() => {
-    // 弹窗 open 曾只绑定 PluginList 组件生命周期，远端断连或切换目标时
-    // Dialog 虽被卸载，用户意图仍会残留并在重连后自动恢复。
-    setOpenedTargetKey(null);
-  }, [params.targetKey]);
-  useEffect(() => {
-    if (!params.rpcReady) {
-      setOpenedTargetKey(null);
-    }
-  }, [params.rpcReady]);
-
-  const setOpen = useCallback(
-    (nextOpen: boolean) => {
-      setOpenedTargetKey(
-        nextOpen && params.rpcReady && params.targetKey.length > 0 ? params.targetKey : null,
-      );
-    },
-    [params.rpcReady, params.targetKey],
-  );
-
-  return { open, setOpen };
+export function shouldShowRemoteSyncActions(
+  remoteTarget: RemoteTarget | null,
+  clientMode?: RemoteSyncClientMode,
+): boolean {
+  return Boolean(remoteTarget) && clientMode !== "web-remote-replayable";
 }
 
-export async function runRemoteSyncPreflightWithTimeout<T>(
-  operation: () => Promise<T>,
-  timeoutMs = REMOTE_SYNC_PREFLIGHT_TIMEOUT_MS,
-): Promise<T> {
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timeoutId = setTimeout(() => {
-      reject(new RemoteSyncPreflightTimeoutError(timeoutMs));
-    }, timeoutMs);
-  });
+export function useRemoteSkillSyncAvailable(
+  localSkillSyncService?: ISkillSyncService | null,
+  remoteSkillSyncService?: ISkillSyncService | null,
+  remoteTarget?: RemoteTarget | null,
+  clientMode?: RemoteSyncClientMode,
+): boolean {
+  const [available, setAvailable] = useState(false);
 
-  try {
-    return await Promise.race([operation(), timeout]);
-  } finally {
-    if (timeoutId !== undefined) {
-      clearTimeout(timeoutId);
+  useEffect(() => {
+    let active = true;
+    if (
+      !shouldShowRemoteSyncActions(remoteTarget ?? null, clientMode) ||
+      !localSkillSyncService ||
+      !remoteSkillSyncService
+    ) {
+      setAvailable(false);
+      return;
     }
-  }
+
+    void withTimeout(
+      Promise.all([
+        remoteSkillSyncService.checkRemoteUserSkillWriteAccess(),
+      ]),
+      REMOTE_SYNC_PREFLIGHT_TIMEOUT_MS,
+    )
+      .then(([remote]) => {
+        if (!active) return;
+        setAvailable(remote.ok);
+      })
+      .catch(() => {
+        if (!active) return;
+        setAvailable(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [clientMode, localSkillSyncService, remoteSkillSyncService, remoteTarget]);
+
+  return available;
+}
+
+export function useRemoteMcpSyncAvailable(
+  localMcpSyncService?: IMcpSyncService | null,
+  remoteMcpSyncService?: IMcpSyncService | null,
+  remoteTarget?: RemoteTarget | null,
+  clientMode?: RemoteSyncClientMode,
+): boolean {
+  const [available, setAvailable] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    if (
+      !shouldShowRemoteSyncActions(remoteTarget ?? null, clientMode) ||
+      !localMcpSyncService ||
+      !remoteMcpSyncService
+    ) {
+      setAvailable(false);
+      return;
+    }
+
+    void withTimeout(
+      Promise.all([
+        remoteMcpSyncService.checkRemoteUserMcpWriteAccess(),
+      ]),
+      REMOTE_SYNC_PREFLIGHT_TIMEOUT_MS,
+    )
+      .then(([remote]) => {
+        if (!active) return;
+        setAvailable(remote.ok);
+      })
+      .catch(() => {
+        if (!active) return;
+        setAvailable(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [clientMode, localMcpSyncService, remoteMcpSyncService, remoteTarget]);
+
+  return available;
 }
 
 export function RemoteSyncMenuItems({
   canSyncSkills,
   canSyncMcp,
-  canSyncPlugins = false,
   onOpenSkillSync,
   onOpenMcpSync,
-  onOpenPluginSync,
   stopMouseDownPropagation = false,
   mcpDisabled = false,
 }: {
   canSyncSkills: boolean;
   canSyncMcp: boolean;
-  canSyncPlugins?: boolean;
   onOpenSkillSync: () => void;
   onOpenMcpSync: () => void;
-  onOpenPluginSync?: () => void;
   stopMouseDownPropagation?: boolean;
   mcpDisabled?: boolean;
 }) {
@@ -155,12 +198,6 @@ export function RemoteSyncMenuItems({
           {intl.formatMessage({ id: "settings.mcp.remoteSync.open" })}
         </DropdownMenuItem>
       ) : null}
-      {canSyncPlugins ? (
-        <DropdownMenuItem onMouseDown={handleMouseDown} onSelect={onOpenPluginSync}>
-          <UploadCloud className="size-3.5" />
-          {intl.formatMessage({ id: "settings.plugins.remoteSync.open" })}
-        </DropdownMenuItem>
-      ) : null}
     </>
   );
 }
@@ -168,23 +205,19 @@ export function RemoteSyncMenuItems({
 export function RemoteSyncDropdownButton({
   canSyncSkills,
   canSyncMcp,
-  canSyncPlugins = false,
   mcpDisabled = false,
   onOpenSkillSync,
   onOpenMcpSync,
-  onOpenPluginSync,
 }: {
   canSyncSkills: boolean;
   canSyncMcp: boolean;
-  canSyncPlugins?: boolean;
   mcpDisabled?: boolean;
   onOpenSkillSync: () => void;
   onOpenMcpSync: () => void;
-  onOpenPluginSync?: () => void;
 }) {
   const { intl } = useZCodeIntl();
 
-  if (!canSyncSkills && !canSyncMcp && !canSyncPlugins) {
+  if (!canSyncSkills && !canSyncMcp) {
     return null;
   }
 
@@ -201,11 +234,9 @@ export function RemoteSyncDropdownButton({
         <RemoteSyncMenuItems
           canSyncSkills={canSyncSkills}
           canSyncMcp={canSyncMcp}
-          canSyncPlugins={canSyncPlugins}
           mcpDisabled={mcpDisabled}
           onOpenSkillSync={onOpenSkillSync}
           onOpenMcpSync={onOpenMcpSync}
-          onOpenPluginSync={onOpenPluginSync}
         />
       </DropdownMenuContent>
     </DropdownMenu>
@@ -215,59 +246,39 @@ export function RemoteSyncDropdownButton({
 export function RemoteSyncDialogs({
   canSyncSkills,
   canSyncMcp,
-  canSyncPlugins = false,
   skillOpen,
   mcpOpen,
-  pluginOpen = false,
   onSkillOpenChange,
   onMcpOpenChange,
-  onPluginOpenChange,
   localSkillSyncService,
   remoteSkillSyncService,
   localMcpSyncService,
   remoteMcpSyncService,
-  localPluginSyncService,
-  remotePluginSyncService,
-  localZCodeAgentService,
-  remoteZCodeAgentService,
   remoteTarget,
   skillWorkspacePath,
   mcpWorkspacePath,
-  pluginWorkspacePath,
-  pluginLocalWorkspacePath,
   mcpLocalWorkspacePath,
   workspaceIdentity,
   onSkillsSynced,
   onMcpSynced,
-  onPluginsSynced,
 }: {
   canSyncSkills: boolean;
   canSyncMcp: boolean;
-  canSyncPlugins?: boolean;
   skillOpen: boolean;
   mcpOpen: boolean;
-  pluginOpen?: boolean;
   onSkillOpenChange: (open: boolean) => void;
   onMcpOpenChange: (open: boolean) => void;
-  onPluginOpenChange?: (open: boolean) => void;
   localSkillSyncService?: ISkillSyncService | null;
   remoteSkillSyncService?: ISkillSyncService | null;
   localMcpSyncService?: IMcpSyncService | null;
   remoteMcpSyncService?: IMcpSyncService | null;
-  localPluginSyncService?: IPluginSyncService | null;
-  remotePluginSyncService?: IPluginSyncService | null;
-  localZCodeAgentService?: IZCodeAgentService | null;
-  remoteZCodeAgentService?: IZCodeAgentService | null;
   remoteTarget?: RemoteTarget | null;
   skillWorkspacePath: string;
   mcpWorkspacePath: string;
-  pluginWorkspacePath?: string;
-  pluginLocalWorkspacePath?: string;
   mcpLocalWorkspacePath?: string;
   workspaceIdentity?: string;
   onSkillsSynced: () => Promise<void> | void;
   onMcpSynced: () => Promise<void> | void;
-  onPluginsSynced?: () => Promise<void> | void;
 }) {
   const skillDialogProps =
     canSyncSkills && skillOpen && remoteTarget && localSkillSyncService && remoteSkillSyncService
@@ -282,18 +293,6 @@ export function RemoteSyncDialogs({
       ? {
           localMcpSyncService,
           remoteMcpSyncService,
-          remoteTarget,
-        }
-      : null;
-  const pluginDialogProps =
-    canSyncPlugins &&
-    pluginOpen &&
-    remoteTarget &&
-    localPluginSyncService &&
-    remotePluginSyncService
-      ? {
-          localPluginSyncService,
-          remotePluginSyncService,
           remoteTarget,
         }
       : null;
@@ -322,21 +321,6 @@ export function RemoteSyncDialogs({
           workspacePath={mcpWorkspacePath}
           localWorkspacePath={mcpLocalWorkspacePath}
           onSynced={onMcpSynced}
-        />
-      ) : null}
-      {pluginDialogProps ? (
-        <RemotePluginSyncDialog
-          open={pluginOpen}
-          onOpenChange={onPluginOpenChange ?? (() => {})}
-          localPluginSyncService={pluginDialogProps.localPluginSyncService}
-          remotePluginSyncService={pluginDialogProps.remotePluginSyncService}
-          localZCodeAgentService={localZCodeAgentService}
-          remoteZCodeAgentService={remoteZCodeAgentService}
-          remoteTarget={pluginDialogProps.remoteTarget}
-          localWorkspacePath={pluginLocalWorkspacePath}
-          workspacePath={pluginWorkspacePath ?? mcpWorkspacePath}
-          workspaceIdentity={workspaceIdentity}
-          onSynced={onPluginsSynced ?? (() => {})}
         />
       ) : null}
     </>

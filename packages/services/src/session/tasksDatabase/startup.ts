@@ -92,6 +92,7 @@ export async function prepareTasksIndexStorage(
     try {
       db.close();
     } catch (error) {
+      /* eslint-disable-next-line no-unsafe-finally */
       if (!failure) throw error;
     }
   }
@@ -101,7 +102,11 @@ export async function prepareTasksIndexStorage(
     new AutomationRepo(path, LOCK_WAIT_MS),
     new OffPeakTaskRepo(path, LOCK_WAIT_MS),
   ];
+  // bug 根因：preparationFailure 此前从未声明，成功路径走到 `if (!preparationFailure ...)`
+  // 读取未定义标识符会抛 ReferenceError，被 Worker 归类为通用 sql_failed，导致每次启动都失败
+  // （即使迁移为 none 无事可做）。修复依据：显式声明该标志，与 closeFailure 同语义追踪 ensureReady 失败。
   let preparationFailure: unknown;
+  let closeFailure: unknown;
   try {
     // 这些是原本就在初始化时执行的修复，不创建新的迁移或改变已有事务边界。
     for (const repo of repos) await repo.ensureReady();
@@ -109,7 +114,6 @@ export async function prepareTasksIndexStorage(
     preparationFailure = error;
     throw error;
   } finally {
-    let closeFailure: unknown;
     for (const repo of repos) {
       try {
         repo.close({ throwOnError: true });
@@ -117,8 +121,8 @@ export async function prepareTasksIndexStorage(
         closeFailure ??= error;
       }
     }
-    if (!preparationFailure && closeFailure) throw closeFailure;
   }
+  if (!preparationFailure && closeFailure) throw closeFailure;
   markTasksStoragePrepared(path);
   report("ready", migration);
 }

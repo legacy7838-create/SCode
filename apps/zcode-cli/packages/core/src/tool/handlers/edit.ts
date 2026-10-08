@@ -28,7 +28,6 @@ import {
   type TraceContext,
 } from "@zcode/contracts";
 import { createStructuredPatch } from "../diff.js";
-import { stampMemoryOriginSessionId } from "../../memory/origin-session.js";
 import {
   findEditMatch,
   normalizeLineEndings,
@@ -498,12 +497,7 @@ async function writeEditResult(input: {
     );
   }
 
-  const contentToWrite = stampMemoryOriginSessionId({
-    content: input.newContent,
-    filePath: input.filePath,
-    memoryRoot: input.context.memoryRoot,
-    sessionId: input.context.sessionId,
-  });
+  const contentToWrite = input.newContent;
   const writeStartedAt = Date.now();
   const writeResult = await fileSystemPort.writeTextFile(
     {

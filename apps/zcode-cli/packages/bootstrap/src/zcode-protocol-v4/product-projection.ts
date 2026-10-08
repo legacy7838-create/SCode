@@ -15,7 +15,6 @@ import type {
   CompactLifecyclePayload,
   AssistantFeedbackUpdatedPayload,
   DynamicWorkflowRunProgressPayload,
-  HookRunLifecyclePayload,
   ModelCompletePayload,
   ModelNetworkStatusPayload,
   ModelSelectedPayload,
@@ -45,10 +44,6 @@ import type {
   TurnSteerDrainedPayload,
   TurnSteerQueuedPayload,
   UserInputAutoResolutionUpdatedPayload,
-  WorkspaceHookReviewRequestedPayload,
-  WorkspaceHookReviewSettledPayload,
-  WorkspaceHookReviewSupersededPayload,
-  WorkspaceHookAdmissionUpdatedPayload,
 } from "@zcode/contracts";
 import {
   CoreErrorType,
@@ -57,11 +52,6 @@ import {
   SessionEventType,
   getModelUsageContextTokens,
 } from "@zcode/contracts";
-// review 单调性裁决单一来源；projection 只实现“应用策略”（advance/no_current 接受，
-// 其余忽略；跨 flow 等 onSessionResumed 清空）。
-// （改直连 monotonicity subpath；discovery barrel 的该 re-export
-// 会在 packages/ui 的 Desktop 构建链解析失败，App 重启后打不开。）
-import { verdictWorkspaceHookReviewRequest } from "@zcode/shared/workspace-hook-review-monotonicity";
 import {
   extractPlanStepsFromToolInput,
   extractPlanStepsFromToolOutput,
@@ -77,14 +67,11 @@ import type {
   AssistantTextRow,
   ApiRetryState,
   BackgroundWorkSummary,
-  CuaAppIdentity,
   ConversationDelta,
   ConversationRow,
   ConversationRowTarget,
   ConversationSnapshot,
   GoalState,
-  HookExecutionProjection,
-  HookInvocationRow,
   PendingInteraction,
   ReasoningRow,
   SessionControl,
@@ -106,18 +93,12 @@ import type {
   WorkflowRunProgressEnvelope,
 } from "@zcode/shared/zcode-protocol-v4";
 import {
-  parseListAppsSnapshot,
-  readOfficialCuaAction,
-  resolveCuaAppIdentity,
-} from "./cua-app-snapshot.js";
-import {
   PROTOCOL_V4_LIMITS,
   applyConversationDeltas,
   applyConversationDeltasMutable,
   createMutableConversationSnapshotAccumulator,
   diffWorkflowRunsState,
   reduceWorkflowRunsState,
-  workspaceHookReviewRequestPayloadSchema,
 } from "@zcode/shared/zcode-protocol-v4";
 import {
   buildToolOutput,
@@ -148,79 +129,6 @@ import {
   SESSION_ALLOW_PERMISSION_OPTION_KIND,
 } from "../permission-options.js";
 import { shouldHideInvalidToolCallFromProduct } from "../tool-call-product-visibility.js";
-
-type HookInvocationRowContent = Omit<
-  HookInvocationRow,
-  | "actions"
-  | "createdAt"
-  | "createdAtSeq"
-  | "entityId"
-  | "productTurnId"
-  | "rowId"
-  | "turnId"
-  | "visibility"
->;
-
-interface PendingSessionHookInvocation {
-  firstEvent: SessionEvent;
-  content: HookInvocationRowContent;
-}
-
-const HOOK_SCRIPT_RUNNERS = new Set([
-  "bash",
-  "bun",
-  "deno",
-  "node",
-  "node.exe",
-  "powershell",
-  "pwsh",
-  "python",
-  "python3",
-  "ruby",
-  "sh",
-  "zsh",
-]);
-const USER_PROMPT_HOOK_BLOCK_ERROR_TYPE = "hooks_prompt_block";
-
-function unquoteHookDisplayToken(token: string): string {
-  if (token.startsWith('"') && token.endsWith('"')) {
-    try {
-      return JSON.parse(token) as string;
-    } catch {
-      return token.slice(1, -1);
-    }
-  }
-  if (token.startsWith("'") && token.endsWith("'")) return token.slice(1, -1);
-  return token;
-}
-
-function hookCommandLabel(commandDisplay: string): string | undefined {
-  const tokens = commandDisplay.match(/"(?:\\.|[^"])*"|'[^']*'|\S+/gu) ?? [];
-  const executableToken = tokens[0];
-  if (!executableToken) return undefined;
-  const executable = unquoteHookDisplayToken(executableToken).split(/[\\/]/u).at(-1);
-  if (!executable) return undefined;
-  const scriptToken = tokens[1];
-  if (!HOOK_SCRIPT_RUNNERS.has(executable.toLowerCase()) || !scriptToken) return executable;
-  const script = unquoteHookDisplayToken(scriptToken);
-  if (!script || script.startsWith("-")) return executable;
-  const scriptName = script.split(/[\\/]/u).at(-1);
-  return scriptName ? `${executable} · ${scriptName}` : executable;
-}
-
-function hookExecutionDisplayName(
-  descriptor: NonNullable<HookRunLifecyclePayload["descriptor"]>,
-  hookIndex: number,
-): string {
-  const executable = hookCommandLabel(descriptor.commandDisplay);
-  return (
-    descriptor.statusMessage?.trim() ||
-    (descriptor.pluginName && executable
-      ? `${descriptor.pluginName} · ${executable}`
-      : descriptor.pluginName || executable) ||
-    `Hook #${hookIndex + 1}`
-  );
-}
 
 /**
  * config 种子：投影初始化/冷恢复后从 runtime 真值注入的初值。
@@ -421,18 +329,10 @@ export class ProductProjection {
   // 这里只保留上一条满足 length/zero-tool/视觉紧邻条件的 text row，任何真实边界都会清空。
   private outputContinuationTextRowId: number | null = null;
   private toolRowIdByCallId = new Map<string, number>();
-  private latestListAppsSnapshot = new Map<number, CuaAppIdentity>();
   // snapshot 是权威状态；该 Set 只是 TurnComplete 缺终态兜底的派生索引，避免每轮扫描全表。
   private openForegroundToolCallIds = new Set<string>();
   private fileToolInputPreviewByCallId = new Map<string, FileToolInputPreviewState>();
   private subagentRowIdByAgentId = new Map<string, number>();
-  private hookRowIdByInvocationId = new Map<string, number>();
-  // resume SessionStart 没有 turnId；先保留在 CLI projection，下一条真实 user-intent
-  // TurnStarted 到达后再分配 rowId/turnId。不得构造 session-hooks:* synthetic turn。
-  private pendingSessionHookInvocations = new Map<string, PendingSessionHookInvocation>();
-  // rewind 后 async Hook 的 terminal 仍可能迟到；保留 invocation 墓碑，避免被删旧分支
-  // 因找不到原 row 而被 terminal-only 兼容路径重新 append。
-  private rewoundHookInvocationIds = new Set<string>();
   // 冷恢复 transcript 可能含旧版本先发布、后持久化失败的 ghost child。store seed 后
   // 必须持续排除，而不是只覆盖一次 snapshot；否则下一条无关事件会从历史 row 再物化它。
   private invalidSubagentChildSessionIds = new Set<string>();
@@ -1079,8 +979,6 @@ export class ProductProjection {
     clone.streamingReasoningRowId = this.streamingReasoningRowId;
     clone.outputContinuationTextRowId = this.outputContinuationTextRowId;
     clone.toolRowIdByCallId = new Map(this.toolRowIdByCallId);
-    // 实时发布逐事件走原子 clone；遗漏该侧表会让成功的 list_apps 快照在提交时丢失。
-    clone.latestListAppsSnapshot = new Map(this.latestListAppsSnapshot);
     clone.openForegroundToolCallIds = new Set(this.openForegroundToolCallIds);
     clone.fileToolInputPreviewByCallId = new Map(
       [...this.fileToolInputPreviewByCallId].map(([toolCallId, state]) => [
@@ -1089,20 +987,6 @@ export class ProductProjection {
       ]),
     );
     clone.subagentRowIdByAgentId = new Map(this.subagentRowIdByAgentId);
-    clone.hookRowIdByInvocationId = new Map(this.hookRowIdByInvocationId);
-    clone.pendingSessionHookInvocations = new Map(
-      [...this.pendingSessionHookInvocations].map(([invocationId, pending]) => [
-        invocationId,
-        {
-          firstEvent: pending.firstEvent,
-          content: {
-            ...pending.content,
-            executions: pending.content.executions.map((execution) => ({ ...execution })),
-          },
-        },
-      ]),
-    );
-    clone.rewoundHookInvocationIds = new Set(this.rewoundHookInvocationIds);
     clone.invalidSubagentChildSessionIds = new Set(this.invalidSubagentChildSessionIds);
     clone.messageIdByRowId = new Map(this.messageIdByRowId);
     clone.outputContinuationRowIdByMessageId = new Map(this.outputContinuationRowIdByMessageId);
@@ -1141,13 +1025,9 @@ export class ProductProjection {
     this.streamingReasoningRowId = candidate.streamingReasoningRowId;
     this.outputContinuationTextRowId = candidate.outputContinuationTextRowId;
     this.toolRowIdByCallId = candidate.toolRowIdByCallId;
-    this.latestListAppsSnapshot = candidate.latestListAppsSnapshot;
     this.openForegroundToolCallIds = candidate.openForegroundToolCallIds;
     this.fileToolInputPreviewByCallId = candidate.fileToolInputPreviewByCallId;
     this.subagentRowIdByAgentId = candidate.subagentRowIdByAgentId;
-    this.hookRowIdByInvocationId = candidate.hookRowIdByInvocationId;
-    this.pendingSessionHookInvocations = candidate.pendingSessionHookInvocations;
-    this.rewoundHookInvocationIds = candidate.rewoundHookInvocationIds;
     this.invalidSubagentChildSessionIds = candidate.invalidSubagentChildSessionIds;
     this.messageIdByRowId = candidate.messageIdByRowId;
     this.outputContinuationRowIdByMessageId = candidate.outputContinuationRowIdByMessageId;
@@ -1321,20 +1201,11 @@ export class ProductProjection {
     switch (event.type) {
       case SessionEventType.SessionCreated:
         return this.onSessionCreated(event);
-      case SessionEventType.SessionResumed:
-        return this.onSessionResumed(event);
       case SessionEventType.SessionTitleUpdated:
         return this.onSessionTitleUpdated(event);
       case SessionEventType.TurnStarted:
         if (fact.semanticKind !== "userIntent") return [];
-        return [
-          ...this.onTurnStarted(fact),
-          // model-only 维护 turn（manual /compact、goal continuation）没有资格
-          // 承载 SessionStart 摘要；pending 保持到下一条 user-visible 真实 turn。
-          ...(this.currentTurnStartedModelOnly
-            ? []
-            : this.flushPendingSessionHookInvocations(fact.productTurnId)),
-        ];
+        return this.onTurnStarted(fact);
       case SessionEventType.ModelStreaming: {
         if (fact.semanticKind !== "assistantSegment") return [];
         const shouldClearApiRetry =
@@ -1376,20 +1247,6 @@ export class ProductProjection {
         return this.onPermissionDenied(event);
       case SessionEventType.UserInputAutoResolutionUpdated:
         return this.onUserInputAutoResolutionUpdated(event);
-      case SessionEventType.WorkspaceHookReviewRequested:
-        return this.onWorkspaceHookReviewRequested(event);
-      case SessionEventType.WorkspaceHookReviewSettled:
-        return this.onWorkspaceHookReviewSettled(event);
-      case SessionEventType.WorkspaceHookReviewSuperseded:
-        return this.onWorkspaceHookReviewSuperseded(event);
-      case SessionEventType.WorkspaceHookAdmissionUpdated:
-        return this.onWorkspaceHookAdmissionUpdated(event);
-      case SessionEventType.HookRunStarted:
-      case SessionEventType.HookRunProgress:
-      case SessionEventType.HookRunCompleted:
-      case SessionEventType.HookRunFailed:
-      case SessionEventType.HookRunBlocked:
-        return this.onHookRunLifecycle(event);
       case SessionEventType.TurnSteerQueued:
         return this.onTurnSteerQueued(event);
       case SessionEventType.TurnSteerDeliveryChanged:
@@ -1441,314 +1298,6 @@ export class ProductProjection {
       default:
         return [];
     }
-  }
-
-  /** A persisted started-only Hook cannot still be running after a real runtime resume. */
-  private onSessionResumed(event: SessionEvent): ConversationDelta[] {
-    const endedAt = this.ms(event);
-    const deltas: ConversationDelta[] = [];
-    // Runtime epoch 切换前尚未归位的 session Hook 不得附着到新 epoch 的下一轮；
-    // 新 Runtime 会重新产生自己的 resume SessionStart lifecycle。
-    this.pendingSessionHookInvocations.clear();
-    for (const row of this.snapshot.rows.window) {
-      if (row.kind !== "hookInvocation" || row.state !== "running") continue;
-      const executions = row.executions.map(
-        (execution): HookExecutionProjection =>
-          execution.state === "running"
-            ? {
-                ...execution,
-                state: "failed",
-                outcome: "cancelled",
-                endedAt,
-                durationMs: Math.max(0, endedAt - execution.startedAt),
-              }
-            : execution,
-      );
-      deltas.push({
-        op: "row.upserted",
-        row: {
-          ...row,
-          state: "failed",
-          executions,
-          endedAt,
-          durationMs: Math.max(0, endedAt - row.startedAt),
-        },
-      });
-    }
-    const pendingInteractions = this.snapshot.pendingInteractions.filter(
-      (interaction) => interaction.payload.kind !== "workspaceHookReview",
-    );
-    if (pendingInteractions.length !== this.snapshot.pendingInteractions.length) {
-      // reviewFlowId/generation 只在单个 Runtime controller 内单调。
-      // Runtime 重启后旧 Requested 会先被 replay，而新 flow 又从 generation=1 开始；
-      // SessionResumed 是明确的新 Runtime epoch 边界，必须先淘汰旧 Runtime 无法再解析的审核。
-      deltas.push({ op: "state.updated", patch: { pendingInteractions } });
-    }
-    // 软门禁:resume 后 activate 会重新上报 admission 状态。
-    // epoch 清理时置 null,避免旧 Runtime 的提示条残留到新 Runtime 接管前。
-    if (this.snapshot.workspaceHookAdmission !== null) {
-      deltas.push({ op: "state.updated", patch: { workspaceHookAdmission: null } });
-    }
-    return deltas;
-  }
-
-  private onHookRunLifecycle(event: SessionEvent): ConversationDelta[] {
-    const payload = event.payload as HookRunLifecyclePayload;
-    const hookInvocationId = payload.hookInvocationId;
-    const hookCount = payload.hookCount;
-    if (
-      !hookInvocationId ||
-      !payload.hookRunId ||
-      !Number.isInteger(hookCount) ||
-      (hookCount ?? 0) <= 0 ||
-      !Number.isInteger(payload.hookIndex) ||
-      payload.hookIndex < 0
-    ) {
-      return [];
-    }
-    if (this.rewoundHookInvocationIds.has(hookInvocationId)) return [];
-
-    const rowId = this.hookRowIdByInvocationId.get(hookInvocationId);
-    const existing = rowId === undefined ? undefined : this.findRow(rowId);
-    const existingRow = existing?.kind === "hookInvocation" ? existing : undefined;
-    const pending = this.pendingSessionHookInvocations.get(hookInvocationId);
-    const previousExecutions = existingRow?.executions ?? pending?.content.executions ?? [];
-    const previousExecution = previousExecutions.find(
-      (execution) => execution.hookRunId === payload.hookRunId,
-    );
-    const descriptor = payload.descriptor;
-    if (
-      !previousExecution &&
-      (descriptor?.clientVisible !== true || descriptor.sourceKind === "internal")
-    ) {
-      return [];
-    }
-    const state = this.hookExecutionState(event.type);
-    const startedAt =
-      typeof payload.startedAt === "number" && Number.isFinite(payload.startedAt)
-        ? payload.startedAt
-        : (previousExecution?.startedAt ?? this.ms(event));
-    const endedAt = state === "running" ? undefined : this.ms(event);
-    const durationMs =
-      typeof payload.durationMs === "number" && Number.isFinite(payload.durationMs)
-        ? Math.max(0, payload.durationMs)
-        : endedAt === undefined
-          ? undefined
-          : Math.max(0, endedAt - startedAt);
-    const outcome = this.hookExecutionOutcome(event.type, payload.outcome);
-    const didExecute =
-      previousExecution?.didExecute === true || event.type === SessionEventType.HookRunStarted;
-    const sourceKind = previousExecution?.sourceKind ?? descriptor?.sourceKind;
-    if (sourceKind === undefined || sourceKind === "internal") return [];
-    const blockReason = payload.blockReason ?? previousExecution?.blockReason;
-    const execution: HookExecutionProjection = {
-      hookRunId: String(payload.hookRunId),
-      hookIndex: payload.hookIndex,
-      didExecute,
-      state,
-      ...(outcome ? { outcome } : {}),
-      ...(blockReason ? { blockReason } : {}),
-      startedAt,
-      ...(endedAt !== undefined ? { endedAt } : {}),
-      ...(durationMs !== undefined ? { durationMs } : {}),
-      displayName:
-        previousExecution?.displayName ??
-        (descriptor
-          ? hookExecutionDisplayName(descriptor, payload.hookIndex)
-          : `Hook #${payload.hookIndex + 1}`),
-      sourceKind,
-      ...(previousExecution?.pluginName || descriptor?.pluginName
-        ? { pluginName: previousExecution?.pluginName ?? descriptor?.pluginName }
-        : {}),
-      ...(payload.toolName || previousExecution?.toolName
-        ? { toolName: payload.toolName ?? previousExecution?.toolName }
-        : {}),
-    };
-    const byRunId = new Map(
-      previousExecutions.map((candidate) => [candidate.hookRunId, candidate]),
-    );
-    byRunId.set(execution.hookRunId, execution);
-    const executions = [...byRunId.values()].toSorted(
-      (left, right) => left.hookIndex - right.hookIndex,
-    );
-    const rowState = this.hookInvocationState(executions, hookCount as number);
-    const invocationStartedAt = Math.min(...executions.map((candidate) => candidate.startedAt));
-    const invocationEndedAt =
-      rowState === "running"
-        ? undefined
-        : Math.max(...executions.map((candidate) => candidate.endedAt ?? candidate.startedAt));
-
-    const content: HookInvocationRowContent = {
-      kind: "hookInvocation",
-      hookInvocationId,
-      hookEventName: payload.hookEventName,
-      hookCount: hookCount as number,
-      state: rowState,
-      startedAt: invocationStartedAt,
-      ...(invocationEndedAt !== undefined
-        ? {
-            endedAt: invocationEndedAt,
-            durationMs: Math.max(0, invocationEndedAt - invocationStartedAt),
-          }
-        : {}),
-      lane: this.hookInvocationLane(payload.hookEventName),
-      ...(payload.toolCallId ? { anchorToolCallId: String(payload.toolCallId) } : {}),
-      executions,
-    };
-
-    if (existingRow) {
-      const blockErrorDelta = this.hookBlockErrorDelta(event, payload, didExecute, blockReason);
-      return [
-        {
-          op: "row.upserted",
-          row: {
-            ...existingRow,
-            ...content,
-          },
-        },
-        ...(blockErrorDelta ? [blockErrorDelta] : []),
-      ];
-    }
-
-    if (
-      pending ||
-      !event.turnId ||
-      // 维护 turn 排除只属于 SessionStart——首条输入即 /compact 时
-      // SessionStart Hook 携带 compact turnId 到达，不能直挂，先入 pending 等
-      // 真实 turn。model-only ≠ 维护 turn：background_task / subagent_message /
-      // goal continuation 轮同样是 model-only，但它们是会真实跑工具的 agent 轮，
-      // 其 PreToolUse/PostToolUse/Stop 必须按 event.turnId 直挂原轮（与 cold
-      // merge 归属对齐），否则会被 pending 吞掉、错误堆到下一个用户轮。
-      (payload.hookEventName === "SessionStart" &&
-        (this.currentTurnId === null || this.currentTurnStartedModelOnly))
-    ) {
-      // startup SessionStart 虽可能已经携带 runtime turnId，但此时 TurnStarted 尚未建立
-      // runtimeTurnId -> productTurnId 映射；提前 append 会把它拆成独立 footer。
-      this.pendingSessionHookInvocations.set(hookInvocationId, {
-        firstEvent: pending?.firstEvent ?? event,
-        content,
-      });
-      return [];
-    }
-
-    const turnId = this.turnIdOf(event);
-    const rowBase = this.rowBase(event, turnId, hookInvocationId);
-    const row: HookInvocationRow = {
-      ...rowBase,
-      ...content,
-    };
-    this.hookRowIdByInvocationId.set(hookInvocationId, row.rowId);
-    const blockErrorDelta = this.hookBlockErrorDelta(event, payload, didExecute, blockReason);
-    return [{ op: "row.appended", row }, ...(blockErrorDelta ? [blockErrorDelta] : [])];
-  }
-
-  /**
-   * UserPromptSubmit 的 executed block 是当前输入的可见错误，但不是 task 失败。
-   * 将它投影到 transient lastError，让 ChatErrorBanner 直接展示原因；下一轮 TurnStarted
-   * 会按既有生命周期清理它。admission-only block 和工具边界 block 仍只保留在 Hook 摘要。
-   */
-  private hookBlockErrorDelta(
-    event: SessionEvent,
-    payload: HookRunLifecyclePayload,
-    didExecute: boolean,
-    blockReason: string | undefined,
-  ): ConversationDelta | null {
-    if (
-      event.type !== SessionEventType.HookRunBlocked ||
-      payload.hookEventName !== "UserPromptSubmit" ||
-      !didExecute ||
-      !blockReason
-    ) {
-      return null;
-    }
-    const diagnosticMessage = [payload.stderrPreview, payload.errorMessage, payload.stdoutPreview]
-      .map((value) => value?.trim())
-      .find((value) => value && value !== blockReason);
-    const displayReason = diagnosticMessage ?? blockReason;
-    const message =
-      displayReason === USER_PROMPT_HOOK_BLOCK_ERROR_TYPE
-        ? USER_PROMPT_HOOK_BLOCK_ERROR_TYPE
-        : `${USER_PROMPT_HOOK_BLOCK_ERROR_TYPE}: ${displayReason}`;
-    const detail = [
-      `Hook block reason: ${blockReason}`,
-      ...(diagnosticMessage ? [`Hook error: ${diagnosticMessage}`] : []),
-    ].join("\n");
-    return {
-      op: "state.updated",
-      patch: this.controlPatch({
-        lastError: {
-          code: "fault.runtime.hookBlocked",
-          message,
-          recoverable: false,
-          at: this.ms(event),
-          source: "runtime",
-          traceId: String(event.traceId),
-          ...(detail ? { detail } : {}),
-          attribution: {
-            source: "runtime",
-            reason: "hook_blocked",
-          },
-        },
-      }),
-    };
-  }
-
-  private flushPendingSessionHookInvocations(turnId: string): ConversationDelta[] {
-    if (this.pendingSessionHookInvocations.size === 0) return [];
-    const deltas: ConversationDelta[] = [];
-    for (const [hookInvocationId, pending] of this.pendingSessionHookInvocations) {
-      const row: HookInvocationRow = {
-        ...this.rowBase(pending.firstEvent, turnId, hookInvocationId),
-        ...pending.content,
-      };
-      this.hookRowIdByInvocationId.set(hookInvocationId, row.rowId);
-      deltas.push({ op: "row.appended", row });
-    }
-    this.pendingSessionHookInvocations.clear();
-    return deltas;
-  }
-
-  private hookExecutionState(eventType: SessionEvent["type"]): HookExecutionProjection["state"] {
-    if (eventType === SessionEventType.HookRunFailed) return "failed";
-    if (
-      eventType === SessionEventType.HookRunCompleted ||
-      eventType === SessionEventType.HookRunBlocked
-    ) {
-      return "completed";
-    }
-    return "running";
-  }
-
-  private hookExecutionOutcome(
-    eventType: SessionEvent["type"],
-    outcome: HookRunLifecyclePayload["outcome"],
-  ): HookExecutionProjection["outcome"] {
-    if (outcome) return outcome;
-    if (eventType === SessionEventType.HookRunCompleted) return "success";
-    if (eventType === SessionEventType.HookRunBlocked) return "blocked";
-    if (eventType === SessionEventType.HookRunFailed) return "failed";
-    return undefined;
-  }
-
-  private hookInvocationState(
-    executions: readonly HookExecutionProjection[],
-    hookCount: number,
-  ): HookInvocationRow["state"] {
-    if (
-      executions.length < hookCount ||
-      executions.some((execution) => execution.state === "running")
-    ) {
-      return "running";
-    }
-    return executions.some((execution) => execution.state === "failed") ? "failed" : "completed";
-  }
-
-  private hookInvocationLane(
-    eventName: HookRunLifecyclePayload["hookEventName"],
-  ): HookInvocationRow["lane"] {
-    if (eventName === "PreToolUse" || eventName === "PermissionRequest") return "toolBefore";
-    if (eventName === "PostToolUse" || eventName === "PostToolUseFailure") return "toolAfter";
-    return "assistantWork";
   }
 
   /**
@@ -1817,12 +1366,6 @@ export class ProductProjection {
       if (rowId >= fromRowId) {
         this.entityIdByRowId.delete(rowId);
         this.editTargetByEntityId.delete(entityId);
-      }
-    }
-    for (const [hookInvocationId, rowId] of this.hookRowIdByInvocationId) {
-      if (rowId >= fromRowId) {
-        this.rewoundHookInvocationIds.add(hookInvocationId);
-        this.hookRowIdByInvocationId.delete(hookInvocationId);
       }
     }
     return [{ op: "row.removed", fromRowId }];
@@ -2885,11 +2428,6 @@ export class ProductProjection {
     this.fileToolInputPreviewByCallId.delete(toolCallId);
     if (shouldHideInvalidToolCallFromProduct(payload.toolName)) return [];
     const inputText = stringifyToolInput(payload.input);
-    const cuaAction = readOfficialCuaAction(payload.toolName);
-    const cuaApp =
-      cuaAction && cuaAction !== "list_apps"
-        ? resolveCuaAppIdentity(payload.input, this.latestListAppsSnapshot)
-        : undefined;
     const existing = this.findToolRow(toolCallId);
     const planDeltas = this.todoPlanDeltas(
       event,
@@ -2912,7 +2450,6 @@ export class ProductProjection {
               : {}),
             inputText,
             input: payload.input,
-            ...(cuaApp ? { cuaApp } : {}),
             ...(payload.display?.kind === "mcp_tool" ? { display: payload.display } : {}),
           },
         },
@@ -2930,7 +2467,6 @@ export class ProductProjection {
       status: "inputStreaming",
       inputText,
       input: payload.input,
-      ...(cuaApp ? { cuaApp } : {}),
       ...(payload.display?.kind === "mcp_tool" ? { display: payload.display } : {}),
     };
     this.toolRowIdByCallId.set(toolCallId, row.rowId);
@@ -2952,11 +2488,6 @@ export class ProductProjection {
     const row = this.findToolRow(toolCallId);
     if (!row) return [];
     const success = payload.result.success;
-    if (success && readOfficialCuaAction(row.toolName) === "list_apps") {
-      // 摘要身份必须来自 Agent 已观察到的成功事实；失败结果不能清空旧快照。
-      const snapshot = parseListAppsSnapshot(payload.result.content, payload.result.display);
-      if (snapshot) this.latestListAppsSnapshot = snapshot;
-    }
     const display = toProtocolToolCallDisplay(payload.result.display);
     const next: ToolCallRow = {
       ...row,
@@ -3217,75 +2748,6 @@ export class ProductProjection {
   private onPermissionDenied(event: SessionEvent): ConversationDelta[] {
     const payload = event.payload as PermissionDeniedPayload;
     return this.settlePermission(String(payload.toolCallId), "cancelled");
-  }
-
-  private onWorkspaceHookReviewRequested(event: SessionEvent): ConversationDelta[] {
-    const payload = event.payload as WorkspaceHookReviewRequestedPayload;
-    const request = workspaceHookReviewRequestPayloadSchema.parse(payload.request);
-    const current = this.snapshot.pendingInteractions.find(
-      (item) => item.payload.kind === "workspaceHookReview",
-    );
-    if (current?.payload.kind === "workspaceHookReview") {
-      const verdict = verdictWorkspaceHookReviewRequest(current.payload, request);
-      // 跨 flow 只能在 onSessionResumed 已清空旧 review 后接管（epoch 应用策略在
-      // onSessionResumed）；其余 stale/replay/conflict 均不得覆盖或延长当前 authority。
-      if (verdict !== "same_flow_advance") {
-        return [];
-      }
-    }
-    const interaction: PendingInteraction = {
-      interactionId: request.interactionId,
-      kind: "workspaceHookReview",
-      anchorRowId: null,
-      createdAt: request.createdAt,
-      payload: request,
-    };
-    // 同 flow 的更高 generation 是唯一合法替换；Runtime 重启的跨 flow 接管必须先经过
-    // SessionResumed 清旧 authority。这里仍原子替换，避免历史异常状态残留多个 review。
-    const pendingInteractions = this.snapshot.pendingInteractions.filter(
-      (item) => item.payload.kind !== "workspaceHookReview",
-    );
-    pendingInteractions.push(interaction);
-    return [{ op: "state.updated", patch: { pendingInteractions } }];
-  }
-
-  private onWorkspaceHookReviewSettled(event: SessionEvent): ConversationDelta[] {
-    const payload = event.payload as WorkspaceHookReviewSettledPayload;
-    return this.removeWorkspaceHookReview(payload.interactionId);
-  }
-
-  private onWorkspaceHookReviewSuperseded(event: SessionEvent): ConversationDelta[] {
-    const payload = event.payload as WorkspaceHookReviewSupersededPayload;
-    return this.removeWorkspaceHookReview(payload.interactionId);
-  }
-
-  private removeWorkspaceHookReview(interactionId: string): ConversationDelta[] {
-    const pendingInteractions = this.snapshot.pendingInteractions.filter(
-      (item) =>
-        !(item.payload.kind === "workspaceHookReview" && item.interactionId === interactionId),
-    );
-    return pendingInteractions.length === this.snapshot.pendingInteractions.length
-      ? []
-      : [{ op: "state.updated", patch: { pendingInteractions } }];
-  }
-
-  /**
-   * 软门禁:处理 WorkspaceHookAdmissionUpdated 事件。
-   *
-   * pendingCount > 0 → 写入 snapshot.workspaceHookAdmission(提示条出现);
-   * pendingCount === 0 → 置 null(提示条消失)。
-   */
-  private onWorkspaceHookAdmissionUpdated(event: SessionEvent): ConversationDelta[] {
-    const payload = event.payload as WorkspaceHookAdmissionUpdatedPayload;
-    const workspaceHookAdmission =
-      payload.pendingCount === 0
-        ? null
-        : {
-            pendingCount: payload.pendingCount,
-            bundleDigest: payload.bundleDigest,
-            ...(payload.workspaceIdentity ? { workspaceIdentity: payload.workspaceIdentity } : {}),
-          };
-    return [{ op: "state.updated", patch: { workspaceHookAdmission } }];
   }
 
   private onUserInputAutoResolutionUpdated(event: SessionEvent): ConversationDelta[] {
@@ -5365,7 +4827,6 @@ function toProtocolToolCallDisplay(
 ): ToolCallDisplay | undefined {
   if (!display) return undefined;
   switch (display.kind) {
-    case "node_repl_images":
     case "task_output":
     case "respond_to_coordinator":
     case "mcp_tool":

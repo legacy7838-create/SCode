@@ -1,9 +1,6 @@
 /* oxlint-disable eslint(max-lines) -- UnifiedBrowserView 集中维护稳定 webview 的导航、事件和 guest 生命周期；横向滚动链已下沉独立 hook。 */
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import type {
-  BrowserViewScreenshotSurfacePreparePayload,
-  EmbeddedBrowserViewportPreference,
-} from "@zcode/shared";
+import type { EmbeddedBrowserViewportPreference } from "@zcode/shared";
 import { cn } from "@/components/lib/utils.js";
 import { usePlatform } from "@/hooks/usePlatform.js";
 import { useWebElementPicker } from "@/hooks/useWebElementPicker.js";
@@ -12,8 +9,6 @@ import { logger } from "@/logger.js";
 import { BrowserToolbar } from "@/EmbeddedBrowserPaneParts.js";
 import { BrowserViewportSurface } from "@/browser-use/BrowserViewportSurface.js";
 import { BrowserViewportToolbar } from "@/browser-use/BrowserViewportToolbar.js";
-import { useBrowserResizeOperationWarning } from "@/browser-use/useBrowserResizeOperationWarning.js";
-import { useBrowserScreenshotSurfaceReady } from "@/browser-use/useBrowserScreenshotSurfaceReady.js";
 import { useEmbeddedBrowserWheelChain } from "@/browser-use/useEmbeddedBrowserWheelChain.js";
 import { useDesktopZoomFactor } from "@/browser-use/useDesktopZoomFactor.js";
 import { useResponsiveBrowserViewportControl } from "@/browser-use/useResponsiveBrowserViewportControl.js";
@@ -65,9 +60,6 @@ export function UnifiedBrowserView({
   remoteSessionId,
   sessionId,
   residencyGeneration,
-  browserUseOperationUntil,
-  browserResizeBaselineVersion,
-  screenshotSurfaceRequest,
   deferEmptyGuest = false,
   initialHumanViewportPreference,
   onHumanViewportPreferenceChange,
@@ -104,14 +96,9 @@ export function UnifiedBrowserView({
   /** tab 创建时冻结的对话归属；不得用 dom-ready 到达时的 active task 回填。 */
   sessionId?: string;
   residencyGeneration?: number;
-  /** 与 tab 鼠标图标共用的 operation deadline；仅 browser-use tab 传入。 */
-  browserUseOperationUntil?: number;
-  browserResizeBaselineVersion?: number;
-  /** 截图前临时保持后台 guest 的真实布局；不改变任何 active/focus 语义。 */
-  screenshotSurfaceRequest?: BrowserViewScreenshotSurfacePreparePayload | null;
-  /** human 空白 tab 延迟创建 guest；agent/browser-use 必须保持创建期 attach。 */
+  /** human 空白 tab 延迟创建 guest。 */
   deferEmptyGuest?: boolean;
-  /** 仅 human Browser surface 传入；Agent Browser Use 必须保持 undefined。 */
+  /** human Browser surface 的显示偏好初值。 */
   initialHumanViewportPreference?: EmbeddedBrowserViewportPreference;
   /** 只接收 human UI 主动变更；Agent viewport event 不得调用。 */
   onHumanViewportPreferenceChange?: (
@@ -130,11 +117,7 @@ export function UnifiedBrowserView({
   const [webviewGeneration, setWebviewGeneration] = useState(0);
   const [webview, setWebview] = useState<ElectronWebviewTag | null>(null);
   const [guestAttachRetryNonce, setGuestAttachRetryNonce] = useState(0);
-  useBrowserScreenshotSurfaceReady({
-    request: screenshotSurfaceRequest ?? null,
-    webview,
-  });
-  const shouldComposeSurface = Boolean(screenshotSurfaceRequest);
+  const browserRegionRef = useRef<HTMLDivElement | null>(null);
   const setGuestZoomFactor = useCallback((target: ElectronWebviewTag, targetZoomFactor: number) => {
     if (typeof target.setZoomFactor !== "function") return;
     safeWebviewCall(
@@ -152,17 +135,6 @@ export function UnifiedBrowserView({
     if (webview) setGuestZoomFactor(webview, 1);
   }, [setGuestZoomFactor, webview]);
   const {
-    browserRegionRef,
-    notifyBrowserViewportResize,
-    prepareForAgentViewportChange,
-    showResizeWarning,
-  } = useBrowserResizeOperationWarning({
-    browserKey,
-    isVisible,
-    operationUntil: browserUseOperationUntil,
-    resizeBaselineVersion: browserResizeBaselineVersion,
-  });
-  const {
     isResponsiveMode,
     responsiveViewportSize,
     responsiveViewportZoom,
@@ -173,35 +145,14 @@ export function UnifiedBrowserView({
   } = useResponsiveBrowserViewportControl({
     browserKey,
     desktopZoomFactor,
-    onAgentViewportChange: prepareForAgentViewportChange,
     onViewportSynchronized: normalizeResponsiveGuestZoom,
-    onViewportResize: notifyBrowserViewportResize,
     initialHumanViewportPreference,
     onHumanViewportPreferenceChange,
     sessionId,
   });
-  // MediaRecorder 录到的是 renderer 中实际合成的 WebView surface。若沿用用户的 Fit/50%
-  // 预览，后续 canvas 只能把低分辨率源放大到目标尺寸。录制 lease 因此派生一份 100% surface，
-  // 不修改用户的自由尺寸、缩放选择或持久状态；request 释放后 React 会自然恢复原预览。
-  const forceUnscaledSurface = screenshotSurfaceRequest?.surfaceScaleMode === "unscaled";
-  // 普通后台 tab 的 fallback viewport 可能大于窗口；仅传 Fit 不会启用布局，
-  // webview 随准备层缩小后永远无法 ready。截图期间统一派生请求尺寸的 responsive 布局，
-  // release 后恢复用户模式与尺寸，不写偏好，也不重建 guest。
-  const effectiveIsResponsiveMode = isResponsiveMode || Boolean(screenshotSurfaceRequest);
-  const effectiveViewportSize = screenshotSurfaceRequest?.viewport ?? responsiveViewportSize;
-  // 普通截图只临时改变布局；fallback metrics 的 guest zoom 由 main 管理。
-  // 若把临时 Fit 当作用户模式切换，release 会错误恢复 desktop zoom，破坏后续 CDP 坐标。
-  const shouldNormalizeGuestZoom = isResponsiveMode || forceUnscaledSurface;
-  // 固定 100%/200% 预览不会随截图画布缩小，Windows 高 DPI 的 guest raster
-  // 仍可能被宿主可见范围裁剪。普通截图临时 Fit，释放后恢复用户比例；录制保持 unscaled。
-  const effectiveViewportZoom = forceUnscaledSurface
-    ? "100"
-    : screenshotSurfaceRequest
-      ? "fit"
-      : responsiveViewportZoom;
   useEmbeddedBrowserWheelChain({
     browserRegionRef,
-    isResponsiveMode: effectiveIsResponsiveMode,
+    isResponsiveMode,
     webview,
   });
 
@@ -658,15 +609,15 @@ export function UnifiedBrowserView({
   useEffect(() => {
     if (!webview) return;
     const wasResponsiveMode = wasResponsiveModeRef.current;
-    wasResponsiveModeRef.current = shouldNormalizeGuestZoom;
+    wasResponsiveModeRef.current = isResponsiveMode;
 
-    if (shouldNormalizeGuestZoom) {
+    if (isResponsiveMode) {
       setGuestZoomFactor(webview, 1);
     } else if (wasResponsiveMode) {
       // 只在退出自由尺寸时恢复当前应用 zoom；普通浏览期间继续沿用 Electron 原生传播。
       setGuestZoomFactor(webview, desktopZoomFactor);
     }
-  }, [desktopZoomFactor, shouldNormalizeGuestZoom, setGuestZoomFactor, webview]);
+  }, [desktopZoomFactor, isResponsiveMode, setGuestZoomFactor, webview]);
 
   useEffect(() => {
     reportBrowserGuest(isSelected);
@@ -943,13 +894,7 @@ export function UnifiedBrowserView({
 
   const handleResponsiveViewportSizeChange = updateResponsiveViewportSize;
 
-  const handleResponsiveViewportInput = useCallback(
-    (viewportSize: typeof responsiveViewportSize) => {
-      notifyBrowserViewportResize();
-      updateResponsiveViewportSize(viewportSize);
-    },
-    [notifyBrowserViewportResize, updateResponsiveViewportSize],
-  );
+  const handleResponsiveViewportInput = updateResponsiveViewportSize;
 
   const faviconListenerRef = useRef<{
     node: ElectronWebviewTag;
@@ -1011,16 +956,11 @@ export function UnifiedBrowserView({
     }
   }, [logWebviewTeardown, shouldMountWebview]);
 
-  // inactive 的 display:none 会让 Electron 保留旧 compositor surface，后台截图会按旧表面平铺。
-  // prepare 期间的 flex 只用于合成；外层 inert、pointer-events-none 和 aria-hidden 隔离交互与 a11y。
   return (
     <div
       aria-hidden={!isVisible}
-      data-browser-screenshot-webview-state={
-        screenshotSurfaceRequest ? (webview ? "ready" : "missing") : undefined
-      }
       className={cn(
-        isVisible || shouldComposeSurface ? "flex" : "hidden",
+        isVisible ? "flex" : "hidden",
         "h-full min-h-0 w-full min-w-0 flex-col overflow-hidden bg-background",
       )}
     >
@@ -1056,21 +996,16 @@ export function UnifiedBrowserView({
         isResidencyRestore={isResidencyRestore}
         formatMessage={intl.formatMessage}
         isEmptyBrowserState={isEmptyBrowserState}
-        isComposed={isVisible || shouldComposeSurface}
-        isResponsiveMode={effectiveIsResponsiveMode}
-        isViewportEmulated={
-          effectiveIsResponsiveMode && screenshotSurfaceRequest?.viewportMode !== "natural"
-        }
+        isComposed={isVisible}
+        isResponsiveMode={isResponsiveMode}
         onRetryGuest={handleRetryGuest}
         onRetryLoad={handleRetryLoad}
-        onViewportResize={notifyBrowserViewportResize}
         onViewportSizeChange={handleResponsiveViewportSizeChange}
         onWebviewRef={handleWebviewRef}
         shouldMountWebview={shouldMountWebview}
-        showResizeWarning={showResizeWarning}
         webviewGeneration={webviewGeneration}
-        viewportSize={effectiveViewportSize}
-        viewportZoom={effectiveViewportZoom}
+        viewportSize={responsiveViewportSize}
+        viewportZoom={responsiveViewportZoom}
       />
     </div>
   );

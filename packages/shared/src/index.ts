@@ -30,7 +30,7 @@ export type { WorkspacePurpose } from "./workspacePurpose.js";
 export { DEFAULT_LOCALE } from "./protocol.js";
 export { ZCODE_VERSION, ZCODE_COMMIT, ZCODE_BUILD_TIME } from "./version.js";
 export type { HelloMessage, HelloAckMessage } from "./handshake.js";
-export type { ArmsRumEnv, ZCodeEnv, ZCodeProductFlavor } from "./env.js";
+export type { ZCodeEnv, ZCodeProductFlavor } from "./env.js";
 export type { RemoteAssetInstallMode } from "./remoteAssetInstallMode.js";
 export type {
   RemoteResourcePackageId,
@@ -65,10 +65,6 @@ export {
   ZCODE_APP_VERSION_ENV,
   ZCODE_BUILD_COMMIT_ID_ENV,
   RUNTIME_ZCODE_DEBUG,
-  ZCODE_TELEMETRY_REPORT_ENDPOINT,
-  ZCODE_ARMS_RUM_ENDPOINT,
-  ZCODE_TELEMETRY_ENABLED,
-  mapZCodeEnvToArmsRumEnv,
   normalizeZCodeEnv,
   normalizeZCodeProductFlavor,
 } from "./env.js";
@@ -196,7 +192,6 @@ export type {
   SaveFileResult,
   PrintPageToPdfResult,
   DesktopCommandId,
-  CuaOsSupport,
   DesktopWindowChromeState,
   DesktopTitleBarTheme,
   DockerContainerInfo,
@@ -222,12 +217,6 @@ export type {
   WSLDistro,
   ZCodeStdioTapDevState,
 } from "./platform.js";
-export type {
-  CuaAccessibilitySettingsResult,
-  CuaPermissionKind,
-  OpenCuaPermissionOnboardingOptions,
-  PrepareCuaHelperPermissionDragResult,
-} from "./cuaAccessibilitySettings.js";
 export type { ZCodeTaskCreateResult } from "./zcode-task-types.js";
 export * from "./zcode-task-types.js";
 export * from "./automation-types.js";
@@ -252,7 +241,6 @@ export * from "./official-glm-model-id.js";
 export * from "./skills-types.js";
 export * from "./skill-sync.js";
 export * from "./mcp-sync.js";
-export * from "./plugin-sync.js";
 export * from "./remote-sync.js";
 export * from "./plugin-types.js";
 export * from "./subagents-types.js";
@@ -282,7 +270,6 @@ export * from "./coding-plan-subscription.js";
 export * from "./forceUpdate.js";
 export * from "./intranetProbe.js";
 export * from "./intranetDefaults.js";
-export * from "./hooks.js";
 export * from "./openrouter-attribution.js";
 export * from "./workspaceSessionRestore.js";
 export * from "./skill-scan-policy.js";
@@ -303,6 +290,5 @@ export { bashOutputDisplaySchema } from "./bash-output-display.js";
 export * from "./localTtft.js";
 export * from "./pluginStoreOrder.js";
 export * from "./clientConfig.js";
-export * from "./pluginStoreOrdering.js";
 export * from "./session-debug.js";
 export { redactFeedbackText } from "./feedbackPrivacy.js";

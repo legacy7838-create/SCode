@@ -13,7 +13,6 @@ import {
   IZCodeTaskService,
   IZCodeAgentService,
   IZCodeSessionService,
-  ICuaPermissionService,
   IConversationShareService,
   IBotsService,
   IFileWatcherService,
@@ -29,13 +28,8 @@ import {
   ISkillsService,
   ISkillSyncService,
   IMcpSyncService,
-  IPluginSyncService,
-  IPluginsService,
-  IPluginManagementService,
   ISubagentsService,
   ICommandsService,
-  IHooksService,
-  IMemoryService,
   ISettingsSyncService,
   IFeedbackService,
   IPromptAttachmentTransferService,
@@ -63,9 +57,6 @@ export class RemoteServiceAccess implements IServiceAccessor {
   readonly windowControllerService: IWindowControllerService;
   readonly zcodeAgentService: IZCodeAgentService;
   readonly zcodeSessionService: IZCodeSessionService;
-  // cuaPermissionService 在 IServiceAccessor 上是可选（远端/bots host 不提供），但桌面 renderer
-  // 经 RPC 一定能拿到（main host 始终注册此 descriptor；非 macOS / 未启用时方法返回 available:false）。
-  readonly cuaPermissionService: ICuaPermissionService;
   readonly conversationShareService: IConversationShareService;
   readonly botsService: IBotsService;
   readonly fileWatcherService: IFileWatcherService;
@@ -82,13 +73,8 @@ export class RemoteServiceAccess implements IServiceAccessor {
   readonly skillsService: ISkillsService;
   readonly skillSyncService: ISkillSyncService;
   readonly mcpSyncService: IMcpSyncService;
-  readonly pluginSyncService: IPluginSyncService;
-  readonly pluginsService: IPluginsService;
-  readonly pluginManagementService: IPluginManagementService;
   readonly subagentsService: ISubagentsService;
   readonly commandsService: ICommandsService;
-  readonly hooksService: IHooksService;
-  readonly memoryService: IMemoryService;
   readonly settingsSyncService: ISettingsSyncService;
   readonly feedbackService: IFeedbackService;
   readonly promptAttachmentTransferService: IPromptAttachmentTransferService;
@@ -129,17 +115,14 @@ export class RemoteServiceAccess implements IServiceAccessor {
     this.zcodeTaskService = ProxyChannel.toService<IZCodeTaskService>(
       channelClient.getChannel(IZCodeTaskService.channelName),
     );
-    this.windowControllerService = ProxyChannel.toService<IWindowControllerService>(
-      channelClient.getChannel(IWindowControllerService.channelName),
-    );
     this.zcodeAgentService = ProxyChannel.toService<IZCodeAgentService>(
       channelClient.getChannel(IZCodeAgentService.channelName),
     );
+    this.windowControllerService = ProxyChannel.toService<IWindowControllerService>(
+      channelClient.getChannel(IWindowControllerService.channelName),
+    );
     this.zcodeSessionService = ProxyChannel.toService<IZCodeSessionService>(
       channelClient.getChannel(IZCodeSessionService.channelName),
-    );
-    this.cuaPermissionService = ProxyChannel.toService<ICuaPermissionService>(
-      channelClient.getChannel(ICuaPermissionService.channelName),
     );
     this.conversationShareService = ProxyChannel.toService<IConversationShareService>(
       channelClient.getChannel(IConversationShareService.channelName),
@@ -189,26 +172,11 @@ export class RemoteServiceAccess implements IServiceAccessor {
     this.mcpSyncService = ProxyChannel.toService<IMcpSyncService>(
       channelClient.getChannel(IMcpSyncService.channelName),
     );
-    this.pluginSyncService = ProxyChannel.toService<IPluginSyncService>(
-      channelClient.getChannel(IPluginSyncService.channelName),
-    );
-    this.pluginsService = ProxyChannel.toService<IPluginsService>(
-      channelClient.getChannel(IPluginsService.channelName),
-    );
-    this.pluginManagementService = ProxyChannel.toService<IPluginManagementService>(
-      channelClient.getChannel(IPluginManagementService.channelName),
-    );
     this.subagentsService = ProxyChannel.toService<ISubagentsService>(
       channelClient.getChannel(ISubagentsService.channelName),
     );
     this.commandsService = ProxyChannel.toService<ICommandsService>(
       channelClient.getChannel(ICommandsService.channelName),
-    );
-    this.hooksService = ProxyChannel.toService<IHooksService>(
-      channelClient.getChannel(IHooksService.channelName),
-    );
-    this.memoryService = ProxyChannel.toService<IMemoryService>(
-      channelClient.getChannel(IMemoryService.channelName),
     );
     this.settingsSyncService = ProxyChannel.toService<ISettingsSyncService>(
       channelClient.getChannel(ISettingsSyncService.channelName),

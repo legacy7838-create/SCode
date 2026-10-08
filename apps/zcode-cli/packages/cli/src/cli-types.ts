@@ -2,19 +2,12 @@ import type { TuiReadClipboardImage, TuiWriteClipboardText } from "@zcode/tui";
 import type { UiLocale } from "@zcode/i18n";
 import type { Logger } from "@zcode/contracts";
 import type {
-  createManagedCdpBrowserRuntime,
-  ManagedCdpBrowserRuntimeOptions,
-} from "@zcode/adapters/browser";
-import type {
   createModelAdapter,
   createZCodeApp,
   CreateModelAdapterOptions,
   configureCodingPlanApiKey,
   ConfigureCodingPlanApiKeyOptions,
   inspectZCodeSkill,
-  inspectWorkspaceHookTrust,
-  grantWorkspaceHookTrust,
-  revokeWorkspaceHookTrustCli,
   inspectZCodeCustomCommand,
   InspectZCodeCustomCommandOptions,
   InspectZCodeSkillOptions,
@@ -34,9 +27,7 @@ import type {
   resolveLatestSession,
   ResolveLatestSessionOptions,
   RunZCodeProtocolAgentOptions,
-  prepareZCodeTelemetryEnv,
   startProcessProviderRegistryRuntime,
-  shutdownZCodeTelemetry,
   ZCodeAppOptions,
 } from "@zcode/bootstrap";
 import type { CliEnv, DotenvLoadResult, LoadCliDotenvOptions } from "./env.js";
@@ -49,9 +40,6 @@ export type BootstrapModule = typeof import("@zcode/bootstrap");
 export interface RunDependencies extends PluginsCommandOverrides {
   protocolLifecycle?: RunZCodeProtocolAgentOptions["lifecycle"];
   protocolInput?: NodeJS.ReadableStream;
-  createManagedCdpBrowserRuntime?: (
-    options?: ManagedCdpBrowserRuntimeOptions,
-  ) => ReturnType<typeof createManagedCdpBrowserRuntime>;
   createModelAdapter?: (
     options?: CreateModelAdapterOptions,
   ) => ReturnType<typeof createModelAdapter>;
@@ -68,9 +56,6 @@ export interface RunDependencies extends PluginsCommandOverrides {
   cwd?: () => string;
   env?: CliEnv;
   inspectSkill?: (options: InspectZCodeSkillOptions) => ReturnType<typeof inspectZCodeSkill>;
-  inspectWorkspaceHookTrust?: typeof inspectWorkspaceHookTrust;
-  grantWorkspaceHookTrust?: typeof grantWorkspaceHookTrust;
-  revokeWorkspaceHookTrustCli?: typeof revokeWorkspaceHookTrustCli;
   inspectCustomCommand?: (
     options: InspectZCodeCustomCommandOptions,
   ) => ReturnType<typeof inspectZCodeCustomCommand>;
@@ -82,7 +67,6 @@ export interface RunDependencies extends PluginsCommandOverrides {
     options: ConfigureCodingPlanApiKeyOptions,
   ) => ReturnType<typeof configureCodingPlanApiKey>;
   loadDotenv?: (options?: LoadCliDotenvOptions) => DotenvLoadResult;
-  prepareZCodeTelemetryEnv?: typeof prepareZCodeTelemetryEnv;
   projectConfigPath?: string;
   listSessions?: (options: ListZCodeSessionsOptions) => ReturnType<typeof listZCodeSessions>;
   listCustomCommands?: (
@@ -111,7 +95,6 @@ export interface RunDependencies extends PluginsCommandOverrides {
   shutdownCleanupTimeoutMs?: number;
   shutdownProcess?: CliShutdownProcess;
   startProcessProviderRegistryRuntime?: typeof startProcessProviderRegistryRuntime;
-  shutdownZCodeTelemetry?: typeof shutdownZCodeTelemetry;
 }
 
 export type CliPermissionMode = "build" | "plan" | "edit" | "yolo";

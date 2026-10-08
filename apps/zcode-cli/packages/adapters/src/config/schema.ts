@@ -34,13 +34,8 @@ const featuresSchema = z.object({
   compact: z.boolean().optional(),
   rewind: z.boolean().optional(),
   subagent: z.boolean().optional(),
-  memory: z.boolean().optional(),
   skill: z.boolean().optional(),
   mcp: z.boolean().optional(),
-});
-
-const memorySchema = z.object({
-  use: z.boolean().optional(),
 });
 
 const mcpServerBaseSchema = {
@@ -224,65 +219,6 @@ const modelAnomalyGuardSchema = z.object({
   maxBudgetWarningsPerTurn: z.number().int().nonnegative().optional(),
 });
 
-// Hooks schema：
-// 理想态是 re-export shared/workspace-hook-config，但两个 pnpm workspace 解析出物理
-// 不同的 zod 实例（adapters 4.4.3 / shared 4.3.6）：shared schema 嵌入本包组合 schema
-// 会让 dts 引用 foreign zod 内部类型（TS2742），typeof/ZodType 注解都会落入类型循环。
-// 因此本副本按原样保留（本包 zod 构造），并保持与 shared 的校验语义等价；
-// 运行时校验语义仍以 shared 为准（discovery/trust 装配入口都走 shared schema——
-// 本 schema 只负责配置文件装载诊断）。若未来统一 zod 实例，应删除本副本改 re-export。
-const hookProcessSchema = z
-  .object({
-    type: z.literal("process"),
-    command: z.string().min(1),
-    enabled: z.boolean().optional(),
-    args: z.array(z.string()).optional(),
-    timeoutMs: positiveNumberSchema.optional(),
-    statusMessage: z.string().min(1).optional(),
-  })
-
-  .passthrough();
-
-const hookCommandSchema = z
-  .object({
-    type: z.literal("command"),
-    command: z.string().min(1),
-    enabled: z.boolean().optional(),
-    async: z.boolean().optional(),
-    shell: z.union([z.literal(true), z.string().min(1)]).optional(),
-    timeout: positiveNumberSchema.optional(),
-    timeoutMs: positiveNumberSchema.optional(),
-    statusMessage: z.string().min(1).optional(),
-  })
-  .passthrough();
-
-const hookMatcherSchema = z
-  .object({
-    matcher: z.string().min(1).optional(),
-    hooks: z.array(z.discriminatedUnion("type", [hookProcessSchema, hookCommandSchema])).min(1),
-  })
-  .strict();
-
-const hooksSchema = z
-  .object({
-    enabled: z.boolean().optional(),
-    timeoutMs: positiveNumberSchema.optional(),
-    maxOutputBytes: positiveNumberSchema.optional(),
-    events: z
-      .object({
-        SessionStart: z.array(hookMatcherSchema).optional(),
-        UserPromptSubmit: z.array(hookMatcherSchema).optional(),
-        PreToolUse: z.array(hookMatcherSchema).optional(),
-        PermissionRequest: z.array(hookMatcherSchema).optional(),
-        PostToolUse: z.array(hookMatcherSchema).optional(),
-        PostToolUseFailure: z.array(hookMatcherSchema).optional(),
-        Stop: z.array(hookMatcherSchema).optional(),
-      })
-      .strict()
-      .optional(),
-  })
-  .strict();
-
 export const ZCodeConfigFileSchema = z
   .object({
     $schema: z.string().optional(),
@@ -291,7 +227,6 @@ export const ZCodeConfigFileSchema = z
     storage: storageSchema.optional(),
     network: networkSchema.optional(),
     features: featuresSchema.optional(),
-    memory: memorySchema.optional(),
     mcp: mcpSchema.optional(),
     plugins: pluginsSchema.optional(),
     skills: skillsSchema.optional(),
@@ -301,7 +236,6 @@ export const ZCodeConfigFileSchema = z
     ui: uiSchema.optional(),
     toolConcurrency: toolConcurrencySchema.optional(),
     modelAnomalyGuard: modelAnomalyGuardSchema.optional(),
-    hooks: hooksSchema.optional(),
   })
   .passthrough();
 
@@ -312,8 +246,7 @@ type SkillCommandOverrideMap = Record<string, { enable?: boolean }>;
 export type ConfigDiagnosticSeverity = "warning" | "error";
 export type ConfigDiagnosticCode =
   | "config_file_invalid"
-  | "config_mcp_server_invalid"
-  | "config_project_hooks_pending_trust";
+  | "config_mcp_server_invalid";
 
 export interface ConfigDiagnostic {
   code: ConfigDiagnosticCode;
@@ -403,7 +336,6 @@ function parsedConfigFileToRuntimePatch(parsed: ZCodeConfigFile): RuntimeConfigP
   if (parsed.storage) config.storage = parsed.storage;
   if (parsed.network) config.network = parsed.network;
   if (parsed.features) config.features = parsed.features;
-  if (parsed.memory) config.memory = parsed.memory;
   if (parsed.mcp) config.mcp = parsed.mcp;
   if (parsed.plugins) config.plugins = normalizePluginConfig(parsed.plugins);
   const skillsConfig = parseSkillsRuntimeConfig(parsed.skills);
@@ -418,7 +350,6 @@ function parsedConfigFileToRuntimePatch(parsed: ZCodeConfigFile): RuntimeConfigP
   if (parsed.ui) config.ui = parsed.ui;
   if (parsed.toolConcurrency) config.toolConcurrency = parsed.toolConcurrency;
   if (parsed.modelAnomalyGuard) config.modelAnomalyGuard = parsed.modelAnomalyGuard;
-  if (parsed.hooks) config.hooks = parsed.hooks;
 
   return config;
 }

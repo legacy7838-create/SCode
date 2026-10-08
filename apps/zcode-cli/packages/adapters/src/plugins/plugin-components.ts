@@ -8,7 +8,6 @@ import type {
   PluginManifest,
 } from "@zcode/contracts";
 import { directoryExists, isRecord, resolveInside } from "./helpers.js";
-import { listPluginHookEventNames } from "./hook-sources.js";
 import { readMarkdownFrontmatter } from "./markdown-frontmatter.js";
 import { loadPluginMcpServerDefinitions } from "./mcp.js";
 import { scanSkillFilesUnderRootSync } from "../skills/scan.js";
@@ -38,9 +37,6 @@ export function enumeratePluginComponents(
   // 不依赖 loaded 是否凑齐（manifest 解析失败的 marketplace describe 链路同样生效）。
   const skillItems = collectSkillComponents(rootPath, manifest?.skills);
   if (skillItems.length > 0) groups.push({ kind: "skill", items: skillItems });
-
-  const hookItems = collectHookComponents(manifest, options);
-  if (hookItems.length > 0) groups.push({ kind: "hook", items: hookItems });
 
   const mcpItems = collectMcpComponents(manifest, options);
   if (mcpItems.length > 0) groups.push({ kind: "mcp", items: mcpItems });
@@ -124,21 +120,6 @@ function collectSkillComponents(rootPath: string, manifestField: unknown): Plugi
   return items;
 }
 
-/** hook：复用 loader 的来源发现规则，但只取事件名用于详情展示，不构造可执行 hook。 */
-function collectHookComponents(
-  manifest: PluginManifest | null,
-  options: { diagnostics?: PluginDiagnostic[]; loaded?: LoadedPlugin },
-): PluginComponentItem[] {
-  if (options.loaded) {
-    return listPluginHookEventNames({
-      diagnostics: options.diagnostics ?? [],
-      loaded: options.loaded,
-    }).map((name) => ({ name }));
-  }
-  if (!manifest) return [];
-  return collectInlineHookEvents(manifest.hooks).map((name) => ({ name }));
-}
-
 /** mcp：复用 loader 读取 `.mcp.json` + `manifest.mcpServers` 的纯读解析，只展示原始 server 名。 */
 function collectMcpComponents(
   manifest: PluginManifest | null,
@@ -160,23 +141,6 @@ function collectMcpComponents(
     .map((name) => name.trim())
     .filter((name) => name.length > 0)
     .map((name) => ({ name }));
-}
-
-function collectInlineHookEvents(value: unknown): string[] {
-  const hooksField =
-    isRecord(value) && isRecord((value as Record<string, unknown>).hooks)
-      ? ((value as Record<string, unknown>).hooks as Record<string, unknown>)
-      : value;
-  if (!isRecord(hooksField)) return [];
-  const seen = new Set<string>();
-  const names: string[] = [];
-  for (const event of Object.keys(hooksField)) {
-    const name = event.trim();
-    if (!name || seen.has(name)) continue;
-    seen.add(name);
-    names.push(name);
-  }
-  return names;
 }
 
 /** 默认目录约定 + manifest 字符串/数组路径声明，合并成去重的待扫描目录列表。 */

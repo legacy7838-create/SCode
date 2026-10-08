@@ -101,7 +101,6 @@ export function formatSharedContextV1(
         break;
       }
       case "subagent":
-      case "hookInvocation":
         throw new ConversationShareServiceError(
           "invalid_contract",
           `Unsupported shared context row: ${row.kind}`,

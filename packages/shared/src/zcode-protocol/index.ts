@@ -29,13 +29,6 @@ import { accountProviderUnavailableReasonSchema } from "../account-provider-stat
 import { modelExecutionSchema } from "../model-execution.js";
 import { APP_USAGE_RANGES, appUsageSnapshotSchema } from "../usage-stats.js";
 import { zcodeAutomationBotDeliveryTargetSchema } from "../bots.js";
-// browser-use 命令/结果契约单一来源：agent 构造、协议校验和 main executor 共用同一 schema。
-import { browserClientModeSchema, browserCommandSchema } from "../browser-use/commands.js";
-import {
-  browserBackendListResultSchema,
-  browserSessionContextKindSchema,
-} from "../browser-use/backend.js";
-import { browserCommandResultSchema } from "../browser-use/result.js";
 import { integratedTerminalShellSelectionSchema } from "../validationAppSettings.js";
 import { zcodeTaskModeSchema } from "../zcode-task-mode-schema.js";
 import { OFFICIAL_MCP_AUTH_PORT_FAILURE_REASONS } from "../official-mcp-auth.js";
@@ -62,13 +55,6 @@ import {
   zcodeMessageWithPartsSchema,
   zcodeMessagePartSchema,
 } from "../zcode-protocol-legacy-types.js";
-
-export {
-  hookExecutionProjectionSchema,
-  hookInvocationRowSchema,
-  type HookExecutionProjection,
-  type HookInvocationRow,
-} from "../zcode-protocol-v4/rows.js";
 
 export const ZCODE_PROTOCOL_NAME = "ZCode Protocol" as const;
 export const ZCODE_PROTOCOL_VERSION = 1 as const;
@@ -106,7 +92,6 @@ export const zcodeNodeReplImageToolResultDisplaySchema = z
       .min(1)
       .max(2),
     truncated: z.boolean().optional(),
-    source: z.literal("browser_turn_end").optional(),
   })
   .strict();
 
@@ -338,7 +323,6 @@ export const zcodeProtocolNotifications = {
   mcpTelemetry: "process/mcpTelemetry",
   mcpResourceSamples: "process/mcpResourceSamples",
   toolExecResource: "process/toolExecResource",
-  pluginOperationProgress: "plugins/operationProgress",
   processResourceSample: "process/resourceSample",
 } as const;
 
@@ -1703,7 +1687,6 @@ export type ZCodeModelContextBudgetStrategy = z.infer<typeof zcodeModelContextBu
 export const zcodeSessionRuntimePreferencesResultSchema = z
   .object({
     nativeSearchEnhancementsEnabled: z.boolean(),
-    memoryEnabled: z.boolean().default(false),
     askUserQuestionAutoResolutionEnabled: z.boolean().default(true),
     integratedTerminalShell: integratedTerminalShellSelectionSchema.optional(),
     // 兼容旧 Host：缺少字段时在协议解析边界使用当前默认策略。
@@ -1716,18 +1699,6 @@ export type ZCodeSessionRuntimePreferencesResult = z.infer<
   typeof zcodeSessionRuntimePreferencesResultSchema
 >;
 
-/**
- * App 在提交 prompt 前只读采集的 IAB 可见状态。该字段只用于 provider-visible
- * ambient context，不进入用户可见 transcript；内容有界，禁止携带页面正文或凭据。
- */
-export const zcodeBrowserAmbientContextSchema = z
-  .object({
-    tabCount: z.number().int().positive().max(100),
-    currentUrl: z.string().trim().min(1).max(4096).optional(),
-  })
-  .strict();
-export type ZCodeBrowserAmbientContext = z.infer<typeof zcodeBrowserAmbientContextSchema>;
-
 export const zcodeSessionSendParamsSchema = z
   .object({
     sessionId: nonEmptyString,
@@ -1737,7 +1708,6 @@ export const zcodeSessionSendParamsSchema = z
     queryId: nonEmptyString.optional(),
     content: z.string(),
     attachments: z.array(jsonObjectSchema).optional(),
-    browserAmbientContext: zcodeBrowserAmbientContextSchema.optional(),
     expectedRevision: z.number().int().nonnegative().optional(),
     expectedProviderRevision: nonEmptyString.optional(),
     automationId: nonEmptyString.optional(),
@@ -2006,37 +1976,6 @@ export const zcodeWorkspacePresentationSchema = z
   })
   .strict();
 export type ZCodeWorkspacePresentation = z.infer<typeof zcodeWorkspacePresentationSchema>;
-const workspaceHookSha256DigestSchema = z.string().regex(/^[a-f0-9]{64}$/u);
-export const zcodeWorkspaceHookTrustGrantParamsSchema = z
-  .object({
-    workspace: zcodeWorkspaceRefSchema,
-    bundleDigest: workspaceHookSha256DigestSchema,
-    hookDeclarationDigest: workspaceHookSha256DigestSchema,
-  })
-  .strict();
-export type ZCodeWorkspaceHookTrustGrantParams = z.infer<
-  typeof zcodeWorkspaceHookTrustGrantParamsSchema
->;
-export const zcodeWorkspaceHookTrustGrantReasonCodeSchema = z.enum([
-  "workspace_hooks_blocked_by_policy",
-  "workspace_hooks_bundle_changed",
-  "workspace_hooks_snapshot_mismatch",
-  "workspace_hooks_policy_requires_pretrust",
-  "workspace_hooks_trust_store_corrupt",
-  "workspace_hooks_config_unreadable",
-]);
-export type ZCodeWorkspaceHookTrustGrantReasonCode = z.infer<
-  typeof zcodeWorkspaceHookTrustGrantReasonCodeSchema
->;
-export const zcodeWorkspaceHookTrustGrantResultSchema = z
-  .object({
-    accepted: z.boolean(),
-    reasonCode: zcodeWorkspaceHookTrustGrantReasonCodeSchema.optional(),
-  })
-  .strict();
-export type ZCodeWorkspaceHookTrustGrantResult = z.infer<
-  typeof zcodeWorkspaceHookTrustGrantResultSchema
->;
 const zcodeWorkspaceModelToolCallSchema = z
   .object({
     id: nonEmptyString,
@@ -2292,49 +2231,6 @@ export const zcodePermissionRequestParamsSchema = z
   .strict();
 export type ZCodePermissionRequestParams = z.infer<typeof zcodePermissionRequestParamsSchema>;
 
-/** Agent 请求 app 枚举当前 workspace/session 可达且已完成握手的 browser backend。 */
-export const zcodeBrowserListParamsSchema = z
-  .object({
-    requestId: nonEmptyString,
-    sessionId: nonEmptyString,
-    turnId: nonEmptyString.optional(),
-    workspaceKey: nonEmptyString,
-    workspacePath: nonEmptyString,
-    workspaceIdentity: nonEmptyString.optional(),
-    remoteSessionId: nonEmptyString.optional(),
-    clientMode: browserClientModeSchema,
-    sessionContext: browserSessionContextKindSchema,
-  })
-  .strict();
-export type ZCodeBrowserListParams = z.infer<typeof zcodeBrowserListParamsSchema>;
-
-export const zcodeBrowserListResultSchema = browserBackendListResultSchema;
-export type ZCodeBrowserListResult = z.infer<typeof zcodeBrowserListResultSchema>;
-
-/** Agent 把一条 browser-use 命令发送给 app 执行。 */
-export const zcodeBrowserExecuteParamsSchema = z
-  .object({
-    requestId: nonEmptyString,
-    sessionId: nonEmptyString,
-    turnId: nonEmptyString.optional(),
-    browserId: nonEmptyString.optional(),
-    browserGeneration: z.number().int().nonnegative().optional(),
-    workspaceKey: nonEmptyString.optional(),
-    workspacePath: nonEmptyString.optional(),
-    workspaceIdentity: nonEmptyString.optional(),
-    remoteSessionId: nonEmptyString.optional(),
-    clientMode: browserClientModeSchema.optional(),
-    sessionContext: browserSessionContextKindSchema.optional(),
-    command: browserCommandSchema,
-  })
-  .strict();
-export type ZCodeBrowserExecuteParams = z.infer<typeof zcodeBrowserExecuteParamsSchema>;
-
-// browser command result 是 app/agent 的同源协议结果；其中 duplicate_request_id 用于在真正维护
-// pending/running 生命周期的边界拒绝 correlation key 冲突，不能依赖上游 UUID 概率保证。
-export const zcodeBrowserExecuteResultSchema = browserCommandResultSchema;
-export type ZCodeBrowserExecuteResult = z.infer<typeof zcodeBrowserExecuteResultSchema>;
-
 export const zcodeUserInputOptionSchema = z
   .object({
     value: nonEmptyString,
@@ -2477,119 +2373,6 @@ export const zcodeOfficialMcpAuthHeadersResponseSchema = z.discriminatedUnion("o
 export type ZCodeOfficialMcpAuthHeadersResponse = z.infer<
   typeof zcodeOfficialMcpAuthHeadersResponseSchema
 >;
-
-// ── Plugin management (list + enable/disable) ──
-// 镜像 @zcode/contracts 的 PluginMetadata, 仅保留 UI 需要的可序列化字段。
-export const zcodePluginOptionValueSchema = z.union([z.string(), z.number(), z.boolean()]);
-export type ZCodePluginOptionValue = z.infer<typeof zcodePluginOptionValueSchema>;
-export const zcodePluginScopeSchema = z.enum(["user", "workspace"]);
-export type ZCodePluginScope = z.infer<typeof zcodePluginScopeSchema>;
-export const zcodePluginHookDetailSchema = z
-  .object({
-    event: nonEmptyString,
-    matcher: z.string().optional(),
-    type: z.enum(["command", "process"]),
-    command: nonEmptyString,
-    args: z.array(z.string()).optional(),
-    async: z.boolean().optional(),
-    shell: z.union([z.literal(true), z.string()]).optional(),
-    timeout: z.number().positive().optional(),
-    timeoutMs: z.number().int().positive().optional(),
-    statusMessage: z.string().optional(),
-    sourcePath: z.string(),
-    runnable: z.boolean(),
-  })
-  .strict();
-export const zcodePluginUserConfigOptionSchema = z
-  .object({
-    default: zcodePluginOptionValueSchema.optional(),
-    description: z.string().optional(),
-    required: z.boolean().optional(),
-    sensitive: z.boolean().optional(),
-    title: z.string().optional(),
-    type: z.enum(["string", "number", "boolean", "directory", "file"]).optional(),
-  })
-  .strict();
-export type ZCodePluginUserConfigOption = z.infer<typeof zcodePluginUserConfigOptionSchema>;
-
-// 组件类型与详情弹窗/市场详情共用的分组顺序保持一致：agent / command / skill / hook / mcp。
-// 注意：这三个 schema 必须定义在 zcodePluginInfoSchema 之前，因为后者（.strict()）的 components 字段引用了它们。
-export const zcodePluginComponentKindSchema = z.enum(["agent", "command", "skill", "hook", "mcp"]);
-export type ZCodePluginComponentKind = z.infer<typeof zcodePluginComponentKindSchema>;
-
-export const zcodePluginComponentItemSchema = z
-  .object({
-    name: nonEmptyString,
-    // 描述来自组件 frontmatter（SKILL.md / command / agent）或 manifest；缺失时省略，不伪造。
-    description: z.string().optional(),
-  })
-  .strict();
-export const zcodePluginComponentGroupSchema = z
-  .object({
-    kind: zcodePluginComponentKindSchema,
-    items: z.array(zcodePluginComponentItemSchema),
-  })
-  .strict();
-export type ZCodePluginComponentGroup = z.infer<typeof zcodePluginComponentGroupSchema>;
-
-export const zcodePluginInfoSchema = z
-  .object({
-    id: nonEmptyString,
-    name: nonEmptyString,
-    description: z.string().optional(),
-    version: z.string().optional(),
-    enabled: z.boolean(),
-    source: nonEmptyString,
-    marketplace: nonEmptyString,
-    // manifest（plugin.json）的作者/主页回退字段；商店 listing 缺失时详情页信息区用它兜底。
-    author: z.string().optional(),
-    authorUrl: z.string().optional(),
-    homepage: z.string().optional(),
-    skillCount: z.number().int().nonnegative().optional(),
-    skillRootCount: z.number().int().nonnegative(),
-    commandRootCount: z.number().int().nonnegative(),
-    // 权威组件清单（名称 + 可选描述），由 CLI 对插件根目录枚举得出，与启用态无关。
-    // 详情 UI 直接展示，取代旧的「数量取协议、名称靠 UI 侧 join」脆弱方案。optional 兼容旧 payload。
-    components: z.array(zcodePluginComponentGroupSchema).optional(),
-    declaredMcpServerNames: z.array(z.string()).optional(),
-    hostMcpServerNames: z.array(z.string()).optional(),
-    mcpServerNames: z.array(z.string()),
-    hookDetails: z.array(zcodePluginHookDetailSchema).optional(),
-    rootPath: z.string(),
-    userConfig: z.record(z.string(), zcodePluginUserConfigOptionSchema).optional(),
-    configuredOptions: z.record(z.string(), zcodePluginOptionValueSchema).optional(),
-    // 缺省表示 package 可用；missing 用于保留已声明但目标 Host 尚未物化的配置行。
-    packageStatus: z.literal("missing").optional(),
-    rootSource: zcodePluginScopeSchema.optional(),
-    enabledSource: zcodePluginScopeSchema.optional(),
-    optionSources: z.record(z.string(), zcodePluginScopeSchema).optional(),
-  })
-  .strict();
-export type ZCodePluginInfo = z.infer<typeof zcodePluginInfoSchema>;
-
-export const zcodePluginDiagnosticSchema = z
-  .object({
-    code: z.string(),
-    message: z.string(),
-    severity: z.enum(["warning", "error"]).optional(),
-    pluginId: z.string().optional(),
-  })
-  .strict();
-export type ZCodePluginDiagnostic = z.infer<typeof zcodePluginDiagnosticSchema>;
-
-export const zcodePluginsListParamsSchema = z
-  .object({
-    workspace: zcodeWorkspaceRefSchema,
-    configScope: zcodePluginScopeSchema.optional(),
-  })
-  .strict();
-export const zcodePluginsListResultSchema = z
-  .object({
-    plugins: z.array(zcodePluginInfoSchema),
-    diagnostics: z.array(zcodePluginDiagnosticSchema),
-  })
-  .strict();
-export type ZCodePluginsListResult = z.infer<typeof zcodePluginsListResultSchema>;
 
 // ── Plugin 对话引用 catalog──
 // Session-scoped 只读投影：带 sessionId → 该 Session 创建时冻结的身份 catalog；
@@ -2938,388 +2721,6 @@ export const zcodeWorkflowsMoveResultSchema = z.union([
 ]);
 export type ZCodeWorkflowsMoveResult = z.infer<typeof zcodeWorkflowsMoveResultSchema>;
 
-// 推荐 Prompt 的可信插件解析：UI 不拆解 stableId，也不从旧目录快照推断可安装性。
-export const zcodePluginSuggestedReferenceStatusSchema = z.enum([
-  "ready",
-  "disabled",
-  "missing",
-  "conflict",
-  "unavailable",
-]);
-export type ZCodePluginSuggestedReferenceStatus = z.infer<
-  typeof zcodePluginSuggestedReferenceStatusSchema
->;
-export const zcodePluginOperationStateSchema = z.enum([
-  "checking",
-  "refreshing",
-  "installing",
-  "enabling",
-  "cancelling",
-  "cancelled",
-  "complete",
-  "failed",
-]);
-export type ZCodePluginOperationState = z.infer<typeof zcodePluginOperationStateSchema>;
-export const zcodePluginOperationProgressNotificationSchema = z
-  .object({
-    operationId: nonEmptyString,
-    state: z.literal("refreshing"),
-  })
-  .strict();
-export type ZCodePluginOperationProgressNotification = z.infer<
-  typeof zcodePluginOperationProgressNotificationSchema
->;
-export const zcodePluginsResolveSuggestedReferenceParamsSchema = z
-  .object({
-    workspace: zcodeWorkspaceRefSchema,
-    stableId: nonEmptyString,
-    operationId: nonEmptyString,
-    clientMode: zcodeDeliveryKindSchema,
-    deliveryKind: zcodeDeliveryKindSchema,
-  })
-  .strict();
-export type ZCodePluginsResolveSuggestedReferenceParams = z.infer<
-  typeof zcodePluginsResolveSuggestedReferenceParamsSchema
->;
-export const zcodePluginsSetEnabledParamsSchema = z
-  .object({
-    workspace: zcodeWorkspaceRefSchema,
-    pluginId: nonEmptyString,
-    enabled: z.boolean(),
-    operationId: nonEmptyString.optional(),
-    scope: zcodePluginScopeSchema.optional(),
-  })
-  .strict();
-export const zcodePluginsSetEnabledResultSchema = z
-  .object({
-    plugin: zcodePluginInfoSchema,
-    enabled: z.boolean(),
-  })
-  .strict();
-export type ZCodePluginsSetEnabledResult = z.infer<typeof zcodePluginsSetEnabledResultSchema>;
-
-// 商店信息（Store Listing）：目录条目携带的展示性元数据（显示名/icon/分类/作者/链接/hero/
-// 示例提示词），全部可选，UI 缺失时按降级矩阵处理（字母头像/隐藏区块/省略信息行）。
-// i18n 采用 `<字段>I18n` map，locale 解析复用 shared 的 plugin-display-name helper。
-export const zcodePluginStoreListingSchema = z
-  .object({
-    displayName: z.string().optional(),
-    displayNameI18n: z.record(z.string(), z.string()).optional(),
-    descriptionI18n: z.record(z.string(), z.string()).optional(),
-    icon: z.string().optional(),
-    category: z.string().optional(),
-    author: z.string().optional(),
-    authorUrl: z.string().optional(),
-    homepage: z.string().optional(),
-    privacyPolicy: z.string().optional(),
-    termsOfService: z.string().optional(),
-    heroImage: z.string().optional(),
-    examplePrompts: z.array(z.string()).optional(),
-    examplePromptsI18n: z.record(z.string(), z.array(z.string())).optional(),
-    /**
-     * 需要付费套餐才好用的插件：市场目录条目声明 `requiresPaidPlan: true`，
-     * UI 在标题右侧展示提示图标。描述的是「使用条件」而非「插件是收费商品」——
-     * 不参与安装门禁与计费，命名也不绑定具体套餐商品名。
-     */
-    requiresPaidPlan: z.boolean().optional(),
-  })
-  .strict();
-export type ZCodePluginStoreListing = z.infer<typeof zcodePluginStoreListingSchema>;
-
-export const zcodePluginsResolveSuggestedReferenceResultSchema = z
-  .object({
-    stableId: nonEmptyString,
-    status: zcodePluginSuggestedReferenceStatusSchema,
-    marketplace: nonEmptyString.optional(),
-    pluginName: nonEmptyString.optional(),
-    sourceTrust: z.literal("official").optional(),
-    // 官方 Marketplace listing 的可选展示投影；不参与身份、安装或权限判断。
-    icon: z.string().optional(),
-    listing: zcodePluginStoreListingSchema.optional(),
-    diagnostics: z.array(zcodePluginDiagnosticSchema),
-  })
-  .strict()
-  .superRefine((value, context) => {
-    if (value.status !== "ready" && value.status !== "disabled" && value.status !== "missing") {
-      return;
-    }
-    if (!value.marketplace || !value.pluginName || value.sourceTrust !== "official") {
-      context.addIssue({
-        code: "custom",
-        message: "actionable suggested Plugin results require trusted install identity",
-      });
-    }
-  });
-export type ZCodePluginsResolveSuggestedReferenceResult = z.infer<
-  typeof zcodePluginsResolveSuggestedReferenceResultSchema
->;
-
-export const zcodePluginMarketplaceSummarySchema = z
-  .object({
-    id: nonEmptyString,
-    name: nonEmptyString,
-    source: jsonObjectSchema,
-    description: z.string().optional(),
-    lastUpdated: z.string().optional(),
-    pluginCount: z.number().int().nonnegative(),
-    isOfficial: z.boolean().optional(),
-    // 目录顶层 featured 策展名单（商店「公开」分段 Featured 区）。
-    featured: z.array(z.string()).optional(),
-    refreshFailure: z
-      .object({
-        code: z.string(),
-        failedAt: z.string(),
-        message: z.string(),
-      })
-      .strict()
-      .optional(),
-  })
-  .strict();
-export type ZCodePluginMarketplaceSummary = z.infer<typeof zcodePluginMarketplaceSummarySchema>;
-
-export const zcodeAvailablePluginSummarySchema = z
-  .object({
-    id: nonEmptyString,
-    name: nonEmptyString,
-    marketplace: nonEmptyString,
-    description: z.string().optional(),
-    version: z.string().optional(),
-    installed: z.boolean(),
-    componentTypes: z.array(z.string()).optional(),
-    listing: zcodePluginStoreListingSchema.optional(),
-  })
-  .strict();
-export type ZCodeAvailablePluginSummary = z.infer<typeof zcodeAvailablePluginSummarySchema>;
-
-export const zcodeInstalledPluginSummarySchema = z
-  .object({
-    id: nonEmptyString,
-    name: nonEmptyString,
-    marketplace: nonEmptyString,
-    description: z.string().optional(),
-    version: z.string().optional(),
-    enabled: z.boolean(),
-    scope: zcodePluginScopeSchema,
-    installPath: z.string().optional(),
-    installedAt: z.string().optional(),
-    componentTypes: z.array(z.string()).optional(),
-    hookDetails: z.array(zcodePluginHookDetailSchema).optional(),
-    updateStatus: z.enum(["none", "update-available", "version-changed"]).optional(),
-    latestVersion: z.string().optional(),
-    listing: zcodePluginStoreListingSchema.optional(),
-  })
-  .strict();
-export type ZCodeInstalledPluginSummary = z.infer<typeof zcodeInstalledPluginSummarySchema>;
-
-export const zcodePluginsOverviewParamsSchema = z
-  .object({
-    workspace: zcodeWorkspaceRefSchema,
-    configScope: zcodePluginScopeSchema.optional(),
-  })
-  .strict();
-export const zcodePluginsOverviewResultSchema = z
-  .object({
-    marketplaces: z.array(zcodePluginMarketplaceSummarySchema),
-    availablePlugins: z.array(zcodeAvailablePluginSummarySchema),
-    installedPlugins: z.array(zcodeInstalledPluginSummarySchema),
-    restorableBuiltins: z.array(zcodeAvailablePluginSummarySchema),
-    diagnostics: z.array(zcodePluginDiagnosticSchema),
-    capability: z
-      .object({
-        supported: z.boolean(),
-        reason: z.string().optional(),
-      })
-      .strict(),
-  })
-  .strict();
-export type ZCodePluginsOverviewResult = z.infer<typeof zcodePluginsOverviewResultSchema>;
-
-export const zcodePluginsMarketplaceAddParamsSchema = z
-  .object({
-    workspace: zcodeWorkspaceRefSchema,
-    source: nonEmptyString,
-    dryRun: z.boolean().optional(),
-    operationId: nonEmptyString.optional(),
-  })
-  .strict();
-export const zcodePluginsMarketplaceRemoveParamsSchema = z
-  .object({
-    workspace: zcodeWorkspaceRefSchema,
-    marketplace: nonEmptyString,
-  })
-  .strict();
-export const zcodePluginsMarketplaceUpdateParamsSchema = z
-  .object({
-    workspace: zcodeWorkspaceRefSchema,
-    marketplace: nonEmptyString.optional(),
-    operationId: nonEmptyString.optional(),
-  })
-  .strict();
-export const zcodePluginsMarketplaceMutationResultSchema = z
-  .object({
-    marketplace: zcodePluginMarketplaceSummarySchema.optional(),
-    marketplaces: z.array(zcodePluginMarketplaceSummarySchema).optional(),
-    diagnostics: z.array(zcodePluginDiagnosticSchema).optional(),
-  })
-  .strict();
-export type ZCodePluginsMarketplaceMutationResult = z.infer<
-  typeof zcodePluginsMarketplaceMutationResultSchema
->;
-
-export const zcodePluginsInstallParamsSchema = z
-  .object({
-    workspace: zcodeWorkspaceRefSchema,
-    pluginName: nonEmptyString,
-    marketplace: nonEmptyString,
-    scope: zcodePluginScopeSchema.optional(),
-    dryRun: z.boolean().optional(),
-    operationId: nonEmptyString.optional(),
-  })
-  .strict();
-export const zcodePluginsCancelOperationParamsSchema = z
-  .object({
-    operationId: nonEmptyString,
-  })
-  .strict();
-export type ZCodePluginsCancelOperationParams = z.infer<
-  typeof zcodePluginsCancelOperationParamsSchema
->;
-
-export const zcodePluginsCancelOperationResultSchema = z
-  .object({
-    operationId: nonEmptyString,
-    cancelled: z.boolean(),
-  })
-  .strict();
-export type ZCodePluginsCancelOperationResult = z.infer<
-  typeof zcodePluginsCancelOperationResultSchema
->;
-export const zcodePluginsUninstallParamsSchema = z
-  .object({
-    workspace: zcodeWorkspaceRefSchema,
-    pluginId: nonEmptyString.optional(),
-    pluginName: nonEmptyString.optional(),
-    marketplace: nonEmptyString.optional(),
-    removeCache: z.boolean().optional(),
-  })
-  .strict();
-export const zcodePluginsInstallResultSchema = z
-  .object({
-    installedPlugins: z.array(zcodeInstalledPluginSummarySchema),
-    dependencyClosure: z.array(z.string()),
-    diagnostics: z.array(zcodePluginDiagnosticSchema),
-  })
-  .strict();
-export type ZCodePluginsInstallResult = z.infer<typeof zcodePluginsInstallResultSchema>;
-
-export const zcodePluginsUninstallResultSchema = z
-  .object({
-    removedPlugin: zcodeInstalledPluginSummarySchema.optional(),
-    diagnostics: z.array(zcodePluginDiagnosticSchema),
-  })
-  .strict();
-export type ZCodePluginsUninstallResult = z.infer<typeof zcodePluginsUninstallResultSchema>;
-
-export const zcodePluginsUpdateParamsSchema = z
-  .object({
-    workspace: zcodeWorkspaceRefSchema,
-    pluginId: nonEmptyString.optional(),
-    marketplace: nonEmptyString.optional(),
-  })
-  .strict();
-export const zcodePluginsRestoreBuiltinParamsSchema = z
-  .object({
-    workspace: zcodeWorkspaceRefSchema,
-    pluginId: nonEmptyString,
-  })
-  .strict();
-export const zcodePluginsRestoreBuiltinResultSchema = z
-  .object({
-    pluginId: nonEmptyString,
-    diagnostics: z.array(zcodePluginDiagnosticSchema),
-  })
-  .strict();
-export type ZCodePluginsRestoreBuiltinResult = z.infer<
-  typeof zcodePluginsRestoreBuiltinResultSchema
->;
-
-export const zcodePluginsConfigureParamsSchema = z
-  .object({
-    workspace: zcodeWorkspaceRefSchema,
-    pluginId: nonEmptyString,
-    options: jsonObjectSchema,
-    clearOptionKeys: z.array(nonEmptyString).optional(),
-    scope: zcodePluginScopeSchema.optional(),
-    dryRun: z.boolean().optional(),
-  })
-  .strict();
-export const zcodePluginsConfigureResultSchema = z
-  .object({
-    pluginId: nonEmptyString,
-    diagnostics: z.array(zcodePluginDiagnosticSchema),
-  })
-  .strict();
-export type ZCodePluginsConfigureResult = z.infer<typeof zcodePluginsConfigureResultSchema>;
-
-export const zcodePluginsResetConfigParamsSchema = z
-  .object({
-    workspace: zcodeWorkspaceRefSchema,
-    pluginId: nonEmptyString,
-    scope: zcodePluginScopeSchema.optional(),
-  })
-  .strict();
-export type ZCodePluginsResetConfigParams = z.infer<typeof zcodePluginsResetConfigParamsSchema>;
-
-export const zcodePluginsValidateParamsSchema = z
-  .object({
-    workspace: zcodeWorkspaceRefSchema,
-    pluginName: nonEmptyString.optional(),
-    marketplace: nonEmptyString.optional(),
-    source: nonEmptyString.optional(),
-  })
-  .strict();
-export const zcodePluginsValidateResultSchema = z
-  .object({
-    ok: z.boolean(),
-    diagnostics: z.array(zcodePluginDiagnosticSchema),
-    compatibility: z
-      .object({
-        runnable: z.array(z.string()),
-        diagnosticOnly: z.array(z.string()),
-        unsupported: z.array(z.string()),
-      })
-      .strict(),
-  })
-  .strict();
-export type ZCodePluginsValidateResult = z.infer<typeof zcodePluginsValidateResultSchema>;
-
-// plugins/describe：按需枚举单个插件的组件「名称 + 描述」。
-// 已安装插件读本地缓存目录；未安装候选按需解析/临时 clone 源后枚举再清理。
-export const zcodePluginsDescribeParamsSchema = z
-  .object({
-    workspace: zcodeWorkspaceRefSchema,
-    pluginName: nonEmptyString,
-    marketplace: nonEmptyString,
-  })
-  .strict();
-export const zcodePluginsDescribeResultSchema = z
-  .object({
-    components: z.array(zcodePluginComponentGroupSchema),
-    diagnostics: z.array(zcodePluginDiagnosticSchema).optional(),
-    // 插件包内 plugin.json 的展示性回退字段；未安装候选详情页信息区在商店 listing 缺失时兜底。
-    metadata: z
-      .object({
-        author: z.string().optional(),
-        authorUrl: z.string().optional(),
-        homepage: z.string().optional(),
-        version: z.string().optional(),
-      })
-      .strict()
-      .optional(),
-  })
-  .strict();
-export type ZCodePluginsDescribeResult = z.infer<typeof zcodePluginsDescribeResultSchema>;
-
 export const zcodeAutomationScheduleRuleSchema = z
   .object({
     unit: z.enum(["minute", "hourly", "daily", "weekly", "monthly", "yearly"]),
@@ -3598,7 +2999,6 @@ export const zcodeProtocolMethods = {
   sessionSetThoughtLevel: "session/setThoughtLevel",
   sessionSetMode: "session/setMode",
   workspaceReadPresentation: "workspace/readPresentation",
-  workspaceHookTrustGrant: "workspace/hooks/trustGrant",
   // 进程级 Account Provider Config 与 workspace 运行目录分离。
   providerUpdateAccountConfig: "provider/updateAccountConfig",
   workspaceUpdateInteractionPreferences: "workspace/updateInteractionPreferences",
@@ -3614,7 +3014,8 @@ export const zcodeProtocolMethods = {
   workspaceCancelGenerateText: "workspace/cancelGenerateText",
   providerTestModelConnectivity: "provider/testModelConnectivity",
   mcpList: "mcp/list",
-  pluginsList: "plugins/list",
+  // 插件只剩「只读身份/展示投影」这一条协议：Composer 的 @plugin 引用与设置页
+  // MCP/Skills/Commands/Subagents 的来源归属都用它。安装/市场/启停/配置面已下线。
   pluginsReferenceCatalog: "plugins/referenceCatalog",
   pluginsReferenceCatalogWithCategory: "plugins/referenceCatalogWithCategory",
   skillsReferenceCatalog: "skills/referenceCatalog",
@@ -3626,21 +3027,6 @@ export const zcodeProtocolMethods = {
   workflowsRuns: "workflows/runs",
   // 在项目档 / 全局档之间移动同名文件。
   workflowsMove: "workflows/move",
-  pluginsResolveSuggestedReference: "plugins/resolveSuggestedReference",
-  pluginsSetEnabled: "plugins/setEnabled",
-  pluginsOverview: "plugins/overview",
-  pluginsMarketplaceAdd: "plugins/marketplace/add",
-  pluginsMarketplaceRemove: "plugins/marketplace/remove",
-  pluginsMarketplaceUpdate: "plugins/marketplace/update",
-  pluginsInstall: "plugins/install",
-  pluginsCancelOperation: "plugins/cancelOperation",
-  pluginsUninstall: "plugins/uninstall",
-  pluginsUpdate: "plugins/update",
-  pluginsRestoreBuiltin: "plugins/restoreBuiltin",
-  pluginsConfigure: "plugins/configure",
-  pluginsResetConfig: "plugins/resetConfig",
-  pluginsValidate: "plugins/validate",
-  pluginsDescribe: "plugins/describe",
   automationCreate: "automation/create",
   automationUpdate: "automation/update",
   automationCheckTaskBinding: "automation/checkTaskBinding",
@@ -3661,9 +3047,6 @@ export const zcodeProtocolMethods = {
   interactionRequestUserInput: "interaction/requestUserInput",
   interactionRequestProviderRuntimeHeaders: "interaction/requestProviderRuntimeHeaders",
   interactionRequestOfficialMcpAuthHeaders: "interaction/requestOfficialMcpAuthHeaders",
-  // browser-use 反向请求由 agent 发起，host 转给 main 中的 CDP executor。
-  interactionBrowserList: "interaction/browserList",
-  interactionBrowserExecute: "interaction/browserExecute",
 } as const;
 
 export type ZCodeProtocolMethod = (typeof zcodeProtocolMethods)[keyof typeof zcodeProtocolMethods];
@@ -3673,21 +3056,9 @@ export const zcodeProtocolEmptyResultSchema = z.object({}).strict();
 // 最新 V4 主链已不再依赖旧版全量方法表；这里仅保留仍被兼容测试和 browser broker
 // 消费的最小契约集合，避免重新引入已移除的 legacy 方法。
 export const zcodeProtocolSessionMethodContracts = {
-  [zcodeProtocolMethods.workspaceHookTrustGrant]: {
-    params: zcodeWorkspaceHookTrustGrantParamsSchema,
-    result: zcodeWorkspaceHookTrustGrantResultSchema,
-  },
   [zcodeProtocolMethods.mcpList]: {
     params: zcodeMcpListParamsSchema,
     result: zcodeMcpListResultSchema,
-  },
-  [zcodeProtocolMethods.interactionBrowserList]: {
-    params: zcodeBrowserListParamsSchema,
-    result: zcodeBrowserListResultSchema,
-  },
-  [zcodeProtocolMethods.interactionBrowserExecute]: {
-    params: zcodeBrowserExecuteParamsSchema,
-    result: zcodeBrowserExecuteResultSchema,
   },
 } as const satisfies Partial<
   Record<ZCodeProtocolMethod, { params: z.ZodTypeAny; result: z.ZodTypeAny }>

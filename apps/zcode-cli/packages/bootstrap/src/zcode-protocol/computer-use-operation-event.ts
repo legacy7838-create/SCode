@@ -22,8 +22,6 @@ function nonEmptyString(value: unknown): string | undefined {
  * 而非文档软要求：ZCode 的 node_repl 每个 cell 都是全新 Worker、SDK 绑定不跨 cell，所以
  * 参考文档写明「The first executable statement of every CUA cell must be this bootstrap,
  * and the bootstrap and the actions must be in the same cell」。凡用 CUA 的 cell 必然含它。
- *
- * Browser Use 的 `agent.browsers.*` 不含该引导，不会命中。
  */
 function usesComputerUse(input: unknown): boolean {
   const code = nonEmptyString(asRecord(input).code);

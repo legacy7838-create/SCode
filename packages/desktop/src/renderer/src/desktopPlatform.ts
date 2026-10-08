@@ -1,4 +1,3 @@
-import { recordArmsCustomEventForE2E } from "@zcode/ui";
 import { DesktopCommandIds, buildLocalMediaPreviewUrl, type IPlatformService } from "@zcode/shared";
 
 import { desktopBrowserPlatformBridge } from "./desktopBrowserPlatformBridge.js";
@@ -40,46 +39,17 @@ export function createDesktopPlatform(options: {
     canOpenCommunity: (locale) => window.zcode.canOpenCommunity(locale),
     openInFileManager: (path) => window.zcode.openInFileManager(path),
     openExternalFile: (path) => window.zcode.openExternalFile(path),
-    openCuaPermissionOnboarding: window.zcode.openCuaPermissionOnboarding
-      ? (permissionOptions) =>
-          window.zcode.openCuaPermissionOnboarding?.(permissionOptions) ??
-          Promise.resolve({ success: false, error: "not_supported" })
-      : undefined,
-    prepareCuaHelperPermissionDrag: window.zcode.prepareCuaHelperPermissionDrag
-      ? () =>
-          window.zcode.prepareCuaHelperPermissionDrag?.() ??
-          Promise.resolve({ success: false, error: "not_supported" })
-      : undefined,
-    startCuaHelperPermissionDrag: window.zcode.startCuaHelperPermissionDrag
-      ? () => window.zcode.startCuaHelperPermissionDrag?.()
-      : undefined,
     registerOAuthState: (payload) => window.zcode.registerOAuthState(payload),
     onOAuthCallback: (callback) => window.zcode.onOAuthCallback(callback),
     onPaymentCallback: (callback) => window.zcode.onPaymentCallback(callback),
     onShareImport: (callback) => window.zcode.onShareImport?.(callback) ?? (() => {}),
     notifyRendererReady: () => window.zcode.notifyRendererReady(),
-    reportTelemetryEvent: (payload) => window.zcode.reportTelemetryEvent(payload),
-    reportArmsCustomEvent: (payload) => {
-      recordArmsCustomEventForE2E(payload);
-      return window.zcode.reportArmsCustomEvent(payload);
-    },
-    getRendererActionTraceConfig: window.zcode.getRendererActionTraceConfig
-      ? () => window.zcode.getRendererActionTraceConfig!()
-      : undefined,
-    onRendererActionTraceConfigChanged: window.zcode.onRendererActionTraceConfigChanged
-      ? (callback) => window.zcode.onRendererActionTraceConfigChanged!(callback)
-      : undefined,
-    reportLocalTtftBatch: (batch) => window.zcode.reportLocalTtftBatch(batch),
-    reportRendererActionTraceBatch: window.zcode.reportRendererActionTraceBatch
-      ? (batch) => window.zcode.reportRendererActionTraceBatch!(batch)
-      : undefined,
-    reportRendererHeapSample: window.zcode.reportRendererHeapSample
-      ? (sample) => window.zcode.reportRendererHeapSample!(sample)
-      : undefined,
     showTaskNotification: (payload) => window.zcode.showTaskNotification(payload),
     syncWindowTabs: (paths) => window.zcode.syncWindowTabs(paths),
     syncWindowUnreadCount: (count) => window.zcode.syncWindowUnreadCount(count),
-    syncActiveTaskSession: (sessionId) => window.zcode.syncActiveTaskSession(sessionId),
+    // PiP 焦点路由随 Computer Use 子系统下线，preload 不再暴露该桥接；
+    // 保留 IPlatformService 契约要求的成员为 no-op，避免 packages/ui 调用点报错。
+    syncActiveTaskSession: () => {},
     syncAppSettings: (patch) => window.zcode.syncAppSettings?.(patch),
     setShortcutRecordingActive: (active) => window.zcode.setShortcutRecordingActive?.(active),
     onFocusTab: (handler) => window.zcode.onFocusTab(handler),

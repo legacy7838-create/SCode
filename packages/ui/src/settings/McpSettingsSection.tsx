@@ -8,18 +8,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   convertToZCodeAgentMcpServer,
-  TID_MCP_OPEN_AUTHORIZATION_BUTTON,
-  TID_PLUGIN_MCP_SERVER_ROW,
   testId,
 } from "@zcode/shared";
 import type {
   RemoteTarget,
-  ZCodeAvailablePluginSummary,
   ZCodeAgentMcpServer,
   ZCodeMcpListMode,
   ZCodeMcpServer,
   ZCodeMcpServerStatusSnapshot,
-  ZCodePluginInfo,
 } from "@zcode/shared";
 import { isZCodeAgentMcpStatusModeUnsupportedError, type IMcpSyncService } from "@zcode/services";
 import { Button } from "@/components/ui/button.js";
@@ -29,7 +25,7 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog.js";
 import { logger } from "@/logger.js";
 import { McpServerForm } from "@/settings/McpServerForm.js";
-import { McpServerList, McpStatusDot } from "@/settings/McpServerList.js";
+import { McpServerList } from "@/settings/McpServerList.js";
 import {
   formToConfig,
   type FormState,
@@ -38,40 +34,20 @@ import {
 } from "@/settings/mcpSettingsShared.js";
 import { SettingsBreadcrumbReporter } from "@/settings/SettingsHeaderBreadcrumb.js";
 import { SettingsResourceHeaderActions } from "@/settings/SettingsResourceHeaderActions.js";
-import { PluginStoreAvatar } from "@/settings/PluginStoreAvatar.js";
-import {
-  PluginInstallEmptyState,
-  PluginLoadingState,
-  PluginSearchEmptyState,
-} from "@/settings/PluginInstallEmptyState.js";
-import {
-  buildPluginMcpServerItems,
-  filterLocalMcpServers,
-  groupPluginMcpServersByPlugin,
-  type PluginMcpServerItem,
-} from "@/settings/pluginManagedResourceGroups.js";
-import { resolvePluginDisplayName } from "@/settings/pluginStoreListing.js";
-import {
-  McpFailurePresentation,
-  resolveMcpFailureMessageId,
-} from "@/settings/McpFailurePresentation.js";
 import {
   SettingsResourceGroupHeader,
-  SettingsResourceList,
 } from "@/settings/SettingsResourceGroup.js";
 import { McpServersImportDialog } from "@/settings/ExternalAgentImportDialog.js";
 import { RemoteSyncDialogs, shouldShowRemoteSyncActions } from "@/settings/RemoteSyncActions.js";
 import { useMcpStore } from "@/store/mcpStore.js";
-import { usePluginManagementStore } from "@/store/pluginManagementStore.js";
 import { usePlatform } from "@/hooks/usePlatform.js";
 import { useBaseWorkspaceServices, useWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
 import { useTabStore } from "@/store/TabStoreProvider.js";
 import type { WorkspaceTabState } from "@/store/tabStore.js";
 import { getPluginWorkspaceKey } from "@/settings/PluginScopeMenu.js";
-import { ExternalLink, Import, Plus, UploadCloud } from "lucide-react";
+import { Import, Plus, UploadCloud } from "lucide-react";
 import { SettingsSegmentedTabs } from "@/settings/SettingsSegmentedTabs.js";
 import { formatRemoteSkillSyncTarget } from "@/settings/RemoteSkillSyncDialog.js";
-import { selectPluginsForScope } from "@/settings/pluginCapabilityProjection.js";
 
 const DEFAULT_MCP_SOURCE: ServerScope = "zcodeagentmcp";
 const MCP_OAUTH_AUTHORIZATION_STATUS_REFRESH_MS = 1_000;
@@ -365,35 +341,6 @@ function buildMcpServerStatusListKey(servers: ZCodeMcpServer[]): string {
     .join("|");
 }
 
-function buildPluginMcpServerStatusListKey(plugins: ZCodePluginInfo[]): string {
-  return plugins
-    .map((plugin) => {
-      const declaredNames = plugin.declaredMcpServerNames ?? [];
-      const runtimeNames = plugin.mcpServerNames;
-      const hostNames = plugin.hostMcpServerNames ?? [];
-      if (
-        (!plugin.enabled && hostNames.length === 0) ||
-        (declaredNames.length === 0 && runtimeNames.length === 0 && hostNames.length === 0)
-      ) {
-        return "";
-      }
-      const pluginKey = `${plugin.id}:${plugin.enabled ? "enabled" : "disabled"}:${[
-        ...declaredNames,
-      ]
-        .sort()
-        .join(",")}:${[...runtimeNames].sort().join(",")}`;
-      return hostNames.length > 0
-        ? `${pluginKey}:host=${[...hostNames].sort().join(",")}`
-        : pluginKey;
-    })
-    .filter(Boolean)
-    .join("|");
-}
-
-function shouldShowPluginMcpServersInMcpSettings(isRemoteSyncContext: boolean): boolean {
-  return !isRemoteSyncContext;
-}
-
 function buildPendingMcpOAuthAuthorizationRefreshKey(
   servers: ZCodeMcpServer[],
   statusSnapshots: Record<string, ZCodeMcpServerStatusSnapshot> = {},
@@ -410,127 +357,6 @@ function buildPendingMcpOAuthAuthorizationRefreshKey(
     .filter(([, snapshot]) => Boolean(snapshot.authorization?.authorizationUrl))
     .map(([serverName, snapshot]) => `${serverName}:${snapshot.authorization?.startedAt ?? ""}`);
   return Array.from(new Set([...localPendingKeys, ...runtimePendingKeys])).join("|");
-}
-
-function PluginMcpServerList({
-  items,
-  pluginListingById,
-  onOpenAuthorization,
-}: {
-  items: PluginMcpServerItem[];
-  pluginListingById: ReadonlyMap<string, ZCodeAvailablePluginSummary["listing"]>;
-  onOpenAuthorization?: (item: PluginMcpServerItem) => void;
-}) {
-  const { intl } = useZCodeIntl();
-  const openAuthorizationLabel = intl.formatMessage({
-    id: "settings.mcp.oauth.openAuthorization",
-  });
-
-  function resolveStatusDescription(item: PluginMcpServerItem): string {
-    if (item.authorization?.authorizationUrl) {
-      return intl.formatMessage({
-        id: "settings.mcp.plugin.authorizationRequiredDescription",
-      });
-    }
-    if (item.status === "error") {
-      return intl.formatMessage({
-        id: resolveMcpFailureMessageId(item.failureKind),
-      });
-    }
-    if (item.active) {
-      if (item.status === "connecting") {
-        return intl.formatMessage({
-          id: "settings.mcp.plugin.connectingDescription",
-        });
-      }
-      if (item.status === "connected") {
-        return intl.formatMessage({
-          id: "settings.mcp.plugin.connectedDescription",
-        });
-      }
-      if (item.status === "disconnected") {
-        return intl.formatMessage({
-          id: "settings.mcp.plugin.disconnectedDescription",
-        });
-      }
-      return item.hostProvided
-        ? intl.formatMessage(
-            { id: "settings.mcp.host.activeDescription" },
-            { pluginName: item.pluginName },
-          )
-        : intl.formatMessage({ id: "settings.mcp.plugin.activeDescription" });
-    }
-    if (!item.pluginEnabled) {
-      return intl.formatMessage({
-        id: "settings.mcp.plugin.disabledDescription",
-      });
-    }
-    return intl.formatMessage({
-      id: "settings.mcp.plugin.unavailableDescription",
-    });
-  }
-
-  return (
-    <SettingsResourceList
-      items={items}
-      getKey={(item) => item.id}
-      renderItem={(item) => {
-        const statusDescription = resolveStatusDescription(item);
-        return (
-          <div
-            className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-hover"
-            data-mcp-status={item.status ?? ""}
-            data-mcp-tool-count={item.toolCount}
-            data-testid={testId(TID_PLUGIN_MCP_SERVER_ROW, item.runtimeServerName)}
-          >
-            <div className="relative size-9 shrink-0" data-mcp-status-dot-placement="icon-corner">
-              <PluginStoreAvatar
-                item={{
-                  name: item.pluginName,
-                  listing: pluginListingById.get(item.pluginId),
-                }}
-                className="size-9 bg-background"
-              />
-              <span className="absolute -right-1 -bottom-1 flex size-4 items-center justify-center rounded-full bg-background">
-                <McpStatusDot
-                  status={item.status}
-                  attention={Boolean(item.authorization?.authorizationUrl)}
-                  disabled={!item.pluginEnabled}
-                  reason={statusDescription}
-                />
-              </span>
-            </div>
-            <div className="min-w-0">
-              <div className="truncate text-ui-base font-medium text-foreground">{item.name}</div>
-              {item.status === "error" ? (
-                <McpFailurePresentation error={item.error} failureKind={item.failureKind} />
-              ) : (
-                <div className="mt-0.5 truncate text-ui-sm text-foreground-subtle">
-                  {statusDescription}
-                </div>
-              )}
-            </div>
-            {item.authorization?.authorizationUrl ? (
-              <div className="flex min-w-0 max-w-full shrink-0 items-center gap-2">
-                <Button
-                  variant="link"
-                  size="sm"
-                  className="text-sky-500 hover:text-sky-600 dark:text-sky-400 dark:hover:text-sky-300"
-                  aria-label={openAuthorizationLabel}
-                  data-testid={testId(TID_MCP_OPEN_AUTHORIZATION_BUTTON, item.runtimeServerName)}
-                  title={openAuthorizationLabel}
-                  onClick={() => onOpenAuthorization?.(item)}
-                >
-                  <ExternalLink className="size-4" aria-hidden="true" />
-                  <span className="hidden sm:inline">{openAuthorizationLabel}</span>
-                </Button>
-              </div>
-            ) : null}
-          </div>
-        );
-      }}
-    />
-  );
 }
 
 interface McpSettingsSectionProps {
@@ -579,13 +405,6 @@ export function McpSettingsSection({
 
   const storedServers = useMcpStore((s) => s.servers);
   const storedStatusSnapshots = useMcpStore((s) => s.statusSnapshots);
-  const plugins = usePluginManagementStore((state) => state.plugins);
-  const availablePlugins = usePluginManagementStore((state) => state.availablePlugins);
-  const installedPlugins = usePluginManagementStore((state) => state.installedPlugins);
-  const pluginStoreWorkspacePath = usePluginManagementStore((state) => state.workspacePath);
-  const pluginStoreWorkspaceIdentity = usePluginManagementStore((state) => state.workspaceIdentity);
-  const pluginConfigScope = usePluginManagementStore((state) => state.configScope);
-  const initializePlugins = usePluginManagementStore((state) => state.initialize);
   const currentProjectPath = useMcpStore((s) => s.currentProjectPath);
   const currentWorkspaceIdentity = useMcpStore((s) => s.currentWorkspaceIdentity);
   const storeActiveWorkspacePath = useTabStore((s) => s.activeWorkspacePath);
@@ -635,11 +454,8 @@ export function McpSettingsSection({
     [onEditorOpenChange],
   );
   const serverStatusListKey = useMemo(
-    () =>
-      [buildMcpServerStatusListKey(servers), buildPluginMcpServerStatusListKey(plugins)]
-        .filter(Boolean)
-        .join("|"),
-    [plugins, servers],
+    () => buildMcpServerStatusListKey(servers),
+    [servers],
   );
   const statusListRefreshQueueRef = useRef<McpStatusListRefreshQueue | null>(null);
   if (!statusListRefreshQueueRef.current) {
@@ -911,23 +727,8 @@ export function McpSettingsSection({
     services.mcpSyncService,
   ]);
 
-  useEffect(() => {
-    if (!activeWorkspacePath) {
-      return;
-    }
-    void initializePlugins({
-      pluginService: services.pluginManagementService,
-      workspaceIdentity: activeWorkspaceIdentity,
-      workspacePath: activeWorkspacePath,
-      configScope: scopeFilter,
-    });
-  }, [
-    activeWorkspaceIdentity,
-    activeWorkspacePath,
-    initializePlugins,
-    scopeFilter,
-    services.pluginManagementService,
-  ]);
+
+
 
   useEffect(() => {
     const transition = transitionMcpAutoStatusListRefreshKey(
@@ -1136,57 +937,22 @@ export function McpSettingsSection({
       ),
     [scopeFilter, servers],
   );
-  const filteredServers = useMemo(
-    () => filterLocalMcpServers(scopedServers, query),
-    [query, scopedServers],
-  );
+  const filteredServers = useMemo(() => {
+    const trimmed = query.trim().toLowerCase();
+    if (!trimmed) return scopedServers;
+    return scopedServers.filter(
+      (server) =>
+        server.name.toLowerCase().includes(trimmed) ||
+        server.config.command?.toLowerCase().includes(trimmed) ||
+        server.config.url?.toLowerCase().includes(trimmed),
+    );
+  }, [query, scopedServers]);
   const connectedRemoteSyncTarget =
-    shouldShowRemoteSyncActions({
-      remoteSessionId,
-      remoteTarget,
-      clientMode: "desktop-continuous" as const,
-      hasLocalSourceService: Boolean(baseServices.mcpSyncService),
-    }) && activeWorkspacePath
+    shouldShowRemoteSyncActions(remoteTarget ?? null, "desktop-continuous") && activeWorkspacePath
       ? remoteTarget
       : null;
-  const isRemoteSyncContext = Boolean(connectedRemoteSyncTarget);
-  const pluginMcpServers = useMemo(() => {
-    if (!shouldShowPluginMcpServersInMcpSettings(isRemoteSyncContext)) {
-      // 插件 MCP 列表来自本机插件管理 store，不是当前远端目标。
-      // 远端 MCP 设置页必须和 Skills 一样只展示远端工作区可读写的资源。
-      return [];
-    }
-    const pluginStoreMatchesTarget =
-      (pluginStoreWorkspaceIdentity?.trim() || pluginStoreWorkspacePath || "") ===
-        activeWorkspaceKey && pluginConfigScope === scopeFilter;
-    if (!pluginStoreMatchesTarget) {
-      return [];
-    }
-    const scopedPlugins = selectPluginsForScope(plugins, installedPlugins, scopeFilter).filter(
-      (plugin) => plugin.enabled,
-    );
-    return buildPluginMcpServerItems(scopedPlugins, query, statusSnapshots);
-  }, [
-    installedPlugins,
-    activeWorkspaceKey,
-    isRemoteSyncContext,
-    pluginConfigScope,
-    pluginStoreWorkspaceIdentity,
-    pluginStoreWorkspacePath,
-    plugins,
-    query,
-    scopeFilter,
-    statusSnapshots,
-  ]);
-  const pluginListingById = useMemo(
-    () => new Map(availablePlugins.map((plugin) => [plugin.id, plugin.listing])),
-    [availablePlugins],
-  );
-  const filteredMcpCount = filteredServers.length + pluginMcpServers.length;
-  const pluginMcpGroups = useMemo(
-    () => groupPluginMcpServersByPlugin(pluginMcpServers),
-    [pluginMcpServers],
-  );
+  const filteredMcpCount = filteredServers.length;
+  const pluginMcpGroups: Array<{ pluginId: string; pluginName: string; items: any[] }> = [];
   const mcpProjectionReady =
     !activeWorkspacePath ||
     (mcpStoreMatchesActiveWorkspace && mcpConfigReadyWorkspaceKey === activeWorkspaceKey);
@@ -1194,17 +960,11 @@ export function McpSettingsSection({
   const installedServers = useMemo(
     () =>
       filteredServers
-        .map((server, index) => ({ index, server }))
-        .toSorted((left, right) => {
-          const leftAttention = Boolean(
-            left.server.authorization?.authorizationUrl || left.server.status === "error",
-          );
-          const rightAttention = Boolean(
-            right.server.authorization?.authorizationUrl || right.server.status === "error",
-          );
-          return Number(rightAttention) - Number(leftAttention) || left.index - right.index;
+        .map((server: ZCodeMcpServer, index: number) => ({ index, server }))
+        .toSorted((left: { index: number; server: ZCodeMcpServer }, right: { index: number; server: ZCodeMcpServer }) => {
+          return left.index - right.index;
         })
-        .map(({ server }) => server),
+        .map(({ server }: { server: ZCodeMcpServer }) => server),
     [filteredServers],
   );
   const hideInstalledGroup = Boolean(query.trim()) && installedServers.length === 0;
@@ -1327,13 +1087,7 @@ export function McpSettingsSection({
     platform.openExternal(authorizationUrl);
   }
 
-  function handleOpenPluginAuthorization(item: PluginMcpServerItem) {
-    const authorizationUrl = item.authorization?.authorizationUrl;
-    if (!authorizationUrl) {
-      return;
-    }
-    platform.openExternal(authorizationUrl);
-  }
+
 
   if (isFormView) {
     const closeFormView = () => {
@@ -1446,13 +1200,13 @@ export function McpSettingsSection({
       ) : null}
 
       {!mcpProjectionReady ? (
-        <PluginLoadingState label={intl.formatMessage({ id: "common.loading" })} />
+        <div className="py-8 text-center text-ui-base text-foreground-subtle">
+          {intl.formatMessage({ id: "common.loading" })}
+        </div>
       ) : hasEmptySearchResult ? (
-        <PluginSearchEmptyState
-          label={intl.formatMessage({
-            id: "settings.plugin.mcp.searchEmpty",
-          })}
-        />
+        <div className="py-8 text-center text-ui-base text-foreground-subtle">
+          {intl.formatMessage({ id: "settings.plugin.mcp.searchEmpty" })}
+        </div>
       ) : null}
       <div
         className={!mcpProjectionReady || hasEmptySearchResult ? "hidden" : "space-y-6"}
@@ -1494,65 +1248,40 @@ export function McpSettingsSection({
               })}
             />
           ) : scopedServers.length === 0 && !query.trim() ? (
-            <PluginInstallEmptyState
-              title={intl.formatMessage({
-                id: "settings.plugin.mcp.emptyInstalledTitle",
-              })}
-              description={intl.formatMessage({
-                id: "settings.plugin.mcp.emptyInstalledDescription",
-              })}
-              actions={
-                <>
-                  <Button
-                    type="button"
-                    variant="default"
-                    size="lg"
-                    onClick={() => {
-                      handleCreate();
-                    }}
-                  >
-                    <Plus data-icon="inline-start" aria-hidden="true" />
-                    {intl.formatMessage({
-                      id: "settings.plugin.mcp.newServer",
-                    })}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="lg"
-                    onClick={() => setImportDialogOpen(true)}
-                  >
-                    <Import data-icon="inline-start" aria-hidden="true" />
-                    {intl.formatMessage({ id: "settings.mcp.import.action" })}
-                  </Button>
-                </>
-              }
-            />
+            <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border p-6 text-center">
+              <div className="text-ui-base font-medium text-foreground">
+                {intl.formatMessage({ id: "settings.plugin.mcp.emptyInstalledTitle" })}
+              </div>
+              <div className="text-ui-sm text-foreground-subtle">
+                {intl.formatMessage({ id: "settings.plugin.mcp.emptyInstalledDescription" })}
+              </div>
+              <div className="flex justify-center gap-3">
+                <Button
+                  type="button"
+                  variant="default"
+                  size="lg"
+                  onClick={() => {
+                    handleCreate();
+                  }}
+                >
+                  <Plus data-icon="inline-start" aria-hidden="true" />
+                  {intl.formatMessage({
+                    id: "settings.plugin.mcp.newServer",
+                  })}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="lg"
+                  onClick={() => setImportDialogOpen(true)}
+                >
+                  <Import data-icon="inline-start" aria-hidden="true" />
+                  {intl.formatMessage({ id: "settings.mcp.import.action" })}
+                </Button>
+              </div>
+            </div>
           ) : null}
         </section>
-        {pluginMcpGroups.map((group) => (
-          <section
-            key={group.pluginId}
-            className="space-y-4"
-            data-mcp-plugin-group={group.pluginId}
-          >
-            <SettingsResourceGroupHeader
-              count={group.items.length}
-              title={resolvePluginDisplayName(
-                {
-                  name: group.pluginName,
-                  listing: pluginListingById.get(group.pluginId),
-                },
-                locale,
-              )}
-            />
-            <PluginMcpServerList
-              items={group.items}
-              pluginListingById={pluginListingById}
-              onOpenAuthorization={handleOpenPluginAuthorization}
-            />
-          </section>
-        ))}
       </div>
       <McpServersImportDialog
         // 对话框携带的是 mcpStore 的 currentProjectPath，只有它与当前 target

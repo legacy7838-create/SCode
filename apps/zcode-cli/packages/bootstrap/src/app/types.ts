@@ -18,13 +18,7 @@ import type {
   WorkspaceCheckpointSummary,
   WorkspaceForkResult,
   WorkspaceGenerateTextInput,
-  WorkspaceHookReviewTarget,
-  WorkspaceHookPolicyProvider,
 } from "@zcode/core";
-import type {
-  WorkspaceHookReviewDecision,
-  WorkspaceHookTrustRevokeTarget,
-} from "@zcode/shared/zcode-protocol-v4";
 import type { ZCodeModelOption } from "@zcode/shared";
 import type { EffectiveModelSelectionResult } from "@zcode/shared/model-selection";
 export type { ZCodeModelOption } from "@zcode/shared";
@@ -46,7 +40,6 @@ import type {
   DynamicWorkflowRunProgressPayload,
   DynamicWorkflowRunSessionSummary,
   ExecutionPort,
-  BrowserControlPort,
   FileSystemPort,
   GoalStatus,
   HttpClientPort,
@@ -91,31 +84,9 @@ import type {
   WorkflowRunListItem,
   ExecutionShellSelection,
 } from "@zcode/contracts";
-import type { NodeReplBrowserBroker } from "./node-repl-browser-broker.js";
 import type { SessionTranscriptMessage } from "../session-transcript.js";
-import type { WorkspaceHookReviewCommandResult } from "./workspace-hook-review-controller.js";
-import type { AgentTelemetryRuntimeOwner, WorkspaceHookPolicy } from "@zcode/contracts";
+import type { AgentTelemetryRuntimeOwner } from "@zcode/contracts";
 import type { ProviderRegistryModelSource } from "./provider-registry-model-runtime.js";
-
-export interface WorkspaceHookReviewHostContext {
-  taskId: string;
-  runId: string;
-  workspaceLabel: string;
-  remoteSessionId?: string;
-}
-
-export type RespondWorkspaceHookReviewInput = WorkspaceHookReviewTarget & {
-  decision: WorkspaceHookReviewDecision;
-};
-
-export type ToggleWorkspaceHookReviewItemInput = WorkspaceHookReviewTarget & {
-  reviewItemId: string;
-  enabled: boolean;
-};
-
-export type RevokeWorkspaceHookTrustInput =
-  | (WorkspaceHookReviewTarget & { reviewItemIds: string[] })
-  | WorkspaceHookTrustRevokeTarget;
 
 /** 新 Session 可使用 Environment 默认选择；恢复 Session 允许保持未绑定，不补默认模型。 */
 export type ZCodeAppRuntimeConfigInput = AgentRuntimeConfig;
@@ -155,10 +126,6 @@ export interface ZCodeAppOptions {
   executionPort?: ExecutionPort;
   /** 资源遥测旁路；由协议宿主注入，主任务和 workflow 的执行适配器共用。 */
   onToolExecResource?: (sample: ZCodeToolExecResource) => void;
-  /** browser-use 控制端口；注入后 node_repl 的 agent.browsers.* 可用。缺省则不可用。 */
-  browserControlPort?: BrowserControlPort;
-  /** 可由协议宿主注入的进程级 node_repl Browser broker；缺省时 app 自建并拥有。 */
-  nodeReplBrowserBroker?: NodeReplBrowserBroker;
   fileSystemPort?: FileSystemPort;
   httpClientPort?: HttpClientPort;
   imageProcessorPort?: ImageProcessorPort;
@@ -183,14 +150,6 @@ export interface ZCodeAppOptions {
   offPeakPort?: OffPeakPort;
   /** 首次真实用户执行或 cold-resume fallback 时解析一次，之后由 app 生命周期缓存。 */
   resolveInitialBashShellSelection?: () => Promise<ExecutionShellSelection | undefined>;
-  /** Trusted embedder policy; workspace/project files cannot populate this field. */
-  workspaceHookPolicy?: WorkspaceHookPolicy;
-  /** Protocol Host-owned provider shared by session Runtime and no-session Settings pretrust. */
-  workspaceHookPolicyProvider?: WorkspaceHookPolicyProvider;
-  /** Rollout gate; false keeps project Hooks hard-blocked and does not read Trust records. */
-  workspaceHookTrustEnabled?: boolean;
-  /** Presence means this owner Host supports the dedicated Workspace Hook review route. */
-  workspaceHookReviewHost?: WorkspaceHookReviewHostContext;
 }
 
 export interface SubmitPromptOptionsBase {
@@ -205,8 +164,6 @@ export interface SubmitPromptOptionsBase {
   onTurnStartedObserved?: (event: SessionEvent) => void;
   /** 仅当前 turn 从 provider 工具列表移除；不会永久改变 session runtime。 */
   toolDisallowlist?: readonly string[];
-  /** App 只读提供的 provider-only IAB 环境状态，不进入 UI transcript。 */
-  browserAmbientContext?: ExecuteTurnOptions["browserAmbientContext"];
   /** 标准 Selection 的单次执行约束；不进入 Session Selection 或持久化。 */
   modelExecution?: ModelExecutionContext;
 }
@@ -292,27 +249,6 @@ export interface ZCodeApp {
   readonly sessionId: SessionId;
   readonly traceId: string;
   readonly runtime: AgentRuntime;
-  respondWorkspaceHookReview(
-    input: RespondWorkspaceHookReviewInput,
-  ): Promise<WorkspaceHookReviewCommandResult>;
-  toggleWorkspaceHookReviewItem(
-    input: ToggleWorkspaceHookReviewItemInput,
-  ): Promise<WorkspaceHookReviewCommandResult & { request?: unknown }>;
-  revokeWorkspaceHookTrust(
-    input: RevokeWorkspaceHookTrustInput,
-  ): Promise<WorkspaceHookReviewCommandResult>;
-  /** 软门禁:按需开审核 flow,无 pending 项时为安全 no-op */
-  requestWorkspaceHookReview(input: {
-    workspaceIdentity: string;
-    bundleDigest: string;
-  }): Promise<WorkspaceHookReviewCommandResult>;
-  /**
-   * Trust store 落盘后本 session 的 coordinator
-   * 内存镜像不会自动更新（per-session，仅创建时 load 一次）。Settings 无 task 的
-   * pretrust 授权成功后，server 会按 workspace 逐个调用本方法，把文件重载进
-   * coordinator 并重发 admission 状态，否则已信任 Hook 继续被拒、banner 不刷新。
-   */
-  reloadWorkspaceHookTrust(): Promise<void>;
   close?(): Promise<void>;
   getMode(): CollaborationMode;
   getModel(): string;

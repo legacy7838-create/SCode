@@ -110,14 +110,7 @@ function assertTerminalAndSafe(rows: ConversationRow[]): void {
     ) {
       throwProjectionError("invalid_conversation", "Active timeline operations cannot be shared");
     }
-    if (row.kind === "toolCall") {
-      if (row.display?.kind === "node_repl_images") {
-        throwProjectionError("unsafe_structure", "Inline tool images cannot be shared", {
-          rowKind: row.kind,
-          rowId: row.rowId,
-        });
-      }
-    }
+
     if (row.kind === "timelineMarker") {
       if (
         row.marker.type === "forkNotice" ||
@@ -395,11 +388,6 @@ function projectRow(row: ConversationRow, index: number, ids: PublicIdMaps): Con
         "invalid_conversation",
         "Subagent detail rows must be filtered before public projection",
       );
-    case "hookInvocation":
-      throwProjectionError(
-        "invalid_conversation",
-        "Hook invocation rows are not part of the V1 public projection",
-      );
   }
 }
 
@@ -615,9 +603,7 @@ export function buildConversationSharePublicProjection(input: {
 
   // 本地运行投影包含 subagent 详情和写入态标识，不能直接作为公开载荷；
   // 必须先过滤非 V1 Row，再基于剩余内容生成一套闭合的公开 ID。
-  const retainedRows = input.rows.filter(
-    (row) => row.kind !== "subagent" && row.kind !== "hookInvocation",
-  );
+  const retainedRows = input.rows.filter((row) => row.kind !== "subagent");
   const sourceArtifactRows = retainedRows.filter(
     (row): row is ArtifactRow => row.kind === "artifact",
   );

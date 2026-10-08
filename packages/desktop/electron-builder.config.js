@@ -20,7 +20,6 @@ import {
   resolveDesktopArtifactSuffix,
   resolveDesktopProductIdentity,
 } from "./scripts/desktop-product-identity.mjs";
-import { verifyStagedKoffi } from "./scripts/koffi-package-assets.mjs";
 const ELECTRON_BUILDER_ARCH = {
   1: "x64",
   3: "arm64",
@@ -570,17 +569,6 @@ export default {
   },
   extraResources: [
     { from: resolve(workspaceRoot, noticesFileName), to: noticesFileName },
-    ...(targetPlatform.os === "darwin"
-      ? [
-          {
-            // CUA 权限浮窗的吸附数据源（CGWindowListCopyWindowInfo，不需要任何 TCC 权限）。
-            // 主进程按 process.resourcesPath 解析；缺失时 watcher fail-open，浮窗仍可用
-            // 只是不吸附，所以这里不做存在性断言。
-            from: "resources/macos-window-bounds/zcode-window-bounds",
-            to: "macos-window-bounds/zcode-window-bounds",
-          },
-        ]
-      : []),
     {
       // 正式包不能依赖仓库目录读取社区、反馈等内置兜底配置。
       // 显式放入 resources/config，与主进程的 process.resourcesPath 解析保持一致。

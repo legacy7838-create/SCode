@@ -1,9 +1,6 @@
 import type {
   CustomCommandRoot,
-  HookEventName,
-  HookMatcherConfig,
   McpServerConfig,
-  PluginHookDetail,
   PluginManifest,
   PluginSource,
   SkillRoot,
@@ -27,8 +24,6 @@ export interface LoadedPlugin {
 
 export interface PluginComponents {
   commandRoots: CustomCommandRoot[];
-  hooks: Partial<Record<HookEventName, HookMatcherConfig[]>>;
-  hookDetails: PluginHookDetail[];
   mcpServers: Record<string, McpServerConfig>;
   skillCount: number;
   skillRoots: SkillRoot[];

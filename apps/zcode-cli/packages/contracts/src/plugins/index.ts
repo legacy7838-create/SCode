@@ -1,5 +1,4 @@
 import type { CustomCommandRoot } from "../commands/index.js";
-import type { HookEventName, HookMatcherConfig } from "../hooks/index.js";
 import type { McpServerConfig } from "../interfaces/mcp.port.js";
 import type { SkillRoot } from "../skills/index.js";
 import type { ExecutionContext, TraceContext } from "../tracing/tracer.js";
@@ -36,9 +35,6 @@ export type PluginDiagnosticCode =
   | "plugin_mcp_read_failed"
   | "plugin_mcp_invalid"
   | "plugin_mcp_server_disabled"
-  | "plugin_hook_read_failed"
-  | "plugin_hook_invalid"
-  | "plugin_hook_unsupported_event"
   | "plugin_dependency_invalid"
   | "plugin_dependency_missing"
   | "plugin_dependency_cycle"
@@ -78,23 +74,8 @@ export interface PluginMarketplaceConfig {
   source: PluginMarketplaceSourceConfig;
 }
 
-export interface PluginHookDetail {
-  args?: string[];
-  async?: boolean;
-  command: string;
-  event: HookEventName;
-  matcher?: string;
-  runnable: boolean;
-  shell?: true | string;
-  sourcePath: string;
-  statusMessage?: string;
-  timeout?: number;
-  timeoutMs?: number;
-  type: "command" | "process";
-}
-
-/** 详情 UI 的组件分组类型，顺序与展示一致：agent / command / skill / hook / mcp。 */
-export type PluginComponentKind = "agent" | "command" | "skill" | "hook" | "mcp";
+/** 详情 UI 的组件分组类型，顺序与展示一致：agent / command / skill / mcp。 */
+export type PluginComponentKind = "agent" | "command" | "skill" | "mcp";
 
 export interface PluginComponentItem {
   name: string;
@@ -146,7 +127,6 @@ export interface PluginManifest {
   dependencies?: unknown;
   description?: string;
   homepage?: string;
-  hooks?: unknown;
   keywords?: unknown;
   license?: string;
   lspServers?: unknown;
@@ -191,7 +171,6 @@ export interface PluginMetadata {
   marketplace: string;
   mcpServerNames: string[];
   name: string;
-  hookDetails: PluginHookDetail[];
   rootPath: string;
   skillCount: number;
   skillRootCount: number;
@@ -248,7 +227,6 @@ export interface PluginReferenceCatalog {
 export interface PluginLoadOutcome {
   commandRoots: CustomCommandRoot[];
   diagnostics: PluginDiagnostic[];
-  hooks: Partial<Record<HookEventName, HookMatcherConfig[]>>;
   mcpServers: Record<string, McpServerConfig>;
   /** 商店 listing 按完整 Plugin ID 关联，供 CLI/TUI 展示；不参与运行时身份判断。 */
   pluginListingsById?: Record<string, PluginStoreListing>;

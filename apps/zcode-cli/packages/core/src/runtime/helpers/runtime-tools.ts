@@ -1,5 +1,4 @@
 import {
-  createConfiguredHookRunner,
   createInMemoryHookRunner,
   createSessionMailboxHookRegistrations,
   createToolExecutor,
@@ -20,16 +19,9 @@ import {
   resolveRuntimeDynamicWorkflowToolsIncluded,
 } from "./tool-allowlist.js";
 import { isStaleBranchRuntimeTaskEvent } from "../methods/runtime-command-generation.js";
-import { resolveEnabledProjectMemoryRoot } from "./project-memory.js";
 import { sessionHasLoadedSkill } from "../../agent/loaded-skills.js";
 
 const DEFAULT_SUBAGENT_BACKGROUND_BASH_MAX_MS = 3_600_000;
-const EMPTY_RUNTIME_HOOK_CONFIG = {
-  enabled: false,
-  events: {},
-  maxOutputBytes: 32_768,
-  timeoutMs: 60_000,
-} as const;
 
 export function initializeRuntimeTooling(
   runtime: AgentRuntimeInternal,
@@ -46,7 +38,6 @@ export function initializeRuntimeTooling(
 
 function registerRuntimeBuiltInTools(runtime: AgentRuntimeInternal, deps: AgentRuntimeDeps): void {
   const nodeReplEnabled = runtime.config.runtimeFeatures?.nodeRepl === true;
-  const browserUseEnabled = resolveRuntimeBrowserUseEnabled(runtime, deps);
   registerBuiltInTools(runtime.registry, {
     bashTimeoutPolicy: runtime.config.bashTimeoutPolicy,
     includeSkill: Boolean(runtime.skillPort),
@@ -72,10 +63,8 @@ function registerRuntimeBuiltInTools(runtime: AgentRuntimeInternal, deps: AgentR
     // 这里不能用端口在场做判据——十个工具的端口在任何 CLI 里都装配齐全，灰度是 Host 的决定。
     // 取值收在 tool-allowlist.ts，与分支刷新那个入口共用同一个推导。
     includeDynamicWorkflow: resolveRuntimeDynamicWorkflowToolsIncluded(runtime.config),
-    // browserControlPort 只是宿主能力，不应隐式暴露高权限 node_repl。
-    // node_repl/browser-use 由 ZCode 官方 browser-use 插件启停推导出的 runtimeFeatures 控制。
+    // node_repl（js）由 ZCode 官方插件启停推导出的 runtimeFeatures 控制。
     includeNodeRepl: nodeReplEnabled,
-    includeBrowserUse: browserUseEnabled,
     embeddedSearchEnabled: resolveRuntimeEmbeddedSearchEnabled(runtime),
     agentProfiles: runtime.config.subagents?.profiles,
     allowedTools: resolveBuiltInToolAllowlist(runtime.config),
@@ -91,21 +80,9 @@ function createRuntimeHookRunner(
   deps: AgentRuntimeDeps,
   sessionId: SessionId,
 ): HookRunner | undefined {
-  let hookRunner =
-    deps.hookRunner ??
-    ((runtime.config.hooks?.enabled || deps.workspaceHookSnapshot) && deps.executionPort
-      ? createConfiguredHookRunner({
-          config: runtime.config.hooks ?? EMPTY_RUNTIME_HOOK_CONFIG,
-          emitEvent: async (event) => {
-            await runtime.appendEvent(event, getCurrentTraceContext() ?? runtime.rootTraceContext);
-          },
-          executionPort: deps.executionPort,
-          getWorkingDirectory: () => runtime.workingDirectory,
-          logger: runtime.logger,
-          workspaceHookAdmission: deps.workspaceHookAdmission,
-          workspaceHookSnapshot: deps.workspaceHookSnapshot,
-        })
-      : undefined);
+  // 用户可配置 / 插件 / workspace Hook 已随 Hooks 产品功能移除；runner 仅保留内部
+  // session-mailbox 投递所需的注册。deps.hookRunner 作为 DI/测试逃生口仍然生效。
+  let hookRunner = deps.hookRunner;
 
   if (!deps.sessionMailboxPort) {
     return hookRunner;
@@ -151,7 +128,6 @@ function createRuntimeToolExecutor(
   deps: AgentRuntimeDeps,
   hookRunner: HookRunner | undefined,
 ): ToolExecutor {
-  const browserUseEnabled = resolveRuntimeBrowserUseEnabled(runtime, deps);
   return createToolExecutor({
     agentTelemetry: runtime.agentTelemetry.port,
     agentTelemetryActorKind: runtime.agentTelemetry.actorKind,
@@ -171,10 +147,6 @@ function createRuntimeToolExecutor(
       stopBackgroundTask: runtime.stopBackgroundTask.bind(runtime),
     },
     executionPort: deps.executionPort,
-    browserControlPort: browserUseEnabled ? deps.browserControlPort : undefined,
-    browserDocumentationRoot: browserUseEnabled
-      ? runtime.config.runtimeFeatures?.browserDocumentationRoot
-      : undefined,
     fileSystemPort: deps.fileSystemPort,
     httpClientPort: deps.httpClientPort,
     imageProcessorPort: deps.imageProcessorPort,
@@ -220,8 +192,6 @@ function createRuntimeToolExecutor(
     remoteSessionId: runtime.config.remoteSessionId,
     clientMode: runtime.config.clientMode,
     deliveryKind: runtime.config.deliveryKind,
-    getMemoryRoot: () =>
-      deps.memoryRoot ?? resolveEnabledProjectMemoryRoot(runtime.config, runtime.workspaceRoot),
     runtimeScope: runtime.config.taskType === "subagent_child" ? "subagent" : "main",
     permissionTimeoutMs: runtime.config.permissionTimeoutMs,
     sessionId: runtime.sessionId,
@@ -229,15 +199,6 @@ function createRuntimeToolExecutor(
     getMode: () => runtime.config.mode ?? "build",
     maxConcurrency: runtime.config.toolConcurrency?.maxConcurrency,
   });
-}
-
-function resolveRuntimeBrowserUseEnabled(
-  runtime: AgentRuntimeInternal,
-  deps: AgentRuntimeDeps,
-): boolean {
-  return (
-    runtime.config.runtimeFeatures?.browserUse === true && deps.browserControlPort !== undefined
-  );
 }
 
 function shouldEnqueueRuntimeBackgroundTaskNotification(

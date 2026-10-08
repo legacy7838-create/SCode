@@ -47,7 +47,6 @@ function deriveSessionSummary(
     workflowRuns: snapshot.workflowRuns,
     backgroundWorks: snapshot.backgroundWorks,
   });
-  // workspaceHookReview 由 Hooks Settings 呈现，不降级成 permission/userInput 侧栏徽标。
   const pending = snapshot.pendingInteractions.find(
     (interaction) => interaction.kind === "permission" || interaction.kind === "userInput",
   );

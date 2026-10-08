@@ -48,12 +48,11 @@ Plugin state lives under `~/.zcode/cli/plugins`:
 - `data/<plugin-id>/`: persistent plugin data. MCP servers should write runtime output here, not into the plugin source directory.
 - `marketplaces/zcode-plugins-official/`: bundled and CDN partitions plus the merged metadata for the single official marketplace.
 
-This repository also ships built-in official plugins as workspace packages. The bundled Browser Use, Document Skills, Skill Creator, and ZCode Guide content plugins are default-enabled and appear as `browser-use@zcode-plugins-official`, `document-skills@zcode-plugins-official`, `skill-creator@zcode-plugins-official`, and `zcode-guide@zcode-plugins-official`. Runtime-heavy official plugins, and local-data migration plugins such as `ios-simulator@zcode-plugins-official`, `android-emulator@zcode-plugins-official`, and `restore-legacy-sessions@zcode-plugins-official`, are discovered by zcode but stay disabled until the user enables them.
+This repository also ships built-in official plugins as workspace packages. The bundled Document Skills, Skill Creator, and ZCode Guide content plugins are default-enabled and appear as `document-skills@zcode-plugins-official`, `skill-creator@zcode-plugins-official`, and `zcode-guide@zcode-plugins-official`. Runtime-heavy official plugins, and local-data migration plugins such as `ios-simulator@zcode-plugins-official`, `android-emulator@zcode-plugins-official`, and `restore-legacy-sessions@zcode-plugins-official`, are discovered by zcode but stay disabled until the user enables them.
 
 ```sh
 zcode plugins list
 zcode plugins enable ios-simulator
-zcode plugins disable browser-use
 zcode plugins enable restore-legacy-sessions
 zcode plugins disable ios-simulator
 ```
@@ -179,119 +178,9 @@ Supported server types:
 
 MCP tools are registered before the first model request and exposed as `mcp__<server>__<tool>`. Use `/mcp list`, `/mcp status`, `/mcp connect <server>`, and `/mcp disconnect <server>` inside the CLI to inspect or manage configured servers for the current session.
 
-## Hooks Configuration
-
-zcode reads hooks from the same main JSON config file as MCP, usually `~/.zcode/cli/config.json`. Hooks are disabled by default; set `hooks.enabled` to `true` and add process hooks under `hooks.events`.
-
-Supported hook events:
-
-- `SessionStart`: runs after session context is initialized and before the first normal prompt reaches the model. It can add context. Its matcher sees the source, such as `startup` or `resume`.
-- `UserPromptSubmit`: runs before the user prompt is written to message history or sent to the model. It can block the prompt with `continue: false` or add context. Its matcher sees the raw prompt text.
-- `PreToolUse`: runs before a client-side tool executes. It can deny, ask, allow, replace tool input, or add model-visible context. Its matcher sees the tool name.
-- `PermissionRequest`: runs when a tool needs approval. It can allow, deny, update permissions, or modify the pending tool input. Its matcher sees the tool name.
-- `PostToolUse`: runs after a tool succeeds and before the tool result is returned to the model. It can add context. Its matcher sees the tool name.
-- `PostToolUseFailure`: runs after a tool fails and before the failure is returned to the model. It can add recovery context. Its matcher sees the tool name.
-- `Stop`: runs when a turn is about to complete without another client-side tool call. It can add feedback and request one more model step with `continue: true`. Empty `continue: true` output is ignored, and repeated continuations are capped to avoid loops.
-
-Example:
-
-```json
-{
-  "hooks": {
-    "enabled": true,
-    "timeoutMs": 60000,
-    "maxOutputBytes": 32768,
-    "events": {
-      "SessionStart": [
-        {
-          "matcher": "startup|resume",
-          "hooks": [
-            {
-              "type": "process",
-              "command": "node",
-              "args": ["./scripts/session-start-hook.mjs"]
-            }
-          ]
-        }
-      ],
-      "PreToolUse": [
-        {
-          "matcher": "^(Bash|Write|Edit)$",
-          "hooks": [
-            {
-              "type": "process",
-              "command": "node",
-              "args": ["./scripts/pre-tool-hook.mjs"],
-              "timeoutMs": 5000
-            }
-          ]
-        }
-      ],
-      "Stop": [
-        {
-          "hooks": [
-            {
-              "type": "process",
-              "command": "node",
-              "args": ["./scripts/stop-hook.mjs"]
-            }
-          ]
-        }
-      ]
-    }
-  }
-}
-```
-
-Configuration shape:
+Model stream timeout:
 
 - `modelStream.idleTimeoutMs`: initial idle timeout between model SSE events. Defaults to `600000`.
-- `hooks.enabled`: enables configured hook execution. Defaults to `false`.
-- `hooks.timeoutMs`: default timeout for each hook process. Defaults to `60000`.
-- `hooks.maxOutputBytes`: stdout/stderr capture limit for hook processes. Defaults to `32768`.
-- `hooks.events.<EventName>`: an array of matcher groups. Groups run in config order.
-- `matcher`: optional JavaScript regular expression string. If omitted, the group matches all inputs for that event.
-- `hooks`: process hook list for the matcher group. Hooks run in order.
-- `type`: currently only `process` is supported.
-- `command`: executable to run, using argv execution rather than a shell string.
-- `args`: optional argv array.
-- `timeoutMs`: optional per-hook timeout override.
-- `statusMessage`: optional status label for future UI projection.
-
-Each process hook receives one JSON hook input on stdin and may print one JSON object to stdout. Empty stdout is treated as no-op. Non-JSON stdout, schema-invalid stdout, timeouts, and non-zero exits other than exit code `2` are recorded as hook failures and do not crash the turn by default. Exit code `2` is treated as an explicit block/deny request.
-
-Common stdout examples:
-
-```json
-{
-  "hookSpecificOutput": {
-    "hookEventName": "SessionStart",
-    "additionalContext": "Use the internal API migration checklist for this repository."
-  }
-}
-```
-
-```json
-{
-  "continue": false,
-  "reason": "Do not run destructive shell commands in this workspace.",
-  "hookSpecificOutput": {
-    "hookEventName": "PreToolUse",
-    "permissionDecision": "deny",
-    "permissionDecisionReason": "Blocked by project hook."
-  }
-}
-```
-
-```json
-{
-  "continue": true,
-  "hookSpecificOutput": {
-    "hookEventName": "Stop",
-    "additionalContext": "Before finalizing, verify that the answer mentions test coverage."
-  }
-}
-```
 
 ## Packaging Strategy
 

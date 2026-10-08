@@ -740,7 +740,7 @@ export async function validateMarketplacePlugin(input: {
  * - 已安装插件：直接读本地缓存/安装目录，无需联网。
  * - 未安装候选：解析并按需临时 clone 插件源（finally 清理临时目录），参照 validateMarketplacePlugin。
  * 组件名称与描述来自组件目录的 frontmatter（command/agent 的 .md、skill 的 SKILL.md）、
- * 以及 manifest（hooks 事件名、mcpServers 名称、object 形式声明的 commands/agents）。
+ * 以及 manifest（mcpServers 名称、object 形式声明的 commands/agents）。
  * 任何一类组件读取失败都降级为「能拿到多少返回多少」+ 诊断，不抛断整个详情。
  */
 export async function describeMarketplacePlugin(input: {

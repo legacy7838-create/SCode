@@ -10,9 +10,6 @@ import {
   BarChart3,
   Terminal,
   AlarmClock,
-  Anchor,
-  Brain,
-  Blocks,
   Globe2,
   Cable,
   WandSparkles,
@@ -74,21 +71,9 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     groupId: "basics",
   },
   {
-    id: "memory",
-    icon: Brain,
-    titleId: "settings.memory",
-    groupId: "agentCapabilities",
-  },
-  {
     id: "subagents",
     icon: Bot,
     titleId: "settings.subagents.title",
-    groupId: "agentCapabilities",
-  },
-  {
-    id: "plugin",
-    icon: Blocks,
-    titleId: "settings.plugins.title",
     groupId: "agentCapabilities",
   },
   {
@@ -114,12 +99,6 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     icon: AlarmClock,
     titleId: "settings.automations.title",
     titleBadgeId: "settings.automations.betaBadge",
-    groupId: "agentCapabilities",
-  },
-  {
-    id: "hooks",
-    icon: Anchor,
-    titleId: "settings.hooks.title",
     groupId: "agentCapabilities",
   },
   {

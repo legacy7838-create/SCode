@@ -5,7 +5,7 @@
 // Interfaces
 export * from "./interfaces/shared.js";
 export * from "./interfaces/execution.port.js";
-export * from "./interfaces/browser-control.port.js";
+
 export * from "./interfaces/file-system.port.js";
 export * from "./interfaces/context-source.port.js";
 export * from "./interfaces/http-client.port.js";

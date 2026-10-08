@@ -40,19 +40,6 @@ function getZCodeCliLogDir() {
   return join(getZCodeCliDir(), "log");
 }
 
-/**
- * Computer Use Helper 的运行目录。macOS 上 Helper 由 LaunchServices 启动，stderr 被系统丢弃，
- * 所以它把生命周期与后台输入诊断 tee 到 `<socket>.exit.log`（见 zcode-cua
- * helperExitLogPathFor）。同目录下还有 `.tokens` broker 凭据，收集时必须按文件名白名单。
- */
-function getCuaHelperRunDir() {
-  return join(homedir(), ".zcode", "computer-use", "run");
-}
-
-function isCuaHelperDiagnosticFileName(fileName: string): boolean {
-  return fileName.endsWith(".exit.log");
-}
-
 interface LogArchiveFileEntry {
   absolutePath: string;
   archivePath: string;
@@ -983,18 +970,6 @@ async function createLogArchiveArtifacts(
     files,
   );
 
-  // Computer Use Helper 的结构化诊断必须进日志包：否则反馈包里
-  // grep "background keyboard begin rejected" 命中 0，
-  // 因为 Helper 由 LaunchServices 启动、stderr 被系统丢弃，它把诊断 tee 到
-  // ~/.zcode/computer-use/run/<socket>.exit.log，既不在 app data 也不在 ~/.zcode/cli 下。
-  // 同目录下有 .tokens broker 凭据，因此按文件名白名单只收 *.exit.log，不递归该目录。
-  await collectLogArchiveFilesByName(
-    getCuaHelperRunDir(),
-    posix.join(".zcode", "computer-use", "run"),
-    isCuaHelperDiagnosticFileName,
-    files,
-  );
-
   const recentFiles = await filterRecentLogArchiveFiles(files, options);
   recentFiles.sort((left, right) => left.archivePath.localeCompare(right.archivePath));
 
@@ -1142,11 +1117,6 @@ export async function createFeedbackLogArchiveFromExportLogs(
     sources: [
       { directory: join(sourceDir, "logs"), archivePrefix: "logs" },
       { directory: getZCodeCliLogDir(), archivePrefix: ".zcode/cli/log" },
-      {
-        directory: getCuaHelperRunDir(),
-        archivePrefix: ".zcode/computer-use/run",
-        exitLogsOnly: true,
-      },
     ],
     outputRootDir: options.outputRootDir ?? getDefaultFeedbackLogArchiveDir(),
     now: options.now,

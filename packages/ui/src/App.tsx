@@ -18,10 +18,6 @@ import type { TaskChatMessage as TestChatMessage } from "@/lib/taskChatMessageTy
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { useIsOfficeMode } from "@/hooks/useInterfaceMode.js";
 import { getPathLeaf } from "@/lib/path.js";
-import {
-  addPluginStoreOpenListener,
-  type PluginStoreOpenTarget,
-} from "@/lib/pluginStoreNavigation.js";
 import { resolveWorkspaceSwitchDraftProvider } from "@/lib/workspaceDraftProvider.js";
 import { useTestActions } from "@/test-actions.js";
 import type { TestActions } from "@/test-actions.js";
@@ -137,15 +133,13 @@ export function App({
   const isOfficeMode = useIsOfficeMode();
   const platform = usePlatform();
   // 进程内存本地诊断日志：每窗口一个 60s 采样器，
-  // 经门控后写桌面主日志；Web 端无日志桥时为 no-op。同一次读数还经 preload 桥把 heap 送 main 的
-  // renderer_main 资源事件，无桥时同样 no-op。
-  const reportRendererHeapSample = platform.reportRendererHeapSample;
+  // 经门控后写桌面主日志；Web 端无日志桥时为 no-op。
+  // 修复依据：原先同一次读数还经 platform.reportRendererHeapSample 送 main 的资源事件，
+  // 遥测出口移除后只保留本地诊断日志，不再对外发送 heap 样本。
   useEffect(() => {
-    const memoryDiagnosticsLogger = startMemoryDiagnosticsLogger({
-      reportHeapSample: reportRendererHeapSample,
-    });
+    const memoryDiagnosticsLogger = startMemoryDiagnosticsLogger();
     return () => memoryDiagnosticsLogger.stop();
-  }, [reportRendererHeapSample]);
+  }, []);
   const activeWorkspaceRpcTarget = useTabStore(
     useShallow((state) => {
       if (!state.activeTabId) {
@@ -811,12 +805,6 @@ export function App({
         setTestMessages([...messages]);
       },
       getChatMessageCount: () => testMessages?.length ?? 0,
-      getPluginsOverview: (params) => services.zcodeAgentService.getPluginsOverview(params),
-      addPluginMarketplace: (params) => services.zcodeAgentService.addPluginMarketplace(params),
-      updatePluginMarketplace: (params) =>
-        services.zcodeAgentService.updatePluginMarketplace(params),
-      installPlugin: (params) => services.zcodeAgentService.installPlugin(params),
-      listPlugins: (params) => services.zcodeAgentService.listPlugins(params),
       getPluginReferenceCatalog: (params) =>
         services.zcodeAgentService.getPluginReferenceCatalog(params),
     }),
@@ -828,12 +816,10 @@ export function App({
   const [openAutomationTab, setOpenAutomationTab] = useState<NonNullable<
     AutomationsNavigationTarget["automationTab"]
   > | null>(null);
-  const [pluginStoreReturnScopeKey, setPluginStoreReturnScopeKey] = useState("user");
-  const [pluginStoreOpenVersion, setPluginStoreOpenVersion] = useState(0);
   const handleNavigateToTaskMain = useCallback(() => {
     setWorkspaceMainView("chat");
   }, []);
-  const { preserveNextSettingsExit } = useWorkspaceMainViewSettingsExit({
+  useWorkspaceMainViewSettingsExit({
     isWorkspaceVisible,
     workspaceMainView,
     onExitSettings: handleNavigateToTaskMain,
@@ -843,14 +829,6 @@ export function App({
     setOpenAutomationTab(target.automationTab ?? null);
     setWorkspaceMainView("automations");
   }, []);
-  const handleNavigateToPluginStoreMain = useCallback(() => {
-    // 通用入口没有 scope 上下文，默认回到 User；Settings 显式带 scope 的入口会在
-    // 导航完成后覆盖这次默认值，避免沿用上一次 Workspace scope。
-    setPluginStoreReturnScopeKey("user");
-    setPluginStoreOpenVersion((version) => version + 1);
-    preserveNextSettingsExit();
-    setWorkspaceMainView("plugin-store");
-  }, [preserveNextSettingsExit]);
   const handleOpenAutomationConsumed = useCallback(() => {
     setOpenAutomationId(null);
     setOpenAutomationTab(null);
@@ -858,7 +836,6 @@ export function App({
   const {
     handleSelectTask,
     handleOpenAutomations,
-    handleOpenPluginStore,
     handleTaskNavBack,
     handleTaskNavForward,
     canGoBack,
@@ -872,27 +849,7 @@ export function App({
     activateTabByPath,
     onNavigateToTask: handleNavigateToTaskMain,
     onNavigateToAutomations: handleNavigateToAutomationsMain,
-    onNavigateToPluginStore: handleNavigateToPluginStoreMain,
   });
-  const handleOpenPluginStoreForScope = useCallback(
-    (_target: PluginStoreOpenTarget = {}) => {
-      // Workspace Marketplace 已收敛为全局入口。兼容旧事件中的 Workspace key，但返回
-      // 目标统一归一为 User，避免旧 sessionStorage/同窗口事件把设置页带回失效 scope。
-      const returnScopeKey = "user";
-      if (workspaceMainView === "plugin-store") {
-        setPluginStoreReturnScopeKey(returnScopeKey);
-        setPluginStoreOpenVersion((version) => version + 1);
-        return;
-      }
-      handleOpenPluginStore();
-      setPluginStoreReturnScopeKey(returnScopeKey);
-    },
-    [handleOpenPluginStore, workspaceMainView],
-  );
-  useEffect(
-    () => addPluginStoreOpenListener(handleOpenPluginStoreForScope),
-    [handleOpenPluginStoreForScope],
-  );
   const handleSelectAdjacentConversation = useCallback(
     (direction: "previous" | "next") => {
       runVisibleWorkspaceCommand(() => {
@@ -937,16 +894,8 @@ export function App({
   const handleSelectNextConversation = useCallback(() => {
     handleSelectAdjacentConversation("next");
   }, [handleSelectAdjacentConversation]);
-  const handleManageInstalledPlugins = useCallback(() => {
-    setPendingSettingsPluginIntent("plugins", {
-      origin: "plugin-store",
-      scopeKey: pluginStoreReturnScopeKey,
-    });
-    openSettingsTab();
-  }, [openSettingsTab, pluginStoreReturnScopeKey]);
-  const handlePrimaryNavigationBack =
-    workspaceMainView === "plugin-store" ? handleManageInstalledPlugins : handleTaskNavBack;
-  const canPrimaryNavigationBack = workspaceMainView === "plugin-store" || canTaskNavBack;
+  const handlePrimaryNavigationBack = handleTaskNavBack;
+  const canPrimaryNavigationBack = canTaskNavBack;
   const shellPanelIds = useMemo(() => ["sidebar", "content"], []);
 
   useAppKeyboard({
@@ -1126,14 +1075,11 @@ export function App({
         services={services}
         workspaceReadOnlyReason={workspaceReadOnlyReason}
         workspaceMainView={workspaceMainView}
-        pluginStoreOpenVersion={pluginStoreOpenVersion}
         openAutomationId={openAutomationId}
         openAutomationTab={openAutomationTab}
         onWorkspaceMainViewChange={setWorkspaceMainView}
         onOpenAutomationConsumed={handleOpenAutomationConsumed}
         handleOpenAutomations={handleOpenAutomations}
-        handleOpenPluginStore={handleOpenPluginStoreForScope}
-        handleManageInstalledPlugins={handleManageInstalledPlugins}
         onConnectRemote={onConnectRemote}
         onSelectRemoteProject={onSelectRemoteProject}
         onCancelRemoteProject={onCancelRemoteProject}

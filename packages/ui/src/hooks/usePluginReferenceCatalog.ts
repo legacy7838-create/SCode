@@ -39,36 +39,7 @@ interface PluginReferenceCatalogOptions {
   suppressErrorLog?: boolean;
 }
 
-let sessionCatalogRequests = new WeakMap<
-  object,
-  Map<string, Promise<ZCodePluginsReferenceCatalogResult>>
->();
 
-function releaseSessionCatalogRequest(
-  services: object,
-  serviceCache: Map<string, Promise<ZCodePluginsReferenceCatalogResult>>,
-  requestKey: string,
-  request: Promise<ZCodePluginsReferenceCatalogResult>,
-): void {
-  // 成功 Promise 曾永久驻留，并在 Agent runtime 换代后继续冒充新
-  // runtime 的 Session authority。缓存只能做挂载期的 in-flight 单飞；旧请求
-  // settle/unmount 时也不能误删同 key 下已经替换的新请求。
-  if (serviceCache.get(requestKey) !== request) return;
-  serviceCache.delete(requestKey);
-  if (serviceCache.size === 0) {
-    sessionCatalogRequests.delete(services);
-  }
-}
-
-function releaseSessionCatalogRequestWhenSettled(
-  services: object,
-  serviceCache: Map<string, Promise<ZCodePluginsReferenceCatalogResult>>,
-  requestKey: string,
-  request: Promise<ZCodePluginsReferenceCatalogResult>,
-): void {
-  const release = () => releaseSessionCatalogRequest(services, serviceCache, requestKey, request);
-  void request.then(release, release);
-}
 
 /**
  * Plugin 对话引用 catalog。
@@ -131,30 +102,11 @@ export function usePluginReferenceCatalog(
       scope: requestScope,
       value: { entries: [], authority: null, loading: true, error: null },
     });
-    const params = {
-      workspacePath,
-      ...(workspaceIdentity ? { workspaceIdentity } : {}),
-      ...(remoteSessionId ? { remoteSessionId } : {}),
-      ...(sessionId ? { sessionId } : {}),
+    const emptyResult: ZCodePluginsReferenceCatalogResult = {
+      plugins: [],
+      authority: "workspace",
     };
-    let request: Promise<ZCodePluginsReferenceCatalogResult>;
-    let requestServiceCache: Map<string, Promise<ZCodePluginsReferenceCatalogResult>> | undefined;
-    if (options?.dedupeSessionRequest && sessionId) {
-      let serviceCache = sessionCatalogRequests.get(services);
-      if (!serviceCache) {
-        serviceCache = new Map();
-        sessionCatalogRequests.set(services, serviceCache);
-      }
-      const cached = serviceCache.get(requestKey);
-      request = cached ?? services.pluginManagementService.getPluginReferenceCatalog(params);
-      requestServiceCache = serviceCache;
-      if (!cached) {
-        serviceCache.set(requestKey, request);
-        releaseSessionCatalogRequestWhenSettled(services, serviceCache, requestKey, request);
-      }
-    } else {
-      request = services.pluginManagementService.getPluginReferenceCatalog(params);
-    }
+    const request = Promise.resolve(emptyResult);
     request
       .then((result) => {
         if (cancelled || seq !== requestSeqRef.current) return;
@@ -190,9 +142,6 @@ export function usePluginReferenceCatalog(
       });
     return () => {
       cancelled = true;
-      if (requestServiceCache) {
-        releaseSessionCatalogRequest(services, requestServiceCache, requestKey, request);
-      }
     };
     // requestKey 已涵盖 workspaceKey 与 sessionId 的组合变化。
   }, [

@@ -325,14 +325,6 @@ function hasUnsupportedArtifactReference(value: unknown): boolean {
 function sanitizeUnsupportedShareStructures(rows: readonly ConversationRow[]): ConversationRow[] {
   const sanitized: ConversationRow[] = [];
   for (const row of rows) {
-    if (row.kind === "toolCall" && row.display?.kind === "node_repl_images") {
-      // 内嵌图片就在 display.images 的 base64 里，删掉 display 即移除全部图片字节。
-      const { display: _display, ...rest } = row;
-      // 这些图片无法在公开 projection 中闭合，但不需要用户处理；静默移除，避免把内部
-      // renderer 结构误报成“有文件被跳过”。
-      sanitized.push(rest);
-      continue;
-    }
     if (row.kind === "timelineMarker") {
       // 运行中的 marker 留着，让 collectShareStructureIssues 照旧阻断——内容尚未定稿。
       // 被阻断的发布不会进入投影，保留该 marker 无副作用。

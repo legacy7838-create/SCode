@@ -1,19 +1,14 @@
 import type {
-  ExecutionPort,
   HookEventName,
   HookExecutionDescriptor,
   HookInput,
   HookJSONOutput,
   HookPermissionDecision,
   HookSourceKind,
-  HooksRuntimeConfig,
-  WorkspaceHookBundleSnapshot,
   Logger,
   PermissionRequestHookDecision,
   SessionEvent,
 } from "@zcode/contracts";
-
-import type { WorkspaceHookRuntimeAdmissionPort } from "./workspace-hook-runtime-admission.js";
 
 export interface HookCallbackContext {
   hookIndex: number;
@@ -90,14 +85,4 @@ export interface HookRunnerOptions {
   emitEvent?: (event: SessionEvent) => Promise<void>;
   hooks?: HookRegistration[];
   logger?: Logger;
-}
-
-export interface ConfiguredHookRunnerOptions {
-  config: HooksRuntimeConfig;
-  emitEvent?: (event: SessionEvent) => Promise<void>;
-  executionPort: ExecutionPort;
-  getWorkingDirectory: () => string;
-  logger?: Logger;
-  workspaceHookAdmission?: WorkspaceHookRuntimeAdmissionPort;
-  workspaceHookSnapshot?: WorkspaceHookBundleSnapshot;
 }

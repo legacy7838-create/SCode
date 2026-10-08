@@ -19,9 +19,6 @@ const nativeSearchReleasePlan = resolveNativeSearchReleasePlan({
 // 保留显式开关，后续恢复入口时仍可复用既有原生实现和供应链校验。
 const shouldPrepareWindowsBrowserImportHelper =
   target.os === "win32" && process.env.ZCODE_ENABLE_WINDOWS_BROWSER_IMPORT === "1";
-// CUA 权限浮窗的吸附数据源。仅 macOS；缺 swiftc 时脚本内部自行降级为跳过（浮窗 fail-open
-// 到屏幕底部，仍可用），所以无条件挂在 darwin 上不会让构建变脆。
-const shouldPrepareMacosWindowBounds = target.os === "darwin";
 
 // 本机桌面包内置 agent 的 JS bundle（prepare:agent-bundle），运行时由 app 的 Electron Node runtime 执行。
 // 远端跨平台原生二进制仍由上面的 prepare:remote-assets 提供。
@@ -30,7 +27,6 @@ const localRuntimeScripts = [
   "prepare:agent-bundle",
   ...(nativeSearchReleasePlan.enabled ? ["prepare:native-search"] : []),
   ...(shouldPrepareWindowsBrowserImportHelper ? ["prepare:browser-import-helper"] : []),
-  ...(shouldPrepareMacosWindowBounds ? ["prepare:macos-window-bounds"] : []),
 ];
 
 function runTimedPnpmScript(scriptName) {

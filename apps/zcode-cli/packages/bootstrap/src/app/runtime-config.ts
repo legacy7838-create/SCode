@@ -2,17 +2,9 @@ import type { ConfigResult } from "@zcode/adapters/config";
 import { resolveInitialModelSelection, type ModelSelectionOptions } from "@zcode/provider";
 import { resolveBashTimeoutPolicy, type AgentProfile, type AgentRuntimeConfig } from "@zcode/core";
 import { type BuiltInSubagentModelSelectionOverrides } from "@zcode/shared";
-import {
-  type CollaborationMode,
-  type HookConfigSource,
-  type HookEventName,
-  type HookMatcherConfig,
-  type HooksRuntimeConfig,
-  type McpServerConfig,
-} from "@zcode/contracts";
-import { omitMcpServers, resolveTrustedOfficialCuaServerNames } from "../mcp-config.js";
+import { type CollaborationMode, type McpServerConfig } from "@zcode/contracts";
+import { omitMcpServers } from "../mcp-config.js";
 import { resolveDefaultEmbeddedSearchBackend } from "./embedded-search-backend.js";
-import { getProjectMemoryRoot } from "./paths.js";
 import type { ZCodeAppOptions } from "./types.js";
 import {
   resolveRegistryOwnedModelSelection,
@@ -37,7 +29,6 @@ export function resolveAppRuntimeConfig(input: {
   persistedMode?: CollaborationMode;
   builtInMcpServers?: Record<string, McpServerConfig>;
   builtInSubagentModelSelectionOverrides?: BuiltInSubagentModelSelectionOverrides;
-  pluginHooks?: Partial<Record<HookEventName, HookMatcherConfig[]>>;
   pluginMcpServers?: Record<string, McpServerConfig>;
   pluginRuntimeFeatures?: AgentRuntimeConfig["runtimeFeatures"];
   subagentOutputRootDir: string;
@@ -47,7 +38,6 @@ export function resolveAppRuntimeConfig(input: {
   workspaceIdentity?: string;
 }): ResolvedAppRuntimeConfig {
   const {
-    cliStorageRoot,
     configResult,
     options,
     persistedMode,
@@ -57,7 +47,6 @@ export function resolveAppRuntimeConfig(input: {
     subagentOutputRootDir,
     subagentProfiles = [],
     workingDirectory,
-    workspaceIdentity,
   } = input;
   const userInstructions = options.runtimeConfig?.userInstructions ?? { workingDirectory };
   const registrySelection = resolveInitialRegistrySelection(options);
@@ -95,24 +84,9 @@ export function resolveAppRuntimeConfig(input: {
     ...(options.runtimeConfig?.mcp?.servers ?? configResult.config.mcp.servers),
     ...builtInMcpServers,
   };
-  const trustedOfficialCuaServerNames = resolveTrustedOfficialCuaServerNames(
-    configuredMcpServers,
-    pluginMcpServers ?? {},
-  );
-  const cuaBridgeServerNames = new Set(trustedOfficialCuaServerNames);
-  if (pluginRuntimeFeatures?.computerUse === true && configuredMcpServers.node_repl) {
-    // node_repl 需要 broker 注入，但不是 CUA MCP server。注入资格与官方 CUA 图片
-    // authority 必须分开；把它塞进 trustedOfficialCuaServerNames 会让整个
-    // 通用 node_repl 结果被误送进 exact-raster gate，Browser 截图和 console 日志都会失败。
-    cuaBridgeServerNames.add("node_repl");
-  }
   // 产品决定 workspace MCP 开箱即用：project 作用域 MCP 默认 trusted，并自动连接。
   const untrustedProjectMcpServers = new Set<string>();
-  const autoConnectMcpServers = omitMcpServers(
-    configuredMcpServers,
-    untrustedProjectMcpServers,
-    cuaBridgeServerNames,
-  );
+  const autoConnectMcpServers = omitMcpServers(configuredMcpServers, untrustedProjectMcpServers);
   const runtimeBuiltInModelSelectionOverrides =
     options.runtimeConfig?.subagents?.builtInModelSelectionOverrides ?? {};
   const runtimeConfig: AgentRuntimeConfig = {
@@ -155,14 +129,7 @@ export function resolveAppRuntimeConfig(input: {
     mcp: {
       enabled: options.runtimeConfig?.mcp?.enabled ?? configResult.config.features.mcp,
       servers: autoConnectMcpServers,
-      trustedOfficialCuaServerNames: [...trustedOfficialCuaServerNames],
     },
-    hooks: mergeRuntimeHooks(
-      options.runtimeConfig?.hooks
-        ? withHookConfigSource(options.runtimeConfig.hooks, { kind: "internal" })
-        : configResult.config.hooks,
-      input.pluginHooks,
-    ),
     subagents: {
       ...options.runtimeConfig?.subagents,
       enabled: options.runtimeConfig?.subagents?.enabled ?? configResult.config.features.subagent,
@@ -173,39 +140,11 @@ export function resolveAppRuntimeConfig(input: {
       },
       profiles: [...(options.runtimeConfig?.subagents?.profiles ?? []), ...subagentProfiles],
     },
-    memory: {
-      cliStorageRoot,
-      enabled: options.runtimeConfig?.memory?.enabled ?? configResult.config.features.memory,
-      ...(options.runtimeConfig?.memory?.extractionEnabled === undefined
-        ? {}
-        : { extractionEnabled: options.runtimeConfig.memory.extractionEnabled }),
-      ...(input.storageRoot ? { storageRoot: input.storageRoot } : {}),
-      use: options.runtimeConfig?.memory?.use ?? configResult.config.memory.use,
-      workspaceIdentity: workspaceIdentity?.trim() || undefined,
-    },
   };
   return {
     configuredMcpServers,
     runtimeConfig,
     untrustedProjectMcpServers,
-  };
-}
-
-function withHookConfigSource(
-  config: HooksRuntimeConfig,
-  source: HookConfigSource,
-): HooksRuntimeConfig {
-  return {
-    ...config,
-    events: Object.fromEntries(
-      Object.entries(config.events).map(([eventName, matchers]) => [
-        eventName,
-        matchers?.map((matcher) => ({
-          ...matcher,
-          hooks: matcher.hooks.map((hook) => ({ ...hook, source: hook.source ?? source })),
-        })),
-      ]),
-    ) as HooksRuntimeConfig["events"],
   };
 }
 
@@ -242,55 +181,17 @@ function resolveInitialRegistrySelection(
     : undefined;
 }
 
-function mergeRuntimeHooks(
-  base: HooksRuntimeConfig | undefined,
-  pluginHooks: Partial<Record<HookEventName, HookMatcherConfig[]>> | undefined,
-): HooksRuntimeConfig | undefined {
-  if (!pluginHooks || Object.values(pluginHooks).every((matchers) => !matchers?.length)) {
-    return base;
-  }
-
-  const mergedEvents: HooksRuntimeConfig["events"] = {
-    ...base?.events,
-  };
-  for (const [eventName, matchers] of Object.entries(pluginHooks) as Array<
-    [HookEventName, HookMatcherConfig[]]
-  >) {
-    if (matchers.length === 0) continue;
-    mergedEvents[eventName] = [...(mergedEvents[eventName] ?? []), ...matchers];
-  }
-
-  return {
-    enabled: true,
-    events: mergedEvents,
-    maxOutputBytes: base?.maxOutputBytes ?? 32768,
-    timeoutMs: base?.timeoutMs ?? 60000,
-  };
-}
-
 export function runtimeConfigLogContext(
   runtimeConfig: AgentRuntimeConfig,
   workingDirectory: string,
 ) {
-  const memoryRoot = runtimeConfig.memory?.cliStorageRoot
-    ? getProjectMemoryRoot(
-        runtimeConfig.memory.cliStorageRoot,
-        workingDirectory,
-        runtimeConfig.memory.workspaceIdentity,
-      )
-    : undefined;
   return {
     mcpEnabled: runtimeConfig.mcp?.enabled !== false,
-    memoryEnabled: runtimeConfig.memory?.enabled !== false,
-    memoryExtractionEnabled: runtimeConfig.memory?.extractionEnabled !== false,
-    memoryRoot,
-    memoryUse: runtimeConfig.memory?.use !== false,
     mcsMode: runtimeConfig.midConversationSystem?.mode,
     mode: runtimeConfig.mode,
     model: runtimeConfig.modelSelection
       ? `${runtimeConfig.modelSelection.providerId}/${runtimeConfig.modelSelection.modelId}`
       : undefined,
-    runtimeFeatureBrowserUse: runtimeConfig.runtimeFeatures?.browserUse === true,
     runtimeFeatureNodeRepl: runtimeConfig.runtimeFeatures?.nodeRepl === true,
     workingDirectory,
   };

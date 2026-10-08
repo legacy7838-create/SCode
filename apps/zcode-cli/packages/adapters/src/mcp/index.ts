@@ -1746,8 +1746,8 @@ class NodeMcpAdapter implements McpPort {
 }
 
 function mcpRequestMeta(request: McpCallToolRequest): Record<string, unknown> {
-  // nodeRepl.requestMeta 暴露。ZCode 所有 MCP server 都可忽略这些扩展键；node_repl browser
-  // bridge 则以它们作为回到当前 BrowserControlPort session 的唯一关联依据。runtime_scope
+  // nodeRepl.requestMeta 暴露。ZCode 所有 MCP server 都可忽略这些扩展键；node_repl 宿主
+  // bridge 以它们作为回到当前 session 的唯一关联依据。runtime_scope
   // 不能从 child session id 猜测，必须由实际执行工具的 runtime 显式透传。
   const requestContext = {
     ...(request.trace ? { trace_id: request.trace.traceId } : {}),

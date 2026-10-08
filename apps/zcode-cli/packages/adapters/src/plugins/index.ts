@@ -2,14 +2,9 @@ import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type {
   CustomCommandRoot,
-  HookConfig,
-  HookEventName,
-  HookMatcherConfig,
-  HookPluginContext,
   PluginConfig,
   PluginDiagnostic,
   PluginDiscoverRequest,
-  PluginHookDetail,
   PluginLoadOutcome,
   PluginManifest,
   PluginMetadata,
@@ -18,8 +13,6 @@ import type {
   SkillRoot,
 } from "@zcode/contracts";
 import {
-  HookEventName as HookEventNameValue,
-  HookMatcherConfigSchema,
   ZCODE_INLINE_PLUGIN_MARKETPLACE,
   ZCODE_OFFICIAL_PLUGIN_MARKETPLACE,
 } from "@zcode/contracts";
@@ -36,7 +29,6 @@ import {
 } from "./helpers.js";
 import { scanSkillFilesUnderRootSync } from "../skills/scan.js";
 import { loadPluginMcpServerDefinitions, resolvePluginMcpServers } from "./mcp.js";
-import { listPluginHookSources } from "./hook-sources.js";
 import { enumeratePluginComponents } from "./plugin-components.js";
 import {
   listInstalledPluginRecords,
@@ -110,12 +102,6 @@ const UNSUPPORTED_COMPONENT_KEYS = [
   "outputStyles",
   "settings",
 ] as const;
-const SUPPORTED_HOOK_EVENTS = new Set<string>(Object.values(HookEventNameValue));
-
-interface PluginHookInspection {
-  details: PluginHookDetail[];
-  events: Partial<Record<HookEventName, HookMatcherConfig[]>>;
-}
 
 export interface NodePluginAdapterOptions {
   storageRoot: string;
@@ -141,7 +127,6 @@ export class NodePluginAdapter implements PluginPort {
     const dataRoot = join(request.storageRoot || this.options.storageRoot, "data");
     const candidates = this.resolveCandidates(request, diagnostics, options);
     const commandRoots: CustomCommandRoot[] = [];
-    const hooks: PluginLoadOutcome["hooks"] = {};
     const mcpServers: PluginLoadOutcome["mcpServers"] = {};
     const plugins: PluginMetadata[] = [];
     const seen = new Set<string>();
@@ -183,31 +168,21 @@ export class NodePluginAdapter implements PluginPort {
       // 未启用插件的内置 MCP 就会在管理页完全不可见。这里先读取声明名给 UI 只读展示，
       // 实际 runtime 注入仍只使用 enabled 分支解析出的 component.mcpServers。
       const mcpServerDefinitions = loadPluginMcpServerDefinitions({ diagnostics, loaded });
-      const hooksRunnable = canRunPluginHooks(loaded);
-      const hookInspection = inspectPluginHooks({
-        dataPath,
-        diagnostics,
-        loaded,
-        runnable: hooksRunnable,
-      });
       const component = enabled
         ? resolveEnabledComponents({
             dataPath,
             diagnostics,
             env: request.env ?? {},
-            hookEvents: hooksRunnable ? hookInspection.events : {},
-            hookDetails: hookInspection.details,
             loaded,
             mcpServerDefinitions,
             options: request.config.options[loaded.id] ?? {},
             priority,
             workingDirectory: request.workingDirectory,
           })
-        : emptyComponents(hookInspection.details);
+        : emptyComponents();
       priority += PRIORITY_STEP;
 
       Object.assign(mcpServers, component.mcpServers);
-      mergeHookEvents(hooks, component.hooks);
       skillRoots.push(...component.skillRoots);
       commandRoots.push(...component.commandRoots);
       plugins.push(
@@ -225,7 +200,6 @@ export class NodePluginAdapter implements PluginPort {
     return {
       commandRoots,
       diagnostics,
-      hooks,
       mcpServers,
       plugins,
       skillRoots,
@@ -323,7 +297,6 @@ function createPluginMetadata(
     marketplace: loaded.marketplace,
     mcpServerNames: Object.keys(component.mcpServers),
     name: loaded.manifest.name,
-    hookDetails: component.hookDetails,
     rootPath: loaded.rootPath,
     skillCount: component.skillCount,
     skillRootCount: component.skillRoots.length,
@@ -337,8 +310,6 @@ function resolveEnabledComponents(input: {
   dataPath: string;
   diagnostics: PluginDiagnostic[];
   env: Record<string, string | undefined>;
-  hookDetails: PluginHookDetail[];
-  hookEvents: Partial<Record<HookEventName, HookMatcherConfig[]>>;
   loaded: LoadedPlugin;
   mcpServerDefinitions: Record<string, unknown>;
   options: Record<string, string | number | boolean>;
@@ -350,8 +321,6 @@ function resolveEnabledComponents(input: {
   const skillRoots = resolveSkillRoots(input, input.priority);
   return {
     commandRoots: resolveCommandRoots(input, input.priority + 1),
-    hooks: input.hookEvents,
-    hookDetails: input.hookDetails,
     mcpServers: resolvePluginMcpServers({
       ...input,
       definitions: input.mcpServerDefinitions,
@@ -361,13 +330,6 @@ function resolveEnabledComponents(input: {
     skillCount: countSkillFiles(skillRoots),
     skillRoots,
   };
-}
-
-function canRunPluginHooks(_loaded: LoadedPlugin): boolean {
-  // 三方 marketplace 插件 hook 默认放行（与内置/官方一致）。
-  // 上限：放弃了「仅官方可执行 hook」的信任边界，三方插件 hook 会直接执行；
-  // 升级路径：需要逐插件 trust（如 user config 白名单）时，把判断收回这里。
-  return true;
 }
 
 function warnUnsupportedComponents(loaded: LoadedPlugin, diagnostics: PluginDiagnostic[]): void {
@@ -452,197 +414,28 @@ function resolveCommandRoots(
     "commands",
     input,
     priority,
-    createHookPluginContext(input.loaded, input.dataPath),
+    createCommandPluginContext(input.loaded, input.dataPath),
   );
   const generatedRoot = materializeCommandMetadataRoot(input, priority + 1);
   if (generatedRoot) roots.push(generatedRoot);
   return roots;
 }
 
-function inspectPluginHooks(input: {
-  dataPath: string;
-  diagnostics: PluginDiagnostic[];
-  loaded: LoadedPlugin;
-  runnable: boolean;
-}): PluginHookInspection {
-  const inspection = emptyHookInspection();
-  for (const source of listPluginHookSources({
-    diagnostics: input.diagnostics,
-    loaded: input.loaded,
-  })) {
-    const loaded = parsePluginHookEvents({
-      diagnostics: input.diagnostics,
-      loaded: input.loaded,
-      pluginDataPath: input.dataPath,
-      rawHooks: source.rawHooks,
-      runnable: input.runnable,
-      sourcePath: source.sourcePath,
-      wrapper: source.wrapper,
-    });
-    mergeHookInspection(inspection, loaded);
-  }
-
-  return inspection;
-}
-
-function parsePluginHookEvents(input: {
-  diagnostics: PluginDiagnostic[];
-  loaded: LoadedPlugin;
-  pluginDataPath: string;
-  rawHooks: unknown;
-  runnable: boolean;
-  sourcePath: string;
-  wrapper: boolean;
-}): PluginHookInspection {
-  const hooksRoot = input.wrapper
-    ? isRecord(input.rawHooks)
-      ? input.rawHooks.hooks
-      : undefined
-    : input.rawHooks;
-  const inspection = emptyHookInspection();
-  if (!isRecord(hooksRoot)) {
-    input.diagnostics.push({
-      code: "plugin_hook_invalid",
-      message: input.wrapper
-        ? "Plugin hooks file must contain a hooks object"
-        : "Plugin manifest hooks entry must be an object, a path, or an array",
-      path: input.sourcePath,
-      pluginId: input.loaded.id,
-      severity: "error",
-    });
-    return inspection;
-  }
-
-  const plugin = createHookPluginContext(input.loaded, input.pluginDataPath, input.sourcePath);
-  for (const [eventName, matcherConfigs] of Object.entries(hooksRoot)) {
-    if (!SUPPORTED_HOOK_EVENTS.has(eventName)) {
-      input.diagnostics.push({
-        code: "plugin_hook_unsupported_event",
-        message: `Plugin hook event is not supported by this ZCode runtime: ${eventName}`,
-        path: input.sourcePath,
-        pluginId: input.loaded.id,
-        severity: "warning",
-      });
-      continue;
-    }
-    if (!Array.isArray(matcherConfigs)) {
-      input.diagnostics.push({
-        code: "plugin_hook_invalid",
-        message: `Plugin hook event must be an array: ${eventName}`,
-        path: input.sourcePath,
-        pluginId: input.loaded.id,
-        severity: "error",
-      });
-      continue;
-    }
-
-    const event = eventName as HookEventName;
-    for (const matcherConfig of matcherConfigs) {
-      const validation = HookMatcherConfigSchema.safeParse(matcherConfig);
-      if (!validation.success) {
-        input.diagnostics.push({
-          code: "plugin_hook_invalid",
-          message: `Invalid plugin hook matcher for ${eventName}: ${validation.error.issues
-            .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
-            .join("; ")}`,
-          path: input.sourcePath,
-          pluginId: input.loaded.id,
-          severity: "error",
-        });
-        continue;
-      }
-      const withPlugin: HookMatcherConfig = {
-        ...validation.data,
-        hooks: validation.data.hooks.map((hook) => attachPluginToHook(hook, plugin)),
-      };
-      (inspection.events[event] ??= []).push(withPlugin);
-      for (const hook of validation.data.hooks) {
-        inspection.details.push(
-          toPluginHookDetail({
-            event,
-            hook,
-            ...(validation.data.matcher !== undefined ? { matcher: validation.data.matcher } : {}),
-            runnable: input.runnable,
-            sourcePath: input.sourcePath,
-          }),
-        );
-      }
-    }
-  }
-
-  return inspection;
-}
-
-function toPluginHookDetail(input: {
-  event: HookEventName;
-  hook: HookConfig;
-  matcher?: string;
-  runnable: boolean;
-  sourcePath: string;
-}): PluginHookDetail {
-  const detail: PluginHookDetail = {
-    command: input.hook.command,
-    event: input.event,
-    runnable: input.runnable,
-    sourcePath: input.sourcePath,
-    type: input.hook.type,
-  };
-  if (input.matcher !== undefined) detail.matcher = input.matcher;
-  if (input.hook.statusMessage !== undefined) detail.statusMessage = input.hook.statusMessage;
-  if (input.hook.timeoutMs !== undefined) detail.timeoutMs = input.hook.timeoutMs;
-  if (input.hook.type === "process") {
-    if (input.hook.args !== undefined) detail.args = input.hook.args;
-    return detail;
-  }
-  if (input.hook.async !== undefined) detail.async = input.hook.async;
-  if (input.hook.shell !== undefined) detail.shell = input.hook.shell;
-  if (input.hook.timeout !== undefined) detail.timeout = input.hook.timeout;
-  return detail;
-}
-
-function createHookPluginContext(
+/**
+ * 插件 command root 的来源上下文（`CustomCommandRoot.plugin`）。原实现借用
+ * contracts 的 `HookPluginContext` 命名；Hooks 产品移除后该结构的消费方只剩
+ * command 链路（数据目录解析、插件归属展示），类型改为从 `CustomCommandRoot`
+ * 结构推导，跟随 contracts 的最终命名，不再依赖 hooks 领域类型。
+ */
+function createCommandPluginContext(
   loaded: LoadedPlugin,
   dataPath: string,
-  sourcePath?: string,
-): HookPluginContext {
+): NonNullable<CustomCommandRoot["plugin"]> {
   return {
     dataPath,
     id: loaded.id,
     name: loaded.manifest.name,
     rootPath: loaded.rootPath,
-    ...(sourcePath ? { sourcePath } : {}),
-  };
-}
-
-function attachPluginToHook(hook: HookConfig, plugin: HookPluginContext): HookConfig {
-  return {
-    ...hook,
-    plugin,
-  };
-}
-
-function mergeHookEvents(
-  target: Partial<Record<HookEventName, HookMatcherConfig[]>>,
-  source: Partial<Record<HookEventName, HookMatcherConfig[]>>,
-): void {
-  for (const [eventName, matchers] of Object.entries(source) as Array<
-    [HookEventName, HookMatcherConfig[]]
-  >) {
-    if (matchers.length > 0) {
-      (target[eventName] ??= []).push(...matchers);
-    }
-  }
-}
-
-function mergeHookInspection(target: PluginHookInspection, source: PluginHookInspection): void {
-  mergeHookEvents(target.events, source.events);
-  target.details.push(...source.details);
-}
-
-function emptyHookInspection(): PluginHookInspection {
-  return {
-    details: [],
-    events: {},
   };
 }
 
@@ -673,7 +466,7 @@ function resolveComponentRoots<T extends CustomCommandRoot | SkillRoot>(
   key: "commands" | "skills",
   input: { diagnostics: PluginDiagnostic[]; loaded: LoadedPlugin },
   priority: number,
-  plugin?: HookPluginContext,
+  plugin?: NonNullable<CustomCommandRoot["plugin"]>,
 ): T[] {
   const paths = parsePathList(input.loaded.manifest[key]);
   const defaultPath = join(input.loaded.rootPath, key);
@@ -797,7 +590,7 @@ function materializeCommandMetadataRoot(
   return wroteCommand
     ? {
         path: generatedRoot,
-        plugin: createHookPluginContext(input.loaded, input.dataPath),
+        plugin: createCommandPluginContext(input.loaded, input.dataPath),
         priority,
         scope: input.loaded.source === "official" ? "system" : "user",
         source: "plugin",
@@ -968,18 +761,15 @@ function emptyOutcome(): PluginLoadOutcome {
   return {
     commandRoots: [],
     diagnostics: [],
-    hooks: {},
     mcpServers: {},
     plugins: [],
     skillRoots: [],
   };
 }
 
-function emptyComponents(hookDetails: PluginHookDetail[] = []): PluginComponents {
+function emptyComponents(): PluginComponents {
   return {
     commandRoots: [],
-    hooks: {},
-    hookDetails,
     mcpServers: {},
     skillCount: 0,
     skillRoots: [],

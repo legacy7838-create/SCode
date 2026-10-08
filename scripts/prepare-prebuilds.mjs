@@ -73,50 +73,13 @@ export function nodeDistBase(env = process.env) {
   const mirror = env.ZCODE_NODE_DIST_MIRROR?.trim();
   return (mirror || DEFAULT_NODE_DIST_BASE).replace(/\/+$/u, "");
 }
-const BROWSER_USE_PLUGIN_PACKAGE_NAME = "@zcode/browser-use-plugin";
-// node_repl 宿主抽成独立包 @zcode/node-repl-host 之后，browser-use
-// 不再产出 dist/mcp/server.js，CUA 资产也已归 @zcode/zcode-cua-plugin。这是**第三份**平行清单
-// （另两份：packages/desktop/scripts/prepare-agent-node-bundle.mjs 的生产打包、
-// scripts/build-desktop-agent-cli.mjs 的 dev 构建），当时只改了 dev 那份，于是先后在
-// build:macos:arm64 与 build:remote:assets 上以 "missing runtime" 挂掉两次。
-// 权威归属见 bootstrap/official-plugin-definitions.ts。
-const browserUseRequiredRuntimePaths = [
-  "scripts/browser-client.mjs",
-  "docs/api.json",
-  "docs/documents.json",
-  "docs/overview.md",
-  // remote prebuild 必须和桌面 seed 使用同一录屏文档完整性合同。
-  "docs/recording.md",
-  "docs/workflow.md",
-  "skills/control-browser/SKILL.md",
-  "skills/web-gui-tester/SKILL.md",
-];
 const remoteOfficialPluginPackages = [
-  // 44b25ed46c「remove bundled plugins except browser use and cua」删掉了其余
-  // 内置插件源码，但漏改这份清单，bootstrap:with-remote 在 staging 第一个 manifest 就抛
-  // missing。此处与 packages/desktop/scripts/prepare-agent-node-bundle.mjs 的桌面 seed
-  // 清单、packages/server/src/remote/zcodeAgentOfficialPluginAssets.ts 的远端合同保持一致。
-  {
-    // 远端 shared-host 必须部署 node_repl runtime，否则只剩 skill 而没有 mcp__node_repl__js ——
-    // 该 runtime 现由 @zcode/node-repl-host 提供（见下一个条目），browser-use 只带自己的
-    // client script 与 skill/docs。
-    packageName: "@zcode/browser-use-plugin",
-    relativePath: "apps/zcode-cli/packages/browser-use-plugin",
-    requiresRuntime: true,
-    requiredRuntimePaths: browserUseRequiredRuntimePaths,
-    runtimeBuildScript: "scripts/build.mjs",
-    stagedPath: "packages/browser-use-plugin",
-  },
-  {
-    // node_repl 宿主：Browser Use 与 Computer Use 共用的 MCP runtime。远端 shared-host 缺它
-    // 就没有 mcp__node_repl__js，bua/cua 两边都会连不上。
-    packageName: "@zcode/node-repl-host",
-    relativePath: "apps/zcode-cli/packages/node-repl-host",
-    requiresRuntime: true,
-    requiredRuntimePaths: ["dist/mcp/server.js"],
-    runtimeBuildScript: "scripts/build.mjs",
-    stagedPath: "packages/node-repl-host",
-  },
+  // 历史：commit 44b25ed46c 曾删除除 browser use 与 cua 之外的内置插件源码却漏改这份清单，
+  // 导致 bootstrap:with-remote 在 staging 阶段抛 manifest missing。本清单必须与
+  // packages/desktop/scripts/prepare-agent-node-bundle.mjs 的桌面 seed 清单、
+  // packages/server/src/remote/zcodeAgentOfficialPluginAssets.ts 的远端合同保持一致；
+  // 权威归属见 bootstrap/official-plugin-definitions.ts。
+  // Computer Use / node_repl 宿主子系统已整体下线，远端 shared-host 不再需要独立 MCP runtime。
 ];
 // 随 CLI 内置的技能包（不是插件）：远端 agent 的 bootstrap 沿官方插件同款候选目录在 zcode.cjs 旁
 // 找 packages/bundled-skills 并原地读取；与 packages/desktop/scripts/prepare-agent-node-bundle.mjs 同一份清单。
@@ -157,10 +120,7 @@ function shouldCopyOfficialPluginAsset(sourcePath) {
   const name = basename(sourcePath);
   return !excludedOfficialPluginAssetNames.has(name) && !name.endsWith(".pyc");
 }
-const remoteOfficialPluginRequiredPaths = [
-  "packages/browser-use-plugin/.zcode-plugin/plugin.json",
-  "packages/node-repl-host/.zcode-plugin/plugin.json",
-];
+const remoteOfficialPluginRequiredPaths = [];
 
 function readZCodeAgentRuntimeVersion() {
   const runtimeSourcePath = join(rootDir, "packages/shared/src/zcode-agent-runtime.ts");
@@ -436,15 +396,13 @@ function buildRemoteOfficialPluginRuntimeForBootstrap(plugin) {
   const hasCompleteRuntime = plugin.requiredRuntimePaths.every((relativePath) =>
     existsSync(join(pluginRoot, ...relativePath.split("/"))),
   );
-  if (plugin.packageName !== BROWSER_USE_PLUGIN_PACKAGE_NAME && hasCompleteRuntime) {
+  if (hasCompleteRuntime) {
     console.log(`  [skip] reuse existing remote official plugin runtime: ${plugin.packageName}`);
     return;
   }
 
   // bootstrap:with-remote 会串行准备远端资源和工作区构建。
   // 官方插件 runtime 只在 stage 资源时需要，这里用当前 Node 执行等价构建，避免再嵌套 pnpm/tsc shim。
-  // browser-use 的 MCP server 与 browser-client 必须来自同一次构建；只凭旧 server.js 判定可复用
-  // 会让远端资源混入陈旧或缺失的 client，因此 bootstrap 模式下对该插件无条件重建。
   runCommand(process.execPath, ["../../node_modules/typescript/bin/tsc"], {
     cwd: pluginRoot,
     env: process.env,
@@ -527,7 +485,7 @@ async function stageRemoteAgentBundles() {
     cwd: rootDir,
     env: process.env,
   });
-  // browser-use runtime 的 tsc 依赖 @zcode/core/dist。远端资产也必须先构建
+  // 官方插件 runtime 的 tsc 依赖 @zcode/core/dist。远端资产也必须先构建
   // agent CLI 依赖，避免 CI 干净检出时被开发机缓存掩盖的 TS2307。
   buildRemoteOfficialPluginRuntimes();
   const cliBundlePath = join(rootDir, "apps/zcode-cli/packages/cli/dist/zcode.cjs");

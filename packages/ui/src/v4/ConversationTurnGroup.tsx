@@ -1,6 +1,6 @@
 /* eslint-disable max-lines -- turn group 需要在同一处维护普通 assistant 与后台结果的严格行序，拆分会重复 actions/preview/tail 协议。 */
 import { useIsOfficeMode } from "@/hooks/useInterfaceMode.js";
-import { Fragment, memo, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, memo, useEffect, useMemo, useState, type ReactNode } from "react";
 import { ChevronRightIcon } from "lucide-react";
 import {
   TID_CHAT_ASSISTANT_HISTORY_CONTENT,
@@ -22,7 +22,6 @@ import { ChatLoading } from "@/components/ai-elements/chat-loading.js";
 import { ChatApiRetryStatus } from "@/chat-input-toolbar/display.js";
 import { cn } from "@/components/lib/utils.js";
 import { Checkbox } from "@/components/ui/checkbox.js";
-import { MessageActions } from "@/components/ai-elements/message.js";
 import {
   Collapsible,
   CollapsibleContent,
@@ -54,12 +53,10 @@ import { shouldShowTurnChatLoading } from "@/v4/chatLoadingVisibility.js";
 import {
   buildAssistantWorkRenderItems,
   ENABLE_CHANGES_TOOL_CALL_GROUPING,
-  ENABLE_CUA_TOOL_CALL_GROUPING,
   ENABLE_EXPLORE_TOOL_CALL_GROUPING,
   ENABLE_TERMINAL_TOOL_CALL_GROUPING,
   type ConversationAssistantWorkRenderItem,
 } from "@/v4/conversationAssistantWorkItems.js";
-import type { ConversationCuaGroupEvent } from "@/v4/conversationCuaGroups.js";
 import { ConversationAgentToolCallRow } from "@/v4/ConversationAgentToolCallRow.js";
 import { ConversationFileSummaryPanel } from "@/v4/ConversationFileSummaryPanel.js";
 import { WorkflowNotificationToolRow } from "@/v4/WorkflowNotificationToolRow.js";
@@ -74,18 +71,15 @@ import type {
   EditWorkspaceRewindAvailability,
 } from "@/v4/ConversationRowView.js";
 import {
-  isConversationReasoningRowVisible,
   type ConversationRowRenderContext,
 } from "@/v4/conversationRowContext.js";
 import type {
   AssistantWorkRow,
-  ConversationTurnFlowItem,
   ConversationTurnRenderUnit,
   ConversationTurnWorkSegment,
 } from "@/v4/conversationTurnRenderUnits.js";
 import { formatConversationWorkDuration } from "@/v4/conversationWorkDuration.js";
 import { ConversationTurnRow, resolveAssistantCopyText } from "@/v4/ConversationTurnRow.js";
-import { ConversationHookDetailsAction } from "@/v4/ConversationHookDetailsAction.js";
 import { toolCallRowToLegacyNode } from "@/v4/toolCallRowAdapter.js";
 
 interface ConversationTurnGroupProps {
@@ -203,38 +197,10 @@ function ConversationToolGroupRow({
 }: {
   item: Extract<
     ConversationAssistantWorkRenderItem,
-    { kind: "cuaGroup" | "executeGroup" | "changesGroup" }
+    { kind: "executeGroup" | "changesGroup" }
   >;
   context: ConversationRowRenderContext;
 }) {
-  const renderAssistantMessage = useCallback(
-    (event: Extract<ConversationCuaGroupEvent, { kind: "assistantMessage" }>) => (
-      <ConversationTurnRow
-        row={event.row}
-        context={context}
-        hideAssistantActions
-        assistantCodeCommentProjectionEnabled={false}
-      />
-    ),
-    [context],
-  );
-  const renderReasoning = useCallback(
-    (event: Extract<ConversationCuaGroupEvent, { kind: "reasoning" }>) => (
-      <ConversationTurnRow row={event.row} context={context} reasoningContentVariant="nested" />
-    ),
-    [context],
-  );
-  const visibleCuaEvents = useMemo(
-    () =>
-      item.kind === "cuaGroup"
-        ? item.events.filter(
-            (event) =>
-              event.kind !== "reasoning" ||
-              isConversationReasoningRowVisible(event.row.rowId, context),
-          )
-        : undefined,
-    [context, item],
-  );
   return (
     <div
       data-row-id={item.rowId}
@@ -251,67 +217,6 @@ function ConversationToolGroupRow({
         onOpenFileLink={context.onOpenFileLink}
         onOpenBrowserUrl={context.onOpenBrowserUrl}
         onOpenAutomationsMain={context.onOpenAutomationsMain}
-        // history/background 兼容路径只传虚拟父节点时，已被分组投影消费的
-        // Assistant message / reasoning 没有交给 renderer，展开后会永久丢失。
-        cuaGroupEvents={visibleCuaEvents}
-        renderCuaAssistantMessage={item.kind === "cuaGroup" ? renderAssistantMessage : undefined}
-        renderCuaReasoning={item.kind === "cuaGroup" ? renderReasoning : undefined}
-      />
-    </div>
-  );
-}
-
-function ConversationCuaGroupRow({
-  item,
-  context,
-}: {
-  item: Extract<ConversationTurnFlowItem, { kind: "cuaGroup" }>;
-  context: ConversationRowRenderContext;
-}) {
-  const renderAssistantMessage = useCallback(
-    (event: Extract<(typeof item.events)[number], { kind: "assistantMessage" }>) => (
-      <ConversationTurnRow
-        row={event.row}
-        context={context}
-        hideAssistantActions
-        assistantCodeCommentProjectionEnabled={false}
-      />
-    ),
-    [context],
-  );
-  const renderReasoning = useCallback(
-    (event: Extract<(typeof item.events)[number], { kind: "reasoning" }>) => (
-      <ConversationTurnRow row={event.row} context={context} reasoningContentVariant="nested" />
-    ),
-    [context],
-  );
-  const visibleCuaEvents = useMemo(
-    () =>
-      item.events.filter(
-        (event) =>
-          event.kind !== "reasoning" || isConversationReasoningRowVisible(event.row.rowId, context),
-      ),
-    [context, item.events],
-  );
-  return (
-    <div
-      data-row-id={item.rowId}
-      data-conversation-selectable="true"
-      data-testid={testId(TID_V4_ROW, String(item.rowId))}
-    >
-      <ToolCallBlock
-        toolCallNode={item.node}
-        workspacePath={context.workspacePath}
-        theme={context.theme}
-        codePreviewSettings={context.codePreviewSettings}
-        showTodoToolCalls={context.messageStreamShowTodos === true}
-        onOpenCodeViewer={context.onOpenCodeViewer}
-        onOpenFileLink={context.onOpenFileLink}
-        onOpenBrowserUrl={context.onOpenBrowserUrl}
-        onOpenAutomationsMain={context.onOpenAutomationsMain}
-        cuaGroupEvents={visibleCuaEvents}
-        renderCuaAssistantMessage={renderAssistantMessage}
-        renderCuaReasoning={renderReasoning}
       />
     </div>
   );
@@ -348,7 +253,6 @@ function ConversationAssistantWorkItems({
         },
         {
           stageTailIsRunning,
-          enableCuaGrouping: ENABLE_CUA_TOOL_CALL_GROUPING,
           enableExploreGrouping:
             context.toolGroupingExploreEnabled ?? ENABLE_EXPLORE_TOOL_CALL_GROUPING,
           enableTerminalGrouping:
@@ -693,23 +597,6 @@ function ConversationWorkSegmentFlow({
             ) : (
               userRow
             );
-        } else if (item.kind === "cuaGroup") {
-          const group = <ConversationCuaGroupRow item={item} context={context} />;
-          if (item.flowKind === "assistantHistory") {
-            const chunkKey =
-              historyChunkIndex === 0 ? segment.key : `${segment.key}:chunk-${historyChunkIndex}`;
-            historyChunkIndex += 1;
-            content = (
-              <CollapsibleContent
-                data-testid={testId(TID_CHAT_ASSISTANT_HISTORY_CONTENT, chunkKey)}
-                data-history-open={String(open)}
-              >
-                <div className="pt-5">{group}</div>
-              </CollapsibleContent>
-            );
-          } else {
-            content = group;
-          }
         } else if (item.kind === "assistantHistory") {
           const chunkKey =
             historyChunkIndex === 0 ? segment.key : `${segment.key}:chunk-${historyChunkIndex}`;
@@ -1201,14 +1088,6 @@ function ConversationTurnGroupImpl({
     !unit.timelineOnly &&
     latestAssistantTextRow?.state === "complete" &&
     assistantCopyText !== undefined;
-  const hasHookActions =
-    // Hook action 与 copy/feedback/fork 共用 turn eligibility；
-    // timelineOnly 维护 turn（compact/modelChange marker 轮）即使带历史遗留的
-    // didExecute=true Hook row 也不得露出图标，否则 /compact 轮会凭 SessionStart
-    // Hook 误挂出一个不可解释的操作栏。
-    !unit.timelineOnly &&
-    !unit.isRunning &&
-    unit.hookInvocations.some((row) => row.executions.some((execution) => execution.didExecute));
   const canRetryLatestAssistant = latestAssistantTextRow?.actions?.canRetry === true;
   const canForkLatestAssistant = latestAssistantTextRow?.actions?.canFork === true;
   const backgroundResultTitle = resolveBackgroundResultTitle(unit);
@@ -1221,7 +1100,6 @@ function ConversationTurnGroupImpl({
     hasAssistantWorkContent ||
     Boolean(unit.header?.fileChanges) ||
     canRenderAssistantActions ||
-    hasHookActions ||
     workflowTurnDigests.length > 0;
   const editWorkspaceRewindAvailability = useMemo<EditWorkspaceRewindAvailability>(() => {
     const fileChanges = unit.header?.fileChanges;
@@ -1402,15 +1280,6 @@ function ConversationTurnGroupImpl({
           {!isOfficeMode && unit.header?.fileChanges ? (
             <ConversationFileSummaryPanel header={unit.header} context={context} />
           ) : null}
-          {unit.browserTurnEndRows.length > 0 ? (
-            // 自动截图表达轮次结束时页面最终状态；放在 assistant work 内会
-            // 穿插到 Website 预览和 file diff 摘要之间。它应是操作栏之前的最后一个内容块。
-            <ConversationAssistantWorkItems
-              rows={unit.browserTurnEndRows}
-              context={assistantRowContext}
-              assistantCodeCommentProjectionEnabled={assistantCodeCommentProjectionEnabled}
-            />
-          ) : null}
           {canRenderAssistantActions && latestAssistantTextRow ? (
             // 文件 summary 是整轮完成后的聚合结果；轮尾工具栏如果跟着
             // assistant text 内联渲染，会插到 summary 前面，读起来像 summary 不是本轮收尾。
@@ -1424,14 +1293,8 @@ function ConversationTurnGroupImpl({
               onFork={canForkLatestAssistant ? onFork : undefined}
               onRetry={canRetryLatestAssistant ? onRetry : undefined}
               onFeedbackChange={onFeedbackChange}
-              hookInvocations={unit.hookInvocations}
-              turnId={unit.turnId}
               className="opacity-0 transition-opacity group-hover/assistant-turn:opacity-100 focus-within:opacity-100"
             />
-          ) : hasHookActions ? (
-            <MessageActions className="opacity-0 transition-opacity group-hover/assistant-turn:opacity-100 focus-within:opacity-100">
-              <ConversationHookDetailsAction rows={unit.hookInvocations} turnId={unit.turnId} />
-            </MessageActions>
           ) : null}
           {unit.assistantTailRows.length > 0 ? (
             // turnTailBoundary 之前虽然从工作历史中拆出，却仍在 flow 内渲染，

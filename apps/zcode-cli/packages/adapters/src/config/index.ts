@@ -120,15 +120,10 @@ class ConfigStore {
         this.set(ConfigKey.FeatureRewind, config.features.rewind, scope);
       if (config.features.subagent !== undefined)
         this.set(ConfigKey.FeatureSubagent, config.features.subagent, scope);
-      if (config.features.memory !== undefined)
-        this.set(ConfigKey.FeatureMemory, config.features.memory, scope);
       if (config.features.skill !== undefined)
         this.set(ConfigKey.FeatureSkill, config.features.skill, scope);
       if (config.features.mcp !== undefined)
         this.set(ConfigKey.FeatureMcp, config.features.mcp, scope);
-    }
-    if (config.memory) {
-      if (config.memory.use !== undefined) this.set(ConfigKey.MemoryUse, config.memory.use, scope);
     }
     if (config.mcp) {
       if (config.mcp.servers !== undefined)
@@ -190,18 +185,6 @@ class ConfigStore {
         {
           ...previous,
           ...config.modelAnomalyGuard,
-        },
-        scope,
-      );
-    }
-    if (config.hooks) {
-      const previous = this.get(ConfigKey.Hooks) ?? DefaultConfig.hooks;
-      this.set(
-        ConfigKey.Hooks,
-        {
-          ...previous,
-          ...config.hooks,
-          events: config.hooks.events ?? previous.events,
         },
         scope,
       );
@@ -284,12 +267,8 @@ export class ConfigPortImpl implements ConfigPort {
         compact: this.store.get(ConfigKey.FeatureCompact) ?? true,
         rewind: this.store.get(ConfigKey.FeatureRewind) ?? true,
         subagent: this.store.get(ConfigKey.FeatureSubagent) ?? true,
-        memory: this.store.get(ConfigKey.FeatureMemory) ?? true,
         skill: this.store.get(ConfigKey.FeatureSkill) ?? true,
         mcp: this.store.get(ConfigKey.FeatureMcp) ?? true,
-      },
-      memory: {
-        use: this.store.get(ConfigKey.MemoryUse) ?? DefaultConfig.memory.use,
       },
       mcp: {
         servers: this.store.get(ConfigKey.McpServers) ?? DefaultConfig.mcp.servers,
@@ -328,7 +307,6 @@ export class ConfigPortImpl implements ConfigPort {
       },
       modelAnomalyGuard:
         this.store.get(ConfigKey.ModelAnomalyGuard) ?? DefaultConfig.modelAnomalyGuard,
-      hooks: this.store.get(ConfigKey.Hooks) ?? DefaultConfig.hooks,
       ui: {
         locale: this.store.get(ConfigKey.UiLocale) ?? DefaultConfig.ui.locale,
         theme: this.store.get(ConfigKey.UiTheme) ?? DefaultConfig.ui.theme,
@@ -399,14 +377,10 @@ function getDefaultValue(key: ConfigKey): unknown {
       return defaults.features.rewind;
     case ConfigKey.FeatureSubagent:
       return defaults.features.subagent;
-    case ConfigKey.FeatureMemory:
-      return defaults.features.memory;
     case ConfigKey.FeatureSkill:
       return defaults.features.skill;
     case ConfigKey.FeatureMcp:
       return defaults.features.mcp;
-    case ConfigKey.MemoryUse:
-      return defaults.memory.use;
     case ConfigKey.McpServers:
       return defaults.mcp.servers;
     case ConfigKey.PluginsEnabled:
@@ -437,8 +411,6 @@ function getDefaultValue(key: ConfigKey): unknown {
       return defaults.toolConcurrency.maxConcurrency;
     case ConfigKey.ModelAnomalyGuard:
       return defaults.modelAnomalyGuard;
-    case ConfigKey.Hooks:
-      return defaults.hooks;
     case ConfigKey.UiLocale:
       return defaults.ui.locale;
     case ConfigKey.UiTheme:

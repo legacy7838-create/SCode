@@ -14,17 +14,6 @@ import type {
 } from "./mcp.js";
 import type { OAuthStateRegistration } from "./oauth.js";
 import type { AppSettings, Locale } from "./protocol.js";
-import type { ArmsCustomEventPayload, RendererTelemetryEventPayload } from "./telemetry.js";
-import type {
-  RendererActionTraceBatchV1,
-  RendererActionTraceConfigV1,
-} from "./rendererActionTrace.js";
-import type { RendererHeapSample } from "./validation.js";
-import type {
-  CuaAccessibilitySettingsResult,
-  OpenCuaPermissionOnboardingOptions,
-  PrepareCuaHelperPermissionDragResult,
-} from "./cuaAccessibilitySettings.js";
 import type { BrowserViewportSize } from "./browser-use/command-metadata.js";
 import type {
   PostUpdateReleaseNotesPayload,
@@ -498,23 +487,9 @@ export const DesktopCommandIds = {
   ResetZCodeEndpoint: "resetZCodeEndpoint",
   ClearAllData: "clearAllData",
   ClearCodingPlanWebviewStorage: "clearCodingPlanWebviewStorage",
-  GetCuaOsSupport: "getCuaOsSupport",
 } as const;
 
 export type DesktopCommandId = (typeof DesktopCommandIds)[keyof typeof DesktopCommandIds];
-
-/**
- * CUA Helper 的操作系统支持态（macOS 版本门槛判定结果，主进程经
- * GetCuaOsSupport 下发给 renderer）。
- * - supported：满足门槛（含非版本因素，如解析失败时按宽松处理）。
- * - macos-below-minimum：macOS 低于承诺地板（Helper LSMinimumSystemVersion 12.0），
- *   低版本上 Helper 会被 LaunchServices -10825 拒启，表象是授权反复无响应。
- * - not-applicable：非 darwin 平台，无 macOS 版本门槛概念。
- */
-export type CuaOsSupport =
-  | { kind: "supported" }
-  | { kind: "macos-below-minimum"; minimumMacOs: string; currentMacOs: string }
-  | { kind: "not-applicable" };
 
 /**
  * 平台操作接口 —— 替代直接访问 window.zcode
@@ -657,21 +632,6 @@ export interface IPlatformService {
   /** 使用系统默认应用打开本地文件；普通 Web 平台返回 unsupported。 */
   openExternalFile?(path: string): Promise<{ success: boolean; error?: string }>;
 
-  /** 打开 ZCode Computer Use 的完整权限引导。Desktop only。 */
-  openCuaPermissionOnboarding?(
-    options?: OpenCuaPermissionOnboardingOptions,
-  ): Promise<CuaAccessibilitySettingsResult>;
-  /** 取消本 renderer 以 operationId 发起的 onboarding participant。Desktop only。 */
-  cancelCuaPermissionOnboarding?(operationId: string): void;
-  /**
-   * 预热并缓存已验证的 Helper 路径 + 指纹，使随后的 dragstart 能同步 startDrag。
-   * 必须在拖拽浮窗挂载时调用：Electron 原生拖拽要求在 dragstart 事件链路里同步调用
-   * startDrag，等不了 install/verify 这类异步 I/O（否则错过 OS 拖拽手势窗口）。Desktop only。
-   */
-  prepareCuaHelperPermissionDrag?(): Promise<PrepareCuaHelperPermissionDragResult>;
-  /** 从权限浮窗把 Helper.app 拖进 macOS 权限列表。Desktop only。 */
-  startCuaHelperPermissionDrag?(): void;
-
   /** 上报 OAuth state 给 main process，用于 deep link 路由 */
   registerOAuthState(payload: OAuthStateRegistration): void;
 
@@ -695,28 +655,6 @@ export interface IPlatformService {
 
   /** 触发任务状态对应的系统通知，由宿主环境决定是否真正展示 */
   showTaskNotification(payload: TaskNotificationPayload): void;
-
-  /** 通过宿主环境统一上报 UI 侧 telemetry 事件 */
-  reportTelemetryEvent(payload: RendererTelemetryEventPayload): Promise<void>;
-
-  /** 通过宿主环境上报 ARMS 自定义事件；Web 端当前为空实现 */
-  reportArmsCustomEvent(payload: ArmsCustomEventPayload): Promise<void>;
-
-  /** 读取 Desktop Renderer 用户操作 Trace 的当前灰度配置；Web/手机不实现。 */
-  getRendererActionTraceConfig?(): Promise<RendererActionTraceConfigV1>;
-  /** 订阅 Main 推送的 Renderer 用户操作 Trace 配置；Web/手机不实现。 */
-  onRendererActionTraceConfigChanged?(
-    callback: (config: RendererActionTraceConfigV1) => void,
-  ): () => void;
-  /** Renderer → Main：发送已结束的 ui_action batch；严格旁路、fire-and-forget。 */
-  reportRendererActionTraceBatch?(batch: RendererActionTraceBatchV1): void;
-  reportLocalTtftBatch?(batch: import("./localTtft.js").LocalTtftBatch): void;
-
-  /**
-   * Renderer → Main：主窗口 renderer 每 60 秒的 heap 读数，进 `renderer_main` 角色事件。单向 send、fire-and-forget；
-   * Web 端与手机远控没有桥，不实现即 no-op。
-   */
-  reportRendererHeapSample?(sample: RendererHeapSample): void;
 
   /** 同步当前窗口所有 tab 的 workspace 路径到 main 进程（用于跨窗口去重） */
   syncWindowTabs(paths: string[]): void;
@@ -962,8 +900,7 @@ export interface IPlatformService {
   ): Promise<{ success: boolean; error?: string }>;
 
   /** 执行桌面窗口级命令（标题栏菜单、缩放、窗口控制等）。
-   *  返回值直通 main 进程 handler 的 return（大多数命令无返回值；
-   *  GetCuaOsSupport 返回 CuaOsSupport），因此放宽为 unknown。 */
+   *  返回值直通 main 进程 handler 的 return（大多数命令无返回值），因此放宽为 unknown。 */
   executeDesktopCommand(command: DesktopCommandId): Promise<unknown>;
 
   /** 同步应用菜单语言，驱动 main 进程重建原生菜单 */

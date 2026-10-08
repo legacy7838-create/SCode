@@ -36,7 +36,6 @@ export type ContextSource =
   | "skills" // 可用 skills
   | "tools" // 工具定义
   | "request_user_context" // request-level user context provider-visible 组合块
-  | "memory" // 长期 memory read path
   | "current_date" // 当前日期
   | "custom_system_prompt" // 自定义 stable system body
   | "workflow_actor_identity" // 动态工作流子代理身份：契约 + persona 叠加
@@ -108,8 +107,6 @@ export interface ContextBuilderConfig {
   currentDate?: string;
   userInstructions?: ResolvedUserInstructions;
   projectContext?: ProjectContext;
-  memoryRoot?: string;
-  memoryIndexContent?: string;
   skills?: SkillLoadOutcome;
   agentProfiles?: readonly AgentProfile[];
   embeddedSearchEnabled?: boolean;

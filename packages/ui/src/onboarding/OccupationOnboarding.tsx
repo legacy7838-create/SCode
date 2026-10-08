@@ -1,4 +1,3 @@
-import { useOnboardingTelemetry } from "@/onboarding/useOnboardingTelemetry.js";
 import { OnboardingHeader } from "@/onboarding/OnboardingHeader.js";
 import { OccupationOnboardingVisual } from "@/onboarding/OccupationOnboardingVisual.js";
 import { occupations, type OccupationValue } from "@/onboarding/occupationOptions.js";
@@ -66,7 +65,6 @@ export function OccupationOnboarding({
   const preferences = step === 2;
   const requestOnboardingDialog = useZCodeStore((state) => state.requestOnboardingDialog);
   const [migration, setMigration] = useState(false);
-  const [memory, setMemory] = useState(savedInterfaceMode === "office");
   const [suggestions, setSuggestions] = useState(savedInterfaceMode === "office");
   const suggestionsEditedRef = useRef(false);
   const [saving, setSaving] = useState(false);
@@ -82,22 +80,10 @@ export function OccupationOnboarding({
     update,
   });
   const onboardingVisible = requested || (needsOnboarding === true && !dismissed);
-  const captureEnd = useOnboardingTelemetry({
-    platform,
-    visible:
-      Boolean(settings) &&
-      onboardingVisible &&
-      (requested || needsOnboarding !== null || Boolean(settings?.onboardingOccupation)),
-    step,
-    occupation,
-    mode,
-    memory,
-    suggestions,
-    migration,
-  });
   const closeOnboarding = useCallback(() => {
     if (savingRef.current) return;
-    captureEnd("close", intl.formatMessage({ id: "occupationOnboarding.close" }))();
+    // 引导曝光/结束遥测（useOnboardingTelemetry）随监控链路整体下线，
+    // 这里仅保留真实的关闭逻辑：回到第一步、标记 dismissed、通知 host 持久化关闭决策。
     setStep(0);
     setDismissed(true);
     setRequested(false);
@@ -106,7 +92,7 @@ export function OccupationOnboarding({
         logger.warn("[occupation-onboarding] 写入关闭决策失败", { error: String(cause) });
       });
     }
-  }, [captureEnd, intl, onboardingRecord, platform, setRequested]);
+  }, [onboardingRecord, platform, setRequested]);
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (
@@ -121,7 +107,6 @@ export function OccupationOnboarding({
         setInterfaceMode(nextMode);
         setMode(nextMode);
         if (nextMode !== mode) {
-          setMemory(nextMode === "office");
           if (nextMode === "office" && !suggestionsEditedRef.current) setSuggestions(true);
         }
         return;
@@ -193,8 +178,6 @@ export function OccupationOnboarding({
     );
     const initialMode = entry?.interfaceMode ?? savedInterfaceMode;
     setMode(initialMode);
-    // 编程模式默认关闭主动工作记忆；办公模式才恢复该用户之前的勾选。
-    setMemory(initialMode === "office" && (entry?.memoryEnabled ?? true));
     setSuggestions(entry?.proactiveSuggestionsEnabled ?? initialMode === "office");
     setMigration(false);
     setError(false);
@@ -220,7 +203,6 @@ export function OccupationOnboarding({
   const save = async (skip = false) => {
     if (savingRef.current) return;
     savingRef.current = true;
-    const reportEnd = captureEnd(skip ? "skip" : "start", t(skip ? "skip" : "start"));
     setSaving(true);
     setError(false);
     try {
@@ -230,11 +212,9 @@ export function OccupationOnboarding({
         // settings 侧保持既有语义：跳过落保守默认值（职业 other / 偏好关），
         // "跳过也算答案"的区分度只体现在 onboarding-record.json 里。
         onboardingOccupation: occupation ?? "other",
-        memoryEnabled: skip ? false : memory,
         proactiveSuggestionsEnabled: !skip && mode === "office" && suggestions,
       });
-      reportEnd();
-      // 保存成功就是本次引导的终点；本地记录失败不应留下可再次上报的引导页面。
+      // 保存成功就是本次引导的终点；本地记录失败不应留下可再次展示的引导页面。
       setStep(0);
       setDismissed(true);
       setRequested(false);
@@ -249,7 +229,6 @@ export function OccupationOnboarding({
           await appendOnboardingRecord(onboardingRecord, platform.getDeviceId(), {
             occupation,
             interfaceMode: mode,
-            memoryEnabled: skip ? null : memory,
             proactiveSuggestionsEnabled: skip ? null : mode === "office" && suggestions,
             completedAt: new Date().toISOString(),
           });
@@ -312,8 +291,6 @@ export function OccupationOnboarding({
                       saving={saving}
                       onSelect={(value) => {
                         markUserEdited();
-                        // 重选当前编程模式也应清除旧记录带来的默认勾选。
-                        setMemory(value === "office");
                         if (value !== mode) {
                           if (value === "office" && !suggestionsEditedRef.current)
                             setSuggestions(true);
@@ -325,7 +302,7 @@ export function OccupationOnboarding({
                     />
                   ) : preferences ? (
                     <div className="mt-8 space-y-3">
-                      {(["suggestions", "memory", "migration"] as const)
+                      {(["suggestions", "migration"] as const)
                         .filter((key) => key !== "suggestions" || mode === "office")
                         .map((key) => (
                           <label
@@ -333,18 +310,11 @@ export function OccupationOnboarding({
                             className="grid cursor-pointer grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2 rounded-xl border border-card-border bg-card dark:bg-surface/40 p-5 text-ui-base transition-colors hover:bg-surface-hover"
                           >
                             <Checkbox
-                              checked={
-                                key === "migration"
-                                  ? migration
-                                  : key === "memory"
-                                    ? memory
-                                    : suggestions
-                              }
+                              checked={key === "migration" ? migration : suggestions}
                               disabled={saving}
                               onCheckedChange={(checked) => {
                                 markUserEdited();
                                 if (key === "migration") setMigration(checked === true);
-                                else if (key === "memory") setMemory(checked === true);
                                 else {
                                   suggestionsEditedRef.current = true;
                                   setSuggestions(checked === true);

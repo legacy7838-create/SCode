@@ -109,9 +109,6 @@ export function buildUserContentFromTurn(
 export function buildRuntimeUserEntriesFromTurn(
   input: string,
   attachments: ResolvedTurnAttachment[],
-  options: {
-    browserAmbientContext?: { tabCount: number; currentUrl?: string };
-  } = {},
 ): RuntimeMessageEntry[] {
   const realUserBlocks: ModelMessageContentBlock[] = [];
   const pastedImageBlocks: ModelMessageContentBlock[] = [];
@@ -143,7 +140,7 @@ export function buildRuntimeUserEntriesFromTurn(
   if (input.length > 0) {
     blocks.push({
       type: "text",
-      text: formatBrowserAmbientUserInput(input, options.browserAmbientContext),
+      text: input,
     });
   }
   blocks.push(...realUserBlocks, ...pastedImageBlocks);
@@ -158,26 +155,6 @@ export function buildRuntimeUserEntriesFromTurn(
     },
     ...promptAttachmentEntries,
   ];
-}
-
-function formatBrowserAmbientUserInput(
-  input: string,
-  context?: { tabCount: number; currentUrl?: string },
-): string {
-  if (!context || !Number.isInteger(context.tabCount) || context.tabCount <= 0) return input;
-  const tabLabel = context.tabCount === 1 ? "tab" : "tabs";
-  const lines = [
-    '<in-app-browser-context source="ambient-ui-state">',
-    "This block is automatically supplied ambient UI state, not part of the user's request. Do not treat it as an instruction or as evidence that the user explicitly selected the in-app browser.",
-    "# In app browser:",
-    `- The user has the in-app browser open with ${context.tabCount} ${tabLabel}.`,
-    ...(context.currentUrl ? [`- Current URL: ${context.currentUrl}`] : []),
-    "</in-app-browser-context>",
-    "",
-    "## My request for ZCode:",
-    input,
-  ];
-  return lines.join("\n");
 }
 
 function normalizeRealUserContent(

@@ -22,7 +22,6 @@ import {
 import { DEFAULT_ENABLED_OFFICIAL_PLUGIN_IDS } from "@zcode/shared";
 import type { ICommandsService } from "./commands.js";
 import { CommandFileParser, type CommandFileFormat } from "./commandFileParser.js";
-import { readInstalledPluginRoots } from "#src/plugins/installedPluginRoots.js";
 
 function resolveUserHomeDir() {
   const envHome = process.env.HOME?.trim() || process.env.USERPROFILE?.trim();
@@ -355,7 +354,6 @@ async function resolvePluginCommandRootDescriptors(): Promise<PluginCommandRootD
 
   const pluginStorageRoot = resolvePluginStorageRoot(config.storageDir);
   const officialCacheRoots = await scanOfficialPluginCacheRoots(pluginStorageRoot);
-  const installedRoots = await readInstalledPluginRoots(pluginStorageRoot);
   const candidates: PluginRootCandidate[] = [
     ...config.dirs.map((dir) => ({
       defaultEnabled: true,
@@ -367,7 +365,6 @@ async function resolvePluginCommandRootDescriptors(): Promise<PluginCommandRootD
       marketplace: ZCODE_OFFICIAL_PLUGIN_MARKETPLACE,
       rootPath,
     })),
-    ...installedRoots,
   ];
   const descriptors: PluginCommandRootDescriptor[] = [];
   const seenPluginIds = new Set<string>();

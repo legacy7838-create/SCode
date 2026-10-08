@@ -29,10 +29,6 @@ import { createWorkflowObservationDisplay } from "./workflow-observation-display
 export { createCreateWorkflowDisplay } from "./create-workflow-display.js";
 import { isRecord } from "./utils.js";
 import { parseOfficialMcpToolError, type OfficialMcpToolErrorCode } from "@zcode/shared";
-import {
-  CUA_REQUEST_ACCESS_STATUS_META_KEY,
-  cuaRequestAccessStatusSchema,
-} from "@zcode/zcode-cua/request-access-contract";
 
 const MAX_DISPLAY_DIFF_HUNKS = 8;
 const MAX_DISPLAY_DIFF_LINES = 160;
@@ -305,10 +301,6 @@ function createCuaToolResultDisplay(
   const targetApp = officialCua
     ? cuaTargetAppDisplaySchema.safeParse(meta?.[CUA_TARGET_APP_DISPLAY_META_KEY])
     : undefined;
-  const permissionStatus =
-    officialCua && toolName === "request_access"
-      ? cuaRequestAccessStatusSchema.safeParse(meta?.[CUA_REQUEST_ACCESS_STATUS_META_KEY])
-      : undefined;
 
   // MCP modelContent 会把 structuredContent 展平成文本；在展平前生成独立、有限长的
   // display，才能让实时事件和历史会话稳定区分 CUA 错误与结构化结果。
@@ -324,7 +316,6 @@ function createCuaToolResultDisplay(
       ? { suggestedAction: errorRecord.suggested_action }
       : {}),
     ...(targetApp?.success ? { targetApp: targetApp.data } : {}),
-    ...(permissionStatus?.success ? { permissionStatus: permissionStatus.data } : {}),
     ...(media.length > 0 ? { media } : {}),
     ...(truncated ? { truncated: true } : {}),
   };

@@ -28,14 +28,11 @@ export type GlobalDetectedLocale = Exclude<GlobalLocale, "auto">;
 export type GlobalOutputFormat = "text" | "json" | "stream-json";
 
 export type GlobalOptions = {
-  browserExecutable?: string;
-  browserUse?: "headless";
   detectedLocale?: GlobalDetectedLocale;
   enableWorkflow?: boolean;
   force: boolean;
   json: boolean;
   locale?: GlobalLocale;
-  memoryBench?: boolean;
   noColor: boolean;
   outputFormat?: GlobalOutputFormat;
   verbose: boolean;

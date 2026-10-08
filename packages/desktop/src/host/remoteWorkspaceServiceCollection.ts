@@ -2,7 +2,6 @@
 import {
   ServiceCollection,
   IFileService,
-  IMediaPreviewService,
   IGitService,
   IGitCheckpointService,
   ISystemService,
@@ -26,13 +25,8 @@ import {
   ISkillsService,
   ISkillSyncService,
   IMcpSyncService,
-  IPluginSyncService,
-  IPluginsService,
-  IPluginManagementService,
   ISubagentsService,
   ICommandsService,
-  IHooksService,
-  IMemoryService,
   ISettingsSyncService,
   IPromptAttachmentTransferService,
   type IServiceAccessor,
@@ -57,12 +51,10 @@ import {
   createSettingsSyncService,
   createBotsService,
   createUsageStatsService,
-  createMediaPreviewService,
   createCodingPlanSubscriptionService,
   createClientScenesService,
   createServiceLogger,
   createSubagentsService,
-  createMemoryService,
   createRemoteConversationShareArtifactSource,
   OAuthCredentialRepo,
 } from "@zcode/services/node";
@@ -267,7 +259,6 @@ export function createRemoteWorkspaceServiceCollection(params: {
               askUserQuestionAutoResolutionEnabled:
                 settings.askUserQuestionAutoResolutionEnabled !== false,
               nativeSearchEnhancementsEnabled: settings.nativeSearchEnhancementsEnabled !== false,
-              memoryEnabled: settings.memoryEnabled === true,
               modelContextBudgetStrategy,
               // remote workspace 与本地 Host 保持同一 scope 边界，首次执行不得再次等待 client config。
               ...(request.scope === "user-execution" && settings.integratedTerminalShell
@@ -366,14 +357,8 @@ export function createRemoteWorkspaceServiceCollection(params: {
     .register(ISkillsService, params.connectionServices.skillsService)
     .register(ISkillSyncService, params.connectionServices.skillSyncService)
     .register(IMcpSyncService, params.connectionServices.mcpSyncService)
-    .register(IPluginSyncService, params.connectionServices.pluginSyncService)
-    .register(IPluginsService, params.connectionServices.pluginsService)
-    // 远端设置页插件管理也必须打到远端 agent（插件目录在远端文件系统）。
-    .register(IPluginManagementService, params.connectionServices.pluginManagementService)
     .register(ICommandsService, params.connectionServices.commandsService)
     .register(ISubagentsService, createSubagentsService({ isDesktopRuntime: true }))
-    .register(IHooksService, params.connectionServices.hooksService)
-    .register(IMemoryService, createMemoryService())
     .register(
       ISettingsSyncService,
       createSettingsSyncService({ settingService: localSettingService }),

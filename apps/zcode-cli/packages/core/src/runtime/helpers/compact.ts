@@ -43,7 +43,6 @@ export function defaultCompactPhaseForTrigger(trigger: CompactTrigger): CompactP
       return CompactPhase.Reactive;
     case CompactTrigger.Manual:
     case CompactTrigger.Partial:
-    case CompactTrigger.SessionMemory:
       return CompactPhase.StandaloneTurn;
   }
 }
@@ -57,8 +56,6 @@ export function defaultCompactReasonForTrigger(trigger: CompactTrigger): Compact
     case CompactTrigger.Manual:
     case CompactTrigger.Partial:
       return CompactReason.UserRequested;
-    case CompactTrigger.SessionMemory:
-      return CompactReason.ContextLimit;
   }
 }
 

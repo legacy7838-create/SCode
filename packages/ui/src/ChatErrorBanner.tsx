@@ -11,9 +11,8 @@ import {
   MEDIA_BUDGET_CURRENT_VIDEO_TOO_LARGE_ERROR_CODE,
   TID_CHAT_ERROR_DETAILS_BUTTON,
   TID_CHAT_ERROR_BANNER,
-  TID_CHAT_ERROR_HOOK_ICON,
 } from "@zcode/shared";
-import { AnchorIcon, CopyIcon, InfoIcon, RocketIcon, SettingsIcon, X } from "lucide-react";
+import { CopyIcon, InfoIcon, RocketIcon, SettingsIcon, X } from "lucide-react";
 import { useZCodeIntl } from "./i18n/IntlProvider.js";
 import type { IntlInstance } from "./i18n/IntlProvider.js";
 import { Button } from "./components/ui/button.js";
@@ -127,7 +126,6 @@ export function ChatErrorBanner({
   const iconButtonClassName = "shrink-0";
   const localizedErrorMessage = resolveChatErrorBannerDisplayMessage(error, intl);
   const modelConfigMissing = isModelConfigMissingError(error);
-  const hookBlocked = error.code === "fault.runtime.hookBlocked";
   if (shouldSuppressChatErrorBanner(error)) {
     return null;
   }
@@ -194,15 +192,7 @@ export function ChatErrorBanner({
         )}
       >
         <div className="flex min-w-0 flex-1 items-center gap-2 text-ui-base text-foreground">
-          {hookBlocked ? (
-            <AnchorIcon
-              aria-hidden="true"
-              className="size-4 shrink-0"
-              data-testid={TID_CHAT_ERROR_HOOK_ICON}
-            />
-          ) : (
-            <InfoIcon aria-hidden="true" className="size-4 shrink-0" />
-          )}
+          <InfoIcon aria-hidden="true" className="size-4 shrink-0" />
           <div className="min-w-0 truncate font-medium">{localizedErrorMessage}</div>
         </div>
 

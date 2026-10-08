@@ -11,7 +11,6 @@ export const CompactTrigger = {
   Auto: "auto",
   Partial: "partial",
   Reactive: "reactive",
-  SessionMemory: "session_memory",
 } as const;
 
 export type CompactTrigger = (typeof CompactTrigger)[keyof typeof CompactTrigger];
@@ -107,7 +106,6 @@ const compactTimelinePayloadInputSchema = z
       CompactTrigger.Auto,
       CompactTrigger.Partial,
       CompactTrigger.Reactive,
-      CompactTrigger.SessionMemory,
     ]),
     phase: z
       .enum([
@@ -184,7 +182,6 @@ export const compactBoundaryPayloadSchema = z
       CompactTrigger.Auto,
       CompactTrigger.Partial,
       CompactTrigger.Reactive,
-      CompactTrigger.SessionMemory,
     ]),
     phase: z
       .enum([
@@ -202,7 +199,7 @@ export const compactBoundaryPayloadSchema = z
         CompactReason.ProviderOverflow,
       ])
       .optional(),
-    summarySource: z.enum(["model", "session_memory"]).optional(),
+    summarySource: z.enum(["model"]).optional(),
     preCompactTokenCount: z.number().int().nonnegative(),
     postCompactTokenCount: z.number().int().nonnegative().optional(),
     truePostCompactTokenCount: z.number().int().nonnegative().optional(),
@@ -264,7 +261,7 @@ export interface CompactSummaryPayload {
   boundaryId: string;
   summary: string;
   summaryMessageId: MessageId;
-  source: "model" | "session_memory";
+  source: "model";
 }
 
 export interface CompactProjectionInfo {

@@ -26,18 +26,7 @@ export interface TestActions extends TaskListE2EActions {
   setLocale: (locale: "zh-CN" | "en-US") => void;
   /** 注入聊天展示用的 mock 消息 */
   setChatMessages: (messages: ChatMessage[]) => void;
-  /** 获取当前 mock 消息数量 */
   getChatMessageCount: () => number;
-  /** E2E 通过真实 zcodeAgentService 拉取插件 overview */
-  getPluginsOverview: IZCodeAgentService["getPluginsOverview"];
-  /** E2E 通过真实 zcodeAgentService 添加 marketplace */
-  addPluginMarketplace: IZCodeAgentService["addPluginMarketplace"];
-  /** E2E 通过真实 zcodeAgentService 刷新 marketplace */
-  updatePluginMarketplace: IZCodeAgentService["updatePluginMarketplace"];
-  /** E2E 通过真实 zcodeAgentService 安装 marketplace plugin */
-  installPlugin: IZCodeAgentService["installPlugin"];
-  /** E2E 通过真实 zcodeAgentService 触发插件 discover */
-  listPlugins: IZCodeAgentService["listPlugins"];
   /** E2E 通过真实 zcodeAgentService 查询 Workspace/Session Plugin catalog */
   getPluginReferenceCatalog: IZCodeAgentService["getPluginReferenceCatalog"];
 }

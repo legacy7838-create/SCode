@@ -264,9 +264,6 @@ async function sendText(
     });
     started = await startPromptTurn(host, record, {
       content: payload.text,
-      ...(payload.browserAmbientContext
-        ? { browserAmbientContext: payload.browserAmbientContext }
-        : {}),
       inputId: envelope.commandId,
       // 立即发送切换了 runtime turn，导致运行中用户输入遗漏 human 提示。
       // 只按 Core 的实际抢占回执标记纯文本；空闲及附件输入保留原路径。

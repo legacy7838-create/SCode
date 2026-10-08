@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
 import type { CommandConfig, UserCommand, ZCodeCommand } from "@zcode/shared";
-import { isPluginCommand, isUserCommand, ZCODE_COMMAND_AGENT_SOURCE } from "@zcode/shared";
+import { isUserCommand, ZCODE_COMMAND_AGENT_SOURCE } from "@zcode/shared";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { toast } from "@/components/ui/toast.js";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog.js";
@@ -19,18 +19,6 @@ import {
   SettingsResourceGroupHeader,
   SettingsResourceList,
 } from "@/settings/SettingsResourceGroup.js";
-import { groupCommandsByPlugin } from "@/settings/pluginManagedResourceGroups.js";
-import {
-  PluginInstallEmptyState,
-  PluginLoadingState,
-  PluginSearchEmptyState,
-} from "@/settings/PluginInstallEmptyState.js";
-import { resolvePluginDisplayName } from "@/settings/pluginStoreListing.js";
-import { usePluginManagementStore } from "@/store/pluginManagementStore.js";
-import {
-  selectCommandsForScope,
-  selectPluginsForScope,
-} from "@/settings/pluginCapabilityProjection.js";
 import type { WorkspaceTabState } from "@/store/tabStore.js";
 import {
   resolveCommandScopeRecovery,
@@ -77,8 +65,7 @@ export function CommandsSection({
     currentWorkspaceTab?.workspaceIdentity ?? workspaceIdentity,
     currentWorkspaceTab?.remoteTarget,
   );
-  const { commandsService, pluginManagementService, settingsSyncService } =
-    listServiceResolution.services;
+  const { commandsService, settingsSyncService } = listServiceResolution.services;
 
   const {
     commands,
@@ -130,30 +117,7 @@ export function CommandsSection({
     setFormScopeKey("user");
   }, [editingCommand, formScopeKey, workspaceTabs]);
 
-  const plugins = usePluginManagementStore((state) => state.plugins);
-  const pluginStoreWorkspacePath = usePluginManagementStore((state) => state.workspacePath);
-  const pluginStoreWorkspaceIdentity = usePluginManagementStore((state) => state.workspaceIdentity);
-  const pluginConfigScope = usePluginManagementStore((state) => state.configScope);
-  const installedPlugins = usePluginManagementStore((state) => state.installedPlugins);
-  const availablePlugins = usePluginManagementStore((state) => state.availablePlugins);
-  const initializePlugins = usePluginManagementStore((state) => state.initialize);
 
-  useEffect(() => {
-    if (!workspacePath || !listServiceResolution.rpcReady) return;
-    void initializePlugins({
-      workspacePath,
-      workspaceIdentity,
-      configScope: scopeFilter,
-      pluginService: pluginManagementService,
-    });
-  }, [
-    initializePlugins,
-    listServiceResolution.rpcReady,
-    pluginManagementService,
-    scopeFilter,
-    workspaceIdentity,
-    workspacePath,
-  ]);
 
   const handleSave = useCallback(
     async (config: CommandConfig, scopeKey: string) => {
@@ -305,41 +269,23 @@ export function CommandsSection({
   // effectiveCommandScopeKey ≠ selectedScopeKey 时会用不同 target 交替初始化它。
   // PluginList 已用 storeKey!==targetKey 自保护，这里复用同一模式，避免插件贡献的
   // 命令分组短暂取自别的 target 的插件投影。
-  const pluginStoreMatchesTarget =
-    (pluginStoreWorkspaceIdentity?.trim() || pluginStoreWorkspacePath || "") ===
-      currentWorkspaceKey && pluginConfigScope === scopeFilter;
-  const scopedPlugins = useMemo(
-    () =>
-      pluginStoreMatchesTarget ? selectPluginsForScope(plugins, installedPlugins, scopeFilter) : [],
-    [installedPlugins, plugins, pluginStoreMatchesTarget, scopeFilter],
-  );
-  const scopedCommands = useMemo(
-    () => selectCommandsForScope(commands, scopedPlugins, scopeFilter),
-    [commands, scopeFilter, scopedPlugins],
-  );
-  const groupedCommands = useMemo(
-    () => groupCommandsByPlugin(scopedCommands, searchQuery),
-    [scopedCommands, searchQuery],
-  );
-  const filteredCommandCount = groupedCommands.local.length + groupedCommands.plugin.length;
+  const scopedCommands = useMemo(() => {
+    return commands.filter(
+      (c) =>
+        isUserCommand(c) &&
+        (scopeFilter === "user" ? (c.scope as string) === "user" || (c.scope as string) === "global" : (c.scope as string) === "workspace" || (c.scope as string) === "project"),
+    );
+  }, [commands, scopeFilter]);
+  const filteredCommands = useMemo(() => {
+    if (!searchQuery.trim()) return scopedCommands;
+    const lower = searchQuery.trim().toLowerCase();
+    return scopedCommands.filter((c) => c.name.toLowerCase().includes(lower) || c.description?.toLowerCase().includes(lower));
+  }, [scopedCommands, searchQuery]);
+  const filteredCommandCount = filteredCommands.length;
   useEffect(() => {
     onVisibleCountChange?.(filteredCommandCount);
   }, [filteredCommandCount, onVisibleCountChange]);
-  const pluginListingById = useMemo(
-    () => new Map(availablePlugins.map((plugin) => [plugin.id, plugin.listing])),
-    [availablePlugins],
-  );
-  const pluginCommandGroups = useMemo(() => {
-    const groups = new Map<string, typeof groupedCommands.plugin>();
-    for (const command of groupedCommands.plugin) {
-      const key = `${command.pluginName.trim()}@${command.pluginMarketplace.trim()}`;
-      groups.set(key, [...(groups.get(key) ?? []), command]);
-    }
-    return Array.from(groups.entries()).sort(([left], [right]) => left.localeCompare(right));
-  }, [groupedCommands.plugin]);
   const hasEmptySearchResult = Boolean(searchQuery.trim()) && filteredCommandCount === 0;
-  const directInstalledCommandCount = scopedCommands.filter(isUserCommand).length;
-  const hideInstalledGroup = Boolean(searchQuery.trim()) && groupedCommands.local.length === 0;
 
   const renderCommandList = (items: ZCodeCommand[]) => (
     <SettingsResourceList
@@ -351,16 +297,6 @@ export function CommandsSection({
           onEdit={isEditableUserCommand(command) ? handleEdit : undefined}
           onToggle={isUserCommand(command) ? handleToggle : undefined}
           isOperating={operatingCommandId === command.id}
-          pluginIconItem={
-            isPluginCommand(command)
-              ? {
-                  name: command.pluginName,
-                  listing: pluginListingById.get(
-                    `${command.pluginName.trim()}@${command.pluginMarketplace.trim()}`,
-                  ),
-                }
-              : undefined
-          }
         />
       )}
     />
@@ -438,59 +374,44 @@ export function CommandsSection({
       ) : null}
 
       {!listServiceResolution.rpcReady ? (
-        <PluginLoadingState label={intl.formatMessage({ id: "common.connecting" })} />
+        <div className="py-8 text-center text-ui-base text-foreground-subtle">
+          {intl.formatMessage({ id: "common.connecting" })}
+        </div>
       ) : loading || !projectionMatchesTarget ? (
-        <PluginLoadingState label={intl.formatMessage({ id: "common.loading" })} />
+        <div className="py-8 text-center text-ui-base text-foreground-subtle">
+          {intl.formatMessage({ id: "common.loading" })}
+        </div>
       ) : hasEmptySearchResult ? (
-        <PluginSearchEmptyState
-          label={intl.formatMessage({
-            id: "settings.plugin.commands.searchEmpty",
-          })}
-        />
+        <div className="py-8 text-center text-ui-base text-foreground-subtle">
+          {intl.formatMessage({ id: "settings.plugin.commands.searchEmpty" })}
+        </div>
       ) : (
         <div className="space-y-6">
-          <section className={hideInstalledGroup ? "hidden" : "space-y-4"}>
+          <section className="space-y-4">
             <SettingsResourceGroupHeader
               actions={headerActions}
-              count={groupedCommands.local.length}
+              count={filteredCommandCount}
               title={intl.formatMessage({
                 id: "settings.plugin.commands.installed",
               })}
             />
-            {groupedCommands.local.length > 0 ? (
-              renderCommandList(groupedCommands.local)
-            ) : directInstalledCommandCount === 0 && !searchQuery.trim() ? (
-              <PluginInstallEmptyState
-                title={intl.formatMessage({
-                  id: "settings.plugin.commands.emptyInstalledTitle",
-                })}
-                description={intl.formatMessage({
-                  id: "settings.plugin.commands.emptyInstalledDescription",
-                })}
-                actions={
-                  <Button type="button" variant="default" size="lg" onClick={handleAddNew}>
-                    <Plus data-icon="inline-start" aria-hidden="true" />
-                    {intl.formatMessage({ id: "settings.create.action" })}
-                  </Button>
-                }
-              />
+            {filteredCommandCount > 0 ? (
+              renderCommandList(filteredCommands)
+            ) : !searchQuery.trim() ? (
+              <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border p-6 text-center">
+                <div className="text-ui-base font-medium text-foreground">
+                  {intl.formatMessage({ id: "settings.plugin.commands.emptyInstalledTitle" })}
+                </div>
+                <div className="text-ui-sm text-foreground-subtle">
+                  {intl.formatMessage({ id: "settings.plugin.commands.emptyInstalledDescription" })}
+                </div>
+                <Button type="button" variant="default" size="lg" onClick={handleAddNew}>
+                  <Plus data-icon="inline-start" aria-hidden="true" />
+                  {intl.formatMessage({ id: "settings.create.action" })}
+                </Button>
+              </div>
             ) : null}
           </section>
-          {pluginCommandGroups.map(([pluginId, items]) => (
-            <section key={pluginId} className="space-y-4">
-              <SettingsResourceGroupHeader
-                count={items.length}
-                title={resolvePluginDisplayName(
-                  {
-                    name: items[0]?.pluginName ?? pluginId,
-                    listing: pluginListingById.get(pluginId),
-                  },
-                  locale,
-                )}
-              />
-              {renderCommandList(items)}
-            </section>
-          ))}
         </div>
       )}
       <CommandsImportDialog

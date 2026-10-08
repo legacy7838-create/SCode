@@ -1,9 +1,7 @@
 import type { Logger, McpPort } from "@zcode/contracts";
 import type { McpConnectionPool, McpTelemetryTracker } from "@zcode/adapters/mcp";
 import type { SqliteSessionStore } from "@zcode/adapters/storage";
-import { shutdownPreparedModelTelemetry } from "@zcode/telemetry";
 import { closeSessionStore } from "../app/session-store.js";
-import type { NodeReplBrowserBroker } from "../app/node-repl-browser-broker.js";
 import type { ZCodeProcessResourceSampler } from "../process-resource-sampler.js";
 import type { ZCodeProtocolAgentServer } from "./server.js";
 
@@ -16,7 +14,6 @@ export async function cleanupProtocolRuntime(options: {
   server?: Pick<ZCodeProtocolAgentServer, "shutdown" | "disposeProjections">;
   processResourceSampler?: Pick<ZCodeProcessResourceSampler, "stop">;
   mcpTelemetryTracker?: Pick<McpTelemetryTracker, "stop">;
-  nodeReplBrowserBroker?: Pick<NodeReplBrowserBroker, "close">;
   mcpPort?: Pick<McpPort, "close">;
   mcpConnectionPool?: Pick<McpConnectionPool, "close">;
   sessionStore?: SqliteSessionStore;
@@ -53,7 +50,6 @@ export async function cleanupProtocolRuntime(options: {
   await step("sessions", () => options.server?.shutdown());
   await step("projections", () => options.server?.disposeProjections());
   await Promise.all([
-    step("node_repl_browser_broker", () => options.nodeReplBrowserBroker?.close()),
     // 不能在同一个 finally 内 await：port 挂起时 pool 仍必须得到 close。
     step("mcp", () => options.mcpPort?.close()),
     step("mcp_pool", () => options.mcpConnectionPool?.close()),
@@ -63,6 +59,5 @@ export async function cleanupProtocolRuntime(options: {
       if (options.sessionStore) closeSessionStore(options.sessionStore);
     }),
     step("provider_registry", () => options.providerRegistryRuntime?.dispose()),
-    step("telemetry", () => shutdownPreparedModelTelemetry()),
   ]);
 }

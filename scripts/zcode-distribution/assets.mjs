@@ -164,13 +164,6 @@ export async function copyRuntimeNodeModules(packageRoot) {
       seen,
     });
   }
-  // CLI 的浏览器运行时同样是外部依赖，不能依赖开发仓库的 hoisted node_modules。
-  await copyRuntimePackageTree({
-    packageName: "playwright-core",
-    packageRoot: resolve(packageRoot, "agent"),
-    requireFrom: createRequire(resolve(root, "apps/zcode-cli/packages/cli/package.json")),
-    seen: new Set(),
-  });
 }
 
 export async function patchNodePtyPrebuilds(packageRoot) {

@@ -19,10 +19,6 @@ import type { PresentationSurface } from "@zcode/core";
 import type { RunZCodeProtocolAgentOptions, ZCodeAppOptions } from "./app/types.js";
 import { createZCodeApp } from "./app/create-app.js";
 import {
-  createNodeReplBrowserBroker,
-  type NodeReplBrowserBroker,
-} from "./app/node-repl-browser-broker.js";
-import {
   openProtocolStartupStorage,
   prepareProtocolStartupStorage,
 } from "./zcode-protocol/storage-startup.js";
@@ -47,7 +43,6 @@ import { cleanupProtocolRuntime } from "./zcode-protocol/runtime-cleanup.js";
 import { startProtocolResourceSampler } from "./zcode-protocol/resource-sampler.js";
 import { acquireProtocolStartupResource } from "./zcode-protocol/startup-resource.js";
 import type { ZCodeProcessResourceSampler } from "./process-resource-sampler.js";
-import { prepareZCodeTelemetryEnv, shutdownZCodeTelemetry } from "./telemetry-bootstrap.js";
 
 function applyProtocolPresentationSurface(
   options: Omit<ZCodeAppOptions, "providerRegistry">,
@@ -123,7 +118,6 @@ export async function runZCodeProtocolAgent(
 
   let sessionStore: SqliteSessionStore | undefined;
   let serverForCleanup: ZCodeProtocolAgentServer | undefined;
-  let nodeReplBrowserBroker: NodeReplBrowserBroker | undefined;
   let mcpConnectionPool: McpConnectionPool | undefined;
   let mcpPort: McpPort | undefined;
   let mcpTelemetryTracker: McpTelemetryTracker | undefined;
@@ -167,19 +161,6 @@ export async function runZCodeProtocolAgent(
       module: "bootstrap.zcode_protocol",
       providerCount: providerRegistryRuntime.snapshot.registry.providers.length,
     });
-    const runtimeSurface = resolveProtocolRuntimeSurface(runtimeEnv);
-    const telemetryEnv = await acquireProtocolStartupResource({
-      signal: options.lifecycle?.signal,
-      logger,
-      disposeLate: () => shutdownZCodeTelemetry(),
-      create: () =>
-        prepareZCodeTelemetryEnv(runtimeEnv, {
-          cliVersion: options.version,
-          productVersion: options.env?.ZCODE_APP_VERSION,
-          runtimeSurface,
-        }),
-    });
-    const telemetryDeviceMid = telemetryEnv.ZCODE_TELEMETRY_DEVICE_MID;
     mcpTelemetryTracker =
       configResult.config.features.mcp === false
         ? undefined
@@ -263,11 +244,8 @@ export async function runZCodeProtocolAgent(
             };
           },
           env: {
-            ...telemetryEnv,
             ...appOptions.env,
-            ...(telemetryDeviceMid ? { ZCODE_TELEMETRY_DEVICE_MID: telemetryDeviceMid } : {}),
           },
-          ...(nodeReplBrowserBroker ? { nodeReplBrowserBroker } : {}),
           ...(mcpConnectionPool
             ? {
                 mcpPortFactory: () =>
@@ -294,19 +272,6 @@ export async function runZCodeProtocolAgent(
       version: options.version,
     }));
     officialMcpAuthContext = server.officialMcpAuthRequestContext;
-    if (configResult.config.features.mcp !== false) {
-      nodeReplBrowserBroker = createNodeReplBrowserBroker({
-        browserControlPort: server.browserControlPort,
-        logger,
-        platform: process.platform,
-      });
-      const broker = nodeReplBrowserBroker;
-      await acquireProtocolStartupResource({
-        signal: options.lifecycle?.signal,
-        logger,
-        create: () => broker.ready,
-      });
-    }
     const connection = new ZCodeProtocolNdjsonConnection({
       signal: options.lifecycle?.signal,
       clearPostResponseMessages: () => server.clearPostResponseMessages(),
@@ -361,7 +326,6 @@ export async function runZCodeProtocolAgent(
       server: serverForCleanup,
       processResourceSampler,
       mcpTelemetryTracker,
-      nodeReplBrowserBroker,
       mcpPort,
       mcpConnectionPool,
       sessionStore,
@@ -374,13 +338,4 @@ export async function runZCodeProtocolAgent(
       status: "completed",
     });
   }
-}
-
-function resolveProtocolRuntimeSurface(
-  env: NodeJS.ProcessEnv,
-): "desktop_local_host" | "remote_workspace_host" {
-  // Bug 根因：入口曾无条件覆盖 Host 注入值，远程 SSH/WSL/容器 Trace 被归入本地 Desktop。
-  return env.ZCODE_TELEMETRY_RUNTIME_SURFACE?.trim() === "remote_workspace_host"
-    ? "remote_workspace_host"
-    : "desktop_local_host";
 }

@@ -13,8 +13,6 @@ export interface BrowserSidePaneTab {
   remoteSessionId?: string | null;
   faviconUrl?: string | null;
   initialUrl?: string | null;
-  /** 由 Agent 控制的页面触发的 popup；不应套用人类浏览器的持久化显示偏好。 */
-  agentOpened?: boolean;
   openedAt?: number;
   title?: string | null;
   residency?: BrowserTabResidencyState;
@@ -22,8 +20,6 @@ export interface BrowserSidePaneTab {
 }
 
 export type BrowserSidePaneMetadata = Partial<Pick<BrowserSidePaneTab, "faviconUrl" | "title">>;
-
-export const BROWSER_USE_OPERATION_INDICATOR_DURATION_MS = 5_000;
 
 export interface GitSidePaneTab {
   id: "git";
@@ -94,29 +90,6 @@ export interface TerminalSidePaneTab {
   title: string;
   cwd?: string;
   remoteSessionId?: string | null;
-}
-
-/** browser-use 受控浏览器视图（renderer `<webview>` + main CDP）。 */
-export interface BrowserUseSidePaneTab {
-  id: string;
-  type: "browser-use";
-  ownerTaskId?: string | null;
-  workspaceKey?: string | null;
-  remoteSessionId?: string | null;
-  sessionId: string;
-  /** main 分配的 opaque IAB tab identity，也是 webview attach key。 */
-  tabId: string;
-  browserId?: string;
-  browserGeneration?: number;
-  openedAt?: number;
-  title?: string | null;
-  faviconUrl?: string | null;
-  residency?: BrowserTabResidencyState;
-  residencyGeneration?: number;
-  /** 最近一次 agent browser-use 操作的 UI 指示截止时间。 */
-  browserUseOperationUntil?: number;
-  /** 模型布局命令对应的单调版本；目标 view 据此重建 ResizeObserver 基线。 */
-  browserUseResizeBaselineVersion?: number;
 }
 
 export interface OpenBackgroundBashSideTabRequest {
@@ -523,7 +496,6 @@ export type WorkspaceSidePaneTab =
   | ModelTrajectorySidePaneTab
   | DeveloperToolsSidePaneTab
   | TerminalSidePaneTab
-  | BrowserUseSidePaneTab
   | SubagentSessionSidePaneTab
   | SubagentDirectorySidePaneTab
   | SelectionSideChatPaneTab
@@ -535,7 +507,7 @@ export type WorkspaceSidePaneTab =
   | WorkflowArtifactSidePaneTab;
 
 /**
- * Browser/browser-use 的页面与 CDP 生命周期依赖 `<webview>` 持续连接 DOM。
+ * Browser 的页面与 CDP 生命周期依赖 `<webview>` 持续连接 DOM。
  * 面板折叠或切到其它对话时仍必须后台挂载，只有显式关闭 tab 才能销毁页面状态。
  */
 export function shouldMountSidePaneContent(
@@ -544,15 +516,11 @@ export function shouldMountSidePaneContent(
 ): boolean {
   return (
     isVisible ||
-    tabs.some(
-      (tab) => tab.type === "browser" || tab.type === "browser-use" || tab.type === "bash-output",
-    )
+    tabs.some((tab) => tab.type === "browser" || tab.type === "bash-output")
   );
 }
 
-export function shouldMountBrowserTabGuest(
-  tab: BrowserSidePaneTab | BrowserUseSidePaneTab,
-): boolean {
+export function shouldMountBrowserTabGuest(tab: BrowserSidePaneTab): boolean {
   return tab.residency !== "suspended" && tab.residency !== "suspend-pending";
 }
 
@@ -626,7 +594,6 @@ function createBrowserSidePaneTab(options?: {
   ownerTaskId?: string | null;
   workspaceKey?: string | null;
   remoteSessionId?: string | null;
-  agentOpened?: boolean;
 }): BrowserSidePaneTab {
   return {
     id: options?.tabId ?? `browser:${createUuid()}`,
@@ -640,7 +607,6 @@ function createBrowserSidePaneTab(options?: {
     ...(options?.remoteSessionId ? { remoteSessionId: options.remoteSessionId } : {}),
     faviconUrl: null,
     initialUrl: options?.initialUrl ?? null,
-    ...(options?.agentOpened ? { agentOpened: true } : {}),
     openedAt: Date.now(),
     title: null,
   };
@@ -1075,7 +1041,6 @@ function sidePaneTabMatchesWorkspace(
 
 /**
  * 新建 tab 在提交到共享侧栏状态时统一冻结工作区与对话归属。
- * browser-use 自带事件来源归属，因此已打标的 tab 绝不能被当前 UI scope 覆盖。
  */
 export function stampSidePaneTabsOwnership(
   state: WorkspaceSidePaneState | null,
@@ -1094,7 +1059,7 @@ export function stampSidePaneTabsOwnership(
       ...tab,
       ownerTaskId: ownership.ownerTaskId,
       workspaceKey: tab.workspaceKey ?? ownership.workspaceKey,
-      ...((tab.type === "browser" || tab.type === "browser-use") && ownership.remoteSessionId
+      ...(tab.type === "browser" && ownership.remoteSessionId
         ? { remoteSessionId: ownership.remoteSessionId }
         : {}),
     } as WorkspaceSidePaneTab;
@@ -1110,7 +1075,6 @@ function getVisibleSidePaneTabsByScope(
   return tabs.filter((tab) => {
     if (!sidePaneTabMatchesWorkspace(tab, scope.workspaceKey)) return false;
     if (isWorkspaceGlobalSidePaneTab(tab)) return true;
-    if (tab.type === "browser-use") return tab.sessionId === scope.ownerTaskId;
     if (
       tab.type === "subagent-session" ||
       tab.type === "subagent-directory" ||
@@ -1194,7 +1158,6 @@ function activateBrowserSidePane(
     ownerTaskId?: string | null;
     workspaceKey?: string | null;
     remoteSessionId?: string | null;
-    agentOpened?: boolean;
   },
 ): WorkspaceSidePaneState {
   if (!options?.forceNew && !options?.tabId && !options?.initialUrl) {
@@ -1220,7 +1183,6 @@ export function openBrowserSidePane(
     workspaceKey?: string | null;
     remoteSessionId?: string | null;
     activate?: boolean;
-    agentOpened?: boolean;
   },
 ): WorkspaceSidePaneState {
   const next = activateBrowserSidePane(current, {
@@ -1285,149 +1247,6 @@ export function openOrActivateBrowserSidePaneByUrl(
   });
 }
 
-/** 打开或更新一个受控 browser-use tab；ready 重放按 tabId 幂等。 */
-function openBrowserUseSidePane(
-  current: WorkspaceSidePaneState | null,
-  options: {
-    workspaceKey: string;
-    sessionId: string;
-    tabId: string;
-    browserId?: string;
-    browserGeneration?: number;
-    remoteSessionId?: string;
-    title?: string;
-    activate?: boolean;
-  },
-): WorkspaceSidePaneState {
-  const id = `browser-use:${options.tabId}`;
-  const existing = current?.tabs.find(
-    (tab): tab is BrowserUseSidePaneTab => tab.type === "browser-use" && tab.id === id,
-  );
-  const remoteSessionId = options.remoteSessionId ?? existing?.remoteSessionId;
-  const tab: BrowserUseSidePaneTab = {
-    id,
-    type: "browser-use",
-    ownerTaskId: options.sessionId,
-    workspaceKey: options.workspaceKey,
-    ...(remoteSessionId ? { remoteSessionId } : {}),
-    sessionId: options.sessionId,
-    tabId: options.tabId,
-    ...(options.browserId ? { browserId: options.browserId } : {}),
-    ...(options.browserGeneration !== undefined
-      ? { browserGeneration: options.browserGeneration }
-      : {}),
-    openedAt: existing?.openedAt ?? Date.now(),
-    ...((options.title ?? existing?.title)
-      ? { title: options.title ?? existing?.title ?? null }
-      : {}),
-    ...(existing?.faviconUrl !== undefined ? { faviconUrl: existing.faviconUrl } : {}),
-    ...(existing?.residency !== undefined ? { residency: existing.residency } : {}),
-    ...(existing?.residencyGeneration !== undefined
-      ? { residencyGeneration: existing.residencyGeneration }
-      : {}),
-    ...(existing?.browserUseOperationUntil !== undefined
-      ? { browserUseOperationUntil: existing.browserUseOperationUntil }
-      : {}),
-    ...(existing?.browserUseResizeBaselineVersion !== undefined
-      ? {
-          browserUseResizeBaselineVersion: existing.browserUseResizeBaselineVersion,
-        }
-      : {}),
-  };
-
-  if (options.activate !== false) {
-    return activateSidePaneTab(current, tab);
-  }
-  if (!current) {
-    return { tabs: [tab], activeTabId: "" };
-  }
-  const existingIndex = findTabIndexById(current.tabs, tab.id);
-  if (existingIndex >= 0) {
-    const tabs = [...current.tabs];
-    tabs[existingIndex] = tab;
-    return { ...current, tabs };
-  }
-  return { ...current, tabs: [...current.tabs, tab] };
-}
-
-interface BrowserUseSidePaneScope {
-  workspaceKey: string;
-  remoteSessionId?: string;
-  ownerTaskId: string | null;
-}
-
-/** ready/show 事件只允许激活其 origin workspace + session，后台事件仅挂载 guest。 */
-export function applyBrowserUseSidePaneEvent(
-  current: WorkspaceSidePaneState | null,
-  options: {
-    workspaceKey: string;
-    remoteSessionId?: string;
-    sessionId: string;
-    tabId: string;
-    browserId?: string;
-    browserGeneration?: number;
-  },
-  activeScope: BrowserUseSidePaneScope,
-): { state: WorkspaceSidePaneState; shouldReveal: boolean } {
-  const shouldReveal =
-    options.workspaceKey === activeScope.workspaceKey &&
-    (options.remoteSessionId ?? "") === (activeScope.remoteSessionId ?? "") &&
-    options.sessionId === activeScope.ownerTaskId;
-  return {
-    state: openBrowserUseSidePane(current, {
-      ...options,
-      activate: shouldReveal,
-    }),
-    shouldReveal,
-  };
-}
-
-/** visibility 只选择 ready 已创建的 shell；迟到事件不得重建已关闭 tab。 */
-export function applyBrowserUseSidePaneVisibilityEvent(
-  current: WorkspaceSidePaneState | null,
-  options: {
-    workspaceKey: string;
-    remoteSessionId?: string;
-    sessionId: string;
-    tabId: string;
-    browserId?: string;
-    browserGeneration?: number;
-  },
-  activeScope: BrowserUseSidePaneScope,
-): {
-  state: WorkspaceSidePaneState | null;
-  shouldReveal: boolean;
-  didMatch: boolean;
-} {
-  const target = current?.tabs.find(
-    (tab): tab is BrowserUseSidePaneTab =>
-      tab.type === "browser-use" &&
-      tab.tabId === options.tabId &&
-      tab.workspaceKey === options.workspaceKey &&
-      (tab.remoteSessionId ?? "") === (options.remoteSessionId ?? "") &&
-      tab.sessionId === options.sessionId &&
-      (options.browserId === undefined || tab.browserId === options.browserId) &&
-      (options.browserGeneration === undefined ||
-        tab.browserGeneration === options.browserGeneration),
-  );
-  if (!target) {
-    // 旧 visibility 路径复用了 ready 的 open helper。main 已关闭 tab 后，队列中
-    // 迟到的 visible=true 会在 renderer 重建无 main authority 的僵尸 shell，之后点击关闭必然
-    // 失败。visibility 是选择信号，只能命中现存且 scope/generation 完全一致的 shell。
-    return { state: current, shouldReveal: false, didMatch: false };
-  }
-
-  const shouldReveal =
-    options.workspaceKey === activeScope.workspaceKey &&
-    (options.remoteSessionId ?? "") === (activeScope.remoteSessionId ?? "") &&
-    options.sessionId === activeScope.ownerTaskId;
-  return {
-    state: shouldReveal ? setActiveSidePaneTab(current, target.id) : current,
-    shouldReveal,
-    didMatch: true,
-  };
-}
-
 export function applyBrowserTabResidencyEvent(
   current: WorkspaceSidePaneState | null,
   event: {
@@ -1435,8 +1254,6 @@ export function applyBrowserTabResidencyEvent(
     workspaceKey?: string;
     remoteSessionId?: string;
     sessionId?: string;
-    browserId?: string;
-    browserGeneration?: number;
     generation: number;
     residency: Extract<
       BrowserTabResidencyState,
@@ -1445,13 +1262,9 @@ export function applyBrowserTabResidencyEvent(
   },
 ): WorkspaceSidePaneState | null {
   if (!current) return current;
-  const index = current.tabs.findIndex(
-    (tab) =>
-      (tab.type === "browser" && tab.id === event.tabId) ||
-      (tab.type === "browser-use" && tab.tabId === event.tabId),
-  );
+  const index = current.tabs.findIndex((tab) => tab.type === "browser" && tab.id === event.tabId);
   if (index < 0) return current;
-  const target = current.tabs[index] as BrowserSidePaneTab | BrowserUseSidePaneTab;
+  const target = current.tabs[index] as BrowserSidePaneTab;
   if (event.workspaceKey !== undefined && target.workspaceKey !== event.workspaceKey)
     return current;
   if (
@@ -1460,22 +1273,13 @@ export function applyBrowserTabResidencyEvent(
   ) {
     return current;
   }
-  if (
-    event.sessionId !== undefined &&
-    (target.type === "browser-use"
-      ? target.sessionId !== event.sessionId
-      : (target.ownerTaskId ?? "unscoped") !== event.sessionId)
-  ) {
+  if (event.sessionId !== undefined && (target.ownerTaskId ?? "unscoped") !== event.sessionId) {
     return current;
   }
   if ((target.residencyGeneration ?? 0) > event.generation) return current;
   const tabs = [...current.tabs];
   tabs[index] = {
     ...target,
-    ...(target.type === "browser-use" && event.browserId ? { browserId: event.browserId } : {}),
-    ...(target.type === "browser-use" && event.browserGeneration !== undefined
-      ? { browserGeneration: event.browserGeneration }
-      : {}),
     residency: event.residency,
     residencyGeneration: event.generation,
   };
@@ -1901,9 +1705,6 @@ export function isSidePaneTabVisibleForParent(
   tab: WorkspaceSidePaneTab,
   parentSessionId: string | null,
 ): boolean {
-  if (tab.type === "browser-use") {
-    return tab.sessionId === parentSessionId;
-  }
   // 归属于某条对话（而非 workspace 全局）的 tab 按 parentSessionId 收窄。
   if (
     tab.type === "selection-side-chat" ||
@@ -2075,7 +1876,7 @@ export function updateBrowserSidePaneTab(
     if (tab.id !== tabId) {
       return tab;
     }
-    if (tab.type === "browser" || tab.type === "browser-use") {
+    if (tab.type === "browser") {
       didUpdate = true;
       return { ...tab, ...patch };
     }
@@ -2088,47 +1889,6 @@ export function updateBrowserSidePaneTab(
         tabs: nextTabs,
       }
     : current;
-}
-
-/** 按 workspace/session/browser generation/tab 完整匹配运行态，避免 stale run 串写。 */
-export function markBrowserUseSidePaneTabOperation(
-  current: WorkspaceSidePaneState | null,
-  options: {
-    workspaceKey: string;
-    sessionId: string;
-    browserId: string;
-    browserGeneration: number;
-    tabId: string;
-    operationUntil: number;
-    resetsResizeBaseline?: boolean;
-  },
-): WorkspaceSidePaneState | null {
-  if (!current) return current;
-  let didUpdate = false;
-  const tabs = current.tabs.map((tab) => {
-    if (
-      tab.type !== "browser-use" ||
-      tab.workspaceKey !== options.workspaceKey ||
-      tab.sessionId !== options.sessionId ||
-      (tab.browserId !== undefined && tab.browserId !== options.browserId) ||
-      (tab.browserGeneration !== undefined &&
-        tab.browserGeneration !== options.browserGeneration) ||
-      tab.tabId !== options.tabId
-    ) {
-      return tab;
-    }
-    didUpdate = true;
-    return {
-      ...tab,
-      browserUseOperationUntil: options.operationUntil,
-      ...(options.resetsResizeBaseline
-        ? {
-            browserUseResizeBaselineVersion: (tab.browserUseResizeBaselineVersion ?? 0) + 1,
-          }
-        : {}),
-    };
-  });
-  return didUpdate ? { ...current, tabs } : current;
 }
 
 export function reorderSidePaneTab(

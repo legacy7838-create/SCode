@@ -11,7 +11,6 @@ const PRODUCTION_IDENTITY = Object.freeze({
   productName: "ZCode",
   linuxExecutableName: "zcode",
   linuxPackageName: "zcode",
-  cuaHelperInstallVariant: null,
 });
 
 const PREVIEW_IDENTITY = Object.freeze({
@@ -20,7 +19,6 @@ const PREVIEW_IDENTITY = Object.freeze({
   productName: "ZCode Preview",
   linuxExecutableName: "zcode-preview",
   linuxPackageName: "zcode-preview",
-  cuaHelperInstallVariant: "preview",
 });
 
 export const desktopProductIdentities = Object.freeze({

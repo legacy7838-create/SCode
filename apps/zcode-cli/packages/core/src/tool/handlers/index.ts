@@ -23,7 +23,6 @@ import { writeToolEntry } from "./write.js";
 import { editToolEntry } from "./edit.js";
 import { bashToolEntry, createBashToolEntry } from "./bash.js";
 import type { BashTimeoutPolicy } from "../bash-timeout-policy.js";
-import { createJsToolEntry, jsToolEntry } from "./node-repl.js";
 import { globToolEntry } from "./glob.js";
 import { grepToolEntry } from "./grep.js";
 import { webFetchToolEntry } from "./webfetch.js";
@@ -108,7 +107,6 @@ export const builtInTools: ToolEntry[] = [
   agentToolEntry,
   taskToolEntry,
   skillToolEntry,
-  jsToolEntry,
   createWorkflowToolEntry,
   amendWorkflowToolEntry,
   // 保存的定义：写侧 gate 与 CreateWorkflow 同档（alwaysAsk），读侧无 gate。
@@ -181,10 +179,8 @@ interface RegisterBuiltInToolsOptions {
    * appRuntimePreferences，不在这一层。
    */
   includeDynamicWorkflow?: boolean;
-  /** node_repl（js）默认关闭，由官方 browser-use 插件启用。 */
+  /** node_repl（js）默认关闭，由官方 node-repl 插件启用。 */
   includeNodeRepl?: boolean;
-  /** browser-use 说明和 agent.browsers 注入由官方 browser-use 插件 + 宿主 browser bridge 共同启用。 */
-  includeBrowserUse?: boolean;
   embeddedSearchEnabled?: boolean;
   agentProfiles?: readonly AgentProfile[];
   allowedTools?: readonly string[];
@@ -259,9 +255,6 @@ export function registerBuiltInTools(
     ) {
       continue;
     }
-    if (entry.metadata.name === "js" && options.includeNodeRepl !== true) {
-      continue;
-    }
     registry.register(resolveBuiltInToolEntryForBranch(entry, options), {
       silentDuplicateWarning: options.silentDuplicateWarnings,
     });
@@ -301,11 +294,6 @@ function resolveBuiltInToolEntryForBranch(
   if (entry.metadata.name === "EnterPlanMode") {
     return createEnterPlanModeToolEntry({
       embeddedSearchEnabled: options.embeddedSearchEnabled,
-    });
-  }
-  if (entry.metadata.name === "js") {
-    return createJsToolEntry({
-      browserUseEnabled: options.includeBrowserUse === true,
     });
   }
   return entry;

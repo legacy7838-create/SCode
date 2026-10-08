@@ -21,18 +21,9 @@ export const parseGlobalArgs = (argv: string[]) =>
       "no-browser": {
         type: "boolean",
       },
-      "browser-use": {
-        type: "string",
-      },
-      "browser-executable": {
-        type: "string",
-      },
       prompt: {
         short: "p",
         type: "string",
-      },
-      "memory-bench": {
-        type: "boolean",
       },
       "enable-workflow": {
         type: "boolean",

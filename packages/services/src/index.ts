@@ -158,7 +158,6 @@ export type {
   ZCodeAgentAttachmentChunkParams,
   ZCodeAgentAttachmentTerminalParams,
   ZCodeAgentCreateSessionParams,
-  ZCodeAgentCuaPermissionObservation,
   ZCodeAgentInitializeResult,
   ZCodeAgentStorageStartupSnapshot,
   ZCodeAgentRuntimeLifecycleEvent,
@@ -206,17 +205,6 @@ export type {
   BotTestResult,
 } from "./bots/bots.js";
 
-// Hooks service — IHooksService is both a type (interface) and value (descriptor).
-export { IHooksService } from "./hooks/hooks.js";
-
-// Memory service — IMemoryService is both a type (interface) and value (descriptor).
-export {
-  IMemoryService,
-  PROJECT_MEMORY_FILE_CHANGED_ERROR_CODE,
-  PROJECT_MEMORY_PREVIEW_LIMIT_EXCEEDED_ERROR_CODE,
-} from "./memory/memory.js";
-export type { ProjectMemoryFileSummary, ProjectMemoryWorkspaceSummary } from "./memory/memory.js";
-
 export type { SessionRealtimePort } from "./session/sessionRealtimePort.js";
 
 // FileWatcher service — IFileWatcherService is both a type (interface) and value (descriptor)
@@ -253,26 +241,6 @@ export type { OffPeakUpdateTaskParams } from "./session/offPeakTask.js";
 export { ISkillsService } from "./skills/skills.js";
 export { ISkillSyncService } from "./skill-sync/skillSync.js";
 export { IMcpSyncService } from "./mcp-sync/mcpSync.js";
-export { IPluginSyncService } from "./plugin-sync/pluginSync.js";
-export {
-  ICuaPermissionService,
-  type CuaPermissionState,
-  type CuaPermissionRestartOptions,
-  type CuaPermissionStatus,
-  type CuaPermissionStatusQueryOptions,
-  type CuaPermissionStatusResult,
-  type CuaPermissionStatusUnavailable,
-  isCuaPermissionStatusAvailable,
-} from "./cua-permission-broker/cuaPermissionService.js";
-export {
-  ICuaPipSessionService,
-  type CuaPipSessionService,
-} from "./cua-permission-broker/cuaPipSession.js";
-
-// Plugins service — IPluginsService is both a type (interface) and value (descriptor)
-export { IPluginsService } from "./plugins/plugins.js";
-// 设置页插件管理薄服务（UI 平台能力面不再直触 zcodeAgentService）
-export { IPluginManagementService } from "./plugins/pluginManagement.js";
 
 // Subagents service — ISubagentsService is both a type (interface) and value (descriptor)
 export { ISubagentsService } from "./subagents/subagents.js";

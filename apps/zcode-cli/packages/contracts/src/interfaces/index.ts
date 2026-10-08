@@ -21,7 +21,6 @@ export * from "./dynamic-workflow-snippet.port.js";
 export * from "./model-catalog.port.js";
 export * from "./automation.port.js";
 export * from "./mcp.port.js";
-export * from "./browser-control.port.js";
 export * from "./shared.js";
 
 export * from "./permission-full-access.js";

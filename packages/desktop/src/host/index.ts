@@ -27,8 +27,6 @@ import { registerHostNetworkTelemetry, stopHostNetworkTelemetry } from "./hostNe
 import { registerHostServiceResourceTelemetry } from "./hostServiceResourceTelemetry.js";
 import { resolveResourceTelemetryEnvironmentKey } from "./hostResourceTelemetryEnvironment.js";
 import { reportHostSessionCreate } from "./hostSessionCreateTelemetry.js";
-import { createBrowserControlMainBridge } from "./browserControlMainBridge.js";
-import { materializeBrowserRecordingArtifact } from "./browserRecordingArtifactMaterializer.js";
 import {
   ServiceCollection,
   IBotsService,
@@ -43,7 +41,6 @@ import {
   IZCodeAgentService,
   IZCodeTaskService,
   IZCodeSessionService,
-  ICuaPipSessionService,
   createZCodeAgentConnectionScope,
   type ZCodeAgentV4ClientMode,
   collectServiceMemoryDiagnostics,
@@ -227,38 +224,6 @@ function authorizeLocalMediaPreviewPath(path: string): Promise<string> {
     }
   });
 }
-
-// browser-use host↔main 桥：把 agent 的 browser 命令经 parentPort 转给 main（WebContentsView+CDP）。
-// parentPort 为空（不应发生于 host 进程）时 postToMain 抛错，bridge 自身返回 backend_unavailable。
-const browserControlMainBridge = createBrowserControlMainBridge({
-  postToMain: (message) => {
-    if (!parentPort) {
-      throw new Error("parentPort unavailable");
-    }
-    parentPort.postMessage(message);
-  },
-  materializeRecording: (input) => {
-    let remoteBackend: Pick<IRemoteBackend, "upload"> | undefined;
-    if (input.remoteSessionId) {
-      const workspaceIdentity = input.workspaceIdentity;
-      if (!workspaceIdentity?.trim()) {
-        throw new Error("remote Browser recording materialization requires workspaceIdentity");
-      }
-      // Window Host 重构后同一进程可同时持有多个远端连接，旧的进程级
-      // remoteConnection 会串 session。必须用完整 scope 从 registry 的权威 entry 取 uploader。
-      remoteBackend = windowRemoteConnectionRegistry.resolveScopedCapabilities({
-        kind: "remote",
-        remoteSessionId: input.remoteSessionId,
-        workspacePath: input.workspacePath,
-        workspaceIdentity,
-      })?.browserRecordingUploader;
-    }
-    return materializeBrowserRecordingArtifact({
-      ...input,
-      ...(remoteBackend ? { remoteBackend } : {}),
-    });
-  },
-});
 
 function reportHostLog(level: HostLogLevel, args: unknown[]): void {
   if (!parentPort) {
@@ -655,8 +620,6 @@ async function dispatchOffPeakRun(request: OffPeakRunDispatchRequest): Promise<{
       toolDenylist: ["CronCreate", "OffPeakCreate"],
       modelSelection: idleSelection,
       modelExecution: {
-        // 闲时执行凭据只服务主 Turn；完成后不再派生自动 Memory 请求。
-        memoryExtraction: "skip",
         selectionScope: "execution",
         requestAuth,
         subagents: {
@@ -1112,18 +1075,6 @@ const runtimeTaskReporter = {
     });
   },
 } satisfies NonNullable<Parameters<typeof createLocalServices>[0]>["taskRuntimeReporter"];
-
-const cuaOperationStateReporter = {
-  onStateChanged(event) {
-    if (!parentPort) {
-      return;
-    }
-    parentPort.postMessage({
-      type: HostResponseTypes.CuaOperationState,
-      ...event,
-    });
-  },
-} satisfies NonNullable<Parameters<typeof createLocalServices>[0]>["cuaOperationStateReporter"];
 
 let untrackedPromptRpcCount = 0;
 function reportHostRunningTaskCount(): void {
@@ -2308,19 +2259,6 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
     return;
   }
 
-  if (msg.type === HostMessageTypes.CuaPipFocusChanged) {
-    const service = activeServices?.getOptional(ICuaPipSessionService);
-    if (service) {
-      void service.publishFocus(msg.event);
-    } else {
-      // 取不到服务时过去静默丢弃，focus-changed 于是从链路上凭空消失
-      // （dev 实测 0 条，正式包同期 92 条）。补这条才能把「main 没发」与
-      // 「host 收到了但服务没注册」分开。
-      logger.warn("[cua-pip-session] focus event dropped: service unavailable");
-    }
-    return;
-  }
-
   if (msg.type === HostMessageTypes.ResourceUsageSnapshotRequest) {
     void hostResourceUsageResponder.handleRequest(msg);
     return;
@@ -2426,15 +2364,6 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
         });
       }
     })();
-    return;
-  }
-
-  if (msg.type === HostMessageTypes.BrowserExecuteResult) {
-    // main 的 WebContentsView+CDP 执行完 browser 命令，按 requestId 关联回 bridge 的 pending。
-    void browserControlMainBridge.handleResult({
-      requestId: msg.requestId,
-      result: msg.result,
-    });
     return;
   }
 
@@ -2872,12 +2801,6 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
                   trigger,
                 });
               },
-              // browser-use：agent 的 interaction/browserExecute 经 zcodeAgentService 转到这个 executor，
-              // 再经 parentPort 到 main 的 WebContentsView+CDP 执行。
-              browserControlExecutor: browserControlMainBridge,
-              // CUA 顶部提示属于物理 Windows 桌面投影；非 Windows 和远端 authority 都不得上报。
-              cuaOperationStateReporter:
-                process.platform === "win32" ? cuaOperationStateReporter : undefined,
             });
             activeServices = initializedServices;
             activeHostApiNetworkTransport = hostApiNetworkTransport;

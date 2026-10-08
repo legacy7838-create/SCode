@@ -200,14 +200,12 @@ export type {
   ModelCatalogPort,
   EmbeddedSearchBackend,
   ExecutionPort,
-  BrowserControlPort,
   ExecutionShellSelection,
   FileSystemPort,
   HttpClientPort,
   ImageProcessorPort,
   PdfDocumentPort,
   InteractionRequestOrigin,
-  HooksRuntimeConfig,
   SkillLoadOutcome,
   SkillContent,
   SkillOperationOptions,
@@ -257,7 +255,6 @@ export { countContextPrefixMessages, MessageHistoryImpl } from "../agent/message
 export type { MessageHistory } from "../agent/message-history.js";
 export { TurnMachineImpl } from "../agent/turn-machine.js";
 export {
-  createConfiguredHookRunner,
   createInMemoryHookRunner,
   createSessionMailboxHookRegistrations,
 } from "../hooks/index.js";

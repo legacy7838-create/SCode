@@ -4,7 +4,6 @@ import {
   TID_BROWSER_WEBVIEW,
   type BrowserViewportSize,
 } from "@zcode/shared";
-import { TriangleAlertIcon } from "lucide-react";
 import { ResponsiveBrowserViewport } from "@/browser-use/ResponsiveBrowserViewport.js";
 import {
   resolveResponsiveBrowserGuestLayout,
@@ -34,11 +33,9 @@ export function BrowserViewportSurface({
   isViewportEmulated = isResponsiveMode,
   onRetryGuest,
   onRetryLoad,
-  onViewportResize,
   onViewportSizeChange,
   onWebviewRef,
   shouldMountWebview = true,
-  showResizeWarning,
   webviewGeneration,
   viewportSize,
   viewportZoom,
@@ -54,11 +51,9 @@ export function BrowserViewportSurface({
   isViewportEmulated?: boolean;
   onRetryGuest: () => void;
   onRetryLoad: () => void;
-  onViewportResize: () => void;
   onViewportSizeChange: (viewportSize: BrowserViewportSize) => void;
   onWebviewRef: (node: ElectronWebviewTag | null) => void;
   shouldMountWebview?: boolean;
-  showResizeWarning: boolean;
   webviewGeneration: number;
   viewportSize: BrowserViewportSize;
   viewportZoom: BrowserViewportZoom;
@@ -86,27 +81,10 @@ export function BrowserViewportSurface({
       ref={browserRegionRef}
       className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-background"
     >
-      {showResizeWarning ? (
-        <div
-          role="status"
-          aria-live="polite"
-          data-browser-resize-warning="visible"
-          className="pointer-events-none absolute top-2 right-2 left-2 z-20 mx-auto flex w-fit max-w-full items-center gap-2 rounded-xl border border-popover-border bg-popover px-3 py-2 text-ui-base font-medium text-foreground shadow-md"
-        >
-          <span
-            aria-hidden="true"
-            data-browser-resize-warning-accent="visible"
-            className="h-5 w-0.5 shrink-0 rounded-full bg-warning"
-          />
-          <TriangleAlertIcon aria-hidden="true" className="size-4 shrink-0 text-warning" />
-          <span>{formatMessage({ id: "browser.resizeDuringOperationWarning" })}</span>
-        </div>
-      ) : null}
       <ResponsiveBrowserViewport
         active={isResponsiveMode}
         desktopZoomFactor={desktopZoomFactor}
         isComposed={isComposed}
-        onResize={onViewportResize}
         onViewportSizeChange={onViewportSizeChange}
         viewportSize={viewportSize}
         zoom={viewportZoom}
@@ -156,7 +134,6 @@ export function BrowserViewportSurface({
               isResponsiveMode ? responsiveGuestTransformScale : undefined
             }
             data-testid={TID_BROWSER_WEBVIEW}
-            data-browser-resize-dimmed={showResizeWarning ? "true" : undefined}
             className={cn(
               "browser-use-viewport h-full min-h-0 w-full",
               isEmptyBrowserState || guestFailure || loadError ? "hidden" : "inline-flex",

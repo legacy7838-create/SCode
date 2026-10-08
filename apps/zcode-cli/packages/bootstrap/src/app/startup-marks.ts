@@ -41,11 +41,6 @@ export function resolveStartupPlugins(input: {
       commandRootCount: pluginOutcome.commandRoots.length,
       diagnosticCount: pluginOutcome.diagnostics.length,
       enabledPluginCount: pluginOutcome.plugins.filter((plugin) => plugin.enabled).length,
-      hookCount: Object.values(pluginOutcome.hooks ?? {}).reduce(
-        (sum, matchers) =>
-          sum + (matchers ?? []).reduce((inner, matcher) => inner + matcher.hooks.length, 0),
-        0,
-      ),
       mcpServerCount: Object.keys(pluginOutcome.mcpServers).length,
       pluginCount: pluginOutcome.plugins.length,
       pluginStorageRoot,

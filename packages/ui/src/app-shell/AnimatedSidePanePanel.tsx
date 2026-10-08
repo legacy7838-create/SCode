@@ -14,14 +14,12 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { horizontalListSortingStrategy, SortableContext } from "@dnd-kit/sortable";
-import type { BrowserViewScreenshotSurfacePreparePayload, GitChangeSourceId } from "@zcode/shared";
+import type { GitChangeSourceId } from "@zcode/shared";
 import { PreviewPane } from "@/PreviewPane.js";
 import { SidePaneTerminalPane } from "@/SidePaneTerminalPane.js";
 import { useIsOfficeMode } from "@/hooks/useInterfaceMode.js";
 import { WorkspaceSidePaneToggleButton } from "@/WorkspaceSidePaneToggleButton.js";
 import { DesktopWindowControls } from "@/DesktopWindowControls.js";
-import { BrowserUseSidePaneContent } from "@/browser-use/BrowserUseSidePaneContent.js";
-import { findScreenshotSurfaceTabForRender } from "@/browser-use/useBrowserScreenshotSurfaceRequest.js";
 import { HumanBrowserView } from "@/browser-use/HumanBrowserView.js";
 import { ScopedErrorBoundary } from "@/ErrorBoundary.js";
 import { GitPane } from "@/GitPane.js";
@@ -75,7 +73,6 @@ import {
   shouldMountSidePaneContent,
   shouldMountBrowserTabGuest,
   type BrowserSidePaneTab,
-  type BrowserUseSidePaneTab,
   type BrowserSidePaneMetadata,
   type OpenScopedSubagentSideTabRequest,
   type OpenScopedWorkflowActorSessionSideTabRequest,
@@ -117,13 +114,9 @@ const EMPTY_TABS_SCROLL_MASK_EDGES: TabsScrollMaskEdges = {
   right: false,
 };
 
-function SuspendedBrowserSidePaneContent({
-  tab,
-}: {
-  tab: BrowserSidePaneTab | BrowserUseSidePaneTab;
-}) {
+function SuspendedBrowserSidePaneContent({ tab }: { tab: BrowserSidePaneTab }) {
   const platform = usePlatform();
-  const tabId = tab.type === "browser-use" ? tab.tabId : tab.id;
+  const tabId = tab.id;
   const generation = tab.residencyGeneration ?? 0;
 
   useEffect(() => {
@@ -296,8 +289,6 @@ export function AnimatedSidePanePanel({
   panelElementRef,
   browserNavigationRequest,
   browserRestoreUrls,
-  screenshotSurfaceRequest: screenshotSurfaceRequestProp = null,
-  screenshotSurfaceTabId = null,
   fileChangeFindActiveIndex,
   fileChangeFindNavigationRequestId,
   fileChangeFindQuery,
@@ -361,8 +352,6 @@ export function AnimatedSidePanePanel({
   panelElementRef: RefObject<HTMLDivElement | null>;
   browserNavigationRequest: BrowserNavigationRequest | null;
   browserRestoreUrls: Record<string, string>;
-  screenshotSurfaceRequest?: BrowserViewScreenshotSurfacePreparePayload | null;
-  screenshotSurfaceTabId?: string | null;
   fileChangeFindActiveIndex: number;
   fileChangeFindNavigationRequestId: number;
   fileChangeFindQuery: string;
@@ -408,13 +397,6 @@ export function AnimatedSidePanePanel({
   const isResizeDisabled = !isVisible;
   const workspaceKey = workspaceIdentity?.trim() || workspaceAbsPath;
   const tabs = sidePaneState?.tabs ?? EMPTY_SIDE_PANE_TABS;
-  const screenshotSurfaceRequest = screenshotSurfaceRequestProp;
-  const isScreenshotSurfaceActive = Boolean(screenshotSurfaceRequest);
-  const screenshotSurfaceTab = screenshotSurfaceTabId
-    ? tabs.find((tab) => tab.id === screenshotSurfaceTabId)
-    : screenshotSurfaceRequest
-      ? findScreenshotSurfaceTabForRender(tabs, screenshotSurfaceRequest)
-      : undefined;
   const visibleTabs = useMemo(
     () =>
       getVisibleSidePaneTabs(tabs, {
@@ -936,7 +918,7 @@ export function AnimatedSidePanePanel({
             <div
               className={cn(
                 "h-full min-h-0",
-                visibleTabs.length === 0 && !screenshotSurfaceRequest && "hidden",
+                visibleTabs.length === 0 && "hidden",
               )}
             >
               <Tabs
@@ -1059,37 +1041,8 @@ export function AnimatedSidePanePanel({
 
                 <div className="relative min-h-0 flex-1 isolate">
                   {tabs.map((tab) => {
-                    if (
-                      (tab.type === "browser" || tab.type === "browser-use") &&
-                      !shouldMountBrowserTabGuest(tab)
-                    ) {
+                    if (tab.type === "browser" && !shouldMountBrowserTabGuest(tab)) {
                       return <SuspendedBrowserSidePaneContent key={tab.id} tab={tab} />;
-                    }
-                    if (tab.type === "browser-use") {
-                      return (
-                        <BrowserUseSidePaneContent
-                          key={tab.id}
-                          tab={tab}
-                          isPanelVisible={isVisible}
-                          isSelected={tab.id === visibleActiveTabId}
-                          isCurrentTask={tab.sessionId === sidePaneOwnerId}
-                          screenshotSurfaceRequest={
-                            screenshotSurfaceTab?.id === tab.id ? screenshotSurfaceRequest : null
-                          }
-                          // restoring guest 的完整 history 由 main 在 did-attach 后写入；
-                          // renderer 同时消费 initialUrl 会抢先提交导航，使 Chromium 拒绝 restore。
-                          initialUrl={
-                            tab.residency === "restoring" ? undefined : browserRestoreUrls[tab.id]
-                          }
-                          workspacePath={workspaceAbsPath}
-                          workspaceIdentity={workspaceIdentity}
-                          residencyGeneration={tab.residencyGeneration}
-                          onUrlChange={(url) => onBrowserUrlChange(tab.id, url)}
-                          onPageMetadataChange={(metadata) =>
-                            onBrowserPageMetadataChange(tab.id, metadata)
-                          }
-                        />
-                      );
                     }
                     return (
                       <TabsContent
@@ -1266,7 +1219,6 @@ export function AnimatedSidePanePanel({
                         ) : (
                           <HumanBrowserView
                             browserKey={tab.id}
-                            agentOpened={tab.agentOpened}
                             deferEmptyGuest
                             isResidencyRestore={tab.residency === "restoring"}
                             isVisible={isVisible && isBrowserOpen && tab.id === visibleActiveTabId}
@@ -1325,9 +1277,7 @@ export function AnimatedSidePanePanel({
           aria-hidden={!isVisible}
           className={cn(
             "h-full w-full min-w-0 border-l border-border bg-background transition-opacity duration-200 ease-out",
-            isVisible || isScreenshotSurfaceActive
-              ? "opacity-100"
-              : "pointer-events-none opacity-0",
+            isVisible ? "opacity-100" : "pointer-events-none opacity-0",
           )}
         >
           {panelContent}
@@ -1369,7 +1319,7 @@ export function AnimatedSidePanePanel({
           "!overflow-hidden transition-opacity duration-200 ease-out",
           // 截图期间 panel 仍保持 opacity=1，避免 opacity=0 让 Chromium 丢弃 guest
           // compositor surface；实际 browser surface 已 fixed 到窗口内的低透明合成层，不会露出 tab 栏。
-          isVisible || isScreenshotSurfaceActive ? "opacity-100" : "pointer-events-none opacity-0",
+          isVisible ? "opacity-100" : "pointer-events-none opacity-0",
         )}
       >
         {panelContent}

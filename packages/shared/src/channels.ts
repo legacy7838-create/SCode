@@ -11,18 +11,6 @@ import type { OAuthStateRegistration } from "./oauth.js";
 import type { AppSettings, Locale } from "./protocol.js";
 import type { StorageCleanRequest, StorageCleanResult, StorageUsageSnapshot } from "./storage.js";
 import type {
-  ArmsCustomEventPayload,
-  ConfigureFinalArmsCustomEventE2ERequest,
-  FinalArmsCustomEventE2EEntry,
-  RendererTelemetryEventPayload,
-  TelemetryRendererContext,
-} from "./telemetry.js";
-import type {
-  RendererActionTraceBatchV1,
-  RendererActionTraceConfigV1,
-} from "./rendererActionTrace.js";
-import type { RendererHeapSample } from "./validation.js";
-import type {
   CancelPendingRemoteConnectionRequest,
   BindRemoteWorkspaceSessionContextRequest,
   BotRemoteWorkspaceReconnectedEvent,
@@ -61,11 +49,6 @@ import type {
   WindowControlsOverlayReadyPayload,
 } from "./platform.js";
 import type { BrowserViewportSize } from "./browser-use/command-metadata.js";
-import type {
-  CuaAccessibilitySettingsResult,
-  OpenCuaPermissionOnboardingOptions,
-  PrepareCuaHelperPermissionDragResult,
-} from "./cuaAccessibilitySettings.js";
 
 // ============================================================================
 // RPC 服务频道 —— 通过 ChannelServer/ChannelClient 传输
@@ -84,10 +67,6 @@ export const ServiceChannels = {
   Setting: "setting",
   /** 凭据管理（从 main IPC 迁移到 host RPC） */
   Credential: "credential",
-  /** Computer Use Helper macOS 权限服务 */
-  CuaPermission: "cua-permission",
-  /** producer-owned PiP session presentation client */
-  CuaPipSession: "cua-pip-session",
   /** 跨窗口广播 */
   Broadcast: "broadcast",
   /** ZCode task wrapper 服务 */
@@ -123,20 +102,10 @@ export const ServiceChannels = {
   SkillSync: "skill-sync",
   /** SSH 远程 MCP 同步服务 */
   McpSync: "mcp-sync",
-  /** SSH 远程 plugin 同步服务 */
-  PluginSync: "plugin-sync",
-  /** 插件管理服务 */
-  Plugins: "plugins",
-  /** 设置页插件管理服务（UI 平台能力面收敛，不再直触 zcodeAgentService） */
-  PluginManagement: "plugin-management",
   /** Subagents 管理服务 */
   Subagents: "subagents",
   /** Commands 管理服务 */
   Commands: "commands",
-  /** Hooks 管理服务 */
-  Hooks: "hooks",
-  /** Memory 管理服务 */
-  Memory: "memory",
   /** 首次启动设置同步服务 */
   SettingsSync: "settings-sync",
   /** Bots 远程聊天控制服务 */
@@ -284,24 +253,6 @@ export const PlatformChannels = {
   OpenInFileManager: "zcode:open-in-file-manager",
   /** Renderer → Main：使用系统默认应用打开本地文件 */
   OpenExternalFile: "zcode:open-external-file",
-  /** Renderer → Main：打开 ZCode Computer Use 权限引导 */
-  OpenCuaPermissionOnboarding: "zcode:open-cua-permission-onboarding",
-  /** Renderer → Main：取消当前 renderer 发起的一次权限引导 participant */
-  CancelCuaPermissionOnboarding: "zcode:cancel-cua-permission-onboarding",
-  /**
-   * Renderer → Main：预热并缓存已验证的 Helper 路径 + bundle 指纹。
-   * 必须在拖拽浮窗挂载时调用 —— dragstart 链路里不允许任何异步 I/O。
-   */
-  PrepareCuaHelperPermissionDrag: "zcode:prepare-cua-helper-permission-drag",
-  /** Renderer → Main：把已验证的 Helper.app 同步拖出到 macOS 权限列表 */
-  StartCuaHelperPermissionDrag: "zcode:start-cua-helper-permission-drag",
-  /**
-   * Renderer → Main：拖拽手势结束。
-   * 拖完授权即完成，浮窗该让位（用户此时要看设置页和系统的重启提示）。必须等 dragend 而不是
-   * 在 dragstart 里就收窗：startDrag 只是把 drag session 交给 OS，非阻塞，drag source
-   * 立刻消失可能打断正在进行的拖拽。
-   */
-  NotifyCuaHelperPermissionDragEnded: "zcode:notify-cua-helper-permission-drag-ended",
   /** Renderer → Main：上报 OAuth state 用于 deep link 路由 */
   OAuthRegisterState: "zcode:oauth-register-state",
   /** Main → Renderer：转发 deep link URL */
@@ -314,27 +265,6 @@ export const PlatformChannels = {
   OAuthCallbackHandled: "zcode:oauth-callback-handled",
   /** Renderer → Main：renderer 已就绪，可接收缓存的 deep link */
   RendererReady: "zcode:renderer-ready",
-  /** Renderer → Main：同步当前 renderer 的 telemetry 上下文 */
-  SyncTelemetryContext: "zcode:sync-telemetry-context",
-  /** Renderer → Main：通过统一 telemetry 层上报业务事件 */
-  ReportTelemetryEvent: "zcode:report-telemetry-event",
-  /** Renderer → Main：上报 ARMS 自定义事件 */
-  ReportArmsCustomEvent: "zcode:report-arms-custom-event",
-  /** Renderer → Main：读取 Renderer 用户操作 Trace 灰度配置。 */
-  GetRendererActionTraceConfig: "zcode:get-renderer-action-trace-config",
-  /** Main → Renderer：Renderer 用户操作 Trace 灰度配置变化。 */
-  RendererActionTraceConfigChanged: "zcode:renderer-action-trace-config-changed",
-  /** Renderer → Main：发送已结束的 ui_action batch。 */
-  ReportRendererActionTraceBatch: "zcode:report-renderer-action-trace-batch",
-  /** Renderer → Main：主窗口 renderer 每 60 秒的 heap 读数，单向 send，不需要回执。 */
-  ReportRendererHeapSample: "zcode:report-renderer-heap-sample",
-  ReportLocalTtftBatch: "zcode:report-local-ttft-batch",
-  /** E2E preload → Main：读取 sendCustom 最终参数的内存 ring。 */
-  ReadFinalArmsCustomEventsE2E: "zcode:e2e:read-final-arms-custom-events",
-  /** E2E preload → Main：清空 sendCustom 最终参数的内存 ring。 */
-  ClearFinalArmsCustomEventsE2E: "zcode:e2e:clear-final-arms-custom-events",
-  /** E2E preload → Main：配置只针对目标 event name 的真实网络抑制。 */
-  ConfigureFinalArmsCustomEventsE2E: "zcode:e2e:configure-final-arms-custom-events",
   /** Renderer → Main：触发任务完成/失败的系统通知 */
   ShowTaskNotification: "zcode:show-task-notification",
   /** Main → Preload：通知 renderer 播放任务通知提示音 */
@@ -553,12 +483,8 @@ export const HostMessageTypes = {
   CronRun: "cron-run",
   /** main → host：闲时任务派发；首跑 createTask 新建 session，续跑带 conversationId/sessionId resume */
   OffPeakRun: "off-peak-run",
-  /** main → host：browser-use 命令执行结果（CDP 执行完回传，按 requestId 关联） */
-  BrowserExecuteResult: "browser-execute-result",
   /** main → host：本地视频 canonical path 授权结果 */
   LocalMediaPreviewPathAuthorizeResult: "local-media-preview-path-authorize-result",
-  /** Main → Host：全局前台 ZCode 窗口派生的 producer focus fact。 */
-  CuaPipFocusChanged: "cua-pip-focus-changed",
   /** main → host：要求 Host 现读本地 Source，并同步指定 Remote Environment。 */
   ProviderProvisioningExecute: "provider-provisioning-execute",
   /** main → host：资源管理器请求 Host 采样其后代进程（Agent / MCP / 终端）的 CPU 与内存 */
@@ -604,8 +530,6 @@ export const HostResponseTypes = {
   AgentRunningTaskCountChanged: "agent-running-task-count-changed",
   /** host 内指定 workspace 当前仍未 terminal 的 task 数量变化 */
   WorkspaceRunningTaskCountChanged: "workspace-running-task-count-changed",
-  /** host → main：Windows desktop-local CUA turn 的操作提示状态 */
-  CuaOperationState: "cua-operation-state",
   /** host → main：workspace generation 已可安全 attach */
   RemoteWorkspaceAcquired: "remote-workspace-acquired",
   /** 广播消息 */
@@ -650,8 +574,6 @@ export const HostResponseTypes = {
   CronSchedulerWakeRequest: "cron-scheduler-wake-request",
   /** host → main：闲时任务翻 schedulable，请立即唤醒 scheduler 认领派发（与 cron 消息独立） */
   OffPeakSchedulerWakeRequest: "off-peak-scheduler-wake-request",
-  /** host → main：执行一条 browser-use 命令（main 用 WebContentsView+CDP 执行，按 requestId 关联） */
-  BrowserExecuteRequest: "browser-execute-request",
   /** host → main：请求授权 Agent 已精确校验的本地视频路径 */
   LocalMediaPreviewPathAuthorizeRequest: "local-media-preview-path-authorize-request",
   /** host → main：RPC 网络遥测批次（channel.command 成功率/耗时） */
@@ -875,27 +797,6 @@ export interface PlatformChannelMap {
     request: string;
     response: { success: boolean; error?: string };
   };
-  [PlatformChannels.OpenCuaPermissionOnboarding]: {
-    request: OpenCuaPermissionOnboardingOptions | undefined;
-    response: CuaAccessibilitySettingsResult;
-  };
-  [PlatformChannels.PrepareCuaHelperPermissionDrag]: {
-    request: undefined;
-    response: PrepareCuaHelperPermissionDragResult;
-  };
-  // 单向 send（不是 invoke）：dragstart 必须同步发起，等不了 invoke 的往返。
-  [PlatformChannels.StartCuaHelperPermissionDrag]: {
-    request: undefined;
-    response: void;
-  };
-  [PlatformChannels.NotifyCuaHelperPermissionDragEnded]: {
-    request: undefined;
-    response: void;
-  };
-  [PlatformChannels.CancelCuaPermissionOnboarding]: {
-    request: { operationId: string };
-    response: void;
-  };
   [PlatformChannels.OAuthRegisterState]: {
     request: OAuthStateRegistration;
     response: void;
@@ -918,47 +819,6 @@ export interface PlatformChannelMap {
   };
   [PlatformChannels.RendererReady]: {
     request: void;
-    response: void;
-  };
-  [PlatformChannels.SyncTelemetryContext]: {
-    request: TelemetryRendererContext;
-    response: void;
-  };
-  [PlatformChannels.ReportTelemetryEvent]: {
-    request: RendererTelemetryEventPayload;
-    response: void;
-  };
-  [PlatformChannels.ReportArmsCustomEvent]: {
-    request: ArmsCustomEventPayload;
-    response: void;
-  };
-  [PlatformChannels.GetRendererActionTraceConfig]: {
-    request: void;
-    response: RendererActionTraceConfigV1;
-  };
-  [PlatformChannels.RendererActionTraceConfigChanged]: {
-    request: RendererActionTraceConfigV1;
-    response: void;
-  };
-  [PlatformChannels.ReportRendererActionTraceBatch]: {
-    request: RendererActionTraceBatchV1;
-    response: void;
-  };
-  // 单向 send（不是 invoke）：60 秒一条的旁路遥测样本，renderer 不等 main 回执。
-  [PlatformChannels.ReportRendererHeapSample]: {
-    request: RendererHeapSample;
-    response: void;
-  };
-  [PlatformChannels.ReadFinalArmsCustomEventsE2E]: {
-    request: void;
-    response: FinalArmsCustomEventE2EEntry[];
-  };
-  [PlatformChannels.ClearFinalArmsCustomEventsE2E]: {
-    request: void;
-    response: void;
-  };
-  [PlatformChannels.ConfigureFinalArmsCustomEventsE2E]: {
-    request: ConfigureFinalArmsCustomEventE2ERequest;
     response: void;
   };
   [PlatformChannels.ShowTaskNotification]: {
@@ -1155,8 +1015,8 @@ export interface PlatformChannelMap {
   };
   [PlatformChannels.ExecuteDesktopCommand]: {
     request: DesktopCommandId;
-    // 返回值直通 main 进程 handler 的 return（GetCuaOsSupport 返回 CuaOsSupport），
-    // 与 renderer 侧 IPlatformService.executeDesktopCommand 的 Promise<unknown> 对齐。
+    // 返回值直通 main 进程 handler 的 return，与 renderer 侧
+    // IPlatformService.executeDesktopCommand 的 Promise<unknown> 对齐。
     response: unknown;
   };
   [PlatformChannels.SetApplicationLocale]: {

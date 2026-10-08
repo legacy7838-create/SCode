@@ -108,7 +108,6 @@ import { buildAppUsageSnapshot, resolveTzOffsetMs } from "./usage-stats-builder.
 import { createProtocolInteractionBroker } from "./interaction-broker.js";
 import { createProtocolAutomationPort } from "./automation-port.js";
 import { createProtocolOffPeakPort } from "./offpeak-port.js";
-import { createProtocolBrowserControlBroker } from "./browser-control-broker.js";
 import { mapComputerUseOperationEvent } from "./computer-use-operation-event.js";
 import { protocolMcpServersToRuntimeMcpConfig } from "./protocol-mcp-config.js";
 import { projectIdFromDirectory } from "../app/paths.js";
@@ -141,7 +140,6 @@ type ZCodeSessionRecordParams = (
 ) & { taskType?: SessionTaskType };
 
 interface SessionStartupPreferences {
-  memoryEnabled: boolean;
   modelContextBudgetStrategy: ZCodeModelContextBudgetStrategy;
   nativeSearchEnhancementsEnabled: boolean;
   resolveInitialBashShellSelection: () => Promise<ExecutionShellSelection | undefined>;
@@ -1984,7 +1982,6 @@ export async function sendPrompt(context: ZCodeProtocolAgentServerContext, rawPa
     runPromptTurnInBackground(context, record, {
       abortController,
       attachments: params.attachments,
-      browserAmbientContext: params.browserAmbientContext,
       inputId,
       intent,
       modelExecution: params.modelExecution
@@ -2365,10 +2362,6 @@ async function runPromptTurnInBackground(
     intent?: SendInputOptions["intent"];
     modelExecution?: SendInputOptions["modelExecution"];
     attachments?: unknown[];
-    browserAmbientContext?: {
-      tabCount: number;
-      currentUrl?: string;
-    };
     inputId?: string;
     queryId?: QueryId;
     content: string;
@@ -2416,7 +2409,6 @@ async function runPromptTurnInBackground(
         abortSignal: params.abortController.signal,
         intent: params.intent,
         modelExecution: params.modelExecution,
-        browserAmbientContext: params.browserAmbientContext,
         inputId: params.inputId,
         queryId: params.queryId,
         ...(params.automationId
@@ -2951,8 +2943,6 @@ export async function getTaskTokenUsage(
  * - SessionResumed：打开/恢复会话是读取，不是活动。冷恢复路径刚把
  *   record.updatedAt 回填成 store 的真实时间（见 resumeSession op 内说明），
  *   若再被 resume 事件冲成 Date.now()，点开/刷新任务就会被顶到列表最前并整列重排。
- * - WorkspaceHookAdmissionUpdated：冷恢复重新评估工作区 hook 准入状态，不代表用户活动；
- *   若漏掉黑名单，SessionResumed 后的准入状态事件会把历史任务显示为“刚刚”。
  * - HookRun*：hook lifecycle 是 turn/session 的内部执行细节；正常 turn 已有消息、工具等
  *   活动事件负责更新时间，冷恢复的 SessionStart hook 不能单独制造一次用户活动。
  */
@@ -2962,7 +2952,6 @@ function isNonActivitySessionEvent(event: SessionEvent): boolean {
     event.type === SessionEventType.SessionModeChanged ||
     event.type === SessionEventType.SessionTitleUpdated ||
     event.type === SessionEventType.SessionResumed ||
-    event.type === SessionEventType.WorkspaceHookAdmissionUpdated ||
     event.type === SessionEventType.HookRunStarted ||
     event.type === SessionEventType.HookRunProgress ||
     event.type === SessionEventType.HookRunCompleted ||
@@ -3218,11 +3207,10 @@ async function requestSessionRuntimePreferences(
       );
     }
     if (error instanceof ProtocolRequestError && (error.code === -32601 || error.code === -32020)) {
-      // 兼容旧 Host 或无 Host 的纯 CLI 创建路径；Memory 服从产品默认关闭，
-      // 增强搜索维持原有默认开启，其他协议/传输错误仍阻止 runtime 创建。
+      // 兼容旧 Host 或无 Host 的纯 CLI 创建路径；增强搜索维持原有默认开启，
+      // 其他协议/传输错误仍阻止 runtime 创建。
       return {
         askUserQuestionAutoResolutionEnabled: true,
-        memoryEnabled: false,
         modelContextBudgetStrategy: DEFAULT_ZCODE_MODEL_CONTEXT_BUDGET_STRATEGY,
         nativeSearchEnhancementsEnabled: true,
       };
@@ -3240,7 +3228,6 @@ async function resolveSessionStartupPreferences(
   if (source.kind === "inherit") {
     const inheritedShellSelection = source.parent.app.runtime.getSessionShellSelection();
     return {
-      memoryEnabled: source.parent.memoryEnabled,
       modelContextBudgetStrategy: DEFAULT_ZCODE_MODEL_CONTEXT_BUDGET_STRATEGY,
       nativeSearchEnhancementsEnabled: source.parent.nativeSearchEnhancementsEnabled,
       resolveInitialBashShellSelection: async () => inheritedShellSelection,
@@ -3258,7 +3245,6 @@ async function resolveSessionStartupPreferences(
     runtimePreferences.askUserQuestionAutoResolutionEnabled,
   );
   return {
-    memoryEnabled: runtimePreferences.memoryEnabled,
     modelContextBudgetStrategy: DEFAULT_ZCODE_MODEL_CONTEXT_BUDGET_STRATEGY,
     nativeSearchEnhancementsEnabled: runtimePreferences.nativeSearchEnhancementsEnabled,
     resolveInitialBashShellSelection: async () => {
@@ -3351,9 +3337,6 @@ async function createRecord(
       toolDisallowlist: "toolDenylist" in params ? params.toolDenylist : undefined,
       nativeSearchEnhancementsEnabled: startupPreferences.nativeSearchEnhancementsEnabled,
       modelContextBudgetStrategy: startupPreferences.modelContextBudgetStrategy,
-      // Memory Settings 是现有 CLI features.memory/use 之外的总开关。只在关闭时
-      // 写入 override，避免开启值反向覆盖用户已有的 CLI 禁用配置。
-      ...(startupPreferences.memoryEnabled ? {} : { memory: { enabled: false } }),
       // desktop-continuous session/create 由 UI 先解析 ~/.zcode/.agents 的 enabled MCP，
       // 但 protocol app-server 自己不会读取 UI/main 侧的 MCP store；之前 createRecord 没把
       // params.mcpServers 注入 runtimeConfig，导致日志里 runtimeHasMcpConfig=false，工具永远不启动。
@@ -3383,21 +3366,6 @@ async function createRecord(
       ? { offPeakPort: createProtocolOffPeakPort(context, () => ownSessionRecord) }
       : {}),
     resolveInitialBashShellSelection: startupPreferences.resolveInitialBashShellSelection,
-    // browser-use：agent.browsers.* 经此把命令转成 interaction/browserExecute 反向请求。
-    browserControlPort: createProtocolBrowserControlBroker(context),
-    // Protocol server 是受信任的 Desktop/Web/Mobile Host；灰度开关由这里显式注入，
-    // 不从 workspace/project 配置或环境变量读取，关闭时仍可通过删掉该字段回滚到 hard block。
-    workspaceHookTrustEnabled: true,
-    // 无 session 的 Settings Trust 曾绕过 managed policy；session Runtime 与
-    // workspace RPC 必须共享 Host 持有的同一 provider，不能各自创建默认 policy。
-    workspaceHookPolicyProvider: context.deps.workspaceHookPolicyProvider,
-    workspaceHookReviewHost: {
-      taskId: sessionId,
-      runId: `workspace-hook-run:${sessionId}:${crypto.randomUUID()}`,
-      workspaceLabel:
-        workspace.workspacePath.split(/[\\/]/u).filter(Boolean).at(-1) ?? workspace.workspacePath,
-      ...(workspace.remoteSessionId ? { remoteSessionId: workspace.remoteSessionId } : {}),
-    },
     sessionId,
     sessionStore: context.deps.sessionStore,
     traceContext,
@@ -3409,7 +3377,6 @@ async function createRecord(
     app,
     createdAt: now,
     eventStore,
-    memoryEnabled: startupPreferences.memoryEnabled,
     modelContextBudgetStrategy: startupPreferences.modelContextBudgetStrategy,
     nativeSearchEnhancementsEnabled: startupPreferences.nativeSearchEnhancementsEnabled,
     ...(parentSessionId ? { parentSessionId } : {}),

@@ -20,7 +20,26 @@ import pkg, { CancellationToken } from "electron-updater";
 import semver from "semver";
 import { logger } from "./logger.js";
 import { getElectronReleasePlatform, ManifestUpdateProvider } from "./manifestUpdateProvider.js";
-const { autoUpdater } = pkg;
+
+// electron-updater 的 `autoUpdater` 是惰性 getter，首次访问即构造 AppUpdater，
+// 而构造器会强制校验 `app.getVersion()` 为合法 semver。开发态运行壳的 package.json
+// 没有 version 字段，`app.getVersion()` 返回非法的 "0.0"，若在模块顶层 eager 解构，
+// 仅仅 import 本模块就会在主进程启动时抛错崩溃——即使开发态根本不会启用自动更新
+// （initAutoUpdater 已通过 canUseAutoUpdaterInCurrentRuntime 提前 return）。
+// 用 Proxy 延迟到真正读写属性时才构造实例，既保留全部调用点，又消除 import 期副作用。
+type AutoUpdaterInstance = typeof pkg.autoUpdater;
+const autoUpdater = new Proxy({} as AutoUpdaterInstance, {
+  get(_target, property) {
+    return (pkg.autoUpdater as unknown as Record<string | symbol, unknown>)[property];
+  },
+  set(_target, property, value) {
+    (pkg.autoUpdater as unknown as Record<string | symbol, unknown>)[property] = value;
+    return true;
+  },
+  has(_target, property) {
+    return property in (pkg.autoUpdater as object);
+  },
+});
 
 export const CHECK_FOR_UPDATE_MENU_ID = "check-for-update";
 const AUTO_UPDATE_POLL_INTERVAL_MS = 60 * 60 * 1000;

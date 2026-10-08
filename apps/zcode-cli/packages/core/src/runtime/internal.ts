@@ -53,9 +53,7 @@ import type { RuntimeTaskRegistry } from "../runtime-task/registry.js";
 import type { AgentRuntimeCoreMethods } from "./internal-methods.js";
 import type { AgentRuntimeTurnMethods } from "./internal-turn-methods.js";
 import type { AgentRuntimeHookMethods } from "./internal-hook-methods.js";
-import type { ProjectMemoryExtractionScheduler } from "./helpers/project-memory-extraction.js";
 import type { RuntimeTelemetryFacade } from "../telemetry/runtime-telemetry.js";
-import type { WorkspaceHookRuntimeAdmissionPort } from "../hooks/workspace-hook-runtime-admission.js";
 
 export interface AgentRuntimeInternal
   extends AgentRuntimeCoreMethods, AgentRuntimeTurnMethods, AgentRuntimeHookMethods {
@@ -76,11 +74,9 @@ export interface AgentRuntimeInternal
   registry: ToolRegistry;
   executor: ToolExecutor;
   hookRunner?: HookRunner;
-  workspaceHookAdmission?: WorkspaceHookRuntimeAdmissionPort;
   modelFactory: AgentRuntimeDeps["modelFactory"];
   modelIoDir?: string;
   providerRuntimeHeadersPort?: ProviderRuntimeHeadersPort;
-  browserControlPort?: AgentRuntimeDeps["browserControlPort"];
   modelRequestAdmission?: AgentRuntimeDeps["modelRequestAdmission"];
   sessionModelSelection: ModelSelection | undefined;
   messageHistory: MessageHistory;
@@ -90,9 +86,6 @@ export interface AgentRuntimeInternal
   contextInitialized: boolean;
   contextSourceSnapshot?: ContextSourceSnapshot;
   latestContextBuildResult?: ContextBuildResult;
-  memoryRoot?: string;
-  memoryIndexContent?: string;
-  memoryExtractionScheduler?: ProjectMemoryExtractionScheduler;
   contextSourcePort?: ContextSourcePort;
   skillPort?: SkillPort;
   mcpPort?: McpPort;

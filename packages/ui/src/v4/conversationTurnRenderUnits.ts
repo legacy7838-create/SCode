@@ -1,7 +1,6 @@
 import type {
   AssistantTextRow,
   ConversationRow,
-  HookInvocationRow,
   SessionPhase,
   TimelineMarkerRow,
   TurnHeaderRow,
@@ -43,10 +42,6 @@ export interface ConversationTurnRenderUnit {
   /** 操作正文锚点之后、真正轮尾 marker 之前的 row；保持 CLI 全序原位渲染。 */
   assistantFollowingRows: AssistantWorkRow[];
   assistantTailRows: AssistantWorkRow[];
-  /** Browser 自动轮尾截图：完成态渲染在 file diff 摘要之后、消息操作栏之前。 */
-  browserTurnEndRows: AssistantWorkRow[];
-  /** turn-local Hook product rows；不进入 assistant work/折叠，只供轮尾详情 action。 */
-  hookInvocations: HookInvocationRow[];
   /** 整轮全部 assistant text 段，用于复制/预览聚合，不代表渲染位置。 */
   assistantTextRows: AssistantTextRow[];
   /** 轻边界（modelChange）：渲染在 user 输入之前的轮顶分隔。 */
@@ -80,7 +75,6 @@ interface DraftTurnRenderUnit {
   header?: TurnHeaderRow;
   userInputs: UserInputRow[];
   assistantWorkRows: AssistantWorkRow[];
-  hookInvocations: HookInvocationRow[];
   orderedRows: ConversationRow[];
 }
 
@@ -100,10 +94,6 @@ function isTimelineMarkerRow(row: ConversationRow): row is TimelineMarkerRow {
   return row.kind === "timelineMarker";
 }
 
-function isHookInvocationRow(row: ConversationRow): row is HookInvocationRow {
-  return row.kind === "hookInvocation";
-}
-
 function isVisibleAssistantWorkRow(row: AssistantWorkRow): boolean {
   if (row.kind === "reasoning" && row.text.trim().length === 0) {
     // reasoning_start/reasoning_end 可能形成空的终态 block；只在共享
@@ -119,7 +109,6 @@ function isVisibleAssistantWorkRow(row: AssistantWorkRow): boolean {
 function isVisibleConversationRow(row: ConversationRow): boolean {
   if (isUserInputRow(row)) return true;
   if (isTurnHeaderRow(row)) return false;
-  if (isHookInvocationRow(row)) return false;
   return isVisibleAssistantWorkRow(row);
 }
 
@@ -159,16 +148,6 @@ function splitTurnTailRows(rows: readonly AssistantWorkRow[]): {
     flowRows: rows.slice(0, tailStart),
     tailRows: rows.slice(tailStart),
   };
-}
-
-function isBrowserTurnEndRow(row: AssistantWorkRow): boolean {
-  // 自动截图以完成态 tool row 持久化在最终正文之后，旧分组只把
-  // timeline boundary 识别为轮尾，导致截图被搬进上方“已工作”折叠区而不可见。
-  return (
-    row.kind === "toolCall" &&
-    row.display?.kind === "node_repl_images" &&
-    row.display.source === "browser_turn_end"
-  );
 }
 
 function isLightBoundaryMarkerRow(row: AssistantWorkRow): row is TimelineMarkerRow {
@@ -257,19 +236,8 @@ function materializeDraftUnit(
   const bodyRows = timelineOnly
     ? visibleAssistantWorkRows
     : visibleAssistantWorkRows.filter((row) => !isLightBoundaryMarkerRow(row));
-  // Browser 自动截图要越过 file diff 摘要成为最后内容块，因此先单独抽取；
-  // 其余 row 仍按 CLI 全序处理，只有连续的真实轮尾 marker 后缀可从 flow 拆出。
-  const browserTurnEndRows: AssistantWorkRow[] = [];
-  const nonBrowserRows: AssistantWorkRow[] = [];
-  if (!timelineOnly) {
-    for (const row of bodyRows) {
-      if (isBrowserTurnEndRow(row)) {
-        browserTurnEndRows.push(row);
-      } else {
-        nonBrowserRows.push(row);
-      }
-    }
-  }
+  // 其余 row 按 CLI 全序处理，只有连续的真实轮尾 marker 后缀可从 flow 拆出。
+  const nonBrowserRows: AssistantWorkRow[] = timelineOnly ? [] : [...bodyRows];
   // 不能用 filter 抽取所有 turnTailBoundary，并把 ExitPlanMode 也强行归入 tail，
   // 会把计划和中间 marker 从原 tool row 搬到轮底。其余 row 必须留在 flow 中。
   const { flowRows, tailRows: assistantTailRows } = timelineOnly
@@ -303,11 +271,10 @@ function materializeDraftUnit(
     workDurationMs,
     isInterrupted,
   );
-  const browserTurnEndRowIds = new Set(browserTurnEndRows.map((row) => row.rowId));
   const orderedBodyRows = visibleOrderedRows.filter(
-    // main 的 workSegments 会从 orderedRows 重建 flow；如果这里只从
-    // bodyRows 抽取截图，它仍会被塞回正文流并在轮尾再次渲染，造成重复和顺序错乱。
-    (row) => !leadingBoundaryRowIds.has(row.rowId) && !browserTurnEndRowIds.has(row.rowId),
+    // main 的 workSegments 会从 orderedRows 重建 flow；轻边界已单独承载，
+    // 不能再算作 assistant work。
+    (row) => !leadingBoundaryRowIds.has(row.rowId),
   );
   const workSegments = buildConversationTurnWorkSegments({
     key: draft.key,
@@ -338,8 +305,6 @@ function materializeDraftUnit(
     assistantHistoryRows: orderedAssistantHistoryRows,
     assistantFollowingRows,
     assistantTailRows,
-    browserTurnEndRows,
-    hookInvocations: draft.hookInvocations,
     assistantTextRows,
     leadingBoundaryRows,
     ...(latestAssistantTextRow ? { latestAssistantTextRow } : {}),
@@ -366,7 +331,6 @@ function createDraftUnit(turnId: string): DraftTurnRenderUnit {
     turnId,
     userInputs: [],
     assistantWorkRows: [],
-    hookInvocations: [],
     orderedRows: [],
   };
 }
@@ -377,7 +341,6 @@ function shouldKeepRenderUnit(unit: ConversationTurnRenderUnit): boolean {
   return (
     unit.visibleUserInputs.length > 0 ||
     unit.assistantWorkRows.length > 0 ||
-    unit.hookInvocations.some((row) => row.executions.some((execution) => execution.didExecute)) ||
     unit.leadingBoundaryRows.length > 0 ||
     // 直接启动轮：用户行不可见、无助手内容，轮由 run 卡呈现——它当然要留下。
     unit.workflowLaunch !== undefined ||
@@ -462,10 +425,6 @@ export function buildConversationTurnRenderUnits(
     unit.orderedRows.push(row);
     if (isUserInputRow(row)) {
       unit.userInputs.push(row);
-      continue;
-    }
-    if (isHookInvocationRow(row)) {
-      unit.hookInvocations.push(row);
       continue;
     }
     unit.assistantWorkRows.push(row);

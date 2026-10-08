@@ -495,7 +495,7 @@ export type ZCodeTimelineStatus =
   | "completed"
   | "failed"
   | "interrupted";
-export type ZCodeTimelineTrigger = "manual" | "auto" | "reactive" | "partial" | "session_memory";
+export type ZCodeTimelineTrigger = "manual" | "auto" | "reactive" | "partial";
 export type ZCodeContextCompactionTimelinePhase =
   | "standalone_turn"
   | "pre_request"

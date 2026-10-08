@@ -52,9 +52,6 @@ export function getSidePaneTabSearchHint(tab: WorkspaceSidePaneTab): string {
     return `${tab.rootSessionId} ${tab.parentSessionId} subagent directory`;
   }
   if (tab.type === "browser") return tab.initialUrl ?? "";
-  if (tab.type === "browser-use") {
-    return `${tab.title ?? ""} ${tab.sessionId} browser use`;
-  }
   if (tab.type === "git") return "git diff";
   if (tab.type === "treemapping") return "file activity diff map treemapping";
   if (tab.type === "whiteboard") return `${tab.title} whiteboard canvas draw sketch`;
@@ -111,7 +108,7 @@ export function getSidePaneTabTypeLabel(
     return tab.subagentType.trim() || labels.subagentTypeLabel;
   }
   if (tab.type === "subagent-directory") return labels.subagentDirectoryTitle;
-  if (tab.type === "browser" || tab.type === "browser-use") return labels.browserTitle;
+  if (tab.type === "browser") return labels.browserTitle;
   if (tab.type === "git") return labels.reviewTitle;
   if (tab.type === "treemapping") return labels.treemappingTitle;
   if (tab.type === "whiteboard") return labels.whiteboardTitle;

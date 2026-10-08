@@ -45,10 +45,7 @@ interface InFlightEntry {
   resolveFinal: (ack: CommandAck) => void;
 }
 
-type CommandFinal = Pick<
-  CommandAck,
-  "status" | "reasonCode" | "message" | "result" | "memoryEnabled"
->;
+type CommandFinal = Pick<CommandAck, "status" | "reasonCode" | "message" | "result">;
 
 interface LiveInputEntry {
   ack: CommandAck;

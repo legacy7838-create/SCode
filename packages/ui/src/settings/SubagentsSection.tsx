@@ -37,7 +37,6 @@ import {
   type ModelSelectGroup,
 } from "@/ModelConfigSelect.js";
 import { cn } from "@/components/lib/utils.js";
-import { logger } from "@/logger.js";
 import { settingsResourceRowInteraction } from "@/settings/settingsResourceRowInteraction.js";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog.js";
 import { useModelSelectionServiceView } from "@/hooks/useModelSelectionView.js";
@@ -67,18 +66,7 @@ import {
 } from "@/settings/PluginScopeMenu.js";
 import { useTabStore } from "@/store/TabStoreProvider.js";
 import { isWorkspaceTab, type WorkspaceTabState } from "@/store/tabStore.js";
-import {
-  PluginInstallEmptyState,
-  PluginLoadingState,
-  PluginSearchEmptyState,
-} from "@/settings/PluginInstallEmptyState.js";
-import {
-  resolvePluginDisplayName,
-  resolveUniquePluginListingByName,
-} from "@/settings/pluginStoreListing.js";
-import { PluginStoreAvatar } from "@/settings/PluginStoreAvatar.js";
-import type { StorePluginItem } from "@/settings/pluginStoreListing.js";
-import { usePluginManagementStore } from "@/store/pluginManagementStore.js";
+
 
 const AGENT_COLORS: AgentColor[] = [...SUBAGENT_COLORS];
 const COLOR_DOT_CLASS: Record<AgentColor, string> = SUBAGENT_COLOR_CLASS;
@@ -444,7 +432,6 @@ function ToolCheckbox({
 
 function AgentListRow({
   agent,
-  pluginIconItem,
   isOperating,
   modelGroups,
   modelSelectionView,
@@ -456,7 +443,6 @@ function AgentListRow({
   onToggle,
 }: {
   agent: AgentSummary;
-  pluginIconItem?: Pick<StorePluginItem, "name" | "listing">;
   isOperating: boolean;
   modelGroups: readonly ModelSelectGroup[];
   modelSelectionView?: ModelSelectionView | null;
@@ -507,17 +493,9 @@ function AgentListRow({
       {...settingsResourceRowInteraction(rowEditable ? () => onEdit(agent) : undefined)}
     >
       <div className="relative shrink-0" aria-hidden="true">
-        {pluginIconItem ? (
-          <PluginStoreAvatar
-            item={pluginIconItem}
-            className="size-9 bg-background"
-            fallbackIcon={<Bot className="size-4" />}
-          />
-        ) : (
-          <div className="flex size-9 items-center justify-center rounded-xl bg-background text-foreground-subtle">
-            <Bot className="size-4" />
-          </div>
-        )}
+        <div className="flex size-9 items-center justify-center rounded-xl bg-background text-foreground-subtle">
+          <Bot className="size-4" />
+        </div>
         {agent.color ? (
           // 右下角颜色点之前溢出头像容器，会让列表行视觉高度变高。
           <span className="absolute -bottom-1 -right-1 inline-flex size-3.5 items-center justify-center rounded-full border border-card bg-card p-px leading-none">
@@ -1266,9 +1244,6 @@ function SubagentForm({
 export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
   const { intl, locale } = useZCodeIntl();
   const confirmDialog = useConfirmDialog();
-  const plugins = usePluginManagementStore((state) => state.plugins);
-  const availablePlugins = usePluginManagementStore((state) => state.availablePlugins);
-  const initializePlugins = usePluginManagementStore((state) => state.initialize);
   const localHostServices = useBaseWorkspaceServices();
   const modelSelectionRead = useModelSelectionServiceView(localHostServices.modelSelectionService);
   const modelSelectionView =
@@ -1308,7 +1283,7 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
   );
   const targetWorkspacePath = selectedWorkspace?.workspacePath ?? "";
   const targetWorkspaceIdentity = undefined;
-  const { pluginManagementService, subagentsService } = localHostServices;
+  const { subagentsService } = localHostServices;
   const activeScope = selectedWorkspace ? "workspace" : "user";
   const latestRequestIdRef = useRef(0);
   const pluginInventoryWorkspacePath = targetWorkspacePath || workspaceTabs[0]?.workspacePath;
@@ -1364,36 +1339,7 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
     void loadAgents(true);
   }, [loadAgents]);
 
-  useEffect(() => {
-    if (!pluginInventoryWorkspacePath) return;
-    let active = true;
-    // 冷启动 seed 晚于文件首读，旧用户页又跳过 inventory 初始化，导致插件直到重进才出现。
-    // 复用已有初始化完成事件刷新只读资源，不阻塞用户列表、不轮询，也不把项目配置带入用户页。
-    void (async () => {
-      try {
-        await initializePlugins({
-          workspacePath: pluginInventoryWorkspacePath,
-          workspaceIdentity: targetWorkspaceIdentity,
-          configScope: activeScope === "user" ? "user" : undefined,
-          pluginService: pluginManagementService,
-        });
-        if (active) await loadAgents(false);
-      } catch (initializationError) {
-        if (active)
-          logger.warn("[subagents] 插件资源初始化失败，保留当前列表", initializationError);
-      }
-    })();
-    return () => {
-      active = false;
-    };
-  }, [
-    activeScope,
-    initializePlugins,
-    loadAgents,
-    pluginInventoryWorkspacePath,
-    pluginManagementService,
-    targetWorkspaceIdentity,
-  ]);
+
 
   const refresh = useCallback(async () => {
     await loadAgents(false);
@@ -1604,20 +1550,6 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
     () => groupPluginAgentsById(groupedAgents.plugin),
     [groupedAgents.plugin],
   );
-  const pluginListingById = useMemo(
-    () => new Map(availablePlugins.map((plugin) => [plugin.id, plugin.listing])),
-    [availablePlugins],
-  );
-  const pluginIconItemById = useMemo(
-    () =>
-      new Map(
-        plugins.map((plugin) => [
-          plugin.id,
-          { name: plugin.name, listing: pluginListingById.get(plugin.id) },
-        ]),
-      ),
-    [pluginListingById, plugins],
-  );
   const filteredAgentCount =
     groupedAgents.user.length + groupedAgents.plugin.length + groupedAgents.builtIn.length;
   const currentEditingAgent = useMemo(() => {
@@ -1685,16 +1617,6 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
           {index > 0 ? <div className="h-px bg-border/50" aria-hidden="true" /> : null}
           <AgentListRow
             agent={agent}
-            pluginIconItem={
-              agent.pluginId
-                ? pluginIconItemById.get(agent.pluginId)
-                : agent.pluginName
-                  ? {
-                      name: agent.pluginName,
-                      listing: resolveUniquePluginListingByName(availablePlugins, agent.pluginName),
-                    }
-                  : undefined
-            }
             isOperating={operatingAgentId === agent.id || refreshing}
             modelGroups={chatModelSelectGroups}
             modelSelectionView={modelSelectionView}
@@ -1763,9 +1685,13 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
       ) : null}
 
       {loading ? (
-        <PluginLoadingState label={intl.formatMessage({ id: "common.loading" })} />
+        <div className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-ui-base text-foreground-subtle">
+          {intl.formatMessage({ id: "common.loading" })}
+        </div>
       ) : hasSearchResultEmpty ? (
-        <PluginSearchEmptyState label={intl.formatMessage({ id: "settings.subagents.empty" })} />
+        <div className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-ui-base text-foreground-subtle">
+          {intl.formatMessage({ id: "settings.subagents.empty" })}
+        </div>
       ) : (
         <div className="space-y-6">
           <section
@@ -1787,38 +1713,27 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
             {groupedAgents.user.length > 0 ? (
               renderAgentList(groupedAgents.user)
             ) : (
-              <PluginInstallEmptyState
-                title={intl.formatMessage({ id: "settings.subagents.empty" })}
-                description={intl.formatMessage({
-                  id: "settings.subagents.addDescription",
-                })}
-                actions={
-                  canManageUserAgents ? (
-                    <Button type="button" variant="default" size="lg" onClick={handleAddNew}>
-                      <Plus data-icon="inline-start" aria-hidden="true" />
-                      {intl.formatMessage({ id: "settings.create.action" })}
-                    </Button>
-                  ) : null
-                }
-              />
+              <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border p-6 text-center">
+                <div className="text-ui-base font-medium text-foreground">
+                  {intl.formatMessage({ id: "settings.subagents.empty" })}
+                </div>
+                <div className="text-ui-sm text-foreground-subtle">
+                  {intl.formatMessage({ id: "settings.subagents.addDescription" })}
+                </div>
+                {canManageUserAgents ? (
+                  <Button type="button" variant="default" size="lg" onClick={handleAddNew}>
+                    <Plus data-icon="inline-start" aria-hidden="true" />
+                    {intl.formatMessage({ id: "settings.create.action" })}
+                  </Button>
+                ) : null}
+              </div>
             )}
           </section>
           {pluginGroups.map(([pluginId, items]) => (
             <section key={pluginId} className="space-y-4">
               <SettingsResourceGroupHeader
                 count={items.length}
-                title={resolvePluginDisplayName(
-                  {
-                    name: items[0]?.pluginName ?? pluginId,
-                    listing:
-                      (items[0]?.pluginId ? pluginListingById.get(items[0].pluginId) : undefined) ??
-                      resolveUniquePluginListingByName(
-                        availablePlugins,
-                        items[0]?.pluginName ?? pluginId,
-                      ),
-                  },
-                  locale,
-                )}
+                title={items[0]?.pluginName ?? pluginId}
               />
               {renderAgentList(items)}
             </section>

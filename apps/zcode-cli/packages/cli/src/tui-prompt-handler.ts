@@ -7,7 +7,6 @@ import type { GlobalOptions } from "@zcode/shared-types";
 import { createCommandCenter, parseSlashCommand } from "./command-center.js";
 import type { CommandCenterApp } from "./command-center.js";
 import { resolveDisplayLocale } from "./locale.js";
-import { createCliHeadlessBrowserRuntime } from "./headless-browser.js";
 // 复用防御式 runtime 读取：subscribeEvents 不在 app 的静态类型面上，
 // 两处各写一份「怎么把它读出来」就会在方法改名时只修好一处。
 import { readRuntimeEventSubscriber } from "./runtime-event-subscriber.js";
@@ -57,19 +56,13 @@ export function createTuiSubmitPrompt(
   startupLocale: SupportedLocale = DEFAULT_LOCALE,
   toolDisallowlist?: readonly string[],
   forceMcs = false,
-  browserUse?: GlobalOptions["browserUse"],
-  browserExecutable?: GlobalOptions["browserExecutable"],
 ): TuiPromptHandler {
   let app: Awaited<ReturnType<NonNullable<RunDependencies["createZCodeApp"]>>> | undefined;
   let activeUiLocale = uiLocale;
-  // 进程级句柄（telemetry / Provider Registry / endpoint 路由）跨 App 替换复用，见 runtime 文件。
+  // 进程级句柄（Provider Registry / endpoint 路由）跨 App 替换复用，见 runtime 文件。
   const processRuntime = createTuiProcessRuntimeState();
   let closeHandlerPromise: Promise<void> | undefined;
   const closePromises = new WeakMap<object, Promise<void>>();
-  const browserRuntimes = new WeakMap<
-    object,
-    NonNullable<ReturnType<typeof createCliHeadlessBrowserRuntime>>
-  >();
   let activeRequestPermission: TuiRequestPermission | undefined;
   const cleanupTimeoutMs = Math.max(
     1,
@@ -97,11 +90,6 @@ export function createTuiSubmitPrompt(
     if (!closePromise) {
       closePromise = (async () => {
         await runCliCleanupWithTimeout(async () => targetApp.close?.(), cleanupTimeoutMs);
-        // App/session 关闭悬空或失败时仍需释放 CLI 自己启动的 Chromium。
-        await runCliCleanupWithTimeout(
-          async () => browserRuntimes.get(closeKey)?.close(),
-          cleanupTimeoutMs,
-        );
       })();
       closePromises.set(closeKey, closePromise);
     }
@@ -140,12 +128,9 @@ export function createTuiSubmitPrompt(
       providerRegistryRuntime,
       sessionId,
       workingDirectory,
-    } = await prepareTuiAppRuntime(deps, version, request, processRuntime);
-    const browserRuntime = createCliHeadlessBrowserRuntime({ browserExecutable, browserUse }, deps);
-    let createdApp: Awaited<ReturnType<NonNullable<RunDependencies["createZCodeApp"]>>>;
-    try {
-      createdApp = await createAppFactory({
-        browserControlPort: browserRuntime?.browserControlPort,
+    } = await prepareTuiAppRuntime(deps, request, processRuntime);
+    const createdApp: Awaited<ReturnType<NonNullable<RunDependencies["createZCodeApp"]>>> =
+      await createAppFactory({
         env: appEnv,
         projectConfigPath: deps.projectConfigPath,
         providerRegistry: providerRegistryRuntime.runtime.registryService,
@@ -172,11 +157,6 @@ export function createTuiSubmitPrompt(
         userConfigPath: deps.userConfigPath,
         version,
       });
-    } catch (error) {
-      await runCliCleanupWithTimeout(async () => browserRuntime?.close(), cleanupTimeoutMs);
-      throw error;
-    }
-    if (browserRuntime) browserRuntimes.set(createdApp as object, browserRuntime);
     // 初始化在等待旧身份导入时 TUI 可能已关闭；迟到 App 不能重新成为当前会话。
     if (closeHandlerPromise) {
       await closeApp(createdApp);
@@ -373,12 +353,6 @@ export function createTuiSubmitPrompt(
   submitPrompt.close = async () => {
     closeHandlerPromise ??= (async () => {
       await closeApp();
-      // Bug 根因：TUI 的 Session 切换和进程退出共用了 App close，不能在 /new 等路径
-      // 提前关闭共享 Owner；只有整个 Prompt Handler 终态才做对称 shutdown。
-      await runCliCleanupWithTimeout(
-        async () => processRuntime.shutdownTelemetry?.(),
-        cleanupTimeoutMs,
-      );
       const providerRegistryRuntime = await processRuntime.providerRegistryRuntimePromise;
       providerRegistryRuntime?.dispose();
     })();

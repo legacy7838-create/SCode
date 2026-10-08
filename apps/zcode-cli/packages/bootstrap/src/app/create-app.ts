@@ -24,13 +24,11 @@ import {
   type AmendWorkflowRunSettingsInput,
   type ResumeSessionResult,
 } from "@zcode/core";
-import { createModelTelemetry } from "@zcode/telemetry";
 import {
   createRootTraceContext,
   traceContextToLogContext,
   type TraceContext,
   createSessionId,
-  createSessionEvent,
   type ExecutionShellSelection,
   type MessageId,
 } from "@zcode/contracts";
@@ -71,7 +69,6 @@ import { createSessionFacade } from "./session-facade.js";
 import { resolveAppRuntimeConfig, runtimeConfigLogContext } from "./runtime-config.js";
 import { resolveBundledSkillRoots } from "./bundled-skills.js";
 import { collectDynamicWorkflowDisabledSkillPaths } from "./dynamic-workflow-gate.js";
-import { createWorkspaceHookRuntimeSecurity } from "./workspace-hook-trust.js";
 import { createScriptWorkflowBridge } from "./script-workflow-methods.js";
 import {
   createDynamicWorkflowRunService,
@@ -85,12 +82,6 @@ import { createDynamicWorkflowRunProgressSink } from "./dynamic-workflow-run-pro
 import { createScriptWorkflowAgentRuntime } from "./script-workflow-child-runtime.js";
 import { workflowActorModelPolicy } from "./workflow-actor-model.js";
 import { workflowActorToolPolicy } from "./workflow-actor-tools.js";
-import {
-  createNodeReplBrowserBroker,
-  injectNodeReplBrowserBroker,
-  type NodeReplBrowserBroker,
-} from "./node-repl-browser-broker.js";
-import { resolveBuiltInNodeReplMcpServers } from "./built-in-node-repl.js";
 import { resolveZCodeCustomCommandPrompt } from "../custom-command-prompt.js";
 import { resolveZCodeBuiltinPromptCommand } from "../builtin-prompt-command.js";
 import { collectDisabledPaths } from "../skill-command-overrides.js";
@@ -155,7 +146,6 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
       env: options.env,
       projectConfigPath: options.projectConfigPath,
       workingDirectory,
-      workspaceIdentity: options.runtimeConfig?.memory?.workspaceIdentity,
       skipUserConfig: options.skipUserConfig,
       userConfigPath: options.userConfigPath,
       cliOverrides: createConfigCliOverrides(options),
@@ -189,12 +179,6 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
     ...traceContextToLogContext(traceContext),
     module: "adapters.model",
   });
-  const modelTelemetry = createModelTelemetry({
-    owner: options.telemetryOwner,
-    sessionId,
-  });
-  let nodeReplBrowserBroker: NodeReplBrowserBroker | undefined;
-  let ownedNodeReplBrowserBroker: NodeReplBrowserBroker | undefined;
   let providerModelRuntime: ApiProviderModelRuntime | undefined;
   try {
     const storageRoot = resolvePath(configResult.config.storage.dir);
@@ -227,10 +211,7 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
       modelSelectionOverrides: zcodeSubagentProfileOutcome.pluginAgentModelSelectionOverrides,
     }).profiles;
     const pluginRuntimeFeatures = resolvePluginRuntimeFeatures(pluginOutcome);
-    const builtInMcpServers = resolveBuiltInNodeReplMcpServers({
-      pluginOutcome,
-      workingDirectory,
-    });
+    const builtInMcpServers: Record<string, never> = {};
     // 用户目录已在 loader 前完成原地迁移；不能给项目/插件旧身份加内存兼容旁路。
     const subagentProfiles = [...zcodeSubagentProfiles, ...pluginSubagentProfiles];
     const ownsSessionStore = options.sessionStore === undefined;
@@ -241,13 +222,12 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
     const persistedMode = options.runtimeConfig?.mode
       ? undefined
       : readProjectPermissionMode(localSettingStore, projectID);
-    let { configuredMcpServers, runtimeConfig, untrustedProjectMcpServers } =
+    const { configuredMcpServers, runtimeConfig, untrustedProjectMcpServers } =
       resolveAppRuntimeConfig({
         cliStorageRoot,
         configResult,
         options,
         persistedMode,
-        pluginHooks: pluginOutcome.hooks,
         pluginMcpServers: pluginOutcome.mcpServers,
         builtInMcpServers,
         pluginRuntimeFeatures,
@@ -257,33 +237,8 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
         subagentProfiles,
         storageRoot,
         workingDirectory,
-        workspaceIdentity: options.runtimeConfig?.memory?.workspaceIdentity,
+        workspaceIdentity: options.runtimeConfig?.workspaceIdentity,
       });
-    const browserControlPort = options.browserControlPort;
-    if (
-      browserControlPort &&
-      pluginRuntimeFeatures.browserUse === true &&
-      runtimeConfig.mcp?.servers?.node_repl?.type === "stdio"
-    ) {
-      nodeReplBrowserBroker =
-        options.nodeReplBrowserBroker ??
-        (ownedNodeReplBrowserBroker = createNodeReplBrowserBroker({
-          browserControlPort,
-          logger,
-          platform: options.platform,
-        }));
-      configuredMcpServers = injectNodeReplBrowserBroker(
-        configuredMcpServers,
-        nodeReplBrowserBroker,
-      );
-      runtimeConfig.mcp = {
-        ...runtimeConfig.mcp,
-        servers: injectNodeReplBrowserBroker(
-          runtimeConfig.mcp.servers ?? {},
-          nodeReplBrowserBroker,
-        ),
-      };
-    }
     startupTimer.mark("ZCode runtime configuration resolved", {
       context: runtimeConfigLogContext(runtimeConfig, workingDirectory),
       event: "bootstrap.app.startup.runtime_config.completed",
@@ -294,51 +249,6 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
     const pluginReferenceCatalog = buildPluginReferenceCatalog(pluginOutcome.plugins);
     runtimeConfig.pluginReferenceCatalog = pluginReferenceCatalog;
     let runtime: AgentRuntime | undefined;
-    const workspaceHookRuntimeSecurity = createWorkspaceHookRuntimeSecurity({
-      appVersion,
-      logger,
-      projectConfigPath: options.projectConfigPath,
-      policy: options.workspaceHookPolicy,
-      policyProvider: options.workspaceHookPolicyProvider,
-      reviewHost: options.workspaceHookReviewHost,
-      workspaceHookTrustEnabled: options.workspaceHookTrustEnabled,
-      runtimeRoot: configResult.sources.project.workspaceHookRuntimeRoot ?? {
-        // Fallback 只在 config-factory 未导出时生效（理论上不会发生）。
-        // 此处原本无条件按单层 runtimeConfig.hooks 重建 runtimeRoot，与
-        // config-factory 遍历 default/user/project/env/cli 全部层的推导不一致，
-        // 导致 review 快照与 toggle 重建的 bundleDigest 不同，
-        // 「审核中 toggle」被误报为 workspace_hooks_snapshot_mismatch。
-        enabled: runtimeConfig.hooks?.enabled === true,
-        timeoutMs: runtimeConfig.hooks?.timeoutMs ?? 60_000,
-        maxOutputBytes: runtimeConfig.hooks?.maxOutputBytes ?? 32_768,
-      },
-      sessionId,
-      snapshot: configResult.sources.project.workspaceHookSnapshot,
-      userConfigPath: configResult.sources.user.path,
-      workingDirectory,
-      ...(options.workspaceHookReviewHost
-        ? {
-            emitReviewEvent: async (event) => {
-              if (!runtime) throw new Error("ZCode runtime is not initialized yet.");
-              await runtime.appendEvent(
-                createSessionEvent(event.type, sessionId, event.payload, {
-                  traceId: traceContext.traceId,
-                }),
-                traceContext,
-              );
-            },
-            emitAdmissionEvent: async (event) => {
-              if (!runtime) throw new Error("ZCode runtime is not initialized yet.");
-              await runtime.appendEvent(
-                createSessionEvent(event.type, sessionId, event.payload, {
-                  traceId: traceContext.traceId,
-                }),
-                traceContext,
-              );
-            },
-          }
-        : {}),
-    });
     const permissionService = new PermissionService({
       allowedTools: new Set(configResult.config.permission.allowedTools),
       autoApproveHighRisk: configResult.config.permission.autoApproveHighRisk,
@@ -404,7 +314,6 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
     const ownsExecutionPort = options.executionPort === undefined;
     const pdfDocumentPort =
       options.pdfDocumentPort ?? createPopplerPdfDocumentAdapter({ executionPort });
-    // browser-use 控制端口：仅当宿主（desktop）注入时可用，无本地 fallback（纯 CLI 无浏览器底座）。
     const fileSystemPort = options.fileSystemPort ?? createNodeFileSystemAdapter();
     const httpClientPort =
       options.httpClientPort ??
@@ -533,12 +442,8 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
         modelIoDir,
         modelIoFullRetentionEnabled: options.modelIoFullRetentionEnabled,
         executionConfig: modelExecutionConfig,
-        statusSink: modelTelemetry.statusSink,
         streamIdleTimeoutMs: configResult.config.modelStream.idleTimeoutMs,
       });
-    if (options.modelAdapter && modelTelemetry.statusSink) {
-      modelAdapter.addStatusSink(modelTelemetry.statusSink);
-    }
     // 进程级并发治理器：run service 拿它的窄端口给
     // driver（每个 actor runtime 一个请求级准入端口）；主 runtime 挂它的 observer（下面 deps）——
     // 不排队、不看冷却，但计入在飞并喂信号。进程级单例——配额本就在账号上，不按会话分。
@@ -555,7 +460,6 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
     // 新建的 Model 才看得到，child 不各自冻结一份。
     const modelFactory = providerModelRuntime.modelFactory;
     const scriptWorkflowFacade = createScriptWorkflowBridge({
-      agentTelemetry: modelTelemetry.agentExecution,
       appOptions: options,
       appVersion,
       artifactStore,
@@ -625,7 +529,6 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
                   ).configOverrides,
                 },
                 deps: {
-                  agentTelemetry: modelTelemetry.agentExecution,
                   appOptions: options,
                   appVersion,
                   artifactStore,
@@ -724,7 +627,6 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
       currentSelection: () => getRuntime().getSessionModelSelection(),
     });
     runtime = new AgentRuntime(sessionId, runtimeConfig, {
-      agentTelemetry: modelTelemetry.agentExecution,
       // 主代理的模型请求过治理器的 observer：立即放行，但让治理器看见它的 429 / 成功。
       modelRequestAdmission: workflowConcurrencyGovernor.observer(),
       eventStore: options.eventStore ?? createInMemorySessionEventStore(),
@@ -732,9 +634,6 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
       sessionMailboxPort,
       logger,
       executionPort,
-      workspaceHookAdmission: workspaceHookRuntimeSecurity?.admission,
-      workspaceHookSnapshot: workspaceHookRuntimeSecurity?.snapshot,
-      browserControlPort,
       fileSystemPort,
       httpClientPort,
       imageProcessorPort,
@@ -765,7 +664,7 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
       providerRuntimeHeadersPort: options.providerRuntimeHeadersPort,
       resolveEffectiveModelSelection: options.resolveEffectiveModelSelection,
       isRemoteWorkspace: () =>
-        isRemoteWorkspaceIdentity(runtimeConfig.memory?.workspaceIdentity ?? ""),
+        isRemoteWorkspaceIdentity(runtimeConfig.workspaceIdentity ?? ""),
       permissionBroker: options.permissionBroker,
       permissionService,
       workflowPort: scriptWorkflowFacade.workflowPort,
@@ -822,7 +721,6 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
       traceContext,
     });
     const workflowFacade = createWorkflowFacade({
-      agentTelemetry: modelTelemetry.agentExecution,
       appOptions: options,
       appVersion,
       artifactStore,
@@ -864,9 +762,6 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
       mcpPort,
       ownsExecutionPort,
       ownsMcpPort,
-      closeNodeReplBrowserBroker: async () => {
-        await ownedNodeReplBrowserBroker?.close();
-      },
       ownsSessionStore,
       prepareUserExecutionBoundary,
       prepareResume,
@@ -923,79 +818,6 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
       sessionId,
       traceId: traceContext.traceId,
       runtime,
-      respondWorkspaceHookReview: (input) =>
-        workspaceHookRuntimeSecurity?.respond(
-          {
-            sessionId: input.sessionId,
-            taskId: input.taskId,
-            runId: input.runId,
-            ...(input.remoteSessionId ? { remoteSessionId: input.remoteSessionId } : {}),
-            workspaceIdentity: input.workspaceIdentity,
-            bundleDigest: input.bundleDigest,
-            reviewFlowId: input.reviewFlowId,
-            generation: input.generation,
-            interactionId: input.interactionId,
-          },
-          input.decision,
-        ) ??
-        Promise.resolve({
-          accepted: false as const,
-          reasonCode: "workspace_hooks_require_trust_capable_host" as const,
-        }),
-      toggleWorkspaceHookReviewItem: (input) =>
-        workspaceHookRuntimeSecurity?.toggle(
-          {
-            sessionId: input.sessionId,
-            taskId: input.taskId,
-            runId: input.runId,
-            ...(input.remoteSessionId ? { remoteSessionId: input.remoteSessionId } : {}),
-            workspaceIdentity: input.workspaceIdentity,
-            bundleDigest: input.bundleDigest,
-            reviewFlowId: input.reviewFlowId,
-            generation: input.generation,
-            interactionId: input.interactionId,
-          },
-          input.reviewItemId,
-          input.enabled,
-        ) ??
-        Promise.resolve({
-          accepted: false as const,
-          reasonCode: "workspace_hooks_require_trust_capable_host" as const,
-        }),
-      revokeWorkspaceHookTrust: (input) =>
-        ("hookDeclarationDigests" in input
-          ? workspaceHookRuntimeSecurity?.revokeCurrent(input)
-          : workspaceHookRuntimeSecurity?.revoke(
-              {
-                sessionId: input.sessionId,
-                taskId: input.taskId,
-                runId: input.runId,
-                ...(input.remoteSessionId ? { remoteSessionId: input.remoteSessionId } : {}),
-                workspaceIdentity: input.workspaceIdentity,
-                bundleDigest: input.bundleDigest,
-                reviewFlowId: input.reviewFlowId,
-                generation: input.generation,
-                interactionId: input.interactionId,
-              },
-              input.reviewItemIds,
-            )) ??
-        Promise.resolve({
-          accepted: false as const,
-          reasonCode: "workspace_hooks_require_trust_capable_host" as const,
-        }),
-      requestWorkspaceHookReview: (input) =>
-        workspaceHookRuntimeSecurity?.requestReview({
-          workspaceIdentity: input.workspaceIdentity,
-          bundleDigest: input.bundleDigest,
-        }) ??
-        Promise.resolve({
-          accepted: false as const,
-          reasonCode: "workspace_hooks_require_trust_capable_host" as const,
-        }),
-      // Settings pretrust 写盘后由 server 按 workspace 调用：重载 Trust store 到本
-      // session 的 coordinator 并重发 admission 状态（详见 types.ts 注释）。
-      reloadWorkspaceHookTrust: () =>
-        workspaceHookRuntimeSecurity?.reloadTrust() ?? Promise.resolve(),
       setModelIoFullRetentionEnabled: (enabled) =>
         modelAdapter.setModelIoFullRetentionEnabled(enabled),
       readToolResultArtifact: (uri) =>
@@ -1110,11 +932,7 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
         try {
           await closeSession?.();
         } finally {
-          try {
-            providerModelRuntime?.dispose();
-          } finally {
-            await modelTelemetry.shutdown();
-          }
+          providerModelRuntime?.dispose();
         }
       },
       ...workflowFacade,
@@ -1278,8 +1096,6 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
     };
   } catch (error) {
     providerModelRuntime?.dispose();
-    void modelTelemetry.shutdown().catch(() => undefined);
-    void ownedNodeReplBrowserBroker?.close();
     startupTimer.fail("ZCode app startup failed", error, {
       context: { sessionId, workingDirectory },
       event: "bootstrap.app.startup.failed",

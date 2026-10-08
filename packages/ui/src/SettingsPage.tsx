@@ -22,7 +22,6 @@ import {
   TID_SETTINGS_BACK_BUTTON,
   TID_SETTINGS_PAGE,
   TID_SETTINGS_SECTION_NAV,
-  TID_SETTINGS_USAGE_TAB,
   testId,
 } from "@zcode/shared";
 import { Button } from "@/components/ui/button.js";
@@ -30,17 +29,11 @@ import { toast } from "@/components/ui/toast.js";
 import { DesktopWindowFrame } from "@/DesktopWindowFrame.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { usePlatform } from "@/hooks/usePlatform.js";
-import { getPathLeaf } from "@/lib/path.js";
 import { useProviderSettingsView } from "@/hooks/useProviderSettingsView.js";
 import { useUsageEntitlement } from "@/hooks/useUsageEntitlement.js";
 import {
   addPendingSettingsSectionListener,
-  clearPendingSettingsPluginOrigin,
-  clearPendingSettingsPluginScopeKey,
   consumeInitialSettingsSection,
-  consumePendingSettingsPluginOrigin,
-  consumePendingSettingsPluginScopeKey,
-  consumePendingSettingsPluginTab,
   consumePendingSettingsModelProviderTarget,
   consumePendingSettingsUsageTab,
   resolveSettingsSection,
@@ -65,15 +58,12 @@ import {
 import { buildPersonalCodingPlanUsageSource } from "@/lib/codingPlanUsageSources.js";
 import { SubagentsSection } from "@/settings/SubagentsSection.js";
 import { AutomationsSection } from "@/settings/AutomationsSection.js";
-import { SegmentPill } from "@/settings/PluginStoreListView.js";
 import { PluginsSection } from "@/settings/PluginsSection.js";
-import { HooksSection } from "@/settings/HooksSection.js";
 import { WorkspaceFileSearchSection } from "@/settings/WorkspaceFileSearchSection.js";
-import { MemorySettingsSection } from "@/settings/MemorySettingsSection.js";
 import { BrowserSettingsSection } from "@/settings/BrowserSettingsSection.js";
-import { ComputerUseSection } from "@/settings/ComputerUseSection.js";
 import { ShortcutSettingsSection } from "@/settings/ShortcutSettingsSection.js";
 import { MigrationSection } from "@/settings/MigrationSection.js";
+import { SettingsSegmentedTabs } from "@/settings/SettingsSegmentedTabs.js";
 import { SETTINGS_FRAME_CONTENT_CLASSNAME } from "@/settings/SettingsPageParts.js";
 import {
   SettingsBreadcrumbProvider,
@@ -105,17 +95,15 @@ import {
 } from "./settingsPageHelpers.js";
 import { AppearanceSectionContent } from "./settingsCodePreview.js";
 import type { SettingsSectionId } from "@/lib/settingsNavigation.js";
-import { requestPluginStoreOpen } from "@/lib/pluginStoreNavigation.js";
 import {
   runUserAction,
   runUserActionAsync,
   type UserActionResult,
   type UserActionTrigger,
 } from "@/lib/userActionTelemetry.js";
-import type { SettingsUserActionFeatureId } from "@/lib/userActionTraceCatalog.js";
 
 function runSettingsActionAsync<T>(options: {
-  featureId: SettingsUserActionFeatureId;
+  featureId: string;
   action: string;
   trigger: UserActionTrigger;
   operation: () => Promise<T>;
@@ -168,17 +156,11 @@ function SettingsUsageProviderTabs({
       : activeTab;
 
   return (
-    <div className="flex items-center gap-1.5">
-      {tabItems.map((item) => (
-        <SegmentPill
-          key={item.id}
-          active={visibleActiveTab === item.id}
-          label={item.label}
-          testId={testId(TID_SETTINGS_USAGE_TAB, item.id)}
-          onClick={() => onTabChange(item.id)}
-        />
-      ))}
-    </div>
+    <SettingsSegmentedTabs
+      items={tabItems.map((item) => ({ label: item.label, value: item.id }))}
+      value={visibleActiveTab}
+      onValueChange={(val) => onTabChange(val as UsageStatsSectionTab)}
+    />
   );
 }
 
@@ -318,20 +300,7 @@ export function SettingsPage({
     writeLastSettingsSectionPreference(visibleInitialSection);
     return visibleInitialSection;
   });
-  const [pluginTab, setPluginTab] = useState(() => consumePendingSettingsPluginTab());
-  const [pluginNavigationOrigin, setPluginNavigationOrigin] = useState(() =>
-    consumePendingSettingsPluginOrigin(),
-  );
-  const [pluginScopeKey, setPluginScopeKey] = useState(() =>
-    consumePendingSettingsPluginScopeKey(),
-  );
   const [settingsSectionNavigationVersion, setSettingsSectionNavigationVersion] = useState(0);
-  useEffect(() => {
-    // React Strict Mode 会双执行 state initializer；来源和 scopeKey 都在挂载完成后再清理，
-    // Marketplace 只返回 User 已安装视图；Workspace 仍通过设置页自身的配置层切换进入。
-    clearPendingSettingsPluginOrigin();
-    clearPendingSettingsPluginScopeKey();
-  }, []);
   const [settingsBreadcrumbItems, setSettingsBreadcrumbItems] = useState<
     readonly SettingsBreadcrumbItem[]
   >([]);
@@ -600,13 +569,9 @@ export function SettingsPage({
     [activeSection],
   );
   const handleOpenCodingPlanUpgradeSettings = useCallback(
-    (
-      providerId: string,
-      funnelContext?: import("@/lib/codingPlanFunnelTelemetry.js").CodingPlanFunnelContext,
-    ) => {
+    (providerId: string) => {
       openCodingPlanUpgrade({
         providerId,
-        funnelContext,
       });
     },
     [openCodingPlanUpgrade],
@@ -661,24 +626,8 @@ export function SettingsPage({
   );
   const selectDirectory = useSelectDirectory();
   const services = useServices();
-  const onboardingRecordService = services.onboardingRecordService;
   const localHostServices = useBaseWorkspaceServices();
   const { settings: sharedSettings, update: updateSharedSettings } = useSettings();
-  const memoryWorkspaceDisplayNames = useMemo(() => {
-    const names = new Set<string>();
-    // Memory Scope 的项目顺序以 settings.json recentProjects 为准；打开中的
-    // Workspace 只补充尚未持久化的项目，不能抢占最近项目排序。
-    for (const path of sharedSettings?.recentProjects ?? []) {
-      const name = getPathLeaf(path).trim();
-      if (name) names.add(name);
-    }
-    for (const tab of workspaceTabs) {
-      const name = tab.label.trim() || getPathLeaf(tab.workspacePath).trim();
-      if (name) names.add(name);
-    }
-    return [...names];
-  }, [sharedSettings?.recentProjects, workspaceTabs]);
-  const memoryEnabled = sharedSettings?.memoryEnabled === true;
   const nativeSearchEnhancementsEnabled = sharedSettings?.nativeSearchEnhancementsEnabled !== false;
   const askUserQuestionAutoResolutionEnabled =
     sharedSettings?.askUserQuestionAutoResolutionEnabled !== false;
@@ -750,13 +699,6 @@ export function SettingsPage({
         setSettingsSectionNavigationVersion((version) => version + 1);
         if (section === "usage" && detail?.usageTab) {
           setUsageActiveTab(detail.usageTab);
-        }
-        if (resolveSettingsSection(section) === "plugin" && detail?.pluginTab) {
-          setPluginTab(detail.pluginTab);
-          setPluginNavigationOrigin(detail.pluginOrigin);
-          setPluginScopeKey(detail.pluginScopeKey);
-        } else if (resolveSettingsSection(section) !== "plugin") {
-          setPluginNavigationOrigin(undefined);
         }
         if (section === "modelProvider" && detail?.modelProviderId) {
           setPendingModelProviderTarget({
@@ -915,29 +857,6 @@ export function SettingsPage({
         action: "toggle_model_io_retention",
         trigger: "switch",
         operation: () => updateSharedSettings({ modelIoFullRetentionEnabled: enabled }),
-        completed: {
-          resultSource: "shared_settings",
-          stateAfter: enabled ? "enabled" : "disabled",
-        },
-      });
-    },
-    [updateSharedSettings],
-  );
-  const handleMemoryEnabledChange = useCallback(
-    async (enabled: boolean) => {
-      await runSettingsActionAsync({
-        featureId: "settings.memory",
-        action: "toggle_memory",
-        trigger: "switch",
-        operation: async () => {
-          await updateSharedSettings({ memoryEnabled: enabled });
-          // 手动修改反向回写 record，换号同步不会复活旧值；失败不阻塞开关。
-          await onboardingRecordService
-            ?.updateRecordPreferences({ memoryEnabled: enabled })
-            .catch((cause: unknown) => {
-              console.warn("[settings] 回写引导记录失败", String(cause));
-            });
-        },
         completed: {
           resultSource: "shared_settings",
           stateAfter: enabled ? "enabled" : "disabled",
@@ -1346,18 +1265,13 @@ export function SettingsPage({
   const activeSectionLabel = intl.formatMessage({
     id: activeSectionMeta.contentTitleId ?? activeSectionMeta.titleId,
   });
-  const settingsBreadcrumbSectionLabel =
-    activeSection === "plugin" && pluginNavigationOrigin === "plugin-store"
-      ? intl.formatMessage({ id: "workspace.openPluginsSettings" })
-      : activeSectionLabel;
+  const settingsBreadcrumbSectionLabel = activeSectionLabel;
   const visibleSettingsBreadcrumbItems =
     settingsBreadcrumbItems[0]?.label === settingsBreadcrumbSectionLabel
       ? settingsBreadcrumbItems
       : [];
   const hasVisibleSettingsBreadcrumb = visibleSettingsBreadcrumbItems.length >= 2;
-  const showActiveSectionTitle =
-    !hasVisibleSettingsBreadcrumb ||
-    (activeSection === "plugin" && pluginNavigationOrigin === "plugin-store");
+  const showActiveSectionTitle = !hasVisibleSettingsBreadcrumb;
 
   return (
     <>
@@ -1370,7 +1284,7 @@ export function SettingsPage({
         <div
           data-testid={TID_SETTINGS_PAGE}
           data-active-section={activeSection}
-          // 隐式 auto 行会按 Memory viewer 的内容高度撑出窗口，随后被 DesktopWindowFrame 裁切且没有滚动条。
+          // 隐式 auto 行会按内部滚动 viewer 的内容高度撑出窗口，随后被 DesktopWindowFrame 裁切且没有滚动条。
           // 固定为单个 minmax(0, 1fr) 行，让普通设置页和内部滚动 viewer 都以窗口剩余高度为边界。
           className="relative grid h-screen min-h-full w-full grid-cols-[68px_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] lg:grid-cols-[268px_minmax(0,1fr)]"
         >
@@ -1414,9 +1328,6 @@ export function SettingsPage({
                             trigger: "button",
                           },
                           operation: () => {
-                            if (pluginNavigationOrigin === "plugin-store") {
-                              requestPluginStoreOpen("user");
-                            }
                             onBack?.();
                           },
                           completed: { resultSource: "local_commit" },
@@ -1488,7 +1399,6 @@ export function SettingsPage({
                                     trigger: "button",
                                   },
                                   operation: () => {
-                                    setPluginNavigationOrigin(undefined);
                                     setSettingsSectionNavigationVersion((version) => version + 1);
                                     setActiveSettingsSection(id);
                                   },
@@ -1821,35 +1731,6 @@ export function SettingsPage({
                               }
                             />
                           </ServiceProvider>
-                        ) : activeSection === "memory" ? (
-                          <ServiceProvider services={localHostServices}>
-                            {/* Memory catalog 始终使用本地 Host，避免远程 workspace 误读本机数据。 */}
-                            <MemorySettingsSection
-                              memoryEnabled={memoryEnabled}
-                              memoryService={localHostServices.memoryService}
-                              onMemoryEnabledChange={handleMemoryEnabledChange}
-                              projectMemoryViewerAvailable={Boolean(isDesktop)}
-                              workspaceDisplayNames={memoryWorkspaceDisplayNames}
-                            />
-                          </ServiceProvider>
-                        ) : activeSection === "plugin" ? (
-                          <PluginsSection
-                            key={`plugin:${settingsSectionNavigationVersion}`}
-                            isDesktop={Boolean(isDesktop)}
-                            isMacDesktop={Boolean(isMacDesktop)}
-                            isWindowsDesktop={Boolean(isWindowsDesktop)}
-                            initialTab={pluginTab}
-                            initialScopeKey={pluginScopeKey}
-                            workspacePath={activeWorkspacePath}
-                            workspaceIdentity={activeWorkspaceIdentity}
-                            showMarketplaceBreadcrumb={pluginNavigationOrigin === "plugin-store"}
-                            onCreateTask={onCreateTask}
-                            onOpenPluginStore={(_returnScopeKey, intent) => {
-                              // 添加市场与浏览插件都先离开设置层，再显示商店。
-                              requestPluginStoreOpen({ returnScopeKey: "user", intent });
-                              onBack?.();
-                            }}
-                          />
                         ) : activeSection === "mcp" ? (
                           <PluginsSection
                             key={`mcp:${settingsSectionNavigationVersion}`}
@@ -1857,11 +1738,6 @@ export function SettingsPage({
                             workspacePath={activeWorkspacePath}
                             workspaceIdentity={activeWorkspaceIdentity}
                             onCreateTask={onCreateTask}
-                            onOpenPluginStore={(_returnScopeKey, intent) => {
-                              // 添加市场与浏览插件都先离开设置层，再显示商店。
-                              requestPluginStoreOpen({ returnScopeKey: "user", intent });
-                              onBack?.();
-                            }}
                           />
                         ) : activeSection === "skill" ? (
                           <PluginsSection
@@ -1870,11 +1746,6 @@ export function SettingsPage({
                             workspacePath={activeWorkspacePath}
                             workspaceIdentity={activeWorkspaceIdentity}
                             onCreateTask={onCreateTask}
-                            onOpenPluginStore={(_returnScopeKey, intent) => {
-                              // 添加市场与浏览插件都先离开设置层，再显示商店。
-                              requestPluginStoreOpen({ returnScopeKey: "user", intent });
-                              onBack?.();
-                            }}
                           />
                         ) : activeSection === "migration" ? (
                           <MigrationSection
@@ -1907,16 +1778,6 @@ export function SettingsPage({
                             workspacePath={activeWorkspacePath}
                             workspaceIdentity={activeWorkspaceIdentity}
                             onCreateTask={onCreateTask}
-                            onOpenPluginStore={(_returnScopeKey, intent) => {
-                              // 添加市场与浏览插件都先离开设置层，再显示商店。
-                              requestPluginStoreOpen({ returnScopeKey: "user", intent });
-                              onBack?.();
-                            }}
-                          />
-                        ) : activeSection === "hooks" ? (
-                          <HooksSection
-                            workspacePath={activeWorkspacePath}
-                            workspaceIdentity={activeWorkspaceIdentity}
                           />
                         ) : activeSection === "workspaceFileSearch" ? (
                           <WorkspaceFileSearchSection
@@ -1935,17 +1796,6 @@ export function SettingsPage({
                             onEmbeddedBrowserAllowInsecureCertificatesChange={
                               handleEmbeddedBrowserAllowInsecureCertificatesChange
                             }
-                          />
-                        ) : activeSection === "computerUse" ? (
-                          <ComputerUseSection
-                            isDesktop={Boolean(isDesktop)}
-                            isMacDesktop={Boolean(isMacDesktop)}
-                            isWindowsDesktop={Boolean(isWindowsDesktop)}
-                            workspacePath={activeWorkspacePath}
-                            workspaceIdentity={activeWorkspaceIdentity}
-                            remoteSessionId={activeWorkspaceTab?.remoteSessionId}
-                            remoteTarget={activeWorkspaceTab?.remoteTarget}
-                            localWorkspacePath={activeWorkspaceTab?.localWorkspacePath}
                           />
                         ) : null}
                       </div>

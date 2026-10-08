@@ -14,16 +14,7 @@ import {
   amendWorkflowRunSettingsPayloadSchema,
   amendWorkflowRunSettingsResultSchema,
 } from "./workflow-run-settings-command.js";
-import {
-  workspaceHookReviewCommandTargetSchema,
-  workspaceHookReviewDecisionSchema,
-  workspaceHookTrustRevokeTargetSchema,
-  requestWorkspaceHookReviewTargetSchema,
-} from "./workspace-hook-review.js";
-import {
-  zcodeBrowserAmbientContextSchema,
-  zcodeProtocolMcpServerSchema,
-} from "../zcode-protocol/index.js";
+import { zcodeProtocolMcpServerSchema } from "../zcode-protocol/index.js";
 import { sharedContextRefSchema } from "./shared-context-ref.js";
 export type { SharedContextRef } from "./shared-context-ref.js";
 
@@ -85,7 +76,6 @@ export const commandPayloadSchemas = {
       // Desktop Cmd/Ctrl+Enter 只覆盖本次 busy input，不改 session followupMode。
       // startNow 由 CLI 原子抢占当前 turn，不经过 queue admission。
       requestedDelivery: z.enum(["startNow", "queue", "guide"]).optional(),
-      browserAmbientContext: zcodeBrowserAmbientContextSchema.optional(),
       // Share handover 只允许当前 session 的一个已导入上下文；完整正文由 runtime 从
       // 持久化 provenance 解析，不能随 command 从 renderer 传入。
       context_refs: z.array(sharedContextRefSchema).max(1).optional(),
@@ -186,21 +176,6 @@ export const commandPayloadSchemas = {
       content: z.record(z.string(), z.unknown()).optional(),
     }),
   }),
-  respondWorkspaceHookReview: workspaceHookReviewCommandTargetSchema.extend({
-    decision: workspaceHookReviewDecisionSchema,
-  }),
-  toggleWorkspaceHookReviewItem: workspaceHookReviewCommandTargetSchema.extend({
-    reviewItemId: z.string().trim().min(1),
-    enabled: z.boolean(),
-  }),
-  revokeWorkspaceHookTrust: z.union([
-    workspaceHookReviewCommandTargetSchema.extend({
-      reviewItemIds: z.array(z.string().trim().min(1)).min(1),
-    }),
-    workspaceHookTrustRevokeTargetSchema,
-  ]),
-  // 软门禁：按需开审核 flow,克隆 revoke non-flow target 但不带 hookDeclarationDigests。
-  requestWorkspaceHookReview: requestWorkspaceHookReviewTargetSchema,
   // AskUserQuestion 首次有效操作永久暂停本次自动结束；重复/迟到调用为幂等 noop。
   snoozeInteractionAutoResolution: z.object({
     interactionId: z.string(),
@@ -428,8 +403,6 @@ export const commandResultSchema = z.discriminatedUnion("type", [
 export type CommandResult = z.infer<typeof commandResultSchema>;
 
 export const commandAckSchema = z.object({
-  /** 会话创建期采用的 App Memory 开关；旧发送端缺省表示未知。 */
-  memoryEnabled: z.boolean().optional(),
   ttftExcluded: z.literal("capacity").optional(),
   commandId: z.string(),
   // accepted 不承诺跨 CLI 进程存活；最终收口以权威数据（sourceCommandId）为准。

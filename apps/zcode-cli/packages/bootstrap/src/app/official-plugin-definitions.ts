@@ -18,38 +18,13 @@ export interface OfficialPluginListingSeed {
   examplePrompts_i18n?: Record<string, string[]>;
 }
 
-const OFFICIAL_BROWSER_USE_PLUGIN_NAME = "browser-use";
-export const OFFICIAL_BROWSER_USE_PLUGIN_ID = `${OFFICIAL_BROWSER_USE_PLUGIN_NAME}@${ZCODE_OFFICIAL_PLUGIN_MARKETPLACE}`;
-/**
- * node_repl 宿主。它不是面向用户的插件：没有 skill、没有 listing、不进市场，唯一职责是
- * 携带 `dist/mcp/server.js` 这个 Browser Use 与 Computer Use 共用的运行时产物。
- *
- * 为什么它需要成为一个 seed 单元：宿主产物过去长在 browser-use 包里，于是
- * resolveBuiltInNodeReplMcpServers 只能在 browser-use 的 rootPath 下找它 —— browser-use
- * 包缺失时，即便 Computer Use 自己启用也拿不到宿主。做成独立 seed 单元后，两个插件
- * 各自只贡献自己的领域资产，谁启用都能拿到同一个宿主。
- */
-export const OFFICIAL_NODE_REPL_HOST_PLUGIN_NAME = "node-repl-host";
-export const OFFICIAL_NODE_REPL_HOST_PLUGIN_ID = `${OFFICIAL_NODE_REPL_HOST_PLUGIN_NAME}@${ZCODE_OFFICIAL_PLUGIN_MARKETPLACE}`;
-const OFFICIAL_CUA_PLUGIN_NAME = "computer-use";
-export const OFFICIAL_CUA_PLUGIN_ID = `${OFFICIAL_CUA_PLUGIN_NAME}@${ZCODE_OFFICIAL_PLUGIN_MARKETPLACE}`;
-
 export interface OfficialPluginDefinition {
-  // 内容型 plugin (无 MCP server / 无系统依赖) 可以设为 true,
-  // 这样用户首次 `/skill <name>` 就能用,不必先 `zcode plugins enable`。
-  // 默认 false 保持 ios-simulator / android-emulator 这类重负载 plugin 原来行为。
   defaultEnabled?: boolean;
   listing?: OfficialPluginListingSeed;
-  /**
-   * 由宿主为该官方插件提供、但不属于 plugin manifest 的 MCP server。
-   * 仅用于产品归属和设置页状态展示；运行时仍保留宿主 identity。
-   */
   hostMcpServerNames?: readonly string[];
   name: string;
-  /** filesystem/SEA seed 缺少任一项时拒绝生成残缺的官方插件缓存。 */
   requiredSeedPaths?: readonly string[];
   rootCandidates: readonly string[];
-  /** Extra top-level paths intentionally staged as plugin runtime assets. */
   runtimeTopLevelPaths?: readonly string[];
   version: string;
 }
@@ -57,28 +32,6 @@ export interface OfficialPluginDefinition {
 const ZAI_AUTHOR = { name: "Z.ai", url: "https://z.ai" } as const;
 const OFFICIAL_PLUGIN_ASSETS_BASE_URL = "https://cdn-zcode.z.ai/zcode/official-plugin/assets";
 
-const OFFICIAL_NODE_REPL_HOST_REQUIRED_SEED_PATHS = ["dist/mcp/server.js"] as const;
-
-export const OFFICIAL_BROWSER_USE_REQUIRED_SEED_PATHS = [
-  "docs/api.json",
-  "docs/documents.json",
-  "docs/overview.md",
-  // documents.json 已注册 recording lookup；若不强制校验正文，会 seed 出无法读取录屏指南的残缺插件。
-  "docs/recording.md",
-  "docs/workflow.md",
-  "scripts/browser-client.mjs",
-  "skills/control-browser/SKILL.md",
-  "skills/web-gui-tester/SKILL.md",
-] as const;
-
-const OFFICIAL_CUA_REQUIRED_SEED_PATHS = [
-  "docs/computer-use.md",
-  "scripts/computer-use-client.mjs",
-  "skills/computer-use/SKILL.md",
-] as const;
-
-// zcode-guide 原本没有 requiredSeedPaths，seed 丢文件时会静默装出一个
-// 没有 /workflow 命令的插件——症状是命令不存在，没有任何诊断。commands/ 与技能正文都钉住。
 const OFFICIAL_ZCODE_GUIDE_REQUIRED_SEED_PATHS = [
   "commands/workflow.md",
   "skills/dynamic-workflows/SKILL.md",
@@ -87,24 +40,6 @@ const OFFICIAL_ZCODE_GUIDE_REQUIRED_SEED_PATHS = [
 ] as const;
 
 export const OFFICIAL_PLUGIN_DEFINITIONS: readonly OfficialPluginDefinition[] = [
-  {
-    // 无 listing：宿主不进市场、不对用户露出。它必须始终可用，因为 node_repl 的注册门禁
-    // 是「Browser Use 或 Computer Use 任一启用」，宿主自己不参与那个判断。
-    //
-    // 这里的 defaultEnabled 不违反「仅限内容型插件」那条约定（见下方 computer-use 的说明）：
-    // 约定要防的是「首启即注入整套工具集并拉起 Helper」，而 seed 宿主两件都不做——工具是否
-    // 进模型工具池由两个能力插件的启停决定，Helper 由 SDK 首次调用时才拉起。
-    defaultEnabled: true,
-    name: OFFICIAL_NODE_REPL_HOST_PLUGIN_NAME,
-    requiredSeedPaths: OFFICIAL_NODE_REPL_HOST_REQUIRED_SEED_PATHS,
-    rootCandidates: [
-      "packages/node-repl-host",
-      "../node-repl-host",
-      "../../node-repl-host",
-      "../../../node-repl-host",
-    ],
-    version: "0.6.0",
-  },
   {
     listing: {
       author: ZAI_AUTHOR,
@@ -124,33 +59,6 @@ export const OFFICIAL_PLUGIN_DEFINITIONS: readonly OfficialPluginDefinition[] = 
       "../../../android-emulator-plugin",
     ],
     version: "0.1.0",
-  },
-  {
-    // manifest 只声明 browser-use skill；宿主 node_repl MCP 独立注入，package 另外携带其 server/client
-    // runtime 资产。默认启用仅控制「何时/如何用内置浏览器」的 skill 与 browser bridge。
-    defaultEnabled: true,
-    hostMcpServerNames: ["node_repl"],
-    listing: {
-      author: ZAI_AUTHOR,
-      category: "productivity",
-      displayName: "Browser Use",
-      displayName_i18n: { "zh-CN": "浏览器操作" },
-      icon: `${OFFICIAL_PLUGIN_ASSETS_BASE_URL}/browser-use/icon.png`,
-      description_i18n: {
-        "zh-CN": "操作 ZCode 内置浏览器，检查网页并验证交互。",
-      },
-    },
-    name: OFFICIAL_BROWSER_USE_PLUGIN_NAME,
-    requiredSeedPaths: OFFICIAL_BROWSER_USE_REQUIRED_SEED_PATHS,
-    rootCandidates: [
-      "packages/browser-use-plugin",
-      "../browser-use-plugin",
-      "../../browser-use-plugin",
-      "../../../browser-use-plugin",
-    ],
-    // 插件 package/manifest 升版时遗漏官方 seed 版本，会继续加载旧缓存目录。
-    // package、manifest、definition 三处版本应保持一致，避免发布内容和安装版本再次分叉。
-    version: "0.5.1",
   },
   ...(
     [
@@ -323,44 +231,6 @@ export const OFFICIAL_PLUGIN_DEFINITIONS: readonly OfficialPluginDefinition[] = 
     ],
     version: "0.2.0",
   },
-  {
-    // 产品决策：电脑控制回退为默认关闭，需用户在设置页显式开启。
-    // 因此这里不声明 defaultEnabled——computer-use 携带 MCP server 与系统 Helper 依赖，
-    // 默认开启意味着每个新用户首启即注入整套工具集并拉起 Helper。
-    // 「defaultEnabled 仅限内容型插件」的旧约定随之恢复完整。
-    // 判定式是 enabledPlugins[id] ?? defaultEnabled：曾在设置页手动开过的用户已落盘
-    // 显式 true，不受本次默认值变更影响。改回默认开启时，需同步
-    // packages/shared/src/plugin-marketplaces.ts 的名单（bootstrap 单测机械对照两者）、
-    // isZCodeCuaInternalFeatureEnabled（打包层默认 true）与输入框入口 hidden 默认值的联动语义。
-    name: "computer-use",
-    hostMcpServerNames: ["node_repl"],
-    // 用户露出名统一为「Computer Use / 电脑控制」。包名与 producer 仓库仍保持 zcode-cua，
-    // 以兼容原生 Helper identity；EN 描述基线走 manifest
-    // description，这里只放 zh-CN 覆盖；resolveLocalizedText 在 en-US 时回退到 manifest。
-    listing: {
-      author: ZAI_AUTHOR,
-      category: "productivity",
-      displayName: "Computer Use",
-      displayName_i18n: { "zh-CN": "电脑控制" },
-      description_i18n: {
-        "zh-CN": "自动化桌面应用：智能体驱动鼠标、键盘与界面元素，代你完成实际任务。",
-      },
-      // 插件更名为 computer-use 后，CDN 图标仍发布在 zcode-cua 目录；沿用资源路径避免 404。
-      icon: `${OFFICIAL_PLUGIN_ASSETS_BASE_URL}/zcode-cua/icon.png`,
-    },
-    rootCandidates: [
-      "packages/zcode-cua-plugin",
-      "../zcode-cua-plugin",
-      "../../zcode-cua-plugin",
-      "../../../zcode-cua-plugin",
-    ],
-    requiredSeedPaths: OFFICIAL_CUA_REQUIRED_SEED_PATHS,
-    // 当前 CUA 为不可用占位包，无需复制 native runtime；避免把本地旧依赖继续带入缓存。
-    runtimeTopLevelPaths: [],
-    // 这里的 version 追踪上游 zcode-cua runtime 版本，使插件 UI 展示、缓存路径、
-    // marketplace 条目都对齐；具体版本由原子 producer bump 工作流维护。
-    version: "0.6.3",
-  },
 ];
 
 // 在 official plugin 定义里标了 defaultEnabled: true 的, 拼成 `<name>@<marketplace>` 形式,
@@ -381,7 +251,7 @@ export function resolveOfficialPluginHostMcpServerNames(pluginId: string): strin
 }
 
 /**
- * 官方插件由 host CLI 注入的 MCP（如 browser-use 的 `node_repl`）server name 不带 `plugin:` 前缀，
+ * 官方插件由 host CLI 注入的 MCP（如 `node_repl`）server name 不带 `plugin:` 前缀，
  * 资源管理器归属插件时需要反查所属官方插件名。
  */
 export function resolveOfficialPluginNameByHostMcpServerName(

@@ -11,7 +11,6 @@ import {
   shouldLoadCliDotenvForProtocolServer,
 } from "./env.js";
 import { formatCliHelp } from "./help.js";
-import { runHooksCommand } from "./hooks-trust-command.js";
 import { detectCliLocale } from "./locale.js";
 import { loadBootstrapModule } from "./bootstrap-loader.js";
 import { runEmbeddedSearchCli } from "./internal-search/embedded-search-cli.js";
@@ -44,13 +43,8 @@ const FORCE_MCS_SCOPE_ERROR = "--force-mcs can only be used with --prompt, --tar
 const TARGET_REPLACE_REQUIRES_TARGET_ERROR = "--target-replace requires --target.";
 const TARGET_CONFLICTS_WITH_PROMPT_ERROR =
   '--target cannot be used with --prompt. Use either --target <objective> or --prompt "/goal <objective>".';
-const BROWSER_EXECUTABLE_REQUIRES_HEADLESS_ERROR =
-  "--browser-executable requires --browser-use=headless.";
-const BROWSER_USE_SCOPE_ERROR =
-  "--browser-use=headless can only be used with --prompt, --target, or tui.";
 const SURFACE_SCOPE_ERROR =
   "--surface can only be used with --prompt, --target, app-server, or agent-server.";
-const MEMORY_BENCH_SCOPE_ERROR = "--memory-bench can only be used with -p/--prompt.";
 const ENABLE_WORKFLOW_SCOPE_ERROR =
   "--enable-workflow can only be used with -p/--prompt or --target.";
 
@@ -93,19 +87,14 @@ const globalOptions = (
   values: ReturnType<typeof parseGlobalArgs>["values"],
   locale: UiLocale | undefined,
   detectedLocale: GlobalOptions["detectedLocale"],
-  browserUse: GlobalOptions["browserUse"],
-  browserExecutable: GlobalOptions["browserExecutable"],
   outputFormat: GlobalOptions["outputFormat"],
 ): GlobalOptions => {
   return {
-    browserExecutable,
-    browserUse,
     detectedLocale,
     ...(values["enable-workflow"] === true ? { enableWorkflow: true } : {}),
     force: values.force === true,
     json: values.json === true,
     locale,
-    ...(values["memory-bench"] === true ? { memoryBench: true } : {}),
     noColor: values["no-color"] === true,
     ...(outputFormat ? { outputFormat } : {}),
     verbose: values.verbose === true,
@@ -138,12 +127,6 @@ const normalizePromptMode = (value: string | undefined): CliPermissionMode | und
   const mode = value.toLowerCase();
   if (mode === "build" || mode === "plan" || mode === "edit" || mode === "yolo") return mode;
   throw new Error(`Unsupported --mode value: ${value}. Supported modes: build, edit, plan, yolo.`);
-};
-
-const normalizeBrowserUse = (value: string | undefined): GlobalOptions["browserUse"] => {
-  if (value === undefined) return undefined;
-  if (value.toLowerCase() === "headless") return "headless";
-  throw new Error(`Unsupported --browser-use value: ${value}. Supported value: headless.`);
 };
 
 const normalizePresentationSurface = (value: string | undefined): PresentationSurface => {
@@ -306,10 +289,6 @@ export const run = async (ctx: RunContext, deps: RunDependencies = {}): Promise<
     return await runDwfChildCommand(ctx, ctx.argv.slice(1));
   }
 
-  if (ctx.argv[0] === "hooks") {
-    return await runHooksCommand(ctx, deps, version);
-  }
-
   let parsed: ReturnType<typeof parseGlobalArgs>;
   let toolDisallowlist: readonly string[] | undefined;
 
@@ -334,7 +313,6 @@ export const run = async (ctx: RunContext, deps: RunDependencies = {}): Promise<
   }
 
   let mode: CliPermissionMode | undefined;
-  let browserUse: GlobalOptions["browserUse"];
   let presentationSurface: PresentationSurface;
   try {
     mode = normalizePromptMode(parsed.values.mode as string | undefined);
@@ -345,22 +323,10 @@ export const run = async (ctx: RunContext, deps: RunDependencies = {}): Promise<
   }
 
   try {
-    browserUse = normalizeBrowserUse(parsed.values["browser-use"] as string | undefined);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    ctx.stderr.write(`${message}\n`);
-    return 1;
-  }
-  try {
     presentationSurface = normalizePresentationSurface(parsed.values.surface as string | undefined);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     ctx.stderr.write(`${message}\n`);
-    return 1;
-  }
-  const browserExecutable = parsed.values["browser-executable"] as string | undefined;
-  if (browserExecutable !== undefined && browserUse !== "headless") {
-    ctx.stderr.write(`${BROWSER_EXECUTABLE_REQUIRES_HEADLESS_ERROR}\n`);
     return 1;
   }
 
@@ -387,8 +353,6 @@ export const run = async (ctx: RunContext, deps: RunDependencies = {}): Promise<
     parsed.values,
     locale,
     detectedLocale,
-    browserUse,
-    browserExecutable,
     outputFormat,
   );
   const forceMcs = parsed.values["force-mcs"] === true;
@@ -434,26 +398,6 @@ export const run = async (ctx: RunContext, deps: RunDependencies = {}): Promise<
       (typeof parsed.values.prompt !== "string" && targetRequest === undefined))
   ) {
     ctx.stderr.write(`${ENABLE_WORKFLOW_SCOPE_ERROR}\n`);
-    return 1;
-  }
-
-  if (
-    options.memoryBench &&
-    (typeof parsed.values.prompt !== "string" || parsed.positionals.length > 0)
-  ) {
-    ctx.stderr.write(`${MEMORY_BENCH_SCOPE_ERROR}\n`);
-    return 1;
-  }
-
-  if (
-    browserUse === "headless" &&
-    !isForceMcsSupportedInvocation({
-      positionals: parsed.positionals,
-      prompt: parsed.values.prompt as string | undefined,
-      targetRequest,
-    })
-  ) {
-    ctx.stderr.write(`${BROWSER_USE_SCOPE_ERROR}\n`);
     return 1;
   }
 

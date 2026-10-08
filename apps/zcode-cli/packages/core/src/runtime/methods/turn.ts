@@ -59,9 +59,6 @@ import {
   closeGoalStateChangeReminderDeferral,
   openGoalStateChangeReminderDeferral,
 } from "./goal-state-reminder.js";
-import { scheduleProjectMemoryExtraction } from "../helpers/project-memory-extraction.js";
-import { appendBrowserTurnScreenshot } from "./browser-turn-screenshot.js";
-import { clearBrowserTurnState } from "../../repl/browser-turn-state.js";
 import { applySubmissionExecutionState, createTurnModel } from "./turn-model.js";
 import { rebuildContextPrefix } from "./context-refresh.js";
 
@@ -502,9 +499,7 @@ export async function executeTurnCommand(
           });
         } else if (options?.skipInputRecord !== true) {
           this.messageHistory.addEntries(
-            buildRuntimeUserEntriesFromTurn(input, resolvedAttachments, {
-              browserAmbientContext: options?.browserAmbientContext,
-            }).map((entry) => {
+            buildRuntimeUserEntriesFromTurn(input, resolvedAttachments).map((entry) => {
               const metadata = runtimeInputMetadata(options?.inputPresentation);
               return entry.kind !== "attachment" && metadata ? { ...entry, metadata } : entry;
             }),
@@ -637,13 +632,6 @@ export async function executeTurnCommand(
             traceContext: turnTraceContext,
           });
         }
-        if (loopState.stableBoundaryAssistantMessageId) {
-          await appendBrowserTurnScreenshot(
-            this,
-            loopState,
-            loopState.stableBoundaryAssistantMessageId,
-          );
-        }
         const completeEvent = this.createEvent(
           SessionEventType.TurnComplete,
           {
@@ -695,13 +683,6 @@ export async function executeTurnCommand(
           status: "completed",
           toolCallCount: loopState.toolCallCount,
         });
-        // 单轮执行策略只抑制本次成功 Turn 的后台提取，不修改 Session Memory 配置。
-        if (options?.modelExecution?.memoryExtraction !== "skip") {
-          scheduleProjectMemoryExtraction(this, {
-            model: loopState.model,
-            traceContext: turnTraceContext,
-          });
-        }
 
         const result: TurnResult = {
           response: loopState.modelResponse,
@@ -825,23 +806,8 @@ export async function executeTurnCommand(
       clearInterval(targetRunHeartbeat);
     }
     this.releaseTurnStart(turnId);
-    clearBrowserTurnState(this.sessionId, turnId);
     this.finishActiveTurn(activeTurn);
     turnAbortScope.dispose();
-    try {
-      await this.browserControlPort?.turnEnded?.({
-        sessionId: this.sessionId,
-        turnId: String(turnId),
-        traceContext: turnTraceContext,
-      });
-    } catch (error) {
-      // 生命周期清理失败不能覆盖已经完成/失败的主 turn；backend 会在 session close 再兜底释放。
-      this.logger?.warn("Browser turn cleanup failed", {
-        error: error instanceof Error ? error.message : String(error),
-        event: "browser.turn_cleanup.failed",
-        turnId: String(turnId),
-      });
-    }
   });
 }
 

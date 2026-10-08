@@ -3,8 +3,6 @@ import { zcodeSyntheticUserMessageSourceSchema } from "../zcode-protocol-legacy-
 import { timestampSchema } from "./core.js";
 
 const factBaseFields = {
-  /** 会话创建期采用的 App Memory 开关，不表示记忆读写结果。 */
-  memoryEnabled: z.boolean().optional(),
   version: z.literal(1),
   eventId: z.string().min(1),
   eventSeq: z.number().int().nonnegative(),
@@ -241,7 +239,7 @@ const compactionTerminalFactSchema = z
     messageId: z.string().min(1).optional(),
     summaryMessageId: z.string().min(1).optional(),
     status: z.enum(["completed", "failed", "interrupted"]),
-    trigger: z.enum(["manual", "auto", "partial", "reactive", "session_memory"]),
+    trigger: z.enum(["manual", "auto", "partial", "reactive"]),
     compactReason: z.string().optional(),
     reason: z.string().optional(),
     attempt: z.number().int().positive().optional(),

@@ -121,11 +121,7 @@ import type {
 import type { AgentRuntimeInternal } from "./internal.js";
 import { InMemoryRuntimeTaskRegistry, type RuntimeTaskRegistry } from "../runtime-task/registry.js";
 import type { ChildClientPortsContext, ClientFacingPorts } from "./helpers/child-client-ports.js";
-import type { ProjectMemoryExtractionScheduler } from "./helpers/project-memory-extraction.js";
-import { projectPersistentAgentMemoryTools } from "../subagent/persistent-memory.js";
 import { RuntimeTelemetryFacade } from "../telemetry/runtime-telemetry.js";
-import type { WorkspaceHookRuntimeAdmissionPort } from "../hooks/workspace-hook-runtime-admission.js";
-import { disposeNodeReplSession } from "../tool/handlers/node-repl.js";
 import { cloneModelSelection } from "./model-selection.js";
 
 // oxlint-disable typescript-eslint/no-unsafe-declaration-merging
@@ -147,11 +143,9 @@ export class AgentRuntime {
   private registry: ToolRegistry;
   private executor: ToolExecutor;
   private hookRunner?: HookRunner;
-  private workspaceHookAdmission?: WorkspaceHookRuntimeAdmissionPort;
   private modelFactory: AgentRuntimeDeps["modelFactory"];
   private modelIoDir?: string;
   private providerRuntimeHeadersPort?: AgentRuntimeDeps["providerRuntimeHeadersPort"];
-  private browserControlPort?: AgentRuntimeDeps["browserControlPort"];
   /** 模型请求准入端口；随每次模型请求进调用上下文。 */
   private modelRequestAdmission?: AgentRuntimeDeps["modelRequestAdmission"];
   private sessionModelSelection: ModelSelection | undefined;
@@ -162,9 +156,6 @@ export class AgentRuntime {
   private contextInitialized = false;
   private contextSourceSnapshot?: ContextSourceSnapshot;
   private latestContextBuildResult?: ContextBuildResult;
-  private memoryRoot?: string;
-  private memoryIndexContent?: string;
-  private memoryExtractionScheduler?: ProjectMemoryExtractionScheduler;
   private contextSourcePort?: ContextSourcePort;
   private skillPort?: SkillPort;
   private mcpPort?: McpPort;
@@ -230,10 +221,10 @@ export class AgentRuntime {
     this.sessionId = sessionId;
     this.turnNumber = 0;
     // 3.12.2：兼容旧 Host/内部调用传入 legacy，但本版本 Runtime、日志和子 Agent 只使用 preflight。
-    this.config = projectPersistentAgentMemoryTools({
+    this.config = {
       ...config,
       modelContextBudgetStrategy: DEFAULT_ZCODE_MODEL_CONTEXT_BUDGET_STRATEGY,
-    });
+    };
     Object.assign(this.config, resolveExecutionState(config));
     this.agentTelemetry = new RuntimeTelemetryFacade({
       agentName: config.agentName,
@@ -269,7 +260,6 @@ export class AgentRuntime {
     this.modelFactory = deps.modelFactory;
     this.modelIoDir = deps.modelIoDir;
     this.providerRuntimeHeadersPort = deps.providerRuntimeHeadersPort;
-    this.browserControlPort = deps.browserControlPort;
     this.modelRequestAdmission = deps.modelRequestAdmission;
     // 旧会话的选择缺失不能阻断历史恢复；不在这里制造默认模型。
     this.sessionModelSelection =
@@ -296,7 +286,6 @@ export class AgentRuntime {
     this.workspaceRoot = this.workingDirectory;
     const tooling = initializeRuntimeTooling(runtime, deps, sessionId);
     this.hookRunner = tooling.hookRunner;
-    this.workspaceHookAdmission = deps.workspaceHookAdmission;
     this.executor = tooling.executor;
 
     this.contextBuilder = deps.contextBuilder ?? null;
@@ -307,37 +296,21 @@ export class AgentRuntime {
     runtime.startMcpStartup(this.rootTraceContext);
   }
 
-  async closeBrowserSession(): Promise<void> {
+  async closeSession(): Promise<void> {
     this.beginShutdown();
-    disposeNodeReplSession(this.sessionId);
-    try {
-      await this.browserControlPort?.closeSession?.({
-        sessionId: this.sessionId,
-        traceContext: this.rootTraceContext,
-      });
-    } catch (error) {
-      // browser backend 清理失败不能阻断 execution/MCP/session store 的主关闭链路。
-      this.logger?.warn("Browser session cleanup failed", {
-        error: error instanceof Error ? error.message : String(error),
-        event: "browser.session_cleanup.failed",
-      });
-    }
   }
 
   beginShutdown(): void {
     // ExecutionPort.close() 会把后台 Bash 收口为 cancelled；若允许
     // teardown terminal event 再唤醒模型，并与随后关闭的 session store 竞态。
     this.shuttingDown = true;
-    // 关闭单个 session 后进程仍存活，
-    // 因此必须先终止该 runtime 的 Extraction，不能只在超时后放弃等待。
-    this.memoryExtractionScheduler?.shutdown();
   }
 }
 
 export interface AgentRuntime {
   lastPermissionGrantId?: string;
   beginShutdown(): void;
-  closeBrowserSession(): Promise<void>;
+  closeSession(): Promise<void>;
   updateConfig(
     patch: Pick<AgentRuntimeConfig, "mode" | "planEnabled" | "language" | "outputStyle">,
   ): void;
@@ -396,7 +369,7 @@ export interface AgentRuntime {
   hasRunningBackgroundTasks(): boolean;
   /**
    * Session 常驻池唯一消费的 runtime owned-work 聚合事实。
-   * 包含前台/队列、registry background task、detached sidecar 和 memory work。
+   * 包含前台/队列、registry background task 和 detached sidecar。
    */
   hasResidencyBlockingWork(): boolean;
   /**
@@ -656,9 +629,6 @@ export interface AgentRuntime {
     input: ModelConnectivityTestInput,
     options?: { abortSignal?: AbortSignal; traceContext?: TraceContext },
   ): Promise<void>;
-  isProjectMemoryEnabled(): boolean;
-  /** 缺省等待最多 60 秒；null 等待全部已调度提取结束，不设置 drain deadline。 */
-  drainMemoryExtractions(timeoutMs?: number | null): Promise<void>;
 }
 
 installAgentRuntimeMethods(AgentRuntime);

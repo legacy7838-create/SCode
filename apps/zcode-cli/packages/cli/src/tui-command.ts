@@ -44,8 +44,6 @@ export const runTuiCommand = async (
       startupLocale,
       toolDisallowlist,
       forceMcs,
-      options.browserUse,
-      options.browserExecutable,
     );
     const unregisterShutdownHandlers = registerCliShutdownHandlers({
       cleanup: async () => {

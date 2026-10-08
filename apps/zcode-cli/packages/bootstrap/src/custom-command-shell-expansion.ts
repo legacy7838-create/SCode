@@ -1,7 +1,7 @@
 import { basename, dirname } from "node:path";
 import {
   type CustomCommandContent,
-  type HookPluginContext,
+  type CommandPluginContext,
   type ExecutionPort,
   type ExecutionResult,
   type TraceContext,
@@ -158,7 +158,7 @@ async function runShellExpansion(input: {
 }
 
 function createShellExpansionEnv(input: {
-  plugin: HookPluginContext | undefined;
+  plugin: CommandPluginContext | undefined;
   sessionId: string | undefined;
   workingDirectory: string;
 }) {
@@ -183,7 +183,7 @@ function createShellExpansionEnv(input: {
 
 function assertShellExpansionContextAvailable(input: {
   command: CustomCommandContent;
-  plugin: HookPluginContext | undefined;
+  plugin: CommandPluginContext | undefined;
   sessionId: string | undefined;
   shellCommand: string;
 }): void {
@@ -220,7 +220,7 @@ function assertShellExpansionContextAvailable(input: {
   SHELL_CONTEXT_VARIABLE_PATTERN.lastIndex = 0;
 }
 
-function inferPluginContext(command: CustomCommandContent): HookPluginContext | undefined {
+function inferPluginContext(command: CustomCommandContent): CommandPluginContext | undefined {
   if (command.metadata.source !== "plugin") return undefined;
   if (basename(command.metadata.rootPath) !== "commands") return undefined;
   const rootPath = dirname(command.metadata.rootPath);

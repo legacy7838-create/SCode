@@ -15,7 +15,6 @@ import { timestampSchema } from "./core.js";
 import { conversationRowSchema } from "./rows.js";
 import { toolCallDisplaySchema } from "./toolDisplay.js";
 
-import { workspaceHookReviewRequestPayloadSchema } from "./workspace-hook-review.js";
 import { workflowRunsStateSchema } from "./workflow-runs.js";
 import { sessionConfigStateSchema, sessionModelTransitionSchema } from "./session-config.js";
 export {
@@ -310,15 +309,14 @@ export type InteractionAutoResolution = z.infer<typeof interactionAutoResolution
 export const pendingInteractionSchema = z
   .object({
     interactionId: z.string(),
-    kind: z.enum(["permission", "userInput", "workspaceHookReview"]),
-    // null = 会话级（如 provider 交互和 workspace Hook review）。
+    kind: z.enum(["permission", "userInput"]),
+    // null = 会话级（如 provider 交互）。
     anchorRowId: z.number().nullable(),
     createdAt: timestampSchema,
     autoResolution: interactionAutoResolutionSchema.optional(),
     payload: z.discriminatedUnion("kind", [
       permissionRequestPayloadSchema,
       userInputRequestPayloadSchema,
-      workspaceHookReviewRequestPayloadSchema,
     ]),
   })
   .superRefine((interaction, context) => {
@@ -327,23 +325,6 @@ export const pendingInteractionSchema = z
         code: z.ZodIssueCode.custom,
         path: ["kind"],
         message: "pending interaction kind must match payload kind",
-      });
-    }
-    if (interaction.kind === "workspaceHookReview" && interaction.autoResolution) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["autoResolution"],
-        message: "workspaceHookReview cannot use AskUserQuestion auto-resolution",
-      });
-    }
-    if (
-      interaction.payload.kind === "workspaceHookReview" &&
-      interaction.interactionId !== interaction.payload.interactionId
-    ) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["interactionId"],
-        message: "workspaceHookReview interaction id must match its immutable payload",
       });
     }
   });
@@ -458,15 +439,6 @@ export const rowsWindowSchema = z.object({
 });
 export type RowsWindow = z.infer<typeof rowsWindowSchema>;
 
-// 软门禁(Soft Gate)：会话级待审核 hook 准入状态。
-// snapshot 与 StatePatch(delta.ts)共用,保证投影补丁与快照字段同构。
-export const workspaceHookAdmissionStateSchema = z.object({
-  pendingCount: z.number().int().nonnegative(),
-  bundleDigest: z.string(),
-  workspaceIdentity: z.string().optional(),
-});
-export type WorkspaceHookAdmissionSnapshotState = z.infer<typeof workspaceHookAdmissionStateSchema>;
-
 export const conversationSnapshotSchema = z.object({
   protocolVersion: z.literal(1),
   sessionId: z.string(),
@@ -499,10 +471,6 @@ export const conversationSnapshotSchema = z.object({
   workflowRuns: workflowRunsStateSchema.optional(),
   goal: goalStateSchema.nullable(),
   plan: planStateSchema.nullable(),
-  // 软门禁(Soft Gate)：additive 字段,必须带 default(null)。
-  // 旧快照/旧发送端不携带此字段 → 解析得 null,不破坏兼容性(遵守冻结规则)。
-  // pendingCount === 0 时投影层置 null(提示条消失)。
-  workspaceHookAdmission: workspaceHookAdmissionStateSchema.nullable().default(null),
   // B 区
   rows: rowsWindowSchema,
 });

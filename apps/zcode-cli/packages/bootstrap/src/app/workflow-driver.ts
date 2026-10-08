@@ -417,8 +417,8 @@ class AgentRuntimeWorkflowDriver implements WorkflowDriver {
   /**
    * run 结算后的资源释放（引擎在 run-settled 之后恰好调一次，见 WorkflowDriver.dispose）。
    *
-   * 对每个 actor runtime 跑 app 关会话的**同一条**链——`closeBrowserSession` 内部依次
-   * beginShutdown、node_repl 会话释放、浏览器会话关闭；不另造一套子代理关闭链，那会漂移。
+   * 对每个 actor runtime 跑 app 关会话的**同一条**链——`closeSession` 内部依次
+   * beginShutdown、node_repl 会话释放；不另造一套子代理关闭链，那会漂移。
    * 不关 execution / MCP / session store：子代理不拥有它们。有在飞 turn 的会话等它落地再关
    * （见 SessionState.turn）；关闭失败只 warn，结算不因它抛。三张表随之清空。
    *

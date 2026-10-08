@@ -495,4 +495,3 @@ function parseArtifactUri(uri: string): { artifactId: string; sessionId: string 
 
   return { artifactId, sessionId };
 }
-export * from "./workspace-hook-trust-store.js";

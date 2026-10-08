@@ -88,10 +88,10 @@ export async function createWorkspaceZCodeApp(
       ...(workspace.remoteSessionId ? { remoteSessionId: workspace.remoteSessionId } : {}),
       ...(workspace.workspaceIdentity
         ? {
-            memory: {
-              ...options.runtimeConfig?.memory,
-              workspaceIdentity: workspace.workspaceIdentity,
-            },
+            workspaceIdentity:
+              workspace.workspaceIdentity as NonNullable<
+                ZCodeAppOptions["runtimeConfig"]
+              >["workspaceIdentity"],
           }
         : {}),
       // Electron/Protocol 主会话之前没有像 CLI/TUI 那样显式开启模型流式，

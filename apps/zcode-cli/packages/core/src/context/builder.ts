@@ -19,7 +19,6 @@ import { buildEnvInfoSection, buildGitSystemContextSection } from "./sections/en
 import { buildSkillsSection } from "./sections/skills.js";
 import { buildRequestUserContextSection } from "./sections/request-user-context.js";
 import { buildCurrentDateSection } from "./sections/current-date.js";
-import { buildMemorySection } from "./sections/memory.js";
 import { buildDesktopContextSection } from "./sections/desktop.js";
 import {
   buildContextManagementSection,
@@ -148,13 +147,6 @@ export class ContextBuilder {
         sections.push(sessionGuidanceSection);
       }
 
-      // Memory
-      if (this.config.memoryRoot) {
-        const memorySection = buildMemorySection(this.config.memoryRoot);
-        if (memorySection) {
-          sections.push(memorySection);
-        }
-      }
       sections.push(buildEnvInfoSection(this.config.envInfo, this.config.model));
 
       // Output Style
@@ -186,11 +178,9 @@ export class ContextBuilder {
       }
     }
 
-    // 5. Meta user context: workspace instructions/project memory first, date second.
+    // 5. Meta user context: workspace instructions first, date second.
     const requestUserContextSection = buildRequestUserContextSection({
       userInstructions: this.config.userInstructions,
-      memoryIndexContent: this.config.memoryIndexContent,
-      memoryRoot: this.config.memoryRoot,
     });
     if (requestUserContextSection) {
       sections.push(requestUserContextSection);

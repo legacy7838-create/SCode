@@ -135,7 +135,7 @@ export function mapCompactMarkerStatus(
   }
 }
 
-// CompactTrigger → marker.origin：manual 之外（auto/partial/reactive/session_memory）
+// CompactTrigger → marker.origin：manual 之外（auto/partial/reactive）
 // 一律归 auto —— UI 只区分「用户点的」与「系统触发的」。
 export function mapCompactMarkerOrigin(
   trigger: CompactTrigger,
@@ -161,9 +161,13 @@ export function mapGoalStatus(status: GoalStatus): GoalState["status"] {
 // 阶段 ref 先用 toolCallId 占位（artifact 存取属传输外壳期）。
 export function buildToolOutput(result: ToolResultPayload, toolCallId: string): ToolOutput {
   const text = result.content;
-  // 模型可见文本只保留图片占位符，若 V4 output 不独立携带 display，
-  // 实时投影和冷恢复都会丢失 CUA 截图。Node REPL 图片仍走 ToolCallRow.display 专用通道。
-  const display = result.display?.kind === "node_repl_images" ? undefined : result.display;
+  // v4 wire 的 toolOutput.display union 已移除 CUA 与 Node REPL 展示 kind（CUA 子系统整体下线）。
+  // CLI 侧 contracts 仍保留这两个 kind 以兼容已持久化的历史 row，故在投影边界按 kind 白名单剔除，
+  // 未声明的 display 会被 strict union 整段 strip，这里显式过滤避免把不兼容载荷塞进协议。
+  const display =
+    result.display && (result.display.kind === "node_repl_images" || result.display.kind === "cua")
+      ? undefined
+      : result.display;
   const headBytes = PROTOCOL_V4_LIMITS.toolOutputFinalHeadBytes;
   const tailBytes = PROTOCOL_V4_LIMITS.toolOutputFinalTailBytes;
   const totalBytes = Buffer.byteLength(text, "utf8");

@@ -178,9 +178,6 @@ importers:
       koffi:
         specifier: 2.15.6
         version: 2.15.6
-      playwright-core:
-        specifier: 1.59.1
-        version: 1.59.1
       proxy-agent:
         specifier: ^8.0.1
         version: 8.0.1
@@ -259,49 +256,6 @@ importers:
         specifier: ^3.3.1
         version: 3.3.1
 
-  apps/zcode-cli/packages/browser-use-plugin:
-    dependencies:
-      '@modelcontextprotocol/server':
-        specifier: 2.0.0
-        version: 2.0.0
-      '@zcode/contracts':
-        specifier: workspace:*
-        version: link:../contracts
-      '@zcode/core':
-        specifier: workspace:*
-        version: link:../core
-      '@zcode/node-repl-host':
-        specifier: workspace:*
-        version: link:../node-repl-host
-      '@zcode/shared':
-        specifier: workspace:*
-        version: link:../../../../packages/shared
-      zod:
-        specifier: 4.6.5
-        version: 4.6.5
-    devDependencies:
-      '@modelcontextprotocol/client':
-        specifier: 2.0.0
-        version: 2.0.0
-      '@types/node':
-        specifier: ^24.0.0
-        version: 24.12.2
-      '@zcode/adapters':
-        specifier: workspace:*
-        version: link:../adapters
-      '@zcode/bootstrap':
-        specifier: workspace:*
-        version: link:../bootstrap
-      esbuild:
-        specifier: ^0.25.0
-        version: 0.25.12
-      playwright-core:
-        specifier: 1.59.1
-        version: 1.59.1
-      typescript:
-        specifier: ^5.9.0
-        version: 5.9.3
-
   apps/zcode-cli/packages/cli:
     dependencies:
       '@zcode/adapters':
@@ -337,9 +291,6 @@ importers:
       dotenv:
         specifier: ^17.4.2
         version: 17.4.2
-      playwright-core:
-        specifier: 1.59.1
-        version: 1.59.1
 
   apps/zcode-cli/packages/contracts:
     dependencies:
@@ -699,9 +650,6 @@ importers:
       node-pty:
         specifier: ^1.0.0
         version: 1.1.0
-      playwright-core:
-        specifier: 1.59.1
-        version: 1.59.1
       react:
         specifier: 19.2.7
         version: 19.2.7
@@ -8285,11 +8233,6 @@ packages:
 
   pkg-types@2.3.0:
     resolution: {integrity: sha512-SIqCzDRg0s9npO5XQ3tNZioRY1uK06lA41ynBC1YmFTmnY6FjUjVt6s4LoADmwoig1qqD0oK8h1p/8mlMx8Oig==}
-
-  playwright-core@1.59.1:
-    resolution: {integrity: sha512-HBV/RJg81z5BiiZ9yPzIiClYV/QMsDCKUyogwH9p3MCP6IYjUFu/MActgYAvK0oWyV9NlwM3GLBjADyWgydVyg==}
-    engines: {node: '>=18'}
-    hasBin: true
 
   plist@3.1.0:
     resolution: {integrity: sha512-uysumyrvkUX0rX/dEVqt8gC3sTBzd4zoWfLeS29nb53imdaXVvLINYXTI2GNqzaMuvacNx4uJQ8+b3zXR0pkgQ==}
@@ -16172,11 +16115,11 @@ snapshots:
 
   lodash.merge@4.6.2: {}
 
+  lodash.pickby@4.6.0: {}
+
   lodash.uniqby@4.7.0: {}
 
   lodash@4.18.1: {}
-
-  lodash.pickby@4.6.0: {}
 
   log-symbols@4.1.0:
     dependencies:
@@ -17421,8 +17364,6 @@ snapshots:
       confbox: 0.2.4
       exsolve: 1.0.8
       pathe: 2.0.3
-
-  playwright-core@1.59.1: {}
 
   plist@3.1.0:
     dependencies:

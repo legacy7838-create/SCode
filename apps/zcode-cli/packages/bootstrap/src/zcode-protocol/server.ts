@@ -1,12 +1,8 @@
 import { querySessionDebug } from "./session-debug.js";
 import {
-  zcodePluginsCancelOperationParamsSchema,
   zcodeProtocolMethods,
   zcodeWorkspaceCancelGenerateTextParamsSchema,
-  zcodeWorkspaceHookTrustGrantParamsSchema,
 } from "@zcode/shared";
-import type { BrowserControlPort } from "@zcode/contracts";
-import { InMemoryWorkspaceHookPolicyProvider } from "@zcode/core";
 import {
   V4_METHODS,
   V4_NOTIFICATIONS,
@@ -52,26 +48,7 @@ import {
   readWorkspacePresentation,
   testProviderModelConnectivity,
 } from "./workspace-model-runtime.js";
-import {
-  addPluginMarketplace,
-  configurePlugin,
-  describePlugin,
-  getPluginsOverview,
-  installPlugin,
-  listPlugins,
-  removePluginMarketplace,
-  resetPluginConfig,
-  restoreBuiltinPlugin,
-  setPluginEnabled,
-  uninstallPlugin,
-  updatePlugin,
-  updatePluginMarketplace,
-  validatePlugin,
-} from "./plugins.js";
-import {
-  getPluginReferenceCatalog,
-  resolveSuggestedPluginReference,
-} from "./plugin-reference-catalog.js";
+import { getPluginReferenceCatalog } from "./plugin-reference-catalog.js";
 import { getSkillReferenceCatalog } from "./skill-reference-catalog.js";
 import {
   deleteSavedWorkflowOp,
@@ -87,7 +64,6 @@ import { updateAccountProviderConfig } from "./account-provider-config.js";
 import { updateModelIoPreferences } from "./model-io-preferences.js";
 import { updateOffPeakToolPolicy } from "./off-peak-tool-policy.js";
 import { updateDynamicWorkflowPolicy } from "./dynamic-workflow-policy.js";
-import { grantWorkspaceHookTrustForProtocol } from "./workspace-hook-trust.js";
 import {
   V4InteractionRegistry,
   resolveV4InteractionRegistryOptionsFromEnv,
@@ -98,7 +74,6 @@ import {
   DEFAULT_SESSION_RESIDENT_HIGH_WATER_COUNT,
   SessionResidentPool,
 } from "./session-resident-pool.js";
-import { createProtocolBrowserControlBroker } from "./browser-control-broker.js";
 import {
   createProtocolLogger,
   isErrorResponse,
@@ -121,24 +96,6 @@ export type { ZCodeProtocolAgentDependencies, ZCodeProtocolSessionRecord };
 const MAX_CLIENT_REQUEST_REANNOUNCE_INTERVAL_MS = 10_000;
 
 type ZCodeProtocolOutboundMessage = ZCodeProtocolNotification | ZCodeProtocolRequest;
-
-/**
- * Trust store 落盘后各 session 的 coordinator
- * 内存镜像（仅创建时 load）不会自动更新，已信任 Hook 继续被拒、banner pendingCount
- * 停留旧值。pretrust 授权成功后按 workspaceKey 通知所有匹配的活跃 session 重载。
- * 独立导出为纯调度函数（不触网、不发事件），便于回归测试直接构造 sessions Map。
- */
-async function notifyWorkspaceHookTrustGrantSessions(input: {
-  grantedWorkspaceKey?: string;
-  sessions: Map<string, ZCodeProtocolSessionRecord>;
-}): Promise<void> {
-  if (!input.grantedWorkspaceKey) return;
-  await Promise.all(
-    [...input.sessions.values()]
-      .filter((record) => record.workspace.workspaceKey === input.grantedWorkspaceKey)
-      .map((record) => record.app.reloadWorkspaceHookTrust()),
-  );
-}
 
 function collectResidencySessionIds(params: unknown): string[] {
   if (!params || typeof params !== "object") return [];
@@ -165,14 +122,6 @@ function collectResidencySessionIds(params: unknown): string[] {
     }
   }
   return [...sessionIds];
-}
-
-function getPluginOperationId(params: unknown): string | undefined {
-  if (!params || typeof params !== "object") return undefined;
-  const operationId = (params as { operationId?: unknown }).operationId;
-  return typeof operationId === "string" && operationId.trim().length > 0
-    ? operationId.trim()
-    : undefined;
 }
 
 function getOperationId(params: unknown): string | undefined {
@@ -203,7 +152,6 @@ interface PendingClientRequest<T> {
 export class ZCodeProtocolAgentServer {
   private readonly runtimeResources: ProtocolRuntimeResources;
   private shutdownPromise?: Promise<void>;
-  readonly browserControlPort: BrowserControlPort;
   /**
    * 官方 MCP 身份头端口所需的最小上下文。
    * MCP 连接池的构造早于 server，需要在 server 就绪后回填闭包持有的引用——
@@ -218,7 +166,6 @@ export class ZCodeProtocolAgentServer {
   private readonly context: ZCodeProtocolAgentServerContext;
   private readonly logger;
   private readonly pendingClientRequests = new Map<string, PendingClientRequest<unknown>>();
-  private readonly pluginOperationControllers = new Map<string, AbortController>();
   private readonly workspaceGenerateTextControllers = new Map<string, AbortController>();
   /**
    * subscribe initial frame 按 JSON-RPC request id 隔离。connection 必须先 take，
@@ -238,8 +185,6 @@ export class ZCodeProtocolAgentServer {
       // 默认 turn 窗口保留策略。
       createSessionEventStore:
         deps.createSessionEventStore ?? (() => createInMemorySessionEventStore()),
-      workspaceHookPolicyProvider:
-        deps.workspaceHookPolicyProvider ?? new InMemoryWorkspaceHookPolicyProvider(),
     };
     this.logger = createProtocolLogger(resolvedDeps);
     this.context = {
@@ -265,7 +210,6 @@ export class ZCodeProtocolAgentServer {
     };
     // v4 通道：gateway 闭包持有 context 做帧出口与命令副作用，构造完立即挂回。
     this.context.v4Gateway = createConversationV4Gateway(this.context);
-    this.browserControlPort = createProtocolBrowserControlBroker(this.context);
     const sessionResidentTargetCount =
       deps.sessionResidentPoolOptions?.targetCount ?? deps.sessionResidentTargetCount;
     const sessionResidentHighWaterCount =
@@ -362,7 +306,6 @@ export class ZCodeProtocolAgentServer {
     this.disconnectClient(error);
     this.messageSink = undefined;
     this.clearPostResponseMessages();
-    for (const controller of this.pluginOperationControllers.values()) controller.abort(error);
     for (const controller of this.workspaceGenerateTextControllers.values())
       controller.abort(error);
     for (const record of this.context.sessions.values()) {
@@ -604,25 +547,6 @@ export class ZCodeProtocolAgentServer {
         return await closeSession(this.context, request.params);
       case zcodeProtocolMethods.workspaceReadPresentation:
         return await readWorkspacePresentation(this.context, request.params);
-      case zcodeProtocolMethods.workspaceHookTrustGrant: {
-        const grantResult = await grantWorkspaceHookTrustForProtocol(request.params, {
-          appVersion: this.context.deps.version,
-          policyProvider: this.context.deps.workspaceHookPolicyProvider,
-        });
-        if (grantResult.accepted) {
-          await notifyWorkspaceHookTrustGrantSessions({
-            // dispatch 层的 params 是弱类型；grant 内部已用同一 schema parse 过，这里
-            // safeParse 只为取出 workspaceKey 做匹配，失败即跳过通知（防御，正常必成功）。
-            grantedWorkspaceKey: zcodeWorkspaceHookTrustGrantParamsSchema.safeParse(request.params)
-              .success
-              ? zcodeWorkspaceHookTrustGrantParamsSchema.parse(request.params).workspace
-                  .workspaceKey
-              : undefined,
-            sessions: this.context.sessions,
-          });
-        }
-        return grantResult;
-      }
       case zcodeProtocolMethods.providerUpdateAccountConfig:
         return await updateAccountProviderConfig(this.context, request.params);
       case zcodeProtocolMethods.workspaceUpdateInteractionPreferences:
@@ -643,8 +567,6 @@ export class ZCodeProtocolAgentServer {
         return await testProviderModelConnectivity(this.context, request.params);
       case zcodeProtocolMethods.mcpList:
         return await listMcpServers(this.context, request.params);
-      case zcodeProtocolMethods.pluginsList:
-        return await listPlugins(this.context, request.params);
       case zcodeProtocolMethods.pluginsReferenceCatalogWithCategory:
         return await getPluginReferenceCatalog(this.context, request.params, true);
       case zcodeProtocolMethods.pluginsReferenceCatalog:
@@ -663,50 +585,10 @@ export class ZCodeProtocolAgentServer {
         return await listSavedWorkflowRunsOp(this.context, request.params);
       case zcodeProtocolMethods.workflowsMove:
         return await moveSavedWorkflowOp(this.context, request.params);
-      case zcodeProtocolMethods.pluginsResolveSuggestedReference:
-        return await this.withPluginOperationSignal(request, (signal) =>
-          resolveSuggestedPluginReference(this.context, request.params, signal),
-        );
-      case zcodeProtocolMethods.pluginsSetEnabled:
-        return await this.withPluginOperationSignal(request, (signal) =>
-          setPluginEnabled(this.context, request.params, signal),
-        );
-      case zcodeProtocolMethods.pluginsOverview:
-        return await getPluginsOverview(this.context, request.params);
       case zcodeProtocolMethods.processChildProcesses:
         return listChildProcesses(this.context.deps.mcpTelemetry?.listProcesses() ?? []);
       case zcodeProtocolMethods.runtimeCapabilities:
         return { independentPlanState: true };
-      case zcodeProtocolMethods.pluginsMarketplaceAdd:
-        return await this.withPluginOperationSignal(request, (signal) =>
-          addPluginMarketplace(this.context, request.params, signal),
-        );
-      case zcodeProtocolMethods.pluginsMarketplaceRemove:
-        return await removePluginMarketplace(this.context, request.params);
-      case zcodeProtocolMethods.pluginsMarketplaceUpdate:
-        return await this.withPluginOperationSignal(request, (signal) =>
-          updatePluginMarketplace(this.context, request.params, signal),
-        );
-      case zcodeProtocolMethods.pluginsInstall:
-        return await this.withPluginOperationSignal(request, (signal) =>
-          installPlugin(this.context, request.params, signal),
-        );
-      case zcodeProtocolMethods.pluginsCancelOperation:
-        return this.cancelPluginOperation(request.params);
-      case zcodeProtocolMethods.pluginsUninstall:
-        return await uninstallPlugin(this.context, request.params);
-      case zcodeProtocolMethods.pluginsUpdate:
-        return await updatePlugin(this.context, request.params);
-      case zcodeProtocolMethods.pluginsRestoreBuiltin:
-        return await restoreBuiltinPlugin(this.context, request.params);
-      case zcodeProtocolMethods.pluginsConfigure:
-        return await configurePlugin(this.context, request.params);
-      case zcodeProtocolMethods.pluginsResetConfig:
-        return await resetPluginConfig(this.context, request.params);
-      case zcodeProtocolMethods.pluginsValidate:
-        return await validatePlugin(this.context, request.params);
-      case zcodeProtocolMethods.pluginsDescribe:
-        return await describePlugin(this.context, request.params);
       case zcodeProtocolMethods.usageStats:
         return await getUsageStats(this.context, request.params);
       case zcodeProtocolMethods.sessionDebug:
@@ -723,34 +605,6 @@ export class ZCodeProtocolAgentServer {
       throw new ProtocolRequestError(-32603, "v4 gateway is not initialized");
     }
     return this.context.v4Gateway;
-  }
-
-  private async withPluginOperationSignal<T>(
-    request: ZCodeProtocolRequest,
-    run: (signal?: AbortSignal) => Promise<T>,
-  ): Promise<T> {
-    const operationId = getPluginOperationId(request.params);
-    if (!operationId) return await run();
-
-    const controller = new AbortController();
-    this.pluginOperationControllers.set(operationId, controller);
-    try {
-      return await run(controller.signal);
-    } finally {
-      if (this.pluginOperationControllers.get(operationId) === controller) {
-        this.pluginOperationControllers.delete(operationId);
-      }
-    }
-  }
-
-  private cancelPluginOperation(rawParams: unknown) {
-    const params = parseParams(zcodePluginsCancelOperationParamsSchema, rawParams);
-    const controller = this.pluginOperationControllers.get(params.operationId);
-    if (!controller) return { operationId: params.operationId, cancelled: false };
-    // 插件同步的可取消能力必须保留在 V4 server；仅按 operationId 中止对应链路。
-    controller.abort();
-    this.pluginOperationControllers.delete(params.operationId);
-    return { operationId: params.operationId, cancelled: true };
   }
 
   private async withWorkspaceGenerateTextSignal<T>(

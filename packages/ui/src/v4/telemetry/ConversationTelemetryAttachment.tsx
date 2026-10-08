@@ -1,6 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, type ReactNode } from "react";
 import type { ConversationTelemetryFact } from "@zcode/shared/zcode-protocol-v4";
-import { resolveWorkspaceTelemetryDetail, type IPlatformService } from "@zcode/shared";
 import { createConversationTelemetryService, type IServiceAccessor } from "@zcode/services";
 import { useOptionalPlatform } from "@/hooks/usePlatform.js";
 import { ConversationTelemetrySupervisor } from "@/v4/telemetry/conversationTelemetrySupervisor.js";
@@ -71,7 +70,6 @@ function sameScope(
 function acquireSupervisor(
   scope: ConversationTelemetryAttachmentScope,
   services: IServiceAccessor,
-  platform: Pick<IPlatformService, "reportArmsCustomEvent" | "reportTelemetryEvent">,
 ): SupervisorLease {
   const logicalScopeKey = logicalAttachmentScopeKey(scope);
   const key = attachmentScopeKey(scope, services.zcodeAgentService);
@@ -93,9 +91,7 @@ function acquireSupervisor(
       key,
       logicalScopeKey,
       supervisor: new ConversationTelemetrySupervisor({
-        platform,
         workspaceScopeKey: key,
-        workspaceTelemetryDetail: resolveWorkspaceTelemetryDetail(scope),
       }),
       refCount: 1,
       subscription: null,
@@ -204,8 +200,8 @@ export function ConversationTelemetryWorkspaceAttachment({
     const agentService = services.zcodeAgentService as object | null | undefined;
     if (!enabled || !platform || !agentService) return null;
     // Bug 根因：Root 的隔离渲染和远端 service 准备阶段可能尚无 PlatformProvider 或 agent service。
-    // telemetry 是旁路能力，不能因依赖未就绪阻断 workspace 主界面；依赖齐备后再按 generation 建 lease。
-    return acquireSupervisor(scope, services, platform);
+    // usage 归因是旁路能力，不能因依赖未就绪阻断 workspace 主界面；依赖齐备后再按 generation 建 lease。
+    return acquireSupervisor(scope, services);
   }, [enabled, platform, scope, services]);
   const supervisor = lease?.entry.supervisor ?? null;
 

@@ -10,10 +10,6 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./browser-control": {
-      "types": "./dist/interfaces/browser-control.port.d.ts",
-      "import": "./dist/interfaces/browser-control.port.js"
-    },
     "./interfaces": {
       "types": "./dist/interfaces/index.d.ts",
       "import": "./dist/interfaces/index.js"

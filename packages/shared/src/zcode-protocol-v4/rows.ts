@@ -179,15 +179,6 @@ export type ReasoningRow = z.infer<typeof reasoningRowSchema>;
 // toolCall 展示层 schema 已拆至 ./toolDisplay.ts（rows.ts 受 max-lines 约束）。
 import { toolCallDisplaySchema, toolOutputSchema, toolProgressSchema } from "./toolDisplay.js";
 
-export const cuaAppIdentitySchema = z
-  .object({
-    pid: z.number().int().positive(),
-    name: z.string().trim().min(1).max(256),
-    bundleId: z.string().trim().min(1).max(512).optional(),
-  })
-  .strict();
-export type CuaAppIdentity = z.infer<typeof cuaAppIdentitySchema>;
-
 export const toolCallRowSchema = z.object({
   ...rowBaseFields,
   kind: z.literal("toolCall"),
@@ -198,7 +189,6 @@ export const toolCallRowSchema = z.object({
   status: z.enum(["inputStreaming", "pendingApproval", "running", "success", "error", "cancelled"]),
   inputText: z.string(),
   input: z.unknown().optional(),
-  cuaApp: cuaAppIdentitySchema.optional(),
   output: toolOutputSchema.optional(),
   // display 解析失败只丢这张卡的载荷，不拒整条 row（理由见 toolDisplay.ts 的 toolOutputSchema
   // 注释：装饰载荷不得决定 row/帧/订阅的生死）。
@@ -264,68 +254,6 @@ export const subagentRowSchema = z.object({
   endedAt: timestampSchema.optional(),
 });
 export type SubagentRow = z.infer<typeof subagentRowSchema>;
-
-// Hook runtime descriptor 只用于 CLI event/projection 输入兼容。对话 wire row 使用下方
-// client-safe summary，不携带命令、绝对路径、stdin/stdout/stderr/tool input 或环境变量。
-export const hookExecutionDescriptorSchema = z
-  .object({
-    clientVisible: z.literal(true),
-    sourceKind: z.enum(["user", "plugin", "project", "internal"]),
-    sourcePath: z.string().optional(),
-    pluginId: z.string().optional(),
-    pluginName: z.string().optional(),
-    statusMessage: z.string().optional(),
-    executionType: z.enum(["process", "command"]),
-    executionMode: z.enum(["foreground", "background"]),
-    commandDisplay: z.string(),
-    timeoutMs: z.number().int().positive(),
-  })
-  .strict();
-export type HookExecutionDescriptor = z.infer<typeof hookExecutionDescriptorSchema>;
-
-export const hookExecutionProjectionSchema = z
-  .object({
-    hookRunId: z.string().min(1),
-    hookIndex: z.number().int().nonnegative(),
-    // 同一 runId 已观察到 HookRunStarted 才为 true；admission-only blocked 为 false。
-    didExecute: z.boolean(),
-    state: z.enum(["running", "completed", "failed"]),
-    outcome: z.enum(["success", "blocked", "failed", "cancelled", "timed_out"]).optional(),
-    blockReason: z.string().trim().min(1).optional(),
-    startedAt: timestampSchema,
-    endedAt: timestampSchema.optional(),
-    durationMs: z.number().nonnegative().optional(),
-    displayName: z.string().trim().min(1),
-    sourceKind: z.enum(["user", "plugin", "project"]),
-    pluginName: z.string().optional(),
-    toolName: z.string().optional(),
-  })
-  .strict();
-export type HookExecutionProjection = z.infer<typeof hookExecutionProjectionSchema>;
-
-export const hookInvocationRowSchema = z.object({
-  ...rowBaseFields,
-  kind: z.literal("hookInvocation"),
-  hookInvocationId: z.string().min(1),
-  hookEventName: z.enum([
-    "SessionStart",
-    "UserPromptSubmit",
-    "PreToolUse",
-    "PermissionRequest",
-    "PostToolUse",
-    "PostToolUseFailure",
-    "Stop",
-  ]),
-  hookCount: z.number().int().positive(),
-  state: z.enum(["running", "completed", "failed"]),
-  startedAt: timestampSchema,
-  endedAt: timestampSchema.optional(),
-  durationMs: z.number().nonnegative().optional(),
-  lane: z.enum(["assistantWork", "toolBefore", "toolAfter"]),
-  anchorToolCallId: z.string().optional(),
-  executions: z.array(hookExecutionProjectionSchema),
-});
-export type HookInvocationRow = z.infer<typeof hookInvocationRowSchema>;
 
 // timelineMarker。
 // compact.status=cancelled 表示 auto compact 被 stop；失败终态为 failed。
@@ -425,7 +353,6 @@ export const conversationRowSchema = z.discriminatedUnion("kind", [
   toolCallRowSchema,
   artifactRowSchema,
   subagentRowSchema,
-  hookInvocationRowSchema,
   timelineMarkerRowSchema,
 ]);
 export type ConversationRow = z.infer<typeof conversationRowSchema>;

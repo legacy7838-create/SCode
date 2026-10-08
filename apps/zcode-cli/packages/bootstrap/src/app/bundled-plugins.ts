@@ -11,7 +11,7 @@ import {
 import { dirname, join, resolve, sep } from "node:path";
 import { writeBundledOfficialMarketplacePartitionSync } from "@zcode/adapters";
 import { ZCODE_OFFICIAL_PLUGIN_MARKETPLACE, type Logger } from "@zcode/contracts";
-import { isZCodeCuaInternalFeatureEnabled, ZCODE_CUA_OFFICIAL_PLUGIN_ID } from "@zcode/shared";
+
 import {
   createOfficialPluginCacheRetryBudget,
   getOfficialPluginCacheRetryAttempts,
@@ -48,8 +48,7 @@ const includedTopLevelPaths = new Set([
   "hooks",
   "output-styles",
   "package.json",
-  // Browser skill 会从官方插件根目录动态导入 scripts/browser-client.mjs。
-  // filesystem seed 若漏掉 scripts，Dev 会连接 node_repl 成功却在首次 Browser Use 时导入失败。
+  // 官方插件可能携带 scripts/（可执行入口、hook 脚本等），filesystem seed 必须保留该顶层目录。
   "scripts",
   "skills",
   "templates",
@@ -231,23 +230,12 @@ export function resolveOfficialPluginRoots(input: {
   storageRoot: string;
   suppressedBuiltins?: ReadonlySet<string>;
 }): string[] {
-  const suppressedBuiltins = new Set(input.suppressedBuiltins ?? []);
-  // zcode-cua 内置 plugin 默认不启用，由 feature flag 控制加载。在 seed/discovery 层门控
-  // （而非只隐藏某个 UI 面），这样开关关闭时用户无法经 plugin 列表/marketplace/MCP 设置/CLI 命令看到它。
-  if (!isZCodeCuaInternalFeatureEnabled(input.env ?? process.env)) {
-    suppressedBuiltins.add(ZCODE_CUA_OFFICIAL_PLUGIN_ID);
-  }
   const failedSeeds = seedBundledOfficialPlugins({
     logger: input.logger,
     storageRoot: input.storageRoot,
   });
 
   const fallbackRoots = failedSeeds.flatMap((definition) => {
-    // CUA 的 frame contract 随 wrapper 与 producer 原子升级。加载旧版本
-    // cache 会把旧 block 布局接到新 consumer 上；当前 cache 不可用时宁可不注册 CUA。
-    if (`${definition.name}@${OFFICIAL_PLUGIN_MARKETPLACE}` === ZCODE_CUA_OFFICIAL_PLUGIN_ID) {
-      return [];
-    }
     const fallbackRoot = findUsableOfficialPluginFallback(input.storageRoot, definition);
     return fallbackRoot ? [fallbackRoot] : [];
   });

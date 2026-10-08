@@ -5,7 +5,6 @@ import type { MessagePortMain, UtilityProcess as ElectronUtilityProcess } from "
 import {
   buildRemoteWorkspaceIdentity,
   buildRemoteEnvironmentKey,
-  buildSshRemoteHostKey,
   HostMessageTypes,
   HostResponseTypes,
   hostResponseMessageSchema,
@@ -16,11 +15,6 @@ import {
   type ProviderProvisioningTrigger,
   type WindowHostRemoteWorkspaceDescriptor,
 } from "@zcode/shared";
-import type {
-  RemoteConnectionStats,
-  RemoteDisconnectReason,
-  RemoteGaugeTransition,
-} from "./desktopRemoteUsageArmsTelemetry.js";
 import type { RemoteAssetDirs } from "./desktopRuntimeEnv.js";
 import { ProviderProvisioningEnvironmentCoordinator } from "./providerProvisioningEnvironmentCoordinator.js";
 
@@ -28,6 +22,14 @@ interface RemoteWorkspaceSessionContext {
   workspacePath: string;
   workspaceIdentity?: string;
 }
+
+/** route 退出原因；原用于 remote-usage ARMS 上报，egress 下线后仅作调用点签名占位。 */
+type RemoteRetireReason =
+  | "disposed"
+  | "connection-closed"
+  | "host-exit"
+  | "window-closed"
+  | "app-shutdown";
 
 interface PendingConnect {
   requestId: string;
@@ -111,19 +113,6 @@ function isSameRemoteTarget(left: RemoteTarget, right: RemoteTarget): boolean {
   }
 }
 
-function buildRemoteTargetTelemetryKey(target: RemoteTarget): string {
-  switch (target.kind) {
-    case "ssh":
-      return `ssh:${buildSshRemoteHostKey(target)}`;
-    case "wsl":
-      return `wsl:${target.distro?.trim() || "default"}\0${target.user?.trim() ?? ""}`;
-    case "docker":
-      return `docker:${target.container}`;
-    case "server":
-      return `server:${normalizeServerRemoteUrlForComparison(target.url)}`;
-  }
-}
-
 function closeMessagePort(port: MessagePortMain | undefined): void {
   if (!port) return;
   try {
@@ -146,17 +135,6 @@ export function createRemoteWorkspaceSessionManager(options: {
   ) => Promise<Extract<RemoteTarget, { kind: "wsl" }>>;
   createMessageChannel?: () => { port1: MessagePortMain; port2: MessagePortMain };
   rendererAttachmentReadyTimeoutMs?: number;
-  reportRemoteConnectionStateChanged?: (params: {
-    rendererId: number;
-    remoteKind: RemoteTarget["kind"];
-    transition: Exclude<RemoteGaugeTransition, "none">;
-  }) => void;
-  reportRemoteDisconnect?: (params: {
-    rendererId: number;
-    remoteKind: RemoteTarget["kind"];
-    disconnectReason: RemoteDisconnectReason;
-    durationMs: number;
-  }) => void;
   monotonicNowMs?: () => number;
   providerProvisioningCoordinator?: ProviderProvisioningEnvironmentCoordinator;
 }) {
@@ -366,17 +344,6 @@ export function createRemoteWorkspaceSessionManager(options: {
     );
     if (!route.connectFinalized) {
       route.connectFinalized = true;
-      if (route.remoteUsageTelemetryEligible) {
-        try {
-          options.reportRemoteConnectionStateChanged?.({
-            rendererId: route.webContentsId,
-            remoteKind: route.descriptor.target.kind,
-            transition: "connected",
-          });
-        } catch (error) {
-          options.logger.warn("[remote-usage-arms] connected reporter failed", { error });
-        }
-      }
     }
     pending.resolve();
   }
@@ -489,35 +456,14 @@ export function createRemoteWorkspaceSessionManager(options: {
 
   function retireActiveRoute(
     route: RemoteAttachmentRoute,
-    reason: RemoteDisconnectReason,
+    reason: RemoteRetireReason,
     mutate: () => void,
   ): void {
-    const wasActive =
-      route.remoteUsageTelemetryEligible &&
-      route.attachmentState === "attachable" &&
-      route.connectFinalized;
+    // 原 reason 仅用于 remote-usage ARMS 上报（egress 已下线）；保留参数以维持调用点签名，
+    // 这里只执行真正的 route 退出变更。
+    void reason;
+    void route;
     mutate();
-    if (!wasActive) return;
-
-    const common = {
-      rendererId: route.webContentsId,
-      remoteKind: route.descriptor.target.kind,
-    };
-    try {
-      options.reportRemoteConnectionStateChanged?.({ ...common, transition: reason });
-    } catch (error) {
-      // telemetry 是连接生命周期的旁路，不能因 reporter 异常回滚 route 退出状态。
-      options.logger.warn("[remote-usage-arms] disconnect gauge reporter failed", { error });
-    }
-    try {
-      options.reportRemoteDisconnect?.({
-        ...common,
-        disconnectReason: reason,
-        durationMs: Math.max(0, Math.round(monotonicNowMs() - route.connectedAtMonotonicMs)),
-      });
-    } catch (error) {
-      options.logger.warn("[remote-usage-arms] disconnect reporter failed", { error });
-    }
   }
 
   function handleClosed(
@@ -776,21 +722,6 @@ export function createRemoteWorkspaceSessionManager(options: {
     }
   }
 
-  function getRemoteConnectionStats(): RemoteConnectionStats {
-    const activeRoutes = Array.from(routesBySessionId.values()).filter(
-      (route) =>
-        route.remoteUsageTelemetryEligible &&
-        route.attachmentState === "attachable" &&
-        route.connectFinalized,
-    );
-    return {
-      activeSessionCount: activeRoutes.length,
-      activeTargetCount: new Set(
-        activeRoutes.map((route) => buildRemoteTargetTelemetryKey(route.descriptor.target)),
-      ).size,
-    };
-  }
-
   function disposeRemoteWorkspaceSession(sessionId: string, _reason?: string): void {
     const route = routesBySessionId.get(sessionId);
     if (!route) return;
@@ -1006,7 +937,6 @@ export function createRemoteWorkspaceSessionManager(options: {
     reattachRemoteWorkspaceSessionsForWindow,
     hasRemoteWorkspaceSessionForTarget,
     createBotRemoteWorkspaceRuntimePort,
-    getRemoteConnectionStats,
     disposeRemoteWorkspaceSession,
     disposeRemoteWorkspaceSessionsForWindow,
     disposeAllAndWaitForAppShutdown: async (_reason: string) => {

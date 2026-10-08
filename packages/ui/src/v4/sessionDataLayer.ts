@@ -5,10 +5,24 @@
 // Map<workspaceKey, SessionDataLayer>，本层不感知 workspace。
 import { ConversationProjectionStore } from "@/v4/conversationProjectionStore.js";
 import { shouldExposeE2EStoreBridge } from "@/lib/e2eStoreBridge.js";
-import type { SessionOpenKind } from "@/lib/sessionOpenArmsTelemetry.js";
 import { conversationTopic, type ConversationTransport } from "@/v4/transport.js";
 import { logger } from "@/logger.js";
 import type { CommandsQueryParams, CommandsQueryResult } from "@zcode/shared/zcode-protocol-v4";
+
+/**
+ * 会话打开分类。修复依据：原从遥测模块 sessionOpenArmsTelemetry 导入；该遥测出口已整体移除，
+ * 这里就地保留分类语义供 lease 与 pane 的 openKind/openTrigger 描述使用，不再对外上报。
+ */
+export type SessionOpenKind = "cold" | "warm" | "keep_warm";
+export type SessionOpenTrigger =
+  | "sidebar"
+  | "search"
+  | "deeplink"
+  | "reload"
+  | "subagent"
+  | "selection"
+  | "split"
+  | "pane";
 
 /** pane 持有的租约；release 幂等。 */
 export interface SessionLease {

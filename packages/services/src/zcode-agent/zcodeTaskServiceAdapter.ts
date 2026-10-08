@@ -164,7 +164,6 @@ import {
   normalizeAvailableZCodeMode,
   settingsToConfigOptions,
 } from "./zcodeConfigOptions.js";
-import type { CuaProductMcpServerResolver } from "#src/cua-permission-broker/index.js";
 import { registerMemoryDiagnosticsProvider } from "#src/memoryDiagnostics.js";
 
 interface TaskOverlay {
@@ -182,7 +181,6 @@ interface CreateZCodeTaskServiceAdapterOptions {
   // 否则 desktop-continuous 路径和 task adapter 路径的事件订阅会分裂成两份，UI 收不全。
   taskIndexSyncer: ZCodeTaskIndexSyncer;
   settingService?: Pick<ISettingService, "get">;
-  cuaProductMcpServerResolver?: CuaProductMcpServerResolver;
 }
 
 interface TaskTarget {
@@ -333,11 +331,7 @@ export function createZCodeTaskServiceAdapter(
   async function resolveProductMcpServers(
     servers: ZCodeAgentMcpServer[] | undefined,
   ): Promise<ZCodeAgentMcpServer[] | undefined> {
-    const configuredServers = (servers?.length ?? 0) > 0 ? servers : undefined;
-    if (!configuredServers || !options.cuaProductMcpServerResolver) {
-      return configuredServers;
-    }
-    return options.cuaProductMcpServerResolver.resolveMcpServers(configuredServers);
+    return (servers?.length ?? 0) > 0 ? servers : undefined;
   }
 
   function workspaceKey(params: { workspacePath: string; workspaceIdentity?: string }): string {
@@ -5750,8 +5744,7 @@ function timelineTriggerValue(value: unknown): ZCodeTimelineTrigger | undefined 
   return value === "manual" ||
     value === "auto" ||
     value === "reactive" ||
-    value === "partial" ||
-    value === "session_memory"
+    value === "partial"
     ? value
     : undefined;
 }

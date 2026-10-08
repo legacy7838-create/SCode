@@ -26,10 +26,6 @@ export interface SessionRealtimePort {
       | Omit<Extract<TaskOwnerCommandRequest, { type: "stop_generation" }>, "commandRequestId">
       | Omit<Extract<TaskOwnerCommandRequest, { type: "respond_permission" }>, "commandRequestId">
       | Omit<Extract<TaskOwnerCommandRequest, { type: "respond_elicitation" }>, "commandRequestId">
-      | Omit<
-          Extract<TaskOwnerCommandRequest, { type: "respond_workspace_hook_review" }>,
-          "commandRequestId"
-        >
       | Omit<Extract<TaskOwnerCommandRequest, { type: "enqueue_task_command" }>, "commandRequestId">
       | Omit<Extract<TaskOwnerCommandRequest, { type: "promote_task_command" }>, "commandRequestId">
       | Omit<Extract<TaskOwnerCommandRequest, { type: "cancel_task_command" }>, "commandRequestId">,

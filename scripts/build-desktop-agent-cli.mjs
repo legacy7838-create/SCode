@@ -47,20 +47,10 @@ const cliWorkspaceBuilds = [
   { packageName: "@zcode/bootstrap", packageDir: "bootstrap" },
 ];
 // 官方插件 manifest 可以在 server.js 缺失时被 filesystem seed，直到 session
-// 连接 MCP 才报错，造成“Helper ready 但 CUA 工具不存在”的半启动状态。所有普通 Dev 必需的
+// 连接 MCP 才报错，造成“Helper ready 但工具不存在”的半启动状态。所有普通 Dev 必需的
 // 独立 MCP runtime 必须集中登记，并在构建后验证真实入口文件，再允许 Agent bundle 启动。
-const requiredDevPluginRuntimeBuilds = [
-  {
-    // node_repl 宿主：Browser Use 与 Computer Use 共用，产物归属独立包。
-    packageName: "@zcode/node-repl-host",
-    artifactPath: "node-repl-host/dist/mcp/server.js",
-  },
-  {
-    // browser-use 自己的 runtime 只剩 browser-client；宿主不再由它携带。
-    packageName: "@zcode/browser-use-plugin",
-    artifactPath: "browser-use-plugin/scripts/browser-client.mjs",
-  },
-];
+// Computer Use / node_repl 宿主子系统已整体下线，当前没有必需的独立 MCP runtime 产物。
+const requiredDevPluginRuntimeBuilds = [];
 const defaultBuildFilters = [
   ...cliWorkspaceBuilds.map(({ packageName }) => packageName),
   ...requiredDevPluginRuntimeBuilds.map(({ packageName }) => packageName),

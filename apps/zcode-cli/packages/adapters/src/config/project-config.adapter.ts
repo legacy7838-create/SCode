@@ -1,11 +1,6 @@
-import { basename, dirname, isAbsolute, resolve } from "node:path";
+import { existsSync, statSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import type { McpServerConfig, RuntimeConfigPatch } from "@zcode/contracts";
-import {
-  createWorkspaceHookSourceInput,
-  discoverWorkspaceHookConfigPaths,
-  workspaceHooksConfigSchema,
-  type WorkspaceHookSourceInput,
-} from "@zcode/shared/workspace-hook-discovery";
 import { loadFileConfig, type LoadedConfig } from "./file-config.adapter.js";
 
 const CURRENT_DIRECTORY = ".";
@@ -14,7 +9,6 @@ export interface ProjectConfigFile {
   baseDir: string;
   config: RuntimeConfigPatch;
   diagnostics: LoadedConfig["diagnostics"];
-  hookCandidate?: WorkspaceHookSourceInput;
   loaded: boolean;
   path: string;
 }
@@ -22,7 +16,6 @@ export interface ProjectConfigFile {
 export interface ProjectConfigDiscovery {
   files: ProjectConfigFile[];
   diagnostics: LoadedConfig["diagnostics"];
-  hookCandidates: WorkspaceHookSourceInput[];
   loaded: boolean;
   paths: string[];
   mcpServerNames: string[];
@@ -33,62 +26,22 @@ export function loadProjectConfigs(
   explicitProjectConfigPath?: string,
 ): ProjectConfigDiscovery {
   const resolvedWorkingDirectory = resolve(workingDirectory ?? process.cwd());
-  const files = discoverWorkspaceHookConfigPaths({
+  const files = discoverProjectConfigPaths({
     workingDirectory: resolvedWorkingDirectory,
     ...(explicitProjectConfigPath ? { explicitProjectConfigPath } : {}),
-  }).map((ref, discoveryOrder) =>
-    loadProjectConfigFile(ref.path, {
-      discoveryOrder,
-      explicitProjectConfig: ref.explicitProjectConfig,
-      workingDirectory: resolvedWorkingDirectory,
-    }),
-  );
+  }).map((path) => loadProjectConfigFile(path));
 
   return summarizeProjectConfigs(files);
 }
 
-export function loadProjectConfigFile(
-  path: string,
-  options: {
-    discoveryOrder?: number;
-    explicitProjectConfig?: boolean;
-    workingDirectory?: string;
-  } = {},
-): ProjectConfigFile {
+export function loadProjectConfigFile(path: string): ProjectConfigFile {
   const result = loadFileConfig(path);
   const baseDir = getProjectConfigBaseDir(result.path);
-  const diagnostics = [...result.diagnostics];
-  const hooks = result.loaded ? result.config.hooks : undefined;
-
-  if (hooks) {
-    diagnostics.push({
-      code: "config_project_hooks_pending_trust",
-      filePath: result.path,
-      message: "Project hooks are pending workspace trust and remain blocked",
-      path: "hooks",
-      severity: "warning",
-    });
-  }
 
   return {
     baseDir,
     config: result.loaded ? normalizeProjectConfig(result.config, baseDir) : {},
-    diagnostics,
-    ...(hooks
-      ? {
-          hookCandidate: createWorkspaceHookSourceInput({
-            path: result.path,
-            workingDirectory: resolve(options.workingDirectory ?? baseDir),
-            // hooks 字段已由 loadFileConfig 经 ZCodeConfigFileSchema（shared 单源
-            // schema）完成运行时校验；这里的 parse 仅做类型桥接——HooksRuntimeConfigPatch
-            // 与 WorkspaceHooksConfig 是两个领域类型（执行 side vs 配置 side，字段语义有
-            // 微差），不共享 TS 结构。禁止改成 as 断言绕过校验。
-            hooks: workspaceHooksConfigSchema.parse(hooks),
-            discoveryOrder: options.discoveryOrder ?? 0,
-            explicitProjectConfig: options.explicitProjectConfig,
-          }),
-        }
-      : {}),
+    diagnostics: result.diagnostics,
     loaded: result.loaded,
     path: result.path,
   };
@@ -107,11 +60,66 @@ export function summarizeProjectConfigs(files: ProjectConfigFile[]): ProjectConf
   return {
     diagnostics: files.flatMap((file) => file.diagnostics),
     files: loadedFiles,
-    hookCandidates: loadedFiles.flatMap((file) => (file.hookCandidate ? [file.hookCandidate] : [])),
     loaded: loadedFiles.length > 0,
     paths: loadedFiles.map((file) => file.path),
     mcpServerNames: [...mcpServerNames],
   };
+}
+
+/**
+ * 项目配置路径发现。原实现复用 shared `workspace-hook-discovery`（Hooks 产品化移除后该
+ * 模块已删除），语义在此原样保留，避免装载范围漂移：
+ * - 从 cwd 向上走，遇到含 `.git`（目录或文件，兼容 worktree/submodule）的目录即视为
+ *   仓库顶层，目录列表反转为 root→cwd 顺序（越靠 cwd 优先级越高）。
+ * - 每个目录依次探测 `zcode.json` 与 `.zcode/config.json`，只保留存在的路径。
+ * - explicit projectConfigPath 追加在末尾；按解析后的绝对路径去重、保留首次出现者，
+ *   使同一文件不会因 auto-discovery 与 explicit 双重进入而覆盖优先级或重复合并。
+ */
+function discoverProjectConfigPaths(input: {
+  workingDirectory: string;
+  explicitProjectConfigPath?: string;
+}): string[] {
+  const candidates = buildProjectConfigCandidatePaths(getProjectConfigDirectories(input.workingDirectory))
+    .filter((path) => existsSync(path))
+    .map((path) => resolve(path));
+
+  if (input.explicitProjectConfigPath) {
+    const explicitPath = resolve(input.explicitProjectConfigPath);
+    if (existsSync(explicitPath)) candidates.push(explicitPath);
+  }
+
+  return [...new Set(candidates)];
+}
+
+function buildProjectConfigCandidatePaths(directories: readonly string[]): string[] {
+  return directories.flatMap((directory) => [
+    join(directory, "zcode.json"),
+    join(directory, ".zcode", "config.json"),
+  ]);
+}
+
+function getProjectConfigDirectories(start: string): string[] {
+  const directories: string[] = [];
+  let current = start;
+  while (true) {
+    directories.push(current);
+    if (hasWorktreeMarker(current)) return directories.reverse();
+    const parent = dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return [start];
+}
+
+function hasWorktreeMarker(directory: string): boolean {
+  const marker = join(directory, ".git");
+  try {
+    if (!existsSync(marker)) return false;
+    const stats = statSync(marker);
+    return stats.isDirectory() || stats.isFile();
+  } catch {
+    return false;
+  }
 }
 
 function getProjectConfigBaseDir(path: string): string {
@@ -120,14 +128,7 @@ function getProjectConfigBaseDir(path: string): string {
 }
 
 function normalizeProjectConfig(config: RuntimeConfigPatch, baseDir: string): RuntimeConfigPatch {
-  const normalized: RuntimeConfigPatch = config.hooks
-    ? (() => {
-        const { hooks: _hooks, ...safeConfig } = config;
-        // Project Hook declarations are retained only in the immutable candidate side-channel.
-        // The executable RuntimeConfigPatch remains hook-free until a later admission phase.
-        return safeConfig;
-      })()
-    : { ...config };
+  const normalized: RuntimeConfigPatch = { ...config };
 
   if (!normalized.mcp?.servers) return normalized;
 

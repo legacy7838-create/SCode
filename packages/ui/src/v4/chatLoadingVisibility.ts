@@ -7,7 +7,6 @@ import type {
 /**
  * 等待用户操作时，弹窗/问答卡已经是唯一进度反馈，不能再显示 loading。
  * 这里只识别权限确认与 AskUserQuestion；ExitPlanMode 等其它 userInput 语义保持独立。
- * 软门禁后 workspaceHookReview 不再阻塞聊天。
  */
 export function hasChatLoadingBlockingInteraction(
   interactions: readonly PendingInteraction[],

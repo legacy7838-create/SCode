@@ -12,87 +12,9 @@ export interface ZCodeAgentWorkspaceTarget {
   remoteSessionId?: string;
 }
 
-export interface ZCodeAgentPluginViewParams extends ZCodeAgentWorkspaceTarget {
-  configScope?: "user" | "workspace";
-}
-
 export interface ZCodeAgentListMcpServerStatusesParams extends ZCodeAgentWorkspaceTarget {
   mcpServers?: ZCodeAgentMcpServer[];
   mode?: ZCodeMcpListMode;
-}
-
-export interface ZCodeAgentAddPluginMarketplaceParams extends ZCodeAgentWorkspaceTarget {
-  dryRun?: boolean;
-  operationId?: string;
-  source: string;
-}
-
-export interface ZCodeAgentRemovePluginMarketplaceParams extends ZCodeAgentWorkspaceTarget {
-  marketplace: string;
-}
-
-export interface ZCodeAgentUpdatePluginMarketplaceParams extends ZCodeAgentWorkspaceTarget {
-  marketplace?: string;
-  operationId?: string;
-}
-
-export interface ZCodeAgentInstallPluginParams extends ZCodeAgentWorkspaceTarget {
-  dryRun?: boolean;
-  marketplace: string;
-  operationId?: string;
-  pluginName: string;
-  scope?: "user" | "workspace";
-}
-
-export interface ZCodeAgentCancelPluginOperationParams {
-  operationId: string;
-}
-
-export interface ZCodeAgentUninstallPluginParams extends ZCodeAgentWorkspaceTarget {
-  marketplace?: string;
-  pluginId?: string;
-  pluginName?: string;
-  removeCache?: boolean;
-}
-
-export interface ZCodeAgentUpdatePluginParams extends ZCodeAgentWorkspaceTarget {
-  pluginId?: string;
-  marketplace?: string;
-}
-
-export interface ZCodeAgentRestoreBuiltinPluginParams extends ZCodeAgentWorkspaceTarget {
-  pluginId: string;
-}
-
-export interface ZCodeAgentConfigurePluginParams extends ZCodeAgentWorkspaceTarget {
-  clearOptionKeys?: string[];
-  dryRun?: boolean;
-  options: Record<string, unknown>;
-  pluginId: string;
-  scope?: "user" | "workspace";
-}
-
-export interface ZCodeAgentResetPluginConfigParams extends ZCodeAgentWorkspaceTarget {
-  pluginId: string;
-  scope?: "user" | "workspace";
-}
-
-export interface ZCodeAgentValidatePluginParams extends ZCodeAgentWorkspaceTarget {
-  marketplace?: string;
-  pluginName?: string;
-  source?: string;
-}
-
-export interface ZCodeAgentDescribePluginParams extends ZCodeAgentWorkspaceTarget {
-  marketplace: string;
-  pluginName: string;
-}
-
-export interface ZCodeAgentSetPluginEnabledParams extends ZCodeAgentWorkspaceTarget {
-  enabled: boolean;
-  operationId?: string;
-  pluginId: string;
-  scope?: "user" | "workspace";
 }
 
 // Plugin 对话引用 catalog：
@@ -106,12 +28,6 @@ export interface ZCodeAgentPluginReferenceCatalogParams extends ZCodeAgentWorksp
 // resident Session runtime 快照；不参与 Settings 管理目录。
 export interface ZCodeAgentSkillReferenceCatalogParams extends ZCodeAgentWorkspaceTarget {
   sessionId?: string;
-}
-export interface ZCodeAgentResolveSuggestedPluginReferenceParams extends ZCodeAgentWorkspaceTarget {
-  stableId: string;
-  operationId: string;
-  clientMode: "desktop-continuous" | "web-remote-replayable";
-  deliveryKind: "desktop-continuous" | "web-remote-replayable";
 }
 
 // ---- 定时任务(automation)管理参数 ----

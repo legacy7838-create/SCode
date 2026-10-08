@@ -122,12 +122,6 @@ export async function resumeFromStore(
 
   this.workingDirectory = session.directory;
   this.config.taskType = session.taskType;
-  if (this.config.memory) {
-    // Memory root 必须使用会话落盘时的 workspace identity，不能沿用进程启动 workspace。
-    this.config.memory.workspaceIdentity = session.workspaceID
-      ? String(session.workspaceID)
-      : undefined;
-  }
   this.messageHistory = new MessageHistoryImpl();
   this.contextBuilder = null;
   this.contextInitialized = false;

@@ -69,7 +69,6 @@ import type {
   WorkspaceConfigState,
   WorkspaceConfigTopicFrame,
   ConversationTelemetryFact,
-  CuaPermissionObservation,
   ConversationOpenTiming,
 } from "@zcode/shared/zcode-protocol-v4";
 import {
@@ -144,7 +143,6 @@ import { SessionsIndexPublisherRegistry } from "./sessions-index-publisher-regis
 import { WorkspaceConfigPublisher } from "./workspace-config-publisher.js";
 import type { TopicFrameReservation } from "./topic-frame-reservation.js";
 import { ConversationTelemetryFactNormalizer } from "./conversation-telemetry-facts.js";
-import { CuaPermissionObservationNormalizer } from "./cua-permission-observation.js";
 import { V4CapabilityUnsupportedError } from "./commands/handlers/interaction-background.js";
 
 function toRuntimeTurnId(turnId: string | null): TurnId | null {
@@ -228,8 +226,6 @@ export interface V4GatewayHost {
   /** 当前进程 live ingest 的无正文事实；不缓存、不进入 topic replay。 */
   emitConversationTelemetryFact?(fact: ConversationTelemetryFact): void;
   emitLocalTtftFacts?(facts: import("@zcode/shared").LocalTtftFacts): void;
-  /** 当前进程 live request_access 权限事实；不缓存、不进入 topic replay。 */
-  emitCuaPermissionObservation?(observation: CuaPermissionObservation): void;
   /**
    * sessions-index：会话 → 所属 workspaceId（列表 topic 的分桶键）。
    * 未实现（旧宿主）→ sessions-index 路径整体不激活（no-op），不影响 conversation。
@@ -249,8 +245,6 @@ export interface V4GatewayHost {
    * 会话不在册返回 null（gateway 跳过，保持空初值）；未实现（旧宿主/测试桩）同。
    */
   getSessionConfigSeed?(sessionId: string): SessionConfigSeed | null;
-  /** 只读会话创建期 App 开关，不读取实时设置或推断 Memory 工具使用。 */
-  getSessionMemoryEnabled?(sessionId: string): boolean | undefined;
   /**
    * 冷恢复 usage 种子：transcript 合成路径可能只能生成 0/默认窗口的占位
    * ModelComplete；宿主可从持久化 assistant tokens / runtime snapshot 提供真实水位。
@@ -621,7 +615,6 @@ export class ConversationV4Gateway {
   private readonly now: () => number;
   private readonly createLogEpoch: (sessionId: string) => string;
   private readonly telemetryNormalizer = new ConversationTelemetryFactNormalizer();
-  private readonly cuaPermissionNormalizer = new CuaPermissionObservationNormalizer();
   private readonly telemetryEventIds = new Set<string>();
   private disposed = false;
 
@@ -786,7 +779,6 @@ export class ConversationV4Gateway {
         this.host.getSessionConfigSeed?.(sessionId) ??
         undefined;
       const fact = this.telemetryNormalizer.normalize(sessionId, event, {
-        memoryEnabled: this.host.getSessionMemoryEnabled?.(sessionId),
         modelName: config?.model,
         modelProvider: config?.provider,
       });
@@ -796,13 +788,6 @@ export class ConversationV4Gateway {
     } catch (error) {
       // 轮次事实绝不能反向阻断 conversation 投影；严格 schema 失败只记录诊断。
       this.host.onError?.("v4.telemetry.normalize", error);
-    }
-    try {
-      const observation = this.cuaPermissionNormalizer.normalize(sessionId, event);
-      if (observation) this.host.emitCuaPermissionObservation?.(observation);
-    } catch (error) {
-      // 权限观察只是 live UI 提示，schema 或投影异常不能阻断 conversation 主链路。
-      this.host.onError?.("v4.cuaPermissionObservation.normalize", error);
     }
   }
 
@@ -2483,18 +2468,9 @@ export class ConversationV4Gateway {
         this.inbox.pinLiveInput(outcome.envelope.sessionId, durableInputIntent);
       }
       const result = await this.host.executeCommand(outcome.envelope, admission);
-      // 新建/侧聊命令采用结果会话的开关，避免把父会话或当前 App 设置误记到新会话。
-      const telemetrySessionId =
-        result?.type === "createSession" || result?.type === "createSelectionSideSession"
-          ? result.sessionId
-          : outcome.envelope.sessionId;
-      const memoryEnabled = telemetrySessionId
-        ? this.host.getSessionMemoryEnabled?.(telemetrySessionId)
-        : undefined;
       const final = {
         status: "accepted" as const,
         ...(result ? { result } : {}),
-        ...(memoryEnabled !== undefined ? { memoryEnabled } : {}),
       };
       return settleOnce(final);
     } catch (error) {

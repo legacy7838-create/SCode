@@ -28,7 +28,6 @@ import type {
 import { DEFAULT_ENABLED_OFFICIAL_PLUGIN_IDS } from "@zcode/shared";
 import type { ISkillsService } from "./skills.js";
 import { SKILL_FILE_NAME, walkSkillMarkdownPaths } from "./skillDiscoveryWalk.js";
-import { readInstalledPluginRoots } from "#src/plugins/installedPluginRoots.js";
 
 interface DiscoverResult {
   skills: SkillSummary[];
@@ -781,7 +780,6 @@ async function resolvePluginSkillRootDescriptors(): Promise<SkillRootDescriptor[
 
   const pluginStorageRoot = resolvePluginStorageRoot(config.storageDir);
   const officialCacheRoots = await scanOfficialPluginCacheRoots(pluginStorageRoot);
-  const installedRoots = await readInstalledPluginRoots(pluginStorageRoot);
   const candidates: PluginRootCandidate[] = [
     ...config.dirs.map((dir) => ({
       defaultEnabled: true,
@@ -793,7 +791,6 @@ async function resolvePluginSkillRootDescriptors(): Promise<SkillRootDescriptor[
       marketplace: ZCODE_OFFICIAL_PLUGIN_MARKETPLACE,
       rootPath,
     })),
-    ...installedRoots,
   ];
   const descriptors: SkillRootDescriptor[] = [];
   const seenPluginIds = new Set<string>();

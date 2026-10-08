@@ -14,18 +14,14 @@ export type HumanBrowserViewportPreferenceChangeSource = "mode" | "viewport" | "
 export function useResponsiveBrowserViewportControl({
   browserKey,
   desktopZoomFactor,
-  onAgentViewportChange,
   onViewportSynchronized,
-  onViewportResize,
   initialHumanViewportPreference,
   onHumanViewportPreferenceChange,
   sessionId,
 }: {
   browserKey: string;
   desktopZoomFactor: number;
-  onAgentViewportChange: (willChangeResponsiveMode: boolean) => void;
   onViewportSynchronized: () => void;
-  onViewportResize: () => void;
   initialHumanViewportPreference?: EmbeddedBrowserViewportPreference;
   onHumanViewportPreferenceChange?: (
     preference: EmbeddedBrowserViewportPreference,
@@ -115,10 +111,7 @@ export function useResponsiveBrowserViewportControl({
     return platform.onBrowserViewViewportChanged?.((payload) => {
       if (payload.tabId !== browserKey) return;
       if (sessionId && payload.sessionId !== sessionId) return;
-      const willChangeResponsiveMode = (payload.viewport !== null) !== isResponsiveModeRef.current;
-      onAgentViewportChange(willChangeResponsiveMode);
-      logger.debug("[browser-use] 模型 viewport 变更不触发 resize 弱提示", {
-        modeChanged: willChangeResponsiveMode,
+      logger.debug("[browser] viewport 变更同步自由尺寸", {
         tabId: browserKey,
         viewport: payload.viewport,
       });
@@ -126,32 +119,22 @@ export function useResponsiveBrowserViewportControl({
         responsiveViewportSizeRef.current = { ...payload.viewport };
         setResponsiveViewportSize({ ...payload.viewport });
         applyResponsiveMode(true);
-        // Agent 创建/设置 viewport 的 main 路径不经过 renderer IPC；只在当前窗口
-        // 处于放大档位时回送一次，让 main 补入可信 zoom factor。默认/缩小不需要回声。
+        // viewport 设置的 main 路径不经过 renderer IPC；只在当前窗口处于放大档位时
+        // 回送一次，让 main 补入可信 zoom factor。默认/缩小不需要回声。
         if (desktopZoomFactor > 1) updateControlledViewport(payload.viewport);
         return;
       }
       applyResponsiveMode(false);
     });
-  }, [
-    applyResponsiveMode,
-    browserKey,
-    desktopZoomFactor,
-    onAgentViewportChange,
-    platform,
-    sessionId,
-    updateControlledViewport,
-  ]);
+  }, [applyResponsiveMode, browserKey, desktopZoomFactor, platform, sessionId, updateControlledViewport]);
 
   const toggleResponsiveMode = useCallback(() => {
-    onViewportResize();
     const nextMode = !isResponsiveModeRef.current;
     applyResponsiveMode(nextMode);
     updateControlledViewport(nextMode ? responsiveViewportSize : null);
     reportHumanViewportPreference("mode");
   }, [
     applyResponsiveMode,
-    onViewportResize,
     reportHumanViewportPreference,
     responsiveViewportSize,
     updateControlledViewport,

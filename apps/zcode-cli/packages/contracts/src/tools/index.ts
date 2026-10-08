@@ -10,7 +10,6 @@ export * from "./write.js";
 export * from "./edit.js";
 export * from "./apply-patch.js";
 export * from "./bash.js";
-export * from "./node-repl.js";
 export * from "./glob.js";
 export * from "./grep.js";
 export * from "./webfetch.js";

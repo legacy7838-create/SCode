@@ -28,13 +28,10 @@ export function formatHumanPluginList(outcome: PluginListOutcome, options: Globa
 
   const lines = [`Plugins (${outcome.plugins.length})`];
   for (const plugin of outcome.plugins) {
-    const hookDetails = plugin.hookDetails ?? [];
     const mcp = plugin.mcpServerNames.length > 0 ? plugin.mcpServerNames.join(", ") : "none";
     lines.push(`- ${plugin.id} [${plugin.enabled ? "enabled" : "disabled"}]`);
     lines.push(`  ${plugin.source}/${plugin.marketplace}: ${plugin.rootPath}`);
-    lines.push(
-      `  skills: ${plugin.skillCount}, commands: ${plugin.commandRootCount}, hooks: ${hookDetails.length}, mcp: ${mcp}`,
-    );
+    lines.push(`  skills: ${plugin.skillCount}, commands: ${plugin.commandRootCount}, mcp: ${mcp}`);
   }
 
   if (options.verbose && outcome.diagnostics.length > 0) {
@@ -113,7 +110,6 @@ export function formatPluginJson(
     marketplace: plugin.marketplace,
     declaredMcpServerNames: plugin.declaredMcpServerNames,
     mcpServerNames: plugin.mcpServerNames,
-    hookDetails: (plugin.hookDetails ?? []).map(formatHookDetailJson),
     name: plugin.name,
     rootPath: plugin.rootPath,
     skillCount: plugin.skillCount,
@@ -165,23 +161,6 @@ export function formatMarketplaceJson(marketplace: ZCodeMarketplaceSummaryData) 
     ...(marketplace.description ? { description: marketplace.description } : {}),
     ...(marketplace.lastUpdated ? { lastUpdated: marketplace.lastUpdated } : {}),
     ...(marketplace.refreshFailure ? { refreshFailure: marketplace.refreshFailure } : {}),
-  };
-}
-
-function formatHookDetailJson(hook: PluginListItem["hookDetails"][number]) {
-  return {
-    command: hook.command,
-    event: hook.event,
-    runnable: hook.runnable,
-    sourcePath: hook.sourcePath,
-    type: hook.type,
-    ...(hook.args ? { args: hook.args } : {}),
-    ...(hook.async !== undefined ? { async: hook.async } : {}),
-    ...(hook.matcher !== undefined ? { matcher: hook.matcher } : {}),
-    ...(hook.shell !== undefined ? { shell: hook.shell } : {}),
-    ...(hook.statusMessage !== undefined ? { statusMessage: hook.statusMessage } : {}),
-    ...(hook.timeout !== undefined ? { timeout: hook.timeout } : {}),
-    ...(hook.timeoutMs !== undefined ? { timeoutMs: hook.timeoutMs } : {}),
   };
 }
 

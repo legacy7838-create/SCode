@@ -83,10 +83,9 @@ const DEFAULT_SESSION_RESOURCE_CLOSE_TIMEOUT_MS = 6_000;
 
 interface SessionResourceCloseInput {
   beginShutdown: () => void;
-  closeBrowserSession: () => Promise<void>;
+  closeRuntimeSession: () => Promise<void>;
   closeExecution?: () => Promise<void> | void;
   closeMcp?: () => Promise<void> | void;
-  closeNodeReplBrowserBroker?: () => Promise<void> | void;
   closeSessionStore?: () => void;
   logger: Logger;
   timeoutMs?: number;
@@ -98,7 +97,6 @@ interface CreateSessionFacadeDeps {
    * run service 的 `close()`。缺席即本装配没有 dwf 端口（journal 窄化失败、测试装配）。
    */
   closeDynamicWorkflowRuns?: () => Promise<void>;
-  closeNodeReplBrowserBroker?: () => Promise<void> | undefined;
   configResult: ConfigResult;
   configuredMcpServers: Record<string, McpServerConfig>;
   configuredDefaultModelSelection?: ModelSelection;
@@ -263,9 +261,8 @@ export function createSessionFacade(deps: CreateSessionFacadeDeps): SessionFacad
   return {
     close: async () => {
       closePromise ??= (async () => {
-        // 关闭入口先阻止新调度并取消在飞 Memory Extraction，再等待取消链路收口。
+        // 关闭入口先阻止新调度并取消在飞工作，再等待取消链路收口。
         deps.runtime.beginShutdown();
-        await deps.runtime.drainMemoryExtractions(60_000);
         // 引擎归本 App 所有，所以关闭要主动停下它。
         // 位置是两个约束夹出来的：在 beginShutdown **之后**，结算带出的终态通知才会被丢掉
         // （background-notifications.ts 在 shuttingDown 时不入队），不会把正在关闭的会话的模型
@@ -293,13 +290,12 @@ export function createSessionFacade(deps: CreateSessionFacadeDeps): SessionFacad
             : undefined;
         await closeSessionResources({
           beginShutdown: () => deps.runtime.beginShutdown(),
-          closeBrowserSession: () => deps.runtime.closeBrowserSession(),
+          closeRuntimeSession: () => deps.runtime.closeSession(),
           closeExecution:
             deps.ownsExecutionPort && deps.executionPort.close
               ? () => deps.executionPort.close?.()
               : undefined,
           closeMcp: deps.ownsMcpPort && deps.mcpPort ? () => deps.mcpPort?.close() : undefined,
-          closeNodeReplBrowserBroker: deps.closeNodeReplBrowserBroker,
           closeSessionStore: closableSessionStore ? () => closableSessionStore.close() : undefined,
           logger: deps.logger,
         });
@@ -586,13 +582,12 @@ async function closeSessionResources(input: SessionResourceCloseInput): Promise<
     Math.trunc(input.timeoutMs ?? DEFAULT_SESSION_RESOURCE_CLOSE_TIMEOUT_MS),
   );
   const resources: Array<[name: string, close: (() => Promise<void> | void) | undefined]> = [
-    ["browser_session", input.closeBrowserSession],
+    ["runtime_session", input.closeRuntimeSession],
     ["execution", input.closeExecution],
     ["mcp", input.closeMcp],
-    ["node_repl_browser_broker", input.closeNodeReplBrowserBroker],
   ];
 
-  // 旧关闭链串行 await；Browser close 永不 settle 时，Execution/MCP 永远不会执行。
+  // 旧关闭链串行 await；任一资源 close 永不 settle 时，后续资源永远不会执行。
   // 各 owner 并行、独立带 deadline，任何一个失败都不能跳过其它资源。
   await Promise.all(
     resources.flatMap(([name, close]) =>

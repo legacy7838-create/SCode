@@ -237,23 +237,6 @@ const goalToolStrategy: ToolDisplayStrategy = {
   },
 };
 
-const nodeReplToolStrategy: ToolDisplayStrategy = {
-  matches(context) {
-    return context.identity.family === "node-repl";
-  },
-  build() {
-    // 展示语义由专用 renderer 从 title/result/error 中归一化；通用 Parameters、Result
-    // 和 kind 会暴露工具实现细节，并与专用结果区重复，因此这里全部关闭。
-    return {
-      inlinePreview: { type: "none" },
-      showSummaryFileLink: false,
-      showInput: false,
-      showOutput: false,
-      showKind: false,
-    };
-  },
-};
-
 const TOOL_DISPLAY_STRATEGIES: ToolDisplayStrategy[] = [
   diffToolStrategy,
   readToolStrategy,
@@ -261,7 +244,6 @@ const TOOL_DISPLAY_STRATEGIES: ToolDisplayStrategy[] = [
   executeToolStrategy,
   searchToolStrategy,
   goalToolStrategy,
-  nodeReplToolStrategy,
   genericImageStrategy,
 ];
 

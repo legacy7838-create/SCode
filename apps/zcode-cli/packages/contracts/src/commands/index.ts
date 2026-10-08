@@ -2,8 +2,16 @@
 // Custom Command Contracts - user-defined slash prompt commands
 // ============================================================
 
-import type { HookPluginContext } from "../hooks/index.js";
 import type { ExecutionContext, TraceContext } from "../tracing/tracer.js";
+
+/** 命令归属插件的运行时上下文（原 HookPluginContext，随 Hooks 产品移除后归命令所有）。 */
+export interface CommandPluginContext {
+  dataPath: string;
+  id: string;
+  name: string;
+  rootPath: string;
+  sourcePath?: string;
+}
 
 export type CustomCommandScope = "project" | "user" | "system" | "admin";
 
@@ -24,7 +32,7 @@ export type CustomCommandDiagnosticCode =
 
 export interface CustomCommandRoot {
   path: string;
-  plugin?: HookPluginContext;
+  plugin?: CommandPluginContext;
   scope: CustomCommandScope;
   source: CustomCommandSource;
   priority: number;
@@ -39,7 +47,7 @@ export interface CustomCommandMetadata {
   model?: string;
   name: string;
   path: string;
-  plugin?: HookPluginContext;
+  plugin?: CommandPluginContext;
   rootPath: string;
   scope: CustomCommandScope;
   skills: string[];

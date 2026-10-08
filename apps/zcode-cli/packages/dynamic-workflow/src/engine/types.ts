@@ -320,9 +320,8 @@ export interface WorkflowDriver {
   /**
    * run 结算后的资源释放：引擎在三条终态路径（complete / cancel / fail）记下 `run-settled`
    * 之后恰好调一次。生产 driver 在这里对每个 actor runtime 跑 app 关会话的同一条关闭链
-   * （runtime 的 `closeBrowserSession`：beginShutdown + node_repl 会话释放 + 浏览器会话关闭）
-   * 并清空会话表；在飞 ask 此刻已被 cancelAsk 中止。可选：fake / 纯 replay 装配没有可释放
-   * 的东西。
+   * （beginShutdown + node_repl 会话释放）并清空会话表；在飞 ask 此刻已被 cancelAsk 中止。
+   * 可选：fake / 纯 replay 装配没有可释放的东西。
    */
   dispose?(): void;
 }

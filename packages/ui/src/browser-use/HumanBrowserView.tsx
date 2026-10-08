@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, type ComponentProps } from "react";
 import {
-  DEFAULT_AGENT_BROWSER_VIEWPORT,
   DEFAULT_EMBEDDED_BROWSER_VIEWPORT_PREFERENCE,
   type EmbeddedBrowserViewportPreference,
 } from "@zcode/shared";
@@ -14,7 +13,7 @@ const HUMAN_BROWSER_VIEWPORT_PREFERENCE_WRITE_DELAY_MS = 200;
 type HumanBrowserViewProps = Omit<
   ComponentProps<typeof UnifiedBrowserView>,
   "initialHumanViewportPreference" | "onHumanViewportPreferenceChange"
-> & { agentOpened?: boolean };
+>;
 
 function clonePreference(
   preference: EmbeddedBrowserViewportPreference,
@@ -25,9 +24,9 @@ function clonePreference(
   };
 }
 
-/** Browser 显示边界：普通 human tab 持久化偏好，Agent popup 使用独立默认 viewport。 */
+/** Browser 显示边界：普通 human tab 持久化偏好。 */
 export function HumanBrowserView(props: HumanBrowserViewProps): React.JSX.Element {
-  const { agentOpened, ...unifiedProps } = props;
+  const unifiedProps = props;
   const { loading, settings, update } = useSettings();
   const initialPreferenceRef = useRef<EmbeddedBrowserViewportPreference | null>(null);
   const pendingPreferenceRef = useRef<EmbeddedBrowserViewportPreference | null>(null);
@@ -37,14 +36,7 @@ export function HumanBrowserView(props: HumanBrowserViewProps): React.JSX.Elemen
 
   if (!loading && !initialPreferenceRef.current) {
     initialPreferenceRef.current = clonePreference(
-      agentOpened
-        ? {
-            mode: "responsive",
-            viewport: { ...DEFAULT_AGENT_BROWSER_VIEWPORT },
-            zoom: "fit",
-          }
-        : (settings?.embeddedBrowserViewportPreference ??
-            DEFAULT_EMBEDDED_BROWSER_VIEWPORT_PREFERENCE),
+      settings?.embeddedBrowserViewportPreference ?? DEFAULT_EMBEDDED_BROWSER_VIEWPORT_PREFERENCE,
     );
   }
 
@@ -115,7 +107,7 @@ export function HumanBrowserView(props: HumanBrowserViewProps): React.JSX.Elemen
     <UnifiedBrowserView
       {...unifiedProps}
       initialHumanViewportPreference={initialPreference}
-      onHumanViewportPreferenceChange={agentOpened ? undefined : handlePreferenceChange}
+      onHumanViewportPreferenceChange={handlePreferenceChange}
     />
   );
 }

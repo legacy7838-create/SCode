@@ -9,7 +9,6 @@ import {
   parseSlashCommand,
 } from "./command-center.js";
 import { loadCliDotenv } from "./env.js";
-import { createCliHeadlessBrowserRuntime } from "./headless-browser.js";
 import {
   createHeadlessPermissionBroker,
   createHeadlessSessionObserver,
@@ -53,8 +52,6 @@ const wantsEventStream = (options: GlobalOptions): boolean =>
 const IMAGE_EXTENSIONS = new Set([".gif", ".jpeg", ".jpg", ".png", ".webp"]);
 const VIDEO_EXTENSIONS = new Set([".mp4", ".m4v", ".mov", ".webm", ".mkv", ".avi"]);
 const EMPTY_PROMPT_ERROR = "--prompt requires non-empty text.";
-const MEMORY_BENCH_DISABLED_ERROR =
-  "--memory-bench requires Project Memory to be enabled (features.memory=true and memory.use=true).";
 const TARGET_SELECTION_UNAVAILABLE_ERROR =
   "Headless goal commands cannot open an interactive replacement picker. Re-run with --target-replace or use /goal replace <objective>.";
 
@@ -111,8 +108,6 @@ export const runPrompt = async (
     | Awaited<ReturnType<Awaited<ReturnType<typeof loadBootstrapModule>>["createZCodeApp"]>>
     | undefined;
   let closePromise: Promise<void> | undefined;
-  let browserRuntime: ReturnType<typeof createCliHeadlessBrowserRuntime>;
-  let shutdownTelemetry: (() => Promise<void>) | undefined;
   // 常驻事件订阅的摘除句柄。声明在这里而不是 try 内，是为了让 finally 也能收口——
   // 任何早退（command-center 路径、抛错）都不能留下一个还在写 stdout 的 sink。
   let detachEvents: (() => void) | undefined;
@@ -132,11 +127,6 @@ export const runPrompt = async (
     const targetApp = app;
     closePromise ??= (async () => {
       await runCliCleanupWithTimeout(async () => targetApp?.close?.(), cleanupTimeoutMs);
-      // Browser process 由 CLI adapter 持有；App close 悬空或失败也必须继续回收 Chromium。
-      await runCliCleanupWithTimeout(async () => browserRuntime?.close(), cleanupTimeoutMs);
-      // Bug 根因：App.close 只结束 Session 并 flush，共享 OTLP Owner 过去没有进程级终态。
-      // 单次 prompt 是最外层生命周期，必须与 prepare 对称 shutdown。
-      await runCliCleanupWithTimeout(async () => shutdownTelemetry?.(), cleanupTimeoutMs);
       providerRegistryRuntime?.dispose();
     })();
     await closePromise;
@@ -180,17 +170,7 @@ export const runPrompt = async (
       stderr: ctx.stderr,
       stdout: ctx.stdout,
     });
-    const prepareTelemetry =
-      deps.prepareZCodeTelemetryEnv ?? bootstrapModule?.prepareZCodeTelemetryEnv;
-    if (prepareTelemetry) {
-      shutdownTelemetry = deps.shutdownZCodeTelemetry ?? bootstrapModule?.shutdownZCodeTelemetry;
-    }
-    const appEnv = prepareTelemetry
-      ? await prepareTelemetry(env, {
-          cliVersion: version,
-          productVersion: env.ZCODE_APP_VERSION,
-        })
-      : env;
+    const appEnv = env;
     const startProviderRegistryRuntime =
       deps.startProcessProviderRegistryRuntime ??
       bootstrapModule?.startProcessProviderRegistryRuntime;
@@ -208,9 +188,7 @@ export const runPrompt = async (
             },
           },
     );
-    browserRuntime = createCliHeadlessBrowserRuntime(options, deps);
     app = await createApp({
-      browserControlPort: browserRuntime?.browserControlPort,
       env: appEnv,
       // headless 没有交互审批面，core 因此退到 deny broker，于是 CreateWorkflow 的
       // alwaysAsk gate 在 -p 下**必然被拒**（"No permission client configured"）。
@@ -231,7 +209,6 @@ export const runPrompt = async (
         ...(forceMcs ? { midConversationSystem: { mode: "force" as const } } : {}),
         // headless 按本次调用显式开关；不改 core 缺省值，保持 TUI 与 stdio 的既有策略。
         dynamicWorkflowEnabled: options.enableWorkflow === true,
-        memory: { extractionEnabled: options.memoryBench === true },
         modelStreaming: "on",
         presentationSurface,
         workingDirectory,
@@ -250,9 +227,6 @@ export const runPrompt = async (
       throw abortController.signal.reason;
     }
     traceId = app.traceId;
-    if (options.memoryBench && !app.runtime.isProjectMemoryEnabled()) {
-      throw new Error(MEMORY_BENCH_DISABLED_ERROR);
-    }
 
     // 按**可解析性**分流，不按拼写。
     //
@@ -320,11 +294,6 @@ export const runPrompt = async (
         signal: abortController.signal,
       });
     }
-    // bench 的正常等待必须先于 close；close 会取消 Extraction，且有独立的清理时限。
-    if (options.memoryBench) {
-      await app.runtime.drainMemoryExtractions(null);
-      abortController.signal.throwIfAborted();
-    }
     // 结果行之后绝不能再冒出事件行——stream-json 的 result 是流的终止符。
     stopObservingEvents();
     // `response` 取**最后**一个回合的文本：工作流结算后的那次总结才是答案。
@@ -337,12 +306,6 @@ export const runPrompt = async (
     // 刻意在两处 summary 里各自内联这个条件展开而不是共享一个变量：展开一个联合类型的
     // 变量会让 TS 把键推成可选（`turnResponses?: string[]`），而 formatJson 只收 JsonValue。
     const multiTurn = turnResponses.length > 1;
-    const hookTrustDiagnostic = await resolveHeadlessWorkspaceHookTrustDiagnostic({
-      bootstrapModule,
-      deps,
-      events: result.events,
-      workingDirectory,
-    });
 
     if (streamsEvents) {
       // Closing summary, on its own line and tagged so it can be told apart
@@ -380,26 +343,6 @@ export const runPrompt = async (
           ...(multiTurn ? { turnResponses } : {}),
           ...(result.usage ? { usage: { ...result.usage } } : {}),
           eventCount: result.events.length,
-          ...(hookTrustDiagnostic
-            ? {
-                workspaceHookTrust: {
-                  workspacePath: hookTrustDiagnostic.workspacePath,
-                  workspaceIdentity: hookTrustDiagnostic.workspaceIdentity,
-                  bundleDigest: hookTrustDiagnostic.bundleDigest,
-                  reasonCode: hookTrustDiagnostic.reasonCode,
-                  items: hookTrustDiagnostic.items.map((item) => ({
-                    reviewItemId: item.reviewItemId,
-                    event: item.event,
-                    matcher: item.matcher,
-                    displayCommand: item.displayCommand,
-                    sourcePath: item.sourcePath,
-                    configuredEnabled: item.configuredEnabled,
-                    hookDeclarationDigest: item.hookDeclarationDigest,
-                    trustState: item.trustState,
-                  })),
-                },
-              }
-            : {}),
           projection: {
             status: result.projection.status,
             turnCount: result.projection.turnCount,
@@ -412,7 +355,6 @@ export const runPrompt = async (
       return 0;
     }
 
-    if (hookTrustDiagnostic) writeHeadlessWorkspaceHookTrustDiagnostic(ctx, hookTrustDiagnostic);
     // 每个回合的文本按到达序打印，所以最后一段自然就是结算后的总结。
     // 单回合时这与 `${result.response}\n` 逐字节相同。
     ctx.stdout.write(`${turnResponses.join("\n\n")}\n`);
@@ -532,11 +474,6 @@ async function runPromptCommandCenterCommand(
     return 1;
   }
 
-  if (options.memoryBench) {
-    await app.runtime.drainMemoryExtractions(null);
-    abortSignal.throwIfAborted();
-  }
-
   if (wantsJsonSummary(options)) {
     ctx.stdout.write(
       formatJson({
@@ -577,66 +514,4 @@ async function loadCustomCommandForPrompt(deps: RunDependencies, name: string) {
   });
 }
 
-const HEADLESS_WORKSPACE_HOOK_BLOCK_REASONS = [
-  "workspace_hooks_pending_trust",
-  "workspace_hooks_require_trust_capable_host",
-  "workspace_hooks_feature_disabled",
-] as const;
-type HeadlessWorkspaceHookBlockReason = (typeof HEADLESS_WORKSPACE_HOOK_BLOCK_REASONS)[number];
-
-async function resolveHeadlessWorkspaceHookTrustDiagnostic(input: {
-  bootstrapModule: Awaited<ReturnType<typeof loadBootstrapModule>> | undefined;
-  deps: RunDependencies;
-  events: readonly unknown[];
-  workingDirectory: string;
-}) {
-  let reasonCode: HeadlessWorkspaceHookBlockReason | undefined;
-  for (const event of input.events) {
-    if (!event || typeof event !== "object") continue;
-    const value = event as {
-      type?: string;
-      payload?: { errorCode?: string; descriptor?: { sourceKind?: string } };
-    };
-    if (value.type !== "hook_run_blocked" || value.payload?.descriptor?.sourceKind !== "project") {
-      continue;
-    }
-    const errorCode = value.payload.errorCode;
-    if (isHeadlessWorkspaceHookBlockReason(errorCode)) {
-      reasonCode = errorCode;
-      break;
-    }
-  }
-  if (!reasonCode) return undefined;
-  const inspect =
-    input.deps.inspectWorkspaceHookTrust ?? input.bootstrapModule?.inspectWorkspaceHookTrust;
-  if (!inspect) return undefined;
-  const status = await inspect({
-    workspacePath: input.workingDirectory,
-    ...(input.deps.userConfigPath ? { userConfigPath: input.deps.userConfigPath } : {}),
-  });
-  return { ...status, reasonCode };
-}
-
-function isHeadlessWorkspaceHookBlockReason(
-  value: string | undefined,
-): value is HeadlessWorkspaceHookBlockReason {
-  return HEADLESS_WORKSPACE_HOOK_BLOCK_REASONS.some((candidate) => candidate === value);
-}
-
-function writeHeadlessWorkspaceHookTrustDiagnostic(
-  ctx: RunContext,
-  status: Awaited<ReturnType<NonNullable<RunDependencies["inspectWorkspaceHookTrust"]>>>,
-): void {
-  ctx.stderr.write(
-    [
-      `Workspace Hooks skipped: ${status.reasonCode}`,
-      `workspace: ${status.workspaceIdentity}`,
-      `bundle: ${status.bundleDigest ?? "none"}`,
-      ...status.items
-        .filter((item) => item.configuredEnabled && item.trustState !== "trusted_persistent")
-        .map((item) => `pending digest: ${item.hookDeclarationDigest}`),
-      `Review with: zcode hooks trust review --workspace ${JSON.stringify(status.workspaceIdentity)}`,
-    ].join("\n") + "\n",
-  );
-}
 import { createCliProviderRefreshReporter } from "./provider-runtime-env.js";

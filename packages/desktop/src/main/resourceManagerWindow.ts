@@ -33,7 +33,6 @@ import {
 
 const preloadPath = join(import.meta.dirname, "../preload/resourceManager.cjs");
 const RESOURCE_MANAGER_WINDOW_TITLE = "Resource Manager";
-const BROWSER_USE_PLUGIN_NAME = "browser-use";
 
 /** 系统整机 CPU：两次 os.cpus() 之间 busy / total 的差分 */
 interface SystemCpuMeter {
@@ -237,13 +236,6 @@ export function unregisterHostAgentProcess(label: string, pid: number): void {
   }
 }
 
-/** browser-use 的浏览器 guest 是 main 里的 WebContentsView，其 renderer 归内置插件 browser-use */
-let browserUseGuestWebContentsIdsProvider: () => Iterable<number> = () => [];
-
-export function setBrowserUseGuestWebContentsIdsProvider(provider: () => Iterable<number>): void {
-  browserUseGuestWebContentsIdsProvider = provider;
-}
-
 // ---------------------------------------------------------------------------
 // 窗口
 // ---------------------------------------------------------------------------
@@ -373,27 +365,12 @@ function collectElectronProcesses(): ResourceUsageProcess[] {
     );
   }
 
-  // browser-use 的浏览器 guest：renderer 进程但归内置插件。
-  const browserUseGuestIds = new Set(browserUseGuestWebContentsIdsProvider());
   for (const contents of electronWebContents.getAllWebContents()) {
     if (contents.isDestroyed()) continue;
     const rendererPid = contents.getOSProcessId();
     if (rendererPid <= 0 || assigned.has(rendererPid)) continue;
     const { cpuPercent, memoryBytes } = metricsOf(rendererPid);
     const name = buildAuxiliaryRendererName(contents);
-    if (browserUseGuestIds.has(contents.id)) {
-      push({
-        pid: rendererPid,
-        name,
-        category: "builtin-plugin",
-        groupKey: `builtin:${BROWSER_USE_PLUGIN_NAME}`,
-        groupLabel: BROWSER_USE_PLUGIN_NAME,
-        cpuPercent,
-        memoryBytes,
-        sampled: true,
-      });
-      continue;
-    }
     push(baseProcess(rendererPid, name, "renderer", cpuPercent, memoryBytes));
   }
 

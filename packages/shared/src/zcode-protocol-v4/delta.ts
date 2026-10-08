@@ -25,7 +25,6 @@ import {
   sessionModelTransitionSchema,
   sessionUsageStateSchema,
   subagentProjectionStateSchema,
-  workspaceHookAdmissionStateSchema,
 } from "./snapshot.js";
 import {
   WORKFLOW_RUNS_LIMITS,
@@ -56,8 +55,6 @@ export const statePatchSchema = z.object({
   workflowRuns: workflowRunsStateSchema.optional(),
   goal: goalStateSchema.nullable().optional(),
   plan: planStateSchema.nullable().optional(),
-  // 软门禁：null = pending 清零(提示条消失);对象 = 待审核状态更新。
-  workspaceHookAdmission: workspaceHookAdmissionStateSchema.nullable().optional(),
 });
 export type StatePatch = z.infer<typeof statePatchSchema>;
 

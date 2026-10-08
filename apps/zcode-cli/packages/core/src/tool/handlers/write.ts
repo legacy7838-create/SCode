@@ -17,7 +17,7 @@ import {
   type TraceContext,
 } from "@zcode/contracts";
 import { createStructuredPatch } from "../diff.js";
-import { stampMemoryOriginSessionId } from "../../memory/origin-session.js";
+
 import { resolveWorkspacePath } from "../path-policy.js";
 import {
   createReadFileStateKey,
@@ -115,12 +115,7 @@ const writeHandler: ToolHandler = async (input, context) => {
     }
   }
 
-  const contentToWrite = stampMemoryOriginSessionId({
-    content,
-    filePath,
-    memoryRoot: context.memoryRoot,
-    sessionId: context.sessionId,
-  });
+  const contentToWrite = content;
   const writeStartedAt = Date.now();
   const writeResult = await fileSystemPort.writeTextFile(
     {

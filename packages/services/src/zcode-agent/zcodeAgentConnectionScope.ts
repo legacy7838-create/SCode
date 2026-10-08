@@ -216,7 +216,6 @@ function createHello(context: ZCodeAgentV4ConnectionContext): HelloMessage {
       localTerminal: continuous,
       binaryFrames: false,
       compression: "none",
-      workspaceHookReview: true,
       independentPlanState: true,
       // 本 Host 会转发 `workflowRun.*` 键级增量；客户端见到它才能在 clientHello 里回声明
       // （那个 capabilities 是 .strict() 的，反过来会让老 Host 握不上手）。
@@ -886,14 +885,6 @@ export function createZCodeAgentConnectionScope(
       return base.onDynamicConversationTelemetryFact(
         withTrustedConnection(workspaceTarget(params), forwardedConnection(params)),
       );
-    },
-    onDynamicCuaPermissionObservation() {
-      assertOpen();
-      // 权限弹窗是本地桌面副作用；手机 replay attachment 只能消费可恢复对话事实。
-      if (role !== "terminal-client" || context.clientMode !== "desktop-continuous") {
-        return RpcEvent.None;
-      }
-      return base.onDynamicCuaPermissionObservation();
     },
     onDynamicProcessResourceSample() {
       assertOpen();

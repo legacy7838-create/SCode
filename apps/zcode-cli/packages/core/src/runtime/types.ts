@@ -17,7 +17,6 @@ import type {
   ResolvedUserInstructions,
   StableForkGoalBoundaryMetadata,
   StableForkTargetMetadata,
-  WorkspaceHookBundleSnapshot,
   WorkspaceId,
 } from "@zcode/contracts";
 import type { ZCodeProviderAccountAccess } from "@zcode/shared";
@@ -68,7 +67,6 @@ import type {
   DynamicWorkflowSnippetPort,
   ModelCatalogPort,
   ExecutionPort,
-  BrowserControlPort,
   ExecutionShellSelection,
   AutomationPort,
   OffPeakPort,
@@ -76,7 +74,6 @@ import type {
   HttpClientPort,
   ImageProcessorPort,
   PdfDocumentPort,
-  HooksRuntimeConfig,
   SkillPort,
   McpPort,
   McpServerConfig,
@@ -109,7 +106,6 @@ import type { AgentProfile } from "../subagent/profile.js";
 import type { RuntimeTaskRegistry } from "../runtime-task/registry.js";
 import type { BashTimeoutPolicy } from "../tool/bash-timeout-policy.js";
 import type { PresentationSurface } from "../context/types.js";
-import type { WorkspaceHookRuntimeAdmissionPort } from "../hooks/workspace-hook-runtime-admission.js";
 
 // -----------------------------------------------
 // Agent Runtime
@@ -161,27 +157,13 @@ export interface AgentRuntimeConfig {
      * 由 bootstrap 根据 ZCode 官方插件启停推导，不由普通插件 manifest 自声明。
      */
     nodeRepl?: boolean;
-    /**
-     * 是否允许 node_repl 注入 agent.browsers。还需要宿主提供 browserControlPort。
-     */
-    browserUse?: boolean;
     /** 是否把 CUA broker 凭据注入共享 node_repl；不代表注册独立 CUA MCP。 */
     computerUse?: boolean;
-    /**
-     * 官方 browser-use plugin 的 docs 资产目录。由 bootstrap 从 plugin metadata.rootPath 推导，
-     * 不属于 plugin manifest schema。
-     */
-    browserDocumentationRoot?: string;
   };
   modelAnomalyGuard?: Partial<ModelAnomalyGuardConfig>;
   mcp?: {
     enabled?: boolean;
     servers?: Record<string, McpServerConfig>;
-    /**
-     * Process-local provenance supplied by bootstrap after resolving bundled
-     * official plugins. Never derive this list from serialized MCP config.
-     */
-    trustedOfficialCuaServerNames?: readonly string[];
   };
   /**
    * Session 冻结的 Plugin 身份 catalog。
@@ -189,12 +171,10 @@ export interface AgentRuntimeConfig {
    * 用于 turn start 解析 `plugin://` 引用并与 live inventory 取交集。
    */
   pluginReferenceCatalog?: PluginReferenceCatalog;
-  hooks?: HooksRuntimeConfig;
   bashShellSelection?: ExecutionShellSelection | undefined;
   embeddedSearchBackend?: EmbeddedSearchBackend;
   /** 根 Session runtime 创建时固定；false 只关闭 Bash 的 bfs/ugrep prelude。 */
   nativeSearchEnhancementsEnabled?: boolean;
-  memory?: MemoryRuntimeConfig;
   /** 历史恢复允许未绑定；只有完整选择才能创建本轮执行 Model。 */
   modelSelection?: ModelSelection;
   titleGeneration?: {
@@ -296,16 +276,6 @@ export interface EnqueueSubagentMessageInput {
   traceContext: TraceContext;
 }
 
-export interface MemoryRuntimeConfig {
-  cliStorageRoot?: string;
-  enabled?: boolean;
-  /** 是否调度成功 Main turn 后的自动 Extraction；缺省按 true 处理。 */
-  extractionEnabled?: boolean;
-  storageRoot?: string;
-  use?: boolean;
-  workspaceIdentity?: string;
-}
-
 export interface AgentRuntimeDeps {
   agentTelemetry?: AgentExecutionTelemetryPort;
   agentTelemetryCausation?: AgentTelemetryCausation;
@@ -325,11 +295,7 @@ export interface AgentRuntimeDeps {
   toolRegistry?: ToolRegistry;
   toolExecutor?: ToolExecutor;
   hookRunner?: HookRunner;
-  workspaceHookAdmission?: WorkspaceHookRuntimeAdmissionPort;
-  workspaceHookSnapshot?: WorkspaceHookBundleSnapshot;
   executionPort?: ExecutionPort;
-  /** browser-use 控制端口；透传到 ToolExecutionContext.browserControlPort 供 node_repl 使用。 */
-  browserControlPort?: BrowserControlPort;
   fileSystemPort?: FileSystemPort;
   httpClientPort?: HttpClientPort;
   imageProcessorPort?: ImageProcessorPort;
@@ -374,7 +340,6 @@ export interface AgentRuntimeDeps {
   contextBuilder?: ContextBuilder; // Optional, will be created from config
   now?: () => Date;
   isRemoteWorkspace?: () => boolean;
-  memoryRoot?: string;
 }
 
 export interface RuntimeModelFactoryInput {
@@ -423,8 +388,6 @@ export interface TurnResult {
  * 也不会成为 Session Selection 的第二份来源。
  */
 export interface ModelExecutionContext {
-  /** 仅当前 Turn 跳过自动 Project Memory Extraction；不修改 Session Memory 配置。 */
-  memoryExtraction?: "skip";
   selectionScope: "execution";
   requestDependencies?: ModelRequestDependencies;
   subagents?: {
@@ -435,10 +398,6 @@ export interface ModelExecutionContext {
 
 export interface ExecuteTurnOptionsBase {
   abortSignal?: AbortSignal;
-  browserAmbientContext?: {
-    tabCount: number;
-    currentUrl?: string;
-  };
   continueActiveTargetAfterTurn?: boolean;
   displayInput?: string;
   /**

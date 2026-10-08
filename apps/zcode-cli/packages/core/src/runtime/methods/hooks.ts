@@ -25,7 +25,6 @@ export async function runSessionStartHooks(
   model?: Pick<Model, "providerId" | "modelId">,
 ): Promise<HookRunResult> {
   if (this.sessionStartHookRan) return EMPTY_HOOK_RESULT;
-  await this.workspaceHookAdmission?.activate(source, signal);
   this.sessionStartHookRan = true;
   if (!this.hookRunner) return EMPTY_HOOK_RESULT;
 

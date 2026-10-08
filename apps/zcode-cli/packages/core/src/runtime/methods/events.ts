@@ -1,4 +1,3 @@
-import type { WorkspaceId } from "@zcode/contracts";
 import { buildExecutionStateEntry, readRuntimeExecutionState } from "../execution-state.js";
 import {
   SESSION_ENTRY_TARGET_COMPLETION_VERIFICATION,
@@ -579,13 +578,10 @@ export async function ensureSessionPersisted(
     // workspaceKey 查 provider registry 时就会落到另一个身份。持久化必须保留协议入口路径。
     const persistedWorkspacePath = this.config.workspacePath ?? directory;
     const title = titleFromInput(input);
-    const workspaceIdentity = this.config.memory?.workspaceIdentity?.trim();
     await this.sessionStore.createSession({
       id: this.sessionId,
       projectID: projectIdFromDirectory(directory),
-      // Memory workspaceIdentity 是上游提供的不透明隔离键。这里只做类型品牌化，
-      // 不能调用会改写字符串的 ID 生成器，否则恢复后的 Memory root 会发生漂移。
-      workspaceID: this.config.workspaceIdentity ?? (workspaceIdentity as WorkspaceId | undefined),
+      workspaceID: this.config.workspaceIdentity,
       parentID: this.config.parentSessionId,
       traceID: traceContext.traceId,
       taskType: this.config.taskType,

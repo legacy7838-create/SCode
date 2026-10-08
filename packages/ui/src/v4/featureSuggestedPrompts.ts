@@ -30,78 +30,6 @@ export const featureSuggestedPrompts: FeatureRecommendedPrompt[] = [
     },
   },
   {
-    id: "feature-recvvsQoVaqVGC",
-    mode: "office",
-    iconUrl: `${ASSETS}/browser-use/icon.png`,
-    iconStyle: "plugin",
-    label: {
-      cn: "每天推送我关注方向的最新新闻并生成简报",
-      en: "Send me a daily briefing on news I care about",
-    },
-    prompt: {
-      cn: "帮我设置一个每天上午 9 点运行的定时任务：使用 [@浏览器操作](plugin://browser-use@zcode-plugins-official) 浏览可访问的公开新闻网站，收集过去 24 小时内与 [关注方向] 相关的重要新闻，去重后生成一份简短简报并推送给我。每条写清事件发生时间、新闻发布时间、来源链接和为什么值得关注；没有可信的新消息就如实说明，不要重复昨天的内容。",
-      en: "Set up a scheduled task for 9 a.m. every day. Use [@Browser Use](plugin://browser-use@zcode-plugins-official) to check accessible public news sites for important news about [topic of interest] from the past 24 hours, remove duplicates, and send me a brief digest. Include event and publication times, source links, and why each item matters. Say when there is no credible new item and do not repeat yesterday’s news.",
-    },
-    plugin: {
-      stableId: "browser-use@zcode-plugins-official",
-      label: { cn: "浏览器操作", en: "Browser Use" },
-    },
-  },
-  {
-    id: "feature-office-browser-business-reading",
-    mode: "office",
-    iconUrl: `${ASSETS}/browser-use/icon.png`,
-    iconStyle: "plugin",
-    label: {
-      cn: "帮我挑出今天值得读的三篇商业文章",
-      en: "Find three business stories worth reading today",
-    },
-    prompt: {
-      cn: "请使用 [@浏览器操作](plugin://browser-use@zcode-plugins-official) 浏览界面新闻等国内公开商业资讯网站，打开文章正文，选出今天最值得职场人阅读的三篇商业文章。每篇告诉我核心信息、推荐理由、发布时间和原文链接。跳过重复报道、付费文章和需要登录的页面；如果合适的不足三篇，就按实际数量推荐。",
-      en: "Use [@Browser Use](plugin://browser-use@zcode-plugins-official) to browse publicly accessible business coverage from The Guardian and other international news sites. Open the full articles and pick three worth reading today. For each, give me the key information, why it is worth my time, the publication time, and the original link. Skip duplicate coverage, paywalled articles, and pages requiring sign-in. Recommend fewer than three if necessary.",
-    },
-    plugin: {
-      stableId: "browser-use@zcode-plugins-official",
-      label: { cn: "浏览器操作", en: "Browser Use" },
-    },
-  },
-  {
-    id: "feature-office-browser-work-reading",
-    mode: "office",
-    iconUrl: `${ASSETS}/browser-use/icon.png`,
-    iconStyle: "plugin",
-    label: {
-      cn: "帮我找几篇能用在工作中的好文章",
-      en: "Find practical articles I can use at work",
-    },
-    prompt: {
-      cn: "请使用 [@浏览器操作](plugin://browser-use@zcode-plugins-official) 查看人人都是产品经理的公开文章，从最近发布的内容中挑三篇对日常办公、沟通协作或提升工作效率有具体帮助的文章。打开正文后，分别说明适合谁读、有什么可借鉴的做法、应用时要注意什么，并附原文链接。不要只根据标题推荐，也不要选择需要登录或付费才能读的内容。",
-      en: "Use [@Browser Use](plugin://browser-use@zcode-plugins-official) to read recent, publicly accessible articles from Microsoft WorkLab and Atlassian Team Playbook. Pick three with concrete ideas for everyday work or collaboration. Read each page before explaining who it helps, what I could try, what to watch out for, and where to read the original. Do not recommend from titles alone or include pages that require sign-in or payment.",
-    },
-    plugin: {
-      stableId: "browser-use@zcode-plugins-official",
-      label: { cn: "浏览器操作", en: "Browser Use" },
-    },
-  },
-  {
-    id: "feature-office-browser-economic-data",
-    mode: "office",
-    iconUrl: `${ASSETS}/browser-use/icon.png`,
-    iconStyle: "plugin",
-    label: {
-      cn: "帮我看懂最近公布的重要经济数据",
-      en: "Explain the latest economic data in plain language",
-    },
-    prompt: {
-      cn: "请使用 [@浏览器操作](plugin://browser-use@zcode-plugins-official) 查看国家统计局公开数据中最近一次发布的主要经济信息。选出与消费、就业或企业经营相关的三项，说明统计时间、数据变化和普通办公人员为什么可能需要关注，附官方原文链接。把数据事实与自己的解读分开；如果本周没有新数据，就明确写出实际发布日期。",
-      en: "Use [@Browser Use](plugin://browser-use@zcode-plugins-official) to review the latest publicly released OECD economic data. Choose three indicators relevant to consumers, employment, or business activity. Explain the reporting period, what changed, and why someone working in an office might care, with links to the original OECD releases. Separate reported facts from your interpretation and state the actual release dates if there is nothing new this week.",
-    },
-    plugin: {
-      stableId: "browser-use@zcode-plugins-official",
-      label: { cn: "浏览器操作", en: "Browser Use" },
-    },
-  },
-  {
     id: "feature-recvvsPdvcUwzl",
     mode: "office",
     iconUrl: presentationsIcon,
@@ -498,24 +426,6 @@ export const featureSuggestedPrompts: FeatureRecommendedPrompt[] = [
     prompt: {
       cn: "帮我设置一个闲时任务，以 [目标仓库] 这个本地仓库为任务项目，全面检查关键用户流程和跨模块调用，找出可能导致功能错误、兼容性问题或数据丢失的缺陷。对高风险问题尽量复现并核对相关测试，最后按严重程度给我一份详尽报告，包含触发条件、代码位置、证据、修复建议及未验证假设。先不要大范围修改代码；如果仓库未作为本地项目打开，先让我选择它。",
       en: "Set up an idle-time task for the local [target repository]. Review important user journeys and cross-module calls for functional, compatibility, or data-loss issues. Reproduce high-risk findings where possible, check relevant tests, and deliver a detailed severity-ranked report with triggers, code locations, evidence, suggested fixes, and unverified hypotheses. Avoid broad code changes. Ask me to select the repository if it is not open.",
-    },
-  },
-  {
-    id: "feature-coding-browser-deployed",
-    mode: "coding",
-    iconUrl: `${ASSETS}/browser-use/icon.png`,
-    iconStyle: "plugin",
-    label: {
-      cn: "帮我检查刚部署的网站有没有明显错误",
-      en: "Check a deployed website for obvious problems",
-    },
-    prompt: {
-      cn: "请使用 [@浏览器操作](plugin://browser-use@zcode-plugins-official) 打开 [测试地址]，像首次访问的用户一样检查首页导航、主要入口和一个无需登录即可完成的流程。找出无法打开的页面、失效操作或明显的内容与布局错误，附复现步骤、页面地址和截图。不要注册、付款或提交真实信息；登录后的部分标为未覆盖。",
-      en: "Use [@Browser Use](plugin://browser-use@zcode-plugins-official) to open [test URL] and check its navigation, main entry points, and one flow available without signing in. Report broken pages, controls, content, or layout with reproduction steps, URLs, and screenshots. Do not register, pay, or submit real information; mark signed-in areas as not covered.",
-    },
-    plugin: {
-      stableId: "browser-use@zcode-plugins-official",
-      label: { cn: "浏览器操作", en: "Browser Use" },
     },
   },
   {

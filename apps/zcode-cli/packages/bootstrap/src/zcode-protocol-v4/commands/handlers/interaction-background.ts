@@ -78,77 +78,6 @@ async function snoozeInteractionAutoResolution(
   return undefined;
 }
 
-class V4WorkspaceHookReviewRejectedError extends Error {
-  constructor(readonly reasonCode: string) {
-    super(`Workspace Hook review command rejected: ${reasonCode}`);
-    this.name = "V4WorkspaceHookReviewRejectedError";
-  }
-}
-
-async function respondWorkspaceHookReview(
-  host: V4CommandCoreHost,
-  envelope: CommandEnvelope,
-): Promise<CommandResult | undefined> {
-  const payload = envelope.payload as CommandPayloadMap["respondWorkspaceHookReview"];
-  const record = requireWorkspaceHookReviewRecord(host, envelope, payload.sessionId);
-  const result = await record.app.respondWorkspaceHookReview(payload);
-  if (!result.accepted) throw new V4WorkspaceHookReviewRejectedError(result.reasonCode);
-  return undefined;
-}
-
-async function toggleWorkspaceHookReviewItem(
-  host: V4CommandCoreHost,
-  envelope: CommandEnvelope,
-): Promise<CommandResult | undefined> {
-  const payload = envelope.payload as CommandPayloadMap["toggleWorkspaceHookReviewItem"];
-  const record = requireWorkspaceHookReviewRecord(host, envelope, payload.sessionId);
-  const result = await record.app.toggleWorkspaceHookReviewItem(payload);
-  if (!result.accepted) throw new V4WorkspaceHookReviewRejectedError(result.reasonCode);
-  return undefined;
-}
-
-async function revokeWorkspaceHookTrust(
-  host: V4CommandCoreHost,
-  envelope: CommandEnvelope,
-): Promise<CommandResult | undefined> {
-  const payload = envelope.payload as CommandPayloadMap["revokeWorkspaceHookTrust"];
-  const record = requireWorkspaceHookReviewRecord(host, envelope, payload.sessionId);
-  const result = await record.app.revokeWorkspaceHookTrust(payload);
-  if (!result.accepted) throw new V4WorkspaceHookReviewRejectedError(result.reasonCode);
-  return undefined;
-}
-
-/**
- * 软门禁:按需开审核 flow。
- *
- * 用户点击「去审核」时调用。经 controller.requestReview → openOrReuseFlow +
- * superviseFlow。已有活跃 flow 时幂等复用。无 pending 项时为安全 no-op。
- */
-async function requestWorkspaceHookReview(
-  host: V4CommandCoreHost,
-  envelope: CommandEnvelope,
-): Promise<CommandResult | undefined> {
-  const payload = envelope.payload as CommandPayloadMap["requestWorkspaceHookReview"];
-  const record = requireWorkspaceHookReviewRecord(host, envelope, payload.sessionId);
-  const result = await record.app.requestWorkspaceHookReview({
-    workspaceIdentity: payload.workspaceIdentity,
-    bundleDigest: payload.bundleDigest,
-  });
-  if (!result.accepted) throw new V4WorkspaceHookReviewRejectedError(result.reasonCode);
-  return undefined;
-}
-
-function requireWorkspaceHookReviewRecord(
-  host: V4CommandCoreHost,
-  envelope: CommandEnvelope,
-  payloadSessionId: string,
-) {
-  if (envelope.sessionId !== payloadSessionId) {
-    throw new V4WorkspaceHookReviewRejectedError("workspace_hooks_snapshot_mismatch");
-  }
-  return requireRecord(host, envelope.sessionId);
-}
-
 /**
  * cancelBackgroundWork 的业务拒绝：core 明确回「没有取消任何东西」（reason 在场）。
  *
@@ -309,10 +238,6 @@ async function amendWorkflowRunSettings(
 
 export const interactionBackgroundHandlers = {
   resolveInteraction,
-  respondWorkspaceHookReview,
-  toggleWorkspaceHookReviewItem,
-  revokeWorkspaceHookTrust,
-  requestWorkspaceHookReview,
   snoozeInteractionAutoResolution,
   cancelBackgroundWork,
   resumeWorkflowRun,

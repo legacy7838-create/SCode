@@ -1,25 +1,13 @@
 // Config Factory - Load and merge all config sources
 
-import { resolve } from "node:path";
 import type {
   ConfigPort,
-  HookConfigSource,
   LoggerFactory,
   McpServerConfig,
   RuntimeConfig,
   RuntimeConfigPatch,
-  WorkspaceHookBundleSnapshot,
 } from "@zcode/contracts";
-import {
-  ConfigScope,
-  DefaultRuntimeConfig,
-  createWorkspaceHookBundleSnapshot,
-} from "@zcode/contracts";
-import {
-  buildWorkspaceHookBundleSnapshot,
-  resolveWorkspaceHookRuntimeRoot,
-  type WorkspaceHookRuntimeRoot,
-} from "@zcode/shared/workspace-hook-discovery";
+import { ConfigScope, DefaultRuntimeConfig } from "@zcode/contracts";
 import { createConfigPort } from "./index.js";
 import { loadFileConfig, getDefaultConfigPath, type LoadedConfig } from "./file-config.adapter.js";
 import { parseEnvConfig } from "./env-config.adapter.js";
@@ -40,8 +28,6 @@ export interface ConfigFactoryOptions {
   projectConfigPath?: string;
   /** Working directory used to discover project config files */
   workingDirectory?: string;
-  /** Opaque workspace identity supplied by the existing Host resolver; local callers fall back to workspacePath. */
-  workspaceIdentity?: string;
   /** Environment variables (default: process.env) */
   env?: Record<string, string | undefined>;
   /** CLI overrides (highest priority) */
@@ -76,15 +62,6 @@ export interface ConfigResult {
       mcpServerNames: string[];
       uiLocalePath: string | undefined;
       uiThemePath: string | undefined;
-      workspaceHookSnapshot?: WorkspaceHookBundleSnapshot;
-      /**
-       * 审核请求与「审核中 toggle」曾各自推导 runtimeRoot（前者遍历
-       * default/user/project/env/cli 全部层，后者只读单层 runtimeConfig.hooks），
-       * 两者只要有一处不同就产生不同 bundleDigest，toggle 会被误判为
-       * workspace_hooks_snapshot_mismatch。这里导出快照实际使用的 runtimeRoot，
-       * 让下游复用同一个值，把一致性变成结构性约束而不是巧合。
-       */
-      workspaceHookRuntimeRoot?: WorkspaceHookRuntimeRoot;
     };
     plugins: PluginConfigSources;
     mcp: {
@@ -138,32 +115,18 @@ export function createConfig(options: ConfigFactoryOptions = {}): ConfigResult {
     : loadFileConfig(options.userConfigPath);
 
   if (userConfigResult.loaded) {
-    configs.push(
-      createPrioritizedConfig(
-        withHookConfigSource(userConfigResult.config, {
-          kind: "user",
-          path: userConfigResult.path,
-        }),
-        ConfigScope.User,
-      ),
-    );
+    configs.push(createPrioritizedConfig(userConfigResult.config, ConfigScope.User));
   }
 
   // 3. Project config files
   const discoveredProjectConfigs: ProjectConfigDiscovery = options.workingDirectory
     ? loadProjectConfigs(options.workingDirectory, options.projectConfigPath)
     : options.projectConfigPath
-      ? summarizeProjectConfigs([
-          loadProjectConfigFile(options.projectConfigPath, {
-            discoveryOrder: 0,
-            explicitProjectConfig: true,
-          }),
-        ])
+      ? summarizeProjectConfigs([loadProjectConfigFile(options.projectConfigPath)])
       : summarizeProjectConfigs([]);
-  // explicit 配置曾在 auto-discovery 之后手工追加并自行编号，绕过 shared
-  // canonical-path dedup；同一文件会进入 snapshot 两次并使既有 Trust 全部 stale。
-  // 修法：有 workspace 时由 loadProjectConfigs 统一走 discoverWorkspaceHookConfigPaths，
-  // 去重、失败候选占位和 discoveryOrder 均与 Settings builder 同源。
+  // explicit 配置曾在 auto-discovery 之后手工追加并自行编号，绕过 canonical-path
+  // dedup；同一文件会以两个来源进入合并结果。现在有 workspace 时统一由
+  // loadProjectConfigs 走本地 discoverProjectConfigPaths，去重与 root→cwd 顺序同源。
   const projectConfigFiles = discoveredProjectConfigs.files;
   const projectSummary = discoveredProjectConfigs;
   const projectDiagnostics = discoveredProjectConfigs.diagnostics;
@@ -191,44 +154,14 @@ export function createConfig(options: ConfigFactoryOptions = {}): ConfigResult {
   // 4. Environment variables
   const envConfig = parseEnvConfig(options.env ?? process.env);
   if (Object.keys(envConfig).length > 0) {
-    configs.push(
-      createPrioritizedConfig(
-        withHookConfigSource(envConfig, { kind: "internal" }),
-        ConfigScope.Env,
-      ),
-    );
+    configs.push(createPrioritizedConfig(envConfig, ConfigScope.Env));
   }
 
   // 5. CLI overrides (applied last = highest priority)
   if (options.cliOverrides) {
-    configs.push(
-      createPrioritizedConfig(
-        withHookConfigSource(options.cliOverrides, { kind: "internal" }),
-        ConfigScope.Cli,
-      ),
-    );
+    configs.push(createPrioritizedConfig(options.cliOverrides, ConfigScope.Cli));
   }
 
-  const workspaceHookRuntimeRoot = resolveWorkspaceHookRuntimeRoot([
-    DefaultRuntimeConfig.hooks,
-    userConfigResult.config.hooks,
-    ...projectSummary.hookCandidates.map((candidate) => candidate.hooks),
-    envConfig.hooks,
-    options.cliOverrides?.hooks,
-  ]);
-  const workspacePath = resolve(options.workingDirectory ?? process.cwd());
-  const workspaceHookSnapshotData = buildWorkspaceHookBundleSnapshot({
-    workspaceIdentity: options.workspaceIdentity?.trim() || workspacePath,
-    workspacePath,
-    sources: projectSummary.hookCandidates,
-    runtimeRoot: workspaceHookRuntimeRoot,
-  });
-  const workspaceHookSnapshot = workspaceHookSnapshotData
-    ? createWorkspaceHookBundleSnapshot(workspaceHookSnapshotData)
-    : undefined;
-
-  // Project Hook events stay outside this executable merge. The snapshot above is the only
-  // Phase 1 side-channel and cannot be consumed by configured-runner.
   const merged = mergeConfigs(...configs);
   const pluginConfigSources = resolvePluginConfigSources({
     projectConfig: projectConfigResult.config,
@@ -274,8 +207,6 @@ export function createConfig(options: ConfigFactoryOptions = {}): ConfigResult {
         mcpServerNames: projectSummary.mcpServerNames,
         uiLocalePath: projectUiLocalePath,
         uiThemePath: projectUiThemePath,
-        ...(workspaceHookSnapshot ? { workspaceHookSnapshot } : {}),
-        workspaceHookRuntimeRoot,
       },
       plugins: pluginConfigSources,
       mcp: {
@@ -329,28 +260,6 @@ function resolvePluginConfigSources(input: {
     paths: {
       user: input.userPath,
       workspace: input.projectPath,
-    },
-  };
-}
-
-function withHookConfigSource(
-  config: RuntimeConfigPatch,
-  source: HookConfigSource,
-): RuntimeConfigPatch {
-  if (!config.hooks?.events) return config;
-  return {
-    ...config,
-    hooks: {
-      ...config.hooks,
-      events: Object.fromEntries(
-        Object.entries(config.hooks.events).map(([eventName, matchers]) => [
-          eventName,
-          matchers?.map((matcher) => ({
-            ...matcher,
-            hooks: matcher.hooks.map((hook) => ({ ...hook, source: hook.source ?? source })),
-          })),
-        ]),
-      ) as NonNullable<RuntimeConfigPatch["hooks"]>["events"],
     },
   };
 }
@@ -431,9 +340,6 @@ function resolveConfigDiagnosticLogMessage(
   code: LoadedConfig["diagnostics"][number]["code"],
 ): string {
   if (code === "config_mcp_server_invalid") return "MCP server config skipped";
-  if (code === "config_project_hooks_pending_trust") {
-    return "Project hooks pending workspace trust";
-  }
   return "Config file failed to load";
 }
 
@@ -441,9 +347,6 @@ function resolveConfigDiagnosticLogEvent(
   code: LoadedConfig["diagnostics"][number]["code"],
 ): string {
   if (code === "config_mcp_server_invalid") return "config.mcp_server.skipped";
-  if (code === "config_project_hooks_pending_trust") {
-    return "config.project_hooks.pending_trust";
-  }
   return "config.file.invalid";
 }
 

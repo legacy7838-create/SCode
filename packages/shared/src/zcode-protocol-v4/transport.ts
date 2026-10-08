@@ -27,7 +27,6 @@ export const hostCapabilitiesSchema = z.object({
   binaryFrames: z.boolean(),
   compression: z.enum(["none", "permessage-deflate"]),
   // Wire-compatible：旧 Host 缺失等价于 false；调用方必须用 === true 判断。
-  workspaceHookReview: z.boolean().optional(),
   independentPlanState: z.boolean().optional(),
   /**
    * 本 Host 会发 `workflowRun.*` 键级增量（delta.ts 的两条 op），因而 `workflowRuns` 的
@@ -72,10 +71,8 @@ export const clientHelloSchema = z
     clientId: z.string(),
     clientKind: z.enum(["desktop", "web", "mobileRemote", "mobileApp"]).optional(),
     appVersion: z.string(),
-    // 缺失代表旧客户端，不具备 Settings-centered review UI。
     capabilities: z
       .object({
-        workspaceHookReviewUi: z.boolean().optional(),
         /**
          * 本客户端认得 `workflowRun.*` 增量。⚠ 声明规则是**单向**的：客户端只有在 Host 的
          * hello 里见到 `workflowRunDeltas === true` 时才能带上这个键——这个 capabilities 对象
@@ -88,14 +85,6 @@ export const clientHelloSchema = z
   })
   .strict();
 export type ClientHello = z.infer<typeof clientHelloSchema>;
-
-export function hostSupportsWorkspaceHookReview(capabilities: HostCapabilities): boolean {
-  return capabilities.workspaceHookReview === true;
-}
-
-export function clientSupportsWorkspaceHookReview(clientHello: ClientHello): boolean {
-  return clientHello.capabilities?.workspaceHookReviewUi === true;
-}
 
 export function hostSupportsWorkflowRunDeltas(capabilities: HostCapabilities): boolean {
   return capabilities.workflowRunDeltas === true;
@@ -410,8 +399,6 @@ export const V4_NOTIFICATIONS = {
   // 仅 live ingest 的无正文事实；不进入 topic snapshot/recovery。
   conversationTelemetryFact: "v4/telemetry/event",
   localTtftFacts: "v4/telemetry/local-ttft",
-  // 仅当前进程 live ToolCallResult 产生；历史与 replayable 链路不得补造。
-  cuaPermissionObservation: "v4/cua/permission-observation",
 } as const;
 
 /** 3.3.6 SSH 历史任务归属证明与 sessions-index 冷种子共享同一有界窗口。 */

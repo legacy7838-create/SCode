@@ -12,12 +12,6 @@ import {
 } from "@/v4/conversationRowContext.js";
 import type { AssistantWorkRow } from "@/v4/conversationTurnRenderUnits.js";
 import { toolCallRowToLegacyNode } from "@/v4/toolCallRowAdapter.js";
-import {
-  ENABLE_CUA_TOOL_CALL_GROUPING,
-  prepareCuaGroups,
-  type ConversationCuaGroupRenderItem,
-} from "@/v4/conversationCuaGroups.js";
-
 export type ConversationAssistantWorkRenderItem =
   | {
       kind: "row";
@@ -31,7 +25,6 @@ export type ConversationAssistantWorkRenderItem =
       rows: ToolCallRow[];
       node: TaskChatToolCallTreeNode;
     }
-  | ConversationCuaGroupRenderItem
   | {
       kind: "executeGroup";
       key: string;
@@ -54,13 +47,11 @@ export type ConversationAssistantWorkRenderItem =
     };
 
 export const ENABLE_EXPLORE_TOOL_CALL_GROUPING = true;
-export { ENABLE_CUA_TOOL_CALL_GROUPING } from "@/v4/conversationCuaGroups.js";
 export const ENABLE_TERMINAL_TOOL_CALL_GROUPING = true;
 export const ENABLE_CHANGES_TOOL_CALL_GROUPING = false;
 
 interface ConversationAssistantWorkRenderOptions {
   stageTailIsRunning?: boolean;
-  enableCuaGrouping?: boolean;
   enableExploreGrouping?: boolean;
   enableTerminalGrouping?: boolean;
   enableChangesGrouping?: boolean;
@@ -274,15 +265,13 @@ export function buildAssistantWorkRenderItems(
   reasoningVisibility: ConversationReasoningVisibility,
   options?: ConversationAssistantWorkRenderOptions,
 ): ConversationAssistantWorkRenderItem[] {
-  const items: ConversationAssistantWorkRenderItem[] = [];
-  const enableExploreGrouping = options?.enableExploreGrouping ?? ENABLE_EXPLORE_TOOL_CALL_GROUPING;
-  const enableCuaGrouping = options?.enableCuaGrouping ?? ENABLE_CUA_TOOL_CALL_GROUPING;
+  const enableExploreGrouping =
+    options?.enableExploreGrouping ?? ENABLE_EXPLORE_TOOL_CALL_GROUPING;
   const enableTerminalGrouping =
     options?.enableTerminalGrouping ?? ENABLE_TERMINAL_TOOL_CALL_GROUPING;
-  const enableChangesGrouping = options?.enableChangesGrouping ?? ENABLE_CHANGES_TOOL_CALL_GROUPING;
-  // Explore 的阶段边界和尾部状态必须基于用户实际可见的行序。等待 command 的 Shell
-  // 若只在循环中跳过，仍会占据数组位置，导致前一个 Explore 被误判为已结束；
-  // 隐藏 reasoning 也有相同问题。先统一剔除暂不可见行，再做配对、分组和尾部判断。
+  const enableChangesGrouping =
+    options?.enableChangesGrouping ?? ENABLE_CHANGES_TOOL_CALL_GROUPING;
+
   const visibleRows = rows.filter((row) => {
     if (
       row.kind === "reasoning" &&
@@ -293,22 +282,13 @@ export function buildAssistantWorkRenderItems(
     return !shouldDeferUnclassifiedShellToolCall(row);
   });
   const { subagentByAgentToolRowId, claimedSubagentRowIds } = pairSubagentRows(visibleRows);
-  const preparedRows = prepareCuaGroups(
-    visibleRows,
-    enableCuaGrouping,
-    options?.stageTailIsRunning === true,
-  );
+  const preparedRows = visibleRows;
+  const items: ConversationAssistantWorkRenderItem[] = [];
   let index = 0;
 
   while (index < preparedRows.length) {
     const row = preparedRows[index];
     if (!row) {
-      index += 1;
-      continue;
-    }
-
-    if (row.kind === "cuaGroup") {
-      items.push(row);
       index += 1;
       continue;
     }
@@ -339,7 +319,7 @@ export function buildAssistantWorkRenderItems(
         index += 1;
         while (index < preparedRows.length) {
           const nextRow = preparedRows[index];
-          if (!nextRow || nextRow.kind === "cuaGroup" || !isChangesToolCallRow(nextRow)) break;
+          if (!nextRow || !isChangesToolCallRow(nextRow)) break;
           groupRows.push(nextRow);
           index += 1;
         }
@@ -362,7 +342,7 @@ export function buildAssistantWorkRenderItems(
         index += 1;
         while (index < preparedRows.length) {
           const nextRow = preparedRows[index];
-          if (!nextRow || nextRow.kind === "cuaGroup" || !isExecuteToolCallRow(nextRow)) {
+          if (!nextRow || !isExecuteToolCallRow(nextRow)) {
             break;
           }
           groupRows.push(nextRow);
@@ -405,7 +385,7 @@ export function buildAssistantWorkRenderItems(
     index += 1;
     while (index < preparedRows.length) {
       const nextRow = preparedRows[index];
-      if (!nextRow || nextRow.kind === "cuaGroup" || !isExploreToolCallRow(nextRow)) {
+      if (!nextRow || !isExploreToolCallRow(nextRow)) {
         break;
       }
       groupRows.push(nextRow);

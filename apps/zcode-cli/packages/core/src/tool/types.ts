@@ -8,7 +8,6 @@ import type {
   OffPeakPort,
   EmbeddedSearchBackend,
   ExecutionPort,
-  BrowserControlPort,
   FileSystemPort,
   HttpClientPort,
   ImageProcessorPort,
@@ -146,10 +145,6 @@ export interface ToolExecutionContext {
   backgroundTaskControlPort?: BackgroundTaskControlPort;
   emitEvent?: (event: SessionEvent) => Promise<void>;
   executionPort?: ExecutionPort;
-  /** browser-use 控制端口；node_repl 的 agent.browsers.* 经此执行。缺省则 browser 不可用。 */
-  browserControlPort?: BrowserControlPort;
-  /** 官方 browser-use plugin docs 资产目录；只在 browser-use 启用时用于 agent.browsers.documentation()。 */
-  browserDocumentationRoot?: string;
   fileSystemPort?: FileSystemPort;
   httpClientPort?: HttpClientPort;
   imageProcessorPort?: ImageProcessorPort;
@@ -190,7 +185,6 @@ export interface ToolExecutionContext {
   remoteSessionId?: string;
   clientMode?: "desktop-continuous" | "web-remote-replayable";
   deliveryKind?: "desktop-continuous" | "web-remote-replayable";
-  memoryRoot?: string;
   runtimeScope?: ToolRuntimeScope;
   providerVisibleToolNames?: readonly string[];
   sessionId: SessionId;

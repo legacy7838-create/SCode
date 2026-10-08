@@ -1,5 +1,4 @@
 import type { McpConnectionSnapshot, McpPort } from "@zcode/contracts";
-import { SUBAGENT_COMPUTER_USE_UNAVAILABLE_MESSAGE } from "./computer-use-policy.js";
 
 interface BorrowedSubagentMcpAccess {
   port: McpPort;
@@ -41,7 +40,7 @@ export function createBorrowedSubagentMcpAccess(
     port: {
       async callTool(request, options) {
         if (isDenied(request.serverName)) {
-          throw new Error(SUBAGENT_COMPUTER_USE_UNAVAILABLE_MESSAGE);
+          throw new Error(`Subagent MCP server access denied: ${request.serverName}`);
         }
         if (!connectedServerNames.has(request.serverName)) {
           throw new Error(`Subagent MCP server is outside visible scope: ${request.serverName}`);

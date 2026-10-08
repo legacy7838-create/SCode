@@ -31,7 +31,6 @@ import { TabsTrigger } from "@/components/ui/tabs.js";
 import { FileDisplayIcon, resolveFileDisplayDescriptor } from "@/lib/fileDisplay.js";
 import type { WorkspaceSidePaneTab } from "@/lib/workspaceSidePane.js";
 import { Button } from "@/components/ui/button.js";
-import { BrowserUseTabIcon } from "@/app-shell/BrowserUseTabIcon.js";
 import { BrowserTabFavicon } from "@/app-shell/BrowserTabFavicon.js";
 import { SidePaneTabTitleTooltip } from "@/app-shell/SidePaneTabTitleTooltip.js";
 
@@ -332,14 +331,6 @@ export function SidePaneTabIcon({ tab }: { tab: WorkspaceSidePaneTab }) {
     return <SquareTerminalIcon className="size-3.5" />;
   }
 
-  // 同 getSidePaneTabTitle——browser-use tab 无 source，若不在此拦截会 fallthrough
-  // 到下方 `tab.source.type` 读 undefined.type 崩溃。
-  // agent 导航后由 <webview> favicon 事件回填 faviconUrl，与 human browser tab 一致地展示真实图标；
-  // 缺省（about:blank/未取到）回退地球图标。
-  if (tab.type === "browser-use") {
-    return <BrowserUseTabIcon tab={tab} />;
-  }
-
   if (tab.source.type === "patch") {
     const fileDisplayTarget = getPatchFileDisplayTarget(tab.source);
     if (fileDisplayTarget) {
@@ -538,13 +529,6 @@ export function getSidePaneTabTitle(
 
   if (tab.type === "terminal" || tab.type === "bash-output") {
     return tab.title || formatMessage({ id: "terminal.title" });
-  }
-
-  // browser-use tab 之前未在此分派，会 fallthrough 到底部 `tab.source.title`，
-  // 而 browser-use tab 无 source 字段 → 读 undefined.title 触发 React 崩溃（整棵 workspace 子树挂掉）。
-  // 用页面标题（agent 导航后由 getState 回填），缺省复用 browser.title 文案。
-  if (tab.type === "browser-use") {
-    return tab.title?.trim() || formatMessage({ id: "browser.title" });
   }
 
   return tab.source.title || formatMessage({ id: "codeViewer.title" });

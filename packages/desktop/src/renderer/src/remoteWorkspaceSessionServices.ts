@@ -36,17 +36,6 @@ export function buildRemoteWorkspaceSessionServices(
     // 远端 MCP 同步的 import 必须写入 SSH 主机的 ~/.zcode/cli/config.json。
     // 这里与 skillSyncService 一样走 remote service，避免把远端配置写回本机用户目录。
     mcpSyncService: remoteServices.mcpSyncService,
-    // 远端 plugin 同步会写入 SSH 主机的 ~/.zcode/plugins 和 plugins.dirs；
-    // 必须像 skill/MCP 一样走 remote service，不能沿用本机 base service。
-    pluginSyncService: remoteServices.pluginSyncService,
-    pluginsService: remoteServices.pluginsService,
-    // 设置页插件管理与 pluginsService 同理，必须打到远端（插件目录在远端文件系统）。
-    pluginManagementService: remoteServices.pluginManagementService,
     commandsService: remoteServices.commandsService,
-    // SSH/Docker 工作区的 hooks 声明、信任状态与待审项都位于远端文件系统。
-    // hooksService 必须覆盖 baseServices 中的本机服务，否则会用远端路径扫描本机文件系统，
-    // 无法读取远端待审 Hook。
-    // hooks 读写（loadHooks/saveHooks）与 grantWorkspaceHookTrust 授权都必须打到远端 host。
-    hooksService: remoteServices.hooksService,
   };
 }

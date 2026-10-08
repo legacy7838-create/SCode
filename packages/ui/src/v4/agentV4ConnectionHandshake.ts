@@ -28,10 +28,7 @@ export function ensureAgentV4ConnectionHandshake(
     // `workflowRunDeltas` 的声明是**单向**的：只有 Host 先在 hello 里宣告，客户端才能回声明。
     // clientHello 的 capabilities 是 `.strict()` 的，向老 Host 发一个它不认识的键会让整条
     // clientHello 解析失败、连接握不上手——这不是降级，是整个会话面板打不开。
-    const capabilities: NonNullable<ClientHello["capabilities"]> = {
-      workspaceHookReviewUi: true,
-      ...(hostSupportsWorkflowRunDeltas(hello.capabilities) ? { workflowRunDeltas: true } : {}),
-    };
+    const capabilities: NonNullable<ClientHello["capabilities"]> = (hostSupportsWorkflowRunDeltas(hello.capabilities) ? { workflowRunDeltas: true } : {});
     await service.initializeConversationV4({
       kind: "clientHello",
       protocolVersion: V4_WIRE_PROTOCOL_VERSION,

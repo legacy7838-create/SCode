@@ -37,7 +37,6 @@ import type {
   CommandAck,
   ConversationRow,
   ConversationRowTarget,
-  HookInvocationRow,
   ReasoningRow,
   SubagentRow,
   TimelineMarkerRow,
@@ -85,8 +84,6 @@ import { isAmendWorkflowToolCall } from "@/lib/workflowToolNames.js";
 import { ToolCallBlock } from "@/ToolCallBlocks.js";
 import { resolveWorkflowRunOpenToolCallId } from "@/v4/workflowRunCardJoin.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
-import { useOptionalPlatform } from "@/hooks/usePlatform.js";
-import { reportAppTelemetryEvent } from "@/lib/appTelemetry.js";
 import { runUserAction, runUserActionAsync } from "@/lib/userActionTelemetry.js";
 import { logger } from "@/logger.js";
 import type { AssistantPreviewCard } from "@/lib/assistantPreviewCards.js";
@@ -125,7 +122,6 @@ import {
   ConversationUserInputEpilogue,
   splitUserInputEpilogue,
 } from "@/v4/ConversationUserInputEpilogue.js";
-import { ConversationHookDetailsAction } from "@/v4/ConversationHookDetailsAction.js";
 import { formatModelChangeLabel } from "@/v4/composer/modelTriggerDisplay.js";
 import { formatMessageTimeLabel } from "@/v4/messageTimeLabel.js";
 import { parseConversationShareContext } from "@/lib/conversationShareContext.js";
@@ -1313,9 +1309,7 @@ export const ConversationAssistantTextActions = memo(function ConversationAssist
   text,
   createdAt,
   feedback = null,
-  hookInvocations,
   sessionId,
-  turnId,
   onFork,
   onFeedbackChange,
   className,
@@ -1325,16 +1319,13 @@ export const ConversationAssistantTextActions = memo(function ConversationAssist
   text: string;
   createdAt: number;
   feedback?: AssistantMessageFeedback | null;
-  hookInvocations?: readonly HookInvocationRow[];
   sessionId?: string | null;
-  turnId?: string;
   onFork?: (target: ConversationRowTarget) => void;
   onRetry?: (target: ConversationRowTarget) => void;
   onFeedbackChange?: AssistantFeedbackHandler;
   className?: string;
 }) {
   const { intl, locale } = useZCodeIntl();
-  const platform = useOptionalPlatform();
   const [localFeedback, setLocalFeedback] = useState<AssistantMessageFeedback | null>(feedback);
   const copyLabel = intl.formatMessage({ id: "chat.message.copy" });
   const likeLabel = intl.formatMessage({
@@ -1376,22 +1367,8 @@ export const ConversationAssistantTextActions = memo(function ConversationAssist
           },
         );
       }
-      if (platform && entityId) {
-        void reportAppTelemetryEvent(
-          platform,
-          {
-            elementName: "assistant_message_feedback",
-            eventRegion: "chat",
-            eventType: "ck",
-            eventExtraDetail: { reaction: resolvedFeedback ?? "none" },
-            ...(sessionId ? { talkId: sessionId } : {}),
-            messageId: entityId,
-          },
-          "ConversationRowView",
-        );
-      }
     },
-    [entityId, localFeedback, onFeedbackChange, platform, rowId, sessionId],
+    [entityId, localFeedback, onFeedbackChange, rowId],
   );
   const handleFork = useCallback(() => {
     if (entityId) {
@@ -1461,9 +1438,6 @@ export const ConversationAssistantTextActions = memo(function ConversationAssist
         >
           <TrendingUpDownIcon className="size-3.5" />
         </MessageAction>
-      ) : null}
-      {turnId && hookInvocations ? (
-        <ConversationHookDetailsAction rows={hookInvocations} turnId={turnId} />
       ) : null}
       {/* 旧 conversation surface 删除后，V4 动作栏漏掉了消息创建时间；
           时间是 row.createdAt 的只读派生展示，不新增 renderer 状态。 */}

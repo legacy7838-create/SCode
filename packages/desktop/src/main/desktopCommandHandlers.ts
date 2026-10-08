@@ -25,7 +25,6 @@ import { showAboutDialog } from "./about.js";
 import { checkForUpdateMenuClick } from "./autoUpdater.js";
 import { exportLogs } from "./exportLogs.js";
 import { openResourceManager } from "./resourceManagerWindow.js";
-import { resolveCuaOsSupport } from "./cuaOsSupport.js";
 import { syncWindowControlsOverlayForZoomLevel } from "./desktopWindowButtonPosition.js";
 import {
   DEFAULT_DESKTOP_WINDOW_HEIGHT,
@@ -682,7 +681,5 @@ export async function executeDesktopCommand(options: {
     case DesktopCommandIds.ClearCodingPlanWebviewStorage:
       await clearCodingPlanWebviewStorage({ logger: options.logger });
       return;
-    case DesktopCommandIds.GetCuaOsSupport:
-      return resolveCuaOsSupport();
   }
 }

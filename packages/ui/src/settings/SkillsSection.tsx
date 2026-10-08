@@ -5,7 +5,6 @@ import {
   ChevronDown,
   ChevronRight,
   ExternalLink,
-  Import,
   Plus,
   Trash2,
   UploadCloud,
@@ -37,33 +36,16 @@ import { useConfirmDialog } from "@/hooks/useConfirmDialog.js";
 import { buildSkillMentionMarkdown } from "@/mentions/mentionMarkdown.js";
 import { filterSkillsForProvider } from "@/lib/skillSourceFilter.js";
 import { invalidateDeferredDraftSessionForSkillChange } from "@/lib/zcodeDraftSkillInvalidation.js";
-import { PluginStoreAvatar } from "@/settings/PluginStoreAvatar.js";
 import { SettingsResourceHeaderActions } from "@/settings/SettingsResourceHeaderActions.js";
 import {
   SettingsResourceGroupHeader,
   SettingsResourceList,
 } from "@/settings/SettingsResourceGroup.js";
 import { SettingsBreadcrumbReporter } from "@/settings/SettingsHeaderBreadcrumb.js";
-import {
-  PluginInstallEmptyState,
-  PluginLoadingState,
-  PluginSearchEmptyState,
-} from "@/settings/PluginInstallEmptyState.js";
-import {
-  resolvePluginDisplayName,
-  resolveUniquePluginListingByName,
-} from "@/settings/pluginStoreListing.js";
-import { groupSkillsByPlugin } from "@/settings/pluginManagedResourceGroups.js";
 import { SkillsImportDialog } from "@/settings/ExternalAgentImportDialog.js";
 import { formatRemoteSkillSyncTarget } from "@/settings/RemoteSkillSyncDialog.js";
 import { RemoteSyncDialogs, shouldShowRemoteSyncActions } from "@/settings/RemoteSyncActions.js";
 import { refreshSharedSkillStoreForWorkspace } from "@/lib/skillStoreRefresh.js";
-import { usePluginManagementStore } from "@/store/pluginManagementStore.js";
-import {
-  groupScopedSkillsBySource,
-  selectPluginsForScope,
-  selectSkillsForScope,
-} from "@/settings/pluginCapabilityProjection.js";
 
 function getWorkspaceBasename(workspacePath: string | null): string {
   if (!workspacePath) return "";
@@ -172,22 +154,9 @@ export function SkillsSection({
   reportDetailBreadcrumb = false,
 }: SkillsSectionProps) {
   const { intl, locale } = useZCodeIntl();
-  const platform = usePlatform();
   const baseServices = useBaseWorkspaceServices();
-  const plugins = usePluginManagementStore((state) => state.plugins);
-  const installedPlugins = usePluginManagementStore((state) => state.installedPlugins);
-  const availablePlugins = usePluginManagementStore((state) => state.availablePlugins);
-  const pluginListingById = useMemo(
-    () => new Map(availablePlugins.map((plugin) => [plugin.id, plugin.listing])),
-    [availablePlugins],
-  );
-  const pluginWorkspacePath = usePluginManagementStore((state) => state.workspacePath);
-  const pluginWorkspaceIdentity = usePluginManagementStore((state) => state.workspaceIdentity);
-  const pluginConfigScope = usePluginManagementStore((state) => state.configScope);
-  const initializePlugins = usePluginManagementStore((state) => state.initialize);
-  // useConfirmDialog 是纯 Zustand selector（不含 useState），放在这里不会影响 SkillsSection
-  // 既有的「按 useState 调用次序」单测桩（见下方 selectedSkill 附近的注释）。
   const confirmDialog = useConfirmDialog();
+  const platform = usePlatform();
   const activeWorkspacePath = workspacePath ?? null;
   const activeWorkspaceIdentity = workspaceIdentity;
   const targetServiceResolution = useWorkspaceServicesResolution(
@@ -196,10 +165,7 @@ export function SkillsSection({
     activeWorkspaceIdentity,
     remoteTarget,
   );
-  // PluginsSection 已把 Scope target 传入，但 Skills 仍从当前 ServiceProvider
-  // 取服务，导致跨远程 host 误路由。技能读写和远端同步都改用同一 target 解析结果。
-  const { pluginManagementService, skillSyncService, skillsService } =
-    targetServiceResolution.services;
+  const { skillSyncService, skillsService } = targetServiceResolution.services;
   const zcodeSessionService = useZCodeSessionService(
     activeWorkspacePath ?? undefined,
     undefined,
@@ -224,32 +190,10 @@ export function SkillsSection({
   const projectionMatchesTarget =
     !activeWorkspacePath || loadedSkillTargetKey === activeSkillTargetKey;
 
-  useEffect(() => {
-    if (!activeWorkspacePath || !targetServiceResolution.rpcReady) return;
-    void initializePlugins({
-      workspacePath: activeWorkspacePath,
-      workspaceIdentity: activeWorkspaceIdentity,
-      configScope: scopeFilter,
-      pluginService: pluginManagementService,
-    });
-  }, [
-    activeWorkspaceIdentity,
-    activeWorkspacePath,
-    initializePlugins,
-    pluginManagementService,
-    scopeFilter,
-    targetServiceResolution.rpcReady,
-  ]);
-
   const workspaceLabel = getWorkspaceBasename(activeWorkspacePath);
   const connectedRemoteSyncTarget =
     targetServiceResolution.rpcReady &&
-    shouldShowRemoteSyncActions({
-      remoteSessionId,
-      remoteTarget,
-      clientMode: "desktop-continuous" as const,
-      hasLocalSourceService: Boolean(baseServices.skillSyncService),
-    }) &&
+    shouldShowRemoteSyncActions(remoteTarget ?? null, "desktop-continuous") &&
     activeWorkspacePath
       ? remoteTarget
       : null;
@@ -261,7 +205,6 @@ export function SkillsSection({
     (skill: SkillSummary): string => {
       switch (skill.scope) {
         case "workspace":
-          // workspace 作用域显示 workspace 名，没有 workspace 时退回到通用文案。
           return (
             workspaceLabel ||
             intl.formatMessage({
@@ -269,23 +212,13 @@ export function SkillsSection({
             })
           );
         case "plugin":
-          return skill.pluginName?.trim()
-            ? resolvePluginDisplayName(
-                {
-                  name: skill.pluginName,
-                  listing:
-                    (skill.pluginId ? pluginListingById.get(skill.pluginId) : undefined) ??
-                    resolveUniquePluginListingByName(availablePlugins, skill.pluginName),
-                },
-                locale,
-              )
-            : intl.formatMessage({ id: "settings.skills.scope.plugin" });
+          return skill.pluginName?.trim() || intl.formatMessage({ id: "settings.skills.scope.plugin" });
         case "user":
         default:
           return intl.formatMessage({ id: "settings.skills.scope.personal" });
       }
     },
-    [availablePlugins, intl, locale, pluginListingById, workspaceLabel],
+    [intl, workspaceLabel],
   );
 
   const renderDiagnosticCodeLabel = useCallback(
@@ -455,54 +388,25 @@ export function SkillsSection({
 
   const scopedProviderSkills = useMemo(() => {
     const allProviderSkills = filterSkillsForProvider(skills, ZCODE_AGENT_PROVIDER);
-    const pluginStoreMatchesTarget =
-      (pluginWorkspaceIdentity?.trim() || pluginWorkspacePath || "") ===
-        (activeWorkspaceIdentity?.trim() || activeWorkspacePath || "") &&
-      pluginConfigScope === scopeFilter;
-    return selectSkillsForScope(
-      allProviderSkills,
-      pluginStoreMatchesTarget ? selectPluginsForScope(plugins, installedPlugins, scopeFilter) : [],
-      scopeFilter,
+    if (!scopeFilter) return allProviderSkills;
+    return allProviderSkills.filter(
+      (skill) =>
+        skill.scope === scopeFilter ||
+        (scopeFilter === "user" && (skill.scope as string) === "global"),
     );
-  }, [
-    activeWorkspaceIdentity,
-    activeWorkspacePath,
-    installedPlugins,
-    pluginWorkspaceIdentity,
-    pluginWorkspacePath,
-    pluginConfigScope,
-    plugins,
-    scopeFilter,
-    skills,
-  ]);
-  const groupedSkills = useMemo(
-    () => groupSkillsByPlugin(scopedProviderSkills, query),
-    [query, scopedProviderSkills],
-  );
-  const skillSourceGroups = useMemo(() => {
-    return groupScopedSkillsBySource(
-      [...groupedSkills.local, ...groupedSkills.plugin],
-      scopeFilter === "user"
-        ? intl.formatMessage({ id: "settings.scope.user" })
-        : workspaceLabel || intl.formatMessage({ id: "settings.scope.workspace" }),
+  }, [scopeFilter, skills]);
+  const filteredSkills = useMemo(() => {
+    if (!query.trim()) return scopedProviderSkills;
+    const lower = query.trim().toLowerCase();
+    return scopedProviderSkills.filter(
+      (s) => s.name.toLowerCase().includes(lower) || s.description?.toLowerCase().includes(lower),
     );
-  }, [groupedSkills.local, groupedSkills.plugin, intl, scopeFilter, workspaceLabel]);
-  const filteredSkillCount = groupedSkills.local.length + groupedSkills.plugin.length;
+  }, [query, scopedProviderSkills]);
+  const filteredSkillCount = filteredSkills.length;
   const hasEmptySearchResult = Boolean(query.trim()) && filteredSkillCount === 0;
   const directInstalledSkillCount = scopedProviderSkills.filter(
     (skill) => skill.scope !== "plugin",
   ).length;
-  const hideInstalledGroup = Boolean(query.trim()) && groupedSkills.local.length === 0;
-  const pluginIconItemById = useMemo(
-    () =>
-      new Map(
-        plugins.map((plugin) => [
-          plugin.id,
-          { name: plugin.name, listing: pluginListingById.get(plugin.id) },
-        ]),
-      ),
-    [pluginListingById, plugins],
-  );
   useEffect(() => {
     onVisibleCountChange?.(filteredSkillCount);
   }, [filteredSkillCount, onVisibleCountChange]);
@@ -572,29 +476,17 @@ export function SkillsSection({
         )
       : "";
   const renderSkillRow = (skill: SkillSummary) => {
-    const pluginIconItem = skill.pluginId
-      ? pluginIconItemById.get(skill.pluginId)
-      : skill.pluginName
-        ? {
-            name: skill.pluginName,
-            listing: resolveUniquePluginListingByName(availablePlugins, skill.pluginName),
-          }
-        : undefined;
     return (
       <div
         key={skill.id}
         className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-hover"
       >
-        {skill.scope === "plugin" && pluginIconItem ? (
-          <PluginStoreAvatar item={pluginIconItem} className="size-9 bg-background" />
-        ) : (
-          <div
-            className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-background text-foreground-subtle"
-            aria-hidden="true"
-          >
-            <WandSparkles className="size-4" />
-          </div>
-        )}
+        <div
+          className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-background text-foreground-subtle"
+          aria-hidden="true"
+        >
+          <WandSparkles className="size-4" />
+        </div>
         <div
           role="button"
           tabIndex={0}
@@ -789,81 +681,47 @@ export function SkillsSection({
       ) : null}
 
       {!targetServiceResolution.rpcReady ? (
-        <PluginLoadingState label={intl.formatMessage({ id: "common.connecting" })} />
-      ) : loading || !projectionMatchesTarget ? (
-        <PluginLoadingState label={intl.formatMessage({ id: "common.loading" })} />
+        <div className="py-8 text-center text-ui-base text-foreground-subtle">
+          {intl.formatMessage({ id: "common.connecting" })}
+        </div>
+      ) : loading ? (
+        <div className="py-8 text-center text-ui-base text-foreground-subtle">
+          {intl.formatMessage({ id: "common.loading" })}
+        </div>
       ) : hasEmptySearchResult ? (
-        <PluginSearchEmptyState
-          label={intl.formatMessage({
-            id: "settings.plugin.skills.searchEmpty",
-          })}
-        />
+        <div className="py-8 text-center text-ui-base text-foreground-subtle">
+          {intl.formatMessage({ id: "settings.plugin.skills.searchEmpty" })}
+        </div>
       ) : (
         <div className="space-y-6">
-          <section className={hideInstalledGroup ? "hidden" : "space-y-4"}>
-            <div data-skills-plugin-direct-actions="true">
-              <SettingsResourceGroupHeader
-                actions={skillHeaderActions}
-                count={groupedSkills.local.length}
-                title={intl.formatMessage({
-                  id: "settings.plugin.skills.installed",
-                })}
-              />
-            </div>
-            {groupedSkills.local.length > 0 ? (
-              renderSkillList(groupedSkills.local)
-            ) : directInstalledSkillCount === 0 && !query.trim() ? (
-              <PluginInstallEmptyState
-                title={intl.formatMessage({
-                  id: "settings.plugin.skills.emptyInstalledTitle",
-                })}
-                description={intl.formatMessage({
-                  id: "settings.plugin.skills.emptyInstalledDescription",
-                })}
-                actions={
-                  <>
-                    <Button type="button" variant="default" size="lg" onClick={handleCreateSkill}>
-                      <Plus data-icon="inline-start" aria-hidden="true" />
-                      {intl.formatMessage({
-                        id: "settings.plugin.skills.newSkill",
-                      })}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="lg"
-                      disabled={!capability?.userScopeAvailable}
-                      onClick={() => setImportDialogOpen(true)}
-                    >
-                      <Import data-icon="inline-start" aria-hidden="true" />
-                      {intl.formatMessage({
-                        id: "settings.skills.import.action",
-                      })}
-                    </Button>
-                  </>
-                }
-              />
-            ) : null}
+          <section className="space-y-4">
+            <SettingsResourceGroupHeader
+              actions={skillHeaderActions}
+              count={filteredSkillCount}
+              title={intl.formatMessage({
+                id: "settings.plugin.skills.installed",
+              })}
+            />
+            {filteredSkillCount > 0 ? (
+              renderSkillList(filteredSkills)
+            ) : (
+              <div className="rounded-xl border border-border p-6 text-center">
+                <p className="text-ui-base text-foreground-subtle">
+                  {intl.formatMessage({
+                    id: "settings.plugin.skills.emptyInstalledDescription",
+                  })}
+                </p>
+                <div className="mt-4 flex justify-center gap-3">
+                  <Button type="button" variant="default" size="lg" onClick={handleCreateSkill}>
+                    <Plus data-icon="inline-start" aria-hidden="true" />
+                    {intl.formatMessage({
+                      id: "settings.plugin.skills.newSkill",
+                    })}
+                  </Button>
+                </div>
+              </div>
+            )}
           </section>
-          {skillSourceGroups
-            .filter((group) => group.id.startsWith("plugin:"))
-            .map((group) => (
-              <section key={group.id} className="space-y-4">
-                <SettingsResourceGroupHeader
-                  count={group.skills.length}
-                  title={resolvePluginDisplayName(
-                    {
-                      name: group.label,
-                      listing:
-                        (group.pluginId ? pluginListingById.get(group.pluginId) : undefined) ??
-                        resolveUniquePluginListingByName(availablePlugins, group.label),
-                    },
-                    locale,
-                  )}
-                />
-                {renderSkillList(group.skills)}
-              </section>
-            ))}
         </div>
       )}
       <Dialog

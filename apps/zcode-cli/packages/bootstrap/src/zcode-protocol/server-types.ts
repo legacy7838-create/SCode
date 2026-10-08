@@ -11,7 +11,6 @@ import {
   type TraceContext,
 } from "@zcode/contracts";
 import type { McpTelemetryTracker } from "@zcode/adapters";
-import type { WorkspaceHookPolicyProvider } from "@zcode/core";
 import type { AccountProviderConfigSnapshot } from "@zcode/provider";
 import {
   zcodeProtocolErrorCodes,
@@ -58,8 +57,6 @@ export interface ZCodeProtocolAgentDependencies {
   sessionResidentTargetCount?: number;
   sessionStore?: SessionStorePort;
   version?: string;
-  /** 受信 Host 管理的 Hook policy；workspace/project 配置不得覆盖。 */
-  workspaceHookPolicyProvider?: WorkspaceHookPolicyProvider;
   /** 把 Host 账号状态形成的第三层 Config Overlay 同步给进程 Registry。 */
   syncAccountProviderConfig?: (snapshot: AccountProviderConfigSnapshot) => Promise<boolean>;
   /** 连接测试前主动重读当前进程的 Config Source 并等待 Registry 发布。 */
@@ -68,7 +65,6 @@ export interface ZCodeProtocolAgentDependencies {
 
 export type ZCodeProtocolAgentResolvedDependencies = ZCodeProtocolAgentDependencies & {
   createSessionEventStore(sessionId: string): SessionEventStorePort;
-  workspaceHookPolicyProvider: WorkspaceHookPolicyProvider;
 };
 
 export interface ZCodeProtocolEventSequenceState {
@@ -82,7 +78,6 @@ export interface ZCodeProtocolToolInputTransmissionState {
 
 export interface ZCodeProtocolSessionRecord {
   app: ZCodeApp;
-  memoryEnabled: boolean;
   nativeSearchEnhancementsEnabled: boolean;
   modelContextBudgetStrategy: ZCodeModelContextBudgetStrategy;
   createdAt: number;
@@ -196,7 +191,7 @@ export function isErrorResponse(message: ZCodeProtocolMessage): message is {
 
 /**
  * 从 zod（或类 zod）校验错误里提炼可读的字段级摘要，附到 "Invalid params" 消息里。
- * 原来只回 "Invalid params" 不说哪个字段错，模型（如 browser evaluate 误传函数、
+ * 原来只回 "Invalid params" 不说哪个字段错，模型（如把函数当参数传入、
  * 坐标为 NaN 等）无从自纠、会反复瞎试。这里用鸭子类型读 ZodError.issues（不引 zod 依赖），
  * 拼成 `expression: Expected string, received function` 这类可操作提示。
  */

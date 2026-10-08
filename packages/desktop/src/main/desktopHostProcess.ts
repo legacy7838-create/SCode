@@ -1,6 +1,5 @@
-import { ingestToolExecResource } from "./desktopResourceTelemetry.js";
-import { ingestMcpResourceSamples } from "./processResourceMcpTelemetrySource.js";
 /* eslint-disable max-lines -- host process 统一处理 main↔host 生命周期、日志、ZCode Agent，拆分前先保持跨进程消息收口。 */
+import { ingestMcpResourceSamples } from "./processResourceMcpTelemetrySource.js";
 import { bindDatabaseStartupRelay } from "./databaseStartupRelay.js";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
@@ -12,14 +11,6 @@ import {
 } from "electron";
 import type { MessagePortMain, UtilityProcess as ElectronUtilityProcess } from "electron";
 import {
-  type HostAgentProcessErrorResponse,
-  type HostAgentProcessExceptionResponse,
-  type HostAgentProcessExitedResponse,
-  type HostAgentProcessReadyResponse,
-  type HostAgentProcessSpawnedResponse,
-  type HostCuaOperationStateResponse,
-  type HostMcpTelemetryResponse,
-  type HostSessionCreateTelemetryResponse,
   type TaskRealtimeHostDeliveryKind,
   formatZCodeHostProcessName,
   HostMessageTypes,
@@ -49,7 +40,6 @@ import {
   hostModulePath,
   resolveBundledGlmBinaryPath,
 } from "./desktopRuntimeEnv.js";
-import { ingestHostNetworkObservations } from "./desktopNetworkTelemetry.js";
 import { ingestCliResourceSample } from "./processResourceCliSource.js";
 import { ingestHostSelfResourceSample } from "./processResourceSelfHeapSource.js";
 import { createFeedbackLogArchiveFromExportLogs } from "./exportLogs.js";
@@ -172,18 +162,6 @@ export function spawnHostProcess(
         runningTaskCount: number;
       },
     ) => void;
-    onAgentProcessExited?: (event: HostAgentProcessExitedResponse) => void;
-    onAgentProcessError?: (event: HostAgentProcessErrorResponse) => void;
-    onAgentProcessException?: (event: HostAgentProcessExceptionResponse) => void;
-    onAgentProcessReady?: (event: HostAgentProcessReadyResponse) => void;
-    onAgentProcessSpawned?: (event: HostAgentProcessSpawnedResponse) => void;
-    onMcpTelemetry?: (event: HostMcpTelemetryResponse) => void;
-    onSessionCreateTelemetry?: (event: HostSessionCreateTelemetryResponse) => void;
-    onCuaOperationStateChanged?: (
-      source: ElectronUtilityProcess,
-      event: HostCuaOperationStateResponse,
-    ) => void;
-    onCuaOperationStateSourceExited?: (source: ElectronUtilityProcess) => void;
     handleBotRemoteWorkspaceReconnectRequest?: (params: {
       win: BrowserWindow;
       requestId: string;
@@ -227,22 +205,6 @@ export function spawnHostProcess(
     onCronSchedulerWakeRequested?: (automationId: string) => void;
     /** host 中闲时任务翻 schedulable 后请求 main 立即唤醒 scheduler。 */
     onOffPeakSchedulerWakeRequested?: (offPeakTaskId?: string) => void;
-    // browser-use：main 用 WebContentsView+CDP 执行一条命令。实现由宿主注入；缺省则 backend_unavailable。
-    handleBrowserExecuteRequest?: (params: {
-      win: BrowserWindow;
-      requestId: string;
-      browserId?: string;
-      browserGeneration?: number;
-      sessionId: string;
-      turnId?: string;
-      workspaceKey?: string;
-      workspacePath?: string;
-      workspaceIdentity?: string;
-      remoteSessionId?: string;
-      clientMode?: "desktop-continuous" | "web-remote-replayable";
-      sessionContext?: "live" | "cached";
-      command: unknown;
-    }) => Promise<{ ok: boolean; [k: string]: unknown }>;
     /** Host 已完成附件授权后，由 Main 将本地视频 realpath 加入精确协议授权集合。 */
     authorizeLocalMediaPreviewPath?: (path: string) => Promise<string>;
   },
@@ -261,13 +223,6 @@ export function spawnHostProcess(
       ...buildHostProcessEnv(dependencies.hostProcessLocalEnv),
       ...buildHostE2ECoverageEnv(),
       ZCODE_PROCESS_LABEL: label,
-      // macOS-only: the Computer Use Helper launcher runs inside this forked host utilityProcess, whose
-      // code-signing identity is a nested Electron helper (NOT dev.zcode.app). Publish THIS (main
-      // Electron) process's pid — which IS dev.zcode.app — so helperLauncher passes it as
-      // `--launcher-pid` and the Helper's signature/peer verification succeeds instead of
-      // health-timing out. Env-name mirror of services' LAUNCHER_PID_ENV. Not set on
-      // Windows/Linux (CUA is macOS-only; nothing reads it there) to keep the host env pristine.
-      ...(process.platform === "darwin" ? { ZCODE_CUA_LAUNCHER_PID: String(process.pid) } : {}),
       ...(dependencies.desktopContextPromptEnabled
         ? {
             [ZCODE_DESKTOP_CONTEXT_PROMPT_ENABLED_ENV]: dependencies.desktopContextPromptEnabled()
@@ -318,11 +273,6 @@ export function spawnHostProcess(
       return;
     }
 
-    if (result.data.type === HostResponseTypes.NetworkTelemetryBatch) {
-      ingestHostNetworkObservations(result.data.observations);
-      return;
-    }
-
     // CLI 自采的 60 秒样本：按 services 打的 lane 归入 cli_chat / cli_aux 角色。
     if (result.data.type === HostResponseTypes.AgentResourceSample) {
       ingestCliResourceSample(
@@ -344,27 +294,12 @@ export function spawnHostProcess(
       return;
     }
 
-    if (result.data.type === HostResponseTypes.ToolExecResource) {
-      ingestToolExecResource(result.data.sample, result.data.runtimeSurface);
-      return;
-    }
-
     if (result.data.type === HostResponseTypes.McpResourceSamples) {
       ingestMcpResourceSamples(
         result.data.samples,
         result.data.runtimeSurface,
         result.data.environmentKey,
       );
-      return;
-    }
-
-    if (result.data.type === HostResponseTypes.McpTelemetry) {
-      dependencies.onMcpTelemetry?.(result.data);
-      return;
-    }
-
-    if (result.data.type === HostResponseTypes.SessionCreateTelemetry) {
-      dependencies.onSessionCreateTelemetry?.(result.data);
       return;
     }
 
@@ -400,12 +335,6 @@ export function spawnHostProcess(
       return;
     }
 
-    if (result.data.type === HostResponseTypes.CuaOperationState) {
-      // Main 只投影 Host 已经判定的 turn 状态，不在这里重复解析 session/tool 业务事件。
-      dependencies.onCuaOperationStateChanged?.(child, result.data);
-      return;
-    }
-
     if (result.data.type === HostResponseTypes.FeedbackLogArchiveRequest) {
       const request = result.data;
       void createFeedbackLogArchiveFromExportLogs(request.sourceDir)
@@ -429,54 +358,6 @@ export function spawnHostProcess(
       return;
     }
 
-    if (result.data.type === HostResponseTypes.BrowserExecuteRequest) {
-      // browser-use：main 用 WebContentsView+CDP 执行命令（handleBrowserExecuteRequest）。
-      // 缺省实现时返回 backend_unavailable，保证通道打通但不阻塞。
-      const requestId = result.data.requestId;
-      const handler = dependencies.handleBrowserExecuteRequest;
-      const fallback = {
-        ok: false as const,
-        error: {
-          code: "backend_unavailable",
-          message: "browser executor not ready",
-        },
-        elapsedMs: 0,
-      };
-      void (
-        handler
-          ? handler({
-              win,
-              requestId,
-              browserId: result.data.browserId,
-              browserGeneration: result.data.browserGeneration,
-              sessionId: result.data.sessionId,
-              turnId: result.data.turnId,
-              workspaceKey: result.data.workspaceKey,
-              workspacePath: result.data.workspacePath,
-              workspaceIdentity: result.data.workspaceIdentity,
-              remoteSessionId: result.data.remoteSessionId,
-              clientMode: result.data.clientMode,
-              sessionContext: result.data.sessionContext,
-              command: result.data.command,
-            }).catch((error: unknown) => ({
-              ok: false as const,
-              error: {
-                code: "execution_error",
-                message: error instanceof Error ? error.message : String(error),
-              },
-              elapsedMs: 0,
-            }))
-          : Promise.resolve(fallback)
-      ).then((commandResult) => {
-        child.postMessage({
-          type: HostMessageTypes.BrowserExecuteResult,
-          requestId,
-          result: commandResult,
-        });
-      });
-      return;
-    }
-
     if (result.data.type === HostResponseTypes.AgentProcessSpawned) {
       registerHostAgentProcess(label, {
         pid: result.data.pid,
@@ -486,28 +367,11 @@ export function spawnHostProcess(
         args: result.data.args,
         startedAt: result.data.startedAt,
       });
-      dependencies.onAgentProcessSpawned?.(result.data);
-      return;
-    }
-
-    if (result.data.type === HostResponseTypes.AgentProcessReady) {
-      dependencies.onAgentProcessReady?.(result.data);
       return;
     }
 
     if (result.data.type === HostResponseTypes.AgentProcessExited) {
       unregisterHostAgentProcess(label, result.data.pid);
-      dependencies.onAgentProcessExited?.(result.data);
-      return;
-    }
-
-    if (result.data.type === HostResponseTypes.AgentProcessError) {
-      dependencies.onAgentProcessError?.(result.data);
-      return;
-    }
-
-    if (result.data.type === HostResponseTypes.AgentProcessException) {
-      dependencies.onAgentProcessException?.(result.data);
       return;
     }
 
@@ -751,8 +615,6 @@ export function spawnHostProcess(
 
   child.on("exit", (code) => {
     exitedHostProcesses.add(child);
-    // Host exit 是 fail-hidden 权威边界；不能依赖即将退出的 Host 再补发 inactive。
-    dependencies.onCuaOperationStateSourceExited?.(child);
     hostLogRelay.flushRawLogs();
     dependencies.logger.info(`[spawnHostProcess] host process (${label}) exited with code ${code}`);
     dependencies.hostRunningTaskCountMap.delete(child);

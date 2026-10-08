@@ -70,10 +70,6 @@
       "types": "./dist/auth/index.d.ts",
       "import": "./dist/auth/index.js"
     },
-    "./browser": {
-      "types": "./dist/browser/index.d.ts",
-      "import": "./dist/browser/index.js"
-    },
     "./mcp": {
       "types": "./dist/mcp/index.d.ts",
       "import": "./dist/mcp/index.js"
@@ -108,13 +104,11 @@
     "@zcode/model-option-map": "workspace:*",
     "@zcode/provider": "workspace:*",
     "@zcode/shared": "workspace:*",
-    "@zcode/zcode-cua": "workspace:*",
     "ai": "6.0.193",
     "cheerio": "^1.0.0",
     "iconv-lite": "0.7.2",
     "jimp": "^1.6.1",
     "koffi": "2.15.6",
-    "playwright-core": "1.59.1",
     "proxy-agent": "^8.0.1",
     "ripgrep": "0.3.1",
     "semver": "^7.7.4",

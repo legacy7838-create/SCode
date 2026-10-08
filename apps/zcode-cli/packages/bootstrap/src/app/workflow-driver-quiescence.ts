@@ -97,8 +97,8 @@ export function createActorSessionQuiescence(options?: {
  * dispose 的每会话释放：退订活动观察、撤掉退避重驱、**登记静默**，再等在飞 turn 落地后关
  * actor runtime。
  *
- * 对每个 runtime 跑 app 关会话的**同一条**链——`closeBrowserSession` 内部依次 beginShutdown、
- * node_repl 会话释放、浏览器会话关闭；不另造一套子代理关闭链，那会漂移。关闭失败只 warn，
+ * 对每个 runtime 跑 app 关会话的**同一条**链——`closeSession` 内部依次 beginShutdown、
+ * node_repl 会话释放；不另造一套子代理关闭链，那会漂移。关闭失败只 warn，
  * 结算不因它抛。
  *
  * 登记必须在 `state.turn.then(...)` **之前**：此刻 `state.turn` 就是要等的那条链，而 then 会把
@@ -123,7 +123,7 @@ export function releaseActorSessions(
 function closeActorRuntime(deps: AgentRuntimeWorkflowDriverDeps, state: SessionState): void {
   // Promise.resolve().then(...)：把同步抛出也归到同一条 warn 路径（最小 stub runtime 没有这个方法）。
   void Promise.resolve()
-    .then(() => state.runtime.closeBrowserSession())
+    .then(() => state.runtime.closeSession())
     .catch((error: unknown) => {
       deps.logger?.warn?.("Dynamic workflow actor runtime close failed", {
         errorMessage: error instanceof Error ? error.message : String(error),

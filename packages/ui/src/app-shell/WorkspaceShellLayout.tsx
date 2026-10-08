@@ -5,13 +5,11 @@ import type {
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
 } from "react";
-import type { PanelImperativeHandle } from "react-resizable-panels";
 
 import { TID_APP_HEADER } from "@zcode/shared";
 // 保活：workspace tab 真正关闭时，按 workspaceKey 回收 side pane terminal 的常驻 PTY/xterm。
 // 对称下侧 Terminal.tsx 的 openWorkspaceKeys 回收。
 import { sidePaneTerminalSessionRegistry } from "@/terminal/sidePaneTerminalSessionRegistry.js";
-import { V4ChatPane } from "@/v4/V4ChatPane.js";
 import { V4WorkspaceChatArea } from "@/v4/V4WorkspaceChatArea.js";
 import {
   V4SplitPaneEntryProvider,
@@ -33,7 +31,6 @@ import { requestV4ComposerDraftWorkspaceTransfer } from "@/v4/composer/composerD
 import { ChatEmptyWorkspacePreviewMenu } from "@/ChatEmptyState.js";
 import { DesktopTopOverlay } from "@/DesktopTopOverlay.js";
 import { DesktopWindowFrame } from "@/DesktopWindowFrame.js";
-import { WorkspacePluginPreview } from "@/WorkspacePluginPreview.js";
 import { useIsOfficeMode } from "@/hooks/useInterfaceMode.js";
 import { GitBranchSwitcher } from "@/GitBranchSwitcher.js";
 import { ScopedErrorBoundary } from "@/ErrorBoundary.js";
@@ -45,15 +42,10 @@ import type {
   SavedWorkflowsOpenRunParams,
 } from "@/settings/saved-workflows/SavedWorkflowsSection.js";
 import { AutomationsMainBreadcrumbFrame } from "@/settings/AutomationsMainBreadcrumbFrame.js";
-import { PluginStorePage } from "@/settings/PluginStorePage.js";
 import { TaskFindDialog } from "@/quickpick/TaskFindDialog.js";
 import { WorkspaceHeader } from "@/WorkspaceHeader.js";
 import { WorkspaceSidebar, type SidebarFileTreeOpenRequest } from "@/WorkspaceSidebar.js";
 import { AnimatedSidePanePanel } from "@/app-shell/AnimatedSidePanePanel.js";
-import {
-  findScreenshotSurfaceTabForRender,
-  useBrowserScreenshotSurfaceRequest,
-} from "@/browser-use/useBrowserScreenshotSurfaceRequest.js";
 import { AnimatedTerminalPanel } from "@/app-shell/AnimatedTerminalPanel.js";
 import { SIDE_PANE_DEFAULT_EXPANDED_SIZE } from "@/app-shell/sidePaneLayout.js";
 import { useAnimatedResizablePanel } from "@/app-shell/useAnimatedResizablePanel.js";
@@ -65,7 +57,6 @@ import {
   resolveWorkspaceShellWindowChromeClass,
 } from "@/app-shell/workspaceShellWindowChrome.js";
 import { cn } from "@/components/lib/utils.js";
-import { Button } from "@/components/ui/button.js";
 import { ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable.js";
 import { toast } from "@/components/ui/toast.js";
 import { getGitDirtyFileCount } from "@/git-branch-switcher/display.js";
@@ -191,14 +182,11 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
   services,
   workspaceReadOnlyReason,
   workspaceMainView,
-  pluginStoreOpenVersion,
   openAutomationId,
   openAutomationTab,
   onWorkspaceMainViewChange,
   onOpenAutomationConsumed,
   handleOpenAutomations,
-  handleOpenPluginStore,
-  handleManageInstalledPlugins,
   onConnectRemote,
   onSelectRemoteProject,
   onCancelRemoteProject,
@@ -360,10 +348,6 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
   );
   const [isSidebarFileTreeOpen, setIsSidebarFileTreeOpen] = useState(false);
   const workspaceKey = workspaceIdentity?.trim() || workspaceAbsPath;
-  const screenshotSurfaceRequest = useBrowserScreenshotSurfaceRequest(sidePaneState?.tabs ?? []);
-  const screenshotSurfaceTab = screenshotSurfaceRequest
-    ? findScreenshotSurfaceTabForRender(sidePaneState?.tabs ?? [], screenshotSurfaceRequest)
-    : undefined;
   // v4 pane 绑定持久化（输出中刷新恢复）：renderer 刷新后恢复上次选中的
   // session；CLI/host 进程未死，pane 重订阅即拿 snapshot+续流。
   usePaneSessionPersistence({
@@ -819,9 +803,8 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
   const showChatMainView = useCallback(() => {
     onWorkspaceMainViewChange("chat");
   }, [onWorkspaceMainViewChange]);
-  const primaryNavigationBack =
-    workspaceMainView === "plugin-store" ? handleManageInstalledPlugins : handleTaskNavBack;
-  const canPrimaryNavigationBack = workspaceMainView === "plugin-store" || canTaskNavBack;
+  const primaryNavigationBack = handleTaskNavBack;
+  const canPrimaryNavigationBack = canTaskNavBack;
   const handleCreateTaskInChat = useCallback(
     (request?: Parameters<typeof onCreateTask>[0]) => {
       // workspaceReadOnlyReason 判定的是活动 workspace；当 request 显式带 targetWorkspace 时
@@ -1189,15 +1172,7 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
           onSelectRemoteProject={onSelectRemoteProject}
           onCancelRemoteProject={onCancelRemoteProject}
         />
-        {isOfficeMode ? (
-          <WorkspacePluginPreview
-            onOpen={handleOpenPluginStore}
-            onSelectPlugin={handleSelectComposerPlugin}
-            workspacePath={workspaceAbsPath}
-            workspaceIdentity={workspaceIdentity}
-            remoteSessionId={workspaceRemoteSessionId ?? undefined}
-          />
-        ) : !isOfficeMode && activeWorkspacePurpose === "project" ? (
+        {!isOfficeMode && activeWorkspacePurpose === "project" ? (
           <GitBranchSwitcher
             workspacePath={workspaceAbsPath}
             gitSummary={gitState.summary}
@@ -1216,7 +1191,6 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
     [
       isOfficeMode,
       workspaceRemoteSessionId,
-      handleOpenPluginStore,
       handleSelectComposerPlugin,
       allowOpenWorkspace,
       allowRemoteWorkspace,
@@ -1445,8 +1419,6 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
       panelElementRef={sidePanePanelElementRef}
       browserNavigationRequest={browserNavigationRequest}
       browserRestoreUrls={browserRestoreUrls}
-      screenshotSurfaceRequest={screenshotSurfaceRequest}
-      screenshotSurfaceTabId={screenshotSurfaceTab?.id ?? null}
       fileChangeFindActiveIndex={fileChangeFindActiveIndex}
       fileChangeFindNavigationRequestId={fileChangeFindNavigationRequestId}
       fileChangeFindQuery={fileChangeFindQuery}
@@ -1491,8 +1463,7 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
   // Draft 之前维护一套独立轻量 header，导致 side pane、caption 安全区和拖拽入口
   // 与 Task Header 分叉。桌面端统一复用 WorkspaceHeader，只由 variant 裁剪 task 专属内容；
   // 手机远控无 active task 时仍不渲染桌面 chrome，继续遵守 replayable overlay 边界。
-  const shouldRenderMainViewHeader =
-    workspaceMainView !== "automations" && workspaceMainView !== "plugin-store";
+  const shouldRenderMainViewHeader = workspaceMainView !== "automations";
   const shouldRenderWorkspaceHeader =
     shouldRenderMainViewHeader && (activeTaskId !== null || isDesktop);
   // ErrorBoundary resetKeys 的数组如果每次 render 都重新创建，
@@ -1598,8 +1569,6 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                     onOpenCommandCenter={handleOpenCommandCenter}
                     onOpenAutomations={handleOpenAutomations}
                     automationsActive={workspaceMainView === "automations"}
-                    onOpenPluginStore={handleOpenPluginStore}
-                    pluginStoreActive={workspaceMainView === "plugin-store"}
                     onFileTreeOpenChange={setIsSidebarFileTreeOpen}
                   />
                 </WorkflowRunOpenProvider>
@@ -1797,30 +1766,6 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                             </div>
                           </AutomationsMainBreadcrumbFrame>
                         </main>
-                      ) : workspaceMainView === "plugin-store" ? (
-                        <main className="flex h-full min-h-0 flex-1 flex-col bg-background">
-                          <AutomationsMainBreadcrumbFrame
-                            isDesktop={Boolean(isDesktop)}
-                            sectionLabel={intl.formatMessage({
-                              id: "workspace.openPluginsSettings",
-                            })}
-                            ariaLabel={intl.formatMessage({
-                              id: "settings.breadcrumbLabel",
-                            })}
-                          >
-                            <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
-                              <div className="mx-auto flex w-full max-w-4xl flex-col px-4 py-4 md:px-6 md:py-6">
-                                <PluginStorePage
-                                  key={`plugin-store:${pluginStoreOpenVersion}`}
-                                  workspacePath={workspaceAbsPath}
-                                  workspaceIdentity={workspaceIdentity}
-                                  onCreateTask={handleCreateTaskInChat}
-                                  onManageInstalled={handleManageInstalledPlugins}
-                                />
-                              </div>
-                            </div>
-                          </AutomationsMainBreadcrumbFrame>
-                        </main>
                       ) : (
                         <main className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden">
                           {renderChatFindDialog()}
@@ -1899,7 +1844,7 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                     </div>
                   </section>
                 </ResizablePanel>
-                {workspaceMainView !== "automations" && workspaceMainView !== "plugin-store" ? (
+                {workspaceMainView !== "automations" ? (
                   <AnimatedTerminalPanel
                     frameClassName={cn(
                       isSidePaneVisible

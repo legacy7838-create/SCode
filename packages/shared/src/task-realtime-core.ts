@@ -8,9 +8,6 @@ import { z } from "zod";
 import type { ZCodeTaskMigrationSource, ZCodeTaskMode } from "./zcode-task-types-core.js";
 import { zcodeAgentProviderSchema } from "./zcode-agent-policy.js";
 import { zcodePermissionResponseSchema } from "./zcode-protocol-legacy-types.js";
-// merge 冲突解决：两侧分别在相邻行新增独立 import（本分支 hook trust review
-// 决策 schema、staging telemetry error attribution schema），二者无语义交集，均保留。
-import { workspaceHookReviewDecisionSchema } from "./zcode-protocol-v4/workspace-hook-review.js";
 import { errorAttributionSchema } from "./zcode-protocol-v4/snapshot.js";
 
 const nonEmptyString = z.string().trim().min(1);
@@ -339,27 +336,6 @@ const taskRespondElicitationOwnerCommandRequestSchema = taskOwnerCommandBaseSche
     content: z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
-const taskRespondWorkspaceHookReviewOwnerCommandRequestSchema = taskOwnerCommandBaseSchema
-  .extend({
-    type: z.literal("respond_workspace_hook_review"),
-    remoteSessionId: nonEmptyString.optional(),
-    sessionId: nonEmptyString,
-    bundleDigest: z.string().regex(/^[a-f0-9]{64}$/u),
-    reviewFlowId: nonEmptyString,
-    generation: z.number().int().positive(),
-    interactionId: nonEmptyString,
-    decision: workspaceHookReviewDecisionSchema,
-  })
-  .strict()
-  .superRefine((command, context) => {
-    if (command.remoteSessionId && !command.workspaceIdentity) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["workspaceIdentity"],
-        message: "remote workspace Hook review response requires workspaceIdentity",
-      });
-    }
-  });
 const zcodeTaskRuntimeCommandBaseSchema = z
   .object({
     commandId: nonEmptyString,
@@ -411,7 +387,6 @@ export const taskOwnerCommandRequestSchema = z
     taskStopGenerationOwnerCommandRequestSchema,
     taskRespondPermissionOwnerCommandRequestSchema,
     taskRespondElicitationOwnerCommandRequestSchema,
-    taskRespondWorkspaceHookReviewOwnerCommandRequestSchema,
     taskEnqueueCommandOwnerCommandRequestSchema,
     taskPromoteCommandOwnerCommandRequestSchema,
     taskCancelCommandOwnerCommandRequestSchema,
@@ -432,11 +407,6 @@ export const taskOwnerCommandDeliverySchema = z
       })
       .strict(),
     taskRespondElicitationOwnerCommandRequestSchema
-      .extend({
-        requesterHostId: nonEmptyString,
-      })
-      .strict(),
-    taskRespondWorkspaceHookReviewOwnerCommandRequestSchema
       .extend({
         requesterHostId: nonEmptyString,
       })

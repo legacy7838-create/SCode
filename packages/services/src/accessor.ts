@@ -11,7 +11,6 @@ import type { IBroadcastService } from "./broadcast/broadcast.js";
 import type { IZCodeTaskService } from "./session/zcodeTaskService.js";
 import type { IZCodeAgentService } from "./zcode-agent/zcodeAgent.js";
 import type { IZCodeSessionService } from "./zcode-session/zcodeSession.js";
-import type { ICuaPermissionService } from "./cua-permission-broker/cuaPermissionService.js";
 import type { IBotsService } from "./bots/bots.js";
 import type { IFileWatcherService } from "./fileWatcher/fileWatcher.js";
 import type { IOAuthService } from "./oauth/oauth.js";
@@ -26,13 +25,8 @@ import type { IClientScenesService } from "./client-scenes/clientScenes.js";
 import type { ISkillsService } from "./skills/skills.js";
 import type { ISkillSyncService } from "./skill-sync/skillSync.js";
 import type { IMcpSyncService } from "./mcp-sync/mcpSync.js";
-import type { IPluginSyncService } from "./plugin-sync/pluginSync.js";
-import type { IPluginsService } from "./plugins/plugins.js";
-import type { IPluginManagementService } from "./plugins/pluginManagement.js";
 import type { ISubagentsService } from "./subagents/subagents.js";
 import type { ICommandsService } from "./commands/commands.js";
-import type { IHooksService } from "./hooks/hooks.js";
-import type { IMemoryService } from "./memory/memory.js";
 import type { ISettingsSyncService } from "./settings-sync/settingsSync.js";
 import type { IFeedbackService } from "./feedback/feedback.js";
 import type { IPromptAttachmentTransferService } from "./prompt-attachment-transfer/promptAttachmentTransfer.js";
@@ -58,8 +52,6 @@ export interface IServiceAccessor {
   readonly windowControllerService?: IWindowControllerService;
   readonly zcodeAgentService: IZCodeAgentService;
   readonly zcodeSessionService: IZCodeSessionService;
-  // CUA 是 opt-in 内测特性：local macOS host 提供，远端 等 host 没有。可选避免连锁必填。
-  readonly cuaPermissionService?: ICuaPermissionService;
   readonly conversationShareService: IConversationShareService;
   readonly botsService: IBotsService;
   readonly fileWatcherService: IFileWatcherService;
@@ -77,14 +69,8 @@ export interface IServiceAccessor {
   readonly skillsService: ISkillsService;
   readonly skillSyncService: ISkillSyncService;
   readonly mcpSyncService: IMcpSyncService;
-  readonly pluginSyncService: IPluginSyncService;
-  readonly pluginsService: IPluginsService;
-  /** 设置页插件管理（UI 不再直触 zcodeAgentService 的 plugins/* 面） */
-  readonly pluginManagementService: IPluginManagementService;
   readonly subagentsService: ISubagentsService;
   readonly commandsService: ICommandsService;
-  readonly hooksService: IHooksService;
-  readonly memoryService: IMemoryService;
   readonly settingsSyncService: ISettingsSyncService;
   readonly feedbackService: IFeedbackService;
   readonly promptAttachmentTransferService: IPromptAttachmentTransferService;

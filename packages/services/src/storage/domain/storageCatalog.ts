@@ -105,7 +105,6 @@ const PREFIX_RULES: Record<Exclude<StorageCategoryId, "other">, string[]> = {
     "v2/acp-config",
     "v2/provider",
     "cli/models",
-    "cli/memories",
     "cli/workflows",
     "security",
     "commands",

@@ -5,45 +5,10 @@ import { join, relative, resolve, sep } from "node:path";
 
 export const seaOfficialPluginAssetPrefix = "zcode-official-plugins/";
 export const seaOfficialPluginManifestAssetKey = `${seaOfficialPluginAssetPrefix}manifest.json`;
-const browserUseRequiredRuntimePaths = [
-  "scripts/browser-client.mjs",
-  "docs/api.json",
-  "docs/documents.json",
-  "docs/overview.md",
-  // recording lookup 是录屏 API 的模型入口，SEA 不得接受缺失正文的插件资产。
-  "docs/recording.md",
-  "docs/workflow.md",
-  "skills/control-browser/SKILL.md",
-  "skills/web-gui-tester/SKILL.md",
-];
 
-export const officialSeaPlugins = [
-  {
-    // node_repl 宿主：Browser Use 与 Computer Use 共用的运行时产物，自己不是面向用户的插件
-    // （无 skill、无市场 listing）。它必须始终随发布物嵌入，否则任一能力启用时都没有宿主可跑。
-    marketplace: "zcode-plugins-official",
-    name: "node-repl-host",
-    packageName: "@zcode/node-repl-host",
-    requiresRuntime: true,
-    requiredRuntimePaths: ["dist/mcp/server.js"],
-    rootPath: join("packages", "node-repl-host"),
-    version: "0.6.0",
-  },
-  {
-
-    marketplace: "zcode-plugins-official",
-    name: "browser-use",
-    packageName: "@zcode/browser-use-plugin",
-    requiresRuntime: true,
-    // Browser Use 的 runtime、client、API 文档和 skills 是同一发布单元；
-    // SEA 构建必须在嵌入前拒绝任一缺失项，不能把损坏产物留到用户启动时才发现。
-    requiredRuntimePaths: browserUseRequiredRuntimePaths,
-    rootPath: join("packages", "browser-use-plugin"),
-    // SEA 清单仍指向旧版时，runtime 会与官方 definition 精确匹配失败，
-    // 导致发布产物不 seed browser-use，进而无法装配宿主 node_repl MCP。
-    version: "0.5.1",
-  },
-];
+// Computer Use / node_repl 宿主子系统已整体下线，随 SEA 发布物嵌入的运行时宿主插件清单清空。
+// 后续若有新的独立 MCP runtime 需要随可执行文件分发，在此登记（requiresRuntime 会校验入口）。
+export const officialSeaPlugins = [];
 
 export const collectSeaOfficialPluginAssets = async ({
   requireRuntime = false,

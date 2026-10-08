@@ -11,9 +11,6 @@ export * from "./context/index.js";
 // Compact helpers
 export * from "./compact/index.js";
 
-// Memory paths
-export { resolveProjectMemoryRoot } from "./memory/project-root.js";
-
 // Tool components
 export { ToolScheduler, defaultToolScheduler, READ_ONLY_TOOLS } from "./tool/scheduler.js";
 export type { ToolSchedule, ToolScheduleItem, ToolDependency } from "./tool/scheduler.js";
@@ -84,19 +81,6 @@ export * from "./mcp/index.js";
 
 // Plugin 对话引用（@ Plugin capability hint）
 export * from "./plugin-reference/index.js";
-
-// Node REPL/browser-use plugin runtime primitives
-export { NodeReplSession } from "./repl/node-repl-session.js";
-export type {
-  NodeReplCuaAppIdentity,
-  NodeReplImage,
-  NodeReplRequestMeta,
-  NodeReplRunResult,
-  NodeReplStructuredResult,
-  NodeReplSessionOptions,
-} from "./repl/node-repl-session.js";
-export { setupBrowserRuntime } from "./browser-client/index.js";
-export type { BrowserClientTransport } from "./browser-client/index.js";
 
 // Subagent components
 export * from "./subagent/index.js";

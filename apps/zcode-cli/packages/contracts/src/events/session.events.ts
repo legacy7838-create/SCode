@@ -145,11 +145,6 @@ export const SessionEventType = {
   PermissionResolved: "permission_resolved",
   PermissionDenied: "permission_denied",
   UserInputAutoResolutionUpdated: "user_input_auto_resolution_updated",
-  WorkspaceHookReviewRequested: "workspace_hook_review_requested",
-  WorkspaceHookReviewSettled: "workspace_hook_review_settled",
-  WorkspaceHookReviewSuperseded: "workspace_hook_review_superseded",
-  // 软门禁:准入状态变化时发射,pendingCount=0 时投影层清空 snapshot 字段。
-  WorkspaceHookAdmissionUpdated: "workspace_hook_admission_updated",
   HookRunStarted: "hook_run_started",
   HookRunProgress: "hook_run_progress",
   HookRunCompleted: "hook_run_completed",
@@ -1005,30 +1000,6 @@ export interface UserInputAutoResolutionUpdatedPayload {
   autoResolution: UserInputAutoResolutionState;
 }
 
-export interface WorkspaceHookReviewRequestedPayload {
-  request: unknown;
-}
-
-export interface WorkspaceHookReviewSettledPayload {
-  interactionId: string;
-  state: "resolved" | "timed_out" | "configuration_error";
-  reasonCode?: string;
-}
-
-export interface WorkspaceHookReviewSupersededPayload {
-  interactionId: string;
-  supersededByInteractionId: string;
-}
-
-// 软门禁:准入层完成评估后上报 pending 状态。
-// pendingCount = configuredEnabled && admissionClass === "pending" 的声明数;
-// pendingCount === 0 → 投影层将 snapshot.workspaceHookAdmission 置 null(提示条消失)。
-export interface WorkspaceHookAdmissionUpdatedPayload {
-  pendingCount: number;
-  bundleDigest: string;
-  workspaceIdentity?: string;
-}
-
 export type PermissionDecision = "allow" | "deny" | "escalate" | "modify";
 
 export type TargetChangedAction =
@@ -1226,10 +1197,6 @@ export type SessionEventPayload =
   | PermissionResolvedPayload
   | PermissionDeniedPayload
   | UserInputAutoResolutionUpdatedPayload
-  | WorkspaceHookReviewRequestedPayload
-  | WorkspaceHookReviewSettledPayload
-  | WorkspaceHookReviewSupersededPayload
-  | WorkspaceHookAdmissionUpdatedPayload
   | HookRunLifecyclePayload
   | CompactLifecyclePayload
   | MicrocompactBoundaryEventPayload

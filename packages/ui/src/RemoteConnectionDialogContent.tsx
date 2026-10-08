@@ -11,7 +11,6 @@ import type {
 import { TID_REMOTE_KIND_DOCKER, TID_REMOTE_KIND_SSH, TID_REMOTE_KIND_WSL } from "@zcode/shared";
 import type {
   IMcpSyncService,
-  IPluginSyncService,
   IServiceAccessor,
   ISkillSyncService,
   IZCodeAgentService,
@@ -325,8 +324,6 @@ export function RemoteConnectionDirectoryStep({
   remoteSkillSyncService,
   localMcpSyncService,
   remoteMcpSyncService,
-  localPluginSyncService,
-  remotePluginSyncService,
   localZCodeAgentService,
   remoteZCodeAgentService,
   localWorkspacePath,
@@ -336,7 +333,6 @@ export function RemoteConnectionDirectoryStep({
   onCancel,
   onSkillsSynced,
   onMcpSynced,
-  onPluginsSynced,
 }: {
   services: IServiceAccessor | null;
   remoteTarget?: RemoteTarget | null;
@@ -344,8 +340,6 @@ export function RemoteConnectionDirectoryStep({
   remoteSkillSyncService?: ISkillSyncService | null;
   localMcpSyncService?: IMcpSyncService;
   remoteMcpSyncService?: IMcpSyncService | null;
-  localPluginSyncService?: IPluginSyncService;
-  remotePluginSyncService?: IPluginSyncService | null;
   localZCodeAgentService?: IZCodeAgentService;
   remoteZCodeAgentService?: IZCodeAgentService | null;
   localWorkspacePath?: string;
@@ -355,29 +349,20 @@ export function RemoteConnectionDirectoryStep({
   onCancel: () => void;
   onSkillsSynced?: () => Promise<void> | void;
   onMcpSynced?: () => Promise<void> | void;
-  onPluginsSynced?: () => Promise<void> | void;
 }) {
   const { intl } = useZCodeIntl();
   const [selectedPath, setSelectedPath] = useState("");
   const [remoteSkillSyncOpen, setRemoteSkillSyncOpen] = useState(false);
   const [remoteMcpSyncOpen, setRemoteMcpSyncOpen] = useState(false);
-  const [remotePluginSyncOpen, setRemotePluginSyncOpen] = useState(false);
-  const canShowRemoteSyncActions = shouldShowRemoteSyncActions({
-    remoteSessionId: remoteTarget ? "directory-step" : null,
-    remoteTarget,
-    clientMode: "desktop-continuous",
-    hasLocalSourceService: Boolean(
-      localSkillSyncService || localMcpSyncService || localPluginSyncService,
-    ),
-  });
+  const canShowRemoteSyncActions = shouldShowRemoteSyncActions(
+    remoteTarget ?? null,
+    "desktop-continuous",
+  );
   const canSyncRemoteSkills = Boolean(
     canShowRemoteSyncActions && localSkillSyncService && remoteSkillSyncService,
   );
   const canSyncRemoteMcp = Boolean(
     canShowRemoteSyncActions && localMcpSyncService && remoteMcpSyncService,
-  );
-  const canSyncRemotePlugins = Boolean(
-    canShowRemoteSyncActions && localPluginSyncService && remotePluginSyncService,
   );
 
   if (!services) {
@@ -410,11 +395,9 @@ export function RemoteConnectionDirectoryStep({
           <RemoteSyncDropdownButton
             canSyncSkills={canSyncRemoteSkills}
             canSyncMcp={canSyncRemoteMcp}
-            canSyncPlugins={canSyncRemotePlugins}
             mcpDisabled={!selectedPath.trim()}
             onOpenSkillSync={() => setRemoteSkillSyncOpen(true)}
             onOpenMcpSync={() => setRemoteMcpSyncOpen(true)}
-            onOpenPluginSync={() => setRemotePluginSyncOpen(true)}
           />
         </div>
         {/* 该容器之前不是 flex，导致子级 DirectoryBrowser 的 flex-1 无法拿到有效高度，
@@ -465,35 +448,23 @@ export function RemoteConnectionDirectoryStep({
       <RemoteSyncDialogs
         canSyncSkills={canSyncRemoteSkills}
         canSyncMcp={canSyncRemoteMcp}
-        canSyncPlugins={canSyncRemotePlugins}
         skillOpen={remoteSkillSyncOpen}
         mcpOpen={remoteMcpSyncOpen}
-        pluginOpen={remotePluginSyncOpen}
         onSkillOpenChange={setRemoteSkillSyncOpen}
         onMcpOpenChange={setRemoteMcpSyncOpen}
-        onPluginOpenChange={setRemotePluginSyncOpen}
         localSkillSyncService={localSkillSyncService}
         remoteSkillSyncService={remoteSkillSyncService}
         localMcpSyncService={localMcpSyncService}
         remoteMcpSyncService={remoteMcpSyncService}
-        localPluginSyncService={localPluginSyncService}
-        remotePluginSyncService={remotePluginSyncService}
-        localZCodeAgentService={localZCodeAgentService}
-        remoteZCodeAgentService={remoteZCodeAgentService}
         remoteTarget={remoteTarget}
         skillWorkspacePath=""
         mcpWorkspacePath={selectedPath.trim()}
-        pluginWorkspacePath={selectedPath.trim()}
-        pluginLocalWorkspacePath={localWorkspacePath}
         mcpLocalWorkspacePath={localWorkspacePath}
         onSkillsSynced={async () => {
           await onSkillsSynced?.();
         }}
         onMcpSynced={async () => {
           await onMcpSynced?.();
-        }}
-        onPluginsSynced={async () => {
-          await onPluginsSynced?.();
         }}
       />
     </div>

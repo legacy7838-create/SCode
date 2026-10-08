@@ -9,7 +9,6 @@ import type {
   ModelCatalogPort,
   EmbeddedSearchBackend,
   ExecutionPort,
-  BrowserControlPort,
   ExecutionShellSelection,
   AutomationPort,
   OffPeakPort,
@@ -88,8 +87,6 @@ export interface ToolExecutorOptions {
   logger?: Logger;
   backgroundTaskControlPort?: BackgroundTaskControlPort;
   executionPort?: ExecutionPort;
-  browserControlPort?: BrowserControlPort;
-  browserDocumentationRoot?: string;
   fileSystemPort?: FileSystemPort;
   httpClientPort?: HttpClientPort;
   imageProcessorPort?: ImageProcessorPort;
@@ -131,7 +128,6 @@ export interface ToolExecutorOptions {
   getWorkingDirectory?: () => string;
   setWorkingDirectory?: (cwd: string) => Promise<void> | void;
   getWorkspaceRoot?: () => string;
-  getMemoryRoot?: () => string | undefined;
   traceContext?: TraceContext;
   mode?: CollaborationMode;
   getMode?: () => CollaborationMode;
@@ -194,8 +190,6 @@ export interface ToolExecutorDeps {
   logger?: Logger;
   backgroundTaskControlPort?: BackgroundTaskControlPort;
   executionPort?: ExecutionPort;
-  browserControlPort?: BrowserControlPort;
-  browserDocumentationRoot?: string;
   fileSystemPort?: FileSystemPort;
   httpClientPort?: HttpClientPort;
   imageProcessorPort?: ImageProcessorPort;
@@ -233,7 +227,6 @@ export interface ToolExecutorDeps {
   remoteSessionId?: string;
   clientMode?: "desktop-continuous" | "web-remote-replayable";
   deliveryKind?: "desktop-continuous" | "web-remote-replayable";
-  getMemoryRoot?: () => string | undefined;
   runtimeScope: ToolRuntimeScope;
   traceContext?: TraceContext;
   getMode: () => CollaborationMode;

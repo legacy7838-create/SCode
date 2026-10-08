@@ -25,9 +25,7 @@ import type {
 import { formatModelPickerValue } from "#src/zcode-agent/zcodeConfigOptions.js";
 import { createZCodeSessionApiRetryRuntimeTracker } from "#src/zcode-session/zcodeSessionApiRetry.js";
 import { appendWorkspaceToFilesystemMcpServers } from "#src/session/mcpWorkspaceScope.js";
-import { repairEmptyImportedClaudeSessionSnapshot } from "#src/zcode-session/importedClaudeSessionRepair.js";
 import { createZCodeDeferredDraftRegistry } from "#src/zcode-session/zcodeSessionDraftRegistry.js";
-import type { CuaProductMcpServerResolver } from "#src/cua-permission-broker/index.js";
 
 const logger = createServiceLogger("zcode-session-service");
 
@@ -41,13 +39,11 @@ interface CreateZCodeSessionServiceOptions {
    * 让侧边栏列表立刻看到 first_input title 和 updatedAt 排序刷新。
    */
   taskIndexSyncer?: ZCodeTaskIndexSyncer;
-  cuaProductMcpServerResolver?: CuaProductMcpServerResolver;
 }
 
 export function createZCodeSessionService({
   agentService,
   taskIndexSyncer,
-  cuaProductMcpServerResolver,
 }: CreateZCodeSessionServiceOptions): IZCodeSessionService {
   const { withApiRetryRuntime } = createZCodeSessionApiRetryRuntimeTracker();
   const deferredDraftSessions = createZCodeDeferredDraftRegistry();
@@ -163,13 +159,7 @@ export function createZCodeSessionService({
     snapshot: ZCodeSessionStateSnapshot,
     params: ZCodeSessionResumeParams | ZCodeSessionReadParams,
   ): Promise<ZCodeSessionStateSnapshot> {
-    return withApiRetryRuntime(
-      await repairEmptyImportedClaudeSessionSnapshot({
-        agentService,
-        snapshot,
-        target: params,
-      }),
-    );
+    return withApiRetryRuntime(snapshot);
   }
 
   async function withResolvedMcpServers<
@@ -179,11 +169,7 @@ export function createZCodeSessionService({
       params.mcpServers,
       params.workspacePath,
     );
-    const resolvedMcpServers = cuaProductMcpServerResolver
-      ? await cuaProductMcpServerResolver.resolveMcpServers(mcpServers, {
-          workspacePath: params.workspacePath,
-        })
-      : mcpServers;
+    const resolvedMcpServers = mcpServers;
     if (resolvedMcpServers === params.mcpServers) {
       return params;
     }

@@ -18,7 +18,6 @@ import type {
   TaskStreamMirrorOp,
 } from "./zcode-task-types-core.js";
 import type { ZCodePermissionResponse } from "./zcode-protocol-legacy-types.js";
-import type { WorkspaceHookReviewDecision } from "./zcode-protocol-v4/workspace-hook-review.js";
 
 export interface TaskRealtimeEnvelope {
   eventId: string;
@@ -125,22 +124,6 @@ export type TaskOwnerCommandRequest =
       elicitationRequestId: string;
       action: "accept" | "decline" | "cancel";
       content?: Record<string, unknown>;
-    }
-  | {
-      commandRequestId: string;
-      type: "respond_workspace_hook_review";
-      workspacePath: string;
-      workspaceIdentity?: string;
-      workspaceKey: string;
-      remoteSessionId?: string;
-      taskId: string;
-      runId: string;
-      sessionId: string;
-      bundleDigest: string;
-      reviewFlowId: string;
-      generation: number;
-      interactionId: string;
-      decision: WorkspaceHookReviewDecision;
     }
   | {
       commandRequestId: string;

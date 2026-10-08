@@ -18,12 +18,6 @@ export const ZCODE_KNOWN_TOOL_NAMES = [
   "RespondToCoordinator",
   "TaskOutput",
   "TaskStop",
-  "js",
-  "js_reset",
-  "js_add_node_module_dir",
-  "mcp__node_repl__js",
-  "mcp__node_repl__js_reset",
-  "mcp__node_repl__js_add_node_module_dir",
   "Agent",
   "Task",
   "Skill",
@@ -51,7 +45,6 @@ export type ZCodeToolFamily =
   | "session-context"
   | "message"
   | "task-control"
-  | "node-repl"
   | "workflow";
 
 const TOOL_FAMILY_BY_NAME: Record<ZCodeKnownToolName, ZCodeToolFamily> = {
@@ -75,14 +68,6 @@ const TOOL_FAMILY_BY_NAME: Record<ZCodeKnownToolName, ZCodeToolFamily> = {
   TaskOutput: "task-control",
   // TaskStop 未登记时 UI identity 会退回 unknown，最终落到 raw fallback renderer。
   TaskStop: "task-control",
-  js: "node-repl",
-  js_reset: "node-repl",
-  js_add_node_module_dir: "node-repl",
-  // node_repl 由 MCP 暴露，进入 UI 的工具名因此带 MCP 前缀。
-  // 若这里只登记旧 built-in 名称，专用 REPL renderer 会退回 unknown fallback。
-  mcp__node_repl__js: "node-repl",
-  mcp__node_repl__js_reset: "node-repl",
-  mcp__node_repl__js_add_node_module_dir: "node-repl",
   Agent: "agent",
   Task: "agent",
   Skill: "skill",

@@ -222,8 +222,6 @@ export const TID_CHAT_MESSAGES = "chat-messages";
 export const TID_CHAT_ERROR_BANNER = "chat-error-banner";
 /** Hook 阻断错误的详情按钮 */
 export const TID_CHAT_ERROR_DETAILS_BUTTON = "chat-error-details-button";
-/** Hook 阻断错误横幅左侧图标 */
-export const TID_CHAT_ERROR_HOOK_ICON = "chat-error-hook-icon";
 /** 聊天空状态容器 */
 export const TID_CHAT_EMPTY = "chat-empty";
 /** 聊天输入框 */
@@ -367,39 +365,6 @@ export const TID_RESOURCE_MANAGER_STORAGE_CONFIRM_ACCEPT =
 /** 资源管理器「存储」tab：清理确认框取消按钮 */
 export const TID_RESOURCE_MANAGER_STORAGE_CONFIRM_CANCEL =
   "resource-manager-storage-confirm-cancel";
-/** Memory 设置模块中的总开关 */
-export const TID_SETTINGS_MEMORY_SWITCH = "settings-memory-switch";
-/** Memory 设置模块刷新按钮 */
-export const TID_SETTINGS_MEMORY_REFRESH = "settings-memory-refresh";
-/** Memory Workspace Scope 菜单触发器 */
-export const TID_SETTINGS_MEMORY_SCOPE_TRIGGER = "settings-memory-scope-trigger";
-/** Memory Workspace Scope 图标 */
-export const TID_SETTINGS_MEMORY_SCOPE_ICON = "settings-memory-scope-icon";
-/** Memory 当前 Workspace 文件数量 */
-export const TID_SETTINGS_MEMORY_COUNT = "settings-memory-count";
-/** Memory 文件名搜索输入框 */
-export const TID_SETTINGS_MEMORY_SEARCH_INPUT = "settings-memory-search-input";
-/** Memory 文件名搜索清空按钮 */
-export const TID_SETTINGS_MEMORY_SEARCH_CLEAR = "settings-memory-search-clear";
-/** Memory 项目文件列表返回项目列表按钮 */
-export const TID_SETTINGS_MEMORY_BACK_PROJECTS = "settings-memory-back-projects";
-/** Memory 文件正文返回项目文件列表按钮 */
-export const TID_SETTINGS_MEMORY_BACK_MEMORIES = "settings-memory-back-memories";
-/** Memory workspace 行（动态后缀为 workspace id） */
-export const TID_SETTINGS_MEMORY_WORKSPACE = "settings-memory-workspace";
-
-/** Memory 文件行（动态后缀为文件名） */
-export const TID_SETTINGS_MEMORY_FILE = "settings-memory-file";
-/** Memory 文件类型图标（动态后缀为文件名） */
-export const TID_SETTINGS_MEMORY_FILE_ICON = "settings-memory-file-icon";
-/** Memory 文件名称（动态后缀为文件名） */
-export const TID_SETTINGS_MEMORY_FILE_NAME = "settings-memory-file-name";
-/** Memory 文件更新时间（动态后缀为文件名） */
-export const TID_SETTINGS_MEMORY_FILE_UPDATED_AT = "settings-memory-file-updated-at";
-/** Memory 文件编辑器按钮组（动态后缀为文件名） */
-export const TID_SETTINGS_MEMORY_FILE_EDITOR_ACTIONS = "settings-memory-file-editor-actions";
-/** Memory 原始 Markdown 预览 */
-export const TID_SETTINGS_MEMORY_PREVIEW = "settings-memory-preview";
 /** 常规设置中的 AskUserQuestion 自动继续开关 */
 export const TID_SETTINGS_ASK_USER_QUESTION_AUTO_RESOLUTION_SWITCH =
   "settings-ask-user-question-auto-resolution-switch";
@@ -521,12 +486,6 @@ export const TID_V4_TIMELINE = "v4-timeline";
 export const TID_V4_TIMELINE_EMPTY = "v4-timeline-empty";
 /** v4 投影行（动态后缀为 rowId） */
 export const TID_V4_ROW = "v4-row";
-/** v4 工作区 Hook 待审核提示条容器 */
-export const TID_V4_WORKSPACE_HOOK_PENDING_BANNER = "v4-workspace-hook-pending-banner";
-/** v4 工作区 Hook 待审核提示条「去审核」按钮 */
-export const TID_V4_WORKSPACE_HOOK_PENDING_REVIEW = "v4-workspace-hook-pending-review";
-/** v4 工作区 Hook 待审核提示条「忽略」按钮 */
-export const TID_V4_WORKSPACE_HOOK_PENDING_DISMISS = "v4-workspace-hook-pending-dismiss";
 /** v4 composer 容器 */
 export const TID_V4_COMPOSER = "v4-composer";
 /** v4 composer 文本输入 */
@@ -559,10 +518,6 @@ export const TID_V4_RETRY = "v4-retry";
 export const TID_V4_FEEDBACK_LIKE = "v4-feedback-like";
 /** v4 assistant 行点踩按钮（动态后缀为 rowId） */
 export const TID_V4_FEEDBACK_DISLIKE = "v4-feedback-dislike";
-/** v4 turn Hook 详情按钮（动态后缀为 product turnId） */
-export const TID_V4_HOOK_DETAILS_TRIGGER = "v4-hook-details-trigger";
-/** v4 turn Hook 详情 Popover（动态后缀为 product turnId） */
-export const TID_V4_HOOK_DETAILS_CONTENT = "v4-hook-details-content";
 /** v4 user 行 edit 按钮（动态后缀为 rowId） */
 export const TID_V4_EDIT = "v4-edit";
 /** v4 user query 编辑输入框（动态后缀为 rowId） */

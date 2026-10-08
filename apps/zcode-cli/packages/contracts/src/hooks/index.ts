@@ -35,12 +35,6 @@ export const HookSourceKind = {
 
 export type HookSourceKind = (typeof HookSourceKind)[keyof typeof HookSourceKind];
 
-/** Runtime-only provenance attached after user/plugin config validation. */
-export interface HookConfigSource {
-  kind: "user" | "project" | "internal";
-  path?: string;
-}
-
 /** Client-safe metadata. Unredacted commands and execution IO must never be added here. */
 export interface HookExecutionDescriptor {
   clientVisible: boolean;
@@ -291,62 +285,6 @@ export const HookJSONOutputSchema = z.object({
   systemMessage: z.string().optional(),
 });
 
-export interface HookPluginContext {
-  dataPath: string;
-  id: string;
-  name: string;
-  rootPath: string;
-  /** Actual hooks.json/manifest source. Other plugin consumers may omit it. */
-  sourcePath?: string;
-}
-
-export interface HookCommandConfig {
-  async?: boolean;
-  command: string;
-  enabled?: boolean;
-  plugin?: HookPluginContext;
-  shell?: true | string;
-  /** Runtime-only provenance; the public config schema deliberately strips this field. */
-  source?: HookConfigSource;
-  statusMessage?: string;
-  timeout?: number;
-  timeoutMs?: number;
-  type: "command";
-}
-
-export interface HookProcessConfig {
-  args?: string[];
-  command: string;
-  enabled?: boolean;
-  plugin?: HookPluginContext;
-  /** Runtime-only provenance; the public config schema deliberately strips this field. */
-  source?: HookConfigSource;
-  statusMessage?: string;
-  timeoutMs?: number;
-  type: "process";
-}
-
-export type HookConfig = HookCommandConfig | HookProcessConfig;
-
-export interface HookMatcherConfig {
-  hooks: HookConfig[];
-  matcher?: string;
-}
-
-export interface HooksRuntimeConfig {
-  enabled: boolean;
-  events: Partial<Record<HookEventName, HookMatcherConfig[]>>;
-  maxOutputBytes: number;
-  timeoutMs: number;
-}
-
-export interface HooksRuntimeConfigPatch {
-  enabled?: boolean;
-  events?: Partial<Record<HookEventName, HookMatcherConfig[]>>;
-  maxOutputBytes?: number;
-  timeoutMs?: number;
-}
-
 export interface HookRunLifecyclePayload {
   agentName?: string;
   /** New events always carry this; optional keeps old persisted events replayable. */
@@ -373,61 +311,3 @@ export interface HookRunLifecyclePayload {
   toolName?: string;
   truncated?: boolean;
 }
-
-export const HookProcessConfigSchema = z.object({
-  type: z.literal("process"),
-  command: z.string().min(1),
-  enabled: z.boolean().optional(),
-  args: z.array(z.string()).optional(),
-  timeoutMs: z.number().int().positive().optional(),
-  statusMessage: z.string().optional(),
-});
-
-export const HookCommandConfigSchema = z.object({
-  type: z.literal("command"),
-  command: z.string().min(1),
-  enabled: z.boolean().optional(),
-  async: z.boolean().optional(),
-  shell: z.union([z.literal(true), z.string().min(1)]).optional(),
-  timeout: z.number().positive().optional(),
-  timeoutMs: z.number().int().positive().optional(),
-  statusMessage: z.string().optional(),
-});
-
-export const HookConfigSchema = z.discriminatedUnion("type", [
-  HookProcessConfigSchema,
-  HookCommandConfigSchema,
-]);
-
-export const HookMatcherConfigSchema = z.object({
-  matcher: z.string().optional(),
-  hooks: z.array(HookConfigSchema).min(1),
-});
-
-export const HooksRuntimeConfigPatchSchema = z.object({
-  enabled: z.boolean().optional(),
-  timeoutMs: z.number().int().positive().optional(),
-  maxOutputBytes: z.number().int().positive().optional(),
-  events: z
-    .object({
-      SessionStart: z.array(HookMatcherConfigSchema).optional(),
-      UserPromptSubmit: z.array(HookMatcherConfigSchema).optional(),
-      PreToolUse: z.array(HookMatcherConfigSchema).optional(),
-      PermissionRequest: z.array(HookMatcherConfigSchema).optional(),
-      PostToolUse: z.array(HookMatcherConfigSchema).optional(),
-      PostToolUseFailure: z.array(HookMatcherConfigSchema).optional(),
-      Stop: z.array(HookMatcherConfigSchema).optional(),
-    })
-    .strict()
-    .optional(),
-});
-
-export const DefaultHooksRuntimeConfig: HooksRuntimeConfig = {
-  enabled: false,
-  events: {},
-  maxOutputBytes: 32768,
-  timeoutMs: 60000,
-};
-
-export * from "./workspace-hook-trust.js";
-export * from "./workspace-hook-trust-store.js";

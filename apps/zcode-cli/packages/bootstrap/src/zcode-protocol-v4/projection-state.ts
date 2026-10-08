@@ -88,8 +88,6 @@ export function createInitialConversationSnapshot(
     subagents: { revision: 0, childSessionIds: [], running: [], endedTotal: 0 },
     goal: null,
     plan: null,
-    // 软门禁：初始无待审核状态;activate() 上报后由投影写入。
-    workspaceHookAdmission: null,
     rows: { window: [], totalCount: 0, firstRowId: null },
   };
 }

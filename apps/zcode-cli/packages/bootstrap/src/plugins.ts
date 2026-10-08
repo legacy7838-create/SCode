@@ -43,17 +43,14 @@ import {
 } from "@zcode/adapters/plugins";
 import type {
   Logger,
-  PluginHookDetail,
   PluginLoadOutcome,
   PluginMetadata,
   PluginStoreListing,
 } from "@zcode/contracts";
 import { ZCODE_OFFICIAL_PLUGIN_MARKETPLACE, isOfficialMarketplaceId } from "@zcode/contracts";
-import { ZCODE_CUA_OFFICIAL_PLUGIN_ID, isZCodeCuaInternalFeatureEnabled } from "@zcode/shared";
 import { resolveOfficialPluginRoots } from "./app/bundled-plugins.js";
 import {
   DEFAULT_ENABLED_OFFICIAL_PLUGIN_IDS,
-  OFFICIAL_NODE_REPL_HOST_PLUGIN_NAME,
   OFFICIAL_PLUGIN_DEFINITIONS,
 } from "./app/official-plugin-definitions.js";
 import { getCliStorageRoot, getPluginStorageRoot } from "./app/paths.js";
@@ -110,7 +107,6 @@ export interface ZCodeAvailablePluginData {
   version?: string;
   installed: boolean;
   componentTypes?: string[];
-  hookDetails?: PluginHookDetail[];
   // 商店信息（显示名/icon/分类/作者/链接/hero/示例提示词），来自目录条目。
   listing?: PluginStoreListing;
 }
@@ -126,7 +122,6 @@ export interface ZCodeInstalledPluginData {
   installPath?: string;
   installedAt?: string;
   componentTypes?: string[];
-  hookDetails?: PluginHookDetail[];
   updateStatus?: "none" | "update-available" | "version-changed";
   latestVersion?: string;
   // 已安装插件的商店信息由目录条目按 id join 得到（市场被移除时缺失，UI 走降级）。
@@ -231,7 +226,7 @@ export interface ZCodePluginInstallData {
 /**
  * 市场插件计数只数用户可见条目。
  *
- * node-repl-host 是 Browser Use 与 Computer Use 共用的运行时宿主：它必须留在官方 manifest 里
+ * node-repl-host 是 Computer Use 使用的运行时宿主：它必须留在官方 manifest 里
  * （否则不会被发现、安装、启用），但没有 skill、没有 listing，也不该出现在设置页。计进去会让
  * 显示的插件数比它能列出的条目多一个。
  *
@@ -239,12 +234,11 @@ export interface ZCodePluginInstallData {
  * 市场：自定义 manifest 里的条目本来就可以不带 listing，它们是真实可见的插件。
  */
 function countVisibleMarketplacePlugins(
-  marketplaceId: string,
+  _marketplaceId: string,
   plugins: readonly { name: string }[] | undefined,
 ): number | undefined {
   if (!plugins) return undefined;
-  if (marketplaceId !== ZCODE_OFFICIAL_PLUGIN_MARKETPLACE) return plugins.length;
-  return plugins.filter((entry) => entry.name !== OFFICIAL_NODE_REPL_HOST_PLUGIN_NAME).length;
+  return plugins.length;
 }
 
 export function resolveZCodePlugins(options: ResolveZCodePluginsOptions = {}): PluginLoadOutcome {
@@ -340,10 +334,7 @@ export function getZCodePluginsOverview(
   // 完整 Catalog/cache 仍然保留，restorable 只是 Runtime 抑制态的投影，商店信息直接取定义里的 listing seed。
   const suppressed = new Set(configResult.config.plugins.suppressedBuiltins);
   const restorableBuiltins: ZCodeAvailablePluginData[] = OFFICIAL_PLUGIN_DEFINITIONS.filter(
-    (def) =>
-      suppressed.has(`${def.name}@${ZCODE_OFFICIAL_PLUGIN_MARKETPLACE}`) &&
-      // computer-use 的恢复入口需要 internal 特性开启（与 restoreBuiltinPluginCore 同口径）。
-      (def.name !== "computer-use" || isZCodeCuaInternalFeatureEnabled(options.env ?? process.env)),
+    (def) => suppressed.has(`${def.name}@${ZCODE_OFFICIAL_PLUGIN_MARKETPLACE}`),
   ).map((def) => {
     const listing = def.listing
       ? parseEntryStoreListing({ name: def.name, ...def.listing })
@@ -889,15 +880,6 @@ function applySparsePaths(
  * 因此核心不能再次获取 promise-chain lock；公开入口再负责提供锁保护。
  */
 async function restoreBuiltinPluginCore(options: RestoreBuiltinPluginOptions): Promise<void> {
-  const zcodeCuaPluginId = ZCODE_CUA_OFFICIAL_PLUGIN_ID;
-  if (
-    options.pluginId === zcodeCuaPluginId &&
-    !isZCodeCuaInternalFeatureEnabled(options.env ?? process.env)
-  ) {
-    // overview 虽然隐藏了恢复入口，但协议调用仍可绕过 UI 写用户配置。
-    // 功能开关关闭时在写盘前失败，确保用户配置与插件缓存都保持零痕迹。
-    throw new Error("computer-use built-in plugin requires ZCODE_CUA_PRODUCT_HELPER to be enabled");
-  }
   const { configResult } = resolvePluginContext(options);
   await removeSuppressedBuiltinInFileConfig(configResult.sources.user.path, options.pluginId);
   // 重读磁盘上的最新 config（patch 后），确保抑制集合不再包含刚恢复的 id；
@@ -1229,7 +1211,6 @@ function toInstalledPluginData(
     installPath: record.installPath,
     installedAt: record.installedAt,
     componentTypes: loaded ? inferComponentTypesFromMetadata(loaded) : undefined,
-    ...(loaded ? { hookDetails: loaded.hookDetails } : {}),
   };
 }
 
@@ -1238,7 +1219,6 @@ function inferComponentTypes(raw: Record<string, unknown>): string[] {
   if ("agents" in raw) types.push("agent");
   if ("commands" in raw) types.push("command");
   if ("skills" in raw) types.push("skill");
-  if ("hooks" in raw) types.push("hook");
   if ("mcpServers" in raw) types.push("mcp");
   if ("lspServers" in raw) types.push("lsp");
   return types;
@@ -1255,7 +1235,6 @@ function inferComponentTypesFromMetadata(plugin: PluginMetadata): string[] {
   if (plugin.declaredMcpServerNames.length > 0 || plugin.mcpServerNames.length > 0) {
     types.push("mcp");
   }
-  if (plugin.hookDetails.length > 0) types.push("hook");
   return types;
 }
 

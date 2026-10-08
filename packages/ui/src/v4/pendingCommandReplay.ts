@@ -9,11 +9,7 @@ export type PendingCommandReplay =
     }
   | {
       kind: "sensitiveDigest";
-      type:
-        | "resolveInteraction"
-        | "respondWorkspaceHookReview"
-        | "toggleWorkspaceHookReviewItem"
-        | "revokeWorkspaceHookTrust";
+      type: "resolveInteraction";
       digest: string;
     };
 
@@ -39,12 +35,7 @@ export function pendingCommandReplayFor(envelope: CommandEnvelope): PendingComma
       payload: clonePayload(payload),
     };
   }
-  if (
-    envelope.type === "resolveInteraction" ||
-    envelope.type === "respondWorkspaceHookReview" ||
-    envelope.type === "toggleWorkspaceHookReviewItem" ||
-    envelope.type === "revokeWorkspaceHookTrust"
-  ) {
+  if (envelope.type === "resolveInteraction") {
     return {
       kind: "sensitiveDigest",
       type: envelope.type,

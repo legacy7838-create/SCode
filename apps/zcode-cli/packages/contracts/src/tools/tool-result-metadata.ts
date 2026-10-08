@@ -179,7 +179,6 @@ export const nodeReplImageToolResultDisplayPayloadSchema = z
       .optional(),
     app: nodeReplCuaAppDisplaySchema.optional(),
     truncated: z.boolean().optional(),
-    source: z.literal("browser_turn_end").optional(),
   })
   .strict();
 

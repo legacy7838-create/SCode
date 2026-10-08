@@ -17,7 +17,6 @@ interface StartPromptTurnParamsBase {
   inputPresentation?: SendInputOptions["inputPresentation"];
   /** 附件命令面：AttachmentRef 已在 handler 层映射为 core TurnAttachment。 */
   attachments?: TurnAttachment[];
-  browserAmbientContext?: SendInputOptions["browserAmbientContext"];
   intent?: TurnInputIntentMetadata;
   /** 标准 Selection 的单次执行约束；不会改写 Session Selection。 */
   modelExecution?: SendInputOptions["modelExecution"];
@@ -116,9 +115,6 @@ export async function startPromptTurn(
         delivery: "start_turn",
         ...(params.intent?.requestedDelivery === "guide"
           ? { queueDelivery: "guide" as const }
-          : {}),
-        ...(params.browserAmbientContext
-          ? { browserAmbientContext: params.browserAmbientContext }
           : {}),
         inputId: params.inputId,
         ...(params.inputPresentation ? { inputPresentation: params.inputPresentation } : {}),
