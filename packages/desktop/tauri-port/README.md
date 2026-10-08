@@ -26,8 +26,8 @@ artifact here is additive and gated behind `isTauriRuntime()`. Nothing is pushed
 | --- | --- | --- | --- |
 | `BROWSER-CDP-SPIKE.md` | #1 embedded browser + CDP | No byte-parity; Windows feasible via WebView2 CDP, macOS/Linux hard → product go/no-go | ✅ |
 | `PRINT-PDF-SPIKE.md` | #3 printToPDF | Two-tier: native per-OS print + headless-Chrome sidecar on Linux | ✅ |
-| `UPDATER-SPIKE.md` | #2 electron-updater | (migration decision) | 🟡 |
-| `WEBVIEW-PROTOCOL-SPIKE.md` | #4 main-world injection, #5 session/Range media | (re-architecture decision) | 🟡 |
+| `UPDATER-SPIKE.md` | #2 electron-updater | Use Tauri plugin as install engine only; rebuild feed/skip/force-gate/install-lock app-side. Effort L / risk HIGH | ✅ |
+| `WEBVIEW-PROTOCOL-SPIKE.md` | #4 main-world injection, #5 session/Range media | Coding-plan page is first-party → wry init-script bridge; Range→206 Rust protocol; residual = embedded-browser call. MED-HIGH | ✅ |
 
 ## Phase 1 (parity gate)
 | Doc | Purpose | Status |
