@@ -1108,6 +1108,22 @@ pub struct ZoomRegistry(Mutex<HashMap<String, f64>>);
 /// literal against drift). Payload shape is `DesktopZoomState` = `{ zoomLevel: number }`.
 pub const ZOOM_CHANGED_EVENT: &str = "zcode:desktop-zoom-changed";
 
+/// Build the `ZOOM_CHANGED_EVENT` payload: an object matching the `DesktopZoomState` contract
+/// (`packages/shared`), i.e. `{ "zoomLevel": <level> }` in camelCase. Extracted as a pure fn so the
+/// payload SHAPE is unit-tested — the a5 guards pin the event NAME and arg camelCase, but a drift in
+/// this key would silently hand the renderer a wrong-shaped `DesktopZoomState` with no failing check.
+///
+/// # Arguments
+///
+/// * `level` - The Electron zoom level just applied.
+///
+/// # Returns
+///
+/// A `serde_json::Value` object `{ "zoomLevel": level }`.
+pub fn zoom_changed_payload(level: f64) -> serde_json::Value {
+    serde_json::json!({ "zoomLevel": level })
+}
+
 #[tauri::command]
 pub fn set_desktop_zoom_level(app: AppHandle, label: String, level: f64) -> Result<(), String> {
     let factor = zoom_level_to_factor(level);
@@ -1124,10 +1140,7 @@ pub fn set_desktop_zoom_level(app: AppHandle, label: String, level: f64) -> Resu
     // the authoritative value lives in `ZoomRegistry` (readable via `get_desktop_zoom_level`), so a
     // dropped emit is recoverable and must NOT fail a zoom that already applied — hence `let _ =`,
     // not `?` and never `.unwrap()`.
-    let _ = app.emit(
-        ZOOM_CHANGED_EVENT,
-        serde_json::json!({ "zoomLevel": level }),
-    );
+    let _ = app.emit(ZOOM_CHANGED_EVENT, zoom_changed_payload(level));
     Ok(())
 }
 
@@ -2760,5 +2773,19 @@ mod tests {
         assert_eq!(parse_ready_port(""), None);
         assert_eq!(parse_ready_port("ZCODE_WS_READY"), None);
         assert_eq!(parse_ready_port("ZCODE_WS_READY notanumber"), None);
+    }
+
+    #[test]
+    fn zoom_changed_payload_has_camelcase_zoomlevel_key() {
+        // The renderer reads the payload as `DesktopZoomState` (`{ zoomLevel: number }`); a key
+        // drift here would silently hand it a wrong-shaped object, so pin the exact shape.
+        let payload = zoom_changed_payload(3.0);
+        let obj = payload
+            .as_object()
+            .expect("zoom-changed payload must be a JSON object");
+        // Exactly one field, named in camelCase (not snake_case).
+        assert_eq!(obj.len(), 1);
+        assert_eq!(obj.get("zoomLevel"), Some(&serde_json::json!(3.0)));
+        assert!(obj.get("zoom_level").is_none());
     }
 }

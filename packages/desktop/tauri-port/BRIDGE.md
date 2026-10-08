@@ -437,3 +437,19 @@ zoom commands (`getDesktopZoomLevel`/`setDesktopZoomLevel`), completing a get/se
 and `tauriBridge.ts` (prevents name drift that would silently drop the event). Full runtime delivery is
 exercised under `pnpm dev:tauri`; the emit + serde payload + listener wiring are compile/type-verified,
 and the subscribe/forward/dispose logic is headless-tested.
+
+## Slice 36 contract — zoom-changed payload SHAPE made unit-testable
+
+Slice 33 closed the event NAME drift risk (a5 7th invariant) and arg camelCase, but left the payload
+BODY as an inline `serde_json::json!({ "zoomLevel": level })` inside `set_desktop_zoom_level`. No
+guard checked that SHAPE: a key rename (`zoom_level`, or dropping the object wrapper) would compile and
+pass a5 yet hand the renderer a wrong-shaped `DesktopZoomState`, so `onDesktopZoomLevelChanged` would
+read `undefined` silently. This slice extracts the payload to a pure fn so the shape is testable
+without a live window.
+
+- Rust: `pub fn zoom_changed_payload(level: f64) -> serde_json::Value` returns `{ "zoomLevel": level }`;
+  `set_desktop_zoom_level`'s best-effort emit now calls it (behavior identical — same value, same `let _ =`).
+- Test: `zoom_changed_payload_has_camelcase_zoomlevel_key` asserts the value is a 1-field object keyed
+  `zoomLevel` (camelCase) and that the snake_case `zoom_level` key is ABSENT — the exact drift a5 cannot see.
+
+`cargo test` now covers 19 units (was 18); clippy/fmt/a5 unchanged green. No interface or TS-side change.
