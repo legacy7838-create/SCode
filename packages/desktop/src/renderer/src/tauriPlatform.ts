@@ -4,6 +4,7 @@ import {
   getTauriDesktopZoomLevel,
   getTauriSystemLocale,
   listenTauriDesktopZoomChanged,
+  listenTauriWindowFullscreenChanged,
   openExternal as bridgeOpenExternal,
   openPath as bridgeOpenPath,
   selectDirectory as bridgeSelectDirectory,
@@ -48,6 +49,7 @@ export interface TauriPlatformDeps {
   getSystemLocale: typeof getTauriSystemLocale;
   openPath: typeof bridgeOpenPath;
   listenDesktopZoomChanged: typeof listenTauriDesktopZoomChanged;
+  listenWindowFullscreenChanged: typeof listenTauriWindowFullscreenChanged;
 }
 
 const realDeps: TauriPlatformDeps = {
@@ -59,6 +61,7 @@ const realDeps: TauriPlatformDeps = {
   getSystemLocale: getTauriSystemLocale,
   openPath: bridgeOpenPath,
   listenDesktopZoomChanged: listenTauriDesktopZoomChanged,
+  listenWindowFullscreenChanged: listenTauriWindowFullscreenChanged,
 };
 
 /** The subset of `IPlatformService` currently ported; expand the `Pick` keys as slices land. */
@@ -72,6 +75,7 @@ export type TauriPlatformSubset = Pick<
   | "openExternalFile"
   | "getDesktopZoomLevel"
   | "onDesktopZoomLevelChanged"
+  | "onWindowFullscreenChanged"
   | "setTitleBarTheme"
   | "getSystemLocale"
 >;
@@ -146,6 +150,26 @@ export function createTauriPlatformSubset(deps: TauriPlatformDeps = realDeps): T
       let unlisten: (() => void) | undefined;
       let disposed = false;
       void deps.listenDesktopZoomChanged(handler).then((fn) => {
+        if (disposed) {
+          fn();
+        } else {
+          unlisten = fn;
+        }
+      });
+      return () => {
+        disposed = true;
+        unlisten?.();
+      };
+    },
+    onWindowFullscreenChanged(handler) {
+      // Same async-listen / sync-disposer bridge as onDesktopZoomLevelChanged: forward the bare
+      // boolean payload, and if the caller unsubscribes before `listen` resolves, tear the listener
+      // down the moment it arrives (no leaked subscription). Faithful to Electron's sync-subscribe
+      // contract. NOTE (parity residual): only shell-command-driven transitions fire the event, since
+      // Tauri has no fullscreen WindowEvent — see commands.rs WINDOW_FULLSCREEN_CHANGED_EVENT doc.
+      let unlisten: (() => void) | undefined;
+      let disposed = false;
+      void deps.listenWindowFullscreenChanged(handler).then((fn) => {
         if (disposed) {
           fn();
         } else {

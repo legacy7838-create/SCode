@@ -453,3 +453,33 @@ without a live window.
   `zoomLevel` (camelCase) and that the snake_case `zoom_level` key is ABSENT — the exact drift a5 cannot see.
 
 `cargo test` now covers 19 units (was 18); clippy/fmt/a5 unchanged green. No interface or TS-side change.
+
+## Slice 37 contract — `onWindowFullscreenChanged` push channel (second of the `on*` family)
+
+Extends the slice-33 `emit` ⇄ `listen` core-event mechanism (no new plugin) to a second event, proving
+the mechanism generalizes across the `on*` subscription family. Chosen because its **trigger already
+lives in landed commands** (`set_fullscreen` / `window_toggle_fullscreen`), so the emit is wired and
+runs at runtime — not speculative dead code.
+
+| Rust | Args | Behavior |
+| --- | --- | --- |
+| `set_fullscreen` | `app,label,fullscreen` | apply, then best-effort `emit(WINDOW_FULLSCREEN_CHANGED_EVENT, fullscreen)` |
+| `window_toggle_fullscreen` | `app,label` | read `is_fullscreen`, invert, apply, then best-effort `emit(..., target)` |
+
+- Event: `WINDOW_FULLSCREEN_CHANGED_EVENT = "zcode:window-fullscreen-changed"`; payload is a **bare JSON
+  boolean** (matches the interface's `(isFullscreen: boolean)`, NOT a `{...}` object). Pure
+  `fullscreen_changed_payload(bool)` unit-tested (a5 pins the event NAME, not the body).
+- Bridge: `listenTauriWindowFullscreenChanged(handler): Promise<UnlistenFn>` (`listen<boolean>`).
+- Adapter: `onWindowFullscreenChanged` added to the `Pick` subset (now 11 methods) via the same
+  async-listen / sync-disposer settled-flag bridge as `onDesktopZoomLevelChanged`; Layer-B-tested
+  (forward bare bool on both transitions, disposer unlistens, early-dispose teardown — no leak).
+
+**Parity residual (grounded, not a stub):** Tauri 2.12.1 `WindowEvent` (`tauri-2.12.1/src/app.rs:111`)
+has NO fullscreen variant (only `Resized/Moved/CloseRequested/Destroyed/Focused/ScaleFactorChanged/
+DragDrop/ThemeChanged`), so a *native* fullscreen transition cannot be observed; this emits at the
+command boundary instead. App-driven transitions are reported faithfully; an OS-window-manager-driven
+fullscreen shortcut is invisible to the shell (no event to hook). That external-transition gap is a
+GO-NO-GO de-scope item, not a hidden stub — `is_fullscreen` stays the authoritative synchronous read.
+
+Verification: `cargo test` 20 units; clippy/fmt green; a5 7th invariant auto-covers the new literal in
+both files; layer-b surface-lock now lists 11 keys. Live delivery exercised under `pnpm dev:tauri`.

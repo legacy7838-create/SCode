@@ -526,10 +526,15 @@ pub fn window_unmaximize(app: AppHandle, label: String) -> Result<(), String> {
 #[tauri::command]
 pub fn window_toggle_fullscreen(app: AppHandle, label: String) -> Result<(), String> {
     let window = require_window(&app, &label)?;
-    let fullscreen = window.is_fullscreen().map_err(|e| e.to_string())?;
-    window
-        .set_fullscreen(!fullscreen)
-        .map_err(|e| e.to_string())
+    let target = !window.is_fullscreen().map_err(|e| e.to_string())?;
+    window.set_fullscreen(target).map_err(|e| e.to_string())?;
+    // Best-effort push of the new state (same contract as [`set_fullscreen`]); see
+    // [`WINDOW_FULLSCREEN_CHANGED_EVENT`] for why the emit lives at the command boundary.
+    let _ = app.emit(
+        WINDOW_FULLSCREEN_CHANGED_EVENT,
+        fullscreen_changed_payload(target),
+    );
+    Ok(())
 }
 
 /// Close the window identified by `label`.
@@ -914,11 +919,48 @@ pub fn center_window(app: AppHandle, label: String) -> Result<(), String> {
 /// # Returns
 ///
 /// `Ok(())` on success; `Err(String)` when the window is missing or the OS rejects the operation.
+/// Event name broadcast whenever [`set_fullscreen`] or [`window_toggle_fullscreen`] changes a window's
+/// fullscreen state. The renderer's `tauriBridge.listenTauriWindowFullscreenChanged` subscribes to this
+/// exact string (a5 guards the literal against drift). Payload is a bare JSON boolean, matching
+/// `IPlatformService.onWindowFullscreenChanged`'s `(isFullscreen: boolean)` argument.
+///
+/// Parity residual (documented honestly, like slice 26's out-of-shell zoom): Tauri 2.12.1's
+/// `WindowEvent` enum (`tauri-2.12.1/src/app.rs:111`) has NO fullscreen variant, so the transition
+/// cannot be observed from a native window event — this emits at the COMMAND boundary instead. Every
+/// app-driven transition (via these two commands) is reported faithfully, but a transition triggered
+/// OUTSIDE the shell (an OS window-manager fullscreen shortcut) is invisible: there is no Tauri event
+/// to hook. That external-transition gap is a de-scope residual for the GO-NO-GO decision, NOT a
+/// silent stub; the authoritative synchronous value remains readable via [`is_fullscreen`].
+pub const WINDOW_FULLSCREEN_CHANGED_EVENT: &str = "zcode:window-fullscreen-changed";
+
+/// Build the [`WINDOW_FULLSCREEN_CHANGED_EVENT`] payload: a bare `serde_json::Value` boolean equal to
+/// the new fullscreen state (mirrors the interface's `(isFullscreen: boolean)`, NOT an object). Pure and
+/// unit-tested because a5 pins the event NAME but not the payload BODY.
+///
+/// # Arguments
+///
+/// * `is_fullscreen` - The fullscreen state just applied.
+///
+/// # Returns
+///
+/// A `serde_json::Value` boolean equal to `is_fullscreen`.
+pub fn fullscreen_changed_payload(is_fullscreen: bool) -> serde_json::Value {
+    serde_json::json!(is_fullscreen)
+}
+
 #[tauri::command]
 pub fn set_fullscreen(app: AppHandle, label: String, fullscreen: bool) -> Result<(), String> {
     require_window(&app, &label)?
         .set_fullscreen(fullscreen)
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    // Best-effort push (same contract as the zoom event in `set_desktop_zoom_level`): a dropped emit
+    // must not fail a transition that already applied, and `is_fullscreen` stays the authoritative
+    // synchronous read — hence `let _ =`, never `.unwrap()`.
+    let _ = app.emit(
+        WINDOW_FULLSCREEN_CHANGED_EVENT,
+        fullscreen_changed_payload(fullscreen),
+    );
+    Ok(())
 }
 
 /// Report whether the window identified by `label` is currently fullscreen.
@@ -2787,5 +2829,14 @@ mod tests {
         assert_eq!(obj.len(), 1);
         assert_eq!(obj.get("zoomLevel"), Some(&serde_json::json!(3.0)));
         assert!(obj.get("zoom_level").is_none());
+    }
+
+    #[test]
+    fn fullscreen_changed_payload_is_a_bare_boolean() {
+        // The interface arg is `(isFullscreen: boolean)`, NOT an object; a5 pins the event name but not
+        // this body, so assert the payload is a bare JSON bool equal to the input on both transitions.
+        assert_eq!(fullscreen_changed_payload(true), serde_json::json!(true));
+        assert_eq!(fullscreen_changed_payload(false), serde_json::json!(false));
+        assert!(fullscreen_changed_payload(true).is_boolean());
     }
 }

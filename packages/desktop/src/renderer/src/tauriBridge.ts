@@ -951,6 +951,33 @@ export function listenTauriDesktopZoomChanged(
 }
 
 /**
+ * Phase 2 第三十七切片：窗口全屏状态变更事件（推送通道）的 TypeScript 接缝。
+ *
+ * 复用第三十三切片验证过的 core 事件机制（`app.emit` ⇄ `listen`，无新增插件）。Rust 端在
+ * `set_fullscreen` / `window_toggle_fullscreen` 于命令边界广播 `WINDOW_FULLSCREEN_CHANGED_EVENT`，
+ * 载荷为裸布尔（与平台契约 `onWindowFullscreenChanged` 的 `(isFullscreen: boolean)` 形参一致）。
+ *
+ * 忠实性残留（Rust 侧 `WINDOW_FULLSCREEN_CHANGED_EVENT` 文档同步说明）：Tauri 2.12 的 `WindowEvent`
+ * 无全屏变体，无法挂原生窗口事件，故仅在「本 shell 命令驱动的」切换处推送；系统窗口管理器发起的外部
+ * 全屏切换不可见。字面量须与 `commands.rs` 逐字一致，由 a5 守卫防漂移；真实推送在 `pnpm dev:tauri` 验证。
+ */
+export const WINDOW_FULLSCREEN_CHANGED_EVENT = "zcode:window-fullscreen-changed";
+
+/**
+ * 订阅窗口全屏状态变更事件。对应 Rust 广播 `WINDOW_FULLSCREEN_CHANGED_EVENT`。
+ *
+ * @param handler - 每次（shell 内的）全屏切换时以最新布尔状态调用。
+ * @returns 解析为退订函数；调用它停止监听。
+ */
+export function listenTauriWindowFullscreenChanged(
+  handler: (isFullscreen: boolean) => void,
+): Promise<UnlistenFn> {
+  return listen<boolean>(WINDOW_FULLSCREEN_CHANGED_EVENT, (event) =>
+    handler(event.payload),
+  );
+}
+
+/**
  * Phase 2 第二十一切片：窗口边框与交互的 TypeScript 接缝（装饰、点击穿透、最小/最大尺寸设置与清除）。
  *
  * 对应 Rust 命令 `set_window_decorations` / `set_window_ignore_cursor_events` /

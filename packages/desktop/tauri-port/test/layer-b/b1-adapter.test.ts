@@ -19,6 +19,8 @@ import {
 
 /** Captures the handler the adapter passes into `listenDesktopZoomChanged` (set by the fake below). */
 let capturedZoomHandler: ((state: { zoomLevel: number }) => void) | undefined;
+/** Captures the handler the adapter passes into `listenWindowFullscreenChanged` (set by the fake below). */
+let capturedFullscreenHandler: ((isFullscreen: boolean) => void) | undefined;
 
 interface FakeOptions {
   /** Value the file/dir pickers resolve to (array = selection, `null` = cancel). */
@@ -74,6 +76,11 @@ function fakeDeps(opts: FakeOptions = {}): { deps: TauriPlatformDeps; calls: str
       // Hand the caller's handler straight back so the test can assert it was wired through.
       capturedZoomHandler = handler;
       return () => calls.push("unlisten");
+    },
+    listenWindowFullscreenChanged: async (handler) => {
+      calls.push("listenWindowFullscreenChanged");
+      capturedFullscreenHandler = handler;
+      return () => calls.push("unlistenFullscreen");
     },
   };
   return { deps, calls };
@@ -197,6 +204,7 @@ test("B1: createTauriPlatformSubset exposes EXACTLY the ported method set (publi
     "getDesktopZoomLevel",
     "getSystemLocale",
     "onDesktopZoomLevelChanged",
+    "onWindowFullscreenChanged",
     "openExternal",
     "openExternalFile",
     "openInFileManager",
@@ -237,6 +245,48 @@ test("B1: onDesktopZoomLevelChanged unlistens even if disposed before listen res
 
   const dispose = platform.onDesktopZoomLevelChanged!(() => {});
   // Dispose BEFORE the listen promise settles — the adapter must still tear down on arrival.
+  dispose();
+  resolveListen(() => {
+    unlistenCalls += 1;
+  });
+  await flush();
+  assert.equal(unlistenCalls, 1, "late-arriving unlisten must be invoked to avoid a leaked subscription");
+});
+
+test("B1: onWindowFullscreenChanged forwards the bare boolean and its disposer unlistens", async () => {
+  capturedFullscreenHandler = undefined;
+  const { deps, calls } = fakeDeps();
+  const platform = createTauriPlatformSubset(deps);
+  const seen: boolean[] = [];
+
+  const dispose = platform.onWindowFullscreenChanged!((v) => seen.push(v));
+  await flush();
+  // The adapter handed our handler to listenWindowFullscreenChanged(); firing it like a real push
+  // (a bare boolean, NOT a wrapped object) must reach the caller unchanged.
+  capturedFullscreenHandler?.(true);
+  capturedFullscreenHandler?.(false);
+  assert.deepEqual(seen, [true, false]);
+
+  dispose();
+  assert.ok(
+    calls.includes("unlistenFullscreen"),
+    "disposer must invoke the unlisten the fullscreen fake returned",
+  );
+});
+
+test("B1: onWindowFullscreenChanged unlistens even if disposed before listen resolves (no leak)", async () => {
+  let unlistenCalls = 0;
+  let resolveListen: (fn: () => void) => void = () => {};
+  const deps = {
+    ...fakeDeps().deps,
+    listenWindowFullscreenChanged: () =>
+      new Promise<() => void>((resolve) => {
+        resolveListen = (fn) => resolve(fn);
+      }),
+  } as unknown as TauriPlatformDeps;
+  const platform = createTauriPlatformSubset(deps);
+
+  const dispose = platform.onWindowFullscreenChanged!(() => {});
   dispose();
   resolveListen(() => {
     unlistenCalls += 1;
