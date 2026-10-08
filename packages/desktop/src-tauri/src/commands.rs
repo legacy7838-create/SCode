@@ -11,7 +11,8 @@
 // visibility, focus) via the existing `WebviewWindow` API, 10) window-mutation commands (set title,
 // size, position, center, fullscreen) via the same `WebviewWindow` API; 11) app-path commands
 // (home/temp/app-data/app-config dirs via the existing `app.path().resolve`, plus the current
-// executable via `std::env::current_exe`).
+// executable via `std::env::current_exe`); 12) window theme (get/set) via the existing
+// `WebviewWindow::theme` / `set_theme` API (no new plugin).
 
 use tauri::{AppHandle, Manager, WebviewWindow};
 // Native dialog API surface for the slice-5 commands: the `DialogExt` app-extension, the file
@@ -770,6 +771,96 @@ pub fn is_fullscreen(app: AppHandle, label: String) -> Result<bool, String> {
         .map_err(|e| e.to_string())
 }
 
+/// Map a renderer-supplied theme string onto Tauri's [`tauri::Theme`].
+///
+/// Phase 2 slice 12 (window theme). Pure helper so the case-insensitive parsing is unit-testable
+/// without a live window. Returns `Some(Theme)` only for the recognized `"light"` / `"dark"`
+/// discriminators; anything else yields `None`, which the calling command turns into an explicit
+/// `Err("invalid theme")` rather than silently clearing the theme (the `None` variant there comes
+/// from an absent argument, not an unrecognized string).
+///
+/// # Arguments
+///
+/// * `s` - Theme discriminator: `"light"` or `"dark"` (case-insensitive).
+///
+/// # Returns
+///
+/// The matching [`tauri::Theme`] wrapped in `Some`, or `None` when unrecognized.
+pub fn parse_theme(s: &str) -> Option<tauri::Theme> {
+    match s.to_ascii_lowercase().as_str() {
+        "light" => Some(tauri::Theme::Light),
+        "dark" => Some(tauri::Theme::Dark),
+        _ => None,
+    }
+}
+
+/// Return the current theme of the window identified by `label`.
+///
+/// Phase 2 slice 12 (window theme). Resolves the live window through [`require_window`] and reads
+/// its theme via `WebviewWindow::theme`, mapping the resulting [`tauri::Theme`] to the contract's
+/// `"light"` / `"dark"` string. Tauri's `theme()` is fallible (it reports a per-window `Err` when the
+/// OS cannot be queried), so it uses the same `.map_err(|e| e.to_string())` seam as the slice-9/10
+/// queries — never `.unwrap()` — surfacing the `Err` on the TypeScript side as a rejected `Promise`.
+/// Requires a live GUI window, so it is compile-verified here and exercised under `pnpm dev:tauri`;
+/// the pure string mapping is covered by [`parse_theme`]'s unit test.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+///
+/// # Returns
+///
+/// `Ok(String)` with `"light"` or `"dark"`; `Err(String)` when the window is missing or the OS
+/// cannot report the theme.
+#[tauri::command]
+pub fn get_window_theme(app: AppHandle, label: String) -> Result<String, String> {
+    let theme = require_window(&app, &label)?
+        .theme()
+        .map_err(|e| e.to_string())?;
+    Ok(match theme {
+        tauri::Theme::Light => "light".to_string(),
+        tauri::Theme::Dark => "dark".to_string(),
+        // `tauri::Theme` 是 #[non_exhaustive]，未来可能新增变体；未知主题回退 "unknown" 而非 panic。
+        _ => "unknown".to_string(),
+    })
+}
+
+/// Set (or clear) the theme of the window identified by `label`.
+///
+/// Phase 2 slice 12. Converts the renderer's `Option<String>` into `Option<tauri::Theme>`: `None`
+/// clears the explicit override (letting the window follow the system), `Some("light")` / `Some("dark")`
+/// selects the matching theme, and an unrecognized string yields `Err("invalid theme")` rather than
+/// silently clearing. The chosen value is applied via `WebviewWindow::set_theme`, whose `Err` is
+/// converted with `.map_err(|e| e.to_string())` (never `.unwrap()`). Requires a live window, so it is
+/// compile-verified here.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+/// * `theme` - Desired theme: `"light"`, `"dark"`, or `None` to clear the override.
+///
+/// # Returns
+///
+/// `Ok(())` on success; `Err(String)` when the theme string is invalid, the window is missing, or
+/// the OS rejects the operation.
+#[tauri::command]
+pub fn set_window_theme(
+    app: AppHandle,
+    label: String,
+    theme: Option<String>,
+) -> Result<(), String> {
+    // An absent argument clears the override; a present one must parse to a known theme or error.
+    let parsed = match theme.as_deref() {
+        None => None,
+        Some(s) => Some(parse_theme(s).ok_or_else(|| "invalid theme".to_string())?),
+    };
+    require_window(&app, &label)?
+        .set_theme(parsed)
+        .map_err(|e| e.to_string())
+}
+
 /// A file-type filter for the open dialog, mirroring the plugin's `{ name, extensions }` shape.
 ///
 /// Deserialized from the renderer's camelCase `DialogFilter` object; Tauri maps the JS fields onto
@@ -1300,6 +1391,16 @@ mod tests {
 
         // Assert
         assert_eq!(size, WindowSize { width, height });
+    }
+
+    #[test]
+    fn parse_theme_maps_known_and_unknown_values() {
+        // Act / Assert: recognized themes map case-insensitively, everything else yields `None`
+        // (which the command turns into an explicit `Err`, not a silent clear).
+        assert!(matches!(parse_theme("light"), Some(tauri::Theme::Light)));
+        assert!(matches!(parse_theme("DARK"), Some(tauri::Theme::Dark)));
+        assert!(parse_theme("").is_none());
+        assert!(parse_theme("nonsense").is_none());
     }
 
     #[test]

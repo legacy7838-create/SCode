@@ -14,7 +14,8 @@
 // (`show_notification`) via `tauri-plugin-notification`, plus the window-state queries and the
 // window-mutation group (set title/size/position, center, set/is fullscreen) via the existing
 // (`WebviewWindow`) API, and the app-path group (home / temp / app-data / app-config directories via
-// `app.path().resolve`, plus the current executable path via `std::env::current_exe`). See ./commands.rs and
+// `app.path().resolve`, plus the current executable path via `std::env::current_exe`), and the
+// window-theme group (get / set) via `WebviewWindow::theme` / `set_theme`. See ./commands.rs and
 // ../tauri-port/BRIDGE.md for the contract.
 mod commands;
 
@@ -70,6 +71,8 @@ fn main() {
             commands::center_window,
             commands::set_fullscreen,
             commands::is_fullscreen,
+            commands::get_window_theme,
+            commands::set_window_theme,
             commands::show_open_dialog,
             commands::show_save_dialog,
             commands::show_message_dialog,
