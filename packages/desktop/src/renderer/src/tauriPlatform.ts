@@ -6,6 +6,7 @@ import type {
 } from "@zcode/shared";
 
 import {
+  activateOrSetWorkspace as bridgeActivateOrSetWorkspace,
   createTempTextAttachment as bridgeCreateTempTextAttachment,
   getTauriDesktopZoomLevel,
   getTauriDeviceId,
@@ -18,6 +19,7 @@ import {
   setWindowTheme as bridgeSetWindowTheme,
   showOpenDialog as bridgeShowOpenDialog,
   showTaskNotification as bridgeShowTaskNotification,
+  syncWindowTabs as bridgeSyncWindowTabs,
 } from "./tauriBridge.js";
 
 /**
@@ -50,6 +52,8 @@ const MAIN_LABEL = "main";
  */
 export interface TauriPlatformDeps {
   createTempTextAttachment: typeof bridgeCreateTempTextAttachment;
+  activateOrSetWorkspace: typeof bridgeActivateOrSetWorkspace;
+  syncWindowTabs: typeof bridgeSyncWindowTabs;
   selectDirectory: typeof bridgeSelectDirectory;
   showOpenDialog: typeof bridgeShowOpenDialog;
   showTaskNotification: typeof bridgeShowTaskNotification;
@@ -65,6 +69,8 @@ export interface TauriPlatformDeps {
 
 const realDeps: TauriPlatformDeps = {
   createTempTextAttachment: bridgeCreateTempTextAttachment,
+  activateOrSetWorkspace: bridgeActivateOrSetWorkspace,
+  syncWindowTabs: bridgeSyncWindowTabs,
   selectDirectory: bridgeSelectDirectory,
   showOpenDialog: bridgeShowOpenDialog,
   showTaskNotification: bridgeShowTaskNotification,
@@ -95,6 +101,8 @@ export type TauriPlatformSubset = Pick<
   | "getDeviceId"
   | "showTaskNotification"
   | "createTempTextAttachment"
+  | "activateOrSetWorkspace"
+  | "syncWindowTabs"
 >;
 
 /**
@@ -217,6 +225,17 @@ export function createTauriPlatformSubset(
       // Result === CreateTempTextAttachmentResult), so it satisfies the Pick's expected return type.
       // `filename` stays `undefined` when absent -> the bridge maps it to null -> Rust Option::None.
       return deps.createTempTextAttachment(payload.text, payload.filename);
+    },
+    activateOrSetWorkspace(path: string) {
+      // Maps the command's `Result<bool>` seam (activated?) onto the interface's `{ activated }` result.
+      return deps
+        .activateOrSetWorkspace(path)
+        .then((activated) => ({ activated }));
+    },
+    syncWindowTabs(paths: string[]): void {
+      // Fire-and-forget like Electron's `ipcRenderer.send` (interface return `void`); swallow any
+      // rejection so a transient command failure never becomes an unhandled rejection in the renderer.
+      void deps.syncWindowTabs(paths).catch(() => {});
     },
     onDesktopZoomLevelChanged(handler) {
       // The interface returns a SYNCHRONOUS disposer, but Tauri's `listen` is async. Bridge them with

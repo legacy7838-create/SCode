@@ -50,6 +50,13 @@ function fakeDeps(opts: FakeOptions = {}): {
   const dialogResult =
     opts.openDialogResult === undefined ? ["picked"] : opts.openDialogResult;
   const deps: TauriPlatformDeps = {
+    activateOrSetWorkspace: async (path) => {
+      calls.push(`activateOrSetWorkspace:${path}`);
+      return path === "/repo/open";
+    },
+    syncWindowTabs: async (paths) => {
+      calls.push(`syncWindowTabs:${paths.join(",")}`);
+    },
     createTempTextAttachment: async (text, filename) => {
       calls.push(`createTempTextAttachment:${text}|${String(filename)}`);
       return {
@@ -268,6 +275,7 @@ test("B1: createTauriPlatformSubset exposes EXACTLY the ported method set (publi
   // case above — the union of both is the ported set.
   const keys = Object.keys(createTauriPlatformSubset()).sort();
   assert.deepEqual(keys, [
+    "activateOrSetWorkspace",
     "createTempTextAttachment",
     "getDesktopZoomLevel",
     "getDeviceId",
@@ -282,6 +290,7 @@ test("B1: createTauriPlatformSubset exposes EXACTLY the ported method set (publi
     "selectFiles",
     "setTitleBarTheme",
     "showTaskNotification",
+    "syncWindowTabs",
   ]);
 });
 
@@ -406,6 +415,29 @@ test("B1: createTempTextAttachment forwards an absent filename as undefined", as
   // No filename -> String(undefined) = "undefined" in the recorder, proving the adapter does NOT
   // invent a default; the bridge maps undefined -> null -> Rust Option::None.
   assert.deepEqual(calls, ["createTempTextAttachment:abc|undefined"]);
+});
+
+test("B1: activateOrSetWorkspace maps the command bool to {activated}", async () => {
+  const { deps, calls } = fakeDeps();
+  const platform = createTauriPlatformSubset(deps);
+  assert.deepEqual(await platform.activateOrSetWorkspace!("/repo/open"), {
+    activated: true,
+  });
+  assert.deepEqual(await platform.activateOrSetWorkspace!("/repo/new"), {
+    activated: false,
+  });
+  assert.deepEqual(calls, [
+    "activateOrSetWorkspace:/repo/open",
+    "activateOrSetWorkspace:/repo/new",
+  ]);
+});
+
+test("B1: syncWindowTabs forwards the paths fire-and-forget and never throws on reject", async () => {
+  const { deps, calls } = fakeDeps();
+  const platform = createTauriPlatformSubset(deps);
+  assert.doesNotThrow(() => platform.syncWindowTabs!(["/a", "/b"]));
+  await flush();
+  assert.deepEqual(calls, ["syncWindowTabs:/a,/b"]);
 });
 
 test("B1: onWindowFullscreenChanged unlistens even if disposed before listen resolves (no leak)", async () => {
