@@ -50,6 +50,32 @@ function bridgeInvokedNames(src: string): Set<string> {
   return names;
 }
 
+/**
+ * Strip `//` line comments (including `///` docs) and `/* *\/` block comments so a
+ * scan of the code ignores prose. Good-enough for this single-purpose guard: it only
+ * needs to avoid false positives from doc text like `always_on_top` appearing in a
+ * comment, while leaving real object-key syntax intact.
+ */
+function stripComments(src: string): string {
+  return src
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "")
+    .replace(/\/\/[^\n]*$/g, "");
+}
+
+/**
+ * Tauri converts a Rust `snake_case` command argument into a JS `camelCase` invoke
+ * key. So every key in a `tauriBridge.ts` invoke argument object MUST be camelCase;
+ * a key still containing an underscore (e.g. `default_path:`) is the exact signature
+ * of forgetting the conversion — a silent runtime bug where the Rust arg never
+ * arrives (PORTING.md Phase-6). Scanning comment-stripped code, command-name string
+ * literals are quoted and followed by `,`/`)`, so they never match `name:`.
+ */
+function snakeCaseArgKeys(src: string): string[] {
+  return [...stripComments(src).matchAll(/\b([a-z]+(?:_[a-z0-9]+)+)\s*:/g)].map((m) => m[1]).sort();
+}
+
+
 function symmetricDifference(a: Set<string>, b: Set<string>): string[] {
   return [...a].filter((x) => !b.has(x)).sort();
 }
@@ -80,5 +106,15 @@ test("A5: every tauriBridge invoke targets a real #[tauri::command]", () => {
     brokenCalls,
     [],
     `wrappers invoking an unknown command (would reject at runtime): ${brokenCalls.join(", ")}`,
+  );
+});
+
+test("A5: every invoke arg object key is camelCase (Rust snake_case → JS camelCase)", () => {
+  const snakeKeys = snakeCaseArgKeys(readFileSync(tauriBridgeTs, "utf8"));
+  assert.deepEqual(
+    snakeKeys,
+    [],
+    `invoke arg object keys must be camelCase; found snake_case key(s) whose Rust arg ` +
+      `would silently never arrive: ${snakeKeys.join(", ")}`,
   );
 });

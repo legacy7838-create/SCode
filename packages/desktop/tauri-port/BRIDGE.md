@@ -188,7 +188,11 @@ string | null` maps to Rust `Option<String>` (null/omitted ⇒ `None`); `spawnTa
 
 Contract guard: `tauri-port/test/layer-a/a5-contract.test.ts` parses BOTH languages and asserts
 (a) every `#[tauri::command] fn` name appears in some `invoke("…")` call in `tauriBridge.ts`, (b)
-every `invoke("…")` target is a real command, and (c) the Rust parse yields ≥40 commands (a
-false-green tripwire if the layout breaks). It is headless-safe and wired into
-`pnpm test:tauri:layer-a` (glob `*.test.ts`). This is the Phase-1 "tests are the contract" gate for
-the invoke seam.
+every `invoke("…")` target is a real command, (c) the Rust parse yields ≥40 commands (a
+false-green tripwire if the layout breaks), and (d) every invoke arg-object key is camelCase — a
+key still containing an underscore (e.g. `default_path:`) is the signature of forgetting the Rust
+`snake_case`→JS `camelCase` conversion, a silent runtime bug where the arg never arrives
+(PORTING.md Phase-6). Guard (d) scans comment-stripped code, so command-name string literals
+(quoted, followed by `,`/`)`) and `/** … */` docs never false-positive. It is headless-safe and
+wired into `pnpm test:tauri:layer-a` (glob `*.test.ts`). This is the Phase-1 "tests are the contract"
+gate for the invoke seam.
