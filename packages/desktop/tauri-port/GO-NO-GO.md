@@ -8,11 +8,22 @@ this is a parallel-shell feasibility call, not a cutover yet.**
 - **Renderer reuse**: UI is 100% behind `IPlatformService` (0 direct `window.zcode` in `packages/ui`) →
   the React app loads unchanged in a Tauri window (`pnpm dev:tauri` → Vite :5174). `cargo check` green.
 - **Transport reuse**: the localhost-WS RPC stack already exists + is production-tested on the
-  web/remote path; `poc/ws-rpc-roundtrip.ts` proves `subagents.list` round-trips over plain WS with no
-  Electron/MessagePort (`POC PASS`). Seam = `IMessagePassingProtocol` (`packages/rpc/src/protocol.ts`).
-- **Command seam**: 12 real `#[tauri::command]`s landed across slices 1–4 (each cargo test/clippy/fmt +
-  tauriBridge tsc green), incl. the fallible `Result→rejected-Promise` error seam and window controls.
+  web/remote path. Now proven **in-tree**: `test/layer-a/a1-ws-rpc.test.ts` drives a real `@zcode/rpc`
+  `ChannelServer` ⇄ `@zcode/client` `connectViaWebSocket` round-trip (`SIDECAR-TRANSPORT.md §6.5`);
+  `a2` binary framing byte-equal; `a3` stdio round-trip; `a4` spawns the echo sidecar + WS round-trip +
+  clean kill. `spawn_sidecar_echo_discover_port` (slice 31) returns the OS-ephemeral port by reading the
+  sidecar's `ZCODE_WS_READY` stdout. Seam = `IMessagePassingProtocol` (`packages/rpc/src/protocol.ts`).
+- **Command seam**: **79 real `#[tauri::command]`s** landed across slices 1–31 (window ops, dirs, dialogs
+  + file/dir pickers, clipboard, notifications, shell/open, monitors, cursor, theme, zoom set+get,
+  sidecar spawn/discover/kill, app lifecycle), each cargo build/test/clippy/fmt + renderer-tsc green.
+  `a5-contract.test.ts` statically enforces command⇄wrapper ⇄ `generate_handler` 1:1 parity + camelCase
+  args; `a6-bridge-import.test.ts` proves the bridge imports with zero side effects (Electron intact).
+- **Adapter**: `tauriPlatform.ts` `createTauriPlatformSubset()` backs **9** `IPlatformService` methods via
+  `Pick<>` (type-checked against the real interface, no stubs), Layer-B-conformance-tested (`b1`, 14/14).
+  Additive — NOT yet wired into the Electron factory.
 - **Sidecar packaging**: runbook exists; `externalBin` naming resolved (`<name>-<rust-target-triple>`).
+- **Gate**: canonical `pnpm typecheck` green AND `tsconfig.renderer.json` clean for bridge/adapter (the
+  two are disjoint projects — see `TEST-HARNESS.md §4.5`). Full `pnpm test:tauri` (layer-a/b/rust) green.
 
 ## Hard-blocker verdicts (from the spikes)
 | # | Blocker | Verdict | Source |
@@ -44,7 +55,29 @@ decision — do not let it block the rest.** Concretely:
 4. **Bundle-size / security motivation**: if the driver is size/attack-surface, the sidecar approach
    (bundling Node for Host/Agent) erodes much of the size win — confirm the goal still holds.
 
+## Decision → what it unblocks (to answer fast)
+Each remaining interface family is blocked on a specific decision, NOT on more slice work:
+- **D1 browser** → `browserView*` (~12 methods), `onOpenBrowserUrl`, `onBrowserView*` events,
+  `clearEmbeddedBrowserData`, `importChromeBrowserData`. If "separate window, no CDP automation" is
+  acceptable, these become a scoped `WebviewWindow` port; if full CDP automation is required, stay
+  Electron for that surface.
+- **D2 updater** → `getUpdateState`, `checkForUpdates`(`CheckForUpdates` id), `downloadUpdate`,
+  `cancelUpdateDownload`, `quitAndInstallUpdate`, `setAutoDownloadAndInstallUpdates`,
+  `skipUpdateVersion`, `onUpdate*` events (~10 methods).
+- **D3 target OS** → gates `getDesktopWindowChromeState` (macOS version), `listWSLDistros` (Windows),
+  `printPageToPdf` (Linux), media Range/seek (Linux WebKitGTK). Without a target OS I cannot ship
+  faithful (non-partial) versions of these.
+- **D4 size/security motivation** → determines whether the Node-sidecar bundling for
+  Host/Agent (erodes size win) is acceptable at all.
+- **Also blocked (transport wiring, not a product decision per se):** `getHostPort`-style factory
+  selection + the renderer↔sidecar `connectViaWebSocket` glue + `executeDesktopCommand` router +
+  all `on*` push events + `notifyRendererReady` — need the Rust-spawns-Host-sidecar step, which needs
+  D1–D4 settled to know what the Host must expose.
+
 ## Honest status
-Foundation + core-command slices + transport proof + full blocker analysis are DONE and verified.
-The remaining work is large and partly gated on the four product decisions above. This is a
-multi-week effort, not closeable by continuing to add slices blindly.
+Foundation + 79 verified commands + 9-method adapter + transport proof + full blocker analysis are DONE
+and verified (all gates green). **The faithful, un-gated, non-partial command/adapter increments are now
+exhausted** — every remaining `IPlatformService` method is gated on D1–D4 or the Host-sidecar transport
+wiring (see the Decision→unblocks map), and forcing one now would ship a stub or a partial substitute,
+which AGENTS.md + the port playbook forbid. This is a multi-week effort gated on those decisions, **not**
+closeable by continuing to add slices blindly. Electron remains the shipped product, fully intact.
