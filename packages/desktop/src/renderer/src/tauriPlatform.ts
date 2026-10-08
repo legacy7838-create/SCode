@@ -8,7 +8,6 @@ import {
   openPath as bridgeOpenPath,
   selectDirectory as bridgeSelectDirectory,
   setWindowTheme as bridgeSetWindowTheme,
-  showItemInFolder as bridgeShowItemInFolder,
   showOpenDialog as bridgeShowOpenDialog,
 } from "./tauriBridge.js";
 
@@ -46,7 +45,6 @@ export interface TauriPlatformDeps {
   openExternal: typeof bridgeOpenExternal;
   getDesktopZoomLevel: typeof getTauriDesktopZoomLevel;
   setWindowTheme: typeof bridgeSetWindowTheme;
-  showItemInFolder: typeof bridgeShowItemInFolder;
   getSystemLocale: typeof getTauriSystemLocale;
   openPath: typeof bridgeOpenPath;
   listenDesktopZoomChanged: typeof listenTauriDesktopZoomChanged;
@@ -58,7 +56,6 @@ const realDeps: TauriPlatformDeps = {
   openExternal: bridgeOpenExternal,
   getDesktopZoomLevel: getTauriDesktopZoomLevel,
   setWindowTheme: bridgeSetWindowTheme,
-  showItemInFolder: bridgeShowItemInFolder,
   getSystemLocale: getTauriSystemLocale,
   openPath: bridgeOpenPath,
   listenDesktopZoomChanged: listenTauriDesktopZoomChanged,
@@ -108,10 +105,14 @@ export function createTauriPlatformSubset(deps: TauriPlatformDeps = realDeps): T
       void deps.openExternal(url).catch(() => {});
     },
     async openInFileManager(path: string) {
-      // Maps the command's `Result<(),String>` seam to the interface's `{success,error?}` result
-      // object (the exact contract Electron's shell.showItemInFolder-based method returns).
+      // FIX (slice 35): Electron's openInFileManager opens the path via `shell.openPath` /
+      // `open` (desktopMainIpcHelpers.ts:66,101 — `openPathInFileManager`), NOT `showItemInFolder`
+      // (reveal-select). Slice 28 mis-mapped it to showItemInFolder, which would reveal instead of
+      // opening under Tauri. The faithful primitive is `openPath` (opener opens a dir in the file
+      // manager) — the same seam openExternalFile uses; both are `shell.openPath`-based in Electron.
+      // Maps the command's `Result<(),String>` seam onto the interface's `{success,error?}` object.
       try {
-        await deps.showItemInFolder(path);
+        await deps.openPath(path);
         return { success: true };
       } catch (e) {
         return { success: false, error: String(e) };

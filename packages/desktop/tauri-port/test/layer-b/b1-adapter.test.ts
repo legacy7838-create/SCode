@@ -25,8 +25,6 @@ interface FakeOptions {
   openDialogResult?: string[] | null;
   /** When true, the `openExternal` stub rejects (exercises the fire-and-forget catch). */
   openExternalThrows?: boolean;
-  /** When true, the `showItemInFolder` stub rejects (exercises openInFileManager's error mapping). */
-  revealThrows?: boolean;
   /** Raw OS locale the `getSystemLocale` stub returns (defaults to a non-supported locale). */
   systemLocale?: string;
   /** When true, the `openPath` stub rejects (exercises openExternalFile's error mapping). */
@@ -60,12 +58,6 @@ function fakeDeps(opts: FakeOptions = {}): { deps: TauriPlatformDeps; calls: str
     },
     setWindowTheme: async (label, theme) => {
       calls.push(`setWindowTheme:${label}:${String(theme)}`);
-    },
-    showItemInFolder: async (path) => {
-      calls.push(`showItemInFolder:${path}`);
-      if (opts.revealThrows) {
-        throw new Error("reveal failed");
-      }
     },
     getSystemLocale: async () => {
       calls.push("getSystemLocale");
@@ -144,19 +136,19 @@ test("B1: setTitleBarTheme maps light/dark directly and system to a null overrid
   assert.deepEqual(calls, ["setWindowTheme:main:dark", "setWindowTheme:main:null"]);
 });
 
-test("B1: openInFileManager returns {success:true} on a successful reveal", async () => {
+test("B1: openInFileManager delegates to openPath and returns {success:true}", async () => {
   const { deps, calls } = fakeDeps();
   const platform = createTauriPlatformSubset(deps);
   assert.deepEqual(await platform.openInFileManager("/tmp/x"), { success: true });
-  assert.deepEqual(calls, ["showItemInFolder:/tmp/x"]);
+  assert.deepEqual(calls, ["openPath:/tmp/x"]);
 });
 
-test("B1: openInFileManager maps a rejected reveal to {success:false,error}", async () => {
-  const { deps } = fakeDeps({ revealThrows: true });
+test("B1: openInFileManager maps a rejected open to {success:false,error}", async () => {
+  const { deps } = fakeDeps({ openFileThrows: true });
   const platform = createTauriPlatformSubset(deps);
   const result = await platform.openInFileManager("/nope");
   assert.equal(result.success, false);
-  assert.match(result.error ?? "", /reveal failed/);
+  assert.match(result.error ?? "", /open failed/);
 });
 
 test("B1: openExternalFile delegates to openPath and returns {success:true}", async () => {
