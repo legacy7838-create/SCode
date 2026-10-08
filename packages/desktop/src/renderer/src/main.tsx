@@ -29,10 +29,10 @@ import {
 } from "@zcode/shared";
 import type { Locale } from "@zcode/shared";
 import type { IServiceAccessor } from "@zcode/services";
-import { createDesktopPlatform } from "./desktopPlatform.js";
-// Parallel-shell seam: under a Tauri runtime the renderer must NOT build the Electron platform
-// (which eagerly reads the absent `window.zcode` and throws). `isTauriRuntime()` gates this so the
-// Electron path is byte-identical; the Tauri factory is a side-effect-free import (a6 proves it).
+// Parallel-shell seam: under a Tauri runtime the renderer must NOT load the Electron platform module
+// (desktopPlatform → desktopBrowserPlatformBridge reads `window.zcode.printPageToPdf` at import time and
+// throws under Tauri). So desktopPlatform is loaded LAZILY only in the non-Tauri branch below; the Tauri
+// factory import is side-effect-free (a6 proves it) and Electron's path is behaviorally unchanged.
 import { isTauriRuntime } from "./tauriBridge.js";
 import { createTauriPlatform } from "./tauriPlatformFactory.js";
 import { startPerformanceTimelineCleanup } from "./performanceTimelineCleanup.js";
@@ -165,7 +165,9 @@ const pendingRemoteWorkspaceServicePorts: RemoteWorkspaceServicePortRegistration
 
 const desktopPlatform = isTauriRuntime()
   ? createTauriPlatform()
-  : createDesktopPlatform({ isLocalDevelopmentRuntime });
+  : (await import("./desktopPlatform.js")).createDesktopPlatform({
+      isLocalDevelopmentRuntime,
+    });
 
 /**
  * 等待 preload 通过 window.postMessage 转发 MessagePort。
