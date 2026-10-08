@@ -2750,6 +2750,195 @@ pub fn write_clipboard_text(app: AppHandle, text: String) -> Result<(), String> 
     app.clipboard().write_text(text).map_err(|e| e.to_string())
 }
 
+/// The `{dataBaseDir}/.zcode/tmp/paste-attachments/{YYYY-MM-DD}` subtree the temp-text attachment
+/// writer creates under, mirroring `tempTextAttachment.ts:10` `TEMP_TEXT_ATTACHMENT_DIR` and the
+/// `join(getZCodeDataRootDir(), "tmp", ...)` structure (`paths.ts:22,44`).
+const TEMP_TEXT_ATTACHMENT_SUBDIR: &str = ".zcode/tmp/paste-attachments";
+
+/// Convert days-since-UNIX-epoch to a proleptic-Gregorian `(year, month, day)`.
+///
+/// Implements Howard Hinnant's integer `civil_from_days` (no date crate). `epoch == 0` at `1970-01-01`;
+/// months Jan/Feb belong to the previous year in the era decomposition, hence the `+1` year fix.
+/// Pure and unit-tested (`days=0 -> (1970,1,1)`, `days=59 -> (1970,3,1)`).
+///
+/// # Arguments
+///
+/// * `days` - Whole days since 1970-01-01 (may be negative for pre-epoch dates).
+///
+/// # Returns
+///
+/// The `(year, month, day)` triple in proleptic-Gregorian form.
+fn ymd_from_days(days: i64) -> (i64, u32, u32) {
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097; // day-of-era [0, 146096]
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365; // year-of-era [0, 399]
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // day-of-year [0, 365]
+    let mp = (5 * doy + 2) / 153; // month-position [0, 11]
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32; // day [1, 31]
+    let m = (if mp < 10 { mp + 3 } else { mp - 9 }) as u32; // month [1, 12]
+    (if m <= 2 { y + 1 } else { y }, m, d)
+}
+
+/// Build the `YYYY-MM-DD` date subdirectory for a temp attachment from an epoch-millisecond stamp
+/// (mirrors `tempTextAttachment.ts:20-21`). Uses UTC; Electron uses the host-local date — a documented
+/// platform adaptation, since the bucket only tidies files and the returned `localPath` is absolute.
+fn temp_attachment_date_dir(epoch_ms: u64) -> String {
+    let days = (epoch_ms / 1_000).div_euclid(86_400) as i64;
+    let (y, m, d) = ymd_from_days(days);
+    format!("{y:04}-{m:02}-{d:02}")
+}
+
+/// Generate an 8-hex-char collision-avoidance suffix, the dependency-free analog of
+/// `randomUUID().slice(0, 8)` (`tempTextAttachment.ts:42`). Mixes sub-second nanos with a process
+/// counter and pid so successive same-instant calls differ; the `create_new` write flag still rejects
+/// the astronomically rare true collision.
+fn temp_attachment_suffix() -> String {
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let count = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.subsec_nanos() as u64);
+    let pid = std::process::id() as u64;
+    let mixed = (nanos ^ count.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ (pid << 16)) as u32;
+    format!("{mixed:08x}")
+}
+
+/// Turn a caller-supplied (or absent) filename into the on-disk name, mirroring
+/// `buildTempTextAttachmentFilename` (`tempTextAttachment.ts:38-48`): default `pasted-text.txt`; strip
+/// NUL and path separators `\\ / :` (the path-traversal guard, replaced with `-`); force a `.txt`
+/// extension; insert the unique suffix before the extension (or append `-suffix.txt` when there is no
+/// usable dot, e.g. a leading-dot name).
+///
+/// # Arguments
+///
+/// * `raw` - Optional caller filename; trimmed, treated as absent when empty.
+/// * `suffix` - The 8-hex collision suffix to embed.
+///
+/// # Returns
+///
+/// The sanitized `name-suffix.txt` string.
+fn build_temp_text_attachment_filename(raw: Option<&str>, suffix: &str) -> String {
+    let raw_base = raw
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("pasted-text.txt");
+    let normalized = raw_base.replace('\0', "-").replace(['\\', '/', ':'], "-");
+    let safe_name = if normalized.ends_with(".txt") {
+        normalized
+    } else {
+        format!("{normalized}.txt")
+    };
+    match safe_name.rfind('.') {
+        Some(0) | None => format!("{safe_name}-{suffix}.txt"),
+        Some(dot) => format!("{}-{}{}", &safe_name[..dot], suffix, &safe_name[dot..]),
+    }
+}
+
+/// Serializable result for [`create_temp_text_attachment`]. `#[serde(rename_all = "camelCase")]` is
+/// REQUIRED so the keys match `CreateTempTextAttachmentResult` (`localPath`, `mimeType`, `sizeBytes`) —
+/// Tauri camelCases command ARGS automatically but NOT return-struct fields (see the PlatformInfo note
+/// at the slice-3 serde doc).
+#[derive(serde::Serialize, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TempTextAttachmentResult {
+    filename: String,
+    local_path: String,
+    mime_type: &'static str,
+    size_bytes: u64,
+}
+
+/// Write `text` as a temp attachment under `base_dir/.zcode/tmp/paste-attachments/{date_dir}`,
+/// returning the absolute path + metadata. Faithful to `createTempTextAttachment`
+/// (`tempTextAttachment.ts:22-35`): recursive-mkdir, then a `create_new` (Electron `wx`) write so an
+/// existing path errors rather than clobbers. Split from [`create_temp_text_attachment`] (which only
+/// resolves the base dir + clock) so this fs logic is unit-testable against a temp dir without env
+/// or global-state races — `base_dir`/`date_dir`/`suffix` are injected.
+///
+/// # Arguments
+///
+/// * `base_dir` - The data-root base directory (`home` or `ZCODE_DATA_BASE_DIR`).
+/// * `date_dir` - The `YYYY-MM-DD` bucket.
+/// * `text` - Non-empty UTF-8 content.
+/// * `raw_filename` - Optional caller filename.
+/// * `suffix` - Collision-avoidance suffix.
+///
+/// # Returns
+///
+/// `Ok(TempTextAttachmentResult)` or `Err(String)` describing the fs failure.
+fn write_temp_text_attachment(
+    base_dir: &std::path::Path,
+    date_dir: &str,
+    text: &str,
+    raw_filename: Option<&str>,
+    suffix: &str,
+) -> Result<TempTextAttachmentResult, String> {
+    let dir = base_dir.join(TEMP_TEXT_ATTACHMENT_SUBDIR).join(date_dir);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let filename = build_temp_text_attachment_filename(raw_filename, suffix);
+    let path = dir.join(&filename);
+    let bytes = text.as_bytes();
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+        .map_err(|e| e.to_string())?;
+    std::io::Write::write_all(&mut file, bytes).map_err(|e| e.to_string())?;
+    Ok(TempTextAttachmentResult {
+        local_path: path.to_string_lossy().into_owned(),
+        size_bytes: bytes.len() as u64,
+        mime_type: "text/plain",
+        filename,
+    })
+}
+
+/// Create a temp text attachment from renderer-pasted content, mirroring Electron's
+/// `createTempTextAttachment` (host-side write so large pasted text never rides the prompt payload).
+///
+/// Phase 3 slice 40. Resolves the data base dir exactly like `paths.ts:getDataBaseDir`
+/// (env `ZCODE_DATA_BASE_DIR` else the home dir), then delegates to [`write_temp_text_attachment`].
+/// The empty-text guard rejects like Electron's thrown error (`tempTextAttachment.ts:16-18`). Residual:
+/// the services in-process `setDataBaseDir()` override is a singleton absent from this shell, so only
+/// the env + home fallbacks are honored (matches Electron's default-at-startup path); and the date
+/// bucket is UTC vs Electron's local date — both documented, non-behavioral for the returned absolute
+/// `localPath`. Requires a writable data dir (present at runtime); the pure helpers + the injected
+/// writer are unit-tested here, and delivery is exercised under `pnpm dev:tauri`.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the home-path resolver.
+/// * `text` - The attachment content; must be non-empty.
+/// * `filename` - Optional base filename (sanitized server-side).
+///
+/// # Returns
+///
+/// `Ok(TempTextAttachmentResult)` with `{ filename, localPath, mimeType, sizeBytes }`, or `Err(String)`.
+#[tauri::command]
+pub fn create_temp_text_attachment(
+    app: AppHandle,
+    text: String,
+    filename: Option<String>,
+) -> Result<TempTextAttachmentResult, String> {
+    if text.is_empty() {
+        return Err("Temporary text attachment content is empty".to_string());
+    }
+    let base_dir = match std::env::var("ZCODE_DATA_BASE_DIR") {
+        Ok(v) if !v.trim().is_empty() => std::path::PathBuf::from(v.trim()),
+        _ => app
+            .path()
+            .resolve(std::ffi::OsStr::new(""), tauri::path::BaseDirectory::Home)
+            .map_err(|e| e.to_string())?,
+    };
+    write_temp_text_attachment(
+        &base_dir,
+        &temp_attachment_date_dir(now_millis()),
+        &text,
+        filename.as_deref(),
+        &temp_attachment_suffix(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3040,5 +3229,68 @@ mod tests {
         ));
         assert!(!recent.contains_key("completed:task-1"));
         assert!(recent.contains_key("failed:task-2"));
+    }
+
+    #[test]
+    fn ymd_from_days_maps_known_epoch_days() {
+        // epoch day 0 == 1970-01-01; day 59 == 1970-03-01 (crosses the non-leap Feb boundary, where
+        // the era Jan/Feb year-fix must NOT apply).
+        assert_eq!(ymd_from_days(0), (1970, 1, 1));
+        assert_eq!(ymd_from_days(59), (1970, 3, 1));
+        assert_eq!(ymd_from_days(60), (1970, 3, 2));
+    }
+
+    #[test]
+    fn temp_attachment_date_dir_formats_utc_date() {
+        // 1_704_067_200_000 ms == 2024-01-01T00:00:00Z -> "2024-01-01" (zero-padded).
+        assert_eq!(temp_attachment_date_dir(1_704_067_200_000), "2024-01-01");
+        assert_eq!(temp_attachment_date_dir(0), "1970-01-01");
+    }
+
+    #[test]
+    fn build_temp_text_attachment_filename_sanitizes_and_inserts_suffix() {
+        // Default name when absent: "pasted-text.txt" -> suffix inserted before the final dot.
+        assert_eq!(
+            build_temp_text_attachment_filename(None, "abcd1234"),
+            "pasted-text-abcd1234.txt"
+        );
+        // Extension inserted before the final dot.
+        assert_eq!(
+            build_temp_text_attachment_filename(Some("report"), "abcd1234"),
+            "report-abcd1234.txt"
+        );
+        assert_eq!(
+            build_temp_text_attachment_filename(Some("a.txt"), "abcd1234"),
+            "a-abcd1234.txt"
+        );
+        // Path separators + NUL are neutralized (the traversal guard), never appear in the output.
+        let evil = build_temp_text_attachment_filename(Some("../../etc/passwd"), "abcd1234");
+        assert!(!evil.contains('/') && !evil.contains('\\') && !evil.contains('\0'));
+        assert!(evil.ends_with("-abcd1234.txt"));
+        // A leading-dot name: "..txt" -> suffix inserted after the first dot (matches the JS slice math).
+        assert_eq!(
+            build_temp_text_attachment_filename(Some("."), "abcd1234"),
+            ".-abcd1234.txt"
+        );
+    }
+
+    #[test]
+    fn write_temp_text_attachment_writes_bytes_under_the_date_dir() {
+        // Real fs, but in a unique temp base with injected date+suffix -> deterministic, race-free.
+        let base = std::env::temp_dir().join(format!("zcode-tta-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let result =
+            write_temp_text_attachment(&base, "2024-01-01", "hello 世界", Some("note"), "cafe0000")
+                .expect("write must succeed");
+        assert_eq!(result.filename, "note-cafe0000.txt");
+        assert_eq!(result.mime_type, "text/plain");
+        // UTF-8 byte length: "hello " =6 + "世界" =6 bytes.
+        assert_eq!(result.size_bytes, 12);
+        let on_disk = std::fs::read_to_string(&result.local_path).expect("file exists");
+        assert_eq!(on_disk, "hello 世界");
+        assert!(result
+            .local_path
+            .ends_with(".zcode/tmp/paste-attachments/2024-01-01/note-cafe0000.txt"));
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

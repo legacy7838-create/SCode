@@ -378,6 +378,40 @@ export function showTaskNotification(
 }
 
 /**
+ * `create_temp_text_attachment` 的返回值，形状与 `@zcode/shared` 的 `CreateTempTextAttachmentResult`
+ * 一致（camelCase）。本地结构化定义，避免桥接层依赖 `@zcode/shared`（保持导入自洽、零副作用）。
+ */
+export interface TauriTempTextAttachmentResult {
+  filename: string;
+  localPath: string;
+  mimeType: "text/plain";
+  sizeBytes: number;
+}
+
+/**
+ * Phase 3 第三十切片：把粘贴文本写成宿主临时附件文件的 TypeScript 接缝。
+ *
+ * 对应 Rust 命令 `create_temp_text_attachment`，复刻 Electron `createTempTextAttachment`
+ * （`tempTextAttachment.ts`）：写入 `{home|ZCODE_DATA_BASE_DIR}/.zcode/tmp/paste-attachments/{YYYY-MM-DD}/`
+ * 下的唯一 `.txt`，返回 `{ filename, localPath, mimeType, sizeBytes }`。空文本会以 rejected Promise
+ * （Rust `Err`）抛出。`filename` 省略时传 `null` → Rust `Option::None`；camelCase 参数由 a5 契约守卫校验。
+ * 需可写宿主数据目录，真实写入在 `pnpm dev:tauri` 验证；纯逻辑与写入 helper 已在 Rust 侧单测。
+ *
+ * @param text - 附件正文（不可为空）。
+ * @param filename - 可选基础文件名（服务端做规范化/去路径分隔符处理）。
+ * @returns 解析为附件的落盘元数据。
+ */
+export function createTempTextAttachment(
+  text: string,
+  filename?: string,
+): Promise<TauriTempTextAttachmentResult> {
+  return invoke<TauriTempTextAttachmentResult>("create_temp_text_attachment", {
+    text,
+    filename: filename ?? null,
+  });
+}
+
+/**
  * Phase 2 第八切片：操作系统剪贴板的 TypeScript 接缝（`tauri-plugin-clipboard-manager`）。
  *
  * 对应 Rust 命令 `read_clipboard_text` / `write_clipboard_text`，委托给

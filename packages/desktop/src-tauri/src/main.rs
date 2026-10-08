@@ -131,7 +131,8 @@ fn main() {
             commands::spawn_sidecar_echo_discover_port,
             commands::kill_sidecar,
             commands::read_clipboard_text,
-            commands::write_clipboard_text
+            commands::write_clipboard_text,
+            commands::create_temp_text_attachment
         ])
         .run(tauri::generate_context!())
         .expect("error while running the ZCode Tauri shell");

@@ -530,3 +530,33 @@ methods; the click gap stays an honest un-implemented residual, not a stub).
 
 Verification: layer-b 23 tests (was 21 — adds payload-destructure mapping + no-throw cases; surface-lock
 now 12 keys); renderer `tsc` 0 errors; prettier clean. No Rust change, so `cargo`/a5 unaffected.
+
+## Slice 40 contract — `createTempTextAttachment` (temp fs write)
+
+Faithful port of `packages/desktop/src/main/tempTextAttachment.ts` — writes renderer-pasted text to a
+host temp file so large pastes never ride the prompt payload. Un-gated: a plain fs write, no product
+decision or Host/browser subsystem dependency.
+
+| Command | Args | Returns |
+| --- | --- | --- |
+| `create_temp_text_attachment` | `text, filename?` | `Result<TempTextAttachmentResult,String>` → `{ filename, localPath, mimeType:"text/plain", sizeBytes }` (camelCase via `#[serde(rename_all)]`) |
+
+- Path mirrors `paths.ts:getDataBaseDir`: env `ZCODE_DATA_BASE_DIR` else home, then
+  `.zcode/tmp/paste-attachments/{YYYY-MM-DD}/`. Recursive-mkdir, then a `create_new` (Electron `wx`)
+  write so a collision errors rather than clobbers.
+- Pure, unit-tested helpers: `ymd_from_days` (Hinnant civil-date, no date crate),
+  `temp_attachment_date_dir` (UTC), `build_temp_text_attachment_filename` — **same path-traversal guard**
+  as Electron (strips NUL + `\\ / :`), forces `.txt`, embeds an 8-hex suffix before the extension;
+  `temp_attachment_suffix` = dependency-free analog of `randomUUID().slice(0,8)`.
+- `write_temp_text_attachment(base, date, text, filename, suffix)` is factored so the real-fs write is
+  unit-tested against a temp dir with injected (race-free) inputs; the command only resolves base+clock.
+
+Residuals (documented, non-behavioral): the services in-process `setDataBaseDir()` override is a
+singleton absent from this shell (env+home fallbacks match Electron's default-at-startup path), and the
+date bucket is UTC vs Electron's local date — the returned `localPath` is absolute either way.
+
+Bridge: `createTempTextAttachment(text, filename?)` → local `TauriTempTextAttachmentResult` interface
+(bridge stays self-contained, no `@zcode/shared` import). Verification: `cargo test` 27 units (was 23),
+clippy/fmt/rustfmt green; a5 12 pass/1 skip (new command↔wrapper↔registration↔camelCase covered);
+renderer `tsc` 0 errors in changed files; prettier clean. Adapter mapping of the interface method is a
+later gated slice (the command + wrapper land first, per the established model).
