@@ -19,7 +19,9 @@
 // 15) window visibility & protection (show/hide/skip-taskbar/focusable/content-protected) via the
 // existing `WebviewWindow` mutators;
 // 16) window state completion (unminimize, is_minimized, inner_position, is/set_enabled) via the
-// existing `WebviewWindow` API.
+// existing `WebviewWindow` API;
+// 17) frame geometry & global cursor (get_window_outer_size reuses WindowSize; get_cursor_position
+// via new CursorPosition).
 
 use tauri::{AppHandle, Manager, WebviewWindow};
 // Native dialog API surface for the slice-5 commands: the `DialogExt` app-extension, the file
@@ -533,6 +535,19 @@ pub struct WindowPosition {
     pub x: i32,
     /// Top edge Y coordinate in physical pixels.
     pub y: i32,
+}
+
+/// The desktop-wide cursor position in physical pixels (sub-pixel floats).
+///
+/// Coordinates use `f64` because `WebviewWindow::cursor_position` reports a `PhysicalPosition<f64>`:
+/// a global cursor has sub-pixel precision and may be negative when the desktop spans monitors placed
+/// to the top-left of the primary display.
+#[derive(serde::Serialize, Debug, PartialEq)]
+pub struct CursorPosition {
+    /// Cursor X coordinate in physical pixels (f64 for sub-pixel precision).
+    pub x: f64,
+    /// Cursor Y coordinate in physical pixels (f64 for sub-pixel precision).
+    pub y: f64,
 }
 
 /// Build a [`WindowSize`] from a raw `(width, height)` pair.
@@ -1322,6 +1337,63 @@ pub fn set_window_enabled(app: AppHandle, label: String, enabled: bool) -> Resul
     require_window(&app, &label)?
         .set_enabled(enabled)
         .map_err(|e| e.to_string())
+}
+
+/// Return the outer (frame-inclusive) size of the window identified by `label`.
+///
+/// Phase 2 slice 17 (frame geometry). Resolves the live window through [`require_window`] and reads
+/// its physical dimensions via `WebviewWindow::outer_size`, reusing the SAME [`WindowSize`] struct
+/// and [`build_window_size`] helper the slice-9 [`get_window_size`] uses. The distinction: slice-9
+/// reports the inner client area (`inner_size`), while this command includes the window frame/decorations
+/// (matching Electron `win.getBounds()`). The fallible `Result` is converted with
+/// `.map_err(|e| e.to_string())` (never `.unwrap()`), surfacing on the TypeScript side as a rejected
+/// `Promise`. Requires a live GUI window, so it is compile-verified here and exercised under
+/// `pnpm dev:tauri` (no fake-window unit test — faking one violates the no-stub rule).
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+///
+/// # Returns
+///
+/// `Ok(WindowSize)` with the physical frame-inclusive dimensions; `Err(String)` when the window is
+/// missing or the OS cannot report the size.
+#[tauri::command]
+pub fn get_window_outer_size(app: AppHandle, label: String) -> Result<WindowSize, String> {
+    let size = require_window(&app, &label)?
+        .outer_size()
+        .map_err(|e| e.to_string())?;
+    Ok(build_window_size(size.width, size.height))
+}
+
+/// Return the OS-wide cursor position in physical pixels.
+///
+/// Phase 2 slice 17 (global cursor). Resolves the live window through [`require_window`] and reads
+/// the desktop-wide mouse location via `WebviewWindow::cursor_position`, which reports a
+/// `PhysicalPosition<f64>` mapped onto the new [`CursorPosition`]. Unlike the slice-9/16 window
+/// positions (`i32`, frame-relative), this is the global cursor and uses `f64` for sub-pixel precision;
+/// it may be negative off the top-left of the primary monitor. The fallible `Result` is converted with
+/// `.map_err(|e| e.to_string())` (never `.unwrap()`), surfacing on the TypeScript side as a rejected
+/// `Promise`. Requires a live GUI window, so it is compile-verified here and exercised under
+/// `pnpm dev:tauri` (no fake-window unit test — faking one violates the no-stub rule).
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`), used to reach the cursor API on the
+///   window (the value returned is the desktop-wide cursor, not window-relative).
+///
+/// # Returns
+///
+/// `Ok(CursorPosition)` with the sub-pixel global cursor coordinates; `Err(String)` when the window
+/// is missing or the OS cannot report the cursor position.
+#[tauri::command]
+pub fn get_cursor_position(app: AppHandle, label: String) -> Result<CursorPosition, String> {
+    let pos = require_window(&app, &label)?
+        .cursor_position()
+        .map_err(|e| e.to_string())?;
+    Ok(CursorPosition { x: pos.x, y: pos.y })
 }
 
 /// A file-type filter for the open dialog, mirroring the plugin's `{ name, extensions }` shape.

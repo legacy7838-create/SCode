@@ -793,3 +793,35 @@ export function isWindowEnabled(label: string): Promise<boolean> {
 export function setWindowEnabled(label: string, enabled: boolean): Promise<void> {
   return invoke<void>("set_window_enabled", { label, enabled });
 }
+
+/**
+ * Phase 2 第十七切片：边框几何与全局光标的 TypeScript 接缝。
+ *
+ * 对应 Rust 命令 `get_window_outer_size` / `get_cursor_position`，全部复用已导入的
+ * `WebviewWindow` API（无需新增插件或 capability）。Rust 端通过 `require_window(label)` 解析窗口，
+ * 缺失时返回显式的 `Err("window not found: {label}")`，这里以 rejected Promise 形式抛出（沿用第三
+ * 切片的错误传播接缝）。运行时需活动 GUI 窗口，因此本组接缝在此处只做编译期类型校验，真实读取在
+ * `pnpm dev:tauri` 下验证。保持导入零副作用。
+ */
+
+/**
+ * 读取窗口外部（含边框）尺寸。对应 Rust 命令 `get_window_outer_size`
+ * （`WebviewWindow::outer_size`），复用第九切片 `getWindowSize` 相同的 `{ width, height }` 形状；
+ * 与 `get_window_size`（内部客户区）不同，本函数含窗口边框，对齐 Electron 的 `getBounds()`。
+ *
+ * @param label - 目标窗口 label。
+ */
+export function getWindowOuterSize(label: string): Promise<TauriWindowSize> {
+  return invoke<TauriWindowSize>("get_window_outer_size", { label });
+}
+
+/**
+ * 读取桌面全局光标位置（物理像素，亚像素浮点）。对应 Rust 命令 `get_cursor_position`
+ * （`WebviewWindow::cursor_position`），映射 Rust 端 `CursorPosition { x, y }`；x/y 为 `f64`，
+ * 是 OS 级全局光标（非窗口相对），跨左上排布的副屏时可为负值。
+ *
+ * @param label - 目标窗口 label（用于触达窗口的光标 API，返回值为桌面全局光标）。
+ */
+export function getCursorPosition(label: string): Promise<{ x: number; y: number }> {
+  return invoke<{ x: number; y: number }>("get_cursor_position", { label });
+}

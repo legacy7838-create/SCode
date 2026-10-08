@@ -151,3 +151,25 @@ TS bridge: one typed `invoke` wrapper per command; `get_window_inner_position` r
 `{ x, y }` object shape as the slice-9 `get_window_position`. No new plugin/capability. `inner_size`
 is NOT re-added (slice 9 already exposes `get_window_size`). All require a live GUI window
 (compile-verified; exercised under `pnpm dev:tauri`; no fake-window unit test per the no-stub rule).
+
+## Slice 17 contract — frame geometry & global cursor
+
+Two genuinely-uncovered reads. `get_window_outer_size` (frame-inclusive dimensions — Electron
+`win.getBounds()` includes the window frame, whereas slice-9 `get_window_size` reports the client
+area) reuses the existing `WindowSize { width: u32, height: u32 }` struct, mapping
+`WebviewWindow::outer_size` (`:1843`, `crate::Result<PhysicalSize<u32>>`). `get_cursor_position`
+exposes the OS-wide mouse location for drag/overlay geometry, mapping `WebviewWindow::cursor_position`
+(`:2025`, `crate::Result<PhysicalPosition<f64>>`) through a new `CursorPosition { x: f64, y: f64 }`
+(f64, not i32, because a global cursor is a sub-pixel float and may be negative off the primary
+monitor).
+
+| Command | Args | Returns | Behavior |
+| --- | --- | --- | --- |
+| `get_window_outer_size` | `label` | `Result<WindowSize,String>` | `window.outer_size()` → `{ width, height }` |
+| `get_cursor_position` | `label` | `Result<CursorPosition,String>` | `window.cursor_position()` → `{ x, y }` (f64, global) |
+
+`get_cursor_position` takes `label` to reach the window's cursor API (Tauri exposes `cursor_position`
+on the window; it returns the desktop-wide cursor, per the crate doc at `:2018`). TS bridge: two typed
+`invoke` wrappers, `get_window_outer_size` mirroring the slice-9 `get_window_size` object shape. No
+new plugin/capability. Both require a live GUI window (compile-verified; exercised under
+`pnpm dev:tauri`; no fake-window unit test per the no-stub rule).

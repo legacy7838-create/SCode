@@ -91,6 +91,8 @@ fn main() {
             commands::get_window_inner_position,
             commands::is_window_enabled,
             commands::set_window_enabled,
+            commands::get_window_outer_size,
+            commands::get_cursor_position,
             commands::show_open_dialog,
             commands::show_save_dialog,
             commands::show_message_dialog,
