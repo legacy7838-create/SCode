@@ -1068,6 +1068,33 @@ export function setWindowCursorVisible(
 }
 
 /**
+ * Phase 2 第二十四切片：应用生命周期（重启 / 退出）的 TypeScript 接缝。
+ *
+ * 对应 Rust 命令 `relaunch_app` / `exit_app`，直接调用核心 `AppHandle::restart` / `AppHandle::exit`
+ * （无需新增插件或 capability）。对齐 Electron 的 `app.relaunch()` / `app.quit()`，服务于真实菜单命令
+ * `DesktopCommandIds.RelaunchApp` 及退出需求。注意：`relaunch_app` 触发进程重建，重启后运行时消失，
+ * 该 `invoke` 的 Promise 不会 resolve（与 Electron 重启行为一致，非桩实现）。参数 `code` 为单词，
+ * camelCase 不变式自然满足。保持导入零副作用。
+ */
+
+/**
+ * 重启应用进程（终止后重新拉起）。对应 Rust 命令 `relaunch_app`（`AppHandle::restart`）。
+ * 调用成功后进程被重建，返回的 Promise 不会 resolve。
+ */
+export function relaunchTauriApp(): Promise<void> {
+  return invoke<void>("relaunch_app");
+}
+
+/**
+ * 以给定退出码结束应用进程。对应 Rust 命令 `exit_app`（`AppHandle::exit`）。
+ *
+ * @param code - 进程退出码（0 表示正常退出）。
+ */
+export function exitTauriApp(code: number): Promise<void> {
+  return invoke<void>("exit_app", { code });
+}
+
+/**
  * Phase 2 第十九切片：显示器信息（多屏 / HiDPI）的 TypeScript 接缝。
  *
  * 对应 Rust 命令 `get_window_current_monitor` / `get_primary_monitor` / `get_available_monitors`，

@@ -50,6 +50,8 @@ fn main() {
             commands::get_device_id,
             commands::get_platform_info,
             commands::get_app_name,
+            commands::relaunch_app,
+            commands::exit_app,
             commands::get_download_directory,
             commands::get_documents_directory,
             commands::get_home_dir,

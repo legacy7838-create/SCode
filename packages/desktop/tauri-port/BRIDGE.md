@@ -327,3 +327,24 @@ TS bridge: three typed `invoke` wrappers; the multi-word Rust arg `visible_on_al
 the JS key `visibleOnAllWorkspaces` (A5 camelCase guard), `grab`/`visible`/`label` unchanged. No new
 plugin/capability. Requires a live GUI window (compile-verified; exercised under `pnpm dev:tauri`;
 no fake-window unit test per the no-stub rule).
+
+## Slice 24 contract — application lifecycle (relaunch + exit)
+
+A new capability class beyond window ops, grounded in the real menu command ids
+`DesktopCommandIds.RelaunchApp` (`packages/shared/src/platform.ts:477`) and the app-quit need. These
+map to Electron `app.relaunch()`+`app.quit()`. Tauri exposes both on the **core `AppHandle`** (no
+extra plugin/dependency): `AppHandle::restart(&self) -> !` (`tauri-2.12.1/src/app.rs:606`, diverges —
+terminates and relaunches) and `AppHandle::exit(&self, code: i32)` (`:581`, triggers
+`RunEvent::ExitRequested`/`Exit`). Because they are called from Rust inside our commands (not the
+JS-facing core API), no capability entry is needed — same as every other command in this bridge.
+
+| Command | Args | Returns | Behavior |
+| --- | --- | --- | --- |
+| `relaunch_app` | none (uses `AppHandle`) | `Result<(),String>` | `app.restart()` — the `!` return coerces to `Ok`'s type, so the call never returns |
+| `exit_app` | `code: i32` | `Result<(),String>` | `app.exit(code)`; returns `()` then `Ok(())` |
+
+TS bridge: `relaunchTauriApp()` → `invoke<void>("relaunch_app")` (no args); `exitTauriApp(code)` →
+`invoke<void>("exit_app", { code })` (`code` single-word, camelCase trivially satisfied). `relaunch_app`
+terminates the process (the `invoke` Promise never resolves because the runtime is gone) — the same
+behavior Electron's relaunch has; documented, not stubbed. Compile-verified; exercised under
+`pnpm dev:tauri`.

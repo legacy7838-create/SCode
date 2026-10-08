@@ -27,7 +27,8 @@
 // managed `SidecarRegistry`, `kill_sidecar` reaps it); 21) window frame & interaction (decorations,
 // click-through, min/max size set + clear) via the existing `WebviewWindow` mutators; 22) window
 // background color (set RGBA + clear) via `WebviewWindow::set_background_color`; 23) window Spaces
-// visibility + cursor grab/visibility (three boolean `WebviewWindow` mutators).
+// visibility + cursor grab/visibility (three boolean `WebviewWindow` mutators); 24) application
+// lifecycle (relaunch + exit) via the core `AppHandle::restart` / `AppHandle::exit`.
 
 use tauri::{AppHandle, Manager, WebviewWindow};
 // Window background color for the slice-22 `set_window_background_color` command. `Color` is the
@@ -180,6 +181,53 @@ pub fn get_platform_info() -> PlatformInfo {
 #[tauri::command]
 pub fn get_app_name(app: AppHandle) -> String {
     app.package_info().name.clone()
+}
+
+/// Relaunch the application process (terminate + start a fresh instance).
+///
+/// Phase 2 slice 24 (application lifecycle). Grounded in the real menu command id
+/// `DesktopCommandIds.RelaunchApp` (`packages/shared/src/platform.ts`), the Tauri equivalent of
+/// Electron's `app.relaunch()` + quit. Delegates to the core `AppHandle::restart()`
+/// (`tauri/src/app.rs:606`), which is declared `-> !`: it tears the runtime down and re-executes the
+/// binary. Because `restart` diverges, the `!` coerces to the command's `Result` return type and the
+/// call never produces an `Ok`/`Err` — the renderer's `invoke` Promise simply never resolves once the
+/// process is gone (the same observable behavior Electron's relaunch has). No extra plugin or
+/// capability: this is a Rust-side core `AppHandle` method, not a JS-facing API. Requires a running
+/// app, so it is compile-verified and exercised under `pnpm dev:tauri`.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle used to restart the process.
+///
+/// # Returns
+///
+/// Never returns normally; the `Result<(), String>` signature exists only so the diverging
+/// `restart()` coerces into the command contract.
+#[tauri::command]
+pub fn relaunch_app(app: AppHandle) -> Result<(), String> {
+    app.restart()
+}
+
+/// Exit the application with the given process exit code.
+///
+/// Phase 2 slice 24. Maps to Electron's `app.quit()`/process exit. Delegates to the core
+/// `AppHandle::exit(code)` (`tauri/src/app.rs:581`), which triggers `RunEvent::ExitRequested` and then
+/// `RunEvent::Exit` before the process terminates. `exit` returns `()`, so `Ok(())` follows the call
+/// in the normal (pre-teardown) control flow. No plugin/capability needed (Rust-side core method).
+/// Requires a running app; compile-verified and exercised under `pnpm dev:tauri`.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle used to exit the process.
+/// * `code` - The process exit code to request (`0` for a clean exit).
+///
+/// # Returns
+///
+/// `Ok(())` after requesting exit; `Err` is not produced by this path (the OS teardown follows).
+#[tauri::command]
+pub fn exit_app(app: AppHandle, code: i32) -> Result<(), String> {
+    app.exit(code);
+    Ok(())
 }
 
 /// Convert a resolved directory path into an owned `String` for transport to the renderer.
