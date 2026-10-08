@@ -46,6 +46,15 @@ function fakeDeps(opts: FakeOptions = {}): {
   const dialogResult =
     opts.openDialogResult === undefined ? ["picked"] : opts.openDialogResult;
   const deps: TauriPlatformDeps = {
+    createTempTextAttachment: async (text, filename) => {
+      calls.push(`createTempTextAttachment:${text}|${String(filename)}`);
+      return {
+        filename: "x.txt",
+        localPath: "/tmp/x.txt",
+        mimeType: "text/plain" as const,
+        sizeBytes: text.length,
+      };
+    },
     selectDirectory: async (multiple) => {
       calls.push(`selectDirectory:${multiple}`);
       return dialogResult;
@@ -229,6 +238,7 @@ test("B1: createTauriPlatformSubset exposes EXACTLY the ported method set (publi
   // case above — the union of both is the ported set.
   const keys = Object.keys(createTauriPlatformSubset()).sort();
   assert.deepEqual(keys, [
+    "createTempTextAttachment",
     "getDesktopZoomLevel",
     "getSystemLocale",
     "onDesktopZoomLevelChanged",
@@ -342,6 +352,29 @@ test("B1: showTaskNotification omits requestId and never surfaces a delivery rej
     }),
   );
   await flush();
+});
+
+test("B1: createTempTextAttachment delegates text + filename and returns the command result", async () => {
+  const { deps, calls } = fakeDeps();
+  const platform = createTauriPlatformSubset(deps);
+  const result = await platform.createTempTextAttachment!({
+    text: "hello",
+    filename: "note",
+  });
+  // The interface request object is destructured onto the command's positional (text, filename).
+  assert.deepEqual(calls, ["createTempTextAttachment:hello|note"]);
+  assert.equal(result.localPath, "/tmp/x.txt");
+  assert.equal(result.sizeBytes, 5);
+  assert.equal(result.mimeType, "text/plain");
+});
+
+test("B1: createTempTextAttachment forwards an absent filename as undefined", async () => {
+  const { deps, calls } = fakeDeps();
+  const platform = createTauriPlatformSubset(deps);
+  await platform.createTempTextAttachment!({ text: "abc" });
+  // No filename -> String(undefined) = "undefined" in the recorder, proving the adapter does NOT
+  // invent a default; the bridge maps undefined -> null -> Rust Option::None.
+  assert.deepEqual(calls, ["createTempTextAttachment:abc|undefined"]);
 });
 
 test("B1: onWindowFullscreenChanged unlistens even if disposed before listen resolves (no leak)", async () => {

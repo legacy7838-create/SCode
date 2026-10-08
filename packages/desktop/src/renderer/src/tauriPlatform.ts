@@ -6,6 +6,7 @@ import type {
 } from "@zcode/shared";
 
 import {
+  createTempTextAttachment as bridgeCreateTempTextAttachment,
   getTauriDesktopZoomLevel,
   getTauriSystemLocale,
   listenTauriDesktopZoomChanged,
@@ -47,6 +48,7 @@ const MAIN_LABEL = "main";
  * typed via `typeof` the real import, so a mock must match the genuine signature.
  */
 export interface TauriPlatformDeps {
+  createTempTextAttachment: typeof bridgeCreateTempTextAttachment;
   selectDirectory: typeof bridgeSelectDirectory;
   showOpenDialog: typeof bridgeShowOpenDialog;
   showTaskNotification: typeof bridgeShowTaskNotification;
@@ -60,6 +62,7 @@ export interface TauriPlatformDeps {
 }
 
 const realDeps: TauriPlatformDeps = {
+  createTempTextAttachment: bridgeCreateTempTextAttachment,
   selectDirectory: bridgeSelectDirectory,
   showOpenDialog: bridgeShowOpenDialog,
   showTaskNotification: bridgeShowTaskNotification,
@@ -87,6 +90,7 @@ export type TauriPlatformSubset = Pick<
   | "setTitleBarTheme"
   | "getSystemLocale"
   | "showTaskNotification"
+  | "createTempTextAttachment"
 >;
 
 /**
@@ -168,6 +172,13 @@ export function createTauriPlatformSubset(
           payload.requestId,
         )
         .catch(() => {});
+    },
+    createTempTextAttachment(payload) {
+      // Faithful delegation: the interface passes a CreateTempTextAttachmentRequest object; the command
+      // takes positional args. The bridge returns a structurally-identical result (TauriTempTextAttachment
+      // Result === CreateTempTextAttachmentResult), so it satisfies the Pick's expected return type.
+      // `filename` stays `undefined` when absent -> the bridge maps it to null -> Rust Option::None.
+      return deps.createTempTextAttachment(payload.text, payload.filename);
     },
     onDesktopZoomLevelChanged(handler) {
       // The interface returns a SYNCHRONOUS disposer, but Tauri's `listen` is async. Bridge them with

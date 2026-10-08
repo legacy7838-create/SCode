@@ -560,3 +560,15 @@ Bridge: `createTempTextAttachment(text, filename?)` → local `TauriTempTextAtta
 clippy/fmt/rustfmt green; a5 12 pass/1 skip (new command↔wrapper↔registration↔camelCase covered);
 renderer `tsc` 0 errors in changed files; prettier clean. Adapter mapping of the interface method is a
 later gated slice (the command + wrapper land first, per the established model).
+
+## Slice 41 contract — `createTempTextAttachment` adapter mapping (Pick 12→13)
+
+Completes the slice-40 seam: maps the interface's `createTempTextAttachment?(payload:
+CreateTempTextAttachmentRequest): Promise<CreateTempTextAttachmentResult>` onto the command wrapper by
+destructuring `(payload.text, payload.filename)`; an absent `filename` forwards as `undefined` (the
+bridge maps it to `null` → Rust `Option::None`) — the adapter invents no default. The bridge's
+`TauriTempTextAttachmentResult` is structurally identical to `CreateTempTextAttachmentResult`, so it
+satisfies the `Pick` return type without importing `@zcode/shared` into the bridge. No Rust change.
+
+Verification: layer-b 25 tests (was 23 — delegation `text|filename` mapping + absent-filename +
+surface-lock now 13 keys); renderer `tsc` 0 errors; prettier clean.
