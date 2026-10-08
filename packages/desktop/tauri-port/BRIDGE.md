@@ -106,3 +106,27 @@ and ungated for the default desktop build in `tauri-2.12.1/src/webview/webview_w
 TS bridge: one typed `invoke` wrapper per command, mirroring the existing wrappers. No new plugin or
 capability entry (these are custom commands called from Rust, not JS-facing core APIs). Min/max-size
 setters are deliberately deferred (they take `Option<Size>` with clear semantics — a separate slice).
+
+## Slice 15 contract — window visibility & protection
+
+Continues the window family with five confirmed, stable, scalar `WebviewWindow` mutators that map to
+real Electron `BrowserWindow` capabilities (`win.show()`/`win.hide()`, `skipTaskbar`, focusability,
+and the anti-screen-capture `setContentProtection` that mirrors `captureWindowScreenshot` in
+`packages/shared/src/platform.ts`). All confirmed present and returning `crate::Result<()>` in
+`tauri-2.12.1/src/webview/webview_window.rs` (`show` :2334, `hide` :2339, `set_skip_taskbar` :2219,
+`set_focusable` :2397, `set_content_protected` :2354). Each resolves the live window through the
+shared `require_window` helper and uses the existing `Result<_, String>` `.map_err` seam.
+
+| Command | Args | Returns | Behavior |
+| --- | --- | --- | --- |
+| `show_window` | `label` | `Result<(),String>` | `window.show()` |
+| `hide_window` | `label` | `Result<(),String>` | `window.hide()` |
+| `set_window_skip_taskbar` | `label`, `skip: bool` | `Result<(),String>` | `set_skip_taskbar(skip)` |
+| `set_window_focusable` | `label`, `focusable: bool` | `Result<(),String>` | `set_focusable(focusable)` |
+| `set_window_content_protected` | `label`, `protected: bool` | `Result<(),String>` | `set_content_protected(protected)` |
+
+TS bridge: one typed `invoke` wrapper per command; Rust snake_case args map to JS camelCase
+(`focusable`, `protected`, `skip` are single words; `label` unchanged). `request_user_attention` is
+deliberately excluded: its `UserAttentionType` public re-export path is not confirmed in this crate
+and the behavior is a platform-specific no-op/error on Linux — it is not stubbed (no-stub rule). All
+five require a live GUI window, so they are compile-verified and exercised under `pnpm dev:tauri`.

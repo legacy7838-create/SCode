@@ -659,3 +659,74 @@ export function isWindowResizable(label: string): Promise<boolean> {
 export function setWindowResizable(label: string, resizable: boolean): Promise<void> {
   return invoke<void>("set_window_resizable", { label, resizable });
 }
+
+/**
+ * Phase 2 第十五切片：窗口可见性与防护的 TypeScript 接缝。
+ *
+ * 对应 Rust 命令 `show_window` / `hide_window` / `set_window_skip_taskbar` /
+ * `set_window_focusable` / `set_window_content_protected`，全部复用已导入的 `WebviewWindow`
+ * mutator（无需新增插件或 capability）。Rust 端通过 `require_window(label)` 解析窗口，缺失时返回
+ * 显式的 `Err("window not found: {label}")`，这里以 rejected Promise 形式抛出（沿用第三切片的错误
+ * 传播接缝）。
+ *
+ * 参数命名：Tauri v2 自动把 Rust 的 snake_case 形参映射为 JS 的 camelCase，故 Rust 形参
+ * `is_protected` 在此以 `isProtected` 传入（`protected` 是 Rust 2024 保留字，故 Rust 侧改用
+ * `is_protected`）。运行时需活动 GUI 窗口，因此本组接缝在此处只做编译期类型校验，真实效果在
+ * `pnpm dev:tauri` 下验证。保持导入零副作用。
+ */
+
+/**
+ * 显示指定窗口。对应 Rust 命令 `show_window`（`WebviewWindow::show`），对齐 Electron 的 `win.show()`。
+ *
+ * @param label - 目标窗口 label。
+ */
+export function showWindow(label: string): Promise<void> {
+  return invoke<void>("show_window", { label });
+}
+
+/**
+ * 隐藏指定窗口。对应 Rust 命令 `hide_window`（`WebviewWindow::hide`），对齐 Electron 的 `win.hide()`。
+ *
+ * @param label - 目标窗口 label。
+ */
+export function hideWindow(label: string): Promise<void> {
+  return invoke<void>("hide_window", { label });
+}
+
+/**
+ * 设置窗口是否在任务栏/程序坞中隐藏。对应 Rust 命令 `set_window_skip_taskbar`
+ * （`WebviewWindow::set_skip_taskbar`），对齐 Electron 的 `setSkipTaskbar`。
+ *
+ * @param label - 目标窗口 label。
+ * @param skip - `true` 从任务栏隐藏，`false` 显示。
+ */
+export function setWindowSkipTaskbar(label: string, skip: boolean): Promise<void> {
+  return invoke<void>("set_window_skip_taskbar", { label, skip });
+}
+
+/**
+ * 设置窗口是否可获取键盘焦点。对应 Rust 命令 `set_window_focusable`
+ * （`WebviewWindow::set_focusable`），对齐 Electron 的 `setFocusable`。
+ *
+ * @param label - 目标窗口 label。
+ * @param focusable - `true` 允许聚焦，`false` 禁止聚焦。
+ */
+export function setWindowFocusable(label: string, focusable: boolean): Promise<void> {
+  return invoke<void>("set_window_focusable", { label, focusable });
+}
+
+/**
+ * 开启/关闭窗口内容防护（反截屏）。对应 Rust 命令 `set_window_content_protected`
+ * （`WebviewWindow::set_content_protected`），是平台契约 `captureWindowScreenshot` 的反向镜像，
+ * 对齐 Electron 的 `setContentProtection`。注意 Rust 形参 `is_protected` 映射为 JS 的 `isProtected`
+ * （`protected` 为 Rust 2024 保留字）。
+ *
+ * @param label - 目标窗口 label。
+ * @param isProtected - `true` 排除截屏/录屏，`false` 允许。
+ */
+export function setWindowContentProtected(
+  label: string,
+  isProtected: boolean,
+): Promise<void> {
+  return invoke<void>("set_window_content_protected", { label, isProtected });
+}

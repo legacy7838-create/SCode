@@ -15,7 +15,9 @@
 // window-mutation group (set title/size/position, center, set/is fullscreen) via the existing
 // (`WebviewWindow`) API, and the app-path group (home / temp / app-data / app-config directories via
 // `app.path().resolve`, plus the current executable path via `std::env::current_exe`), and the
-// window-theme group (get / set) via `WebviewWindow::theme` / `set_theme`. See ./commands.rs and
+// window-theme group (get / set) via `WebviewWindow::theme` / `set_theme`, and the window
+// visibility & protection group (show / hide / skip-taskbar / focusable / content-protected) via the
+// existing `WebviewWindow` mutators. See ./commands.rs and
 // ../tauri-port/BRIDGE.md for the contract.
 mod commands;
 
@@ -79,6 +81,11 @@ fn main() {
             commands::set_window_always_on_top,
             commands::is_window_resizable,
             commands::set_window_resizable,
+            commands::show_window,
+            commands::hide_window,
+            commands::set_window_skip_taskbar,
+            commands::set_window_focusable,
+            commands::set_window_content_protected,
             commands::show_open_dialog,
             commands::show_save_dialog,
             commands::show_message_dialog,

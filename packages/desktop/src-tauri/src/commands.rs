@@ -15,7 +15,9 @@
 // `WebviewWindow::theme` / `set_theme` API (no new plugin); 13) desktop zoom (set) via
 // `WebviewWindow::set_zoom`, with a pure Electron level↔Tauri factor mapping;
 // 14) window chrome extras (scale factor, always-on-top, resizable) via the existing
-// `WebviewWindow` getters/setters.
+// `WebviewWindow` getters/setters;
+// 15) window visibility & protection (show/hide/skip-taskbar/focusable/content-protected) via the
+// existing `WebviewWindow` mutators.
 
 use tauri::{AppHandle, Manager, WebviewWindow};
 // Native dialog API surface for the slice-5 commands: the `DialogExt` app-extension, the file
@@ -1058,6 +1060,141 @@ pub fn is_window_resizable(app: AppHandle, label: String) -> Result<bool, String
 pub fn set_window_resizable(app: AppHandle, label: String, resizable: bool) -> Result<(), String> {
     require_window(&app, &label)?
         .set_resizable(resizable)
+        .map_err(|e| e.to_string())
+}
+
+/// Show the window identified by `label`.
+///
+/// Phase 2 slice 15 (window visibility & protection). Resolves the live window through
+/// [`require_window`] and calls the real `WebviewWindow::show`, the mirror of Electron's
+/// `win.show()`. The fallible `Result<()>` is converted with `.map_err(|e| e.to_string())` (never
+/// `.unwrap()`), surfacing on the TypeScript side as a rejected `Promise`. Requires a live GUI
+/// window, so it is compile-verified here and exercised under `pnpm dev:tauri` (no fake-window unit
+/// test — faking one violates the no-stub rule).
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+///
+/// # Returns
+///
+/// `Ok(())` on success; `Err(String)` when the window is missing or the OS rejects the operation.
+#[tauri::command]
+pub fn show_window(app: AppHandle, label: String) -> Result<(), String> {
+    require_window(&app, &label)?
+        .show()
+        .map_err(|e| e.to_string())
+}
+
+/// Hide the window identified by `label`.
+///
+/// Phase 2 slice 15 (window visibility & protection). Resolves the live window through
+/// [`require_window`] and calls the real `WebviewWindow::hide`, the mirror of Electron's
+/// `win.hide()`. The fallible `Result<()>` is converted with `.map_err(|e| e.to_string())` (never
+/// `.unwrap()`), surfacing on the TypeScript side as a rejected `Promise`. Requires a live GUI
+/// window, so it is compile-verified here and exercised under `pnpm dev:tauri` (no fake-window unit
+/// test — faking one violates the no-stub rule).
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+///
+/// # Returns
+///
+/// `Ok(())` on success; `Err(String)` when the window is missing or the OS rejects the operation.
+#[tauri::command]
+pub fn hide_window(app: AppHandle, label: String) -> Result<(), String> {
+    require_window(&app, &label)?
+        .hide()
+        .map_err(|e| e.to_string())
+}
+
+/// Set whether the window identified by `label` is hidden from the OS taskbar/dock.
+///
+/// Phase 2 slice 15 (window visibility & protection). Resolves the live window through
+/// [`require_window`] and applies the flag via the real `WebviewWindow::set_skip_taskbar`, the
+/// mirror of Electron's `setSkipTaskbar`. The fallible `Result<()>` is converted with
+/// `.map_err(|e| e.to_string())` (never `.unwrap()`), surfacing on the TypeScript side as a rejected
+/// `Promise`. Requires a live GUI window, so it is compile-verified here and exercised under
+/// `pnpm dev:tauri` (no fake-window unit test — faking one violates the no-stub rule).
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+/// * `skip` - `true` to hide the window from the taskbar/dock, `false` to show it.
+///
+/// # Returns
+///
+/// `Ok(())` on success; `Err(String)` when the window is missing or the OS rejects the operation.
+#[tauri::command]
+pub fn set_window_skip_taskbar(app: AppHandle, label: String, skip: bool) -> Result<(), String> {
+    require_window(&app, &label)?
+        .set_skip_taskbar(skip)
+        .map_err(|e| e.to_string())
+}
+
+/// Set whether the window identified by `label` may take keyboard focus.
+///
+/// Phase 2 slice 15 (window visibility & protection). Resolves the live window through
+/// [`require_window`] and applies the flag via the real `WebviewWindow::set_focusable`, the mirror
+/// of Electron's `setFocusable`. The fallible `Result<()>` is converted with
+/// `.map_err(|e| e.to_string())` (never `.unwrap()`), surfacing on the TypeScript side as a rejected
+/// `Promise`. Requires a live GUI window, so it is compile-verified here and exercised under
+/// `pnpm dev:tauri` (no fake-window unit test — faking one violates the no-stub rule).
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+/// * `focusable` - `true` to allow the window to take focus, `false` to prevent it.
+///
+/// # Returns
+///
+/// `Ok(())` on success; `Err(String)` when the window is missing or the OS rejects the operation.
+#[tauri::command]
+pub fn set_window_focusable(app: AppHandle, label: String, focusable: bool) -> Result<(), String> {
+    require_window(&app, &label)?
+        .set_focusable(focusable)
+        .map_err(|e| e.to_string())
+}
+
+/// Enable or disable content protection for the window identified by `label`.
+///
+/// Phase 2 slice 15 (window visibility & protection). Resolves the live window through
+/// [`require_window`] and applies the flag via the real `WebviewWindow::set_content_protected`, the
+/// anti-screen-capture mirror of the platform contract's `captureWindowScreenshot`
+/// (`packages/shared/src/platform.ts`) — when protected, the window is excluded from screenshots and
+/// screen recording, as Electron's `setContentProtection` does. The fallible `Result<()>` is
+/// converted with `.map_err(|e| e.to_string())` (never `.unwrap()`), surfacing on the TypeScript
+/// side as a rejected `Promise`. Requires a live GUI window, so it is compile-verified here and
+/// exercised under `pnpm dev:tauri` (no fake-window unit test — faking one violates the no-stub rule).
+///
+/// The Rust parameter is named `is_protected` rather than `protected` because `protected` is a
+/// reserved keyword in the Rust 2024 edition; naming it `is_protected` keeps the command valid across
+/// all editions. Tauri maps the snake_case Rust parameter to a camelCase JS key, so the JS-facing
+/// argument is `isProtected` (see the `tauriBridge.ts` wrapper).
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+/// * `is_protected` - `true` to exclude the window from capture/recording, `false` to allow it.
+///   Exposed to the renderer as the JS key `isProtected`.
+///
+/// # Returns
+///
+/// `Ok(())` on success; `Err(String)` when the window is missing or the OS rejects the operation.
+#[tauri::command]
+pub fn set_window_content_protected(
+    app: AppHandle,
+    label: String,
+    is_protected: bool,
+) -> Result<(), String> {
+    require_window(&app, &label)?
+        .set_content_protected(is_protected)
         .map_err(|e| e.to_string())
 }
 
