@@ -28,6 +28,22 @@ fn shell_kind() -> &'static str {
 }
 
 fn main() {
+    // WebKitGTK 2.4x + Wayland 的 dmabuf GL 后端在部分环境（尤其 Hyprland / NVIDIA）会在窗口创建时
+    // 抛 `Gdk-Message: Error 71 (Protocol error) dispatching to Wayland display` 并直接退出。
+    // 在 GTK/WebKit 初始化之前禁用 dmabuf 渲染器（必要时再关合成）可绕过；仅在 Wayland 下生效，
+    // 且尊重用户已显式设置的环境变量，故 X11 与手动配置不受影响。
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("WAYLAND_DISPLAY").is_some() {
+        for key in [
+            "WEBKIT_DISABLE_DMABUF_RENDERER",
+            "WEBKIT_DISABLE_COMPOSITING_MODE",
+        ] {
+            if std::env::var_os(key).is_none() {
+                std::env::set_var(key, "1");
+            }
+        }
+    }
+
     tauri::Builder::default()
         // Native dialog support for the slice-5 `show_*_dialog` commands.
         .plugin(tauri_plugin_dialog::init())
