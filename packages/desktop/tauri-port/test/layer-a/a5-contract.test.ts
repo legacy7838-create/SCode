@@ -16,11 +16,15 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 // Paths resolved relative to this file: .../tauri-port/test/layer-a/ -> .../desktop/
-const commandsRs = fileURLToPath(new URL("../../../src-tauri/src/commands.rs", import.meta.url));
+const commandsRs = fileURLToPath(
+  new URL("../../../src-tauri/src/commands.rs", import.meta.url),
+);
 const tauriBridgeTs = fileURLToPath(
   new URL("../../../src/renderer/src/tauriBridge.ts", import.meta.url),
 );
-const mainRs = fileURLToPath(new URL("../../../src-tauri/src/main.rs", import.meta.url));
+const mainRs = fileURLToPath(
+  new URL("../../../src-tauri/src/main.rs", import.meta.url),
+);
 
 /**
  * Extract the declared command function name that follows each `#[tauri::command]`
@@ -73,19 +77,66 @@ function stripComments(src: string): string {
  * literals are quoted and followed by `,`/`)`, so they never match `name:`.
  */
 function snakeCaseArgKeys(src: string): string[] {
-  return [...stripComments(src).matchAll(/\b([a-z]+(?:_[a-z0-9]+)+)\s*:/g)].map((m) => m[1]).sort();
+  return [...stripComments(src).matchAll(/\b([a-z]+(?:_[a-z0-9]+)+)\s*:/g)]
+    .map((m) => m[1])
+    .sort();
 }
-
 
 function symmetricDifference(a: Set<string>, b: Set<string>): string[] {
   return [...a].filter((x) => !b.has(x)).sort();
+}
+
+/**
+ * Tauri auto-camelCases command ARGUMENTS, but a serde RETURN struct keeps its Rust field names
+ * UNLESS the struct carries `#[serde(rename_all = "camelCase")]`. So a `Serialize` struct with a
+ * snake_case field and no rename_all silently returns e.g. `local_path` where the renderer expects
+ * `localPath` — the exact trap MonitorInfo / TempTextAttachmentResult guard by hand. This parses every
+ * `#[derive(...Serialize...)]` brace-struct and returns the names of those with ≥1 snake_case field but
+ * NO `rename_all`. An empty result means the invariant holds; a parse that finds too few structs means
+ * the regex broke against the file layout (guarded separately by the tripwire below).
+ */
+function serializeStructsWithSnakeFieldsMissingCamelRename(
+  src: string,
+): string[] {
+  const code = stripComments(src);
+  const offenders: string[] = [];
+  // Each block runs from a Serialize derive attribute up to the struct's closing brace (line-initial }).
+  const blockRe = /#\[derive\([^)]*\bSerialize\b[^)]*\)\]([\s\S]*?)\n\}/g;
+  for (const match of code.matchAll(blockRe)) {
+    const block = match[1];
+    const structName =
+      (block.match(/struct\s+([A-Za-z0-9_]+)/) ?? [])[1] ?? "<anonymous>";
+    const hasRenameAll = /rename_all\s*=/.test(block);
+    // Field names are the identifiers left of `:` inside the body (handles `pub x:` and private `x:`).
+    const body = block.slice(block.indexOf("{") + 1);
+    const fieldNames = [
+      ...body.matchAll(/^\s*(?:pub\s+)?([a-z][a-z0-9_]*)\s*:/gm),
+    ].map((m) => m[1]);
+    const hasSnakeField = fieldNames.some((f) => f.includes("_"));
+    if (hasSnakeField && !hasRenameAll) {
+      offenders.push(structName);
+    }
+  }
+  return offenders.sort();
+}
+
+/** Count the `#[derive(...Serialize...)]` brace-structs the block regex recognizes (vacuity guard). */
+function serializeStructCount(src: string): number {
+  return [
+    ...stripComments(src).matchAll(
+      /#\[derive\([^)]*\bSerialize\b[^)]*\)\][\s\S]*?\n\}/g,
+    ),
+  ].length;
 }
 
 test("A5: the parser finds a non-trivial number of Rust commands (guards a false-green)", () => {
   const names = rustCommandNames(readFileSync(commandsRs, "utf8"));
   // The seam is well past a handful of commands; a near-zero count here means the
   // parse broke against the file layout, which would make the drift checks vacuous.
-  assert.ok(names.size >= 40, `expected >=40 Rust commands, parsed ${names.size}`);
+  assert.ok(
+    names.size >= 40,
+    `expected >=40 Rust commands, parsed ${names.size}`,
+  );
 });
 
 test("A5: every #[tauri::command] has a tauriBridge invoke wrapper", () => {
@@ -158,14 +209,47 @@ test("A5: every commands::NAME registered in main.rs is a real #[tauri::command]
 
 /**
  * Push-event channel guard (slice 33): a Rust `app.emit(NAME, ..)` and a JS `listen(NAME, ..)` must
- * use the IDENTICAL event-name string, else the renderer silently never receives the event. Asserts
- * every event literal shared between the two languages is present on both sides. Currently one event.
+ * use the IDENTICAL event-name string, else the renderer silently never receives the event. Auto-extracts
+ * every `zcode:` string literal defined in `commands.rs` and requires the SAME literal to appear in
+ * `tauriBridge.ts` — so it guards ALL push-events (zoom, fullscreen, and any future), not a hardcoded list.
  */
 test("A5: shared push-event names appear in BOTH commands.rs and tauriBridge.ts", () => {
-  const commands = readFileSync(commandsRs, "utf8");
+  const commands = stripComments(readFileSync(commandsRs, "utf8"));
   const bridge = readFileSync(tauriBridgeTs, "utf8");
-  for (const name of ["zcode:desktop-zoom-changed"]) {
-    assert.ok(commands.includes(`"${name}"`), `commands.rs must emit "${name}"`);
-    assert.ok(bridge.includes(`"${name}"`), `tauriBridge.ts must listen on "${name}"`);
+  const names = [
+    ...new Set([...commands.matchAll(/"(zcode:[^"]+)"/g).map((m) => m[1])]),
+  ].sort();
+  // Tripwire: at least the two landed events are discovered (guards a vacuous match against a parse break).
+  assert.ok(
+    names.length >= 2,
+    `expected >=2 zcode: events in commands.rs, found ${names.join(", ")}`,
+  );
+  for (const name of names) {
+    assert.ok(
+      bridge.includes(`"${name}"`),
+      `tauriBridge.ts must listen on "${name}" (defined in commands.rs)`,
+    );
   }
+});
+
+/**
+ * Guard the serde RETURN-struct casing (see `serializeStructsWithSnakeFieldsMissingCamelRename`).
+ * Tauri camelCases ARGS automatically but NOT returned struct fields, so a `Serialize` struct with a
+ * snake_case field and no `#[serde(rename_all = "camelCase")]` returns a key the renderer cannot read.
+ * This is the return-side twin of the arg-camelCase check above.
+ */
+test("A5: every Serialize return struct with snake_case fields declares camelCase rename", () => {
+  const src = readFileSync(commandsRs, "utf8");
+  const offenders = serializeStructsWithSnakeFieldsMissingCamelRename(src);
+  assert.deepEqual(
+    offenders,
+    [],
+    `Serialize structs with snake_case fields but no #[serde(rename_all="camelCase")]: ${offenders.join(", ")}`,
+  );
+  // Vacuity guard: the parser must actually see the landed return structs, else this test passes falsely.
+  const count = serializeStructCount(src);
+  assert.ok(
+    count >= 5,
+    `expected >=5 Serialize structs parsed, got ${count} (parser likely broke)`,
+  );
 });

@@ -572,3 +572,23 @@ satisfies the `Pick` return type without importing `@zcode/shared` into the brid
 
 Verification: layer-b 25 tests (was 23 — delegation `text|filename` mapping + absent-filename +
 surface-lock now 13 keys); renderer `tsc` 0 errors; prettier clean.
+
+## Slice 42 contract — a5 guards: return-struct casing + auto-extracted event names
+
+**Return-struct casing guard (new invariant).** a5 checked command **argument** camelCase but never the
+**return** side. Tauri camelCases `invoke` args automatically but does NOT rename serde RETURN-struct
+fields — a `#[derive(Serialize)]` struct with a snake_case field and no `#[serde(rename_all =
+"camelCase")]` returns e.g. `local_path` where the renderer reads `localPath`, a silent runtime bug. The
+new guard parses every `Serialize` brace-struct in `commands.rs` and fails on any with a snake_case field
+but no `rename_all`, with a ≥5-struct tripwire against a vacuous parse. (The existing structs —
+`MonitorInfo.scale_factor`, `TempTextAttachmentResult.local_path/size_bytes/mime_type` — already satisfy
+it by hand; this locks it for the future.)
+
+**Event-name guard fix (corrects a prior overclaim).** The 7th invariant iterated a HARDCODED list
+containing only `zcode:desktop-zoom-changed`, so the slice-37 fullscreen event literal was NOT actually
+guarded — the docs (slices 37/40) that said "a5 auto-covers the new literal" were inaccurate. The guard now
+AUTO-EXTRACTS every `"zcode:…"` literal from `commands.rs` and requires each in `tauriBridge.ts`, so both
+landed events (and any future one) are covered, with a ≥2 tripwire.
+
+Verification: layer-a 13 pass / 1 skip (added the return-struct invariant; event guard now auto-extracts
+and still green); no Rust change so `cargo` unaffected; prettier clean.
