@@ -22,12 +22,38 @@
 - **Risk**: copied/aligned from `INVENTORY.md` §1/§2 (LOW / MED / HIGH / CRITICAL).
 - **Phase**: build slice from §5 below (`P0..P8`, `OUT` = out-of-adapter-scope until a
   `INVENTORY.md` top blocker spike resolves).
-- **DONE** marker = the backing Tauri command already exists in `tauriBridge.ts`
-  (`get_app_version`, `get_system_locale`, `get_device_id`, `get_platform_info`,
-  `get_app_name`, `get_download_directory`, `get_documents_directory`). Note some DONE
-  commands are *infra* not surfaced as an `IPlatformService` method (app version/name/
-  platform info/download+documents dir) — they back future rows but do not by themselves
-  retire an interface method.
+- **DONE** marker (updated to source, slices 1–26) = a backing `#[tauri::command]` already exists in
+  `commands.rs` AND a typed wrapper in `tauriBridge.ts`. As of this write there are **78 commands**
+  (extracted from `commands.rs`, not hand-maintained); `a5-contract.test.ts` statically enforces 1:1
+  command↔wrapper parity + camelCase arg keys, so the count below cannot silently drift. Grouped by
+  capability (full list is the source of truth in `commands.rs`):
+  - *app info / dirs*: `get_app_version` `get_app_name` `get_platform_info` `get_system_locale`
+    `get_device_id` `get_download_directory` `get_documents_directory` `get_home_dir` `get_temp_dir`
+    `get_app_data_dir` `get_app_config_dir` `get_exe_path`
+  - *lifecycle*: `relaunch_app` `exit_app` `spawn_sidecar_echo` `kill_sidecar`
+  - *window state/getters*: `get_window_size` `get_window_outer_size` `get_window_position`
+    `get_window_inner_position` `get_window_scale_factor` `get_window_theme` `get_desktop_zoom_level`
+    `get_cursor_position` `get_window_current_monitor` `get_primary_monitor` `get_available_monitors`
+    `window_is_maximized` `is_window_minimized` `is_window_visible` `is_window_focused`
+    `is_window_always_on_top` `is_window_resizable` `is_window_enabled` `is_fullscreen`
+  - *window mutations*: `window_minimize` `window_maximize` `window_unmaximize` `window_unminimize`
+    `window_toggle_fullscreen` `window_close` `window_set_focus` `set_window_title` `set_window_size`
+    `set_window_position` `center_window` `set_fullscreen` `set_window_theme` `set_window_always_on_top`
+    `set_window_resizable` `set_window_enabled` `show_window` `hide_window` `set_window_skip_taskbar`
+    `set_window_focusable` `set_window_content_protected` `set_window_decorations`
+    `set_window_ignore_cursor_events` `set_window_visible_on_all_workspaces` `set_window_cursor_grab`
+    `set_window_cursor_visible` `set_window_min_size` `set_window_max_size` `clear_window_min_size`
+    `clear_window_max_size` `set_window_background_color` `clear_window_background_color`
+    `set_desktop_zoom_level`
+  - *dialogs / fs pickers*: `show_open_dialog` `select_directory` `show_save_dialog`
+    `show_message_dialog`
+  - *shell / open*: `open_url` `open_path` `reveal_in_folder`
+  - *notify / clipboard*: `show_notification` `read_clipboard_text` `write_clipboard_text`
+
+  Several are *infra* not surfaced as their own `IPlatformService` method (app version/name/platform
+  info/dir getters); they back rows but do not by themselves retire an interface method. Rows in §1
+  whose `mechanism` is a `command:<snake>` now listed above are therefore **infra-ready** — the adapter
+  (§5 P-slices) still has to map the method to them; the command existing ≠ the method being wired.
 
 Signatures are quoted from `platform.ts` (line refs in parentheses). `ASSUMPTION` marks a
 mechanism not yet confirmed against source/Rust.
