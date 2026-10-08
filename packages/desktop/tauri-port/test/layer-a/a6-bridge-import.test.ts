@@ -67,51 +67,54 @@ test("A6: importing tauriBridge under a Tauri-less window throws nothing and pro
 });
 
 /**
- * Parallel-shell isolation — the strongest reading of "Electron stays fully intact, Tauri is a PARALLEL
- * additive shell." The whole cutover decision depends on the port NOT leaking into the shipped Electron
- * runtime: no Electron main/preload/renderer file may import the Tauri shell modules
- * (`tauriBridge`/`tauriPlatform`/`tauriHostConnection`) or `@tauri-apps/*`. The adapter is wired only by
- * the (gated) runtime factory, and even then behind `isTauriRuntime()`. This static guard walks the
- * shipped source trees and fails the moment a shipped file pulls the shell into Electron's graph —
- * turning a project-wide invariant into an enforced check rather than a convention.
- *
- * The three Tauri modules themselves are the only permitted importers and are excluded by basename; test
- * files are excluded so the guards themselves don't trip the rule.
+ * Parallel-shell isolation — "Electron stays fully intact, Tauri is a PARALLEL additive shell." Two
+ * tiers, so the guard stays strong while permitting the one sanctioned runtime-gated seam:
+ *  - Electron-ONLY process code (`src/main`, `src/preload`) must NEVER import the Tauri shell or
+ *    `@tauri-apps/*` — those run only in Electron, so any leak there is a hard contract break.
+ *  - The SHARED renderer tree (`src/renderer/src`) may import Tauri ONLY from the runtime-gated entry
+ *    seam (`main.tsx`, which branches on `isTauriRuntime()`) and the Tauri modules themselves. Every other
+ *    renderer file pulling the shell would scatter the port outside the single gated entry — a violation.
+ * `a6`'s import-safety test already proves importing the Tauri bridge is side-effect-free, so the entry's
+ * static import cannot alter Electron behavior (the Tauri branch never executes under Electron).
  */
 test("A6: no Electron-shipped source file imports the Tauri shell (parallel/additive invariant)", () => {
-  const shippedRoots = [
-    "../../../src/renderer/src",
-    "../../../src/main",
-    "../../../src/preload",
-  ].map((rel) => fileURLToPath(new URL(rel, import.meta.url)));
+  const root = (rel: string) => fileURLToPath(new URL(rel, import.meta.url));
+  // Electron-only process trees: zero Tauri imports allowed (no seam exception).
+  const electronOnlyRoots = ["../../../src/main", "../../../src/preload"].map(
+    root,
+  );
+  // Shared renderer tree: only the runtime-gated entry + the Tauri modules may import the shell.
+  const rendererRoot = root("../../../src/renderer/src");
   const tauriModuleBases = new Set([
     "tauriBridge.ts",
     "tauriPlatform.ts",
     "tauriHostConnection.ts",
+    "tauriPlatformFactory.ts",
   ]);
-  // Match import/export-from / require of a Tauri shell module or the @tauri-apps SDK.
+  const seamAllowedBases = new Set(["main.tsx"]);
   const forbidden =
     /(?:from|import|require\s*\()\s*['"][^'"]*(?:tauriBridge|tauriPlatform|tauriHostConnection|@tauri-apps\/)/;
 
-  const violators: string[] = [];
-  for (const root of shippedRoots) {
-    for (const entry of readdirSync(root, { recursive: true })) {
+  const scan = (dir: string, allow: Set<string>): string[] => {
+    const hits: string[] = [];
+    for (const entry of readdirSync(dir, { recursive: true })) {
       const rel = entry.toString();
       if (!/\.tsx?$/.test(rel)) continue;
       const base = rel.split(/[\\/]/).pop() ?? rel;
-      if (tauriModuleBases.has(base)) continue; // the Tauri modules themselves are allowed
-      const text = readFileSync(`${root}/${rel}`, "utf8");
-      if (forbidden.test(text)) {
-        violators.push(rel);
-      }
+      if (tauriModuleBases.has(base) || allow.has(base)) continue;
+      if (forbidden.test(readFileSync(`${dir}/${rel}`, "utf8"))) hits.push(rel);
     }
-  }
+    return hits;
+  };
 
-  // Vacuity guard: we must actually be scanning shipped files, else a wrong root silently passes.
-  assert.ok(shippedRoots.length === 3, "expected 3 shipped roots to scan");
+  const violators = [
+    ...electronOnlyRoots.flatMap((dir) => scan(dir, new Set())),
+    ...scan(rendererRoot, seamAllowedBases),
+  ].sort();
+
   assert.deepEqual(
     violators,
     [],
-    `Electron-shipped files import the Tauri shell (breaks the parallel/additive contract): ${violators.join(", ")}`,
+    `files import the Tauri shell outside the sanctioned seam/Tauri modules: ${violators.join(", ")}`,
   );
 });
