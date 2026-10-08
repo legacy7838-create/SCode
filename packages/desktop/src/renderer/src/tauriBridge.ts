@@ -76,3 +76,25 @@ export function getTauriPlatformInfo(): Promise<TauriPlatformInfo> {
 export function getTauriAppName(): Promise<string> {
   return invoke<string>("get_app_name");
 }
+
+/**
+ * 读取宿主操作系统的“下载”目录，例如 `"/home/user/Downloads"`。
+ * 对应 Rust 命令 `get_download_directory`，源自 Tauri 内置路径解析器 `app.path().download_directory()`。
+ *
+ * Phase 2 第三切片：这是首个可失败（fallible）命令。Rust 端返回 `Result<String, String>`，
+ * 失败时的 `Err(String)` 会在这里以 rejected Promise 的形式抛出 —— 即错误传播接缝。
+ * 调用方应通过 `.catch`/`try-catch` 处理目录无法解析的情况。保持导入零副作用。
+ */
+export function getTauriDownloadDir(): Promise<string> {
+  return invoke<string>("get_download_directory");
+}
+
+/**
+ * 读取宿主操作系统的“文档”目录，例如 `"/home/user/Documents"`。
+ * 对应 Rust 命令 `get_documents_directory`，源自 `app.path().document_directory()`。
+ *
+ * 与 `getTauriDownloadDir` 共享同一可失败契约：Rust `Err` 在此表现为 rejected Promise。
+ */
+export function getTauriDocumentsDir(): Promise<string> {
+  return invoke<string>("get_documents_directory");
+}

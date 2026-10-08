@@ -4,7 +4,7 @@
 // genuine source (package metadata, OS locale, process environment, compile-time OS consts); the
 // only hardcoded values are the documented fallbacks required by the contract.
 
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 /// BCP-47 fallback locale used when the host OS locale cannot be resolved.
 const FALLBACK_LOCALE: &str = "en-US";
@@ -131,6 +131,84 @@ pub fn get_app_name(app: AppHandle) -> String {
     app.package_info().name.clone()
 }
 
+/// Convert a resolved directory path into an owned `String` for transport to the renderer.
+///
+/// Kept as a pure helper so the lossy UTF-8 coercion and trailing-separator normalization are
+/// unit-testable without a running app handle. Tauri's `PathResolver::resolve` appends the
+/// requested (here, empty) sub-path, so a base directory comes back with a trailing separator; we
+/// strip it to yield a clean directory path. Non-UTF-8 sequences fall back to their lossy
+/// representation rather than panicking, matching the "never `.unwrap()` in library paths" rule.
+///
+/// # Arguments
+///
+/// * `path` - The resolved filesystem directory path to stringify.
+///
+/// # Returns
+///
+/// The directory as an owned UTF-8 `String`, without a trailing path separator (the filesystem root
+/// `"/"` is preserved).
+pub fn directory_to_string(path: std::path::PathBuf) -> String {
+    let raw = path.to_string_lossy();
+    let trimmed = raw.trim_end_matches(std::path::is_separator).to_string();
+    // Preserve the filesystem root, which would otherwise be trimmed to an empty string.
+    if trimmed.is_empty() {
+        "/".to_string()
+    } else {
+        trimmed
+    }
+}
+
+/// Return the host OS downloads directory, e.g. `"/home/user/Downloads"`.
+///
+/// Resolved through Tauri's built-in path API (`app.path().resolve("", BaseDirectory::Download)`),
+/// so no extra crate is required. This is the first fallible command in the slice: the Rust `Err`
+/// is converted to `Err(String)` via `.map_err(|e| e.to_string())` (never `.unwrap()`), which
+/// surfaces on the TypeScript side as a rejected `Promise` — the error-propagation seam.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the path resolver.
+///
+/// # Returns
+///
+/// `Ok(String)` with the absolute downloads directory, or `Err(String)` describing why the OS
+/// directory could not be resolved.
+#[tauri::command]
+pub fn get_download_directory(app: AppHandle) -> Result<String, String> {
+    app.path()
+        .resolve(
+            std::ffi::OsStr::new(""),
+            tauri::path::BaseDirectory::Download,
+        )
+        .map(directory_to_string)
+        .map_err(|e| e.to_string())
+}
+
+/// Return the host OS documents directory, e.g. `"/home/user/Documents"`.
+///
+/// Resolved through Tauri's built-in path API (`app.path().resolve("", BaseDirectory::Document)`).
+/// Shares the same fallible `Result<String, String>` contract as [`get_download_directory`]; the
+/// Rust `Err` becomes a rejected `Promise` on the TypeScript side.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the path resolver.
+///
+/// # Returns
+///
+/// `Ok(String)` with the absolute documents directory, or `Err(String)` describing why the OS
+/// directory could not be resolved.
+#[tauri::command]
+pub fn get_documents_directory(app: AppHandle) -> Result<String, String> {
+    app.path()
+        .resolve(
+            std::ffi::OsStr::new(""),
+            tauri::path::BaseDirectory::Document,
+        )
+        .map(directory_to_string)
+        .map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -205,5 +283,29 @@ mod tests {
         // Assert
         assert_eq!(info.os, std::env::consts::OS);
         assert_eq!(info.arch, std::env::consts::ARCH);
+    }
+
+    #[test]
+    fn directory_to_string_trims_trailing_separator() {
+        // Arrange: Tauri's resolve appends an empty sub-path, yielding a trailing separator.
+        let path = std::path::PathBuf::from("/home/user/Downloads/");
+
+        // Act
+        let result = directory_to_string(path);
+
+        // Assert
+        assert_eq!(result, "/home/user/Downloads");
+    }
+
+    #[test]
+    fn directory_to_string_preserves_filesystem_root() {
+        // Arrange
+        let path = std::path::PathBuf::from("/");
+
+        // Act
+        let result = directory_to_string(path);
+
+        // Assert
+        assert_eq!(result, "/");
     }
 }
