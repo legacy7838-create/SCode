@@ -106,6 +106,20 @@ grounded in already-landed seams:
    await-init-before-use ordering the sync-getter prefetch (blocker #7, `SYNC-GETTER-SPIKE.md`) relies on.
 4. **Blocker #7** (`getDeviceId` etc.) unblocks inside step 3's bootstrap once the factory exists — not a
    product decision.
+- **PREREQUISITE to step 1 (discovered under build authorization, recorded here so the next slice is not
+  blocked by a false violation):** the `a6` parallel-shell isolation guard (slice 44) currently scans
+  WHOLE directories (`renderer/src`, `main`, `preload`) and rejects any file except the three Tauri modules
+  importing them. A legitimate Tauri-only bootstrap (`main.tauri.tsx`) MUST import `tauriPlatform`/
+  `tauriBridge`, so it would trip the guard as written. Before landing step 1, RE-SCOPE the guard to the
+  *Electron entry graph* (assert the specific shipped entry files — `desktopPlatform.ts`, Electron's
+  `main.tsx`, `preload/index.ts`, `src/main/*` — do not import the Tauri shell) instead of blanket-scanning
+  `renderer/src`, so the invariant still forbids leaking Tauri into Electron while permitting the
+  Tauri-only entry to wire the adapter. Keep the ≥1-shipped-root tripwire and add a positive case so the
+  narrowed scan stays non-vacuous.
+- **STATUS: build authorization for steps 1–4 has been given** (2026-10-08). First slice executes the
+  guard re-scope above, then the Tauri-only bootstrap + subset platform selector. The factory must return
+  the `Pick` subset only (13 methods) until each additional method is backed + tested — never a partial
+  full-`IPlatformService`.
 These 4 steps make the Tauri shell actually BOOT and serve the core app, and they are gated on *build
 authorization* (the factory + Host wiring), not on D1–D4.
 
