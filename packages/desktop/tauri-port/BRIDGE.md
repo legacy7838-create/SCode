@@ -309,3 +309,21 @@ deserializes each to `u8`), so the A5 camelCase guard is satisfied and no nested
 needed. `clear_window_background_color` needs no turbofish: `set_background_color`'s parameter type
 `Option<Color>` fixes the `None`'s type. No new plugin/capability. Requires a live GUI window
 (compile-verified; exercised under `pnpm dev:tauri`; no fake-window unit test per the no-stub rule).
+
+## Slice 23 contract — window Spaces visibility + cursor grab/visibility
+
+Three confirmed, stable boolean `WebviewWindow` mutators mapping to real Electron capabilities:
+`set_visible_on_all_workspaces` (`:2173`, Electron `setVisibleOnAllWorkspaces`), `set_cursor_grab`
+(`:2232`, pointer-lock), `set_cursor_visible` (`:2245`, hide/show the system cursor over the window).
+All take a single `bool` and return `crate::Result<()>`.
+
+| Command | Args | Returns | Behavior |
+| --- | --- | --- | --- |
+| `set_window_visible_on_all_workspaces` | `label`, `visible_on_all_workspaces: bool` | `Result<(),String>` | show across all macOS Spaces |
+| `set_window_cursor_grab` | `label`, `grab: bool` | `Result<(),String>` | confine cursor to the window |
+| `set_window_cursor_visible` | `label`, `visible: bool` | `Result<(),String>` | show/hide the system cursor |
+
+TS bridge: three typed `invoke` wrappers; the multi-word Rust arg `visible_on_all_workspaces` maps to
+the JS key `visibleOnAllWorkspaces` (A5 camelCase guard), `grab`/`visible`/`label` unchanged. No new
+plugin/capability. Requires a live GUI window (compile-verified; exercised under `pnpm dev:tauri`;
+no fake-window unit test per the no-stub rule).

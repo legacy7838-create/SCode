@@ -26,7 +26,8 @@
 // mapped through `monitor_to_info`; 20) sidecar lifecycle (spawn retains a `CommandChild` in a
 // managed `SidecarRegistry`, `kill_sidecar` reaps it); 21) window frame & interaction (decorations,
 // click-through, min/max size set + clear) via the existing `WebviewWindow` mutators; 22) window
-// background color (set RGBA + clear) via `WebviewWindow::set_background_color`.
+// background color (set RGBA + clear) via `WebviewWindow::set_background_color`; 23) window Spaces
+// visibility + cursor grab/visibility (three boolean `WebviewWindow` mutators).
 
 use tauri::{AppHandle, Manager, WebviewWindow};
 // Window background color for the slice-22 `set_window_background_color` command. `Color` is the
@@ -1759,6 +1760,84 @@ pub fn set_window_background_color(
 pub fn clear_window_background_color(app: AppHandle, label: String) -> Result<(), String> {
     require_window(&app, &label)?
         .set_background_color(None)
+        .map_err(|e| e.to_string())
+}
+
+/// Show or hide the window identified by `label` across all macOS Spaces.
+///
+/// Phase 2 slice 23. Applies `WebviewWindow::set_visible_on_all_workspaces`, the mirror of Electron's
+/// `setVisibleOnAllWorkspaces` — pinning the window so it follows the active Space. Platform-specific
+/// (meaningful on macOS; a no-op elsewhere), but the `Result<()>` seam is uniform: the `Err` uses
+/// `.map_err(|e| e.to_string())` (never `.unwrap()`). Requires a live GUI window, so it is
+/// compile-verified and exercised under `pnpm dev:tauri`.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+/// * `visible_on_all_workspaces` - `true` to show on every Space, `false` for the current one.
+///
+/// # Returns
+///
+/// `Ok(())` on success; `Err(String)` when the window is missing or the OS rejects the operation.
+#[tauri::command]
+pub fn set_window_visible_on_all_workspaces(
+    app: AppHandle,
+    label: String,
+    visible_on_all_workspaces: bool,
+) -> Result<(), String> {
+    require_window(&app, &label)?
+        .set_visible_on_all_workspaces(visible_on_all_workspaces)
+        .map_err(|e| e.to_string())
+}
+
+/// Confine or release the system cursor to the window identified by `label`.
+///
+/// Phase 2 slice 23. Applies `WebviewWindow::set_cursor_grab`, the pointer-lock equivalent the
+/// renderer needs for capture-style interactions (the cursor cannot leave the window while grabbed).
+/// The `Err` uses `.map_err(|e| e.to_string())` (never `.unwrap()`). Requires a live GUI window, so it
+/// is compile-verified and exercised under `pnpm dev:tauri`.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+/// * `grab` - `true` to lock the cursor inside the window, `false` to release it.
+///
+/// # Returns
+///
+/// `Ok(())` on success; `Err(String)` when the window is missing or the OS rejects the operation.
+#[tauri::command]
+pub fn set_window_cursor_grab(app: AppHandle, label: String, grab: bool) -> Result<(), String> {
+    require_window(&app, &label)?
+        .set_cursor_grab(grab)
+        .map_err(|e| e.to_string())
+}
+
+/// Show or hide the system cursor over the window identified by `label`.
+///
+/// Phase 2 slice 23. Applies `WebviewWindow::set_cursor_visible`, used to hide the pointer during
+/// idle/fullscreen media and restore it on interaction. The `Err` uses `.map_err(|e| e.to_string())`
+/// (never `.unwrap()`). Requires a live GUI window, so it is compile-verified and exercised under
+/// `pnpm dev:tauri`.
+///
+/// # Arguments
+///
+/// * `app` - The Tauri application handle providing the window registry.
+/// * `label` - Target window label (the main window is `"main"`).
+/// * `visible` - `true` to show the cursor, `false` to hide it over this window.
+///
+/// # Returns
+///
+/// `Ok(())` on success; `Err(String)` when the window is missing or the OS rejects the operation.
+#[tauri::command]
+pub fn set_window_cursor_visible(
+    app: AppHandle,
+    label: String,
+    visible: bool,
+) -> Result<(), String> {
+    require_window(&app, &label)?
+        .set_cursor_visible(visible)
         .map_err(|e| e.to_string())
 }
 

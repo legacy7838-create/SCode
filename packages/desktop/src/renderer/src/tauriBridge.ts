@@ -1016,6 +1016,58 @@ export function clearWindowBackgroundColor(label: string): Promise<void> {
 }
 
 /**
+ * Phase 2 第二十三切片：macOS 全空间显示 + 光标锁定/可见性的 TypeScript 接缝。
+ *
+ * 对应 Rust 命令 `set_window_visible_on_all_workspaces` / `set_window_cursor_grab` /
+ * `set_window_cursor_visible`，均为单个 bool 的 `WebviewWindow` mutator（无需新增插件或 capability）。
+ * 注意 Rust 形参 `visible_on_all_workspaces` 映射为 JS 的 `visibleOnAllWorkspaces`（camelCase，由 a5
+ * 契约守卫校验）。运行时需活动 GUI 窗口，本组接缝在此只做编译期类型校验，真实效果在 `pnpm dev:tauri`
+ * 下验证。保持导入零副作用。
+ */
+
+/**
+ * 设置窗口是否在所有 macOS Space 上显示（对齐 Electron `setVisibleOnAllWorkspaces`）。对应 Rust 命令
+ * `set_window_visible_on_all_workspaces`。非 macOS 平台为 no-op。
+ *
+ * @param label - 目标窗口 label。
+ * @param visibleOnAllWorkspaces - `true` 在所有工作区显示，`false` 仅当前工作区。
+ */
+export function setWindowVisibleOnAllWorkspaces(
+  label: string,
+  visibleOnAllWorkspaces: boolean,
+): Promise<void> {
+  return invoke<void>("set_window_visible_on_all_workspaces", {
+    label,
+    visibleOnAllWorkspaces,
+  });
+}
+
+/**
+ * 锁定或释放窗口内的系统光标（指针锁定，用于捕获类交互）。对应 Rust 命令 `set_window_cursor_grab`
+ * （`WebviewWindow::set_cursor_grab`）。
+ *
+ * @param label - 目标窗口 label。
+ * @param grab - `true` 将光标约束在窗口内，`false` 释放。
+ */
+export function setWindowCursorGrab(label: string, grab: boolean): Promise<void> {
+  return invoke<void>("set_window_cursor_grab", { label, grab });
+}
+
+/**
+ * 显示或隐藏窗口上的系统光标（媒体空闲/全屏时隐藏，交互时恢复）。对应 Rust 命令
+ * `set_window_cursor_visible`（`WebviewWindow::set_cursor_visible`）。
+ *
+ * @param label - 目标窗口 label。
+ * @param visible - `true` 显示光标，`false` 隐藏。
+ */
+export function setWindowCursorVisible(
+  label: string,
+  visible: boolean,
+): Promise<void> {
+  return invoke<void>("set_window_cursor_visible", { label, visible });
+}
+
+/**
  * Phase 2 第十九切片：显示器信息（多屏 / HiDPI）的 TypeScript 接缝。
  *
  * 对应 Rust 命令 `get_window_current_monitor` / `get_primary_monitor` / `get_available_monitors`，
