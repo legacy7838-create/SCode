@@ -9,6 +9,7 @@ pub mod cron_engine;
 pub mod grouping;
 pub mod grouped_view;
 pub mod migrations;
+pub mod session_bootstrap;
 pub mod session_migrations;
 pub mod offpeak;
 pub mod offpeak_write;
@@ -1766,6 +1767,32 @@ pub fn are_migrations_applied(db_path: String) -> Result<bool> {
 pub fn bootstrap_tasks_index(db_path: String, deadline_ms: i64) -> Result<String> {
     migrations::bootstrap_tasks_index(&db_path, deadline_ms)
         .map(|kind| kind.to_string())
+        .map_err(Error::from_reason)
+}
+
+/// N-API: create/open the Agent CLI session-store DB (`~/.zcode/cli/db/db.sqlite`), apply the frozen
+/// migration ledger, and return the `DatabaseMigrationFacts` JSON. The CLI facade calls this on open,
+/// replacing `runSqliteSessionMigrations` — no `node:sqlite` remains in the session-store path.
+#[napi]
+pub fn bootstrap_session_store_json(
+    db_path: String,
+    deadline_ms: i64,
+    now: f64,
+) -> Result<String> {
+    let facts = session_bootstrap::bootstrap_session_store(&db_path, deadline_ms, now as i64)
+        .map_err(Error::from_reason)?;
+    serde_json::to_string(&facts).map_err(|e| Error::from_reason(e.to_string()))
+}
+
+/// N-API: read-only check whether the session-store DB is fully migrated (no pending, no checksum
+/// drift). A missing file reports `false` (it still needs `bootstrapSessionStoreJson`).
+#[napi]
+pub fn are_session_migrations_applied(db_path: String) -> Result<bool> {
+    let Ok(conn) = open_readonly(&db_path) else {
+        return Ok(false);
+    };
+    session_bootstrap::inspect_session_migration_kind(&conn)
+        .map(|kind| kind == "none")
         .map_err(Error::from_reason)
 }
 

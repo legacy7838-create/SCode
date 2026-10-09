@@ -652,7 +652,7 @@ pub fn apply_migrations_and_commit(conn: &Connection) -> Result<(), String> {
 }
 
 /// True for a `SQLITE_BUSY` (primary code 5) failure — the retry condition in the lock acquire loop.
-fn is_sqlite_busy(err: &rusqlite::Error) -> bool {
+pub(crate) fn is_sqlite_busy(err: &rusqlite::Error) -> bool {
     match err {
         rusqlite::Error::SqliteFailure(ffi, _) => (ffi.extended_code & 0xff) == 5,
         _ => false,
@@ -661,7 +661,7 @@ fn is_sqlite_busy(err: &rusqlite::Error) -> bool {
 
 /// Port of `startup.ts`'s `acquire` for a SQL statement: retry on `SQLITE_BUSY` every 100ms until
 /// the deadline, else propagate. Locks are normally free, so this returns on the first attempt.
-fn acquire_exec(conn: &Connection, sql: &str, deadline_ms: i64) -> Result<(), String> {
+pub(crate) fn acquire_exec(conn: &Connection, sql: &str, deadline_ms: i64) -> Result<(), String> {
     let deadline =
         std::time::Instant::now() + std::time::Duration::from_millis(deadline_ms.max(0) as u64);
     loop {

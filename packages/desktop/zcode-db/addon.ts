@@ -24,6 +24,10 @@ export interface DbAddon {
   areMigrationsApplied(dbPath: string): boolean;
   runStartupRepairsJson(dbPath: string, now: number): void;
 
+  // ---- session-store (Agent CLI `~/.zcode/cli/db/db.sqlite`) bootstrap / migration ----
+  bootstrapSessionStoreJson(dbPath: string, deadlineMs: number, now: number): string;
+  areSessionMigrationsApplied(dbPath: string): boolean;
+
   // ---- task index: reads ----
   tasksCount(dbPath: string): number;
   listRecentTasks(dbPath: string, limit: number): unknown[];
