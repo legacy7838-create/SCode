@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev:tauri": "concurrently -k -n tsup,vite,tauri,host \"tsup --watch\" \"vite dev\" \"tauri dev\" \"node scripts/dev-host.mjs\"",
-    "tauri:build": "pnpm build && tauri build",
+    "tauri:build": "pnpm prepare:zcode-db-native && pnpm build && tauri build",
     "build": "tsup && vite build",
     "prepare:build-meta": "node scripts/build-metadata.mjs",
     "prepare:runtime-assets": "node scripts/prepare-runtime-assets.mjs",
@@ -14,6 +14,8 @@
     "prepare:agent-bundle": "node scripts/prepare-agent-node-bundle.mjs",
     "prepare:native-search": "node ../../scripts/prepare-native-search-tools.mjs",
     "prepare:browser-import-helper": "node scripts/build-windows-browser-import-helper.mjs",
+    "prepare:zcode-db-native": "node scripts/prepare-zcode-db-native.mjs",
+    "check:zcode-db-native": "node scripts/prepare-zcode-db-native.mjs --check",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix"
   },

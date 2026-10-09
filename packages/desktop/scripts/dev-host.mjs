@@ -12,10 +12,20 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const desktopRoot = join(here, "..");
 const standalone = join(desktopRoot, "out/host/standalone.js");
+const dbAddon = join(desktopRoot, "zcode-db/zcode_db.node");
 const port = process.env.ZCODE_WS_PORT ?? "5199";
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// The standalone host loads the Rust DB addon on its first data op; fail fast here with the exact
+// build command instead of surfacing a missing-addon error deep in host startup.
+if (!existsSync(dbAddon)) {
+  console.error(
+    `[dev-host] zcode-db addon missing: ${dbAddon}\n  run: pnpm prepare:zcode-db-native`,
+  );
+  process.exit(1);
 }
 
 async function waitForBuild(timeoutMs = 30000) {
