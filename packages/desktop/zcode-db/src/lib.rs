@@ -134,6 +134,8 @@ const ZCODE_AGENT_PROVIDER: &str = "glm";
 const VALID_MIGRATION: [&str; 1] = ["claudeCode"];
 /// `searchable_text` size cap in UTF-16 code units — mirrors TS `TASK_SEARCH_TEXT_MAX_CHARS`.
 const TASK_SEARCH_TEXT_MAX_CHARS: usize = 200_000;
+/// Grouped-view ordering step — mirrors TS `GROUPED_TASK_ORDER_STEP`.
+const GROUPED_TASK_ORDER_STEP: i64 = 1000;
 
 /// Rust mirror of TS `ZCodeTaskMeta`. `skip_serializing_if = Option::is_none` reproduces
 /// `JSON.stringify` dropping `undefined` keys, and serde ignoring unknown keys reproduces zod's
@@ -1161,6 +1163,77 @@ pub fn update_task_state(
     }
 }
 
+/// Port of `getNextGroupedTopSortOrder`: one step ABOVE the current minimum so a newly-prepended
+/// group lands at the top. Empty table → `step*2 - step` (i.e. `1000`).
+pub fn get_next_grouped_top_sort_order(
+    conn: &Connection,
+) -> std::result::Result<i64, rusqlite::Error> {
+    let min: Option<i64> = conn
+        .query_row(
+            "SELECT MIN(sort_order) FROM task_group_view_node_orders",
+            [],
+            |r| r.get::<_, Option<i64>>(0),
+        )
+        .ok()
+        .flatten();
+    Ok(min.unwrap_or(GROUPED_TASK_ORDER_STEP * 2) - GROUPED_TASK_ORDER_STEP)
+}
+
+/// A task's identity for grouping (a borrowed `TaskRef` to keep the port's signature tidy).
+#[derive(Debug, Clone, Copy)]
+pub struct TaskRef<'a> {
+    pub workspace_key: &'a str,
+    pub workspace_path: &'a str,
+    pub workspace_identity: Option<&'a str>,
+    pub task_id: &'a str,
+}
+
+/// A system group's identity (cron/off-peak): fixed id, display title, color.
+#[derive(Debug, Clone, Copy)]
+pub struct SystemGroup<'a> {
+    pub group_id: &'a str,
+    pub title: &'a str,
+    pub color: &'a str,
+}
+
+/// Port of `ensureSystemGroupMembership`: idempotently create the system group row, give it a
+/// grouped-view order (only if absent, so re-running never reshuffles), and add the task as a
+/// member (`INSERT OR IGNORE` so a user's manual grouping is preserved). `now` is injected so the
+/// port is deterministic and testable (TS uses `Date.now()`).
+pub fn ensure_system_group_membership(
+    conn: &Connection,
+    task: &TaskRef<'_>,
+    group: &SystemGroup<'_>,
+    now: i64,
+) -> std::result::Result<(), rusqlite::Error> {
+    conn.execute(
+        "INSERT OR IGNORE INTO task_groups (group_id, title, color, created_at, updated_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        rusqlite::params![group.group_id, group.title, group.color, now, now],
+    )?;
+    let sort = get_next_grouped_top_sort_order(conn)?;
+    conn.execute(
+        "INSERT OR IGNORE INTO task_group_view_node_orders (node_type, node_key, sort_order, created_at, updated_at) \
+         VALUES ('group', ?1, ?2, ?3, ?4)",
+        rusqlite::params![group.group_id, sort, now, now],
+    )?;
+    conn.execute(
+        "INSERT OR IGNORE INTO task_group_members (group_id, workspace_key, workspace_path, workspace_identity, task_id, sort_order, added_at, created_at, updated_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6, ?7, ?8)",
+        rusqlite::params![
+            group.group_id,
+            task.workspace_key,
+            task.workspace_path,
+            task.workspace_identity,
+            task.task_id,
+            now,
+            now,
+            now
+        ],
+    )?;
+    Ok(())
+}
+
 /// N-API: return the raw `meta_json` string for one task (parse it in Rust via `row_to_meta`).
 #[napi]
 pub fn read_task_meta_json(
@@ -1476,6 +1549,9 @@ mod tests {
                workspace_identity TEXT, task_id TEXT NOT NULL, sort_order INTEGER,
                added_at INTEGER, created_at INTEGER, updated_at INTEGER,
                PRIMARY KEY (group_id, workspace_key, task_id));
+             CREATE TABLE task_groups (
+               group_id TEXT PRIMARY KEY, title TEXT NOT NULL, color TEXT,
+               created_at INTEGER, updated_at INTEGER);
              CREATE TABLE task_group_view_node_orders (
                node_type TEXT NOT NULL, node_key TEXT NOT NULL, sort_order INTEGER,
                created_at INTEGER, updated_at INTEGER,
@@ -2104,6 +2180,69 @@ mod tests {
             update_task_state(&conn, "/ws", "t1", &p).is_err(),
             "already-deleted row throws"
         );
+    }
+
+    #[test]
+    fn next_grouped_top_sort_order_walks_above_minimum() {
+        let conn = full_schema_db();
+        // Empty view orders → step*2 - step = 1000.
+        assert_eq!(get_next_grouped_top_sort_order(&conn).unwrap(), 1000);
+        conn.execute(
+            "INSERT INTO task_group_view_node_orders (node_type, node_key, sort_order) VALUES ('group','g',500)",
+            [],
+        )
+        .unwrap();
+        assert_eq!(
+            get_next_grouped_top_sort_order(&conn).unwrap(),
+            -500,
+            "min 500 - step"
+        );
+    }
+
+    #[test]
+    fn ensure_system_group_membership_is_idempotent() {
+        let conn = full_schema_db();
+        let task = TaskRef {
+            workspace_key: "/ws",
+            workspace_path: "/ws",
+            workspace_identity: None,
+            task_id: "t1",
+        };
+        let group = SystemGroup {
+            group_id: "cron-default",
+            title: "cron",
+            color: "blue",
+        };
+        ensure_system_group_membership(&conn, &task, &group, 42).unwrap();
+        ensure_system_group_membership(&conn, &task, &group, 99).unwrap();
+
+        let groups: i64 = conn
+            .query_row("SELECT count(*) FROM task_groups", [], |r| r.get(0))
+            .unwrap();
+        let members: i64 = conn
+            .query_row("SELECT count(*) FROM task_group_members", [], |r| r.get(0))
+            .unwrap();
+        let orders: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM task_group_view_node_orders",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            (groups, members, orders),
+            (1, 1, 1),
+            "INSERT OR IGNORE stays idempotent"
+        );
+        // The original sort_order (from the first call's watermark 1000) must not be reshuffled.
+        let order: i64 = conn
+            .query_row(
+                "SELECT sort_order FROM task_group_view_node_orders WHERE node_key='cron-default'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(order, 1000, "group order preserved across re-runs");
     }
 
     #[test]
