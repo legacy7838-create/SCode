@@ -194,6 +194,42 @@ pub fn list_off_peak(
     Ok(rows)
 }
 
+/// Independent copy of the off-peak claim-stale window (mirrors automation's, but the repos keep
+/// their own constant — do not cross-reference).
+pub const OFF_PEAK_CLAIM_STALE_MS: i64 = 10 * 60_000;
+
+/// `OFF_PEAK_TERMINAL_STATUSES` — irreversible terminal states (state-machine invariant).
+pub const OFF_PEAK_TERMINAL_STATUSES: [&str; 3] = ["completed", "failed", "cancelled"];
+
+/// `SELECT COUNT(*) ... WHERE status NOT IN (terminal)`.
+pub fn count_active_off_peak(conn: &Connection) -> Result<i64, String> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM off_peak_tasks WHERE status NOT IN ('completed','failed','cancelled')",
+        [],
+        |r| r.get(0),
+    )
+    .map_err(|e| e.to_string())
+}
+
+/// `SELECT COUNT(*) ... WHERE status = 'running'`.
+pub fn count_running_off_peak(conn: &Connection) -> Result<i64, String> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM off_peak_tasks WHERE status = 'running'",
+        [],
+        |r| r.get(0),
+    )
+    .map_err(|e| e.to_string())
+}
+
+/// Port of `delete`: removes the row by id, returning how many rows were deleted.
+pub fn delete_off_peak(conn: &Connection, off_peak_task_id: &str) -> Result<usize, String> {
+    conn.execute(
+        "DELETE FROM off_peak_tasks WHERE off_peak_task_id = ?1",
+        [off_peak_task_id],
+    )
+    .map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -298,5 +334,41 @@ mod tests {
         let scoped = list_off_peak(&conn, Some("wk")).unwrap();
         assert_eq!(scoped.len(), 2, "workspace filter excludes o3");
         assert!(scoped.iter().all(|t| t.workspace_key == "wk"));
+    }
+
+    #[test]
+    fn off_peak_counts_and_delete() {
+        let conn = off_peak_db();
+        insert_off_peak(&conn, "o1", "wk", None, 10);
+        insert_off_peak(&conn, "o2", "wk", None, 20);
+        insert_off_peak(&conn, "o3", "wk", None, 30);
+        // all queued → active (non-terminal) = 3, running = 0.
+        assert_eq!(count_active_off_peak(&conn).unwrap(), 3);
+        assert_eq!(count_running_off_peak(&conn).unwrap(), 0);
+
+        conn.execute(
+            "UPDATE off_peak_tasks SET status='running' WHERE off_peak_task_id='o1'",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE off_peak_tasks SET status='completed' WHERE off_peak_task_id='o2'",
+            [],
+        )
+        .unwrap();
+        assert_eq!(
+            count_active_off_peak(&conn).unwrap(),
+            2,
+            "one completed is terminal"
+        );
+        assert_eq!(count_running_off_peak(&conn).unwrap(), 1);
+
+        assert_eq!(delete_off_peak(&conn, "o1").unwrap(), 1);
+        assert_eq!(
+            delete_off_peak(&conn, "o1").unwrap(),
+            0,
+            "idempotent delete"
+        );
+        assert!(get_off_peak(&conn, "o1").unwrap().is_none());
     }
 }
