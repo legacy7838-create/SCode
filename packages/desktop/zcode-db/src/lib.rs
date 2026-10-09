@@ -117,6 +117,59 @@ pub fn upsert_task(conn: &Connection, task: &NewTask) -> std::result::Result<usi
     )
 }
 
+/// Rust projection of the TS `ZCodeTaskMeta` (meta_json blob). Known scalar fields are typed;
+/// unknown/complex fields (traceId, thoughtLevel, target, …) are preserved in `rest` for lossless
+/// round-trip. camelCase JSON keys map to snake_case Rust fields via serde `rename_all`.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskMeta {
+    #[serde(default)]
+    pub task_id: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub mode: String,
+    #[serde(default)]
+    pub created_at: i64,
+    #[serde(default)]
+    pub updated_at: i64,
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub provider: Option<String>,
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(flatten)]
+    pub rest: std::collections::BTreeMap<String, serde_json::Value>,
+}
+
+/// Parse a `meta_json` blob into `TaskMeta` (foundation for the `rowToMeta` port).
+pub fn parse_task_meta(meta_json: &str) -> std::result::Result<TaskMeta, serde_json::Error> {
+    serde_json::from_str(meta_json)
+}
+
+/// N-API: return the raw `meta_json` string for one task (parse it in Rust via `parse_task_meta`).
+#[napi]
+pub fn read_task_meta_json(
+    db_path: String,
+    workspace_key: String,
+    task_id: String,
+) -> Result<Option<String>> {
+    let conn = open_readonly(&db_path)?;
+    let mut stmt = conn
+        .prepare("SELECT meta_json FROM tasks WHERE workspace_key = ?1 AND task_id = ?2")
+        .map_err(|e| Error::from_reason(e.to_string()))?;
+    let mut rows = stmt
+        .query_map(rusqlite::params![workspace_key, task_id], |row| {
+            row.get::<_, Option<String>>(0)
+        })
+        .map_err(|e| Error::from_reason(e.to_string()))?;
+    match rows.next() {
+        Some(r) => r.map_err(|e| Error::from_reason(e.to_string())),
+        None => Ok(None),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -206,6 +259,23 @@ mod tests {
         let rows = query_tasks_by_workspace(&conn, "ws-B").unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].task_id, "other");
+    }
+
+    #[test]
+    fn parses_real_meta_json_shape() {
+        // Mirrors a real row's meta_json keys observed in the live DB.
+        let sample = r#"{"taskId":"sess_x","traceId":"zcode-sess_x","title":"hey","titleOverridden":false,"workspacePath":"/p","createdAt":1,"updatedAt":2,"mode":"build","model":"m","thoughtLevel":"high","provider":"p","status":"idle","lastError":null,"target":{}}"#;
+        let m = parse_task_meta(sample).unwrap();
+        assert_eq!(m.task_id, "sess_x");
+        assert_eq!(m.title, "hey");
+        assert_eq!(m.mode, "build");
+        assert_eq!(m.created_at, 1);
+        assert_eq!(m.updated_at, 2);
+        assert_eq!(m.model.as_deref(), Some("m"));
+        // Unknown/complex fields are preserved (lossless), not dropped.
+        assert!(m.rest.contains_key("traceId"));
+        assert!(m.rest.contains_key("thoughtLevel"));
+        assert!(m.rest.contains_key("target"));
     }
 }
 
