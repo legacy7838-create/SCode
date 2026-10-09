@@ -11,6 +11,7 @@ pub mod grouped_view;
 pub mod migrations;
 pub mod session_bootstrap;
 pub mod session_migrations;
+pub mod session_store;
 pub mod offpeak;
 pub mod offpeak_write;
 
@@ -1794,6 +1795,14 @@ pub fn are_session_migrations_applied(db_path: String) -> Result<bool> {
     session_bootstrap::inspect_session_migration_kind(&conn)
         .map(|kind| kind == "none")
         .map_err(Error::from_reason)
+}
+
+/// N-API: `readTodos` port. Returns a JSON array of `{content,status,priority}` ordered by position.
+#[napi]
+pub fn read_todos_json(db_path: String, session_id: String) -> Result<String> {
+    let conn = open_readonly(&db_path)?;
+    let value = session_store::read_todos(&conn, &session_id).map_err(Error::from_reason)?;
+    serde_json::to_string(&value).map_err(|e| Error::from_reason(e.to_string()))
 }
 
 /// Port of `normalizeSearchSnippetText`: collapse whitespace runs to a single space, trim, cap at

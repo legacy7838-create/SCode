@@ -28,6 +28,9 @@ export interface DbAddon {
   bootstrapSessionStoreJson(dbPath: string, deadlineMs: number, now: number): string;
   areSessionMigrationsApplied(dbPath: string): boolean;
 
+  // ---- session-store: reads ----
+  readTodosJson(dbPath: string, sessionId: string): string;
+
   // ---- task index: reads ----
   tasksCount(dbPath: string): number;
   listRecentTasks(dbPath: string, limit: number): unknown[];
