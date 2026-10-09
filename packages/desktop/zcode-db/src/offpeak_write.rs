@@ -634,6 +634,17 @@ pub fn mark_history_deleted(
     get_off_peak(conn, id)
 }
 
+/// Port of `delete`: hard-remove an off-peak row by id. The TS returns void and does not guard on
+/// the row existing, so `changes` is intentionally ignored here (behavior parity).
+pub fn delete_off_peak(conn: &Connection, id: &str) -> Result<(), String> {
+    conn.execute(
+        "DELETE FROM off_peak_tasks WHERE off_peak_task_id = ?1",
+        params![id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// Port of `countNonTerminal`: rows not in a terminal state (`status NOT IN (terminal)`). This is the
 /// local pre-check for the create cap; the authoritative limit is server-side ticketing.
 pub fn count_non_terminal(conn: &Connection) -> Result<i64, String> {

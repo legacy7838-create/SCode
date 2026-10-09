@@ -2226,6 +2226,194 @@ pub fn offpeak_list_unsettled_terminal_json(db_path: String) -> Result<String> {
     serde_json::to_string(&rows).map_err(|e| Error::from_reason(e.to_string()))
 }
 
+// ---- OffPeakTaskRepo create / invalidate / editable / scheduling / delete N-API ----
+
+/// Parse a required `modelSelection` JSON value through the same strict zod path the create/update
+/// writes use; `None` (invalid) is surfaced as an error the caller can raise like the TS schema.
+fn parse_model_selection_required(
+    v: Option<&serde_json::Value>,
+) -> std::result::Result<automation::ModelSelection, Error> {
+    let v = v.ok_or_else(|| Error::from_reason("modelSelection is required"))?;
+    automation::read_serialized_model_selection(Some(&v.to_string()))
+        .ok_or_else(|| Error::from_reason("invalid modelSelection"))
+}
+
+/// N-API: `OffPeakTaskRepo.create` (read-write). `offPeakTaskId` in `options_json` lets the caller
+/// pin the id (TS external-mint path) so the write is deterministic; absent → a uuid `offpeak-…`.
+#[napi]
+pub fn offpeak_create_json(
+    db_path: String,
+    params_json: String,
+    options_json: String,
+    now: f64,
+) -> Result<String> {
+    let pv: serde_json::Value =
+        serde_json::from_str(&params_json).map_err(|e| Error::from_reason(e.to_string()))?;
+    let ov: serde_json::Value =
+        serde_json::from_str(&options_json).map_err(|e| Error::from_reason(e.to_string()))?;
+    let p_obj = pv
+        .as_object()
+        .ok_or_else(|| Error::from_reason("params must be an object"))?;
+    let o_obj = ov
+        .as_object()
+        .ok_or_else(|| Error::from_reason("options must be an object"))?;
+    let params = offpeak_write::OffPeakCreateParams {
+        workspace_path: two_str(p_obj, "workspacePath").unwrap_or_default(),
+        workspace_identity: two_str(p_obj, "workspaceIdentity"),
+        title: two_str(p_obj, "title").unwrap_or_default(),
+        prompt: two_str(p_obj, "prompt").unwrap_or_default(),
+        permission_mode: two_str(p_obj, "permissionMode").unwrap_or_default(),
+        model_selection: parse_model_selection_required(p_obj.get("modelSelection"))?,
+        bound_session_id: two_str(p_obj, "boundSessionId"),
+    };
+    let options = offpeak_write::OffPeakCreateOptions {
+        off_peak_task_id: two_str(o_obj, "offPeakTaskId"),
+        server_ticket_id: two_str(o_obj, "serverTicketId"),
+        queue_position: o_obj.get("queuePosition").and_then(serde_json::Value::as_i64),
+        registered_at: o_obj.get("registeredAt").and_then(serde_json::Value::as_i64),
+        schedulable: opt_bool(o_obj, "schedulable").unwrap_or(false),
+    };
+    let conn = open_readwrite(&db_path)?;
+    let row =
+        offpeak_write::create_off_peak(&conn, &params, &options, now as i64).map_err(Error::from_reason)?;
+    serde_json::to_string(&row).map_err(|e| Error::from_reason(e.to_string()))
+}
+
+/// N-API: `OffPeakTaskRepo.invalidateModelSelection` (read-write). `selection_json` is the observed
+/// (possibly stale) selection; applied only when it still matches the stored row.
+#[napi]
+pub fn offpeak_invalidate_model_selection_json(
+    db_path: String,
+    id: String,
+    selection_json: String,
+    now: f64,
+) -> Result<Option<String>> {
+    let sv: serde_json::Value =
+        serde_json::from_str(&selection_json).map_err(|e| Error::from_reason(e.to_string()))?;
+    let sel = parse_model_selection_required(Some(&sv))?;
+    let conn = open_readwrite(&db_path)?;
+    let row =
+        offpeak_write::invalidate_model_selection(&conn, &id, &sel, now as i64).map_err(Error::from_reason)?;
+    Ok(row.map(|t| serde_json::to_string(&t).unwrap_or_default()))
+}
+
+/// N-API: `OffPeakTaskRepo.updateEditableFields` (read-write). `patch_json` = EditableFields
+/// (`title`/`prompt`/`permissionMode` via `??`, `modelSelection` tri-state).
+#[napi]
+pub fn offpeak_update_editable_fields_json(
+    db_path: String,
+    id: String,
+    patch_json: String,
+    now: f64,
+) -> Result<Option<String>> {
+    let v: serde_json::Value =
+        serde_json::from_str(&patch_json).map_err(|e| Error::from_reason(e.to_string()))?;
+    let obj = v
+        .as_object()
+        .ok_or_else(|| Error::from_reason("patch must be an object"))?;
+    let patch = offpeak_write::EditableFields {
+        title: two_str(obj, "title"),
+        prompt: two_str(obj, "prompt"),
+        permission_mode: two_str(obj, "permissionMode"),
+        model_selection: tri_model(obj, "modelSelection"),
+    };
+    let conn = open_readwrite(&db_path)?;
+    let row = offpeak_write::update_editable_fields(&conn, &id, &patch, now as i64)
+        .map_err(Error::from_reason)?;
+    Ok(row.map(|t| serde_json::to_string(&t).unwrap_or_default()))
+}
+
+/// N-API: `OffPeakTaskRepo.updateSchedulingSnapshot` (read-write). `patch_json` = SchedulingPatch
+/// (queuePosition/nextPollAt tri-state; schedulable/serverTicketId/registeredAt plain).
+#[napi]
+pub fn offpeak_update_scheduling_snapshot_json(
+    db_path: String,
+    id: String,
+    patch_json: String,
+    now: f64,
+) -> Result<()> {
+    let v: serde_json::Value =
+        serde_json::from_str(&patch_json).map_err(|e| Error::from_reason(e.to_string()))?;
+    let obj = v
+        .as_object()
+        .ok_or_else(|| Error::from_reason("patch must be an object"))?;
+    let patch = offpeak_write::SchedulingPatch {
+        schedulable: opt_bool(obj, "schedulable"),
+        queue_position: tri_i64(obj, "queuePosition"),
+        next_poll_at: tri_i64(obj, "nextPollAt"),
+        server_ticket_id: two_str(obj, "serverTicketId"),
+        registered_at: obj.get("registeredAt").and_then(serde_json::Value::as_i64),
+    };
+    let conn = open_readwrite(&db_path)?;
+    offpeak_write::update_scheduling_snapshot(&conn, &id, &patch, now as i64)
+        .map_err(Error::from_reason)
+}
+
+/// N-API: `OffPeakTaskRepo.delete` (read-write). TS returns void.
+#[napi]
+pub fn offpeak_delete_json(db_path: String, id: String) -> Result<()> {
+    let conn = open_readwrite(&db_path)?;
+    offpeak_write::delete_off_peak(&conn, &id).map_err(Error::from_reason)
+}
+
+/// N-API: `OffPeakTaskRepo.markHistoryDeleted` (read-write). Returns the post-write row JSON, or
+/// `null` when the row is absent.
+#[napi]
+pub fn offpeak_mark_history_deleted_json(
+    db_path: String,
+    id: String,
+    now: f64,
+) -> Result<Option<String>> {
+    let conn = open_readwrite(&db_path)?;
+    let row = offpeak_write::mark_history_deleted(&conn, &id, now as i64).map_err(Error::from_reason)?;
+    Ok(row.map(|t| serde_json::to_string(&t).unwrap_or_default()))
+}
+
+/// N-API: `AutomationRepo.create` (read-write). `params_json` = AutomationCreateParams, `options_json`
+/// = `{nextRunAt?, lifecycleStatus?}`, `now` injected. The automation id is a uuid `automation-…`
+/// (mirrors TS); the differential harness normalizes it. Enforces the create-limit count guard.
+#[napi]
+pub fn automation_create_json(
+    db_path: String,
+    params_json: String,
+    options_json: String,
+    now: f64,
+) -> Result<String> {
+    let pv: serde_json::Value =
+        serde_json::from_str(&params_json).map_err(|e| Error::from_reason(e.to_string()))?;
+    let ov: serde_json::Value =
+        serde_json::from_str(&options_json).map_err(|e| Error::from_reason(e.to_string()))?;
+    let p_obj = pv
+        .as_object()
+        .ok_or_else(|| Error::from_reason("params must be an object"))?;
+    let o_obj = ov
+        .as_object()
+        .ok_or_else(|| Error::from_reason("options must be an object"))?;
+    let params = automation::AutomationCreateParams {
+        workspace_path: two_str(p_obj, "workspacePath").unwrap_or_default(),
+        workspace_identity: two_str(p_obj, "workspaceIdentity"),
+        title: two_str(p_obj, "title").unwrap_or_default(),
+        cron_expr: two_str(p_obj, "cronExpr").unwrap_or_default(),
+        prompt: two_str(p_obj, "prompt").unwrap_or_default(),
+        model_selection: tri_model(p_obj, "modelSelection").flatten(),
+        mode: two_str(p_obj, "mode"),
+        target_task_id: two_str(p_obj, "targetTaskId"),
+        bot_delivery_target: p_obj.get("botDeliveryTarget").cloned(),
+        recurring: opt_bool(p_obj, "recurring").unwrap_or(true),
+        max_runs: p_obj.get("maxRuns").and_then(serde_json::Value::as_i64),
+        end_at: p_obj.get("endAt").and_then(serde_json::Value::as_i64),
+        schedule_rule: p_obj.get("scheduleRule").cloned(),
+    };
+    let options = automation::AutomationCreateOptions {
+        next_run_at: o_obj.get("nextRunAt").and_then(serde_json::Value::as_i64),
+        lifecycle_status: two_str(o_obj, "lifecycleStatus"),
+    };
+    let conn = open_readwrite(&db_path)?;
+    let created = automation::create_automation(&conn, &params, &options, now as i64)
+        .map_err(Error::from_reason)?;
+    serde_json::to_string(&created).map_err(|e| Error::from_reason(e.to_string()))
+}
+
 // ---- AutomationRepo write N-API (deterministic ops: update / delete) ----
 
 fn two_str(obj: &serde_json::Map<String, serde_json::Value>, k: &str) -> Option<String> {
