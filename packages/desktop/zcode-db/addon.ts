@@ -74,6 +74,8 @@ export interface DbAddon {
   automationScheduledRunCountJson(dbPath: string, automationId: string, workspaceKey: string | null): number | null;
   automationHasTaskBindingJson(dbPath: string, workspaceKey: string, targetTaskId: string): boolean;
   automationModelSelectionForDispatchJson(dbPath: string, automationId: string, workspaceKey: string): string | null;
+  automationGetBotDeliveryTargetJson(dbPath: string, automationId: string, workspaceKey: string | null): string | null;
+  automationGetModelSelectionColumnJson(dbPath: string, automationId: string, workspaceKey: string | null): string;
   automationRunNowJson(dbPath: string, automationId: string, workspaceKey: string | null, now: number): string | null;
   automationClaimManualRunsJson(dbPath: string, now: number): string;
   automationSkipAndRescheduleJson(dbPath: string, paramsJson: string, now: number): void;

@@ -2859,6 +2859,64 @@ pub fn automation_model_selection_for_dispatch_json(
     Ok(sel.map(|m| serde_json::to_string(&m).unwrap_or_default()))
 }
 
+/// N-API: `AutomationRepo.getBotDeliveryTarget` raw-column read (read-only). Returns the raw
+/// `bot_delivery_target` text, or `null` when the row is absent OR the column is SQL NULL (the
+/// caller zod-parses and treats invalid/unset as `undefined`, matching the TS exactly).
+#[napi]
+pub fn automation_get_bot_delivery_target_json(
+    db_path: String,
+    automation_id: String,
+    workspace_key: Option<String>,
+) -> Result<Option<String>> {
+    let conn = open_readonly(&db_path)?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT bot_delivery_target FROM automations WHERE automation_id = ?1 \
+             AND (?2 IS NULL OR workspace_key = ?2)",
+        )
+        .map_err(|e| Error::from_reason(e.to_string()))?;
+    let mut rows = stmt
+        .query_map(rusqlite::params![automation_id, workspace_key], |r| {
+            r.get::<_, Option<String>>(0)
+        })
+        .map_err(|e| Error::from_reason(e.to_string()))?;
+    Ok(match rows.next() {
+        Some(Ok(v)) => v,
+        _ => None,
+    })
+}
+
+/// N-API: raw dispatch-selection read as `{"exists":bool,"column":string|null}` (read-only). The TS
+/// `getModelSelectionForDispatch` has THREE distinct outcomes the adapter must reproduce faithfully:
+/// throw when the row is missing (`exists=false`), return `undefined` when the column is the literal
+/// `"null"` string (follows-workspace), and throw on any other non-parseable value. `column` is the
+/// raw `model_selection` text (SQL NULL → `null`). The `get_model_selection_for_dispatch` parse path
+/// collapses "follows" and "corrupt", so this raw view is what lets the adapter keep that distinction.
+#[napi]
+pub fn automation_get_model_selection_column_json(
+    db_path: String,
+    automation_id: String,
+    workspace_key: Option<String>,
+) -> Result<String> {
+    let conn = open_readonly(&db_path)?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT model_selection FROM automations WHERE automation_id = ?1 \
+             AND (?2 IS NULL OR workspace_key = ?2)",
+        )
+        .map_err(|e| Error::from_reason(e.to_string()))?;
+    let mut rows = stmt
+        .query_map(rusqlite::params![automation_id, workspace_key], |r| {
+            r.get::<_, Option<String>>(0)
+        })
+        .map_err(|e| Error::from_reason(e.to_string()))?;
+    let obj = match rows.next() {
+        Some(Ok(col)) => serde_json::json!({ "exists": true, "column": col }),
+        _ => serde_json::json!({ "exists": false, "column": serde_json::Value::Null }),
+    };
+    serde_json::to_string(&obj).map_err(|e| Error::from_reason(e.to_string()))
+}
+
 /// N-API: `AutomationRepo.listRuns` (read-only) as JSON.
 #[napi]
 pub fn automation_list_runs_json(

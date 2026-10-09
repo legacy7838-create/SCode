@@ -25,7 +25,7 @@ const EXPECTED = [
   "automationCreateJson", "automationSetEnabledJson", "automationRestartJson", "automationClaimDueJson",
   "automationMarkDispatchedJson", "automationMarkDispatchFailedJson", "automationReleaseClaimJson",
   "automationReleaseManualClaimJson", "automationTouchManualClaimJson", "automationScheduledRunCountJson",
-  "automationHasTaskBindingJson", "automationModelSelectionForDispatchJson", "automationRunNowJson",
+  "automationHasTaskBindingJson", "automationGetBotDeliveryTargetJson", "automationGetModelSelectionColumnJson", "automationModelSelectionForDispatchJson", "automationRunNowJson",
   "automationClaimManualRunsJson", "automationSkipAndRescheduleJson", "automationMarkManualRunDispatchedJson",
   "automationListRunsJson", "automationGetRunJson", "automationDeleteRunJson", "automationPruneRunsJson",
   "automationEnsureRunClaimedJson", "automationUpsertRunClaimedJson", "automationFixRunModelSelectionJson",
