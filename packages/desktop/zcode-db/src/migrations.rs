@@ -586,6 +586,129 @@ fn run_migrations_inner(conn: &Connection) -> Result<(), String> {
     Ok(())
 }
 
+/// Port of `inspectTasksMigrationKind` (read-only ledger pre-check). Returns the migration kind
+/// (`"none"` fully applied, `"initialize"` empty DB, `"upgrade"` partial) and errors on a stored-vs-
+/// computed checksum mismatch. `table` name checks mirror the TS `sqlite_master` predicates.
+pub fn inspect_tasks_migration_kind(conn: &Connection) -> Result<&'static str, String> {
+    let has_ledger: bool = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='tasks_schema_migration'",
+            [],
+            |_| Ok(()),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?
+        .is_some();
+    let mut pending = false;
+    for (id, input) in migration_definitions() {
+        let row: Option<String> = if has_ledger {
+            conn.query_row(
+                "SELECT checksum FROM tasks_schema_migration WHERE id = ?1",
+                [id],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?
+        } else {
+            None
+        };
+        match row {
+            None => pending = true,
+            Some(stored) => {
+                if stored != checksum_of(&input) {
+                    return Err(format!("Task database migration checksum mismatch: {id}"));
+                }
+            }
+        }
+    }
+    if !pending {
+        return Ok("none");
+    }
+    let has_other_table: bool = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type='table' \
+             AND name NOT IN ('tasks_schema_migration','sqlite_sequence') LIMIT 1",
+            [],
+            |_| Ok(()),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?
+        .is_some();
+    Ok(if has_other_table {
+        "upgrade"
+    } else {
+        "initialize"
+    })
+}
+
+/// Apply the defined migrations assuming a transaction is ALREADY open by the caller and COMMIT at
+/// the end — the `transactionOpen: true` path (used by the bootstrap). Skips applied ids; errors on
+/// any checksum mismatch. The self-contained `run_tasks_database_migrations` wraps this with BEGIN.
+pub fn apply_migrations_and_commit(conn: &Connection) -> Result<(), String> {
+    run_migrations_inner(conn)?;
+    conn.execute("COMMIT", [])
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// True for a `SQLITE_BUSY` (primary code 5) failure — the retry condition in the lock acquire loop.
+fn is_sqlite_busy(err: &rusqlite::Error) -> bool {
+    match err {
+        rusqlite::Error::SqliteFailure(ffi, _) => (ffi.extended_code & 0xff) == 5,
+        _ => false,
+    }
+}
+
+/// Port of `startup.ts`'s `acquire` for a SQL statement: retry on `SQLITE_BUSY` every 100ms until
+/// the deadline, else propagate. Locks are normally free, so this returns on the first attempt.
+fn acquire_exec(conn: &Connection, sql: &str, deadline_ms: i64) -> Result<(), String> {
+    let deadline =
+        std::time::Instant::now() + std::time::Duration::from_millis(deadline_ms.max(0) as u64);
+    loop {
+        match conn.execute_batch(sql) {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                if !is_sqlite_busy(&e) {
+                    return Err(e.to_string());
+                }
+                if std::time::Instant::now() >= deadline {
+                    return Err("Task storage lock wait expired".to_string());
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+        }
+    }
+}
+
+/// Port of the schema-owning portion of `prepareTasksIndexStorage` (slice 16): create the parent dir,
+/// open RW/CREATE, set `busy_timeout`/`foreign_keys`, acquire WAL under lock-retry, `synchronous=NORMAL`,
+/// inspect the migration kind, then `BEGIN IMMEDIATE` + apply migrations + COMMIT. Returns the kind.
+///
+/// SCOPE: the TS function's post-migration `repo.ensureReady()` repair steps and the `prepared.js`
+/// markers are NOT included — they belong to the (not-yet-ported) `AutomationRepo`/`OffPeakTaskRepo`
+/// and are the caller's responsibility, not silently skipped here.
+pub fn bootstrap_tasks_index(path: &str, deadline_ms: i64) -> Result<&'static str, String> {
+    if let Some(parent) = std::path::Path::new(path).parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+    }
+    let conn = Connection::open_with_flags(
+        path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE | rusqlite::OpenFlags::SQLITE_OPEN_CREATE,
+    )
+    .map_err(|e| e.to_string())?;
+    conn.execute_batch("PRAGMA busy_timeout = 25; PRAGMA foreign_keys = ON;")
+        .map_err(|e| e.to_string())?;
+    acquire_exec(&conn, "PRAGMA journal_mode = WAL", deadline_ms)?;
+    conn.execute_batch("PRAGMA synchronous = NORMAL")
+        .map_err(|e| e.to_string())?;
+    let kind = inspect_tasks_migration_kind(&conn)?;
+    acquire_exec(&conn, "BEGIN IMMEDIATE", deadline_ms)?;
+    apply_migrations_and_commit(&conn)?;
+    Ok(kind)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -700,6 +823,50 @@ mod tests {
             None
         );
         assert_eq!(decode_legacy_selection(Some(""), Some("x"), None), None);
+    }
+
+    #[test]
+    fn inspect_reports_initialize_for_empty_db() {
+        let conn = Connection::open_in_memory().unwrap();
+        assert_eq!(inspect_tasks_migration_kind(&conn).unwrap(), "initialize");
+    }
+
+    #[test]
+    fn inspect_reports_upgrade_for_partial_and_none_for_applied() {
+        // A data table present but no ledger row → upgrade.
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE tasks (workspace_key TEXT);")
+            .unwrap();
+        assert_eq!(inspect_tasks_migration_kind(&conn).unwrap(), "upgrade");
+
+        // Fully applied → none.
+        let conn2 = Connection::open_in_memory().unwrap();
+        run_tasks_database_migrations(&conn2).unwrap();
+        assert_eq!(inspect_tasks_migration_kind(&conn2).unwrap(), "none");
+    }
+
+    #[test]
+    fn bootstrap_creates_wal_db_applies_migrations_and_reopen_is_none() {
+        let path = std::env::temp_dir().join("zcode-db-bootstrap-test-1.sqlite");
+        let _ = std::fs::remove_file(&path);
+        let path_str = path.to_str().unwrap();
+
+        let kind = bootstrap_tasks_index(path_str, 25).unwrap();
+        assert_eq!(kind, "initialize", "fresh file initializes");
+
+        // Reopen read-write and confirm the ledger applied, WAL on, and second pass is a no-op.
+        let conn = Connection::open(path_str).unwrap();
+        assert!(are_tasks_migrations_applied(&conn).unwrap());
+        let mode: String = conn
+            .query_row("PRAGMA journal_mode", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(mode.to_lowercase(), "wal");
+        assert_eq!(inspect_tasks_migration_kind(&conn).unwrap(), "none");
+        drop(conn);
+        // Re-bootstrap an already-good DB: kind none, migrations skip, still applied.
+        assert_eq!(bootstrap_tasks_index(path_str, 25).unwrap(), "none");
+
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
