@@ -29,6 +29,7 @@ import type { IServiceAccessor } from "@zcode/services";
 // Electron has been removed from this project; Tauri is the only desktop runtime. The renderer
 // installs the Tauri platform factory unconditionally.
 import { createTauriPlatform } from "./tauriPlatformFactory.js";
+import { connectTauriHost } from "./tauriHostConnection.js";
 import { startPerformanceTimelineCleanup } from "./performanceTimelineCleanup.js";
 import { buildRemoteWorkspaceSessionServices } from "./remoteWorkspaceSessionServices.js";
 import {
@@ -290,8 +291,12 @@ function handleServicePortMessage(event: MessageEvent): void {
 }
 
 function initializeBusinessRoot(port: MessagePort): void {
+  initializeBusinessRootWithServices(connectViaMessagePort(port));
+}
+
+function initializeBusinessRootWithServices(services: IServiceAccessor): void {
+  if (appInitialized) return;
   appInitialized = true;
-  const services = connectViaMessagePort(port);
   baseServicesForRemoteSessions = services;
   registerBaseWorkspaceServices(services);
   flushPendingRemoteWorkspaceServicePorts();
@@ -328,10 +333,29 @@ function initializeBusinessRoot(port: MessagePort): void {
   );
 }
 
+/**
+ * Tauri-only desktop boot: acquire the live service accessor by connecting to the loopback Host
+ * sidecar over WebSocket. The Electron preload MessagePort no longer exists, so this replaces the old
+ * `ServicePort` postMessage handoff. The Host defers the RPC Initialize until its DB+services are
+ * ready, so awaiting `connectTauriHost()` also awaits startup — standing in for the removed
+ * `DatabaseStartupState` relay.
+ */
+async function connectTauriBackendAndEnter(): Promise<void> {
+  try {
+    const services = await connectTauriHost();
+    initializeBusinessRootWithServices(services);
+  } catch (error) {
+    // Surface a backend-connect failure to the webview console / global error handler.
+    setTimeout(() => {
+      throw error;
+    }, 0);
+  }
+}
+
 window.addEventListener("message", handleServicePortMessage);
 if (windowKind !== "update-status") {
   renderDatabaseStartup();
-  sendStartupControl({ action: "snapshot" });
+  void connectTauriBackendAndEnter();
 }
 
 if (windowKind === "update-status") {
