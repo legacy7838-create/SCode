@@ -79,7 +79,7 @@ try {
   // Rust side (bootstrap an empty file, then the same sync sequence; fixed `now` for grouping)
   const kind = addon.bootstrapTasksIndex(DB_RS, 25);
   if (kind !== "initialize") { console.log(`rust bootstrap kind=${kind} (expected initialize)`); }
-  for (const m of seq) addon.syncTaskMetaJson(DB_RS, WS, JSON.stringify(m), JSON.stringify({ titleOverridden: m.titleOverridden ? true : undefined }), 5000);
+  for (const m of seq) addon.syncTaskMetaJson(DB_RS, WS, JSON.stringify(m), JSON.stringify({ titleOverridden: m.titleOverridden ? true : undefined }), null, 5000);
   addon.updateTaskStateJson(DB_RS, WS, TASK, JSON.stringify(updPatch));
   addon.clearTaskUnreadJson(DB_RS, WS, TASK, 5);
 

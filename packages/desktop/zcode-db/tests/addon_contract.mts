@@ -16,7 +16,7 @@ const EXPECTED = [
   "tasksCount", "listRecentTasks", "listTasksByWorkspace", "readTaskMetaJson", "getTaskMetaJson",
   "listTaskMetasJson", "listTaskMetasFilteredJson", "queryTaskListJson", "listDeletedTaskIdsJson",
   "listSessionsByAutomationJson", "hasGroupedWorkspaceBootstrapRunJson",
-  "syncTaskMetaJson", "syncTaskMetaAtGroupedTopJson", "updateTaskStateJson", "clearTaskUnreadJson",
+  "seedTaskMetaIfMissingJson", "syncTaskMetaJson", "syncTaskMetaAtGroupedTopJson", "updateTaskStateJson", "clearTaskUnreadJson",
   "applyAgentPatchJson", "deleteArchivedTaskJson", "archiveStaleTasksJson",
   "groupingCreateTaskGroupJson", "groupingRenameTaskGroupJson", "groupingUpdateTaskGroupColorJson",
   "groupingDeleteTaskGroupJson", "groupingUpsertTopOrderJson", "groupingInitializeAtTopJson",

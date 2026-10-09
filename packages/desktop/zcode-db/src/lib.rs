@@ -1709,6 +1709,22 @@ pub fn sync_task_meta_at_grouped_top_json(
         .map_err(|e| Error::from_reason(e.to_string()))
 }
 
+/// N-API: `TaskIndexRepo.seedTaskMetaIfMissing` (read-write). Returns the existing projection when
+/// the row is present, else the newly written one. `incoming_json` = `TaskMeta`.
+#[napi]
+pub fn seed_task_meta_if_missing_json(
+    db_path: String,
+    workspace_key: String,
+    incoming_json: String,
+) -> Result<String> {
+    let incoming: TaskMeta =
+        serde_json::from_str(&incoming_json).map_err(|e| Error::from_reason(e.to_string()))?;
+    let conn = open_readwrite(&db_path)?;
+    let meta =
+        seed_task_meta_if_missing(&conn, &workspace_key, &incoming).map_err(|e| Error::from_reason(e.to_string()))?;
+    serde_json::to_string(&meta).map_err(|e| Error::from_reason(e.to_string()))
+}
+
 /// N-API write boundary: run the full `syncTaskMeta` write path against a read-write DB, taking the
 /// incoming meta + sync params as JSON and returning the persisted projection as JSON. This is the
 /// callable surface a TS adapter replaces `node:sqlite` with. `now` is a JS number (epoch ms).
@@ -1718,6 +1734,7 @@ pub fn sync_task_meta_json(
     workspace_key: String,
     incoming_json: String,
     params_json: String,
+    searchable_text: Option<String>,
     now: f64,
 ) -> Result<String> {
     let incoming: TaskMeta =
@@ -1726,7 +1743,7 @@ pub fn sync_task_meta_json(
         serde_json::from_str(&params_json).map_err(|e| Error::from_reason(e.to_string()))?;
     let conn = open_readwrite(&db_path)?;
     let persisted =
-        sync_task_meta_with_grouping(&conn, &workspace_key, &incoming, &params, None, now as i64)
+        sync_task_meta_with_grouping(&conn, &workspace_key, &incoming, &params, searchable_text, now as i64)
             .map_err(|e| Error::from_reason(e.to_string()))?;
     serde_json::to_string(&persisted).map_err(|e| Error::from_reason(e.to_string()))
 }
@@ -2033,7 +2050,10 @@ pub fn get_task_meta_json(
     let conn = open_readonly(&db_path)?;
     let row = get_task_index_row(&conn, &workspace_key, &task_id)
         .map_err(|e| Error::from_reason(e.to_string()))?;
+    // `getTaskMeta` returns null for a deleted row (the CLI seed path can re-materialize one), so
+    // filter the tombstone here rather than exposing a `deleted` flag the meta projection lacks.
     Ok(row
+        .filter(|r| r.deleted != 1)
         .as_ref()
         .map(row_to_meta)
         .map(|m| serde_json::to_string(&m).unwrap_or_default()))

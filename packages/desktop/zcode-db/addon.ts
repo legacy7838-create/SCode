@@ -38,7 +38,8 @@ export interface DbAddon {
   hasGroupedWorkspaceBootstrapRunJson(dbPath: string): boolean;
 
   // ---- task index: writes ----
-  syncTaskMetaJson(dbPath: string, workspaceKey: string, incomingJson: string, paramsJson: string, now: number): string;
+  syncTaskMetaJson(dbPath: string, workspaceKey: string, incomingJson: string, paramsJson: string, searchableText: string | null, now: number): string;
+  seedTaskMetaIfMissingJson(dbPath: string, workspaceKey: string, incomingJson: string): string;
   syncTaskMetaAtGroupedTopJson(dbPath: string, workspaceKey: string, incomingJson: string, paramsJson: string, searchableText: string | null, now: number): string;
   updateTaskStateJson(dbPath: string, workspaceKey: string, taskId: string, patchJson: string): string | null;
   clearTaskUnreadJson(dbPath: string, workspaceKey: string, taskId: string, expectedUnreadAt: number): string;
