@@ -13,9 +13,10 @@
  */
 import { once } from "node:events";
 import { WebSocketServer, type WebSocket as NodeWebSocket } from "ws";
-import { SocketProtocol, ChannelServer, ProxyChannel, wrapWebSocket } from "@zcode/rpc";
+import { ProxyChannel } from "@zcode/rpc";
 import { ISubagentsService } from "@zcode/services";
 import { connectViaWebSocket } from "@zcode/client";
+import { createWsChannelServer } from "../../../src/host/wsServe.js";
 
 /** A live host fixture: an authenticated client accessor plus a hard teardown. */
 export interface WsRpcFixture {
@@ -56,11 +57,9 @@ export async function startWsRpcHost(service: Record<string, unknown>): Promise<
   wss.on("connection", (ws: NodeWebSocket) => {
     connections.add(ws);
     ws.on("close", () => connections.delete(ws));
-    const socket = wrapWebSocket(ws);
-    const protocol = new SocketProtocol(socket);
-    const server = new ChannelServer(protocol, "layer-a");
-    server.registerChannel(ISubagentsService.channelName, ProxyChannel.fromService(service));
-    socket.onClose(() => server.dispose());
+    // Exercises the production Host WS serving path (createWsChannelServer), not a test-only copy.
+    const handle = createWsChannelServer(ws, { name: "layer-a" });
+    handle.server.registerChannel(ISubagentsService.channelName, ProxyChannel.fromService(service));
   });
 
   const client = await connectViaWebSocket(`ws://127.0.0.1:${port}`, {
