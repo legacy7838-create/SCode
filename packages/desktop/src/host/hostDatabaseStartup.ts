@@ -1,6 +1,5 @@
 import {
   getTasksIndexDatabasePath,
-  markTasksStoragePrepared,
   resolveZCodeAgentSpawnCwd,
 } from "@zcode/services/storage-startup";
 import type { DatabaseStartupState } from "@zcode/shared";
@@ -53,7 +52,6 @@ export function createHostDatabaseStartup(options: {
             report("preparing_host_storage", phase, { databaseId: "tasks-index", migration }),
           abort.signal,
         );
-        markTasksStoragePrepared(tasksPath);
         report("preparing_session_storage", "checking");
         const candidates = options.workingDirectories?.length
           ? options.workingDirectories

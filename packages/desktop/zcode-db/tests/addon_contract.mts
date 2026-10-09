@@ -57,7 +57,7 @@ try {
   if (typeof kind !== "string") fail(`bootstrap returned ${typeof kind}`);
   const ws = "/contract/ws";
   const meta = { taskId: "c1", traceId: "t", title: "Hello", workspacePath: ws, createdAt: 100, updatedAt: 200, mode: "build", provider: "glm" };
-  const synced = JSON.parse(addon.syncTaskMetaJson(db, ws, JSON.stringify(meta), JSON.stringify({}), 500));
+  const synced = JSON.parse(addon.syncTaskMetaJson(db, ws, JSON.stringify(meta), JSON.stringify({}), null, 500));
   if (synced.title !== "Hello") fail(`sync returned title=${synced.title}`);
   const read = JSON.parse(addon.getTaskMetaJson(db, ws, "c1") ?? "null");
   if (!read || read.taskId !== "c1") fail("getTaskMetaJson roundtrip mismatch");
