@@ -212,6 +212,19 @@ pub struct TaskMeta {
     pub target: Option<serde_json::Value>,
 }
 
+/// Deserialize a `Nullable`/optional JSON passthrough field so key PRESENCE is preserved: an
+/// explicit `"target": null` becomes `Some(Value::Null)` (serde's normal `Option<T>` would collapse
+/// null→None and drop it, diverging from zod which keeps a nullable field's explicit null).
+fn some_json_value<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<serde_json::Value>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize;
+    Ok(Some(serde_json::Value::deserialize(deserializer)?))
+}
+
 /// Un-validated `meta_json` capture. Required schema fields are `Option` so absence is detectable
 /// (an `Option` field is `None` for both a missing key and a JSON `null`, and zod rejects both for
 /// these scalars). Optional scalars default to `None`; serde ignores unknown keys (zod-strip parity).
@@ -247,11 +260,11 @@ struct MetaInput {
     unread_at: Option<i64>,
     #[serde(default)]
     status: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "some_json_value")]
     last_error: Option<serde_json::Value>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "some_json_value")]
     change_summary: Option<serde_json::Value>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "some_json_value")]
     target: Option<serde_json::Value>,
 }
 
@@ -391,6 +404,13 @@ fn gate_valid_meta(
         return None;
     }
     if m.runtime_epoch.is_some_and(|e| e < 0) || m.unread_at.is_some_and(|u| u < 0) {
+        return None;
+    }
+    // `lastError`/`changeSummary` are optional but NOT nullable — a present `null` fails zod and
+    // forces the column fallback. `target` IS nullable, so its explicit null is kept below.
+    if matches!(m.last_error, Some(serde_json::Value::Null))
+        || matches!(m.change_summary, Some(serde_json::Value::Null))
+    {
         return None;
     }
 
@@ -1971,6 +1991,25 @@ mod tests {
         // '{}' parses but lacks required fields → TS safeParse fails → fallback.
         let m = row_to_meta(&row("{}"));
         assert_eq!(m.title, "col-title");
+    }
+
+    #[test]
+    fn valid_meta_preserves_explicit_null_target_but_rejects_null_last_error() {
+        // `target` is nullable → an explicit null survives (TS keeps `target: null`).
+        let m = row_to_meta(&row(
+            r#"{"taskId":"t1","traceId":"z1","title":"hey","workspacePath":"/p","createdAt":5,"updatedAt":6,"mode":"build","target":null}"#,
+        ));
+        assert_eq!(m.created_at, 5, "valid path (target null is allowed)");
+        assert_eq!(m.target, Some(serde_json::Value::Null));
+        // `lastError` is optional-but-not-nullable → an explicit null rejects the whole meta.
+        let f = row_to_meta(&row(
+            r#"{"taskId":"t1","traceId":"z1","title":"hey","workspacePath":"/p","createdAt":5,"updatedAt":6,"mode":"build","lastError":null}"#,
+        ));
+        assert_eq!(
+            f.created_at, 1,
+            "null lastError → invalid → column fallback"
+        );
+        assert_eq!(f.title, "col-title");
     }
 
     #[test]
