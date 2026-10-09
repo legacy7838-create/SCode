@@ -1897,6 +1897,14 @@ pub fn message_with_parts_json(db_path: String, session_id: String, message_id: 
     serde_json::to_string(&value).map_err(|e| Error::from_reason(e.to_string()))
 }
 
+/// N-API: `readTarget` port. Returns the `SessionGoal` JSON or `"null"`.
+#[napi]
+pub fn read_target_json(db_path: String, session_id: String) -> Result<String> {
+    let conn = open_readonly(&db_path)?;
+    let value = session_store::read_target(&conn, &session_id).map_err(Error::from_reason)?;
+    serde_json::to_string(&value).map_err(|e| Error::from_reason(e.to_string()))
+}
+
 /// Port of `normalizeSearchSnippetText`: collapse whitespace runs to a single space, trim, cap at
 /// `SNIPPET_MAX_CHARS`. `split_whitespace` + join matches JS `.replace(/\s+/g, " ").trim()`.
 fn normalize_search_snippet_text(text: &str) -> String {

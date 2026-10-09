@@ -164,6 +164,39 @@ pub fn get_project_permission_mode(conn: &Connection, project_id: &str) -> Resul
     }
 }
 
+/// Port of `readTarget`/`readSessionTarget`: the `session_target` row for a session projected to
+/// `SessionGoal` (`decodeTargetRow`) — all columns direct, nulls kept as JSON null, fixed key order;
+/// `null` when no row.
+pub fn read_target(conn: &Connection, session_id: &str) -> Result<Value, String> {
+    let sql = "select session_id, target_id, objective, summary_title, status, token_budget, \
+        tokens_used, time_used_seconds, active_input_id, active_run_started_at, \
+        active_run_last_seen_at, time_created, time_updated \
+        from session_target where session_id = ?1";
+    let row = conn
+        .query_row(sql, [session_id], |r| {
+            Ok(json!({
+                "sessionID": r.get::<_, String>(0)?,
+                "targetID": r.get::<_, String>(1)?,
+                "objective": r.get::<_, String>(2)?,
+                "summaryTitle": r.get::<_, Option<String>>(3)?,
+                "status": r.get::<_, String>(4)?,
+                "tokenBudget": r.get::<_, Option<i64>>(5)?,
+                "tokensUsed": r.get::<_, i64>(6)?,
+                "timeUsedSeconds": r.get::<_, i64>(7)?,
+                "activeInputId": r.get::<_, Option<String>>(8)?,
+                "activeRunStartedAtMs": r.get::<_, Option<i64>>(9)?,
+                "activeRunLastSeenAtMs": r.get::<_, Option<i64>>(10)?,
+                "time": {
+                    "created": r.get::<_, i64>(11)?,
+                    "updated": r.get::<_, i64>(12)?,
+                },
+            }))
+        })
+        .optional()
+        .map_err(|e| e.to_string())?;
+    Ok(row.unwrap_or(Value::Null))
+}
+
 /// Port of `listSessionInputs`: all (or one status) for a session, ordered by `admitted_sequence`.
 pub fn list_session_inputs(
     conn: &Connection,
