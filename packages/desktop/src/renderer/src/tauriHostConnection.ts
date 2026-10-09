@@ -53,11 +53,18 @@ export function hostWsUrl(port: number): string {
  * Discover the running Host sidecar's port and connect the renderer to it over the reused WS-RPC
  * transport, returning the service accessor.
  *
+ * Dev bridge: when `VITE_ZCODE_HOST_WS_URL` is set (the `dev:tauri` flow starts the Host on a fixed
+ * loopback port), connect to it directly and skip the spawn/discovery command. In a packaged build the
+ * var is empty and the Rust discovery command path is used.
+ *
  * @param deps - Injectable port-discovery + connect functions; defaults to the real command + client.
  * @returns The `@zcode/client` service accessor (the RPC surface the platform adapter consumes).
  */
 export function connectTauriHost(
   deps: TauriHostConnectionDeps = realDeps,
 ): Promise<Awaited<ReturnType<typeof connectViaWebSocket>>> {
+  const env = import.meta.env as unknown as { VITE_ZCODE_HOST_WS_URL?: string } | undefined;
+  const devUrl = env?.VITE_ZCODE_HOST_WS_URL?.trim();
+  if (devUrl) return deps.connect(devUrl);
   return deps.discoverPort().then((port) => deps.connect(hostWsUrl(port)));
 }

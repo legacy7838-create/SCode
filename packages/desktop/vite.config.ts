@@ -4,10 +4,7 @@ import { dirname, extname, isAbsolute, resolve } from "node:path";
 import { defineConfig, loadEnv, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
-import {
-  resolveZCodeEndpointOrigin,
-  pickProductEndpointEnv,
-} from "@zcode/shared/zcodeEndpoint";
+import { resolveZCodeEndpointOrigin, pickProductEndpointEnv } from "@zcode/shared/zcodeEndpoint";
 import { pdfJsCMapsPlugin } from "../ui/vite/pdfJsCMapsPlugin.js";
 import { getBuildMetadata } from "./scripts/build-metadata.mjs";
 import { resolveDesktopProductFlavor } from "./scripts/desktop-product-identity.mjs";
@@ -34,9 +31,7 @@ interface IstanbulLibInstrument {
   }): IstanbulInstrumenter;
 }
 
-const { createInstrumenter } = desktopRequire(
-  "istanbul-lib-instrument",
-) as IstanbulLibInstrument;
+const { createInstrumenter } = desktopRequire("istanbul-lib-instrument") as IstanbulLibInstrument;
 
 function resolveInstalledPackageRoot(packageName: string): string {
   return dirname(desktopRequire.resolve(`${packageName}/package.json`));
@@ -84,9 +79,7 @@ function createE2EUIRendererCoveragePlugin(repoRoot: string): Plugin {
         return null;
       }
       const filename = stripViteRequestQuery(id);
-      const absoluteFilename = isAbsolute(filename)
-        ? filename
-        : resolve(repoRoot, filename);
+      const absoluteFilename = isAbsolute(filename) ? filename : resolve(repoRoot, filename);
       const normalizedFilename = normalizePathForVite(absoluteFilename);
       if (!shouldInstrumentE2EUISource(normalizedFilename, sourceRoots)) {
         return null;
@@ -108,11 +101,7 @@ function createE2EUIRendererCoveragePlugin(repoRoot: string): Plugin {
       // 只读取页面 __coverage__ 会让从未加载的 lazy chunk 消失，分母被缩小。
       // coverage build 将完整 renderer graph 的零命中 map 留给 suite reporter 合并。
       mkdirSync(dirname(baselinePath), { recursive: true });
-      writeFileSync(
-        baselinePath,
-        `${JSON.stringify(baselineCoverage, null, 2)}\n`,
-        "utf-8",
-      );
+      writeFileSync(baselinePath, `${JSON.stringify(baselineCoverage, null, 2)}\n`, "utf-8");
     },
   };
 }
@@ -128,16 +117,7 @@ function shouldInstrumentE2EUISource(filename: string, sourceRoots: string[]) {
 }
 
 function isCoverageSourceFile(filename: string) {
-  return [
-    ".cts",
-    ".cjs",
-    ".js",
-    ".jsx",
-    ".mjs",
-    ".mts",
-    ".ts",
-    ".tsx",
-  ].includes(extname(filename));
+  return [".cts", ".cjs", ".js", ".jsx", ".mjs", ".mts", ".ts", ".tsx"].includes(extname(filename));
 }
 
 function isDeclarationFile(filename: string) {
@@ -174,20 +154,15 @@ export default defineConfig(({ mode }) => {
   const e2eCoverageEnabled =
     env.ZCODE_E2E_COVERAGE === "1" || process.env.ZCODE_E2E_COVERAGE === "1";
   const e2eStoreBridgeEnabled =
-    env.VITE_ZCODE_E2E_STORE_BRIDGE === "1" ||
-    process.env.VITE_ZCODE_E2E_STORE_BRIDGE === "1";
+    env.VITE_ZCODE_E2E_STORE_BRIDGE === "1" || process.env.VITE_ZCODE_E2E_STORE_BRIDGE === "1";
   const zcodeEndpointOrigin = resolveZCodeEndpointOrigin({
     env: zcodeEnv,
     envBaseOrigin: env.ZCODE_BASE_URL ?? env.ZCODE_ENDPOINT_ORIGIN,
   });
   const codingPlanWebviewOrigin =
-    env.VITE_CODING_PLAN_WEBVIEW_ORIGIN ??
-    process.env.VITE_CODING_PLAN_WEBVIEW_ORIGIN ??
-    "";
+    env.VITE_CODING_PLAN_WEBVIEW_ORIGIN ?? process.env.VITE_CODING_PLAN_WEBVIEW_ORIGIN ?? "";
   const plugins = [
-    ...(e2eCoverageEnabled
-      ? [createE2EUIRendererCoveragePlugin(repoRoot)]
-      : []),
+    ...(e2eCoverageEnabled ? [createE2EUIRendererCoveragePlugin(repoRoot)] : []),
     pdfJsCMapsPlugin(),
     react(),
     tailwindcss(),
@@ -207,10 +182,7 @@ export default defineConfig(({ mode }) => {
         // Recharts 通过 d3-shape 读取 d3-path 的 Path 导出；hoisted node_modules
         // 里可能残留 d3-shape/node_modules/d3-path@1.x，Vite 预构建会优先命中旧包并报 Missing export。
         // 这里把 d3-path 固定到根部 3.x 入口，确保桌面端依赖优化和运行时解析一致。
-        "d3-path": resolve(
-          __dirname,
-          "../../node_modules/d3-path/src/index.js",
-        ),
+        "d3-path": resolve(__dirname, "../../node_modules/d3-path/src/index.js"),
       },
       dedupe: ["react", "react-dom", "lucide-react"],
     },
@@ -223,8 +195,7 @@ export default defineConfig(({ mode }) => {
       // localhost:5174, so this is behavior-neutral there.
       hmr: { protocol: "ws", host: "localhost", port: 5174 },
       // Native FS events work on Linux/macOS/Windows; polling is opt-in via env for network mounts.
-      watch:
-        process.env.VITE_USE_POLLING === "1" ? { usePolling: true } : undefined,
+      watch: process.env.VITE_USE_POLLING === "1" ? { usePolling: true } : undefined,
     },
     define: {
       __ZCODE_ENDPOINT_ENV__: JSON.stringify(pickProductEndpointEnv(env)),
@@ -233,21 +204,20 @@ export default defineConfig(({ mode }) => {
       __ZCODE_BUILD_TIME__: JSON.stringify(buildMetadata.buildTime),
       __ZCODE_ENV__: JSON.stringify(zcodeEnv),
       __ZCODE_PRODUCT_FLAVOR__: JSON.stringify(zcodeProductFlavor),
-      __ZCODE_LOCAL_DEVELOPMENT_RUNTIME__: JSON.stringify(
-        mode !== "production",
-      ),
-      "import.meta.env.VITE_ZCODE_BASE_URL":
-        JSON.stringify(zcodeEndpointOrigin),
+      __ZCODE_LOCAL_DEVELOPMENT_RUNTIME__: JSON.stringify(mode !== "production"),
+      "import.meta.env.VITE_ZCODE_BASE_URL": JSON.stringify(zcodeEndpointOrigin),
       // 兼容旧 renderer 读取名；新代码统一读 VITE_ZCODE_BASE_URL。
-      "import.meta.env.VITE_ZCODE_ENDPOINT_ORIGIN":
-        JSON.stringify(zcodeEndpointOrigin),
-      "import.meta.env.VITE_CODING_PLAN_WEBVIEW_ORIGIN": JSON.stringify(
-        codingPlanWebviewOrigin,
+      "import.meta.env.VITE_ZCODE_ENDPOINT_ORIGIN": JSON.stringify(zcodeEndpointOrigin),
+      "import.meta.env.VITE_CODING_PLAN_WEBVIEW_ORIGIN": JSON.stringify(codingPlanWebviewOrigin),
+      // Dev bridge: the standalone Host sidecar (scripts/dev-host.mjs) listens on this loopback port;
+      // the renderer connects here instead of the packaged externalBin. Empty in production builds.
+      "import.meta.env.VITE_ZCODE_HOST_WS_URL": JSON.stringify(
+        env.VITE_ZCODE_HOST_WS_URL ??
+          process.env.VITE_ZCODE_HOST_WS_URL ??
+          (mode !== "production" ? "ws://127.0.0.1:5199" : ""),
       ),
       "import.meta.env.VITE_REWARDS_WEBVIEW_ORIGIN": JSON.stringify(
-        env.VITE_REWARDS_WEBVIEW_ORIGIN ??
-          process.env.VITE_REWARDS_WEBVIEW_ORIGIN ??
-          "",
+        env.VITE_REWARDS_WEBVIEW_ORIGIN ?? process.env.VITE_REWARDS_WEBVIEW_ORIGIN ?? "",
       ),
       // E2E store bridge 只能由 WDIO 专用变量打开，避免把 ZCODE_ENV=test 产品环境误当成测试运行态。
       "import.meta.env.VITE_ZCODE_E2E_STORE_BRIDGE": JSON.stringify(
@@ -274,10 +244,7 @@ export default defineConfig(({ mode }) => {
         // 多入口：主窗口 + 进程监控。（CUA 权限浮窗已随浏览器插件移除，勿再引用其 html 入口。）
         input: {
           index: resolve(__dirname, "src/renderer/index.html"),
-          "resource-manager": resolve(
-            __dirname,
-            "src/renderer/resource-manager.html",
-          ),
+          "resource-manager": resolve(__dirname, "src/renderer/resource-manager.html"),
         },
       },
     },

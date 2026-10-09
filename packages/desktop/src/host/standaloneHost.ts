@@ -13,6 +13,9 @@
  * resource telemetry, network-policy, feedback-via-main) are not yet re-homed; they degrade to no-ops /
  * local logs here and are tracked as Phase 3 surfaces. See `tauri-port/PORTING.md`.
  */
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import {
   createHostApiNetworkTransport,
   createLocalServices,
@@ -43,12 +46,6 @@ export interface StandaloneHostInit {
 export function readStandaloneHostInitFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): StandaloneHostInit {
-  const providerConfigFilePath = env["ZCODE_BUILTIN_PROVIDER_CONFIG_FILE_PATH"]?.trim();
-  if (!providerConfigFilePath) {
-    throw new Error(
-      "ZCODE_BUILTIN_PROVIDER_CONFIG_FILE_PATH is required for the standalone Host sidecar",
-    );
-  }
   const wsPortRaw = env["ZCODE_WS_PORT"]?.trim();
   const wsPort = wsPortRaw ? Number(wsPortRaw) : 0;
   if (!Number.isInteger(wsPort) || wsPort < 0 || wsPort > 65535) {
@@ -61,11 +58,27 @@ export function readStandaloneHostInitFromEnv(
     databaseStartupId: env["ZCODE_DB_STARTUP_ID"]?.trim() || undefined,
     workspacePath: env["ZCODE_WORKSPACE_PATH"]?.trim() || undefined,
     deviceMid: env["ZCODE_DEVICE_MID"]?.trim() || undefined,
-    providerConfigFilePath,
+    providerConfigFilePath: ensureProviderConfigFile(
+      env["ZCODE_BUILTIN_PROVIDER_CONFIG_FILE_PATH"],
+    ),
     agentSpawnFallbackCwd: env["ZCODE_AGENT_SPAWN_FALLBACK_CWD"]?.trim() || undefined,
     runtimeProcessEnvPatch: patch,
     wsPort,
   };
+}
+
+/**
+ * Resolve the built-in provider config path, defaulting to a writable dev location and creating an
+ * empty config if absent. Real provider-config management is a Phase-3 surface; this keeps the
+ * standalone dev sidecar bootable without the (deleted) Electron main supplying the path.
+ */
+function ensureProviderConfigFile(configured: string | undefined): string {
+  const path = configured?.trim() || join(tmpdir(), "zcode-host-dev", "providers.json");
+  if (!existsSync(path)) {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, JSON.stringify({ providers: {} }), "utf8");
+  }
+  return path;
 }
 
 /**
