@@ -16,15 +16,37 @@ use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use rusqlite::{Connection, OpenFlags};
 
+/// Busy timeout injected on every addon connection. The flipped repos open a fresh short-lived
+/// connection per call (the addon is stateless), so without this a concurrent writer would return
+/// `SQLITE_BUSY` immediately instead of waiting. Matches the TS shared-connection `busy_timeout`.
+pub(crate) const DB_BUSY_TIMEOUT_MS: i64 = 5000;
+
+/// `busy_timeout` alone on a read connection; WAL readers rarely block, but a small wait makes the
+/// stateless-connection model robust under concurrent writers.
 fn open_readonly(path: &str) -> Result<Connection> {
-    Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
-        .map_err(|e| Error::from_reason(format!("open {path}: {e}")))
+    let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|e| Error::from_reason(format!("open {path}: {e}")))?;
+    conn
+        .busy_timeout(std::time::Duration::from_millis(DB_BUSY_TIMEOUT_MS as u64))
+        .map_err(|e| Error::from_reason(format!("busy_timeout {path}: {e}")))?;
+    Ok(conn)
 }
 
-/// Open for read-write (no create) — the write-path boundary for the N-API wrappers.
+/// Open for read-write (no create) — the write-path boundary for the N-API wrappers. Applies the
+/// same per-connection PRAGMAs the TS shared connection set (`foreign_keys`, WAL, synchronous) so
+/// FK-cascade writes and the busy-wait behave identically to the `node:sqlite` path.
 fn open_readwrite(path: &str) -> Result<Connection> {
-    Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE)
-        .map_err(|e| Error::from_reason(format!("open rw {path}: {e}")))
+    let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE)
+        .map_err(|e| Error::from_reason(format!("open rw {path}: {e}")))?;
+    let apply = || -> std::result::Result<(), rusqlite::Error> {
+        conn.busy_timeout(std::time::Duration::from_millis(DB_BUSY_TIMEOUT_MS as u64))?;
+        conn.pragma_update(None, "foreign_keys", "ON")?;
+        conn.pragma_update(None, "journal_mode", "WAL")?;
+        conn.pragma_update(None, "synchronous", "NORMAL")?;
+        Ok(())
+    };
+    apply().map_err(|e| Error::from_reason(format!("pragmas {path}: {e}")))?;
+    Ok(conn)
 }
 
 /// Count rows in `tasks`.
