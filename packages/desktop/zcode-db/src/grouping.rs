@@ -49,7 +49,7 @@ pub struct TaskGroup {
 }
 
 /// Port of `rowToTaskGroup`: an invalid stored color falls back to the default (`gray`).
-fn row_to_task_group(
+pub(crate) fn row_to_task_group(
     group_id: String,
     title: String,
     color: String,

@@ -7,6 +7,7 @@ pub mod automation;
 pub mod automation_write;
 pub mod cron_engine;
 pub mod grouping;
+pub mod grouped_view;
 pub mod migrations;
 pub mod offpeak;
 pub mod offpeak_write;
@@ -500,7 +501,7 @@ pub fn row_to_meta(row: &TaskIndexRow) -> TaskMeta {
 /// Map a `TaskIndexRow` column projection (positional, matching the `listTaskMetas` SELECT) onto
 /// a `TaskIndexRow`. Nullable columns fall back to the TS-equivalent defaults so `row_to_meta` sees
 /// a complete row. Shared by the list query and the single-row re-read after a write.
-fn map_task_index_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<TaskIndexRow> {
+pub(crate) fn map_task_index_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<TaskIndexRow> {
     Ok(TaskIndexRow {
         workspace_key: r.get(0)?,
         workspace_path: r.get::<_, Option<String>>(1)?.unwrap_or_default(),
@@ -532,7 +533,7 @@ fn map_task_index_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<TaskIndexRow> {
     })
 }
 
-const TASK_INDEX_ROW_COLUMNS: &str =
+pub(crate) const TASK_INDEX_ROW_COLUMNS: &str =
     "workspace_key, workspace_path, workspace_identity, task_id, title, task_status, provider, \
      mode, model, migration_source, forked_from_task_id, cron_automation_id, off_peak_task_id, \
      created_at, updated_at, unread_at, title_overridden, meta_json, pinned, archived, deleted, \
@@ -1545,8 +1546,8 @@ pub fn ensure_system_group_membership(
 }
 
 /// System-group ids — mirror the shared `CRON_DEFAULT_GROUP_ID` / `OFF_PEAK_DEFAULT_GROUP_ID`.
-const CRON_DEFAULT_GROUP_ID: &str = "zcode-default-group-cron";
-const OFF_PEAK_DEFAULT_GROUP_ID: &str = "zcode-default-group-off-peak";
+pub(crate) const CRON_DEFAULT_GROUP_ID: &str = "zcode-default-group-cron";
+pub(crate) const OFF_PEAK_DEFAULT_GROUP_ID: &str = "zcode-default-group-off-peak";
 
 /// Port of `ensureCronGroupMembership` — a cron session joins the fixed cron group.
 pub fn ensure_cron_group_membership(
@@ -3133,6 +3134,32 @@ pub fn grouping_query_view_structure_json(db_path: String, scopes_json: String) 
     let structure = grouping::query_grouped_task_view_structure(&conn, &scopes)
         .map_err(Error::from_reason)?;
     serde_json::to_string(&structure).map_err(|e| Error::from_reason(e.to_string()))
+}
+
+/// N-API: `TaskIndexRepo.queryGroupedTaskView` (READ-WRITE — it runs the one-shot workspace-group
+/// bootstrap and the two lazy order normalizations, matching the TS). `scopes_json` = scope array;
+/// `include_all` = across all workspaces; `provider` optional runtime filter; `now` injected clock.
+/// Returns `{ nodes: [...] }` JSON.
+#[napi]
+pub fn grouping_query_view_json(
+    db_path: String,
+    scopes_json: String,
+    include_all: bool,
+    provider: Option<String>,
+    now: f64,
+) -> Result<String> {
+    let scopes: Vec<WorkspaceScope> =
+        serde_json::from_str(&scopes_json).map_err(|e| Error::from_reason(e.to_string()))?;
+    let conn = open_readwrite(&db_path)?;
+    let view = grouped_view::query_grouped_task_view(
+        &conn,
+        &scopes,
+        include_all,
+        provider.as_deref(),
+        now as i64,
+    )
+    .map_err(Error::from_reason)?;
+    serde_json::to_string(&view).map_err(|e| Error::from_reason(e.to_string()))
 }
 
 /// N-API: return the raw `meta_json` string for one task (parse it in Rust via `row_to_meta`).
