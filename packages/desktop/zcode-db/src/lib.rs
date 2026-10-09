@@ -12,6 +12,7 @@ pub mod migrations;
 pub mod model_selection;
 pub mod session_bootstrap;
 pub mod session_entries;
+pub mod session_messages;
 pub mod session_migrations;
 pub mod session_sessions;
 pub mod session_store;
@@ -1876,6 +1877,23 @@ pub fn session_entries_json(
     let value =
         session_entries::session_entries(&conn, &session_id, entry_type.as_deref())
             .map_err(Error::from_reason)?;
+    serde_json::to_string(&value).map_err(|e| Error::from_reason(e.to_string()))
+}
+
+/// N-API: `messages` port. Returns a JSON array of `{info, parts}`.
+#[napi]
+pub fn messages_json(db_path: String, session_id: String) -> Result<String> {
+    let conn = open_readonly(&db_path)?;
+    let value = session_messages::messages(&conn, &session_id).map_err(Error::from_reason)?;
+    serde_json::to_string(&value).map_err(|e| Error::from_reason(e.to_string()))
+}
+
+/// N-API: `messageWithParts` port. Returns `{info, parts}` JSON or `"null"`.
+#[napi]
+pub fn message_with_parts_json(db_path: String, session_id: String, message_id: String) -> Result<String> {
+    let conn = open_readonly(&db_path)?;
+    let value = session_messages::message_with_parts(&conn, &session_id, &message_id)
+        .map_err(Error::from_reason)?;
     serde_json::to_string(&value).map_err(|e| Error::from_reason(e.to_string()))
 }
 

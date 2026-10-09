@@ -37,6 +37,8 @@ export interface DbAddon {
   getSessionJson(dbPath: string, sessionId: string): string;
   listSessionsJson(dbPath: string, filterJson: string): string;
   sessionEntriesJson(dbPath: string, sessionId: string, type: string | null): string;
+  messagesJson(dbPath: string, sessionId: string): string;
+  messageWithPartsJson(dbPath: string, sessionId: string, messageId: string): string;
 
   // ---- task index: reads ----
   tasksCount(dbPath: string): number;
