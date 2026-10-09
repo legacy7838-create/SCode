@@ -1862,6 +1862,162 @@ pub fn list_off_peak_json(db_path: String, workspace_key: Option<String>) -> Res
     serde_json::to_string(&rows).map_err(|e| Error::from_reason(e.to_string()))
 }
 
+// ---- OffPeakTaskRepo state-machine N-API (deterministic, seeded-by-id transitions) ----
+//
+// These mirror the Automation write wrappers: open a read-write connection, call the ported
+// transition, and project the resulting row (or `null` when the state-machine guard rejects it)
+// as JSON. `now`/`started_at`/`ended_at` are injected so the TS adapter and the differential
+// harness share one clock instead of reading `Date.now()` inside Rust.
+
+fn parse_offpeak_terminal_status(
+    s: &str,
+) -> std::result::Result<offpeak_write::OffPeakTerminalStatus, Error> {
+    match s {
+        "completed" => Ok(offpeak_write::OffPeakTerminalStatus::Completed),
+        "failed" => Ok(offpeak_write::OffPeakTerminalStatus::Failed),
+        "cancelled" => Ok(offpeak_write::OffPeakTerminalStatus::Cancelled),
+        other => Err(Error::from_reason(format!("invalid terminal status: {other}"))),
+    }
+}
+
+/// N-API: `OffPeakTaskRepo.markRunning` (queued → running). Returns the updated row, or `null`
+/// when the row is not in `queued` (the guard is the state-machine invariant).
+#[napi]
+pub fn offpeak_mark_running_json(
+    db_path: String,
+    id: String,
+    started_at: f64,
+    conversation_id: Option<String>,
+    session_id: Option<String>,
+    server_ticket_id: Option<String>,
+) -> Result<Option<String>> {
+    let conn = open_readwrite(&db_path)?;
+    let row = offpeak_write::mark_running(
+        &conn,
+        &id,
+        started_at as i64,
+        conversation_id.as_deref(),
+        session_id.as_deref(),
+        server_ticket_id.as_deref(),
+    )
+    .map_err(Error::from_reason)?;
+    Ok(row.map(|t| serde_json::to_string(&t).unwrap_or_default()))
+}
+
+/// N-API: `OffPeakTaskRepo.markTerminal` (→ completed/failed/cancelled). Returns the updated row,
+/// or `null` when the row is already terminal (irreversible-transition guard).
+#[napi]
+pub fn offpeak_mark_terminal_json(
+    db_path: String,
+    id: String,
+    status: String,
+    ended_at: f64,
+    failure_reason: Option<String>,
+    files_changed: Option<f64>,
+    dispatch_error: Option<String>,
+) -> Result<Option<String>> {
+    let st = parse_offpeak_terminal_status(&status)?;
+    let conn = open_readwrite(&db_path)?;
+    let row = offpeak_write::mark_terminal(
+        &conn,
+        &id,
+        st,
+        ended_at as i64,
+        failure_reason.as_deref(),
+        files_changed.map(|v| v as i64),
+        dispatch_error.as_deref(),
+    )
+    .map_err(Error::from_reason)?;
+    Ok(row.map(|t| serde_json::to_string(&t).unwrap_or_default()))
+}
+
+/// N-API: `OffPeakTaskRepo.setPaused` (queued ⇄ paused). Returns the updated row, or `null` when
+/// the row is not in the expected `from` status or is mid-dispatch.
+#[napi]
+pub fn offpeak_set_paused_json(
+    db_path: String,
+    id: String,
+    paused: bool,
+    now: f64,
+) -> Result<Option<String>> {
+    let conn = open_readwrite(&db_path)?;
+    let row =
+        offpeak_write::set_paused(&conn, &id, paused, now as i64).map_err(Error::from_reason)?;
+    Ok(row.map(|t| serde_json::to_string(&t).unwrap_or_default()))
+}
+
+/// N-API: `OffPeakTaskRepo.releaseClaim` — reset the single-flight lock. TS returns void; the
+/// guarded UPDATE is idempotent, so the harness verifies the transition by re-reading the row.
+#[napi]
+pub fn offpeak_release_claim_json(
+    db_path: String,
+    id: String,
+    error: Option<String>,
+    now: f64,
+) -> Result<()> {
+    let conn = open_readwrite(&db_path)?;
+    offpeak_write::release_claim(&conn, &id, error.as_deref(), now as i64)
+        .map_err(Error::from_reason)
+}
+
+/// N-API: `OffPeakTaskRepo.recoverInterrupted` — release stale running claims. Returns affected count.
+#[napi]
+pub fn offpeak_recover_interrupted_json(db_path: String, now: f64) -> Result<i64> {
+    let conn = open_readwrite(&db_path)?;
+    offpeak_write::recover_interrupted(&conn, now as i64).map_err(Error::from_reason)
+}
+
+/// N-API: `OffPeakTaskRepo.claimDue` — atomically claim due queued tasks. Returns claimed rows JSON.
+#[napi]
+pub fn offpeak_claim_due_json(db_path: String, now: f64) -> Result<String> {
+    let conn = open_readwrite(&db_path)?;
+    let rows =
+        offpeak_write::claim_due(&conn, now as i64).map_err(Error::from_reason)?;
+    serde_json::to_string(&rows).map_err(|e| Error::from_reason(e.to_string()))
+}
+
+/// N-API: `OffPeakTaskRepo.markSettled` — backfill settled_at on a terminal row.
+#[napi]
+pub fn offpeak_mark_settled_json(db_path: String, id: String, settled_at: f64) -> Result<()> {
+    let conn = open_readwrite(&db_path)?;
+    offpeak_write::mark_settled(&conn, &id, settled_at as i64).map_err(Error::from_reason)
+}
+
+/// N-API: `OffPeakTaskRepo.countNonTerminal` (read-only).
+#[napi]
+pub fn offpeak_count_non_terminal_json(db_path: String) -> Result<i64> {
+    let conn = open_readonly(&db_path)?;
+    offpeak_write::count_non_terminal(&conn).map_err(Error::from_reason)
+}
+
+/// N-API: `OffPeakTaskRepo.hasActiveBoundTask` (read-only).
+#[napi]
+pub fn offpeak_has_active_bound_task_json(
+    db_path: String,
+    workspace_key: String,
+    session_id: String,
+) -> Result<bool> {
+    let conn = open_readonly(&db_path)?;
+    offpeak_write::has_active_bound_task(&conn, &workspace_key, &session_id)
+        .map_err(Error::from_reason)
+}
+
+/// N-API: `OffPeakTaskRepo.listNonTerminal` (read-only) as JSON.
+#[napi]
+pub fn offpeak_list_non_terminal_json(db_path: String) -> Result<String> {
+    let conn = open_readonly(&db_path)?;
+    let rows = offpeak_write::list_non_terminal(&conn).map_err(Error::from_reason)?;
+    serde_json::to_string(&rows).map_err(|e| Error::from_reason(e.to_string()))
+}
+
+/// N-API: `OffPeakTaskRepo.listUnsettledTerminal` (read-only) as JSON.
+#[napi]
+pub fn offpeak_list_unsettled_terminal_json(db_path: String) -> Result<String> {
+    let conn = open_readonly(&db_path)?;
+    let rows = offpeak_write::list_unsettled_terminal(&conn).map_err(Error::from_reason)?;
+    serde_json::to_string(&rows).map_err(|e| Error::from_reason(e.to_string()))
+}
+
 // ---- AutomationRepo write N-API (deterministic ops: update / delete) ----
 
 fn two_str(obj: &serde_json::Map<String, serde_json::Value>, k: &str) -> Option<String> {
