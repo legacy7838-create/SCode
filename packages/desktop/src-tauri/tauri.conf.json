@@ -16,7 +16,6 @@
         "label": "main",
         "width": 1200,
         "height": 800,
-        "transparent": true,
         "decorations": false,
         "url": "http://localhost:5174"
       }
