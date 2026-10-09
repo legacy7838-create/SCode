@@ -5,6 +5,7 @@
 
 pub mod automation;
 pub mod migrations;
+pub mod offpeak;
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
@@ -1731,6 +1732,14 @@ pub fn get_automation_json(
     let row = automation::get_automation(&conn, &automation_id, workspace_key.as_deref())
         .map_err(Error::from_reason)?;
     Ok(row.map(|a| serde_json::to_string(&a).unwrap_or_default()))
+}
+
+/// N-API: read a single off-peak task (read-only) as JSON, or `null` when absent.
+#[napi]
+pub fn get_off_peak_json(db_path: String, off_peak_task_id: String) -> Result<Option<String>> {
+    let conn = open_readonly(&db_path)?;
+    let row = offpeak::get_off_peak(&conn, &off_peak_task_id).map_err(Error::from_reason)?;
+    Ok(row.map(|t| serde_json::to_string(&t).unwrap_or_default()))
 }
 
 /// N-API: return the raw `meta_json` string for one task (parse it in Rust via `row_to_meta`).
