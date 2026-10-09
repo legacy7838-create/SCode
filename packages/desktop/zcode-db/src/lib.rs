@@ -1350,6 +1350,16 @@ pub fn are_migrations_applied(db_path: String) -> Result<bool> {
     migrations::are_tasks_migrations_applied(&conn).map_err(Error::from_reason)
 }
 
+/// N-API: open (RW/CREATE), set WAL/`busy_timeout`, and apply migrations to a tasks-index DB.
+/// Returns the migration kind (`"initialize"`/`"upgrade"`/`"none"`). Post-migration repo repair
+/// steps are a caller concern (see `bootstrap_tasks_index` scope note).
+#[napi]
+pub fn bootstrap_tasks_index(db_path: String, deadline_ms: i64) -> Result<String> {
+    migrations::bootstrap_tasks_index(&db_path, deadline_ms)
+        .map(|kind| kind.to_string())
+        .map_err(Error::from_reason)
+}
+
 /// N-API: return the raw `meta_json` string for one task (parse it in Rust via `row_to_meta`).
 #[napi]
 pub fn read_task_meta_json(
