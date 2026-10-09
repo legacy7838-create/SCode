@@ -1,22 +1,7 @@
 import type { DatabaseMigrationFacts } from "@zcode/shared";
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
-import { createRequire } from "node:module";
-// 与既有 Repo 一致：避免构建器把 node:sqlite 改写成不存在的 npm sqlite 包。
-const { DatabaseSync } = createRequire(import.meta.url)(
-  "node:sqlite",
-) as typeof import("node:sqlite");
-import { TaskIndexRepo } from "#src/session/taskIndexRepo.js";
-import { AutomationRepo } from "#src/session/automationRepo.js";
-import { OffPeakTaskRepo } from "#src/session/offPeakTaskRepo.js";
-import {
-  runTasksDatabaseMigrations,
-  inspectTasksMigrationKind,
-} from "#src/session/tasksDatabase/migrations.js";
-import {
-  markTasksStorageMigrated,
-  markTasksStoragePrepared,
-} from "#src/session/tasksDatabase/prepared.js";
+import { loadDb } from "#src/session/zcodeDb.js";
 
 type TasksStoragePhase =
   | "checking"
@@ -27,102 +12,33 @@ type TasksStoragePhase =
   | "ready";
 const LOCK_WAIT_MS = 60 * 60_000;
 
-/** 由 Host Worker 调用，SQL 和迁移后修复与旧 Repo 共用，只有获取写锁异步等待。 */
+/**
+ * 由 Host Worker 调用：确保 tasks-index.sqlite 建表 / 迁移 / 一次性启动自愈完成。
+ *
+ * 存储与迁移账本已全部下沉 Rust `zcode-db` addon：`bootstrapTasksIndex` 负责建表 + 冻结校验和的
+ * 迁移账本（幂等，遇锁按 busy_timeout 等待），`runStartupRepairsJson` 负责 off-peak 标记/分组回填、
+ * 删除引用清理、awaiting_approval 修复等一次性自愈（同样幂等）。本函数不再直接开 `node:sqlite`，
+ * 迁移期专用的 prepared/migrated 标记也已随 addon 的幂等 bootstrap 一并省去。`migration` 进度事实
+ * 保留为可选入参以兼容 Worker 回调（addon 的 bootstrap 为单步，不再逐迁移上报）。
+ */
 export async function prepareTasksIndexStorage(
   path: string,
   onProgress: (phase: TasksStoragePhase, migration?: DatabaseMigrationFacts) => void,
 ): Promise<void> {
-  // 回调拿到的是当时事实，不共享后续执行会继续递增的内部对象。
-  const report = (phase: TasksStoragePhase, migration?: DatabaseMigrationFacts) =>
-    onProgress(phase, migration ? { ...migration } : undefined);
+  const report = (phase: TasksStoragePhase): void => onProgress(phase);
   report("checking");
   await mkdir(dirname(path), { recursive: true });
-  const db = new DatabaseSync(path);
-  let failure: unknown;
-  let migration: DatabaseMigrationFacts | undefined;
+  report("migrating");
   try {
-    db.exec("PRAGMA busy_timeout = 25");
-    db.exec("PRAGMA foreign_keys = ON");
-    const deadline = Date.now() + LOCK_WAIT_MS;
-    const acquire = async (operation: string | (() => void)) => {
-      // 预检前后可分别遇锁；确认迁移后的等待需要重新发布可见状态。
-      let waiting = false;
-      for (;;) {
-        try {
-          if (typeof operation === "string") db.exec(operation);
-          else operation();
-          return;
-        } catch (error) {
-          const code = (error as { errcode?: number }).errcode;
-          if (typeof code !== "number" || (code & 0xff) !== 5) throw error;
-          if (Date.now() >= deadline)
-            throw Object.assign(new Error("Task storage lock wait expired", { cause: error }), {
-              kind: "lock_timeout",
-            });
-          if (!waiting) {
-            waiting = true;
-            report("waiting_for_lock", migration);
-          }
-          await new Promise<void>((resolve) => setTimeout(resolve, 100));
-        }
-      }
-    };
-    await acquire("PRAGMA journal_mode = WAL");
-    db.exec("PRAGMA synchronous = NORMAL");
-    await acquire(() => {
-      migration = { kind: inspectTasksMigrationKind(db), executedCount: 0, committedCount: 0 };
-    });
-    report("checking", migration);
-    await acquire("BEGIN IMMEDIATE");
-    runTasksDatabaseMigrations(db, { transactionOpen: true, migration, onProgress: report });
-    // COMMIT 已成功，先发布事实；后续 close 失败不能把已提交误报为未提交。
-    report("maintaining", migration);
+    // 建表 + 迁移账本；busy_timeout 传入以在并发窗口/多 Host 下等待而非立即 SQLITE_BUSY。
+    loadDb().bootstrapTasksIndex(path, LOCK_WAIT_MS);
+    report("maintaining");
+    // 一次性启动自愈（幂等）：off-peak 标记/分组回填、删除引用清理、legacy 状态修复。
+    loadDb().runStartupRepairsJson(path, Date.now());
   } catch (error) {
-    failure = error;
-    // 失败事实随原异常交给 Worker，不倒退发布 checking/migrating，也不覆盖首因。
-    if (migration && error && typeof error === "object") {
-      try {
-        Object.assign(error, { startupMigration: { ...migration } });
-      } catch {
-        /* 不可扩展异常仍保留原错误。 */
-      }
-    }
+    // 失败事实随原异常交给 Worker，由其归类为 sql_failed / lock_timeout；不吞首因。
+    report("checking");
     throw error;
-  } finally {
-    try {
-      db.close();
-    } catch (error) {
-      /* eslint-disable-next-line no-unsafe-finally */
-      if (!failure) throw error;
-    }
   }
-  markTasksStorageMigrated(path);
-  const repos = [
-    new TaskIndexRepo(path, LOCK_WAIT_MS),
-    new AutomationRepo(path, LOCK_WAIT_MS),
-    new OffPeakTaskRepo(path, LOCK_WAIT_MS),
-  ];
-  // bug 根因：preparationFailure 此前从未声明，成功路径走到 `if (!preparationFailure ...)`
-  // 读取未定义标识符会抛 ReferenceError，被 Worker 归类为通用 sql_failed，导致每次启动都失败
-  // （即使迁移为 none 无事可做）。修复依据：显式声明该标志，与 closeFailure 同语义追踪 ensureReady 失败。
-  let preparationFailure: unknown;
-  let closeFailure: unknown;
-  try {
-    // 这些是原本就在初始化时执行的修复，不创建新的迁移或改变已有事务边界。
-    for (const repo of repos) await repo.ensureReady();
-  } catch (error) {
-    preparationFailure = error;
-    throw error;
-  } finally {
-    for (const repo of repos) {
-      try {
-        repo.close({ throwOnError: true });
-      } catch (error) {
-        closeFailure ??= error;
-      }
-    }
-  }
-  if (!preparationFailure && closeFailure) throw closeFailure;
-  markTasksStoragePrepared(path);
-  report("ready", migration);
+  report("ready");
 }
