@@ -1862,6 +1862,120 @@ pub fn list_off_peak_json(db_path: String, workspace_key: Option<String>) -> Res
     serde_json::to_string(&rows).map_err(|e| Error::from_reason(e.to_string()))
 }
 
+// ---- AutomationRepo write N-API (deterministic ops: update / delete) ----
+
+fn two_str(obj: &serde_json::Map<String, serde_json::Value>, k: &str) -> Option<String> {
+    obj.get(k)
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string)
+}
+fn opt_bool(obj: &serde_json::Map<String, serde_json::Value>, k: &str) -> Option<bool> {
+    obj.get(k).and_then(serde_json::Value::as_bool)
+}
+/// Tri-state i64: absent→None (keep), present-null→Some(None) (clear), number→Some(Some(n)).
+fn tri_i64(obj: &serde_json::Map<String, serde_json::Value>, k: &str) -> Option<Option<i64>> {
+    obj.get(k)
+        .map(|v| if v.is_null() { None } else { v.as_i64() })
+}
+fn tri_str(obj: &serde_json::Map<String, serde_json::Value>, k: &str) -> Option<Option<String>> {
+    obj.get(k).map(|v| v.as_str().map(str::to_string))
+}
+fn tri_value(
+    obj: &serde_json::Map<String, serde_json::Value>,
+    k: &str,
+) -> Option<Option<serde_json::Value>> {
+    obj.get(k)
+        .map(|v| if v.is_null() { None } else { Some(v.clone()) })
+}
+fn tri_model(
+    obj: &serde_json::Map<String, serde_json::Value>,
+    k: &str,
+) -> Option<Option<automation::ModelSelection>> {
+    obj.get(k).map(|v| {
+        if v.is_null() {
+            None
+        } else {
+            automation::read_serialized_model_selection(Some(&v.to_string()))
+        }
+    })
+}
+
+fn parse_automation_update_params(
+    obj: &serde_json::Map<String, serde_json::Value>,
+) -> automation_write::AutomationUpdateParams {
+    automation_write::AutomationUpdateParams {
+        title: two_str(obj, "title"),
+        cron_expr: two_str(obj, "cronExpr"),
+        prompt: two_str(obj, "prompt"),
+        model_selection: tri_model(obj, "modelSelection"),
+        mode: tri_str(obj, "mode"),
+        recurring: opt_bool(obj, "recurring"),
+        max_runs: tri_i64(obj, "maxRuns"),
+        end_at: tri_i64(obj, "endAt"),
+        schedule_rule: tri_value(obj, "scheduleRule"),
+        schedule_edited_by_user: opt_bool(obj, "scheduleEditedByUser"),
+    }
+}
+
+fn parse_automation_update_options(
+    obj: &serde_json::Map<String, serde_json::Value>,
+) -> automation_write::AutomationUpdateOptions {
+    automation_write::AutomationUpdateOptions {
+        next_run_at: tri_i64(obj, "nextRunAt"),
+        lifecycle_status: two_str(obj, "lifecycleStatus"),
+        reset_retry: opt_bool(obj, "resetRetry").unwrap_or(false),
+    }
+}
+
+/// N-API: `AutomationRepo.update` (read-write). Returns the merged projected row JSON, or `null`
+/// when the row is missing. `params_json`/`options_json` are JSON objects; tri-state fields are
+/// read via the same absent-vs-null distinction as the TS.
+#[napi]
+pub fn update_automation_json(
+    db_path: String,
+    automation_id: String,
+    params_json: String,
+    options_json: String,
+    workspace_key: Option<String>,
+    now: f64,
+) -> Result<Option<String>> {
+    let pv: serde_json::Value =
+        serde_json::from_str(&params_json).map_err(|e| Error::from_reason(e.to_string()))?;
+    let ov: serde_json::Value =
+        serde_json::from_str(&options_json).map_err(|e| Error::from_reason(e.to_string()))?;
+    let params = parse_automation_update_params(
+        pv.as_object()
+            .ok_or_else(|| Error::from_reason("params must be an object"))?,
+    );
+    let options = parse_automation_update_options(
+        ov.as_object()
+            .ok_or_else(|| Error::from_reason("options must be an object"))?,
+    );
+    let conn = open_readwrite(&db_path)?;
+    let result = automation_write::update(
+        &conn,
+        &automation_id,
+        &params,
+        &options,
+        workspace_key.as_deref(),
+        now as i64,
+    )
+    .map_err(Error::from_reason)?;
+    Ok(result.map(|a| serde_json::to_string(&a).unwrap_or_default()))
+}
+
+/// N-API: `AutomationRepo.delete` (read-write); returns whether a row was removed.
+#[napi]
+pub fn delete_automation_json(
+    db_path: String,
+    automation_id: String,
+    workspace_key: Option<String>,
+) -> Result<bool> {
+    let conn = open_readwrite(&db_path)?;
+    automation_write::delete(&conn, &automation_id, workspace_key.as_deref())
+        .map_err(Error::from_reason)
+}
+
 /// N-API: return the raw `meta_json` string for one task (parse it in Rust via `row_to_meta`).
 #[napi]
 pub fn read_task_meta_json(
@@ -3182,6 +3296,37 @@ mod tests {
         // clear marker: unreadAt present but null → Clear.
         let clear = parse_state_patch(serde_json::json!({ "unreadAt": null }).as_object().unwrap());
         assert_eq!(clear.unread_at, PatchField::Set(UnreadOp::Clear));
+    }
+
+    #[test]
+    fn parse_automation_update_params_tri_state() {
+        let v: serde_json::Value = serde_json::json!({
+            "title": null,           // ??-field: null → None (keep)
+            "cronExpr": "0 8 * * *", // ??-field: value
+            "maxRuns": null,         // tri: present-null → Some(None) (clear)
+            "endAt": 123,            // tri: number → Some(Some(123))
+            "modelSelection": null,  // tri: present-null → Some(None)
+            "recurring": false,      // ??-bool: false kept → Some(false)
+        });
+        let p = parse_automation_update_params(v.as_object().unwrap());
+        assert_eq!(p.title, None);
+        assert_eq!(p.cron_expr.as_deref(), Some("0 8 * * *"));
+        assert_eq!(p.max_runs, Some(None), "present-null clears");
+        assert_eq!(p.end_at, Some(Some(123)));
+        assert_eq!(p.model_selection, Some(None));
+        assert_eq!(p.recurring, Some(false));
+        // absent keys → keep (None)
+        let empty = parse_automation_update_params(serde_json::json!({}).as_object().unwrap());
+        assert_eq!(empty.max_runs, None);
+        assert_eq!(empty.model_selection, None);
+        assert!(
+            parse_automation_update_options(
+                serde_json::json!({ "resetRetry": true })
+                    .as_object()
+                    .unwrap()
+            )
+            .reset_retry
+        );
     }
 
     #[test]
