@@ -1805,6 +1805,28 @@ pub fn read_todos_json(db_path: String, session_id: String) -> Result<String> {
     serde_json::to_string(&value).map_err(|e| Error::from_reason(e.to_string()))
 }
 
+/// N-API: `listSessionInputs` port. `status` is optional (null/undefined → all), ordered by
+/// `admitted_sequence`. Returns a JSON array of `SessionInputRecord` projections.
+#[napi]
+pub fn list_session_inputs_json(
+    db_path: String,
+    session_id: String,
+    status: Option<String>,
+) -> Result<String> {
+    let conn = open_readonly(&db_path)?;
+    let value = session_store::list_session_inputs(&conn, &session_id, status.as_deref())
+        .map_err(Error::from_reason)?;
+    serde_json::to_string(&value).map_err(|e| Error::from_reason(e.to_string()))
+}
+
+/// N-API: `getSessionInputById` port. Returns the record JSON or `"null"`.
+#[napi]
+pub fn get_session_input_by_id_json(db_path: String, id: String) -> Result<String> {
+    let conn = open_readonly(&db_path)?;
+    let value = session_store::get_session_input_by_id(&conn, &id).map_err(Error::from_reason)?;
+    serde_json::to_string(&value).map_err(|e| Error::from_reason(e.to_string()))
+}
+
 /// Port of `normalizeSearchSnippetText`: collapse whitespace runs to a single space, trim, cap at
 /// `SNIPPET_MAX_CHARS`. `split_whitespace` + join matches JS `.replace(/\s+/g, " ").trim()`.
 fn normalize_search_snippet_text(text: &str) -> String {

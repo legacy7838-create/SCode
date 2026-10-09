@@ -30,6 +30,8 @@ export interface DbAddon {
 
   // ---- session-store: reads ----
   readTodosJson(dbPath: string, sessionId: string): string;
+  listSessionInputsJson(dbPath: string, sessionId: string, status: string | null): string;
+  getSessionInputByIdJson(dbPath: string, id: string): string;
 
   // ---- task index: reads ----
   tasksCount(dbPath: string): number;
