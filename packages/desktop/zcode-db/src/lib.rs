@@ -1711,6 +1711,28 @@ pub fn get_task_meta_json(
         .map(|m| serde_json::to_string(&m).unwrap_or_default()))
 }
 
+/// N-API: list automations (read-only) as JSON, optionally filtered by workspace key.
+#[napi]
+pub fn list_automations_json(db_path: String, workspace_key: Option<String>) -> Result<String> {
+    let conn = open_readonly(&db_path)?;
+    let rows = automation::list_automations(&conn, workspace_key.as_deref())
+        .map_err(Error::from_reason)?;
+    serde_json::to_string(&rows).map_err(|e| Error::from_reason(e.to_string()))
+}
+
+/// N-API: read a single automation (read-only) as JSON, or `null` when absent.
+#[napi]
+pub fn get_automation_json(
+    db_path: String,
+    automation_id: String,
+    workspace_key: Option<String>,
+) -> Result<Option<String>> {
+    let conn = open_readonly(&db_path)?;
+    let row = automation::get_automation(&conn, &automation_id, workspace_key.as_deref())
+        .map_err(Error::from_reason)?;
+    Ok(row.map(|a| serde_json::to_string(&a).unwrap_or_default()))
+}
+
 /// N-API: return the raw `meta_json` string for one task (parse it in Rust via `row_to_meta`).
 #[napi]
 pub fn read_task_meta_json(
