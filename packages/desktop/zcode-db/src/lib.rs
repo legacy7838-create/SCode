@@ -2316,6 +2316,27 @@ pub fn offpeak_list_unsettled_terminal_json(db_path: String) -> Result<String> {
     serde_json::to_string(&rows).map_err(|e| Error::from_reason(e.to_string()))
 }
 
+/// N-API: `OffPeakTaskRepo.countActive` (read-only) — running-task count (keep-awake signal).
+#[napi]
+pub fn offpeak_count_active_json(db_path: String) -> Result<i64> {
+    let conn = open_readonly(&db_path)?;
+    offpeak::count_running_off_peak(&conn).map_err(Error::from_reason)
+}
+
+/// N-API: `OffPeakTaskRepo.requeueForContinuation` (read-write). Returns the requeued row JSON, or
+/// `null` when the row is not in `running`.
+#[napi]
+pub fn offpeak_requeue_for_continuation_json(
+    db_path: String,
+    id: String,
+    now: f64,
+) -> Result<Option<String>> {
+    let conn = open_readwrite(&db_path)?;
+    let row = offpeak_write::requeue_for_continuation(&conn, &id, now as i64)
+        .map_err(Error::from_reason)?;
+    Ok(row.map(|t| serde_json::to_string(&t).unwrap_or_default()))
+}
+
 // ---- OffPeakTaskRepo create / invalidate / editable / scheduling / delete N-API ----
 
 /// Parse a required `modelSelection` JSON value through the same strict zod path the create/update

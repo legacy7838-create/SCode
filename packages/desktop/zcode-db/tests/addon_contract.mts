@@ -35,7 +35,7 @@ const EXPECTED = [
   "offpeakMarkHistoryDeletedJson", "offpeakClaimDueJson", "offpeakMarkRunningJson", "offpeakMarkTerminalJson",
   "offpeakSetPausedJson", "offpeakReleaseClaimJson", "offpeakRecoverInterruptedJson", "offpeakMarkSettledJson",
   "offpeakCountNonTerminalJson", "offpeakHasActiveBoundTaskJson", "offpeakListNonTerminalJson",
-  "offpeakListUnsettledTerminalJson",
+  "offpeakListUnsettledTerminalJson", "offpeakCountActiveJson", "offpeakRequeueForContinuationJson",
 ];
 
 let failures = 0;

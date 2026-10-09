@@ -109,6 +109,8 @@ export interface DbAddon {
   offpeakHasActiveBoundTaskJson(dbPath: string, workspaceKey: string, sessionId: string): boolean;
   offpeakListNonTerminalJson(dbPath: string): string;
   offpeakListUnsettledTerminalJson(dbPath: string): string;
+  offpeakCountActiveJson(dbPath: string): number;
+  offpeakRequeueForContinuationJson(dbPath: string, id: string, now: number): string | null;
 }
 
 /**
