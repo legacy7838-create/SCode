@@ -180,7 +180,11 @@ const firstStartupStateTimer =
   windowKind === "update-status"
     ? undefined
     : setTimeout(() => {
-        if (databaseStartupAdmission.state) return;
+        // Under Tauri the startup readiness signal is the Host WS connection resolving (see
+        // connectTauriBackendAndEnter), NOT the Electron preload DatabaseStartupState postMessage. Once
+        // the app has entered (appInitialized), this timer must not clobber the running UI with a fake
+        // "channel unavailable" failure — that was a regression from the Electron→Tauri cutover.
+        if (appInitialized || databaseStartupAdmission.state) return;
         const now = Date.now();
         databaseStartupAdmission.state = {
           schemaVersion: 1,
@@ -276,6 +280,9 @@ function handleServicePortMessage(event: MessageEvent): void {
 function initializeBusinessRootWithServices(services: IServiceAccessor): void {
   if (appInitialized) return;
   appInitialized = true;
+  // The app has entered via the Tauri Host connection; the Electron startup-channel failure timer is
+  // obsolete and must not fire later.
+  if (firstStartupStateTimer) clearTimeout(firstStartupStateTimer);
   baseServicesForRemoteSessions = services;
   registerBaseWorkspaceServices(services);
   flushPendingRemoteWorkspaceServicePorts();
