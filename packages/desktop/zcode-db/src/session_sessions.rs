@@ -34,7 +34,7 @@ fn decode_title_source(value: &str) -> &str {
 
 /// `decodeJson(col)`: null/empty → `None` (omit); otherwise parse, propagating a parse error like JS
 /// `JSON.parse` throwing on invalid content.
-fn decode_json_col(raw: &Option<String>) -> Result<Option<Value>, String> {
+pub(crate) fn decode_json_col(raw: &Option<String>) -> Result<Option<Value>, String> {
     match raw {
         None => Ok(None),
         Some(s) if s.is_empty() => Ok(None),

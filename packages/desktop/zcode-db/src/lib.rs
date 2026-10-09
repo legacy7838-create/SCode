@@ -16,6 +16,7 @@ pub mod session_messages;
 pub mod session_migrations;
 pub mod session_sessions;
 pub mod session_store;
+pub mod session_workflow;
 pub mod offpeak;
 pub mod offpeak_write;
 
@@ -1911,6 +1912,24 @@ pub fn recall_previous_input_history_json(db_path: String, project_id: String, s
     let conn = open_readonly(&db_path)?;
     let value = session_store::recall_previous_input_history(&conn, &project_id, skip as i64)
         .map_err(Error::from_reason)?;
+    serde_json::to_string(&value).map_err(|e| Error::from_reason(e.to_string()))
+}
+
+/// N-API: `getScriptWorkflowRun` port. Returns the run JSON or `"null"`.
+#[napi]
+pub fn get_script_workflow_run_json(db_path: String, run_id: String) -> Result<String> {
+    let conn = open_readonly(&db_path)?;
+    let value = session_workflow::get_script_workflow_run(&conn, &run_id).map_err(Error::from_reason)?;
+    serde_json::to_string(&value).map_err(|e| Error::from_reason(e.to_string()))
+}
+
+/// N-API: `listScriptWorkflowRuns` port. `filter_json` = `{ cwd?, statuses?, limit? }`.
+#[napi]
+pub fn list_script_workflow_runs_json(db_path: String, filter_json: String) -> Result<String> {
+    let conn = open_readonly(&db_path)?;
+    let filter: serde_json::Value = serde_json::from_str(&filter_json)
+        .map_err(|e| Error::from_reason(format!("invalid filter json: {e}")))?;
+    let value = session_workflow::list_script_workflow_runs(&conn, &filter).map_err(Error::from_reason)?;
     serde_json::to_string(&value).map_err(|e| Error::from_reason(e.to_string()))
 }
 

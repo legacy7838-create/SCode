@@ -41,6 +41,8 @@ export interface DbAddon {
   messageWithPartsJson(dbPath: string, sessionId: string, messageId: string): string;
   readTargetJson(dbPath: string, sessionId: string): string;
   recallPreviousInputHistoryJson(dbPath: string, projectId: string, skip: number): string;
+  getScriptWorkflowRunJson(dbPath: string, runId: string): string;
+  listScriptWorkflowRunsJson(dbPath: string, filterJson: string): string;
 
   // ---- task index: reads ----
   tasksCount(dbPath: string): number;
