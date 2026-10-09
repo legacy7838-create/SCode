@@ -553,6 +553,108 @@ pub fn query_task_index_rows(
     rows.collect()
 }
 
+/// Port of `hasGroupedWorkspaceBootstrapRunSync`: whether any workspace has already run the
+/// grouped-workspace bootstrap (a global one-shot guard, read from `task_group_workspace_bootstraps`).
+pub fn has_grouped_workspace_bootstrap_run(conn: &Connection) -> std::result::Result<bool, rusqlite::Error> {
+    let mut stmt = conn.prepare("SELECT 1 FROM task_group_workspace_bootstraps LIMIT 1")?;
+    let mut rows = stmt.query([])?;
+    Ok(rows.next()?.is_some())
+}
+
+/// Port of `listDeletedTaskIds`: task ids tombstoned (`deleted = 1`) in one workspace, optionally
+/// scoped to a runtime provider, ordered by id.
+pub fn list_deleted_task_ids(
+    conn: &Connection,
+    workspace_key: &str,
+    provider: Option<&str>,
+) -> std::result::Result<Vec<String>, rusqlite::Error> {
+    let sql = "SELECT task_id FROM tasks WHERE workspace_key = ?1 AND deleted = 1 \
+               AND (?2 IS NULL OR provider = ?2) ORDER BY task_id";
+    let mut stmt = conn.prepare(sql)?;
+    let rows = stmt.query_map(rusqlite::params![workspace_key, provider], |r| r.get::<_, String>(0))?;
+    rows.collect()
+}
+
+/// Port of `listSessionsByAutomation`: the cron sessions an automation produced (non-deleted),
+/// newest first. Reuses the canonical row projection so `row_to_meta` sees the same columns as TS.
+pub fn list_sessions_by_automation(
+    conn: &Connection,
+    automation_id: &str,
+) -> std::result::Result<Vec<TaskMeta>, rusqlite::Error> {
+    let sql = format!(
+        "SELECT {TASK_INDEX_ROW_COLUMNS} FROM tasks WHERE cron_automation_id = ?1 AND deleted = 0 \
+         ORDER BY created_at DESC, task_id DESC"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map([automation_id], map_task_index_row)?;
+    Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?.iter().map(row_to_meta).collect())
+}
+
+/// Port of `archiveStaleTasks`: archive completed, non-pinned, non-archived, read tasks older than
+/// `cutoff` in one workspace (optionally provider-scoped). The flag writes run under one
+/// `BEGIN IMMEDIATE`, matching TS; returns the metas that were archived (already `archived = 1`).
+/// `cutoff` is injected (`Date.now() - days`) so the adapter controls the clock.
+pub fn archive_stale_tasks(
+    conn: &Connection,
+    workspace_key: &str,
+    cutoff: i64,
+    provider: Option<&str>,
+) -> std::result::Result<Vec<TaskMeta>, rusqlite::Error> {
+    let provider_scoped = provider.is_some();
+    let mut sql = String::from(
+        "SELECT workspace_key, workspace_path, workspace_identity, task_id, title, task_status, \
+         provider, mode, model, migration_source, forked_from_task_id, cron_automation_id, \
+         off_peak_task_id, created_at, updated_at, unread_at, title_overridden, meta_json, pinned, \
+         archived, deleted, last_unread_at, searchable_text \
+         FROM tasks WHERE workspace_key = ?1 AND deleted = 0 AND archived = 0 AND pinned = 0 \
+         AND unread_at IS NULL AND updated_at < ?2 AND task_status = 'completed'",
+    );
+    if provider_scoped {
+        sql.push_str(" AND provider = ?3");
+    }
+    sql.push_str(" ORDER BY updated_at DESC, created_at DESC, task_id DESC");
+
+    let rows: Vec<TaskIndexRow> = {
+        let mut stmt = conn.prepare(&sql)?;
+        let mapped = if provider_scoped {
+            stmt.query_map(
+                rusqlite::params![workspace_key, cutoff, provider],
+                map_task_index_row,
+            )?
+        } else {
+            stmt.query_map(rusqlite::params![workspace_key, cutoff], map_task_index_row)?
+        };
+        mapped.collect::<std::result::Result<Vec<_>, _>>()?
+    };
+    if rows.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    conn.execute("BEGIN IMMEDIATE", [])?;
+    let archive = |conn: &Connection| -> std::result::Result<(), rusqlite::Error> {
+        for row in &rows {
+            conn.execute(
+                "UPDATE tasks SET archived = 1 WHERE workspace_key = ?1 AND task_id = ?2",
+                rusqlite::params![row.workspace_key, row.task_id],
+            )?;
+        }
+        Ok(())
+    };
+    match archive(conn) {
+        Ok(()) => {
+            conn.execute("COMMIT", [])?;
+        }
+        Err(e) => {
+            let _ = conn.execute("ROLLBACK", []);
+            return Err(e);
+        }
+    }
+    // TS projects the pre-update rows it read (it maps `rowToMeta` over `rows`, not a re-read),
+    // so the returned metas carry the pre-archive column state; only the raw `archived` flag flips.
+    Ok(rows.iter().map(row_to_meta).collect())
+}
+
+
 /// Read one `TaskIndexRow` by primary key (`workspace_key`, `task_id`), the re-read TS `writeRecord`
 /// performs via `getTaskRow` to return the persisted projection. Tombstones are included (a write
 /// can re-read a soft-deleted row), matching `getTaskRow` semantics rather than the list filter.
@@ -2679,6 +2781,51 @@ pub fn read_task_meta_json(
         Some(r) => r.map_err(|e| Error::from_reason(e.to_string())),
         None => Ok(None),
     }
+}
+
+/// N-API: `TaskIndexRepo.hasGroupedWorkspaceBootstrapRun` (read-only).
+#[napi]
+pub fn has_grouped_workspace_bootstrap_run_json(db_path: String) -> Result<bool> {
+    let conn = open_readonly(&db_path)?;
+    has_grouped_workspace_bootstrap_run(&conn).map_err(|e| Error::from_reason(e.to_string()))
+}
+
+/// N-API: `TaskIndexRepo.listDeletedTaskIds` (read-only) as a JSON string array.
+#[napi]
+pub fn list_deleted_task_ids_json(
+    db_path: String,
+    workspace_key: String,
+    provider: Option<String>,
+) -> Result<String> {
+    let conn = open_readonly(&db_path)?;
+    let ids = list_deleted_task_ids(&conn, &workspace_key, provider.as_deref())
+        .map_err(|e| Error::from_reason(e.to_string()))?;
+    serde_json::to_string(&ids).map_err(|e| Error::from_reason(e.to_string()))
+}
+
+/// N-API: `TaskIndexRepo.listSessionsByAutomation` (read-only) as a JSON array of metas.
+#[napi]
+pub fn list_sessions_by_automation_json(db_path: String, automation_id: String) -> Result<String> {
+    let conn = open_readonly(&db_path)?;
+    let metas = list_sessions_by_automation(&conn, &automation_id)
+        .map_err(|e| Error::from_reason(e.to_string()))?;
+    serde_json::to_string(&metas).map_err(|e| Error::from_reason(e.to_string()))
+}
+
+/// N-API: `TaskIndexRepo.archiveStaleTasks` (read-write) as a JSON array of archived metas.
+/// `cutoff` is injected (`Date.now() - olderThanDays`).
+#[napi]
+pub fn archive_stale_tasks_json(
+    db_path: String,
+    workspace_key: String,
+    cutoff: f64,
+    provider: Option<String>,
+) -> Result<String> {
+    let conn = open_readwrite(&db_path)?;
+    let metas =
+        archive_stale_tasks(&conn, &workspace_key, cutoff as i64, provider.as_deref())
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+    serde_json::to_string(&metas).map_err(|e| Error::from_reason(e.to_string()))
 }
 
 #[cfg(test)]
