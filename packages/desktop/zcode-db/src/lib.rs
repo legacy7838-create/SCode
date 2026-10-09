@@ -3278,6 +3278,104 @@ pub fn archive_stale_tasks_json(
     serde_json::to_string(&metas).map_err(|e| Error::from_reason(e.to_string()))
 }
 
+/// Port of the idempotent startup data-repairs the TS repos run in `initialize()` after migrations —
+/// the self-heal writes a faithful `node:sqlite`-free cutover must preserve:
+///   (a) `tasks.off_peak_task_id` back-fill from a bound off-peak session row,
+///   (b) off-peak system-group membership back-fill (remote primary keys skipped, like the TS, so a
+///       historical remote row is never re-projected onto a same-path local workspace),
+///   (c) deleted-task grouping-reference cleanup (one `BEGIN IMMEDIATE`),
+///   (d) the legacy `awaiting_approval` → `running` status repair.
+/// Each is guarded / `INSERT OR IGNORE` so re-running every startup is a no-op once converged.
+/// `now` is injected for the membership + status timestamps.
+pub fn run_startup_repairs(
+    conn: &Connection,
+    now: i64,
+) -> std::result::Result<(), rusqlite::Error> {
+    let has_off_peak = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'off_peak_tasks' LIMIT 1",
+            [],
+            |_| Ok::<i64, rusqlite::Error>(1),
+        )
+        .is_ok();
+
+    if has_off_peak {
+        conn.execute(
+            "UPDATE tasks SET off_peak_task_id = (SELECT o.off_peak_task_id FROM off_peak_tasks o \
+             WHERE o.session_id = tasks.task_id AND o.workspace_key = tasks.workspace_key) \
+             WHERE off_peak_task_id IS NULL AND EXISTS (SELECT 1 FROM off_peak_tasks o \
+             WHERE o.session_id = tasks.task_id AND o.workspace_key = tasks.workspace_key)",
+            [],
+        )?;
+        conn.execute(
+            "UPDATE off_peak_tasks SET status = 'running', updated_at = ?1 WHERE status = 'awaiting_approval'",
+            rusqlite::params![now],
+        )?;
+    }
+
+    let members: Vec<(String, String, Option<String>, String)> = {
+        let mut stmt = conn.prepare(
+            "SELECT workspace_key, workspace_path, workspace_identity, task_id FROM tasks \
+             WHERE off_peak_task_id IS NOT NULL AND deleted = 0",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, Option<String>>(2)?,
+                r.get::<_, String>(3)?,
+            ))
+        })?;
+        rows.collect::<std::result::Result<Vec<_>, _>>()?
+    };
+    for (wk, wp, wident, tid) in &members {
+        // Remote primary keys never get an off-peak group (matches the TS guard).
+        if is_remote_workspace_identity(wk) {
+            continue;
+        }
+        let task = TaskRef {
+            workspace_key: wk,
+            workspace_path: wp,
+            workspace_identity: wident.as_deref(),
+            task_id: tid,
+        };
+        ensure_off_peak_group_membership(conn, &task, now)?;
+    }
+
+    let deleted: Vec<(String, String)> = {
+        let mut stmt = conn.prepare("SELECT workspace_key, task_id FROM tasks WHERE deleted = 1")?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+        rows.collect::<std::result::Result<Vec<_>, _>>()?
+    };
+    if !deleted.is_empty() {
+        conn.execute("BEGIN IMMEDIATE", [])?;
+        let run = (|| -> std::result::Result<(), rusqlite::Error> {
+            for (wk, tid) in &deleted {
+                delete_task_grouping_references(conn, wk, tid)?;
+            }
+            Ok(())
+        })();
+        match run {
+            Ok(()) => {
+                conn.execute("COMMIT", [])?;
+            }
+            Err(e) => {
+                let _ = conn.execute("ROLLBACK", []);
+                return Err(e);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// N-API: run the idempotent startup data-repairs (see [`run_startup_repairs`]) against a
+/// read-write DB. The host calls this once at startup after `bootstrapTasksIndex`.
+#[napi]
+pub fn run_startup_repairs_json(db_path: String, now: f64) -> Result<()> {
+    let conn = open_readwrite(&db_path)?;
+    run_startup_repairs(&conn, now as i64).map_err(|e| Error::from_reason(e.to_string()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4656,5 +4754,85 @@ mod tests {
         // Absent optional fields must not serialize (JSON.stringify drops undefined).
         assert!(!json.contains("lastError"));
         assert!(!json.contains("workspacePurpose"));
+    }
+
+    #[test]
+    fn run_startup_repairs_backfills_and_cleans() {
+        let conn = full_schema_db();
+        conn.execute_batch(
+            "CREATE TABLE off_peak_tasks (
+               off_peak_task_id TEXT PRIMARY KEY, session_id TEXT, workspace_key TEXT NOT NULL,
+               status TEXT NOT NULL, updated_at INTEGER NOT NULL);",
+        )
+        .unwrap();
+
+        // (a) a completed task bound by session to an off-peak row → marker back-filled.
+        conn.execute(
+            "INSERT INTO tasks (workspace_key, workspace_path, task_id, created_at, updated_at) VALUES ('/ws','/ws','t1',1,1)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO off_peak_tasks VALUES ('op1','t1','/ws','running',5)",
+            [],
+        )
+        .unwrap();
+
+        // (d) a legacy awaiting_approval row → repaired to running.
+        conn.execute(
+            "INSERT INTO off_peak_tasks VALUES ('op2',NULL,'/ws','awaiting_approval',5)",
+            [],
+        )
+        .unwrap();
+
+        // (c) a deleted task carrying a stale grouping member + order → cleaned.
+        conn.execute(
+            "INSERT INTO tasks (workspace_key, workspace_path, task_id, created_at, updated_at, deleted) VALUES ('/ws','/ws','dead',1,1,1)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO task_group_members (group_id, workspace_key, task_id, sort_order, added_at, created_at, updated_at) VALUES ('g1','/ws','dead',1,1,1,1)",
+            [],
+        )
+        .unwrap();
+
+        run_startup_repairs(&conn, 100).unwrap();
+
+        let marker: Option<String> = conn
+            .query_row("SELECT off_peak_task_id FROM tasks WHERE task_id='t1'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(marker.as_deref(), Some("op1"), "off-peak marker back-filled");
+
+        let status: String = conn
+            .query_row("SELECT status FROM off_peak_tasks WHERE off_peak_task_id='op2'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(status, "running", "awaiting_approval repaired to running");
+
+        let member_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM task_group_members WHERE task_id='dead'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(member_count, 0, "deleted-task grouping reference cleaned");
+
+        // (b) t1 now has an off_peak marker → a system off-peak group + membership is created.
+        let in_op_group: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM task_group_members WHERE task_id='t1' AND group_id='zcode-default-group-off-peak'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(in_op_group, 1, "off-peak membership back-filled into the system group");
+
+        // Idempotent: running again adds no duplicate membership.
+        run_startup_repairs(&conn, 200).unwrap();
+        let dup: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM task_group_members WHERE task_id='t1' AND group_id='zcode-default-group-off-peak'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(dup, 1, "membership back-fill is idempotent");
     }
 }

@@ -22,6 +22,7 @@ export interface DbAddon {
   // ---- bootstrap / migration ----
   bootstrapTasksIndex(dbPath: string, deadlineMs: number): string;
   areMigrationsApplied(dbPath: string): boolean;
+  runStartupRepairsJson(dbPath: string, now: number): void;
 
   // ---- task index: reads ----
   tasksCount(dbPath: string): number;

@@ -12,7 +12,7 @@ import { join } from "node:path";
 const { loadAddon } = await import("../addon.ts");
 
 const EXPECTED = [
-  "bootstrapTasksIndex", "areMigrationsApplied",
+  "bootstrapTasksIndex", "areMigrationsApplied", "runStartupRepairsJson",
   "tasksCount", "listRecentTasks", "listTasksByWorkspace", "readTaskMetaJson", "getTaskMetaJson",
   "listTaskMetasJson", "listTaskMetasFilteredJson", "queryTaskListJson", "listDeletedTaskIdsJson",
   "listSessionsByAutomationJson", "hasGroupedWorkspaceBootstrapRunJson",
