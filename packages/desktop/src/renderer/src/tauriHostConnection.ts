@@ -13,9 +13,11 @@ import { spawnTauriSidecarDiscoverPort } from "./tauriBridge.js";
  * So this is NOT a new transport; it is the ~5 lines of glue joining the verified port-discovery
  * command to the verified WS-RPC client.
  *
- * Additive and NOT wired into the Electron factory yet: the runtime factory will call this only under
- * `isTauriRuntime()` once the Host externalBin is packaged (SIDECAR-TRANSPORT §6 steps 1–3, gated on
- * the `GO-NO-GO.md` decisions). Until then it is a complete, tested building block.
+ * Wired into `main.tsx`'s Tauri boot (Electron is removed, so this is the sole desktop path).
+ * `discoverPort` currently invokes the echo discovery command as a proven stand-in; it flips to the
+ * real `zcode-host` sidecar spawn once the Host externalBin is packaged (Phase 4 SEA) and Rust sources
+ * the provider-config/workspace env for it (Phase 3). The standalone Host boot + WS serve themselves are
+ * already verified end-to-end (`src/host/standaloneHost.ts`, layer-a A8). See `tauri-port/PORTING.md`.
  *
  * Auth: `connectViaWebSocket` opens a plain browser `WebSocket`; the loopback shared-secret gate
  * (SIDECAR-TRANSPORT §4) attaches the token to the URL at the server handshake. Browser WebSockets

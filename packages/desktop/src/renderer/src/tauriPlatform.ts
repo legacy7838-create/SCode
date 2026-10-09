@@ -33,9 +33,9 @@ import {
  * signature while no unported method is required (no stubs / no `throw`-placeholders, per the port
  * no-stub rule and AGENTS.md "no code beyond necessity").
  *
- * Electron is untouched: nothing imports this yet; the runtime factory will only select it under
- * `isTauriRuntime()` in a later, gated slice once the hard blockers (Agent transport, CDP browser
- * view, updater, event push, binary-over-JSON, sync-IPC getters) are ported.
+ * Now consumed by the Tauri platform factory (main.tsx selects it unconditionally, since Electron has
+ * been removed). The remaining hard surfaces (CDP browser view, updater, event push, binary-over-JSON,
+ * sync-IPC getters) are Phase-3 ports and stay inert in the factory until command-backed.
  *
  * Two mapping notes that are real logic, not pass-throughs:
  * - The interface's `selectDirectory`/`selectFile` return a SINGLE `string | null`, while the bridge
@@ -121,9 +121,7 @@ let deviceIdCache: string | null = null;
  *
  * @param deps - Bridge wrappers to read from; defaults to the real `tauriBridge` functions.
  */
-export async function bootstrapTauriPlatform(
-  deps: TauriPlatformDeps = realDeps,
-): Promise<void> {
+export async function bootstrapTauriPlatform(deps: TauriPlatformDeps = realDeps): Promise<void> {
   deviceIdCache = await deps.getDeviceId();
 }
 
@@ -140,9 +138,7 @@ export function resetTauriPlatformBootstrapForTesting(): void {
  * @returns An object whose members each satisfy the corresponding `IPlatformService` method
  *   signature (enforced by the `TauriPlatformSubset` `Pick`), delegating to a real Tauri `invoke`.
  */
-export function createTauriPlatformSubset(
-  deps: TauriPlatformDeps = realDeps,
-): TauriPlatformSubset {
+export function createTauriPlatformSubset(deps: TauriPlatformDeps = realDeps): TauriPlatformSubset {
   return {
     async selectDirectory() {
       const paths = await deps.selectDirectory(false);
@@ -228,9 +224,7 @@ export function createTauriPlatformSubset(
     },
     activateOrSetWorkspace(path: string) {
       // Maps the command's `Result<bool>` seam (activated?) onto the interface's `{ activated }` result.
-      return deps
-        .activateOrSetWorkspace(path)
-        .then((activated) => ({ activated }));
+      return deps.activateOrSetWorkspace(path).then((activated) => ({ activated }));
     },
     syncWindowTabs(paths: string[]): void {
       // Fire-and-forget like Electron's `ipcRenderer.send` (interface return `void`); swallow any

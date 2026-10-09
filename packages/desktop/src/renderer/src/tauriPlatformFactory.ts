@@ -1,9 +1,6 @@
 import type { IPlatformService } from "@zcode/shared";
 
-import {
-  bootstrapTauriPlatform,
-  createTauriPlatformSubset,
-} from "./tauriPlatform.js";
+import { bootstrapTauriPlatform, createTauriPlatformSubset } from "./tauriPlatform.js";
 
 /**
  * Tauri runtime platform factory — Phase 3, the renderer seam (`main.tsx` selects this when
@@ -14,8 +11,8 @@ import {
  * Honest scope note: the inert fallbacks below are explicitly "not yet ported to the Tauri shell" — they
  * no-op (void methods), return empty/false/null (getters), or return a never-firing disposer (`on*`).
  * They are NOT stubs pretending to work; calling an inert feature does nothing until it is ported. The
- * real, backed methods are the source of truth. Electron remains the shipped, full runtime; this file is
- * only ever loaded under a Tauri runtime.
+ * real, backed methods are the source of truth. Electron has been removed from this project — Tauri is
+ * the sole desktop runtime; these inert methods are Phase-3 surfaces awaiting a Tauri command.
  *
  * The `as unknown as IPlatformService` cast is deliberate: only the boot-path methods need concrete
  * shapes now; unported methods are filled with best-effort defaults and will be replaced by real
