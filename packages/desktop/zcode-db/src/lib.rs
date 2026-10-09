@@ -3,6 +3,8 @@
 //!
 //! READ-ONLY for now — the write path + migration/locking parity are later slices (PORTING-DB.md).
 
+pub mod migrations;
+
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use rusqlite::{Connection, OpenFlags};
@@ -1336,6 +1338,16 @@ pub fn sync_task_meta_json(
         sync_task_meta_with_grouping(&conn, &workspace_key, &incoming, &params, None, now as i64)
             .map_err(|e| Error::from_reason(e.to_string()))?;
     serde_json::to_string(&persisted).map_err(|e| Error::from_reason(e.to_string()))
+}
+
+/// N-API: verify the migration ledger of an existing DB (read-only) against this crate's frozen
+/// checksums. `true` means the Rust DB layer can safely adopt this file; a checksum mismatch
+/// surfaces as a thrown error (mirrors the TS runner). Extra migrations from newer builds (e.g.
+/// `0004`) are simply outside this crate's frozen set and are ignored, exactly like the TS check.
+#[napi]
+pub fn are_migrations_applied(db_path: String) -> Result<bool> {
+    let conn = open_readonly(&db_path)?;
+    migrations::are_tasks_migrations_applied(&conn).map_err(Error::from_reason)
 }
 
 /// N-API: return the raw `meta_json` string for one task (parse it in Rust via `row_to_meta`).
