@@ -40,6 +40,7 @@ export interface DbAddon {
   messagesJson(dbPath: string, sessionId: string): string;
   messageWithPartsJson(dbPath: string, sessionId: string, messageId: string): string;
   readTargetJson(dbPath: string, sessionId: string): string;
+  recallPreviousInputHistoryJson(dbPath: string, projectId: string, skip: number): string;
 
   // ---- task index: reads ----
   tasksCount(dbPath: string): number;

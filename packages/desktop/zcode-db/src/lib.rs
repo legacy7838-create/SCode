@@ -1905,6 +1905,15 @@ pub fn read_target_json(db_path: String, session_id: String) -> Result<String> {
     serde_json::to_string(&value).map_err(|e| Error::from_reason(e.to_string()))
 }
 
+/// N-API: `recallPreviousInputHistory` port. Returns the entry JSON or `"null"`. `skip` = offset.
+#[napi]
+pub fn recall_previous_input_history_json(db_path: String, project_id: String, skip: f64) -> Result<String> {
+    let conn = open_readonly(&db_path)?;
+    let value = session_store::recall_previous_input_history(&conn, &project_id, skip as i64)
+        .map_err(Error::from_reason)?;
+    serde_json::to_string(&value).map_err(|e| Error::from_reason(e.to_string()))
+}
+
 /// Port of `normalizeSearchSnippetText`: collapse whitespace runs to a single space, trim, cap at
 /// `SNIPPET_MAX_CHARS`. `split_whitespace` + join matches JS `.replace(/\s+/g, " ").trim()`.
 fn normalize_search_snippet_text(text: &str) -> String {

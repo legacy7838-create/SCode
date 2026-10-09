@@ -231,3 +231,92 @@ pub fn get_session_input_by_id(conn: &Connection, id: &str) -> Result<Value, Str
     Ok(row.unwrap_or(Value::Null))
 }
 
+
+/// `normalizedInputHistoryAttachments` for one entry array: keep only file/image/pdf/url types with a
+/// trimmed non-empty `path` or a trimmed non-empty `content` that isn't a `data:` URL; empty result →
+/// `None` (omit). Attachment key order: type, path?, content?.
+fn normalize_attachments(value: &Value) -> Option<Value> {
+    let arr = value.as_array()?;
+    let mut out: Vec<Value> = Vec::new();
+    for item in arr {
+        let Some(obj) = item.as_object() else { continue };
+        let ty = obj.get("type").and_then(Value::as_str);
+        if !matches!(ty, Some("file") | Some("image") | Some("pdf") | Some("url")) {
+            continue;
+        }
+        let path = obj.get("path").and_then(Value::as_str).map(str::trim).filter(|t| !t.is_empty());
+        let content = obj
+            .get("content")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|t| !t.is_empty() && !t.starts_with("data:"));
+        if path.is_none() && content.is_none() {
+            continue;
+        }
+        let mut m = Map::new();
+        m.insert("type".into(), json!(ty.unwrap()));
+        if let Some(p) = path {
+            m.insert("path".into(), json!(p));
+        }
+        if let Some(c) = content {
+            m.insert("content".into(), json!(c));
+        }
+        out.push(Value::Object(m));
+    }
+    if out.is_empty() {
+        None
+    } else {
+        Some(Value::Array(out))
+    }
+}
+
+/// Port of `recallPreviousInputHistory`: the newest (offset by `skip`) input-history entry for a
+/// project, or `null`. `decodeJson(attachments)` throws on invalid JSON (propagated).
+pub fn recall_previous_input_history(
+    conn: &Connection,
+    project_id: &str,
+    skip: i64,
+) -> Result<Value, String> {
+    let sql = "select id, project_id, session_id, text, attachments, kind, time_created \
+               from input_history where project_id = ?1 \
+               order by time_created desc, id desc limit 1 offset ?2";
+    let row = conn
+        .query_row(sql, rusqlite::params![project_id, skip], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, Option<String>>(2)?,
+                r.get::<_, String>(3)?,
+                r.get::<_, Option<String>>(4)?,
+                r.get::<_, String>(5)?,
+                r.get::<_, i64>(6)?,
+            ))
+        })
+        .optional()
+        .map_err(|e| e.to_string())?;
+    let Some((id, project_id, session_id, text, attachments_raw, kind, time_created)) = row else {
+        return Ok(Value::Null);
+    };
+
+    let attachments = match attachments_raw.filter(|s| !s.is_empty()) {
+        Some(s) => {
+            let parsed: Value = serde_json::from_str(&s).map_err(|e| e.to_string())?;
+            normalize_attachments(&parsed)
+        }
+        None => None,
+    };
+
+    let mut o = Map::new();
+    o.insert("id".into(), json!(id));
+    o.insert("projectID".into(), json!(project_id));
+    if let Some(v) = session_id.filter(|s| !s.is_empty()) {
+        o.insert("sessionID".into(), json!(v));
+    }
+    o.insert("text".into(), json!(text));
+    if let Some(a) = attachments {
+        o.insert("attachments".into(), a);
+    }
+    o.insert("kind".into(), json!(kind));
+    o.insert("time".into(), json!({ "created": time_created }));
+    Ok(Value::Object(o))
+}
