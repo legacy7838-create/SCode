@@ -1933,6 +1933,30 @@ pub fn list_script_workflow_runs_json(db_path: String, filter_json: String) -> R
     serde_json::to_string(&value).map_err(|e| Error::from_reason(e.to_string()))
 }
 
+/// N-API: `listScriptWorkflowActivities` port. Returns a JSON array of activity records.
+#[napi]
+pub fn list_script_workflow_activities_json(db_path: String, run_id: String) -> Result<String> {
+    let conn = open_readonly(&db_path)?;
+    let value = session_workflow::list_script_workflow_activities(&conn, &run_id)
+        .map_err(Error::from_reason)?;
+    serde_json::to_string(&value).map_err(|e| Error::from_reason(e.to_string()))
+}
+
+/// N-API: `listScriptWorkflowEvents` port. `limit` <= 0 or null → all (ascending); otherwise the
+/// newest N re-ascending. Returns a JSON array.
+#[napi]
+pub fn list_script_workflow_events_json(
+    db_path: String,
+    run_id: String,
+    limit: Option<f64>,
+) -> Result<String> {
+    let conn = open_readonly(&db_path)?;
+    let lim = limit.filter(|l| *l > 0.0).map(|l| l as i64);
+    let value = session_workflow::list_script_workflow_events(&conn, &run_id, lim)
+        .map_err(Error::from_reason)?;
+    serde_json::to_string(&value).map_err(|e| Error::from_reason(e.to_string()))
+}
+
 /// Port of `normalizeSearchSnippetText`: collapse whitespace runs to a single space, trim, cap at
 /// `SNIPPET_MAX_CHARS`. `split_whitespace` + join matches JS `.replace(/\s+/g, " ").trim()`.
 fn normalize_search_snippet_text(text: &str) -> String {

@@ -43,6 +43,8 @@ export interface DbAddon {
   recallPreviousInputHistoryJson(dbPath: string, projectId: string, skip: number): string;
   getScriptWorkflowRunJson(dbPath: string, runId: string): string;
   listScriptWorkflowRunsJson(dbPath: string, filterJson: string): string;
+  listScriptWorkflowActivitiesJson(dbPath: string, runId: string): string;
+  listScriptWorkflowEventsJson(dbPath: string, runId: string, limit: number | null): string;
 
   // ---- task index: reads ----
   tasksCount(dbPath: string): number;
