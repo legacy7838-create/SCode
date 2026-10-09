@@ -132,6 +132,8 @@ const VALID_PURPOSE: [&str; 2] = ["project", "conversation"];
 const ZCODE_AGENT_PROVIDER: &str = "glm";
 /// Valid `migrationSource` values — mirrors `zcodeTaskMigrationSourceSchema`.
 const VALID_MIGRATION: [&str; 1] = ["claudeCode"];
+/// `searchable_text` size cap in UTF-16 code units — mirrors TS `TASK_SEARCH_TEXT_MAX_CHARS`.
+const TASK_SEARCH_TEXT_MAX_CHARS: usize = 200_000;
 
 /// Rust mirror of TS `ZCodeTaskMeta`. `skip_serializing_if = Option::is_none` reproduces
 /// `JSON.stringify` dropping `undefined` keys, and serde ignoring unknown keys reproduces zod's
@@ -446,48 +448,76 @@ pub fn row_to_meta(row: &TaskIndexRow) -> TaskMeta {
         .unwrap_or_else(|| fallback_meta(row, identity))
 }
 
+/// Map a `TaskIndexRow` column projection (positional, matching the `listTaskMetas` SELECT) onto
+/// a `TaskIndexRow`. Nullable columns fall back to the TS-equivalent defaults so `row_to_meta` sees
+/// a complete row. Shared by the list query and the single-row re-read after a write.
+fn map_task_index_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<TaskIndexRow> {
+    Ok(TaskIndexRow {
+        workspace_key: r.get(0)?,
+        workspace_path: r.get::<_, Option<String>>(1)?.unwrap_or_default(),
+        workspace_identity: r.get(2)?,
+        task_id: r.get(3)?,
+        title: r.get(4)?,
+        task_status: r.get(5)?,
+        provider: r.get(6)?,
+        mode: r
+            .get::<_, Option<String>>(7)?
+            .unwrap_or_else(|| "build".to_string()),
+        model: r.get(8)?,
+        migration_source: r.get(9)?,
+        forked_from_task_id: r.get(10)?,
+        cron_automation_id: r.get(11)?,
+        off_peak_task_id: r.get(12)?,
+        created_at: r.get(13)?,
+        updated_at: r.get(14)?,
+        unread_at: r.get(15)?,
+        title_overridden: r.get::<_, Option<i64>>(16)?.unwrap_or(0),
+        meta_json: r
+            .get::<_, Option<String>>(17)?
+            .unwrap_or_else(|| "{}".to_string()),
+    })
+}
+
+const TASK_INDEX_ROW_COLUMNS: &str =
+    "workspace_key, workspace_path, workspace_identity, task_id, title, task_status, provider, \
+     mode, model, migration_source, forked_from_task_id, cron_automation_id, off_peak_task_id, \
+     created_at, updated_at, unread_at, title_overridden, meta_json";
+
 /// Select the full `TaskIndexRow` column set for one workspace, matching the TS `listTaskMetas`
-/// query (`deleted = 0`, `ORDER BY updated_at DESC, created_at DESC, task_id DESC`). Nullable
-/// columns fall back to the TS-equivalent defaults so `row_to_meta` sees a complete row.
+/// query (`deleted = 0`, `ORDER BY updated_at DESC, created_at DESC, task_id DESC`).
 pub fn query_task_index_rows(
     conn: &Connection,
     workspace_key: &str,
 ) -> std::result::Result<Vec<TaskIndexRow>, rusqlite::Error> {
-    let mut stmt = conn.prepare(
-        "SELECT workspace_key, workspace_path, workspace_identity, task_id, title, task_status,
-                provider, mode, model, migration_source, forked_from_task_id, cron_automation_id,
-                off_peak_task_id, created_at, updated_at, unread_at, title_overridden, meta_json
-         FROM tasks
-         WHERE workspace_key = ?1 AND deleted = 0
-         ORDER BY updated_at DESC, created_at DESC, task_id DESC",
-    )?;
-    let rows = stmt.query_map([workspace_key], |r| {
-        Ok(TaskIndexRow {
-            workspace_key: r.get(0)?,
-            workspace_path: r.get::<_, Option<String>>(1)?.unwrap_or_default(),
-            workspace_identity: r.get(2)?,
-            task_id: r.get(3)?,
-            title: r.get(4)?,
-            task_status: r.get(5)?,
-            provider: r.get(6)?,
-            mode: r
-                .get::<_, Option<String>>(7)?
-                .unwrap_or_else(|| "build".to_string()),
-            model: r.get(8)?,
-            migration_source: r.get(9)?,
-            forked_from_task_id: r.get(10)?,
-            cron_automation_id: r.get(11)?,
-            off_peak_task_id: r.get(12)?,
-            created_at: r.get(13)?,
-            updated_at: r.get(14)?,
-            unread_at: r.get(15)?,
-            title_overridden: r.get::<_, Option<i64>>(16)?.unwrap_or(0),
-            meta_json: r
-                .get::<_, Option<String>>(17)?
-                .unwrap_or_else(|| "{}".to_string()),
-        })
-    })?;
+    let sql = format!(
+        "SELECT {TASK_INDEX_ROW_COLUMNS} FROM tasks WHERE workspace_key = ?1 AND deleted = 0 \
+         ORDER BY updated_at DESC, created_at DESC, task_id DESC"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map([workspace_key], map_task_index_row)?;
     rows.collect()
+}
+
+/// Read one `TaskIndexRow` by primary key (`workspace_key`, `task_id`), the re-read TS `writeRecord`
+/// performs via `getTaskRow` to return the persisted projection. Tombstones are included (a write
+/// can re-read a soft-deleted row), matching `getTaskRow` semantics rather than the list filter.
+fn get_task_index_row(
+    conn: &Connection,
+    workspace_key: &str,
+    task_id: &str,
+) -> std::result::Result<Option<TaskIndexRow>, rusqlite::Error> {
+    let sql = format!(
+        "SELECT {TASK_INDEX_ROW_COLUMNS} FROM tasks WHERE workspace_key = ?1 AND task_id = ?2"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let mut rows = stmt.query_map(
+        rusqlite::params![workspace_key, task_id],
+        map_task_index_row,
+    )?;
+    match rows.next() {
+        Some(r) => r.map(Some),
+        None => Ok(None),
+    }
 }
 
 /// N-API: full Rust read path for one workspace — query rows, project each through `row_to_meta`,
@@ -502,6 +532,158 @@ pub fn list_task_metas_json(db_path: String, workspace_key: String) -> Result<St
         .map(row_to_meta)
         .collect();
     serde_json::to_string(&metas).map_err(|e| Error::from_reason(e.to_string()))
+}
+
+/// UTF-16 code-unit truncation matching JS `String.prototype.slice(0, max)`. Counting by `char`
+/// would over-keep astral (emoji) text, since JS counts a surrogate pair as 2 units but Rust's
+/// `char` counts it as 1 — so we must accumulate `encode_utf16` units and cut on a boundary.
+fn truncate_utf16(s: &str, max_units: usize) -> String {
+    let mut units = 0usize;
+    let mut byte_len = 0usize;
+    for ch in s.chars() {
+        let used = ch.len_utf16();
+        if units + used > max_units {
+            break;
+        }
+        units += used;
+        byte_len += ch.len_utf8();
+    }
+    s[..byte_len].to_string()
+}
+
+/// A write payload for `write_record` — mirrors the TS `TaskIndexWriteRecord` columns. `meta_json`
+/// is pre-serialized by the caller (TS `serializeMetaJson` uses `JSON.stringify`, whose key order
+/// is not canonical even across TS writes, so the parity contract is the *semantic* projection, not
+/// raw bytes). `searchable_text = None` means "keep the existing indexed text" (TS `undefined`).
+#[derive(Debug, Clone)]
+pub struct WriteRecord {
+    pub workspace_key: String,
+    pub workspace_path: String,
+    pub workspace_identity: Option<String>,
+    pub task_id: String,
+    pub title: String,
+    pub task_status: Option<String>,
+    pub provider: Option<String>,
+    pub mode: String,
+    pub model: Option<String>,
+    pub migration_source: Option<String>,
+    pub forked_from_task_id: Option<String>,
+    pub cron_automation_id: Option<String>,
+    pub off_peak_task_id: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub unread_at: Option<i64>,
+    /// TS `writeUnreadAt`: when false the conflict branch preserves the existing `unread_at`.
+    pub write_unread_at: bool,
+    pub pinned: bool,
+    pub archived: bool,
+    pub deleted: bool,
+    pub title_overridden: bool,
+    pub searchable_text: Option<String>,
+    pub meta_json: String,
+}
+
+/// Port of TS `writeRecord`: the full-column `tasks` upsert. Preserves `unread_at` unless
+/// `write_unread_at`, advances `last_unread_at` via `MAX(...)`, keeps existing `searchable_text`
+/// when none is supplied, then re-reads and returns the persisted projection via `row_to_meta`.
+pub fn write_record(
+    conn: &Connection,
+    record: &WriteRecord,
+) -> std::result::Result<TaskMeta, rusqlite::Error> {
+    let searchable_text = match record.searchable_text.as_deref() {
+        Some(s) => truncate_utf16(s, TASK_SEARCH_TEXT_MAX_CHARS),
+        None => {
+            let existing: Option<String> = conn
+                .query_row(
+                    "SELECT searchable_text FROM tasks WHERE workspace_key = ?1 AND task_id = ?2",
+                    rusqlite::params![record.workspace_key, record.task_id],
+                    |r| r.get::<_, Option<String>>(0),
+                )
+                .unwrap_or(None);
+            existing.unwrap_or_default()
+        }
+    };
+
+    let last_unread_at = record.unread_at.unwrap_or(0);
+    let write_unread_at: i64 = record.write_unread_at.into();
+    let pinned: i64 = record.pinned.into();
+    let archived: i64 = record.archived.into();
+    let deleted: i64 = record.deleted.into();
+    let title_overridden: i64 = record.title_overridden.into();
+    let params: Vec<(&str, &dyn rusqlite::types::ToSql)> = vec![
+        ("@workspace_key", &record.workspace_key),
+        ("@workspace_path", &record.workspace_path),
+        ("@workspace_identity", &record.workspace_identity),
+        ("@task_id", &record.task_id),
+        ("@title", &record.title),
+        ("@task_status", &record.task_status),
+        ("@provider", &record.provider),
+        ("@mode", &record.mode),
+        ("@model", &record.model),
+        ("@migration_source", &record.migration_source),
+        ("@forked_from_task_id", &record.forked_from_task_id),
+        ("@cron_automation_id", &record.cron_automation_id),
+        ("@off_peak_task_id", &record.off_peak_task_id),
+        ("@created_at", &record.created_at),
+        ("@updated_at", &record.updated_at),
+        ("@unread_at", &record.unread_at),
+        ("@last_unread_at", &last_unread_at),
+        ("@write_unread_at", &write_unread_at),
+        ("@pinned", &pinned),
+        ("@archived", &archived),
+        ("@deleted", &deleted),
+        ("@title_overridden", &title_overridden),
+        ("@searchable_text", &searchable_text),
+        ("@meta_json", &record.meta_json),
+    ];
+
+    conn.execute(
+        "INSERT INTO tasks (
+          workspace_key, workspace_path, workspace_identity, task_id, title, task_status,
+          provider, mode, model, migration_source, forked_from_task_id, cron_automation_id,
+          off_peak_task_id, created_at, updated_at, unread_at, last_unread_at, pinned, archived,
+          deleted, title_overridden, searchable_text, meta_json
+        ) VALUES (
+          @workspace_key, @workspace_path, @workspace_identity, @task_id, @title, @task_status,
+          @provider, @mode, @model, @migration_source, @forked_from_task_id, @cron_automation_id,
+          @off_peak_task_id, @created_at, @updated_at, @unread_at, @last_unread_at, @pinned,
+          @archived, @deleted, @title_overridden, @searchable_text, @meta_json
+        )
+        ON CONFLICT(workspace_key, task_id) DO UPDATE SET
+          workspace_path = excluded.workspace_path,
+          workspace_identity = excluded.workspace_identity,
+          title = excluded.title,
+          task_status = excluded.task_status,
+          provider = excluded.provider,
+          mode = excluded.mode,
+          model = excluded.model,
+          migration_source = excluded.migration_source,
+          forked_from_task_id = excluded.forked_from_task_id,
+          cron_automation_id = excluded.cron_automation_id,
+          off_peak_task_id = excluded.off_peak_task_id,
+          created_at = excluded.created_at,
+          updated_at = excluded.updated_at,
+          unread_at = CASE
+            WHEN @write_unread_at = 1 THEN excluded.unread_at
+            ELSE tasks.unread_at
+          END,
+          last_unread_at = MAX(
+            tasks.last_unread_at,
+            COALESCE(tasks.unread_at, 0),
+            CASE WHEN @write_unread_at = 1 THEN excluded.last_unread_at ELSE 0 END
+          ),
+          pinned = excluded.pinned,
+          archived = excluded.archived,
+          deleted = excluded.deleted,
+          title_overridden = excluded.title_overridden,
+          searchable_text = excluded.searchable_text,
+          meta_json = excluded.meta_json",
+        params.as_slice(),
+    )?;
+
+    let persisted = get_task_index_row(conn, &record.workspace_key, &record.task_id)?
+        .ok_or(rusqlite::Error::QueryReturnedNoRows)?;
+    Ok(row_to_meta(&persisted))
 }
 
 /// N-API: return the raw `meta_json` string for one task (parse it in Rust via `row_to_meta`).
@@ -791,6 +973,160 @@ mod tests {
             row_to_meta(&rem).workspace_identity.as_deref(),
             Some("remote:ssh:host.example:22:user:/home/u")
         );
+    }
+
+    fn full_schema_db() -> Connection {
+        // The live `tasks` shape after base schema-v1 + the ALTER migrations (cron/off_peak/
+        // searchable_text added). Column set matches write_record's INSERT exactly.
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE tasks (
+               workspace_key TEXT NOT NULL, workspace_path TEXT NOT NULL, workspace_identity TEXT,
+               task_id TEXT NOT NULL, title TEXT NOT NULL DEFAULT '', task_status TEXT,
+               provider TEXT, mode TEXT NOT NULL DEFAULT 'build', model TEXT,
+               migration_source TEXT, forked_from_task_id TEXT, cron_automation_id TEXT,
+               off_peak_task_id TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+               unread_at INTEGER, last_unread_at INTEGER NOT NULL DEFAULT 0,
+               pinned INTEGER NOT NULL DEFAULT 0, archived INTEGER NOT NULL DEFAULT 0,
+               deleted INTEGER NOT NULL DEFAULT 0, title_overridden INTEGER NOT NULL DEFAULT 0,
+               searchable_text TEXT NOT NULL DEFAULT '', meta_json TEXT NOT NULL DEFAULT '{}',
+               PRIMARY KEY (workspace_key, task_id));",
+        )
+        .unwrap();
+        conn
+    }
+
+    fn wr(task_id: &str) -> WriteRecord {
+        WriteRecord {
+            workspace_key: "/ws".into(),
+            workspace_path: "/ws".into(),
+            workspace_identity: None,
+            task_id: task_id.into(),
+            title: "t".into(),
+            task_status: Some("completed".into()),
+            provider: None,
+            mode: "build".into(),
+            model: None,
+            migration_source: None,
+            forked_from_task_id: None,
+            cron_automation_id: None,
+            off_peak_task_id: None,
+            created_at: 1,
+            updated_at: 2,
+            unread_at: None,
+            write_unread_at: true,
+            pinned: false,
+            archived: false,
+            deleted: false,
+            title_overridden: false,
+            searchable_text: Some("hello".into()),
+            meta_json: format!(
+                r#"{{"taskId":"{task_id}","traceId":"z-{task_id}","title":"t","workspacePath":"/ws","createdAt":1,"updatedAt":2,"mode":"build"}}"#
+            ),
+        }
+    }
+
+    fn col_i64(conn: &Connection, task_id: &str, column: &str) -> Option<i64> {
+        conn.query_row(
+            &format!("SELECT {column} FROM tasks WHERE workspace_key='/ws' AND task_id=?1"),
+            [task_id],
+            |r| r.get::<_, Option<i64>>(0),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn write_record_insert_then_preserves_unread_when_not_flagged() {
+        let conn = full_schema_db();
+        write_record(&conn, &wr("a")).unwrap();
+        assert_eq!(
+            col_i64(&conn, "a", "unread_at"),
+            None,
+            "first insert stores NULL unread_at"
+        );
+
+        // A follow-up write that does NOT flag unread must leave the existing value untouched.
+        let mut r = wr("a");
+        r.write_unread_at = false;
+        r.unread_at = Some(99);
+        r.searchable_text = Some("world".into());
+        write_record(&conn, &r).unwrap();
+        assert_eq!(
+            col_i64(&conn, "a", "unread_at"),
+            None,
+            "unread_at preserved (CASE ELSE branch)"
+        );
+
+        // Flagging it now writes the new value.
+        let mut r2 = wr("a");
+        r2.unread_at = Some(7);
+        write_record(&conn, &r2).unwrap();
+        assert_eq!(
+            col_i64(&conn, "a", "unread_at"),
+            Some(7),
+            "write_unread_at=1 updates value"
+        );
+    }
+
+    #[test]
+    fn write_record_advances_last_unread_at_via_max() {
+        let conn = full_schema_db();
+        let mut r = wr("b");
+        r.unread_at = Some(3);
+        write_record(&conn, &r).unwrap();
+        assert_eq!(col_i64(&conn, "b", "last_unread_at"), Some(3));
+
+        // New unread (2) is smaller than current unread_at (3): MAX keeps 3, unread_at becomes 2.
+        let mut r2 = wr("b");
+        r2.unread_at = Some(2);
+        write_record(&conn, &r2).unwrap();
+        assert_eq!(
+            col_i64(&conn, "b", "last_unread_at"),
+            Some(3),
+            "MAX monotonic"
+        );
+        assert_eq!(col_i64(&conn, "b", "unread_at"), Some(2));
+    }
+
+    #[test]
+    fn write_record_keeps_existing_searchable_text_when_none() {
+        let conn = full_schema_db();
+        let mut r = wr("c");
+        r.searchable_text = Some("seed".into());
+        write_record(&conn, &r).unwrap();
+        // None => preserve the indexed body (the exact corruption the TS comment warns about).
+        let mut r2 = wr("c");
+        r2.searchable_text = None;
+        write_record(&conn, &r2).unwrap();
+        let text: String = conn
+            .query_row(
+                "SELECT searchable_text FROM tasks WHERE workspace_key='/ws' AND task_id='c'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(text, "seed");
+    }
+
+    #[test]
+    fn truncate_utf16_counts_surrogate_pairs_as_two() {
+        // "😀" is 1 Rust char, 4 bytes, but 2 UTF-16 code units (a surrogate pair) — JS slices on 2.
+        assert_eq!(truncate_utf16("😀", 1), "");
+        assert_eq!(truncate_utf16("😀", 2), "😀");
+        assert_eq!(truncate_utf16("a😀b", 3), "a😀");
+        assert_eq!(truncate_utf16("abc", 2), "ab");
+    }
+
+    #[test]
+    fn write_record_returns_persisted_projection() {
+        let conn = full_schema_db();
+        let meta = write_record(&conn, &wr("d")).unwrap();
+        assert_eq!(meta.task_id, "d");
+        assert_eq!(
+            meta.trace_id, "z-d",
+            "valid meta_json projects meta traceId"
+        );
+        assert_eq!(meta.workspace_path, "/ws");
     }
 
     #[test]
