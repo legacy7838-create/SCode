@@ -2561,6 +2561,104 @@ pub fn automation_run_now_json(
     }))
 }
 
+// ---- TaskGroup write + grouped-view ordering N-API ----
+//
+// Grouping inputs (`GroupedTaskRef`, `GroupedTaskViewOrderInput`) derive `Deserialize` with the
+// same camelCase shape the TS emits, so they parse straight from JSON. All stamp an injected `now`.
+
+/// N-API: `TaskIndexRepo.createTaskGroup` (read-write). Returns the created `TaskGroup` JSON.
+#[napi]
+pub fn grouping_create_task_group_json(
+    db_path: String,
+    title: Option<String>,
+    color: Option<String>,
+    now: f64,
+) -> Result<String> {
+    let conn = open_readwrite(&db_path)?;
+    let group = grouping::create_task_group(
+        &conn,
+        title.as_deref(),
+        color.as_deref(),
+        now as i64,
+    )
+    .map_err(Error::from_reason)?;
+    serde_json::to_string(&group).map_err(|e| Error::from_reason(e.to_string()))
+}
+
+/// N-API: `TaskIndexRepo.renameTaskGroup` (read-write). Returns the re-read `TaskGroup` JSON.
+#[napi]
+pub fn grouping_rename_task_group_json(
+    db_path: String,
+    group_id: String,
+    title: String,
+    now: f64,
+) -> Result<String> {
+    let conn = open_readwrite(&db_path)?;
+    let group =
+        grouping::rename_task_group(&conn, &group_id, &title, now as i64).map_err(Error::from_reason)?;
+    serde_json::to_string(&group).map_err(|e| Error::from_reason(e.to_string()))
+}
+
+/// N-API: `TaskIndexRepo.updateTaskGroupColor` (read-write). Returns the re-read `TaskGroup` JSON.
+#[napi]
+pub fn grouping_update_task_group_color_json(
+    db_path: String,
+    group_id: String,
+    color: String,
+    now: f64,
+) -> Result<String> {
+    let conn = open_readwrite(&db_path)?;
+    let group = grouping::update_task_group_color(&conn, &group_id, &color, now as i64)
+        .map_err(Error::from_reason)?;
+    serde_json::to_string(&group).map_err(|e| Error::from_reason(e.to_string()))
+}
+
+/// N-API: `TaskIndexRepo.deleteTaskGroup` (read-write).
+#[napi]
+pub fn grouping_delete_task_group_json(db_path: String, group_id: String) -> Result<()> {
+    let conn = open_readwrite(&db_path)?;
+    grouping::delete_task_group(&conn, &group_id).map_err(Error::from_reason)
+}
+
+/// N-API: `TaskIndexRepo.upsertGroupedTopOrder` (read-write) — insert/update one mixed-list node slot.
+#[napi]
+pub fn grouping_upsert_top_order_json(
+    db_path: String,
+    node_type: String,
+    node_key: String,
+    sort_order: f64,
+    now: f64,
+) -> Result<()> {
+    let conn = open_readwrite(&db_path)?;
+    grouping::upsert_grouped_top_order(
+        &conn,
+        &node_type,
+        &node_key,
+        sort_order as i64,
+        now as i64,
+    )
+    .map_err(Error::from_reason)
+}
+
+/// N-API: `TaskIndexRepo.initializeGroupedTaskAtTop` (read-write). `task_json` = `GroupedTaskRef`.
+/// Returns whether a new order row was created (false when one already exists / task ineligible).
+#[napi]
+pub fn grouping_initialize_at_top_json(db_path: String, task_json: String, now: f64) -> Result<bool> {
+    let task: grouping::GroupedTaskRef =
+        serde_json::from_str(&task_json).map_err(|e| Error::from_reason(e.to_string()))?;
+    let conn = open_readwrite(&db_path)?;
+    grouping::initialize_grouped_task_at_top(&conn, &task, now as i64).map_err(Error::from_reason)
+}
+
+/// N-API: `TaskIndexRepo.applyGroupedTaskViewOrder` (read-write). `input_json` = the full order input.
+#[napi]
+pub fn grouping_apply_view_order_json(db_path: String, input_json: String, now: f64) -> Result<()> {
+    let input: grouping::GroupedTaskViewOrderInput =
+        serde_json::from_str(&input_json).map_err(|e| Error::from_reason(e.to_string()))?;
+    let conn = open_readwrite(&db_path)?;
+    grouping::apply_grouped_task_view_order(&conn, &input, now as i64).map_err(Error::from_reason)
+}
+
 /// N-API: return the raw `meta_json` string for one task (parse it in Rust via `row_to_meta`).
 #[napi]
 pub fn read_task_meta_json(
