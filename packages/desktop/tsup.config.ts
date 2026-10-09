@@ -111,6 +111,8 @@ const desktopNodeRuntimeExternals = [
   "node-pty",
   "ssh2",
   "undici",
+  // 独立 Host sidecar 用 ws 起 loopback RPC server；保留为运行时外部依赖，不内联进 ESM 产物。
+  "ws",
   "@larksuiteoapi/node-sdk",
   "yaml",
   // node-forge 内部用动态 require("crypto")，内联进 ESM main/host bundle 后 Electron 会报
@@ -132,6 +134,7 @@ export default defineConfig([
     name: "host",
     entry: {
       "host/index": "src/host/index.ts",
+      "host/standalone": "src/host/standaloneHost.ts",
       "host/tasksStorageWorker": "src/host/tasksStorageWorker.ts",
     },
     outDir: "out",

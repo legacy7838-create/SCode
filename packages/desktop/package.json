@@ -5,9 +5,9 @@
   "author": "ZCode",
   "type": "module",
   "scripts": {
-    "dev:tauri": "concurrently -k -n vite,tauri \"vite dev\" \"tauri dev\"",
-    "tauri:build": "vite build && tauri build",
-    "build": "vite build",
+    "dev:tauri": "concurrently -k -n tsup,vite,tauri \"tsup --watch\" \"vite dev\" \"tauri dev\"",
+    "tauri:build": "pnpm build && tauri build",
+    "build": "tsup && vite build",
     "prepare:build-meta": "node scripts/build-metadata.mjs",
     "prepare:runtime-assets": "node scripts/prepare-runtime-assets.mjs",
     "prepare:remote-assets": "node ../../scripts/prepare-prebuilds.mjs",
