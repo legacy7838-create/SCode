@@ -139,6 +139,31 @@ fn decode_json_null_on_empty(raw: &Option<String>) -> Result<Value, String> {
     }
 }
 
+/// N-API: `getProjectPermissionMode` port. Reads the `local_setting` mode row; empty/absent →
+/// `null`; invalid JSON → error (JS `JSON.parse` throws); a `.mode` that is not one of
+/// plan/build/edit/yolo/auto → `null` (mirrors `isCollaborationMode`).
+pub fn get_project_permission_mode(conn: &Connection, project_id: &str) -> Result<Value, String> {
+    let raw: Option<String> = conn
+        .query_row(
+            "select value from local_setting \
+             where scope='project' and scope_id=?1 and namespace='permission' and key='mode'",
+            [project_id],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    let Some(s) = raw.filter(|v| !v.is_empty()) else {
+        return Ok(Value::Null);
+    };
+    let parsed: Value = serde_json::from_str(&s).map_err(|e| e.to_string())?;
+    let mode = parsed.get("mode").and_then(Value::as_str);
+    if matches!(mode, Some("plan") | Some("build") | Some("edit") | Some("yolo") | Some("auto")) {
+        Ok(json!(mode.unwrap()))
+    } else {
+        Ok(Value::Null)
+    }
+}
+
 /// Port of `listSessionInputs`: all (or one status) for a session, ordered by `admitted_sequence`.
 pub fn list_session_inputs(
     conn: &Connection,
