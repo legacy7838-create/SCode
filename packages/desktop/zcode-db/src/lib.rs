@@ -686,6 +686,143 @@ pub fn write_record(
     Ok(row_to_meta(&persisted))
 }
 
+// ---- syncTaskMeta merge core (pure business rules, ported before DB/group plumbing) ----
+
+/// TS `isTerminalTaskStatus`: `completed` / `error` are terminal (a snapshot must not downgrade
+/// them back to `running`).
+fn is_terminal_status(status: Option<&str>) -> bool {
+    matches!(status, Some("completed") | Some("error"))
+}
+
+/// Port of `shouldPreserveNewerTerminalStatus`: keep the existing terminal status only when the
+/// existing row is terminal, the incoming status is missing/`running` (JS truthiness: an empty
+/// string is falsy, so it does not block preservation), and the existing row is strictly newer.
+pub fn should_preserve_newer_terminal_status(
+    existing: Option<&TaskMeta>,
+    incoming: &TaskMeta,
+) -> bool {
+    let existing = match existing {
+        Some(e) => e,
+        None => return false,
+    };
+    if !is_terminal_status(existing.status.as_deref()) {
+        return false;
+    }
+    if let Some(s) = incoming.status.as_deref() {
+        if !s.is_empty() && s != "running" {
+            return false;
+        }
+    }
+    existing.updated_at > incoming.updated_at
+}
+
+/// Sync-level params for `syncTaskMeta`, distinct from the meta fields. `None` means the caller
+/// omitted it, so the existing row's value is kept (TS `params.x ?? existing…`).
+#[derive(Debug, Clone, Default)]
+pub struct SyncParams {
+    pub pinned: Option<bool>,
+    pub archived: Option<bool>,
+    pub deleted: Option<bool>,
+    pub title_overridden: Option<bool>,
+    /// Whether the incoming meta had an OWN `target` key (TS `hasOwnProperty`). Present-but-null
+    /// still wins over the existing target; only a truly absent key defers to the existing one.
+    pub incoming_target_present: bool,
+}
+
+/// Existing-row scalar flags `syncTaskMeta` reads from the raw row (not the meta) as `??` fallbacks.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ExistingRowFlags {
+    pub title_overridden: bool,
+    pub pinned: bool,
+    pub archived: bool,
+    pub deleted: bool,
+}
+
+/// The merged outcome of `syncTaskMeta`'s decision step: the effective `meta` to write, the
+/// `writeRecord` flags, and the two "first appearance" triggers that later drive system-group
+/// membership (`ensureCronGroupMembership` / `ensureOffPeakGroupMembership`).
+#[derive(Debug, Clone)]
+pub struct SyncDecision {
+    pub meta: TaskMeta,
+    pub pinned: bool,
+    pub archived: bool,
+    pub deleted: bool,
+    pub title_overridden: bool,
+    pub newly_cron: bool,
+    pub newly_off_peak: bool,
+}
+
+/// Pure port of the `syncTaskMetaWithGroupedAdmission` merge block: the correctness-critical
+/// preservation rules (monotonic `updatedAt`, user-title keep, terminal-status keep, identity/
+/// migration/unread fallbacks, `target` presence) isolated from the transaction/queue/group I/O.
+pub fn merge_sync_task_meta(
+    incoming: &TaskMeta,
+    existing: Option<&TaskMeta>,
+    existing_flags: ExistingRowFlags,
+    params: &SyncParams,
+) -> SyncDecision {
+    let title_overridden = params
+        .title_overridden
+        .unwrap_or(existing_flags.title_overridden);
+    let updated_at = incoming
+        .updated_at
+        .max(existing.map(|e| e.updated_at).unwrap_or(0));
+    let preserve_terminal = should_preserve_newer_terminal_status(existing, incoming);
+
+    let mut meta = incoming.clone();
+    meta.title = match (title_overridden, existing) {
+        (true, Some(e)) => e.title.clone(),
+        _ => incoming.title.clone(),
+    };
+    meta.title_overridden = title_overridden;
+    meta.status = if preserve_terminal {
+        existing.and_then(|e| e.status.clone())
+    } else {
+        incoming.status.clone()
+    };
+    meta.last_error = if preserve_terminal {
+        existing.and_then(|e| e.last_error.clone())
+    } else {
+        incoming.last_error.clone()
+    };
+    meta.target = if params.incoming_target_present {
+        incoming.target.clone()
+    } else {
+        existing.and_then(|e| e.target.clone())
+    };
+    meta.migration_source = incoming
+        .migration_source
+        .clone()
+        .or_else(|| existing.and_then(|e| e.migration_source.clone()));
+    meta.cron_automation_id = incoming
+        .cron_automation_id
+        .clone()
+        .or_else(|| existing.and_then(|e| e.cron_automation_id.clone()));
+    meta.off_peak_task_id = incoming
+        .off_peak_task_id
+        .clone()
+        .or_else(|| existing.and_then(|e| e.off_peak_task_id.clone()));
+    meta.unread_at = incoming
+        .unread_at
+        .or_else(|| existing.and_then(|e| e.unread_at));
+    meta.updated_at = updated_at;
+
+    let existing_had_cron = existing.is_some_and(|e| e.cron_automation_id.is_some());
+    let existing_had_off_peak = existing.is_some_and(|e| e.off_peak_task_id.is_some());
+    let newly_cron = meta.cron_automation_id.is_some() && !existing_had_cron;
+    let newly_off_peak = meta.off_peak_task_id.is_some() && !existing_had_off_peak;
+
+    SyncDecision {
+        meta,
+        pinned: params.pinned.unwrap_or(existing_flags.pinned),
+        archived: params.archived.unwrap_or(existing_flags.archived),
+        deleted: params.deleted.unwrap_or(existing_flags.deleted),
+        title_overridden,
+        newly_cron,
+        newly_off_peak,
+    }
+}
+
 /// N-API: return the raw `meta_json` string for one task (parse it in Rust via `row_to_meta`).
 #[napi]
 pub fn read_task_meta_json(
@@ -1127,6 +1264,177 @@ mod tests {
             "valid meta_json projects meta traceId"
         );
         assert_eq!(meta.workspace_path, "/ws");
+    }
+
+    fn tm(updated_at: i64, status: Option<&str>) -> TaskMeta {
+        TaskMeta {
+            task_id: "t1".into(),
+            trace_id: "z-t1".into(),
+            title: "incoming".into(),
+            title_overridden: false,
+            workspace_path: "/ws".into(),
+            created_at: 1,
+            updated_at,
+            mode: "build".into(),
+            status: status.map(|s| s.to_string()),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn merge_keeps_updated_at_monotonic() {
+        let existing = tm(500, Some("running"));
+        let incoming = tm(300, Some("running")); // older snapshot arrives late
+        let d = merge_sync_task_meta(
+            &incoming,
+            Some(&existing),
+            ExistingRowFlags::default(),
+            &SyncParams::default(),
+        );
+        assert_eq!(
+            d.meta.updated_at, 500,
+            "updatedAt never regresses below the stored value"
+        );
+    }
+
+    #[test]
+    fn merge_preserves_newer_terminal_status_over_incoming_running() {
+        // existing completed at 500, incoming running at 300 (stale snapshot) → keep completed.
+        let mut existing = tm(500, Some("completed"));
+        existing.last_error = None;
+        let incoming = tm(300, Some("running"));
+        let d = merge_sync_task_meta(
+            &incoming,
+            Some(&existing),
+            ExistingRowFlags::default(),
+            &SyncParams::default(),
+        );
+        assert_eq!(
+            d.meta.status.as_deref(),
+            Some("completed"),
+            "terminal status not downgraded"
+        );
+    }
+
+    #[test]
+    fn merge_does_not_preserve_when_incoming_is_non_running() {
+        // existing completed@500 but incoming completed@600 (newer, non-running) → take incoming.
+        let existing = tm(500, Some("completed"));
+        let incoming = tm(600, Some("error"));
+        let d = merge_sync_task_meta(
+            &incoming,
+            Some(&existing),
+            ExistingRowFlags::default(),
+            &SyncParams::default(),
+        );
+        assert_eq!(d.meta.status.as_deref(), Some("error"));
+        assert_eq!(d.meta.updated_at, 600);
+    }
+
+    #[test]
+    fn merge_keeps_user_overridden_title() {
+        let mut existing = tm(500, Some("running"));
+        existing.title = "user rename".into();
+        let incoming = tm(600, Some("running"));
+        let flags = ExistingRowFlags {
+            title_overridden: true,
+            ..Default::default()
+        };
+        let d = merge_sync_task_meta(&incoming, Some(&existing), flags, &SyncParams::default());
+        assert!(d.title_overridden);
+        assert_eq!(
+            d.meta.title, "user rename",
+            "app-side rename survives background refresh"
+        );
+    }
+
+    #[test]
+    fn merge_preserves_identity_fields_from_existing() {
+        let mut existing = tm(500, Some("completed"));
+        existing.cron_automation_id = Some("cron-1".into());
+        existing.migration_source = Some("claudeCode".into());
+        let incoming = tm(600, Some("completed")); // snapshot carries no cron/migration
+        let d = merge_sync_task_meta(
+            &incoming,
+            Some(&existing),
+            ExistingRowFlags::default(),
+            &SyncParams::default(),
+        );
+        assert_eq!(d.meta.cron_automation_id.as_deref(), Some("cron-1"));
+        assert_eq!(d.meta.migration_source.as_deref(), Some("claudeCode"));
+        assert!(!d.newly_cron, "cron already existed → no re-add trigger");
+    }
+
+    #[test]
+    fn merge_triggers_first_cron_membership() {
+        let existing = tm(500, Some("completed")); // no cron
+        let mut incoming = tm(600, Some("completed"));
+        incoming.cron_automation_id = Some("cron-new".into());
+        let d = merge_sync_task_meta(
+            &incoming,
+            Some(&existing),
+            ExistingRowFlags::default(),
+            &SyncParams::default(),
+        );
+        assert!(
+            d.newly_cron,
+            "first time a cron id appears → group membership"
+        );
+    }
+
+    #[test]
+    fn merge_target_present_beats_existing_but_absent_defers() {
+        let mut existing = tm(500, Some("completed"));
+        existing.target = Some(serde_json::json!({"goal": "old"}));
+
+        // Incoming has NO own `target` key → keep existing target.
+        let absent = tm(600, Some("completed"));
+        let d1 = merge_sync_task_meta(
+            &absent,
+            Some(&existing),
+            ExistingRowFlags::default(),
+            &SyncParams::default(),
+        );
+        assert_eq!(
+            d1.meta.target, existing.target,
+            "absent target defers to existing"
+        );
+
+        // Incoming has target: null (present) → wins (becomes null), NOT existing.
+        let mut present_null = tm(600, Some("completed"));
+        present_null.target = Some(serde_json::Value::Null);
+        let p = SyncParams {
+            incoming_target_present: true,
+            ..Default::default()
+        };
+        let d2 = merge_sync_task_meta(
+            &present_null,
+            Some(&existing),
+            ExistingRowFlags::default(),
+            &p,
+        );
+        assert_eq!(
+            d2.meta.target,
+            Some(serde_json::Value::Null),
+            "present null target clears it"
+        );
+    }
+
+    #[test]
+    fn should_preserve_helper_truthiness_of_empty_status() {
+        let existing = tm(500, Some("error"));
+        // empty-string incoming status is falsy in JS → does not block preservation; existing newer.
+        let incoming = tm(300, Some(""));
+        assert!(should_preserve_newer_terminal_status(
+            Some(&existing),
+            &incoming
+        ));
+        // non-running non-empty incoming status blocks it.
+        let incoming2 = tm(300, Some("completed"));
+        assert!(!should_preserve_newer_terminal_status(
+            Some(&existing),
+            &incoming2
+        ));
     }
 
     #[test]
