@@ -2132,6 +2132,435 @@ pub fn delete_automation_json(
         .map_err(Error::from_reason)
 }
 
+// ---- AutomationRepo dispatch / claim / run-ledger N-API ----
+//
+// All take an injected `now`/`dispatched_at`/`failed_at` clock, so the adapter and the differential
+// harness share one time source. The run ledger fns accept an explicit `runId` (the TS callers
+// already mint the id before the write), except `runNow`, whose random suffix is normalized in the
+// harness. Model-selection inputs reuse `read_serialized_model_selection` — the same strict zod path.
+
+fn parse_dispatch_failure_kind(s: &str) -> std::result::Result<automation_write::DispatchFailureKind, Error> {
+    match s {
+        "transient" => Ok(automation_write::DispatchFailureKind::Transient),
+        "permanent" => Ok(automation_write::DispatchFailureKind::Permanent),
+        other => Err(Error::from_reason(format!(
+            "invalid dispatch failure kind: {other}"
+        ))),
+    }
+}
+
+/// Owned form of `RunIdentity` (borrows would not outlive the JSON parse); `as_borrowed` re-borrows
+/// it for the ported call.
+struct RunIdentityOwned {
+    run_id: String,
+    automation_id: String,
+    workspace_key: String,
+    scheduled_at: Option<i64>,
+    trigger: String,
+}
+
+impl RunIdentityOwned {
+    fn as_borrowed(&self) -> automation_write::RunIdentity<'_> {
+        automation_write::RunIdentity {
+            run_id: &self.run_id,
+            automation_id: &self.automation_id,
+            workspace_key: &self.workspace_key,
+            scheduled_at: self.scheduled_at,
+            trigger: &self.trigger,
+        }
+    }
+}
+
+fn parse_run_identity(json: &str) -> std::result::Result<RunIdentityOwned, Error> {
+    let v: serde_json::Value =
+        serde_json::from_str(json).map_err(|e| Error::from_reason(e.to_string()))?;
+    let o = v
+        .as_object()
+        .ok_or_else(|| Error::from_reason("run identity must be an object"))?;
+    Ok(RunIdentityOwned {
+        run_id: two_str(o, "runId").unwrap_or_default(),
+        automation_id: two_str(o, "automationId").unwrap_or_default(),
+        workspace_key: two_str(o, "workspaceKey").unwrap_or_default(),
+        scheduled_at: o.get("scheduledAt").and_then(serde_json::Value::as_i64),
+        trigger: two_str(o, "trigger").unwrap_or_default(),
+    })
+}
+
+fn parse_model_selection_opt(json: Option<&str>) -> Option<automation::ModelSelection> {
+    automation::read_serialized_model_selection(json)
+}
+
+/// N-API: `AutomationRepo.setEnabled` (read-write).
+#[napi]
+pub fn automation_set_enabled_json(
+    db_path: String,
+    automation_id: String,
+    enabled: bool,
+    workspace_key: Option<String>,
+    now: f64,
+) -> Result<()> {
+    let conn = open_readwrite(&db_path)?;
+    automation_write::set_enabled(
+        &conn,
+        &automation_id,
+        enabled,
+        workspace_key.as_deref(),
+        now as i64,
+    )
+    .map_err(Error::from_reason)
+}
+
+/// N-API: `AutomationRepo.restart` (read-write). `next_run_at` is tri-state: absent→`None` arg
+/// meaning "keep computed", but the ported fn treats a passed `None` as "no next run" — so the
+/// adapter must always pass an explicit value (TS recomputes nextRunAt before calling). Here a
+/// present number is used, `null`/absent becomes `None`.
+#[napi]
+pub fn automation_restart_json(
+    db_path: String,
+    automation_id: String,
+    next_run_at: Option<f64>,
+    workspace_key: Option<String>,
+    now: f64,
+) -> Result<()> {
+    let conn = open_readwrite(&db_path)?;
+    automation_write::restart(
+        &conn,
+        &automation_id,
+        next_run_at.map(|v| v as i64),
+        workspace_key.as_deref(),
+        now as i64,
+    )
+    .map_err(Error::from_reason)
+}
+
+/// N-API: `AutomationRepo.claimDue` — atomically claim due automations. Returns claimed rows JSON.
+#[napi]
+pub fn automation_claim_due_json(db_path: String, now: f64) -> Result<String> {
+    let conn = open_readwrite(&db_path)?;
+    let rows = automation_write::claim_due(&conn, now as i64).map_err(Error::from_reason)?;
+    serde_json::to_string(&rows).map_err(|e| Error::from_reason(e.to_string()))
+}
+
+/// N-API: `AutomationRepo.markDispatched` (read-write).
+#[napi]
+pub fn automation_mark_dispatched_json(
+    db_path: String,
+    automation_id: String,
+    dispatched_at: f64,
+    next_run_at: Option<f64>,
+) -> Result<()> {
+    let conn = open_readwrite(&db_path)?;
+    automation_write::mark_dispatched(
+        &conn,
+        &automation_id,
+        dispatched_at as i64,
+        next_run_at.map(|v| v as i64),
+    )
+    .map_err(Error::from_reason)
+}
+
+/// N-API: `AutomationRepo.markDispatchFailed` (read-write). `kind` is `transient`/`permanent`.
+#[napi]
+pub fn automation_mark_dispatch_failed_json(
+    db_path: String,
+    automation_id: String,
+    failed_at: f64,
+    error: String,
+    kind: String,
+    next_run_at: Option<f64>,
+) -> Result<()> {
+    let k = parse_dispatch_failure_kind(&kind)?;
+    let conn = open_readwrite(&db_path)?;
+    automation_write::mark_dispatch_failed(
+        &conn,
+        &automation_id,
+        failed_at as i64,
+        &error,
+        k,
+        next_run_at.map(|v| v as i64),
+    )
+    .map_err(Error::from_reason)
+}
+
+/// N-API: `AutomationRepo.releaseClaim` (read-write).
+#[napi]
+pub fn automation_release_claim_json(db_path: String, automation_id: String, now: f64) -> Result<()> {
+    let conn = open_readwrite(&db_path)?;
+    automation_write::release_claim(&conn, &automation_id, now as i64).map_err(Error::from_reason)
+}
+
+/// N-API: `AutomationRepo.releaseManualClaim` (read-write).
+#[napi]
+pub fn automation_release_manual_claim_json(
+    db_path: String,
+    automation_id: String,
+    workspace_key: String,
+    now: f64,
+) -> Result<()> {
+    let conn = open_readwrite(&db_path)?;
+    automation_write::release_manual_claim(&conn, &automation_id, &workspace_key, now as i64)
+        .map_err(Error::from_reason)
+}
+
+/// N-API: `AutomationRepo.touchManualClaim` (read-write).
+#[napi]
+pub fn automation_touch_manual_claim_json(
+    db_path: String,
+    automation_id: String,
+    workspace_key: String,
+    now: f64,
+) -> Result<()> {
+    let conn = open_readwrite(&db_path)?;
+    automation_write::touch_manual_claim(&conn, &automation_id, &workspace_key, now as i64)
+        .map_err(Error::from_reason)
+}
+
+/// N-API: `AutomationRepo.getScheduledRunCount` (read-only). Returns `null` when the row is absent.
+#[napi]
+pub fn automation_scheduled_run_count_json(
+    db_path: String,
+    automation_id: String,
+    workspace_key: Option<String>,
+) -> Result<Option<i64>> {
+    let conn = open_readonly(&db_path)?;
+    automation_write::get_scheduled_run_count(&conn, &automation_id, workspace_key.as_deref())
+        .map_err(Error::from_reason)
+}
+
+/// N-API: `AutomationRepo.hasTaskBinding` (read-only).
+#[napi]
+pub fn automation_has_task_binding_json(
+    db_path: String,
+    workspace_key: String,
+    target_task_id: String,
+) -> Result<bool> {
+    let conn = open_readonly(&db_path)?;
+    automation_write::has_task_binding(&conn, &workspace_key, &target_task_id)
+        .map_err(Error::from_reason)
+}
+
+/// N-API: `AutomationRepo.getModelSelectionForDispatch` (read-only) as JSON, or `null`.
+#[napi]
+pub fn automation_model_selection_for_dispatch_json(
+    db_path: String,
+    automation_id: String,
+    workspace_key: String,
+) -> Result<Option<String>> {
+    let conn = open_readonly(&db_path)?;
+    let sel = automation_write::get_model_selection_for_dispatch(&conn, &automation_id, &workspace_key)
+        .map_err(Error::from_reason)?;
+    Ok(sel.map(|m| serde_json::to_string(&m).unwrap_or_default()))
+}
+
+/// N-API: `AutomationRepo.listRuns` (read-only) as JSON.
+#[napi]
+pub fn automation_list_runs_json(
+    db_path: String,
+    automation_id: String,
+    workspace_key: Option<String>,
+) -> Result<String> {
+    let conn = open_readonly(&db_path)?;
+    let rows =
+        automation_write::list_runs(&conn, &automation_id, workspace_key.as_deref())
+            .map_err(Error::from_reason)?;
+    serde_json::to_string(&rows).map_err(|e| Error::from_reason(e.to_string()))
+}
+
+/// N-API: `AutomationRepo.getRun` (read-only) as JSON, or `null`.
+#[napi]
+pub fn automation_get_run_json(db_path: String, run_id: String) -> Result<Option<String>> {
+    let conn = open_readonly(&db_path)?;
+    let row = automation_write::get_run(&conn, &run_id).map_err(Error::from_reason)?;
+    Ok(row.map(|r| serde_json::to_string(&r).unwrap_or_default()))
+}
+
+/// N-API: `AutomationRepo.deleteRun` (read-write).
+#[napi]
+pub fn automation_delete_run_json(
+    db_path: String,
+    run_id: String,
+    workspace_key: Option<String>,
+) -> Result<()> {
+    let conn = open_readwrite(&db_path)?;
+    automation_write::delete_run(&conn, &run_id, workspace_key.as_deref()).map_err(Error::from_reason)
+}
+
+/// N-API: `AutomationRepo.pruneRuns` (read-write). Returns the pruned count.
+#[napi]
+pub fn automation_prune_runs_json(db_path: String, max_age_ms: f64, now: f64) -> Result<i64> {
+    let conn = open_readwrite(&db_path)?;
+    let n = automation_write::prune_runs(&conn, max_age_ms as i64, now as i64)
+        .map_err(Error::from_reason)?;
+    Ok(n as i64)
+}
+
+/// N-API: `AutomationRepo.ensureRunClaimed` (read-write). `identity_json` = `{runId,automationId,workspaceKey,scheduledAt?,trigger}`.
+#[napi]
+pub fn automation_ensure_run_claimed_json(
+    db_path: String,
+    identity_json: String,
+    now: f64,
+) -> Result<()> {
+    let id = parse_run_identity(&identity_json)?;
+    let conn = open_readwrite(&db_path)?;
+    automation_write::ensure_run_claimed(&conn, &id.as_borrowed(), now as i64)
+        .map_err(Error::from_reason)
+}
+
+/// N-API: `AutomationRepo.upsertRunClaimed` (read-write). `selection_json` optional; parsed via the
+/// strict zod path (an unparseable object yields `None`, matching `readSerializedModelSelection`).
+#[napi]
+pub fn automation_upsert_run_claimed_json(
+    db_path: String,
+    identity_json: String,
+    selection_json: Option<String>,
+    now: f64,
+) -> Result<()> {
+    let id = parse_run_identity(&identity_json)?;
+    let sel = parse_model_selection_opt(selection_json.as_deref());
+    let conn = open_readwrite(&db_path)?;
+    automation_write::upsert_run_claimed(&conn, &id.as_borrowed(), sel.as_ref(), now as i64)
+        .map_err(Error::from_reason)
+}
+
+/// N-API: `AutomationRepo.fixRunModelSelection` (read-write). Returns the persisted selection JSON.
+#[napi]
+pub fn automation_fix_run_model_selection_json(
+    db_path: String,
+    run_id: String,
+    selection_json: String,
+    now: f64,
+) -> Result<String> {
+    let sel = automation::read_serialized_model_selection(Some(&selection_json))
+        .ok_or_else(|| Error::from_reason("invalid model selection"))?;
+    let conn = open_readwrite(&db_path)?;
+    let result =
+        automation_write::fix_run_model_selection(&conn, &run_id, &sel, now as i64)
+            .map_err(Error::from_reason)?;
+    serde_json::to_string(&result).map_err(|e| Error::from_reason(e.to_string()))
+}
+
+/// N-API: `AutomationRepo.markRunDispatch` (read-write).
+#[napi]
+pub fn automation_mark_run_dispatch_json(
+    db_path: String,
+    run_id: String,
+    dispatch_status: String,
+    session_id: Option<String>,
+    error: Option<String>,
+    now: f64,
+) -> Result<()> {
+    let conn = open_readwrite(&db_path)?;
+    automation_write::mark_run_dispatch(
+        &conn,
+        &run_id,
+        &dispatch_status,
+        session_id.as_deref(),
+        error.as_deref(),
+        now as i64,
+    )
+    .map_err(Error::from_reason)
+}
+
+/// N-API: `AutomationRepo.markRunOutcome` (read-write).
+#[napi]
+pub fn automation_mark_run_outcome_json(
+    db_path: String,
+    run_id: String,
+    outcome: String,
+    error: Option<String>,
+    now: f64,
+) -> Result<()> {
+    let conn = open_readwrite(&db_path)?;
+    automation_write::mark_run_outcome(&conn, &run_id, &outcome, error.as_deref(), now as i64)
+        .map_err(Error::from_reason)
+}
+
+/// N-API: `AutomationRepo.recordSkippedRun` (read-write).
+#[napi]
+pub fn automation_record_skipped_run_json(
+    db_path: String,
+    identity_json: String,
+    reason: String,
+    now: f64,
+) -> Result<()> {
+    let id = parse_run_identity(&identity_json)?;
+    let conn = open_readwrite(&db_path)?;
+    automation_write::record_skipped_run(&conn, &id.as_borrowed(), &reason, now as i64)
+        .map_err(Error::from_reason)
+}
+
+/// N-API: `AutomationRepo.claimManualRuns` (read-write) as JSON `[{automation,run}, ...]`.
+#[napi]
+pub fn automation_claim_manual_runs_json(db_path: String, now: f64) -> Result<String> {
+    let conn = open_readwrite(&db_path)?;
+    let rows = automation_write::claim_manual_runs(&conn, now as i64).map_err(Error::from_reason)?;
+    let json: Vec<serde_json::Value> = rows
+        .iter()
+        .map(|m| serde_json::json!({ "automation": m.automation, "run": m.run }))
+        .collect();
+    serde_json::to_string(&json).map_err(|e| Error::from_reason(e.to_string()))
+}
+
+/// N-API: `AutomationRepo.markManualRunDispatched` (read-write). Returns whether a row matched.
+#[napi]
+pub fn automation_mark_manual_run_dispatched_json(
+    db_path: String,
+    run_id: String,
+    session_id: Option<String>,
+    dispatched_at: f64,
+) -> Result<bool> {
+    let conn = open_readwrite(&db_path)?;
+    automation_write::mark_manual_run_dispatched(&conn, &run_id, session_id.as_deref(), dispatched_at as i64)
+        .map_err(Error::from_reason)
+}
+
+/// N-API: `AutomationRepo.skipAndReschedule` (read-write). `params_json` mirrors
+/// `SkipAndRescheduleParams` (`finalize` marks a pure one-shot terminal).
+#[napi]
+pub fn automation_skip_and_reschedule_json(
+    db_path: String,
+    params_json: String,
+    now: f64,
+) -> Result<()> {
+    let v: serde_json::Value =
+        serde_json::from_str(&params_json).map_err(|e| Error::from_reason(e.to_string()))?;
+    let o = v
+        .as_object()
+        .ok_or_else(|| Error::from_reason("params must be an object"))?;
+    let p = automation_write::SkipAndRescheduleParams {
+        automation_id: two_str(o, "automationId").unwrap_or_default(),
+        run_id: two_str(o, "runId").unwrap_or_default(),
+        workspace_key: two_str(o, "workspaceKey").unwrap_or_default(),
+        scheduled_at: o.get("scheduledAt").and_then(serde_json::Value::as_i64),
+        reason: two_str(o, "reason").unwrap_or_default(),
+        next_run_at: o.get("nextRunAt").and_then(serde_json::Value::as_i64),
+        finalize: opt_bool(o, "finalize").unwrap_or(false),
+    };
+    let conn = open_readwrite(&db_path)?;
+    automation_write::skip_and_reschedule(&conn, &p, now as i64).map_err(Error::from_reason)
+}
+
+/// N-API: `AutomationRepo.runNow` (read-write) as JSON `{automation,run}` or `null`. The run id's
+/// random uuid suffix is generated in Rust (mirrors TS `crypto.randomUUID()`); the differential
+/// harness normalizes it.
+#[napi]
+pub fn automation_run_now_json(
+    db_path: String,
+    automation_id: String,
+    workspace_key: Option<String>,
+    now: f64,
+) -> Result<Option<String>> {
+    let conn = open_readwrite(&db_path)?;
+    let claimed =
+        automation_write::run_now(&conn, &automation_id, workspace_key.as_deref(), now as i64)
+            .map_err(Error::from_reason)?;
+    Ok(claimed.map(|m| {
+        serde_json::to_string(&serde_json::json!({ "automation": m.automation, "run": m.run }))
+            .unwrap_or_default()
+    }))
+}
+
 /// N-API: return the raw `meta_json` string for one task (parse it in Rust via `row_to_meta`).
 #[napi]
 pub fn read_task_meta_json(
