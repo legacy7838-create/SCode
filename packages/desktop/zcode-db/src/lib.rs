@@ -132,7 +132,7 @@ pub fn upsert_task(
 // ---- rowToMeta / meta model (faithful port of TS ZCodeTaskMeta read projection) ----
 
 /// Valid `mode` values — mirrors `zcodeTaskModeSchema`.
-const VALID_MODES: [&str; 6] = ["yolo", "plan", "edit", "auto", "autoEdit", "build"];
+pub(crate) const VALID_MODES: [&str; 6] = ["yolo", "plan", "edit", "auto", "autoEdit", "build"];
 /// Valid persisted `status` values — mirrors `zcodeTaskPersistStatusSchema`.
 const VALID_STATUS: [&str; 3] = ["running", "completed", "error"];
 /// Valid `workspacePurpose` values — mirrors `zcodeTaskMetaSchema.workspacePurpose`.
