@@ -285,6 +285,39 @@ pub fn get_automation(
     }
 }
 
+// ---- Cron-independent pure scheduling helpers (slice 25) ----
+
+/// Mirrors TS `ONE_SHOT_MISSED_RUN_GRACE_MS`.
+pub const ONE_SHOT_MISSED_RUN_GRACE_MS: i64 = 60 * 1_000;
+/// Mirrors TS `ONE_SHOT_STALE_TARGET_WINDOW_MS` (30 min).
+pub const ONE_SHOT_STALE_TARGET_WINDOW_MS: i64 = 30 * 60 * 1_000;
+
+/// Port of the `FIXED_CALENDAR_CRON` test (`/^\d+\s+\d+\s+\d+\s+\d+\s+\*$/`): a five-field cron of
+/// four all-digit components and a literal `*` day-of-week. Implemented by hand so no regex crate is
+/// pulled in for a pattern this simple. `expr` is trimmed by the caller (TS trims before testing).
+pub fn is_fixed_calendar_cron(expr: &str) -> bool {
+    let tokens: Vec<&str> = expr.split_whitespace().collect();
+    if tokens.len() != 5 || tokens[4] != "*" {
+        return false;
+    }
+    tokens[..4]
+        .iter()
+        .all(|t| !t.is_empty() && t.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// Port of the `minute` branch of `computeScheduleRuleNextRunAt` — the only unit that is pure
+/// absolute-ms arithmetic (no local-calendar `Date`, no `croner`). Steps in whole-minute intervals
+/// from a fixed `anchor_at`, always returning a time strictly after `from` (never earlier than
+/// `anchor + interval`, so a late dispatch can't drift). The division uses `f64::floor` to mirror JS
+/// `Math.floor` (Rust integer `/` truncates toward zero, which differs for negative dividends — the
+/// `max(1, …)` clamp hides that here, but flooring keeps it faithful).
+pub fn compute_minute_interval_next_run(interval_minutes: f64, anchor_at: i64, from: i64) -> i64 {
+    let interval = interval_minutes.floor().max(1.0) as i64;
+    let step = interval * 60_000;
+    let steps = (((from - anchor_at) as f64 / step as f64).floor() + 1.0).max(1.0) as i64;
+    anchor_at + steps * step
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -392,6 +425,45 @@ mod tests {
         assert_eq!(
             serialize_model_selection(&with).unwrap(),
             r#"{"providerId":"p","modelId":"m","options":{"reasoningLevel":"high"}}"#
+        );
+    }
+
+    #[test]
+    fn is_fixed_calendar_cron_matches_four_digits_and_star() {
+        assert!(is_fixed_calendar_cron("15 10 25 12 *"));
+        assert!(is_fixed_calendar_cron("0 9 1 1 *"));
+        assert!(!is_fixed_calendar_cron("*/5 * * * *"));
+        assert!(!is_fixed_calendar_cron("15 10 25 12 1")); // day-of-week must be *
+        assert!(!is_fixed_calendar_cron("15 10 25 * *")); // only four components → 5 tokens but field4 is *
+        assert!(!is_fixed_calendar_cron("15 10 25 12")); // missing day-of-week
+    }
+
+    #[test]
+    fn minute_interval_next_run_uses_floor_and_clamps() {
+        let anchor = 1_000_000;
+        // from == anchor → first full interval after.
+        assert_eq!(
+            compute_minute_interval_next_run(5.0, anchor, anchor),
+            anchor + 300_000
+        );
+        // one ms into the second interval → steps=2.
+        assert_eq!(
+            compute_minute_interval_next_run(5.0, anchor, anchor + 300_001),
+            anchor + 600_000
+        );
+        // a from earlier than anchor still clamps to the first interval (max(1)).
+        assert_eq!(
+            compute_minute_interval_next_run(5.0, anchor, anchor - 999_999),
+            anchor + 300_000
+        );
+        // fractional interval floors, then clamps to >=1.
+        assert_eq!(
+            compute_minute_interval_next_run(2.9, anchor, anchor),
+            anchor + 120_000
+        );
+        assert_eq!(
+            compute_minute_interval_next_run(0.0, anchor, anchor),
+            anchor + 60_000
         );
     }
 
