@@ -1,20 +1,16 @@
 /*
  * Layer A6 — tauriBridge import-safety + runtime capability probe.
  *
- * The entire parallel-shell contract ("Electron stays fully intact and is never
- * removed until Tauri reaches verified parity") rests on one property of
- * `tauriBridge.ts`: importing it must have ZERO side effects and it must select
- * the Tauri path only via a runtime probe of `window.__TAURI_INTERNALS__` — never
- * by assuming that global exists at load time. If the module called `invoke()` at
- * top level, or hard-referenced the Tauri global on import, merely importing it in
- * an Electron/Chromium renderer (which has no Tauri internals) would throw and
- * break Electron. No other test guards this, so it is asserted here: under a
- * Tauri-less `window`, the module imports cleanly and `isTauriRuntime()` returns
- * `false` (the Electron path is preserved); once a Tauri global is present it
- * returns `true`.
+ * `tauriBridge.ts` is imported unconditionally by the renderer entry, so importing it must have ZERO
+ * side effects and it must select the Tauri path only via a runtime probe of
+ * `window.__TAURI_INTERNALS__` — never by assuming that global exists at load time. If the module
+ * called `invoke()` at top level, or hard-referenced the Tauri global on import, merely importing it
+ * in a non-Tauri JS context (unit tests run under plain Node with a fake `window`) would throw.
+ * No other test guards this, so it is asserted here: under a Tauri-less `window`, the module imports
+ * cleanly and `isTauriRuntime()` returns `false`; once a Tauri global is present it returns `true`.
  */
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -36,17 +32,13 @@ test("A6: importing tauriBridge under a Tauri-less window throws nothing and pro
       isTauriRuntime?: () => boolean;
     };
 
-    assert.equal(
-      typeof mod.isTauriRuntime,
-      "function",
-      "tauriBridge must export isTauriRuntime()",
-    );
-    // With no Tauri global, the probe MUST report false, so callers keep the
-    // Electron path and Electron behavior is unchanged.
+    assert.equal(typeof mod.isTauriRuntime, "function", "tauriBridge must export isTauriRuntime()");
+    // With no Tauri global, the probe MUST report false, so non-Tauri JS contexts
+    // (tests, SSR) importing the bridge never trip a hard Tauri-global read.
     assert.equal(
       mod.isTauriRuntime!(),
       false,
-      "isTauriRuntime() must be false when window lacks __TAURI_INTERNALS__ (Electron intact)",
+      "isTauriRuntime() must be false when window lacks __TAURI_INTERNALS__",
     );
 
     // Now flip it: install a Tauri global and re-call (isTauriRuntime reads window
@@ -67,54 +59,38 @@ test("A6: importing tauriBridge under a Tauri-less window throws nothing and pro
 });
 
 /**
- * Parallel-shell isolation — "Electron stays fully intact, Tauri is a PARALLEL additive shell." Two
- * tiers, so the guard stays strong while permitting the one sanctioned runtime-gated seam:
- *  - Electron-ONLY process code (`src/main`, `src/preload`) must NEVER import the Tauri shell or
- *    `@tauri-apps/*` — those run only in Electron, so any leak there is a hard contract break.
- *  - The SHARED renderer tree (`src/renderer/src`) may import Tauri ONLY from the runtime-gated entry
- *    seam (`main.tsx`, which branches on `isTauriRuntime()`) and the Tauri modules themselves. Every other
- *    renderer file pulling the shell would scatter the port outside the single gated entry — a violation.
- * `a6`'s import-safety test already proves importing the Tauri bridge is side-effect-free, so the entry's
- * static import cannot alter Electron behavior (the Tauri branch never executes under Electron).
+ * Tauri-only-entry guard — Electron has been removed as the desktop runtime, so the shipped renderer
+ * entry must install the Tauri platform and the Electron process layer must stay gone. This is the
+ * inverse of the old parallel-shell isolation test (which forbade Tauri leaking into Electron).
+ *  - The Electron-only process trees (`src/main`, `src/preload`) and the Electron platform modules
+ *    (`desktopPlatform.ts`, `desktopBrowserPlatformBridge.ts`) must not exist — re-adding them is a
+ *    contract break.
+ *  - `main.tsx` must install `createTauriPlatform()` unconditionally and must NOT import the deleted
+ *    Electron platform factory. Positive content assertions keep the scan non-vacuous.
  */
-test("A6: no Electron-shipped source file imports the Tauri shell (parallel/additive invariant)", () => {
+test("A6: Tauri is the sole desktop entry and the Electron process layer is gone", () => {
   const root = (rel: string) => fileURLToPath(new URL(rel, import.meta.url));
-  // Electron-only process trees: zero Tauri imports allowed (no seam exception).
-  const electronOnlyRoots = ["../../../src/main", "../../../src/preload"].map(
-    root,
-  );
-  // Shared renderer tree: only the runtime-gated entry + the Tauri modules may import the shell.
-  const rendererRoot = root("../../../src/renderer/src");
-  const tauriModuleBases = new Set([
-    "tauriBridge.ts",
-    "tauriPlatform.ts",
-    "tauriHostConnection.ts",
-    "tauriPlatformFactory.ts",
-  ]);
-  const seamAllowedBases = new Set(["main.tsx"]);
-  const forbidden =
-    /(?:from|import|require\s*\()\s*['"][^'"]*(?:tauriBridge|tauriPlatform|tauriHostConnection|@tauri-apps\/)/;
 
-  const scan = (dir: string, allow: Set<string>): string[] => {
-    const hits: string[] = [];
-    for (const entry of readdirSync(dir, { recursive: true })) {
-      const rel = entry.toString();
-      if (!/\.tsx?$/.test(rel)) continue;
-      const base = rel.split(/[\\/]/).pop() ?? rel;
-      if (tauriModuleBases.has(base) || allow.has(base)) continue;
-      if (forbidden.test(readFileSync(`${dir}/${rel}`, "utf8"))) hits.push(rel);
-    }
-    return hits;
-  };
+  // Electron-only trees/modules that must never come back.
+  for (const gone of [
+    "../../../src/main",
+    "../../../src/preload",
+    "../../../src/renderer/src/desktopPlatform.ts",
+    "../../../src/renderer/src/desktopBrowserPlatformBridge.ts",
+  ]) {
+    assert.equal(
+      existsSync(root(gone)),
+      false,
+      `Electron runtime artifact must be removed: ${gone}`,
+    );
+  }
 
-  const violators = [
-    ...electronOnlyRoots.flatMap((dir) => scan(dir, new Set())),
-    ...scan(rendererRoot, seamAllowedBases),
-  ].sort();
-
-  assert.deepEqual(
-    violators,
-    [],
-    `files import the Tauri shell outside the sanctioned seam/Tauri modules: ${violators.join(", ")}`,
+  // The shipped entry must install the Tauri platform, and must not reach for the Electron factory.
+  const mainTsx = readFileSync(root("../../../src/renderer/src/main.tsx"), "utf8");
+  assert.match(mainTsx, /createTauriPlatform\s*\(/, "main.tsx must install createTauriPlatform()");
+  assert.doesNotMatch(
+    mainTsx,
+    /createDesktopPlatform|from "\.\/desktopPlatform|from "\.\/desktopBrowserPlatformBridge/,
+    "main.tsx must not import the removed Electron platform factory",
   );
 });

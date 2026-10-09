@@ -14,10 +14,7 @@ import {
   setStreamClientId,
 } from "@zcode/ui";
 import "@zcode/ui/styles.css";
-import {
-  connectViaMessagePort,
-  createMessagePortServiceConnection,
-} from "@zcode/client";
+import { connectViaMessagePort, createMessagePortServiceConnection } from "@zcode/client";
 import {
   InternalChannels,
   databaseStartupStateSchema,
@@ -29,11 +26,8 @@ import {
 } from "@zcode/shared";
 import type { Locale } from "@zcode/shared";
 import type { IServiceAccessor } from "@zcode/services";
-// Parallel-shell seam: under a Tauri runtime the renderer must NOT load the Electron platform module
-// (desktopPlatform → desktopBrowserPlatformBridge reads `window.zcode.printPageToPdf` at import time and
-// throws under Tauri). So desktopPlatform is loaded LAZILY only in the non-Tauri branch below; the Tauri
-// factory import is side-effect-free (a6 proves it) and Electron's path is behaviorally unchanged.
-import { isTauriRuntime } from "./tauriBridge.js";
+// Electron has been removed from this project; Tauri is the only desktop runtime. The renderer
+// installs the Tauri platform factory unconditionally.
 import { createTauriPlatform } from "./tauriPlatformFactory.js";
 import { startPerformanceTimelineCleanup } from "./performanceTimelineCleanup.js";
 import { buildRemoteWorkspaceSessionServices } from "./remoteWorkspaceSessionServices.js";
@@ -60,24 +54,20 @@ const launchMarks: LaunchMarks | null = parseLaunchMarks(
     __ZCODE_LAUNCH_MARKS__?: LaunchMarks | null;
   }
 ).__ZCODE_RENDERER_START__ = rendererStartedAt;
-(
-  window as Window & { __ZCODE_LAUNCH_MARKS__?: LaunchMarks | null }
-).__ZCODE_LAUNCH_MARKS__ = launchMarks;
+(window as Window & { __ZCODE_LAUNCH_MARKS__?: LaunchMarks | null }).__ZCODE_LAUNCH_MARKS__ =
+  launchMarks;
 registerE2EStoreBridgesIfEnabled();
 
 function registerE2EStoreBridgesIfEnabled() {
-  const env = ((
-    import.meta as ImportMeta & { env?: DesktopRendererImportMetaEnv }
-  ).env ?? {}) as DesktopRendererImportMetaEnv;
+  const env = ((import.meta as ImportMeta & { env?: DesktopRendererImportMetaEnv }).env ??
+    {}) as DesktopRendererImportMetaEnv;
   if (env.VITE_ZCODE_E2E_STORE_BRIDGE !== "1") {
     return;
   }
 
-  void import("@zcode/ui/e2e-store-bridge").then(
-    ({ registerE2EStoreBridges }) => {
-      registerE2EStoreBridges();
-    },
-  );
+  void import("@zcode/ui/e2e-store-bridge").then(({ registerE2EStoreBridges }) => {
+    registerE2EStoreBridges();
+  });
 }
 
 // 初始化主题：默认 Zai dark，后续由 useTheme hook 接管
@@ -102,14 +92,8 @@ function registerE2EStoreBridgesIfEnabled() {
           ? "zai-light"
           : saved;
   if (resolved === "dark") document.documentElement.classList.add("dark");
-  document.documentElement.classList.toggle(
-    "theme-zai-light",
-    appliedTheme === "zai-light",
-  );
-  document.documentElement.classList.toggle(
-    "theme-zai-dark",
-    appliedTheme === "zai-dark",
-  );
+  document.documentElement.classList.toggle("theme-zai-light", appliedTheme === "zai-light");
+  document.documentElement.classList.toggle("theme-zai-dark", appliedTheme === "zai-dark");
 }
 
 const isMacDesktop = navigator.userAgent.includes("Mac");
@@ -120,22 +104,10 @@ document.documentElement.classList.toggle("platform-mac-desktop", isMacDesktop);
 // Windows 的原生 titleBarOverlay 与 renderer 共用右上角，深层浮层拿不到
 // Root 的 isWindowsDesktop prop 时会把关闭按钮放进原生窗控命中区。根节点平台标记只描述
 // Desktop chrome，不会让普通 Windows Web 误用标题栏安全区。
-document.documentElement.classList.toggle(
-  "platform-windows-desktop",
-  isWindowsDesktop,
-);
+document.documentElement.classList.toggle("platform-windows-desktop", isWindowsDesktop);
 // Linux 的窗口标题栏由 renderer 自绘，应用内 Dialog overlay 如果覆盖整个 webContents，
 // 会把标题栏点击区一起拦截。给桌面 Linux 根节点打平台标记，让 UI overlay 能只在 Linux 避开标题栏。
-document.documentElement.classList.toggle(
-  "platform-linux-desktop",
-  isLinuxDesktop,
-);
-const isLocalDevelopmentRuntime =
-  (
-    globalThis as typeof globalThis & {
-      __ZCODE_LOCAL_DEVELOPMENT_RUNTIME__?: boolean;
-    }
-  ).__ZCODE_LOCAL_DEVELOPMENT_RUNTIME__ === true;
+document.documentElement.classList.toggle("platform-linux-desktop", isLinuxDesktop);
 
 function readBooleanFlag(name: string, defaultValue: boolean): boolean {
   const value = new URLSearchParams(window.location.search).get(name);
@@ -160,14 +132,9 @@ const initialLocale: Locale =
     ? initialLocaleFlag
     : DEFAULT_LOCALE;
 let baseServicesForRemoteSessions: IServiceAccessor | null = null;
-const pendingRemoteWorkspaceServicePorts: RemoteWorkspaceServicePortRegistration[] =
-  [];
+const pendingRemoteWorkspaceServicePorts: RemoteWorkspaceServicePortRegistration[] = [];
 
-const desktopPlatform = isTauriRuntime()
-  ? createTauriPlatform()
-  : (await import("./desktopPlatform.js")).createDesktopPlatform({
-      isLocalDevelopmentRuntime,
-    });
+const desktopPlatform = createTauriPlatform();
 
 /**
  * 等待 preload 通过 window.postMessage 转发 MessagePort。
@@ -181,21 +148,12 @@ const desktopPlatform = isTauriRuntime()
 let appInitialized = false;
 const databaseStartupAdmission = new DatabaseStartupAdmission();
 const appRoot =
-  windowKind === "update-status"
-    ? null
-    : createRoot(document.getElementById("root")!);
+  windowKind === "update-status" ? null : createRoot(document.getElementById("root")!);
 const sendStartupControl = (control: DatabaseStartupControl) =>
-  window.postMessage(
-    { type: InternalChannels.DatabaseStartupControl, control },
-    "*",
-  );
+  window.postMessage({ type: InternalChannels.DatabaseStartupControl, control }, "*");
 function renderDatabaseStartup(): void {
   appRoot?.render(
-    <AppErrorBoundary
-      isDesktop
-      isMacDesktop={isMacDesktop}
-      isWindowsDesktop={isWindowsDesktop}
-    >
+    <AppErrorBoundary isDesktop isMacDesktop={isMacDesktop} isWindowsDesktop={isWindowsDesktop}>
       <ZCodeIntlProvider
         initialLocale={initialLocaleFlag ? initialLocale : undefined}
         resolveSystemLocale={desktopPlatform.getSystemLocale}
@@ -242,9 +200,7 @@ const firstStartupStateTimer =
         renderDatabaseStartup();
       }, 30_000);
 
-function registerRemoteWorkspaceServicePort(
-  params: RemoteWorkspaceServicePortRegistration,
-) {
+function registerRemoteWorkspaceServicePort(params: RemoteWorkspaceServicePortRegistration) {
   if (!baseServicesForRemoteSessions) {
     return;
   }
@@ -260,9 +216,7 @@ function registerRemoteWorkspaceServicePort(
     target: params.target,
     services,
     dispose: (reason) =>
-      remoteConnection.dispose(
-        reason ?? createRemoteWorkspaceDisconnectedError(),
-      ),
+      remoteConnection.dispose(reason ?? createRemoteWorkspaceDisconnectedError()),
   });
   // canonical workspace bind 会换代 remote-scoped port。
   // 只有 store 已注册新 services 后才能确认 ready，bind IPC 返回后的调用方才可重新读取并使用新代 services。
@@ -270,10 +224,7 @@ function registerRemoteWorkspaceServicePort(
 }
 
 function flushPendingRemoteWorkspaceServicePorts(): void {
-  if (
-    !baseServicesForRemoteSessions ||
-    pendingRemoteWorkspaceServicePorts.length === 0
-  ) {
+  if (!baseServicesForRemoteSessions || pendingRemoteWorkspaceServicePorts.length === 0) {
     return;
   }
 
@@ -286,9 +237,8 @@ function flushPendingRemoteWorkspaceServicePorts(): void {
 function StartupReadyNotifier() {
   useEffect(() => {
     // T5:React 首次 commit。供启动分阶段耗时计算 react_commit 段。
-    (
-      window as Window & { __ZCODE_REACT_COMMIT_AT__?: number }
-    ).__ZCODE_REACT_COMMIT_AT__ = Date.now();
+    (window as Window & { __ZCODE_REACT_COMMIT_AT__?: number }).__ZCODE_REACT_COMMIT_AT__ =
+      Date.now();
     // HTML 启动壳的弹出动画结束时，React 首屏可能还没 commit，直接移除壳会露出空白。
     // 这里在 React commit 后通知 index.html，再由启动壳统一判断动画和 React ready 两个条件后退场。
     window.dispatchEvent(new Event("zcode-react-startup-ready"));
@@ -298,10 +248,7 @@ function StartupReadyNotifier() {
 }
 
 function handleServicePortMessage(event: MessageEvent): void {
-  if (
-    event.source === window &&
-    event.data?.type === InternalChannels.DatabaseStartupState
-  ) {
+  if (event.source === window && event.data?.type === InternalChannels.DatabaseStartupState) {
     const result = databaseStartupStateSchema.safeParse(event.data.state);
     if (!result.success || appInitialized) return;
     const next = result.data;
@@ -338,10 +285,7 @@ function handleServicePortMessage(event: MessageEvent): void {
     return;
   const port = event.ports[0];
   if (!port) return;
-  databaseStartupAdmission.acceptPort(
-    { databaseStartupId: event.data.databaseStartupId },
-    port,
-  );
+  databaseStartupAdmission.acceptPort({ databaseStartupId: event.data.databaseStartupId }, port);
   enterAppIfPrepared();
 }
 
@@ -357,11 +301,7 @@ function initializeBusinessRoot(port: MessagePort): void {
   setStreamClientId(desktopPlatform.getDeviceId());
 
   appRoot?.render(
-    <AppErrorBoundary
-      isDesktop
-      isMacDesktop={isMacDesktop}
-      isWindowsDesktop={isWindowsDesktop}
-    >
+    <AppErrorBoundary isDesktop isMacDesktop={isMacDesktop} isWindowsDesktop={isWindowsDesktop}>
       <ZCodeIntlProvider
         settingService={settingService}
         broadcastService={services.broadcastService}
@@ -379,9 +319,7 @@ function initializeBusinessRoot(port: MessagePort): void {
           supportsSettings={supportsSettings}
           initialWorkspaceAbsPath={initialWorkspaceAbsPath}
           initialWorkspacePurpose={
-            initialWorkspacePurpose === "conversation"
-              ? "conversation"
-              : "project"
+            initialWorkspacePurpose === "conversation" ? "conversation" : "project"
           }
           unavailableWorkspacePath={unavailableWorkspacePath}
         />
@@ -398,11 +336,7 @@ if (windowKind !== "update-status") {
 
 if (windowKind === "update-status") {
   createRoot(document.getElementById("root")!).render(
-    <AppErrorBoundary
-      isDesktop
-      isMacDesktop={isMacDesktop}
-      isWindowsDesktop={isWindowsDesktop}
-    >
+    <AppErrorBoundary isDesktop isMacDesktop={isMacDesktop} isWindowsDesktop={isWindowsDesktop}>
       <StartupReadyNotifier />
       <UpdateStatusWindowRoot
         platform={desktopPlatform}

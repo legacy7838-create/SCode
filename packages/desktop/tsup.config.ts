@@ -130,68 +130,6 @@ function createDevReadyMarkerHook(target: "main" | "host" | "preload"): string {
 
 export default defineConfig([
   {
-    name: "main",
-    entry: {
-      "main/index": "src/main/index.ts",
-      "main/zcodeDataSizeWorker": "src/main/zcodeDataSizeWorker.ts",
-      // 资源管理器「存储」tab 的扫描 Worker：main 持有 StorageService，遍历放独立线程，供 new Worker(new URL()) 解析。
-      "main/storageScanWorker": "src/main/storageScanWorker.ts",
-    },
-    outDir: "out",
-    format: "esm",
-    platform: "node",
-    target: "node22",
-    // undici 如果被 main ESM bundle 直接内联，运行时会落到它内部的 CommonJS require("assert")，
-    // Electron 加载 main 产物时会报 Dynamic require of "assert" is not supported。
-    // desktop 保持 undici 为外部依赖，remote 单文件 bundle 再单独内联。
-    external: desktopNodeRuntimeExternals,
-    noExternal: [
-      "@zcode/server",
-      "@zcode/shared",
-      "@zcode/rpc",
-      "@zcode/services",
-      "@zcode/client",
-      // Provider Refactor 的 workspace 包导出 TypeScript 源码；Electron 生产运行时没有
-      // TS loader，必须随 Desktop bundle 内联，不能留下指向 src/index.ts 的裸包引用。
-      "@zcode/provider",
-      "@zcode/provider-node",
-    ],
-    // OTLP 端点与鉴权只在运行时读取；构建环境中的凭据不能写进公开安装包。
-    define: createSharedDefines(),
-    // main/host 同时 watch 且共享 out 根目录时，默认 chunk 命名会互相覆盖，
-    // 可能让 main 的 import 指向被 host 刚重写的 chunk，触发“缺少命名导出”的偶发启动报错。
-    // 这里按目标分目录输出 chunk，确保并发构建下产物隔离。
-    esbuildOptions(options) {
-      applyDesktopTsupEsbuildSecurityOptions(options);
-      options.chunkNames = "main/chunk-[hash]";
-    },
-    onSuccess: createDevReadyMarkerHook("main"),
-    ...desktopTsupBundleSecurityOptions,
-  },
-  {
-    name: "preload",
-    entry: {
-      "preload/embeddedBrowserJavaScriptDialog": "src/preload/embeddedBrowserJavaScriptDialog.ts",
-      "preload/codingPlanWebview": "src/preload/codingPlanWebview.ts",
-      "preload/browserVideoRecorder": "src/preload/browserVideoRecorder.ts",
-      "preload/index": "src/preload/index.ts",
-      "preload/resourceManager": "src/preload/resourceManager.ts",
-    },
-    outDir: "out",
-    format: "cjs",
-    platform: "node",
-    target: "node22",
-    external: ["electron"],
-    noExternal: ["@zcode/shared"],
-    outExtension: () => ({ js: ".cjs" }),
-    define: createSharedDefines(),
-    esbuildOptions(options) {
-      applyDesktopTsupEsbuildSecurityOptions(options);
-    },
-    onSuccess: createDevReadyMarkerHook("preload"),
-    ...desktopTsupBundleSecurityOptions,
-  },
-  {
     name: "host",
     entry: {
       "host/index": "src/host/index.ts",

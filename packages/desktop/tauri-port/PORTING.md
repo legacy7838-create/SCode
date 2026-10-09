@@ -7,13 +7,14 @@ Electron is never removed until Tauri reaches verified parity.
 ## Non-negotiables (from the port playbook + user instruction)
 
 1. **Behavior parity over elegance.** Same inputs → same outputs/errors/envelope.
-2. **Electron stays intact.** Tauri is added alongside (`pnpm dev:tauri`). No Electron deletion
-   until every in-scope feature is verified on Tauri.
-3. **Tests are the contract.** Repo currently has ~4 tests → **Phase 1 prerequisite**: build a
-   language-neutral black-box harness (drive the app over its stdio/WS/CLI surface + a UI smoke
-   suite) before claiming parity for any subsystem.
-4. **One subsystem per commit**, reviewed by a non-author. No stubs/`TODO`/silenced warnings as
-   "done."
+2. **Cutover is authorized.** The owner directed full Electron removal + Tauri parity (2026-10-09).
+   Work happens on branch `remove-electron-tauri-default`; `main` stays intact until merge approval.
+   The Electron UI process layer (`src/main`, `src/preload`) is already removed; the backend Host port
+   (below) is the remaining hard part. Each subsystem lands one commit, reviewed by a non-author.
+3. **Tests are the contract.** The Tauri harness (`test/layer-a` + `layer-b`) is the green gate per
+   slice; a slice is not "done" until `pnpm test:tauri` + `pnpm typecheck` + `pnpm lint` are green.
+4. **No stubs/`TODO`/silenced warnings as "done."** Inert platform fallbacks are permitted ONLY as an
+   explicit degraded-boot state (`tauriPlatformFactory`), never as a fake passing implementation.
 
 ## Architecture mapping
 
@@ -80,6 +81,38 @@ ship as "reduced on Tauri" rather than block the whole port:
 - Process lifecycle: `utilityProcess` auto-kills with main; sidecars must be explicitly terminated on
   exit (and on `tauri` window close) to avoid orphans.
 
+## Transport porting — MessagePort → WebSocket (Phase 0/1)
+
+The renderer↔Host RPC does **not** ride `process.parentPort`. Today main builds a
+`MessageChannelMain`, keeps `port1` for the renderer `webContents`, and **transfers** `port2` into the
+Host inside an `InitLocal` parentPort message; the Host then runs
+`exposeServicesOnMessagePort` → `wrapElectronPort(port)` → `MessagePortProtocol` → `ChannelServer`
+(`src/host/index.ts:1937-1954`). `parentPort` itself is only a side-channel to MAIN (~40 telemetry /
+control flows). Mapping:
+
+| Electron (source) | Tauri sidecar (target) | Notes |
+| --- | --- | --- |
+| `wrapElectronPort(MessagePortMain) → MessagePortLike` | **`@zcode/rpc` `wrapWebSocket(WebSocketLike) → ISocket`** (`packages/rpc/src/wsServer.ts`) | Shared server-side WS adapter; promoted from 3 hand-rolled copies (server, server-cli, layer-a `_host.ts`) |
+| `MessagePortProtocol(wrappedPort)` | `SocketProtocol(socket)` | Same framing/serialization; `ChannelServer`/middleware stack unchanged |
+| `InitLocal` parentPort message carrying `port2` + `{hostId, deviceMid, workspacePath, …}` | Host self-boots from **env/argv** (`ZCODE_HOST_ID`, `ZCODE_WORKSPACE_PATH`, `ZCODE_DEVICE_MID`, `ZCODE_DB_STARTUP_ID`, `ZCODE_WS_PORT`, shared secret), then `WebSocketServer.listen(127.0.0.1, port)` | Rust spawner provides the env; port 0 = ephemeral |
+| renderer `webContents.postMessage(ServicePort, [port1])` | renderer `connectTauriHost()` → `connectViaWebSocket(ws://127.0.0.1:port)` | Client stack already production-proven |
+| `AttachServicePort`/scoped attachments | per-WS-connection capability/attachment token | Preserve owner/lease + stale-run guards (AGENTS.md) |
+| inbound MAIN→Host commands (`CronRun`, `OffPeakRun`, `SessionMessageDeliver`, `ProviderProvisioningExecute`, `ConnectRemoteWorkspace`, `Dispose`, `DatabaseStartupControl`, `ResourceUsageSnapshot`) | register as Host **channels** callable over WS by the renderer/Rust | Convert the `parentPort.on("message")` handler |
+| ~40 outbound telemetry/report flows to MAIN | `IHostReportSink` → Tauri event / RPC stream; non-critical degrade to local log | Nearly all helpers already no-op when `parentPort` is null |
+
+### Owned-buffer semantic trap (hit during Phase 0)
+
+`ws` delivers inbound messages as Node `Buffer` fragments. `VSBuffer.wrap` **takes ownership** of the
+array and the transport may reuse/zero its receive buffer after the `message` event. Two failure modes,
+both proven by `test/layer-a/a2-framing.test.ts`:
+
+- Returning the live `Buffer` without copying → data corrupts on the next frame.
+- Using `buffer.slice()` → returns a **`Buffer`**, which the RPC serializer JSON-encodes as
+  `{type:"Buffer",data:[…]}` instead of a `Uint8Array`, so a binary top-level arg does NOT round-trip.
+
+**Rule:** normalize every inbound payload to a **plain, owned** `Uint8Array` via `new Uint8Array(raw)`
+(never `raw.slice()`). `wsServer.ts:toUint8Array` encodes this and is regression-locked by A2.
+
 ## Success criteria for declaring parity (per subsystem)
 
 P1 harness green on BOTH Electron and Tauri for that subsystem's flows, on Linux/macOS/Windows where
@@ -87,23 +120,21 @@ applicable, plus a manual side-by-side read of tricky paths. No "works on my mac
 
 ## Current status (living checkpoint)
 
-Electron remains the shipped product; all Tauri work is additive and gated behind `isTauriRuntime()`.
+**Cutover in progress on `remove-electron-tauri-default`.** The Electron UI layer is removed; the
+backend Host WS-sidecar port and `main`-responsibility re-homing remain.
 
-- **P0 foundation — DONE.** Inventory (`INVENTORY.md`), this plan, a compiling `src-tauri` scaffold, and
-  `pnpm dev:tauri` (loads the same Vite renderer on :5174). `cargo check` green.
-- **P1 test harness — IN PROGRESS.** Design being written (`TEST-HARNESS.md`); no code harness yet.
-  Parity is therefore NOT yet verifiable end-to-end — the binding gate before any cutover.
-- **P2 platform adapter + IPC — IN PROGRESS.**
-  - Transport reuse is **PROVEN** headlessly (`poc/ws-rpc-roundtrip.ts` → `POC PASS`); the localhost-WS
-    RPC stack already exists in the web/remote path. Packaging runbook: `SIDECAR-PACKAGING.md`.
-  - Command slices landed (each cargo test/clippy/fmt + tauriBridge tsc green): slice 1 (app version,
-    locale, device id), slice 2 (platform info, app name), slice 3 (fallible app-path dirs — error seam),
-    slice 4 (window controls). Slice 5 (native dialogs) in flight.
-  - Full 104-method `tauriPlatform` adapter NOT started; blueprint in `PLATFORM-ADAPTER-PLAN.md`.
-- **P4 hard-blocker spikes — IN PROGRESS.** #1 embedded-browser/CDP (`BROWSER-CDP-SPIKE.md`, verdict:
-  no byte-parity, product go/no-go), #3 printToPDF (`PRINT-PDF-SPIKE.md`, two-tier native+headless-Chrome),
-  #4/#5 webview-injection + session/media-protocol (`WEBVIEW-PROTOCOL-SPIKE.md`) in flight. #2 updater
-  (`UPDATER-SPIKE.md`) in flight.
+- **Cutover-A (done, this session):** removed `src/main` (114 files) + `src/preload`; `main.tsx` installs
+  `createTauriPlatform()` unconditionally; deleted `desktopPlatform.ts`/`desktopBrowserPlatformBridge.ts`,
+  the `main`/`preload` tsup targets, `electron-builder.config.js`, `dev-app-update.yml`,
+  `tsconfig.main/preload.json` (+ refs). Rewrote `a6` as a Tauri-only-entry guard. Host still compiles
+  clean; `electron` dep intentionally retained until Phase 1 removes the Host's `parentPort` coupling.
+- **Phase 0 (done, this session):** promoted `@zcode/rpc` `wrapWebSocket` (`wsServer.ts`) + regression-
+  locked it via layer-a A1/A2 against a real `ws` server. `pnpm typecheck`/`lint`/layer-a/layer-b green.
+- **P0 foundation — DONE.** Inventory, this plan, a compiling `src-tauri` scaffold, `pnpm dev:tauri`.
+- **P2 platform adapter + IPC — IN PROGRESS.** ~82 commands landed + a 16-method Tauri platform subset;
+  blueprint in `PLATFORM-ADAPTER-PLAN.md`. Runtime selection now fixed (cutover-A).
+- **P4 hard-blocker spikes — DONE (verdicts in `GO-NO-GO.md`).** Browser/CDP, printToPDF, updater,
+  webview-injection/media-protocol, saveFile SSRF, sync-getters — each with a scoped plan + residual.
 
-**Not done / open:** P1 harness code; the full adapter wiring + runtime-selection edit; sidecar runtime
-PoC; the embedded-browser product decision. Cutover (P5) is far off and gated on all of the above.
+**Next:** Phase 1 (Host → standalone WS sidecar), then Phase 2 (Rust spawns real Host; renderer boots
+connected; `connectTauriHost()` wired), then Phase 3 (`main` re-homing to `IPlatformService` parity).

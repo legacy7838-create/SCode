@@ -13,56 +13,9 @@
  */
 import { once } from "node:events";
 import { WebSocketServer, type WebSocket as NodeWebSocket } from "ws";
-import {
-  Emitter,
-  VSBuffer,
-  SocketProtocol,
-  ChannelServer,
-  ProxyChannel,
-  type ISocket,
-} from "@zcode/rpc";
+import { SocketProtocol, ChannelServer, ProxyChannel, wrapWebSocket } from "@zcode/rpc";
 import { ISubagentsService } from "@zcode/services";
 import { connectViaWebSocket } from "@zcode/client";
-
-/** Wrap a Node `ws` connection into the RPC framework's `ISocket` abstraction. */
-function wrapWebSocket(ws: NodeWebSocket): ISocket {
-  const onData = new Emitter<VSBuffer>();
-  const onClose = new Emitter<void>();
-  const onEnd = new Emitter<void>();
-
-  ws.on("message", (raw: Buffer | ArrayBuffer | Buffer[]) => {
-    const buf = Buffer.isBuffer(raw) ? raw : Buffer.from(raw as ArrayBuffer);
-    onData.fire(VSBuffer.wrap(new Uint8Array(buf)));
-  });
-  ws.on("close", () => {
-    onClose.fire();
-    onEnd.fire();
-  });
-  ws.on("error", () => {
-    onClose.fire();
-    onEnd.fire();
-  });
-
-  return {
-    onData: onData.event,
-    onClose: onClose.event,
-    onEnd: onEnd.event,
-    write(buffer: VSBuffer) {
-      if (ws.readyState === ws.OPEN) {
-        ws.send(buffer.buffer);
-      }
-    },
-    end() {
-      ws.close();
-    },
-    drain() {
-      return Promise.resolve();
-    },
-    dispose() {
-      ws.close();
-    },
-  };
-}
 
 /** A live host fixture: an authenticated client accessor plus a hard teardown. */
 export interface WsRpcFixture {

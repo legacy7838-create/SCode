@@ -71,6 +71,9 @@ export {
 } from "./protocol.js";
 export { PersistentProtocol, type PersistentProtocolOptions } from "./persistent-protocol.js";
 
+// Layer 2: server-side WebSocket transport adapter (shared by every WS ChannelServer / Host sidecar)
+export { wrapWebSocket, type WebSocketLike, type RawMessageLike } from "./wsServer.js";
+
 // Layer 3: Channel RPC
 export {
   type IChannel,
