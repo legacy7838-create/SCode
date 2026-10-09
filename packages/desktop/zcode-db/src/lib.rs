@@ -1234,6 +1234,81 @@ pub fn ensure_system_group_membership(
     Ok(())
 }
 
+/// System-group ids — mirror the shared `CRON_DEFAULT_GROUP_ID` / `OFF_PEAK_DEFAULT_GROUP_ID`.
+const CRON_DEFAULT_GROUP_ID: &str = "zcode-default-group-cron";
+const OFF_PEAK_DEFAULT_GROUP_ID: &str = "zcode-default-group-off-peak";
+
+/// Port of `ensureCronGroupMembership` — a cron session joins the fixed cron group.
+pub fn ensure_cron_group_membership(
+    conn: &Connection,
+    task: &TaskRef<'_>,
+    now: i64,
+) -> std::result::Result<(), rusqlite::Error> {
+    ensure_system_group_membership(
+        conn,
+        task,
+        &SystemGroup {
+            group_id: CRON_DEFAULT_GROUP_ID,
+            title: "cron",
+            color: "blue",
+        },
+        now,
+    )
+}
+
+/// Port of `ensureOffPeakGroupMembership`. Off-peak does not support remote workspaces, so a
+/// remote identity short-circuits without grouping (matches the TS guard).
+pub fn ensure_off_peak_group_membership(
+    conn: &Connection,
+    task: &TaskRef<'_>,
+    now: i64,
+) -> std::result::Result<(), rusqlite::Error> {
+    if task
+        .workspace_identity
+        .is_some_and(is_remote_workspace_identity)
+    {
+        return Ok(());
+    }
+    ensure_system_group_membership(
+        conn,
+        task,
+        &SystemGroup {
+            group_id: OFF_PEAK_DEFAULT_GROUP_ID,
+            title: "off-peak",
+            color: "purple",
+        },
+        now,
+    )
+}
+
+/// Full `syncTaskMeta` write path: run the core merge+persist, then, on a FIRST cron/off-peak
+/// identity, add the session to its system group (the `newly_*` triggers from the merge decision).
+/// `now` is injected for the group timestamps (TS `Date.now()`). Returns the persisted projection.
+pub fn sync_task_meta_with_grouping(
+    conn: &Connection,
+    workspace_key: &str,
+    incoming: &TaskMeta,
+    params: &SyncParams,
+    searchable_text: Option<String>,
+    now: i64,
+) -> std::result::Result<TaskMeta, rusqlite::Error> {
+    let (persisted, decision) =
+        sync_task_meta(conn, workspace_key, incoming, params, searchable_text)?;
+    let task = TaskRef {
+        workspace_key,
+        workspace_path: &decision.meta.workspace_path,
+        workspace_identity: decision.meta.workspace_identity.as_deref(),
+        task_id: &decision.meta.task_id,
+    };
+    if decision.newly_cron {
+        ensure_cron_group_membership(conn, &task, now)?;
+    }
+    if decision.newly_off_peak {
+        ensure_off_peak_group_membership(conn, &task, now)?;
+    }
+    Ok(persisted)
+}
+
 /// N-API: return the raw `meta_json` string for one task (parse it in Rust via `row_to_meta`).
 #[napi]
 pub fn read_task_meta_json(
@@ -2243,6 +2318,62 @@ mod tests {
             )
             .unwrap();
         assert_eq!(order, 1000, "group order preserved across re-runs");
+    }
+
+    fn group_count(conn: &Connection, group_id: &str) -> i64 {
+        conn.query_row(
+            "SELECT count(*) FROM task_groups WHERE group_id = ?1",
+            [group_id],
+            |r| r.get(0),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn sync_grouping_adds_cron_on_first_appearance_only() {
+        let conn = full_schema_db();
+        let mut with_cron = tm(100, Some("completed"));
+        with_cron.cron_automation_id = Some("cron-1".into());
+        sync_task_meta_with_grouping(&conn, "/ws", &with_cron, &SyncParams::default(), None, 10)
+            .unwrap();
+        assert_eq!(
+            group_count(&conn, CRON_DEFAULT_GROUP_ID),
+            1,
+            "cron group created"
+        );
+
+        // Re-sync a snapshot without cron (existing preserved) → no duplicate / no re-add.
+        let again = tm(200, Some("completed"));
+        sync_task_meta_with_grouping(&conn, "/ws", &again, &SyncParams::default(), None, 20)
+            .unwrap();
+        assert_eq!(group_count(&conn, CRON_DEFAULT_GROUP_ID), 1, "idempotent");
+    }
+
+    #[test]
+    fn sync_grouping_off_peak_skips_remote_workspace() {
+        let conn = full_schema_db();
+        // Local off-peak session → grouped.
+        let mut local = tm(100, Some("completed"));
+        local.off_peak_task_id = Some("op-1".into());
+        sync_task_meta_with_grouping(&conn, "/ws", &local, &SyncParams::default(), None, 10)
+            .unwrap();
+        assert_eq!(group_count(&conn, OFF_PEAK_DEFAULT_GROUP_ID), 1);
+
+        // Remote off-peak session → NOT grouped (off-peak has no remote support).
+        let mut remote = tm(100, Some("completed"));
+        remote.task_id = "t2".into();
+        remote.workspace_identity = Some("remote:ssh:h:22:u:/p".into());
+        remote.off_peak_task_id = Some("op-2".into());
+        let wk = "remote:ssh:h:22:u:/p";
+        sync_task_meta_with_grouping(&conn, wk, &remote, &SyncParams::default(), None, 10).unwrap();
+        let members: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM task_group_members WHERE group_id=?1 AND workspace_key=?2",
+                rusqlite::params![OFF_PEAK_DEFAULT_GROUP_ID, wk],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(members, 0, "remote off-peak not added to the group");
     }
 
     #[test]
