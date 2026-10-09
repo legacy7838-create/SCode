@@ -4,6 +4,7 @@
 //! READ-ONLY for now — the write path + migration/locking parity are later slices (PORTING-DB.md).
 
 pub mod automation;
+pub mod cron_engine;
 pub mod migrations;
 pub mod offpeak;
 
