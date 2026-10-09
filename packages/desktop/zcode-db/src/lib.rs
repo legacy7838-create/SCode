@@ -1503,7 +1503,7 @@ pub fn build_search_snippets(searchable_text: &str, search: Option<&str>) -> Vec
 // ---- queryTaskList (multi-workspace, kind, search, pagination) ----
 
 /// TS `resolveWorkspaceKey`: trimmed identity, else the raw path.
-fn workspace_key(path: &str, identity: Option<&str>) -> String {
+pub(crate) fn workspace_key(path: &str, identity: Option<&str>) -> String {
     identity
         .map(str::trim)
         .filter(|s| !s.is_empty())

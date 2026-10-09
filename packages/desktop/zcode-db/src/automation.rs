@@ -285,6 +285,139 @@ pub fn get_automation(
     }
 }
 
+// ---- createAutomation (limit-guarded, BEGIN IMMEDIATE) ----
+
+/// Mirrors TS `AUTOMATION_CREATE_LIMIT`.
+pub const AUTOMATION_CREATE_LIMIT: i64 = 20;
+
+/// Inputs for `create_automation` (mirrors `ZCodeAutomationCreateParams`). Bundled so the function
+/// stays within the argument budget.
+#[derive(Debug, Clone)]
+pub struct AutomationCreateParams {
+    pub workspace_path: String,
+    pub workspace_identity: Option<String>,
+    pub title: String,
+    pub cron_expr: String,
+    pub prompt: String,
+    pub model_selection: Option<ModelSelection>,
+    pub mode: Option<String>,
+    pub target_task_id: Option<String>,
+    pub bot_delivery_target: Option<serde_json::Value>,
+    pub recurring: bool,
+    pub max_runs: Option<i64>,
+    pub end_at: Option<i64>,
+    pub schedule_rule: Option<serde_json::Value>,
+}
+
+/// Caller-supplied scheduling state (mirrors the `options` arg). `next_run_at` is precomputed by the
+/// caller (via `compute_next_run_at`), and `lifecycle_status` defaults to `"active"`.
+#[derive(Debug, Clone, Default)]
+pub struct AutomationCreateOptions {
+    pub next_run_at: Option<i64>,
+    pub lifecycle_status: Option<String>,
+}
+
+fn create_automation_inner(
+    conn: &Connection,
+    id: &str,
+    p: &AutomationCreateParams,
+    o: &AutomationCreateOptions,
+    now: i64,
+    workspace_key: &str,
+) -> Result<Automation, String> {
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM automations", [], |r| r.get(0))
+        .map_err(|e| e.to_string())?;
+    if count >= AUTOMATION_CREATE_LIMIT {
+        return Err(format!(
+            "[AUTOMATION_CREATE_LIMIT_REACHED] At most {AUTOMATION_CREATE_LIMIT} automations may be retained."
+        ));
+    }
+    // model_selection: explicit empty serializes to JSON "null", distinct from an unmigrated SQL NULL.
+    let model_selection = p
+        .model_selection
+        .as_ref()
+        .and_then(serialize_model_selection)
+        .unwrap_or_else(|| "null".to_string());
+    let bot = p.bot_delivery_target.as_ref().map(|v| v.to_string());
+    let schedule_rule = p.schedule_rule.as_ref().map(|v| v.to_string());
+    let lifecycle = o
+        .lifecycle_status
+        .clone()
+        .unwrap_or_else(|| "active".to_string());
+    let enabled: i64 = if lifecycle == "completed" { 0 } else { 1 };
+
+    conn.execute(
+        "INSERT INTO automations (
+          automation_id, title, cron_expr, prompt, model, provider, model_selection,
+          workspace_key, workspace_path, workspace_identity, target_task_id, bot_delivery_target, location_kind,
+          recurring, max_runs, end_at, schedule_rule, schedule_edited_by_user,
+          run_count, enabled, lifecycle_status,
+          next_run_at, last_run_at, running, claimed_at,
+          dispatch_status, dispatch_attempts, retry_at, last_error,
+          mode, thought_level, created_at, updated_at
+        ) VALUES (
+          ?1, ?2, ?3, ?4, NULL, NULL, ?5,
+          ?6, ?7, ?8, ?9, ?10, 'local',
+          ?11, ?12, ?13, ?14, 0,
+          0, ?15, ?16,
+          ?17, NULL, 0, NULL,
+          'idle', 0, NULL, NULL,
+          ?18, NULL, ?19, ?20
+        )",
+        rusqlite::params![
+            id,
+            p.title,
+            p.cron_expr,
+            p.prompt,
+            model_selection,
+            workspace_key,
+            p.workspace_path,
+            p.workspace_identity,
+            p.target_task_id,
+            bot,
+            i64::from(p.recurring),
+            p.max_runs,
+            p.end_at,
+            schedule_rule,
+            enabled,
+            lifecycle,
+            o.next_run_at,
+            p.mode,
+            now,
+            now,
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+
+    get_automation(conn, id, None)?.ok_or_else(|| format!("automation missing after insert: {id}"))
+}
+
+/// Port of `createAutomation`: generate the id, `BEGIN IMMEDIATE` so the total-count limit and the
+/// insert serialize against concurrent creates, insert, COMMIT, then re-read via `rowToAutomation`.
+/// `now` is injected (TS `Date.now()`).
+pub fn create_automation(
+    conn: &Connection,
+    p: &AutomationCreateParams,
+    o: &AutomationCreateOptions,
+    now: i64,
+) -> Result<Automation, String> {
+    let id = format!("automation-{}", uuid::Uuid::new_v4());
+    let wk = crate::workspace_key(&p.workspace_path, p.workspace_identity.as_deref());
+    conn.execute("BEGIN IMMEDIATE", [])
+        .map_err(|e| e.to_string())?;
+    match create_automation_inner(conn, &id, p, o, now, &wk) {
+        Ok(a) => {
+            conn.execute("COMMIT", []).map_err(|e| e.to_string())?;
+            Ok(a)
+        }
+        Err(e) => {
+            let _ = conn.execute("ROLLBACK", []);
+            Err(e)
+        }
+    }
+}
+
 // ---- Cron-independent pure scheduling helpers (slice 25) ----
 
 /// Mirrors TS `ONE_SHOT_MISSED_RUN_GRACE_MS`.
@@ -465,6 +598,81 @@ mod tests {
             compute_minute_interval_next_run(0.0, anchor, anchor),
             anchor + 60_000
         );
+    }
+
+    #[test]
+    fn create_automation_persists_and_rereads() {
+        let conn = automations_db();
+        let p = AutomationCreateParams {
+            workspace_path: "/w".into(),
+            workspace_identity: None,
+            title: "Daily".into(),
+            cron_expr: "0 9 * * *".into(),
+            prompt: "do it".into(),
+            model_selection: Some(ModelSelection {
+                provider_id: "account:zai".into(),
+                model_id: "GLM-5".into(),
+                options: None,
+            }),
+            mode: Some("plan".into()),
+            target_task_id: None,
+            bot_delivery_target: None,
+            recurring: true,
+            max_runs: None,
+            end_at: None,
+            schedule_rule: None,
+        };
+        let o = AutomationCreateOptions {
+            next_run_at: Some(12345),
+            lifecycle_status: None,
+        };
+        let a = create_automation(&conn, &p, &o, 1000).unwrap();
+        assert!(a.automation_id.starts_with("automation-"));
+        assert_eq!(a.workspace_key, "/w");
+        assert_eq!(a.title, "Daily");
+        assert_eq!(a.cron_expr, "0 9 * * *");
+        assert_eq!(a.mode.as_deref(), Some("plan"));
+        assert!(a.recurring);
+        assert!(a.enabled);
+        assert_eq!(a.lifecycle_status, "active");
+        assert_eq!(a.next_run_at, Some(12345));
+        assert_eq!(a.model_selection.as_ref().unwrap().model_id, "GLM-5");
+    }
+
+    #[test]
+    fn create_automation_enforces_limit_under_transaction() {
+        let conn = automations_db();
+        // Pre-fill to the limit with direct inserts (bypassing the create guard).
+        for i in 0..AUTOMATION_CREATE_LIMIT {
+            conn.execute(
+                "INSERT INTO automations (automation_id, title, cron_expr, prompt, workspace_key, workspace_path, created_at, updated_at) \
+                 VALUES (?1,'t','* * * * *','p',?2,'/w',1,1)",
+                rusqlite::params![format!("a{i}"), "/w"],
+            )
+            .unwrap();
+        }
+        let p = AutomationCreateParams {
+            workspace_path: "/w".into(),
+            workspace_identity: None,
+            title: "x".into(),
+            cron_expr: "* * * * *".into(),
+            prompt: "p".into(),
+            model_selection: None,
+            mode: None,
+            target_task_id: None,
+            bot_delivery_target: None,
+            recurring: false,
+            max_runs: None,
+            end_at: None,
+            schedule_rule: None,
+        };
+        let err = create_automation(&conn, &p, &AutomationCreateOptions::default(), 1).unwrap_err();
+        assert!(err.contains("AUTOMATION_CREATE_LIMIT_REACHED"), "{err}");
+        // The failed create rolled back: still exactly the limit, no new row.
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM automations", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, AUTOMATION_CREATE_LIMIT);
     }
 
     fn automations_db() -> Connection {

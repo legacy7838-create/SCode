@@ -24,6 +24,7 @@ percent-encoding = "2"
 cron = "0.17.0"
 chrono = { version = "0.4.45", features = ["serde"] }
 chrono-tz = "0.10.4"
+uuid = { version = "1.27.0", features = ["v4"] }
 
 [build-dependencies]
 napi-build = "2"
