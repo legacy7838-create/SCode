@@ -30,8 +30,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("opened (read-only): {}", path.display());
     println!("tasks rows: {task_count}");
 
-    let mut stmt =
-        conn.prepare("SELECT workspace_key, task_id, mode, title FROM tasks ORDER BY updated_at DESC LIMIT 5")?;
+    let mut stmt = conn.prepare(
+        "SELECT workspace_key, task_id, mode, title FROM tasks ORDER BY updated_at DESC LIMIT 5",
+    )?;
     let rows = stmt.query_map([], |row| {
         Ok((
             row.get::<_, String>(0)?,

@@ -4,9 +4,12 @@
 //! READ-ONLY for now — the write path + migration/locking parity are later slices (PORTING-DB.md).
 
 pub mod automation;
+pub mod automation_write;
 pub mod cron_engine;
+pub mod grouping;
 pub mod migrations;
 pub mod offpeak;
+pub mod offpeak_write;
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
@@ -146,7 +149,7 @@ const VALID_MIGRATION: [&str; 1] = ["claudeCode"];
 /// `searchable_text` size cap in UTF-16 code units — mirrors TS `TASK_SEARCH_TEXT_MAX_CHARS`.
 const TASK_SEARCH_TEXT_MAX_CHARS: usize = 200_000;
 /// Grouped-view ordering step — mirrors TS `GROUPED_TASK_ORDER_STEP`.
-const GROUPED_TASK_ORDER_STEP: i64 = 1000;
+pub(crate) const GROUPED_TASK_ORDER_STEP: i64 = 1000;
 /// Search-snippet window params — mirror the TS `TASK_SEARCH_SNIPPET_*` constants.
 const SNIPPET_PREFIX_RADIUS: usize = 20;
 const SNIPPET_SUFFIX_RADIUS: usize = 72;
@@ -530,7 +533,7 @@ pub fn query_task_index_rows(
 /// Read one `TaskIndexRow` by primary key (`workspace_key`, `task_id`), the re-read TS `writeRecord`
 /// performs via `getTaskRow` to return the persisted projection. Tombstones are included (a write
 /// can re-read a soft-deleted row), matching `getTaskRow` semantics rather than the list filter.
-fn get_task_index_row(
+pub(crate) fn get_task_index_row(
     conn: &Connection,
     workspace_key: &str,
     task_id: &str,
