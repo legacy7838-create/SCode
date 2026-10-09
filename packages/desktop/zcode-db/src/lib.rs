@@ -446,7 +446,65 @@ pub fn row_to_meta(row: &TaskIndexRow) -> TaskMeta {
         .unwrap_or_else(|| fallback_meta(row, identity))
 }
 
-/// N-API: return the raw `meta_json` string for one task (parse it in Rust via `parse_task_meta`).
+/// Select the full `TaskIndexRow` column set for one workspace, matching the TS `listTaskMetas`
+/// query (`deleted = 0`, `ORDER BY updated_at DESC, created_at DESC, task_id DESC`). Nullable
+/// columns fall back to the TS-equivalent defaults so `row_to_meta` sees a complete row.
+pub fn query_task_index_rows(
+    conn: &Connection,
+    workspace_key: &str,
+) -> std::result::Result<Vec<TaskIndexRow>, rusqlite::Error> {
+    let mut stmt = conn.prepare(
+        "SELECT workspace_key, workspace_path, workspace_identity, task_id, title, task_status,
+                provider, mode, model, migration_source, forked_from_task_id, cron_automation_id,
+                off_peak_task_id, created_at, updated_at, unread_at, title_overridden, meta_json
+         FROM tasks
+         WHERE workspace_key = ?1 AND deleted = 0
+         ORDER BY updated_at DESC, created_at DESC, task_id DESC",
+    )?;
+    let rows = stmt.query_map([workspace_key], |r| {
+        Ok(TaskIndexRow {
+            workspace_key: r.get(0)?,
+            workspace_path: r.get::<_, Option<String>>(1)?.unwrap_or_default(),
+            workspace_identity: r.get(2)?,
+            task_id: r.get(3)?,
+            title: r.get(4)?,
+            task_status: r.get(5)?,
+            provider: r.get(6)?,
+            mode: r
+                .get::<_, Option<String>>(7)?
+                .unwrap_or_else(|| "build".to_string()),
+            model: r.get(8)?,
+            migration_source: r.get(9)?,
+            forked_from_task_id: r.get(10)?,
+            cron_automation_id: r.get(11)?,
+            off_peak_task_id: r.get(12)?,
+            created_at: r.get(13)?,
+            updated_at: r.get(14)?,
+            unread_at: r.get(15)?,
+            title_overridden: r.get::<_, Option<i64>>(16)?.unwrap_or(0),
+            meta_json: r
+                .get::<_, Option<String>>(17)?
+                .unwrap_or_else(|| "{}".to_string()),
+        })
+    })?;
+    rows.collect()
+}
+
+/// N-API: full Rust read path for one workspace — query rows, project each through `row_to_meta`,
+/// return the `TaskMeta[]` as JSON. This is the `listTaskMetas` DB+projection equivalent, run
+/// entirely in Rust (rusqlite + serde), for golden-parity comparison against the TS repo.
+#[napi]
+pub fn list_task_metas_json(db_path: String, workspace_key: String) -> Result<String> {
+    let conn = open_readonly(&db_path)?;
+    let metas: Vec<TaskMeta> = query_task_index_rows(&conn, &workspace_key)
+        .map_err(|e| Error::from_reason(e.to_string()))?
+        .iter()
+        .map(row_to_meta)
+        .collect();
+    serde_json::to_string(&metas).map_err(|e| Error::from_reason(e.to_string()))
+}
+
+/// N-API: return the raw `meta_json` string for one task (parse it in Rust via `row_to_meta`).
 #[napi]
 pub fn read_task_meta_json(
     db_path: String,
@@ -732,6 +790,28 @@ mod tests {
         assert_eq!(
             row_to_meta(&rem).workspace_identity.as_deref(),
             Some("remote:ssh:host.example:22:user:/home/u")
+        );
+    }
+
+    #[test]
+    fn query_task_index_rows_feeds_row_to_meta_end_to_end() {
+        // Fixture rows have meta_json default '{}' → every projection takes the column fallback.
+        let conn = fixture_db();
+        let metas: Vec<TaskMeta> = query_task_index_rows(&conn, "ws-A")
+            .unwrap()
+            .iter()
+            .map(row_to_meta)
+            .collect();
+        let projected: Vec<(String, String)> =
+            metas.into_iter().map(|m| (m.task_id, m.title)).collect();
+        assert_eq!(
+            projected,
+            vec![
+                ("t-new".to_string(), "new".to_string()),
+                ("t-mid".to_string(), "mid".to_string()),
+                ("t-old".to_string(), "old".to_string()),
+            ],
+            "ordered by updated_at DESC, titles from columns, tombstone excluded"
         );
     }
 
