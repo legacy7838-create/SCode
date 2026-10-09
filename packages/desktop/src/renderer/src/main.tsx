@@ -14,7 +14,7 @@ import {
   setStreamClientId,
 } from "@zcode/ui";
 import "@zcode/ui/styles.css";
-import { connectViaMessagePort, createMessagePortServiceConnection } from "@zcode/client";
+import { createMessagePortServiceConnection } from "@zcode/client";
 import {
   InternalChannels,
   databaseStartupStateSchema,
@@ -176,11 +176,6 @@ function renderDatabaseStartup(): void {
     </AppErrorBoundary>,
   );
 }
-function enterAppIfPrepared(): void {
-  if (appInitialized) return;
-  const port = databaseStartupAdmission.takeReadyPort();
-  if (port) initializeBusinessRoot(port);
-}
 const firstStartupStateTimer =
   windowKind === "update-status"
     ? undefined
@@ -256,7 +251,6 @@ function handleServicePortMessage(event: MessageEvent): void {
     if (!databaseStartupAdmission.acceptState(next)) return;
     if (firstStartupStateTimer) clearTimeout(firstStartupStateTimer);
     renderDatabaseStartup();
-    enterAppIfPrepared();
     return;
   }
 
@@ -277,21 +271,6 @@ function handleServicePortMessage(event: MessageEvent): void {
     registerRemoteWorkspaceServicePort(remoteWorkspacePort);
     return;
   }
-
-  if (
-    event.source !== window ||
-    event.data?.type !== InternalChannels.ServicePort ||
-    appInitialized
-  )
-    return;
-  const port = event.ports[0];
-  if (!port) return;
-  databaseStartupAdmission.acceptPort({ databaseStartupId: event.data.databaseStartupId }, port);
-  enterAppIfPrepared();
-}
-
-function initializeBusinessRoot(port: MessagePort): void {
-  initializeBusinessRootWithServices(connectViaMessagePort(port));
 }
 
 function initializeBusinessRootWithServices(services: IServiceAccessor): void {
