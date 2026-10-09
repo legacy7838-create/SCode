@@ -1,0 +1,13 @@
+[package]
+name = "zcode-db"
+version = "0.0.0"
+edition = "2021"
+description = "ZCode SQLite data layer, ported to Rust (rusqlite). Vertical-slice scaffold."
+
+[dependencies]
+# bundled = compile SQLite's C from source so the crate is self-contained (no system libsqlite3).
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+[[bin]]
+name = "zcode-db-read"
+path = "src/main.rs"
