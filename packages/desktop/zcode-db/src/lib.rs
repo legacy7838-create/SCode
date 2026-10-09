@@ -12,6 +12,12 @@ fn open_readonly(path: &str) -> Result<Connection> {
         .map_err(|e| Error::from_reason(format!("open {path}: {e}")))
 }
 
+/// Open for read-write (no create) — the write-path boundary for the N-API wrappers.
+fn open_readwrite(path: &str) -> Result<Connection> {
+    Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE)
+        .map_err(|e| Error::from_reason(format!("open rw {path}: {e}")))
+}
+
 /// Count rows in `tasks`.
 #[napi]
 pub fn tasks_count(db_path: String) -> Result<u32> {
@@ -729,7 +735,8 @@ pub fn should_preserve_newer_terminal_status(
 
 /// Sync-level params for `syncTaskMeta`, distinct from the meta fields. `None` means the caller
 /// omitted it, so the existing row's value is kept (TS `params.x ?? existing…`).
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase", default)]
 pub struct SyncParams {
     pub pinned: Option<bool>,
     pub archived: Option<bool>,
@@ -1307,6 +1314,28 @@ pub fn sync_task_meta_with_grouping(
         ensure_off_peak_group_membership(conn, &task, now)?;
     }
     Ok(persisted)
+}
+
+/// N-API write boundary: run the full `syncTaskMeta` write path against a read-write DB, taking the
+/// incoming meta + sync params as JSON and returning the persisted projection as JSON. This is the
+/// callable surface a TS adapter replaces `node:sqlite` with. `now` is a JS number (epoch ms).
+#[napi]
+pub fn sync_task_meta_json(
+    db_path: String,
+    workspace_key: String,
+    incoming_json: String,
+    params_json: String,
+    now: f64,
+) -> Result<String> {
+    let incoming: TaskMeta =
+        serde_json::from_str(&incoming_json).map_err(|e| Error::from_reason(e.to_string()))?;
+    let params: SyncParams =
+        serde_json::from_str(&params_json).map_err(|e| Error::from_reason(e.to_string()))?;
+    let conn = open_readwrite(&db_path)?;
+    let persisted =
+        sync_task_meta_with_grouping(&conn, &workspace_key, &incoming, &params, None, now as i64)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+    serde_json::to_string(&persisted).map_err(|e| Error::from_reason(e.to_string()))
 }
 
 /// N-API: return the raw `meta_json` string for one task (parse it in Rust via `row_to_meta`).
