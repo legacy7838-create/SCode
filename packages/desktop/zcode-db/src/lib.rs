@@ -85,6 +85,38 @@ pub fn list_tasks_by_workspace(db_path: String, workspace_key: String) -> Result
     query_tasks_by_workspace(&conn, &workspace_key).map_err(|e| Error::from_reason(e.to_string()))
 }
 
+/// Input for an upsert of one task row (subset of the TS `syncTaskMeta` write path).
+#[derive(Clone)]
+#[napi(object)]
+pub struct NewTask {
+    pub workspace_key: String,
+    pub task_id: String,
+    pub title: String,
+    pub mode: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+/// Insert or update a task row (write building block for the `syncTaskMeta` port). Uses SQLite
+/// upsert so repeated calls are idempotent on `(workspace_key, task_id)` — matching the TS repo's
+/// upsert semantics. Returns the number of affected rows.
+pub fn upsert_task(conn: &Connection, task: &NewTask) -> std::result::Result<usize, rusqlite::Error> {
+    conn.execute(
+        "INSERT INTO tasks (workspace_key, task_id, title, mode, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+         ON CONFLICT(workspace_key, task_id) DO UPDATE SET
+           title = excluded.title, mode = excluded.mode, updated_at = excluded.updated_at",
+        rusqlite::params![
+            task.workspace_key,
+            task.task_id,
+            task.title,
+            task.mode,
+            task.created_at,
+            task.updated_at,
+        ],
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -119,6 +151,44 @@ mod tests {
         ins("ws-A", "t-dead", 400, 1, "deleted");
         ins("ws-B", "other", 500, 0, "other-ws");
         conn
+    }
+
+    #[test]
+    fn upsert_inserts_then_updates_idempotently() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE tasks (
+               workspace_key TEXT NOT NULL, task_id TEXT NOT NULL, title TEXT NOT NULL DEFAULT '',
+               mode TEXT NOT NULL DEFAULT 'build', created_at INTEGER NOT NULL,
+               updated_at INTEGER NOT NULL, deleted INTEGER DEFAULT 0,
+               PRIMARY KEY (workspace_key, task_id));",
+        )
+        .unwrap();
+        let t = NewTask {
+            workspace_key: "ws".into(),
+            task_id: "id1".into(),
+            title: "first".into(),
+            mode: "build".into(),
+            created_at: 10,
+            updated_at: 10,
+        };
+        assert_eq!(upsert_task(&conn, &t).unwrap(), 1, "insert affects 1 row");
+        // Same key, new title/updated_at => UPDATE (not a second row).
+        let t2 = NewTask {
+            title: "second".into(),
+            updated_at: 20,
+            ..t.clone()
+        };
+        assert_eq!(upsert_task(&conn, &t2).unwrap(), 1, "update affects the same 1 row");
+        let rows = conn
+            .prepare("SELECT title, updated_at FROM tasks WHERE workspace_key='ws' AND task_id='id1'")
+            .unwrap()
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))
+            .unwrap()
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(rows.len(), 1, "still one row (upsert, not duplicate)");
+        assert_eq!(rows[0], ("second".to_string(), 20));
     }
 
     #[test]
