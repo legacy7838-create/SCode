@@ -323,6 +323,269 @@ pub fn are_tasks_migrations_applied(conn: &Connection) -> Result<bool, String> {
     Ok(true)
 }
 
+/// Epoch millis for the ledger `time_applied` (matches TS `Date.now()`; not part of any checksum).
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+/// Does `column` already exist on `table`? (mirrors the `PRAGMA table_info` skip in `adoptSchema`).
+/// `table` comes only from the frozen constant list, so the interpolation is not user input.
+fn column_exists(conn: &Connection, table: &str, column: &str) -> Result<bool, String> {
+    let mut stmt = conn
+        .prepare(&format!("PRAGMA table_info({table})"))
+        .map_err(|e| e.to_string())?;
+    let names = stmt
+        .query_map([], |r| r.get::<_, String>(1))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    Ok(names.iter().any(|n| n == column))
+}
+
+/// Port of `adoptSchema`: run the frozen base DDL, add any missing frozen columns, create the
+/// follow-up indexes, and create the off-peak bound index only when no duplicate active binding
+/// exists (so it can't fail on an already-duplicated legacy table).
+pub fn adopt_schema(conn: &Connection) -> Result<(), String> {
+    for ddl in [TASK_INDEX_SCHEMA, AUTOMATION_SCHEMA, OFF_PEAK_SCHEMA] {
+        conn.execute_batch(ddl).map_err(|e| e.to_string())?;
+    }
+    let columns: Vec<[String; 3]> =
+        serde_json::from_str(COLUMNS_JSON).map_err(|e| e.to_string())?;
+    for [table, column, definition] in &columns {
+        if column_exists(conn, table, column)? {
+            continue;
+        }
+        conn.execute_batch(&format!(
+            "ALTER TABLE {table} ADD COLUMN {column} {definition}"
+        ))
+        .map_err(|e| e.to_string())?;
+        if table == "automations" && column == "scheduled_run_count" {
+            conn.execute_batch("UPDATE automations SET scheduled_run_count=run_count")
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    conn.execute_batch(INDEXES_SQL).map_err(|e| e.to_string())?;
+    let duplicate: Option<i64> = conn
+        .query_row(
+            &format!(
+                "SELECT 1 FROM off_peak_tasks WHERE {ACTIVE_PREDICATE} \
+                 GROUP BY workspace_key, session_id HAVING count(*)>1 LIMIT 1"
+            ),
+            [],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    if duplicate.is_none() {
+        conn.execute_batch(&bound_index())
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// The frozen legacy provider-name table (mirror of `providerNames`).
+fn legacy_provider_name(provider: &str) -> Option<&'static str> {
+    Some(match provider {
+        "builtin:bigmodel" => "bigmodel-api",
+        "builtin:zai" => "zai-api",
+        "builtin:bigmodel-start-plan" => "account:bigmodel-start-plan",
+        "builtin:zai-start-plan" => "account:zai-start-plan",
+        "builtin:bigmodel-coding-plan" => "account:bigmodel-individual-coding-plan",
+        "builtin:zai-coding-plan" => "account:zai-individual-coding-plan",
+        _ => return None,
+    })
+}
+
+/// `decodeURIComponent` parity: percent-decode as UTF-8; on malformed input return the original
+/// (TS `catch { return value }`).
+fn decode_component(value: &str) -> String {
+    percent_encoding::percent_decode_str(value)
+        .decode_utf8()
+        .map(|c| c.into_owned())
+        .unwrap_or_else(|_| value.to_string())
+}
+
+/// Port of `decodeLegacySelection` returning the `JSON.stringify`'d selection, or `None` (which the
+/// caller maps to a NULL write). `serde_json`'s `preserve_order` keeps `providerId`/`modelId`/
+/// `options` in the TS insertion order for byte-identical output.
+fn decode_legacy_selection(
+    model_raw: Option<&str>,
+    provider_raw: Option<&str>,
+    thought_level: Option<&str>,
+) -> Option<String> {
+    let value = model_raw?.trim();
+    if value.is_empty() {
+        return None;
+    }
+    let mut provider = provider_raw.unwrap_or("").trim().to_string();
+    let mut model = value.to_string();
+    let mut reasoning = thought_level
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+
+    if let Some(body) = value.strip_prefix("custom:") {
+        let separator = body.find(':')?;
+        let parts: Vec<&str> = body.split(':').collect();
+        if parts.len() >= 3 && parts[0] == "builtin" {
+            provider = format!("builtin:{}", parts[1]);
+            model = decode_component(&parts[2..].join(":"));
+        } else {
+            provider = decode_component(&body[..separator]);
+            model = decode_component(&body[separator + 1..]);
+        }
+    } else if value.contains('/') {
+        let separator = value.find('/')?;
+        provider = value[..separator].to_string();
+        model = value[separator + 1..].to_string();
+        if let Some(ls) = model.find('$') {
+            if ls > 0 && ls < model.len() - 1 {
+                let level = model[ls + 1..].trim().to_string();
+                if level.is_empty() {
+                    return None;
+                }
+                reasoning = Some(level);
+                model = model[..ls].to_string();
+            }
+        }
+    } else if provider == "glm" || provider == "zcode" {
+        return None;
+    }
+
+    provider = provider.trim().to_string();
+    model = model.trim().to_string();
+    if provider.is_empty() || model.is_empty() {
+        return None;
+    }
+    let provider_id = if provider.starts_with("builtin:") {
+        legacy_provider_name(&provider).map(str::to_string)?
+    } else {
+        provider.clone()
+    };
+
+    let mut map = serde_json::Map::new();
+    map.insert("providerId".into(), serde_json::Value::String(provider_id));
+    map.insert("modelId".into(), serde_json::Value::String(model));
+    if let Some(level) = reasoning {
+        let mut opts = serde_json::Map::new();
+        opts.insert("reasoningLevel".into(), serde_json::Value::String(level));
+        map.insert("options".into(), serde_json::Value::Object(opts));
+    }
+    Some(serde_json::Value::Object(map).to_string())
+}
+
+/// Port of `importLegacyAutomationSelections` (migration 0002's data step). Runs inside the caller's
+/// migration transaction; the guarded UPDATE with `IS` re-checks the row hasn't drifted.
+pub fn import_legacy_automation_selections(conn: &Connection) -> Result<(), String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT automation_id, model, provider, thought_level FROM automations WHERE model IS NOT NULL",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, Option<String>>(1)?,
+                r.get::<_, Option<String>>(2)?,
+                r.get::<_, Option<String>>(3)?,
+            ))
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    for (aid, model, provider, thought) in &rows {
+        match decode_legacy_selection(model.as_deref(), provider.as_deref(), thought.as_deref()) {
+            None => {
+                // Explicit intent but indeterminate identity → NULL (never a silent default).
+                if !model.as_deref().unwrap_or("").trim().is_empty() {
+                    conn.execute(
+                        "UPDATE automations SET model_selection=NULL WHERE automation_id=?1",
+                        [aid],
+                    )
+                    .map_err(|e| e.to_string())?;
+                }
+            }
+            Some(json) => {
+                conn.execute(
+                    "UPDATE automations SET model_selection = ?1 WHERE automation_id = ?2 \
+                     AND model IS ?3 AND provider IS ?4 AND thought_level IS ?5",
+                    rusqlite::params![json, aid, model, provider, thought],
+                )
+                .map_err(|e| e.to_string())?;
+            }
+        }
+    }
+    conn.execute_batch(
+        "UPDATE automations SET model_selection='null' \
+         WHERE model_selection IS NULL AND (model IS NULL OR trim(model)='')",
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Port of `runTasksDatabaseMigrations` for the not-yet-open case: one `BEGIN IMMEDIATE` wrapping
+/// the ledger-driven apply of 0001→0003, writing each applied id+checksum. Skips already-applied
+/// ids, and errors on any checksum mismatch (frozen history must not drift).
+pub fn run_tasks_database_migrations(conn: &Connection) -> Result<(), String> {
+    conn.execute("BEGIN IMMEDIATE", [])
+        .map_err(|e| e.to_string())?;
+    match run_migrations_inner(conn) {
+        Ok(()) => {
+            conn.execute("COMMIT", []).map_err(|e| e.to_string())?;
+            Ok(())
+        }
+        Err(e) => {
+            let _ = conn.execute("ROLLBACK", []);
+            Err(e)
+        }
+    }
+}
+
+fn run_migrations_inner(conn: &Connection) -> Result<(), String> {
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS tasks_schema_migration (\
+           id TEXT PRIMARY KEY, checksum TEXT NOT NULL, time_applied INTEGER NOT NULL)",
+        [],
+    )
+    .map_err(|e| e.to_string())?;
+    for (id, input) in migration_definitions() {
+        let checksum = checksum_of(&input);
+        let applied: Option<String> = conn
+            .query_row(
+                "SELECT checksum FROM tasks_schema_migration WHERE id = ?1",
+                [id],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
+        if let Some(stored) = applied {
+            if stored != checksum {
+                return Err(format!("Task database migration checksum mismatch: {id}"));
+            }
+            continue;
+        }
+        match id {
+            "0001_adopt_task_schema" => adopt_schema(conn)?,
+            "0002_provider_selection" => import_legacy_automation_selections(conn)?,
+            "0003_official_glm_selection" => conn
+                .execute_batch(GLM_SELECTION_SQL)
+                .map_err(|e| e.to_string())?,
+            other => return Err(format!("unknown migration id: {other}")),
+        }
+        conn.execute(
+            "INSERT INTO tasks_schema_migration VALUES(?1, ?2, ?3)",
+            rusqlite::params![id, checksum, now_ms()],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -387,5 +650,76 @@ mod tests {
         )
         .unwrap();
         assert!(are_tasks_migrations_applied(&conn).is_err());
+    }
+
+    #[test]
+    fn fresh_init_builds_schema_and_ledger_then_is_idempotent() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_tasks_database_migrations(&conn).unwrap();
+        // All 3 migrations recorded with the exact frozen checksums, and the DB verifies as applied.
+        assert!(are_tasks_migrations_applied(&conn).unwrap());
+        let tables: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN \
+                 ('tasks','automations','automation_runs','off_peak_tasks','task_groups')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(tables, 5, "all base tables created");
+        // Re-running is a no-op (skips applied ids; checksums match) — no error, still applied.
+        run_tasks_database_migrations(&conn).unwrap();
+        assert!(are_tasks_migrations_applied(&conn).unwrap());
+    }
+
+    #[test]
+    fn decode_legacy_selection_custom_builtin_parity() {
+        let json = decode_legacy_selection(Some("custom:builtin:zai:glm-4.6"), None, Some("high"))
+            .unwrap();
+        assert_eq!(
+            json,
+            r#"{"providerId":"zai-api","modelId":"glm-4.6","options":{"reasoningLevel":"high"}}"#,
+            "key order + builtin mapping match TS JSON.stringify"
+        );
+    }
+
+    #[test]
+    fn decode_legacy_selection_slash_and_level() {
+        let json = decode_legacy_selection(Some("openai/gpt-4o$low"), None, None).unwrap();
+        assert_eq!(
+            json,
+            r#"{"providerId":"openai","modelId":"gpt-4o","options":{"reasoningLevel":"low"}}"#
+        );
+    }
+
+    #[test]
+    fn decode_legacy_selection_rejects_execution_only_providers() {
+        // provider glm/zcode with a bare model is an execution backend, not an identity → None.
+        assert_eq!(
+            decode_legacy_selection(Some("glm-4.6"), Some("glm"), None),
+            None
+        );
+        assert_eq!(decode_legacy_selection(Some(""), Some("x"), None), None);
+    }
+
+    #[test]
+    fn import_legacy_sets_default_null_for_empty_model() {
+        let conn = Connection::open_in_memory().unwrap();
+        adopt_schema(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO automations (automation_id, cron_expr, prompt, workspace_key, workspace_path, model, created_at, updated_at) \
+             VALUES ('a1','* * * * *','p','wk','/w', NULL, 1, 1)",
+            [],
+        )
+        .unwrap();
+        import_legacy_automation_selections(&conn).unwrap();
+        let sel: String = conn
+            .query_row(
+                "SELECT model_selection FROM automations WHERE automation_id='a1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(sel, "null", "empty model → default JSON null (not NULL)");
     }
 }
