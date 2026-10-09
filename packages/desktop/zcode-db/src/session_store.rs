@@ -101,6 +101,44 @@ fn row_to_session_input(row: &rusqlite::Row<'_>) -> rusqlite::Result<Value> {
 }
 
 
+/// N-API: `getProjectPermission` port. Two-tier read: `local_setting`
+/// (scope=project, namespace=permission, key=ruleset) first, then the legacy `permission.data`
+/// column. Mirrors `decodeJson` exactly: empty → `null`, invalid JSON → error (JS `JSON.parse`
+/// throws), missing → `null`.
+pub fn get_project_permission(conn: &Connection, project_id: &str) -> Result<Value, String> {
+    let setting: Option<String> = conn
+        .query_row(
+            "select value from local_setting \
+             where scope='project' and scope_id=?1 and namespace='permission' and key='ruleset'",
+            [project_id],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    let raw = match setting {
+        Some(v) => Some(v),
+        None => conn
+            .query_row(
+                "select data from permission where project_id = ?1",
+                [project_id],
+                |r| r.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?,
+    };
+    decode_json_null_on_empty(&raw)
+}
+
+/// `decodeJson(v) ?? null`: absent/empty → `null`; otherwise `JSON.parse` (invalid → propagate an
+/// error, matching the throw in JS).
+fn decode_json_null_on_empty(raw: &Option<String>) -> Result<Value, String> {
+    match raw {
+        None => Ok(Value::Null),
+        Some(s) if s.is_empty() => Ok(Value::Null),
+        Some(s) => serde_json::from_str(s).map_err(|e| e.to_string()),
+    }
+}
+
 /// Port of `listSessionInputs`: all (or one status) for a session, ordered by `admitted_sequence`.
 pub fn list_session_inputs(
     conn: &Connection,

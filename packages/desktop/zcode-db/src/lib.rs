@@ -1827,6 +1827,14 @@ pub fn get_session_input_by_id_json(db_path: String, id: String) -> Result<Strin
     serde_json::to_string(&value).map_err(|e| Error::from_reason(e.to_string()))
 }
 
+/// N-API: `getProjectPermission` port. Returns the parsed ruleset JSON or `"null"`.
+#[napi]
+pub fn get_project_permission_json(db_path: String, project_id: String) -> Result<String> {
+    let conn = open_readonly(&db_path)?;
+    let value = session_store::get_project_permission(&conn, &project_id).map_err(Error::from_reason)?;
+    serde_json::to_string(&value).map_err(|e| Error::from_reason(e.to_string()))
+}
+
 /// Port of `normalizeSearchSnippetText`: collapse whitespace runs to a single space, trim, cap at
 /// `SNIPPET_MAX_CHARS`. `split_whitespace` + join matches JS `.replace(/\s+/g, " ").trim()`.
 fn normalize_search_snippet_text(text: &str) -> String {
