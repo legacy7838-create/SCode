@@ -832,37 +832,70 @@ pub fn merge_sync_task_meta(
 /// Build the `writeRecord` payload from a merge decision + the resolved `workspace_key` + the
 /// caller-supplied searchable body. `write_unread_at` is false, matching TS `syncTaskMeta` (which
 /// does not flag the `unread_at` column on conflict; the merged value still lands in `meta_json`).
+/// Row-level (non-meta) columns a `writeRecord` supplies alongside the meta. Bundled so the write
+/// builder stays within the argument budget and call sites read as intent, not positional booleans.
+#[derive(Debug, Clone, Copy, Default)]
+struct RowFlags {
+    pinned: bool,
+    archived: bool,
+    deleted: bool,
+    title_overridden: bool,
+    write_unread_at: bool,
+}
+
+/// Shared `WriteRecord` builder: copies the scalar columns from `meta` and applies the row-level
+/// flags + `meta_json` serialization. Every `tasks`-row write funnels through this one path.
+fn record_from_meta(
+    workspace_key: &str,
+    meta: &TaskMeta,
+    flags: RowFlags,
+    searchable_text: Option<String>,
+) -> WriteRecord {
+    WriteRecord {
+        workspace_key: workspace_key.to_string(),
+        workspace_path: meta.workspace_path.clone(),
+        workspace_identity: meta.workspace_identity.clone(),
+        task_id: meta.task_id.clone(),
+        title: meta.title.clone(),
+        task_status: meta.status.clone(),
+        provider: meta.provider.clone(),
+        mode: meta.mode.clone(),
+        model: meta.model.clone(),
+        migration_source: meta.migration_source.clone(),
+        forked_from_task_id: meta.forked_from_task_id.clone(),
+        cron_automation_id: meta.cron_automation_id.clone(),
+        off_peak_task_id: meta.off_peak_task_id.clone(),
+        created_at: meta.created_at,
+        updated_at: meta.updated_at,
+        unread_at: meta.unread_at,
+        write_unread_at: flags.write_unread_at,
+        pinned: flags.pinned,
+        archived: flags.archived,
+        deleted: flags.deleted,
+        title_overridden: flags.title_overridden,
+        searchable_text,
+        meta_json: serde_json::to_string(meta).unwrap_or_else(|_| "{}".to_string()),
+    }
+}
+
 fn decision_to_write_record(
     workspace_key: &str,
     decision: &SyncDecision,
     searchable_text: Option<String>,
 ) -> WriteRecord {
-    let m = &decision.meta;
-    WriteRecord {
-        workspace_key: workspace_key.to_string(),
-        workspace_path: m.workspace_path.clone(),
-        workspace_identity: m.workspace_identity.clone(),
-        task_id: m.task_id.clone(),
-        title: m.title.clone(),
-        task_status: m.status.clone(),
-        provider: m.provider.clone(),
-        mode: m.mode.clone(),
-        model: m.model.clone(),
-        migration_source: m.migration_source.clone(),
-        forked_from_task_id: m.forked_from_task_id.clone(),
-        cron_automation_id: m.cron_automation_id.clone(),
-        off_peak_task_id: m.off_peak_task_id.clone(),
-        created_at: m.created_at,
-        updated_at: m.updated_at,
-        unread_at: m.unread_at,
-        write_unread_at: false,
-        pinned: decision.pinned,
-        archived: decision.archived,
-        deleted: decision.deleted,
-        title_overridden: decision.title_overridden,
+    record_from_meta(
+        workspace_key,
+        &decision.meta,
+        RowFlags {
+            pinned: decision.pinned,
+            archived: decision.archived,
+            deleted: decision.deleted,
+            title_overridden: decision.title_overridden,
+            // syncTaskMeta never flags the unread column on conflict (see the TS writeRecord call).
+            write_unread_at: false,
+        },
         searchable_text,
-        meta_json: serde_json::to_string(m).unwrap_or_else(|_| "{}".to_string()),
-    }
+    )
 }
 
 /// Port of the `syncTaskMeta` core for the normal (non-grouped-top) path: read the existing row,
@@ -895,6 +928,83 @@ pub fn sync_task_meta(
     let record = decision_to_write_record(workspace_key, &decision, searchable_text);
     let persisted = write_record(conn, &record)?;
     Ok((persisted, decision))
+}
+
+/// Port of `seedTaskMetaIfMissing`: write baseline metadata ONLY when the index row is absent. An
+/// existing row (including a soft-deleted shell) is returned unchanged so its product-shell state
+/// (pin/archive/unread/manual title) is never clobbered by a late first snapshot.
+pub fn seed_task_meta_if_missing(
+    conn: &Connection,
+    workspace_key: &str,
+    incoming: &TaskMeta,
+) -> std::result::Result<TaskMeta, rusqlite::Error> {
+    if let Some(row) = get_task_index_row(conn, workspace_key, &incoming.task_id)? {
+        return Ok(row_to_meta(&row));
+    }
+    let record = record_from_meta(
+        workspace_key,
+        incoming,
+        RowFlags {
+            title_overridden: incoming.title_overridden,
+            ..Default::default()
+        },
+        None,
+    );
+    write_record(conn, &record)
+}
+
+/// Port of `clearTaskUnreadIfMatches`, held under ONE `BEGIN IMMEDIATE`: the compare and the write
+/// share the same write transaction so a late phone-read cannot wipe a newer `unreadAt` produced
+/// after the click (the exact race the TS comment guards). Errors (`QueryReturnedNoRows`) on a
+/// missing or deleted row. Returns `(persistedMeta, cleared)`.
+pub fn clear_task_unread_if_matches(
+    conn: &Connection,
+    workspace_key: &str,
+    task_id: &str,
+    expected_unread_at: i64,
+) -> std::result::Result<(TaskMeta, bool), rusqlite::Error> {
+    conn.execute("BEGIN IMMEDIATE", [])?;
+    match clear_task_unread_inner(conn, workspace_key, task_id, expected_unread_at) {
+        Ok(v) => {
+            conn.execute("COMMIT", [])?;
+            Ok(v)
+        }
+        Err(e) => {
+            let _ = conn.execute("ROLLBACK", []);
+            Err(e)
+        }
+    }
+}
+
+fn clear_task_unread_inner(
+    conn: &Connection,
+    workspace_key: &str,
+    task_id: &str,
+    expected_unread_at: i64,
+) -> std::result::Result<(TaskMeta, bool), rusqlite::Error> {
+    let row = get_task_index_row(conn, workspace_key, task_id)?
+        .filter(|r| r.deleted != 1)
+        .ok_or(rusqlite::Error::QueryReturnedNoRows)?;
+    let current = row_to_meta(&row);
+    if current.unread_at != Some(expected_unread_at) {
+        return Ok((current, false));
+    }
+    let mut next = current.clone();
+    next.unread_at = None;
+    let record = record_from_meta(
+        workspace_key,
+        &next,
+        RowFlags {
+            pinned: row.pinned == 1,
+            archived: row.archived == 1,
+            deleted: false,
+            title_overridden: row.title_overridden == 1,
+            write_unread_at: true,
+        },
+        None,
+    );
+    let persisted = write_record(conn, &record)?;
+    Ok((persisted, true))
 }
 
 /// N-API: return the raw `meta_json` string for one task (parse it in Rust via `row_to_meta`).
@@ -1574,6 +1684,83 @@ mod tests {
             sync_task_meta(&conn, "/ws", &again, &SyncParams::default(), None).unwrap();
         assert_eq!(persisted.cron_automation_id.as_deref(), Some("cron-1"));
         assert!(!d2.newly_cron, "already grouped → no re-trigger");
+    }
+
+    #[test]
+    fn seed_writes_only_when_missing_and_never_overwrites_existing() {
+        let conn = full_schema_db();
+        let mut a = tm(100, Some("running"));
+        a.title = "A".into();
+        let persisted = seed_task_meta_if_missing(&conn, "/ws", &a).unwrap();
+        assert_eq!(persisted.title, "A", "first seed inserts");
+
+        // A second seed with a different title must return the EXISTING row unchanged.
+        let mut b = tm(999, Some("completed"));
+        b.title = "B".into();
+        let again = seed_task_meta_if_missing(&conn, "/ws", &b).unwrap();
+        assert_eq!(again.title, "A", "existing row is not clobbered by a seed");
+    }
+
+    #[test]
+    fn clear_unread_preserves_last_unread_at_and_guards_stale_click() {
+        let conn = full_schema_db();
+        let mut meta = tm(100, Some("running"));
+        meta.unread_at = Some(5);
+        let rec = record_from_meta(
+            "/ws",
+            &meta,
+            RowFlags {
+                write_unread_at: true,
+                ..Default::default()
+            },
+            Some("x".into()),
+        );
+        write_record(&conn, &rec).unwrap();
+        assert_eq!(col_i64(&conn, "t1", "unread_at"), Some(5));
+
+        let (persisted, cleared) = clear_task_unread_if_matches(&conn, "/ws", "t1", 5).unwrap();
+        assert!(cleared);
+        assert_eq!(persisted.unread_at, None, "unread cleared");
+        assert_eq!(col_i64(&conn, "t1", "unread_at"), None);
+        assert_eq!(
+            col_i64(&conn, "t1", "last_unread_at"),
+            Some(5),
+            "MAX keeps the just-cleared unread as last_unread"
+        );
+
+        // A stale repeat click (expected no longer matches) must not report cleared.
+        let (_, cleared2) = clear_task_unread_if_matches(&conn, "/ws", "t1", 5).unwrap();
+        assert!(
+            !cleared2,
+            "already-cleared row: expected mismatch → not cleared"
+        );
+    }
+
+    #[test]
+    fn clear_unread_errors_on_missing_or_deleted() {
+        let conn = full_schema_db();
+        assert!(
+            clear_task_unread_if_matches(&conn, "/ws", "ghost", 1).is_err(),
+            "missing row throws"
+        );
+
+        let mut meta = tm(100, Some("running"));
+        meta.unread_at = Some(7);
+        let mut rec = record_from_meta(
+            "/ws",
+            &meta,
+            RowFlags {
+                write_unread_at: true,
+                ..Default::default()
+            },
+            None,
+        );
+        rec.deleted = true;
+        write_record(&conn, &rec).unwrap();
+        assert!(
+            clear_task_unread_if_matches(&conn, "/ws", "t1", 7).is_err(),
+            "deleted row throws"
+        );
     }
 
     #[test]
