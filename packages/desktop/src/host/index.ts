@@ -109,6 +109,7 @@ import type {
 } from "@zcode/server/remote";
 import type { RemoteTarget } from "@zcode/shared";
 import { wrapElectronPort } from "./electronPort.js";
+import type { HostMessagePort, HostParentMessageEvent } from "./ipcTypes.js";
 import { createTaskRealtimeBridgeForHostInit } from "./taskRealtimeBridge.js";
 import { resolveRpcLogLevel } from "./rpcLogLevel.js";
 import { createHostWorkspaceTaskTracker } from "./hostWorkspaceTaskTracker.js";
@@ -1935,7 +1936,7 @@ function createControllerRoutedTaskService(
 }
 
 function exposeServicesOnMessagePort(
-  port: Electron.MessagePortMain,
+  port: HostMessagePort,
   services: ServiceCollection,
   deferInit: boolean,
   clientMode: ZCodeAgentV4ClientMode = "desktop-continuous",
@@ -2040,7 +2041,7 @@ function exposeServicesOnMessagePort(
 
 const windowHostAttachmentRegistry = createWindowHostAttachmentRegistry<
   ServiceCollection,
-  Electron.MessagePortMain,
+  HostMessagePort,
   HostRemoteConnectionCapabilities
 >({
   resolveScope: (scope: WindowHostAttachmentScope) => {
@@ -2243,7 +2244,7 @@ process.on(
   }),
 );
 
-parentPort.on("message", async (e: Electron.MessageEvent) => {
+parentPort.on("message", async (e: HostParentMessageEvent) => {
   const result = parseHostIncomingMessageEvent(e);
   if (!result.success) {
     logger.error("invalid parentPort message:", formatZodError(result.error));

@@ -365,7 +365,7 @@ async function dispose(): Promise<void> {
   process.exit(0);
 }
 
-parentPort?.on("message", (event: Electron.MessageEvent) => {
+parentPort?.on("message", (event: { data: unknown }) => {
   const msg = event.data as MainToSchedulerMessage;
   if (!msg || typeof msg !== "object") return;
   if (msg.type === "scheduler-dispose") {

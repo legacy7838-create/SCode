@@ -10,7 +10,7 @@
  * cleanly and `isTauriRuntime()` returns `false`; once a Tauri global is present it returns `true`.
  */
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -92,5 +92,30 @@ test("A6: Tauri is the sole desktop entry and the Electron process layer is gone
     mainTsx,
     /createDesktopPlatform|from "\.\/desktopPlatform|from "\.\/desktopBrowserPlatformBridge/,
     "main.tsx must not import the removed Electron platform factory",
+  );
+});
+
+/**
+ * Electron decoupling tripwire — no file under `packages/desktop/src` may import the `electron`
+ * package (value or type). The backend Host/scheduler were de-coupled via local structural types
+ * (`ipcTypes.ts`, `parentPortTypes.ts`); reintroducing an `electron` import means the desktop source
+ * is no longer runtime-neutral, which the Tauri-only cutover forbids. Comment mentions of "Electron"
+ * are allowed; only `import`/`require` statements are matched.
+ */
+test("A6: no desktop source file imports the electron package", () => {
+  const srcRoot = fileURLToPath(new URL("../../../src", import.meta.url));
+  const electronImport =
+    /(?:import\b[^;'"]*\bfrom\s*|^\s*(?:import\s*)|require\s*\(\s*)['"]electron['"]/m;
+  const offenders: string[] = [];
+  for (const entry of readdirSync(srcRoot, { recursive: true })) {
+    const rel = entry.toString();
+    if (!/\.tsx?$/.test(rel) || rel.endsWith(".d.ts")) continue;
+    const full = `${srcRoot}/${rel}`;
+    if (electronImport.test(readFileSync(full, "utf8"))) offenders.push(rel);
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    `desktop source still imports the electron package: ${offenders.join(", ")}`,
   );
 });

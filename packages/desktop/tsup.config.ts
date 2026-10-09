@@ -108,7 +108,6 @@ function createSharedDefines() {
 }
 
 const desktopNodeRuntimeExternals = [
-  "electron",
   "node-pty",
   "ssh2",
   "undici",

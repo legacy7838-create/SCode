@@ -1,14 +1,14 @@
-import type { MessagePortMain } from "electron";
 import type { MessagePortLike, MessagePortPayload } from "@zcode/rpc";
+import type { HostMessagePort } from "./ipcTypes.js";
 
 /**
- * 将 Electron MessagePortMain 适配为 RPC 层的 MessagePortLike 接口。
+ * 将 utilityProcess 服务端口适配为 RPC 层的 MessagePortLike 接口。
  *
- * Electron 的 MessagePortMain 使用 Node EventEmitter 风格 (.on/.off)，
- * 而 MessagePortLike 使用 Web 标准风格 (addEventListener/removeEventListener)。
- * 此适配器弥合两者差异，使 MessagePortProtocol 可以直接在 utilityProcess 中使用。
+ * 传输端口使用 Node EventEmitter 风格 (.on/.off)，而 MessagePortLike 使用 Web 标准风格
+ * (addEventListener/removeEventListener)。此适配器弥合两者差异，使 MessagePortProtocol 可以
+ * 直接使用转移进来的端口（Electron utilityProcess 或 worker_threads 均满足 HostMessagePort）。
  */
-export function wrapElectronPort(port: MessagePortMain): MessagePortLike {
+export function wrapElectronPort(port: HostMessagePort): MessagePortLike {
   return {
     addEventListener(_type: "message", listener: (e: { data: MessagePortPayload }) => void) {
       // MessagePortMain 的 message 事件已经是 { data } 结构，直接转发
