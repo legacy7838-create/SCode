@@ -4,10 +4,19 @@ version = "0.0.0"
 edition = "2021"
 description = "ZCode SQLite data layer, ported to Rust (rusqlite). Vertical-slice scaffold."
 
-[dependencies]
-# bundled = compile SQLite's C from source so the crate is self-contained (no system libsqlite3).
-rusqlite = { version = "0.32", features = ["bundled"] }
+[lib]
+# cdylib => produces a loadable Node-API addon (.node).
+crate-type = ["cdylib", "rlib"]
 
 [[bin]]
 name = "zcode-db-read"
 path = "src/main.rs"
+
+[dependencies]
+# bundled = compile SQLite's C from source so the crate is self-contained (no system libsqlite3).
+rusqlite = { version = "0.32", features = ["bundled"] }
+napi = { version = "2", default-features = false, features = ["napi4"] }
+napi-derive = "2"
+
+[build-dependencies]
+napi-build = "2"
