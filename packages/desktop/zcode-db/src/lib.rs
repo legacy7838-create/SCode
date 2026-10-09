@@ -1742,6 +1742,15 @@ pub fn get_off_peak_json(db_path: String, off_peak_task_id: String) -> Result<Op
     Ok(row.map(|t| serde_json::to_string(&t).unwrap_or_default()))
 }
 
+/// N-API: list off-peak tasks (read-only), optionally scoped to one workspace key, as JSON.
+#[napi]
+pub fn list_off_peak_json(db_path: String, workspace_key: Option<String>) -> Result<String> {
+    let conn = open_readonly(&db_path)?;
+    let rows =
+        offpeak::list_off_peak(&conn, workspace_key.as_deref()).map_err(Error::from_reason)?;
+    serde_json::to_string(&rows).map_err(|e| Error::from_reason(e.to_string()))
+}
+
 /// N-API: return the raw `meta_json` string for one task (parse it in Rust via `row_to_meta`).
 #[napi]
 pub fn read_task_meta_json(

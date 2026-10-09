@@ -72,19 +72,29 @@ fn str_or(r: &rusqlite::Row<'_>, idx: usize) -> rusqlite::Result<String> {
         .map(|v| v.unwrap_or_default())
 }
 
-fn map_off_peak_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<OffPeakTask> {
+/// Maps a row produced by `OFF_PEAK_COLUMNS` (25 positional columns). `title_idx` is the position of
+/// the extra `session_title` column when the `tasks` LEFT-JOIN variant of `list` is used; `None`
+/// (get / no-join list) leaves `session_title` absent, matching `rowToTask`.
+fn map_off_peak_row(
+    r: &rusqlite::Row<'_>,
+    title_idx: Option<usize>,
+) -> rusqlite::Result<OffPeakTask> {
     let model_selection =
         read_serialized_model_selection(r.get::<_, Option<String>>(7)?.as_deref());
     let model_selection_issue = model_selection
         .is_none()
         .then(|| serde_json::json!({ "code": "repair-required" }));
+    let session_title = match title_idx {
+        Some(i) => r.get::<_, Option<String>>(i)?,
+        None => None,
+    };
     Ok(OffPeakTask {
         off_peak_task_id: str_or(r, 0)?,
         server_ticket_id: r.get(1)?,
         title: str_or(r, 2)?,
         conversation_id: r.get(3)?,
         session_id: r.get(4)?,
-        session_title: None,
+        session_title,
         prompt: str_or(r, 5)?,
         permission_mode: str_or(r, 6)?,
         model_selection,
@@ -118,12 +128,70 @@ pub fn get_off_peak(
     let sql = format!("SELECT {OFF_PEAK_COLUMNS} FROM off_peak_tasks WHERE off_peak_task_id = ?1");
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
     let mut rows = stmt
-        .query_map([off_peak_task_id], map_off_peak_row)
+        .query_map([off_peak_task_id], |r| map_off_peak_row(r, None))
         .map_err(|e| e.to_string())?;
     match rows.next() {
         Some(r) => r.map(Some).map_err(|e| e.to_string()),
         None => Ok(None),
     }
+}
+
+/// The same 25 columns prefixed with the `t.` alias, for the LEFT-JOIN list variant (so `session_title`
+/// at index 25 does not collide with `t.title` at index 2).
+const OFF_PEAK_COLUMNS_T: &str = "t.off_peak_task_id, t.server_ticket_id, t.title, t.conversation_id, \
+     t.session_id, t.prompt, t.permission_mode, t.model_selection, t.workspace_key, t.workspace_path, \
+     t.workspace_identity, t.status, t.queued_at, t.started_at, t.ended_at, t.failure_reason, \
+     t.files_changed, t.settled_at, t.history_deleted_at, t.registered_at, t.schedulable, \
+     t.queue_position, t.next_poll_at, t.created_at, t.updated_at";
+
+/// Port of `hasTasksIndexTable()`: whether the `tasks` table exists in this DB file. The off-peak
+/// list only attaches `session_title` when the shared tasks-index table is present (a standalone
+/// off-peak DB before migration has no `tasks` table).
+pub fn has_tasks_index_table(conn: &Connection) -> Result<bool, String> {
+    let found: Option<i64> = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='tasks' LIMIT 1",
+            [],
+            |r| r.get(0),
+        )
+        .ok();
+    Ok(found.is_some())
+}
+
+/// Port of `list`: all off-peak tasks (optionally scoped to one workspace key), `created_at DESC`.
+/// When the `tasks` table exists, LEFT-JOINs the bound session title (`session_id → tasks.task_id`)
+/// and sets `session_title`; otherwise the plain projection leaves it absent.
+pub fn list_off_peak(
+    conn: &Connection,
+    workspace_key: Option<&str>,
+) -> Result<Vec<OffPeakTask>, String> {
+    let with_title = has_tasks_index_table(conn)?;
+    let sql = if with_title {
+        format!(
+            "SELECT {OFF_PEAK_COLUMNS_T}, s.title AS session_title FROM off_peak_tasks t \
+             LEFT JOIN tasks s ON s.workspace_key = t.workspace_key AND s.task_id = t.session_id \
+             WHERE (@workspace_key IS NULL OR t.workspace_key = @workspace_key) \
+             ORDER BY t.created_at DESC"
+        )
+    } else {
+        format!(
+            "SELECT {OFF_PEAK_COLUMNS} FROM off_peak_tasks \
+             WHERE (@workspace_key IS NULL OR workspace_key = @workspace_key) \
+             ORDER BY created_at DESC"
+        )
+    };
+    let wk = workspace_key
+        .map(|s| rusqlite::types::Value::Text(s.to_string()))
+        .unwrap_or(rusqlite::types::Value::Null);
+    let params: Vec<(&str, &dyn rusqlite::types::ToSql)> = vec![("@workspace_key", &wk)];
+    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+    let title_idx = if with_title { Some(25) } else { None };
+    let rows = stmt
+        .query_map(params.as_slice(), |r| map_off_peak_row(r, title_idx))
+        .map_err(|e| e.to_string())?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    Ok(rows)
 }
 
 #[cfg(test)]
@@ -180,5 +248,55 @@ mod tests {
     fn get_off_peak_missing_returns_none() {
         let conn = off_peak_db();
         assert!(get_off_peak(&conn, "ghost").unwrap().is_none());
+    }
+
+    fn insert_off_peak(
+        conn: &Connection,
+        id: &str,
+        ws: &str,
+        session_id: Option<&str>,
+        created: i64,
+    ) {
+        conn.execute(
+            "INSERT INTO off_peak_tasks (off_peak_task_id, title, prompt, permission_mode, \
+             session_id, workspace_key, workspace_path, status, queued_at, schedulable, \
+             claim_running, attempt_count, created_at, updated_at) \
+             VALUES (?1,'t','p','plan',?2,?3,'/w','queued',100,0,0,0,?4,?4)",
+            rusqlite::params![id, session_id, ws, created],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn list_off_peak_joins_session_title_and_filters_workspace() {
+        let conn = off_peak_db();
+        // tasks table present (adopt_schema) → join variant active.
+        conn.execute(
+            "INSERT INTO tasks (workspace_key, workspace_path, task_id, created_at, updated_at, title) \
+             VALUES ('wk','/w','sess1',1,2,'Bound Session')",
+            [],
+        )
+        .unwrap();
+        insert_off_peak(&conn, "o1", "wk", Some("sess1"), 30);
+        insert_off_peak(&conn, "o2", "wk", Some("missing"), 10); // no matching tasks row
+        insert_off_peak(&conn, "o3", "other", Some("sess1"), 20);
+
+        let all = list_off_peak(&conn, None).unwrap();
+        let by_id: std::collections::HashMap<_, _> = all
+            .iter()
+            .map(|t| (t.off_peak_task_id.clone(), t))
+            .collect();
+        assert_eq!(by_id.len(), 3);
+        assert_eq!(by_id["o1"].session_title.as_deref(), Some("Bound Session"));
+        assert_eq!(
+            by_id["o2"].session_title, None,
+            "LEFT JOIN miss → null title"
+        );
+        // created_at DESC → o1 (30) first.
+        assert_eq!(all[0].off_peak_task_id, "o1");
+
+        let scoped = list_off_peak(&conn, Some("wk")).unwrap();
+        assert_eq!(scoped.len(), 2, "workspace filter excludes o3");
+        assert!(scoped.iter().all(|t| t.workspace_key == "wk"));
     }
 }
