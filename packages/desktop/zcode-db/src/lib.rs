@@ -553,6 +553,61 @@ pub fn list_task_metas_json(db_path: String, workspace_key: String) -> Result<St
     serde_json::to_string(&metas).map_err(|e| Error::from_reason(e.to_string()))
 }
 
+/// Filter options for the TS `listTaskMetas` full query. `None` on a scalar means "don't filter"
+/// (matches the `@x IS NULL OR x=@x` predicates); `workspace_key: None` = across all workspaces.
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ListFilter {
+    pub workspace_key: Option<String>,
+    pub include_deleted: bool,
+    pub provider: Option<String>,
+    pub pinned: Option<bool>,
+    pub archived: Option<bool>,
+}
+
+/// Faithful port of the TS `listTaskMetas` SELECT (filter predicates + the same
+/// `updated_at/created_at/task_id DESC` ordering), projected through `row_to_meta`.
+pub fn query_task_metas_filtered(
+    conn: &Connection,
+    filter: &ListFilter,
+) -> std::result::Result<Vec<TaskMeta>, rusqlite::Error> {
+    let sql = format!(
+        "SELECT {TASK_INDEX_ROW_COLUMNS} FROM tasks \
+         WHERE (@workspace_key IS NULL OR workspace_key = @workspace_key) \
+           AND (@include_deleted = 1 OR deleted = 0) \
+           AND (@provider IS NULL OR provider = @provider) \
+           AND (@pinned IS NULL OR pinned = @pinned) \
+           AND (@archived IS NULL OR archived = @archived) \
+         ORDER BY updated_at DESC, created_at DESC, task_id DESC"
+    );
+    let include_deleted: i64 = filter.include_deleted.into();
+    let pinned: Option<i64> = filter.pinned.map(i64::from);
+    let archived: Option<i64> = filter.archived.map(i64::from);
+    let params: [(&str, &dyn rusqlite::types::ToSql); 5] = [
+        ("@workspace_key", &filter.workspace_key),
+        ("@include_deleted", &include_deleted),
+        ("@provider", &filter.provider),
+        ("@pinned", &pinned),
+        ("@archived", &archived),
+    ];
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt
+        .query_map(&params, map_task_index_row)?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(rows.iter().map(row_to_meta).collect())
+}
+
+/// N-API: the full filtered `listTaskMetas` as JSON (read-only). `filter_json` maps to `ListFilter`.
+#[napi]
+pub fn list_task_metas_filtered_json(db_path: String, filter_json: String) -> Result<String> {
+    let filter: ListFilter =
+        serde_json::from_str(&filter_json).map_err(|e| Error::from_reason(e.to_string()))?;
+    let conn = open_readonly(&db_path)?;
+    let metas =
+        query_task_metas_filtered(&conn, &filter).map_err(|e| Error::from_reason(e.to_string()))?;
+    serde_json::to_string(&metas).map_err(|e| Error::from_reason(e.to_string()))
+}
+
 /// UTF-16 code-unit truncation matching JS `String.prototype.slice(0, max)`. Counting by `char`
 /// would over-keep astral (emoji) text, since JS counts a surrogate pair as 2 units but Rust's
 /// `char` counts it as 1 — so we must accumulate `encode_utf16` units and cut on a boundary.
@@ -2425,6 +2480,62 @@ mod tests {
             )
             .unwrap();
         assert_eq!(members, 0, "remote off-peak not added to the group");
+    }
+
+    #[test]
+    fn filtered_list_workspace_and_include_deleted() {
+        let conn = fixture_db();
+        // All workspaces, hide deleted.
+        let all = query_task_metas_filtered(&conn, &ListFilter::default()).unwrap();
+        let ids: Vec<String> = all.iter().map(|m| m.task_id.clone()).collect();
+        assert_eq!(ids, vec!["other", "t-new", "t-mid", "t-old"]);
+
+        // Include tombstones → t-dead (updated_at 400) slots in.
+        let with_deleted = query_task_metas_filtered(
+            &conn,
+            &ListFilter {
+                include_deleted: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let ids2: Vec<String> = with_deleted.iter().map(|m| m.task_id.clone()).collect();
+        assert_eq!(ids2, vec!["other", "t-dead", "t-new", "t-mid", "t-old"]);
+
+        // Single workspace.
+        let ws = query_task_metas_filtered(
+            &conn,
+            &ListFilter {
+                workspace_key: Some("ws-A".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(ws.len(), 3);
+    }
+
+    #[test]
+    fn filtered_list_pin_and_archive() {
+        let conn = fixture_db();
+        // No row is pinned → pinned=Some(true) yields nothing; Some(false) yields all non-deleted.
+        let pinned_true = query_task_metas_filtered(
+            &conn,
+            &ListFilter {
+                pinned: Some(true),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(pinned_true.is_empty());
+        let pinned_false = query_task_metas_filtered(
+            &conn,
+            &ListFilter {
+                pinned: Some(false),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(pinned_false.len(), 4);
     }
 
     #[test]
