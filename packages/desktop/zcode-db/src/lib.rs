@@ -9,7 +9,9 @@ pub mod cron_engine;
 pub mod grouping;
 pub mod grouped_view;
 pub mod migrations;
+pub mod model_selection;
 pub mod session_bootstrap;
+pub mod session_entries;
 pub mod session_migrations;
 pub mod session_sessions;
 pub mod session_store;
@@ -1860,6 +1862,20 @@ pub fn list_sessions_json(db_path: String, filter_json: String) -> Result<String
     let filter: serde_json::Value = serde_json::from_str(&filter_json)
         .map_err(|e| Error::from_reason(format!("invalid filter json: {e}")))?;
     let value = session_sessions::list_sessions(&conn, &filter).map_err(Error::from_reason)?;
+    serde_json::to_string(&value).map_err(|e| Error::from_reason(e.to_string()))
+}
+
+/// N-API: `sessionEntries` port. `type` is optional (null/undefined → all). Returns a JSON array.
+#[napi]
+pub fn session_entries_json(
+    db_path: String,
+    session_id: String,
+    entry_type: Option<String>,
+) -> Result<String> {
+    let conn = open_readonly(&db_path)?;
+    let value =
+        session_entries::session_entries(&conn, &session_id, entry_type.as_deref())
+            .map_err(Error::from_reason)?;
     serde_json::to_string(&value).map_err(|e| Error::from_reason(e.to_string()))
 }
 
