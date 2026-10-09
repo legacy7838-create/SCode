@@ -100,7 +100,10 @@ pub struct NewTask {
 /// Insert or update a task row (write building block for the `syncTaskMeta` port). Uses SQLite
 /// upsert so repeated calls are idempotent on `(workspace_key, task_id)` — matching the TS repo's
 /// upsert semantics. Returns the number of affected rows.
-pub fn upsert_task(conn: &Connection, task: &NewTask) -> std::result::Result<usize, rusqlite::Error> {
+pub fn upsert_task(
+    conn: &Connection,
+    task: &NewTask,
+) -> std::result::Result<usize, rusqlite::Error> {
     conn.execute(
         "INSERT INTO tasks (workspace_key, task_id, title, mode, created_at, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)
@@ -117,35 +120,330 @@ pub fn upsert_task(conn: &Connection, task: &NewTask) -> std::result::Result<usi
     )
 }
 
-/// Rust projection of the TS `ZCodeTaskMeta` (meta_json blob). Known scalar fields are typed;
-/// unknown/complex fields (traceId, thoughtLevel, target, …) are preserved in `rest` for lossless
-/// round-trip. camelCase JSON keys map to snake_case Rust fields via serde `rename_all`.
-#[derive(Debug, Clone, serde::Deserialize)]
+// ---- rowToMeta / meta model (faithful port of TS ZCodeTaskMeta read projection) ----
+
+/// Valid `mode` values — mirrors `zcodeTaskModeSchema`.
+const VALID_MODES: [&str; 6] = ["yolo", "plan", "edit", "auto", "autoEdit", "build"];
+/// Valid persisted `status` values — mirrors `zcodeTaskPersistStatusSchema`.
+const VALID_STATUS: [&str; 3] = ["running", "completed", "error"];
+/// Valid `workspacePurpose` values — mirrors `zcodeTaskMetaSchema.workspacePurpose`.
+const VALID_PURPOSE: [&str; 2] = ["project", "conversation"];
+/// The only accepted agent provider — mirrors `zcodeAgentProviderSchema = z.literal("glm")`.
+const ZCODE_AGENT_PROVIDER: &str = "glm";
+/// Valid `migrationSource` values — mirrors `zcodeTaskMigrationSourceSchema`.
+const VALID_MIGRATION: [&str; 1] = ["claudeCode"];
+
+/// Rust mirror of TS `ZCodeTaskMeta`. `skip_serializing_if = Option::is_none` reproduces
+/// `JSON.stringify` dropping `undefined` keys, and serde ignoring unknown keys reproduces zod's
+/// default strip of extra `meta_json` fields — so the read projection matches TS key-for-key.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskMeta {
     #[serde(default)]
     pub task_id: String,
     #[serde(default)]
-    pub title: String,
+    pub trace_id: String,
     #[serde(default)]
-    pub mode: String,
+    pub title: String,
+    pub title_overridden: bool,
+    #[serde(default)]
+    pub workspace_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_identity: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_purpose: Option<String>,
     #[serde(default)]
     pub created_at: i64,
     #[serde(default)]
     pub updated_at: i64,
     #[serde(default)]
+    pub mode: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
-    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thought_level: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_epoch: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub provider: Option<String>,
-    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub migration_source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub forked_from_task_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cron_automation_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub off_peak_task_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unread_at: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
-    #[serde(flatten)]
-    pub rest: std::collections::BTreeMap<String, serde_json::Value>,
+    // PARITY GAP: nested lastError/changeSummary/target are carried as opaque JSON. Their inner
+    // zod shape validation (which can force TS safeParse to reject and fall back) is not yet
+    // reproduced; a malformed nested object is accepted here but rejected by TS.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_error: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub change_summary: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target: Option<serde_json::Value>,
 }
 
-/// Parse a `meta_json` blob into `TaskMeta` (foundation for the `rowToMeta` port).
-pub fn parse_task_meta(meta_json: &str) -> std::result::Result<TaskMeta, serde_json::Error> {
-    serde_json::from_str(meta_json)
+/// Un-validated `meta_json` capture. Required schema fields are `Option` so absence is detectable
+/// (an `Option` field is `None` for both a missing key and a JSON `null`, and zod rejects both for
+/// these scalars). Optional scalars default to `None`; serde ignores unknown keys (zod-strip parity).
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MetaInput {
+    task_id: Option<String>,
+    trace_id: Option<String>,
+    title: Option<String>,
+    workspace_path: Option<String>,
+    created_at: Option<i64>,
+    updated_at: Option<i64>,
+    mode: Option<String>,
+    #[serde(default)]
+    workspace_purpose: Option<String>,
+    #[serde(default)]
+    model: Option<String>,
+    #[serde(default)]
+    thought_level: Option<String>,
+    #[serde(default)]
+    runtime_epoch: Option<i64>,
+    #[serde(default)]
+    provider: Option<String>,
+    #[serde(default)]
+    migration_source: Option<String>,
+    #[serde(default)]
+    forked_from_task_id: Option<String>,
+    #[serde(default)]
+    cron_automation_id: Option<String>,
+    #[serde(default)]
+    off_peak_task_id: Option<String>,
+    #[serde(default)]
+    unread_at: Option<i64>,
+    #[serde(default)]
+    status: Option<String>,
+    #[serde(default)]
+    last_error: Option<serde_json::Value>,
+    #[serde(default)]
+    change_summary: Option<serde_json::Value>,
+    #[serde(default)]
+    target: Option<serde_json::Value>,
+}
+
+/// The `tasks` row projection `rowToMeta` consumes — the columns `listTaskMetas` selects that the
+/// transform actually reads (pinned/archived/deleted/searchable_text are filtered, not projected).
+#[derive(Debug, Clone)]
+pub struct TaskIndexRow {
+    pub workspace_key: String,
+    pub workspace_path: String,
+    pub workspace_identity: Option<String>,
+    pub task_id: String,
+    pub title: String,
+    pub task_status: Option<String>,
+    pub provider: Option<String>,
+    pub mode: String,
+    pub model: Option<String>,
+    pub migration_source: Option<String>,
+    pub forked_from_task_id: Option<String>,
+    pub cron_automation_id: Option<String>,
+    pub off_peak_task_id: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub unread_at: Option<i64>,
+    pub title_overridden: i64,
+    pub meta_json: String,
+}
+
+/// Port of TS `isRemoteWorkspaceIdentity`: true when `identity` is a well-formed `remote:` key.
+/// Mirrors `parseRemoteWorkspaceIdentity`'s structural walk (prefix → kind → authority segments →
+/// WSL optional-user → path startswith "/"); authority detail is intentionally not extracted.
+pub fn is_remote_workspace_identity(identity: &str) -> bool {
+    const PREFIX: &str = "remote:";
+    let rest = match identity.strip_prefix(PREFIX) {
+        Some(r) => r,
+        None => return false,
+    };
+    let kind_end = match rest.find(':') {
+        Some(pos) if pos > 0 => pos,
+        _ => return false,
+    };
+    let kind = &rest[..kind_end];
+    let segments = match kind {
+        "ssh" => 3,
+        "wsl" | "docker" => 1,
+        _ => return false,
+    };
+    let mut cursor = kind_end + 1;
+    for _ in 0..segments {
+        match rest[cursor..].find(':') {
+            Some(rel) if cursor + rel > cursor => cursor = cursor + rel + 1,
+            _ => return false,
+        }
+    }
+    // WSL carries an optional explicit-user segment; a non-'/' next char means it is present.
+    if kind == "wsl" && rest.as_bytes().get(cursor) != Some(&b'/') {
+        match rest[cursor..].find(':') {
+            Some(rel) if cursor + rel > cursor => cursor = cursor + rel + 1,
+            _ => return false,
+        }
+    }
+    rest[cursor..].starts_with('/')
+}
+
+/// Port of TS `resolveTaskIndexRowWorkspaceIdentity`. The column identity is only trusted when it
+/// equals `workspace_key`; otherwise a uniform-format remote `workspace_key` wins; else undefined.
+fn resolve_workspace_identity(row: &TaskIndexRow) -> Option<String> {
+    let column_identity = row.workspace_identity.as_deref().map(|s| s.trim());
+    if column_identity == Some(row.workspace_key.as_str()) {
+        return column_identity.map(|s| s.to_string());
+    }
+    if is_remote_workspace_identity(&row.workspace_key) {
+        return Some(row.workspace_key.clone());
+    }
+    None
+}
+
+/// A `nonEmptyStringSchema.optional()` value is present but must be non-empty; empty rejects the
+/// whole parse (matching zod), so it forces the column fallback rather than being dropped.
+fn reject_if_empty(v: &Option<String>) -> bool {
+    matches!(v, Some(s) if s.is_empty())
+}
+
+/// Gate a parsed `meta_json` against `zcodeTaskMetaSchema`. Returns `None` when TS `safeParse`
+/// would fail (missing/empty required field, out-of-enum scalar, negative int, float-for-int type
+/// mismatch — the last surfaces as a serde error before we ever get here).
+fn gate_valid_meta(
+    m: &MetaInput,
+    row: &TaskIndexRow,
+    identity: Option<String>,
+) -> Option<TaskMeta> {
+    m.task_id.as_deref().filter(|s| !s.is_empty())?;
+    let trace_id = m.trace_id.clone().filter(|s| !s.is_empty())?;
+    let title = m.title.clone()?;
+    m.workspace_path.as_deref().filter(|s| !s.is_empty())?;
+    // createdAt/updatedAt: z.number().int().nonnegative(). They exist as typed i64 or the meta is
+    // invalid — serde only fills Some when the JSON value was a whole number (float rejects at
+    // parse), so `?` handles absence and the `< 0` check handles the nonnegative bound.
+    let created_at = m.created_at?;
+    let updated_at = m.updated_at?;
+    if created_at < 0 || updated_at < 0 {
+        return None;
+    }
+    let mode = m.mode.as_deref()?;
+    if !VALID_MODES.contains(&mode) {
+        return None;
+    }
+    if let Some(p) = m.workspace_purpose.as_deref() {
+        if !VALID_PURPOSE.contains(&p) {
+            return None;
+        }
+    }
+    if let Some(s) = m.status.as_deref() {
+        if !VALID_STATUS.contains(&s) {
+            return None;
+        }
+    }
+    if let Some(p) = m.provider.as_deref() {
+        if p != ZCODE_AGENT_PROVIDER {
+            return None;
+        }
+    }
+    if let Some(ms) = m.migration_source.as_deref() {
+        if !VALID_MIGRATION.contains(&ms) {
+            return None;
+        }
+    }
+    if reject_if_empty(&m.thought_level)
+        || reject_if_empty(&m.cron_automation_id)
+        || reject_if_empty(&m.off_peak_task_id)
+        || reject_if_empty(&m.forked_from_task_id)
+    {
+        return None;
+    }
+    if m.runtime_epoch.is_some_and(|e| e < 0) || m.unread_at.is_some_and(|u| u < 0) {
+        return None;
+    }
+
+    // Valid path: spread parsed.data, then overlay. created/updated/traceId/title/mode/model/… come
+    // from the meta; taskId/workspacePath/unreadAt/titleOverridden are overridden by columns; cron/
+    // offPeak prefer meta then column; identity comes from the column-key resolver.
+    Some(TaskMeta {
+        task_id: row.task_id.clone(),
+        trace_id,
+        title,
+        title_overridden: row.title_overridden == 1,
+        workspace_path: row.workspace_path.clone(),
+        workspace_identity: identity,
+        workspace_purpose: m.workspace_purpose.clone(),
+        created_at,
+        updated_at,
+        mode: mode.to_string(),
+        model: m.model.clone(),
+        thought_level: m.thought_level.clone(),
+        runtime_epoch: m.runtime_epoch,
+        provider: m.provider.clone(),
+        migration_source: m.migration_source.clone(),
+        forked_from_task_id: m.forked_from_task_id.clone(),
+        cron_automation_id: m
+            .cron_automation_id
+            .clone()
+            .or_else(|| row.cron_automation_id.clone()),
+        off_peak_task_id: m
+            .off_peak_task_id
+            .clone()
+            .or_else(|| row.off_peak_task_id.clone()),
+        unread_at: row.unread_at,
+        status: m.status.clone(),
+        last_error: m.last_error.clone(),
+        change_summary: m.change_summary.clone(),
+        target: m.target.clone(),
+    })
+}
+
+/// Column fallback (matches TS: invalid/missing `meta_json` → build entirely from scalar columns,
+/// synthesizing `traceId = "zcode-<taskId>"`). Nested/target fields and workspacePurpose/thoughtLevel
+/// are absent here, exactly as the TS fallback literal omits them.
+fn fallback_meta(row: &TaskIndexRow, identity: Option<String>) -> TaskMeta {
+    TaskMeta {
+        task_id: row.task_id.clone(),
+        trace_id: format!("zcode-{}", row.task_id),
+        title: row.title.clone(),
+        title_overridden: row.title_overridden == 1,
+        workspace_path: row.workspace_path.clone(),
+        workspace_identity: identity,
+        workspace_purpose: None,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        mode: row.mode.clone(),
+        model: row.model.clone(),
+        thought_level: None,
+        runtime_epoch: None,
+        provider: row
+            .provider
+            .as_ref()
+            .filter(|p| p.as_str() == ZCODE_AGENT_PROVIDER)
+            .cloned(),
+        migration_source: row.migration_source.clone(),
+        forked_from_task_id: row.forked_from_task_id.clone(),
+        cron_automation_id: row.cron_automation_id.clone(),
+        off_peak_task_id: row.off_peak_task_id.clone(),
+        unread_at: row.unread_at,
+        status: row.task_status.clone(),
+        last_error: None,
+        change_summary: None,
+        target: None,
+    }
+}
+
+/// Faithful port of TS `rowToMeta`: attempt schema-gated meta projection, else column fallback.
+pub fn row_to_meta(row: &TaskIndexRow) -> TaskMeta {
+    let identity = resolve_workspace_identity(row);
+    serde_json::from_str::<MetaInput>(&row.meta_json)
+        .ok()
+        .and_then(|m| gate_valid_meta(&m, row, identity.clone()))
+        .unwrap_or_else(|| fallback_meta(row, identity))
 }
 
 /// N-API: return the raw `meta_json` string for one task (parse it in Rust via `parse_task_meta`).
@@ -232,9 +530,15 @@ mod tests {
             updated_at: 20,
             ..t.clone()
         };
-        assert_eq!(upsert_task(&conn, &t2).unwrap(), 1, "update affects the same 1 row");
+        assert_eq!(
+            upsert_task(&conn, &t2).unwrap(),
+            1,
+            "update affects the same 1 row"
+        );
         let rows = conn
-            .prepare("SELECT title, updated_at FROM tasks WHERE workspace_key='ws' AND task_id='id1'")
+            .prepare(
+                "SELECT title, updated_at FROM tasks WHERE workspace_key='ws' AND task_id='id1'",
+            )
             .unwrap()
             .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))
             .unwrap()
@@ -261,21 +565,200 @@ mod tests {
         assert_eq!(rows[0].task_id, "other");
     }
 
+    fn row(meta_json: &str) -> TaskIndexRow {
+        TaskIndexRow {
+            workspace_key: "/local/proj".into(),
+            workspace_path: "/local/proj".into(),
+            workspace_identity: None,
+            task_id: "t1".into(),
+            title: "col-title".into(),
+            task_status: Some("completed".into()),
+            provider: None,
+            mode: "build".into(),
+            model: Some("col-model".into()),
+            migration_source: None,
+            forked_from_task_id: None,
+            cron_automation_id: None,
+            off_peak_task_id: None,
+            created_at: 1,
+            updated_at: 2,
+            unread_at: None,
+            title_overridden: 0,
+            meta_json: meta_json.into(),
+        }
+    }
+
     #[test]
-    fn parses_real_meta_json_shape() {
-        // Mirrors a real row's meta_json keys observed in the live DB.
-        let sample = r#"{"taskId":"sess_x","traceId":"zcode-sess_x","title":"hey","titleOverridden":false,"workspacePath":"/p","createdAt":1,"updatedAt":2,"mode":"build","model":"m","thoughtLevel":"high","provider":"p","status":"idle","lastError":null,"target":{}}"#;
-        let m = parse_task_meta(sample).unwrap();
-        assert_eq!(m.task_id, "sess_x");
+    fn valid_meta_projects_schema_with_column_overlays() {
+        // Real-shape meta: createdAt/updatedAt live in the meta (valid path must NOT read columns).
+        let m = row_to_meta(&row(
+            r#"{"taskId":"meta-id","traceId":"zcode-meta-id","title":"hey","workspacePath":"/mp","createdAt":100,"updatedAt":200,"mode":"plan","model":"m","thoughtLevel":"high","status":"completed"}"#,
+        ));
+        assert_eq!(m.trace_id, "zcode-meta-id");
         assert_eq!(m.title, "hey");
-        assert_eq!(m.mode, "build");
-        assert_eq!(m.created_at, 1);
-        assert_eq!(m.updated_at, 2);
+        assert_eq!(m.mode, "plan");
         assert_eq!(m.model.as_deref(), Some("m"));
-        // Unknown/complex fields are preserved (lossless), not dropped.
-        assert!(m.rest.contains_key("traceId"));
-        assert!(m.rest.contains_key("thoughtLevel"));
-        assert!(m.rest.contains_key("target"));
+        assert_eq!(m.thought_level.as_deref(), Some("high"));
+        assert_eq!(
+            m.status.as_deref(),
+            Some("completed"),
+            "valid-path status from meta"
+        );
+        // Times come from the meta, not the row columns (1/2) — matches TS not overriding them.
+        assert_eq!(m.created_at, 100);
+        assert_eq!(m.updated_at, 200);
+        // Overlays from columns: taskId/workspacePath win over the meta's own values.
+        assert_eq!(m.task_id, "t1");
+        assert_eq!(m.workspace_path, "/local/proj");
+    }
+
+    #[test]
+    fn invalid_enum_status_falls_back_to_columns() {
+        // zcodeTaskPersistStatusSchema only allows running|completed|error; "idle" rejects.
+        let m = row_to_meta(&row(
+            r#"{"taskId":"t1","traceId":"z1","title":"hey","workspacePath":"/p","createdAt":100,"updatedAt":200,"mode":"build","status":"idle"}"#,
+        ));
+        assert_eq!(m.trace_id, "zcode-t1", "fallback synthesizes traceId");
+        assert_eq!(
+            m.created_at, 1,
+            "fallback uses column created_at, not meta 100"
+        );
+        assert_eq!(
+            m.updated_at, 2,
+            "fallback uses column updated_at, not meta 200"
+        );
+        assert_eq!(m.title, "col-title", "fallback uses column title");
+        assert_eq!(
+            m.status.as_deref(),
+            Some("completed"),
+            "fallback status from column"
+        );
+        assert_eq!(m.mode, "build", "fallback mode from column");
+    }
+
+    #[test]
+    fn invalid_mode_falls_back_to_columns() {
+        // mode "default" (observed live divergence) is outside the mode enum → fallback.
+        let m = row_to_meta(&row(
+            r#"{"taskId":"t1","traceId":"z1","title":"hey","workspacePath":"/p","createdAt":100,"updatedAt":200,"mode":"default"}"#,
+        ));
+        assert_eq!(
+            m.mode, "build",
+            "fallback mode from column, not meta's invalid 'default'"
+        );
+        assert_eq!(m.created_at, 1);
+    }
+
+    #[test]
+    fn missing_or_unparseable_meta_falls_back() {
+        assert_eq!(row_to_meta(&row("")).trace_id, "zcode-t1");
+        assert_eq!(row_to_meta(&row("not json")).trace_id, "zcode-t1");
+        // '{}' parses but lacks required fields → TS safeParse fails → fallback.
+        let m = row_to_meta(&row("{}"));
+        assert_eq!(m.title, "col-title");
+    }
+
+    #[test]
+    fn float_created_at_is_type_mismatch_and_falls_back() {
+        // z.number().int() rejects 1.5; serde i64 rejects the float → parse error → fallback.
+        let m = row_to_meta(&row(
+            r#"{"taskId":"t1","traceId":"z1","title":"hey","workspacePath":"/p","createdAt":1.5,"updatedAt":2,"mode":"build"}"#,
+        ));
+        assert_eq!(
+            m.created_at, 1,
+            "fallback: float meta createdAt rejected, column wins"
+        );
+    }
+
+    #[test]
+    fn fallback_provider_gated_to_agent() {
+        let mut r = row("");
+        r.provider = Some("openai".into());
+        assert_eq!(
+            row_to_meta(&r).provider,
+            None,
+            "non-glm provider column is dropped (TS ternary)"
+        );
+        r.provider = Some("glm".into());
+        assert_eq!(row_to_meta(&r).provider.as_deref(), Some("glm"));
+    }
+
+    #[test]
+    fn cron_and_offpeak_prefer_meta_then_column() {
+        let mut r = row(
+            r#"{"taskId":"t1","traceId":"z1","title":"hey","workspacePath":"/p","createdAt":1,"updatedAt":2,"mode":"build","cronAutomationId":"c-meta"}"#,
+        );
+        r.cron_automation_id = Some("c-col".into());
+        assert_eq!(
+            row_to_meta(&r).cron_automation_id.as_deref(),
+            Some("c-meta")
+        );
+        // meta without cron → column fills it.
+        let mut r2 = row(
+            r#"{"taskId":"t1","traceId":"z1","title":"hey","workspacePath":"/p","createdAt":1,"updatedAt":2,"mode":"build"}"#,
+        );
+        r2.cron_automation_id = Some("c-col".into());
+        assert_eq!(
+            row_to_meta(&r2).cron_automation_id.as_deref(),
+            Some("c-col")
+        );
+    }
+
+    #[test]
+    fn empty_cron_rejects_meta_entirely() {
+        // nonEmptyStringSchema.optional(): present-but-empty cron fails zod → full fallback.
+        let m = row_to_meta(&row(
+            r#"{"taskId":"t1","traceId":"z1","title":"hey","workspacePath":"/p","createdAt":100,"updatedAt":200,"mode":"build","cronAutomationId":""}"#,
+        ));
+        assert_eq!(m.created_at, 1, "fallback selected, not valid path");
+        assert_eq!(m.title, "col-title");
+    }
+
+    #[test]
+    fn workspace_identity_resolution() {
+        // Local workspace_key: identity undefined unless the column equals the key.
+        let mut r = row("");
+        assert_eq!(row_to_meta(&r).workspace_identity, None);
+        r.workspace_identity = Some("/local/proj".into());
+        assert_eq!(
+            row_to_meta(&r).workspace_identity.as_deref(),
+            Some("/local/proj"),
+            "column identity accepted when it equals workspace_key"
+        );
+        // Remote key: identity adopted from workspace_key even when column mismatches.
+        let mut rem = row("");
+        rem.workspace_key = "remote:ssh:host.example:22:user:/home/u".into();
+        rem.workspace_identity = Some("stale".into());
+        assert_eq!(
+            row_to_meta(&rem).workspace_identity.as_deref(),
+            Some("remote:ssh:host.example:22:user:/home/u")
+        );
+    }
+
+    #[test]
+    fn is_remote_identity_parsing_parity() {
+        assert!(is_remote_workspace_identity("remote:ssh:h:22:u:/p"));
+        assert!(is_remote_workspace_identity("remote:docker:ctr:/p"));
+        assert!(is_remote_workspace_identity("remote:wsl:distro:/p"));
+        assert!(is_remote_workspace_identity("remote:wsl:distro:user:/p"));
+        assert!(!is_remote_workspace_identity("/local/proj"));
+        assert!(!is_remote_workspace_identity("remote:ftp:h:/p")); // unknown kind
+        assert!(!is_remote_workspace_identity("remote:ssh:h:22:u:p")); // path without leading /
+        assert!(!is_remote_workspace_identity("remote:ssh:h:22")); // missing segments
+    }
+
+    #[test]
+    fn meta_json_roundtrip_strips_unknown_keys() {
+        // zod strips unknown keys; serde (no flatten) ignores them. A valid meta with an extra key
+        // serializes back WITHOUT that key — proving the projection is TS-identical, not lossy-extra.
+        let m = row_to_meta(&row(
+            r#"{"taskId":"t1","traceId":"z1","title":"hey","workspacePath":"/p","createdAt":1,"updatedAt":2,"mode":"build","someZodStrippedKey":123}"#,
+        ));
+        let json = serde_json::to_string(&m).unwrap();
+        assert!(!json.contains("someZodStrippedKey"));
+        assert!(json.contains("\"traceId\":\"z1\""));
+        // Absent optional fields must not serialize (JSON.stringify drops undefined).
+        assert!(!json.contains("lastError"));
+        assert!(!json.contains("workspacePurpose"));
     }
 }
-
