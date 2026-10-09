@@ -2867,6 +2867,19 @@ pub fn grouping_apply_view_order_json(db_path: String, input_json: String, now: 
     grouping::apply_grouped_task_view_order(&conn, &input, now as i64).map_err(Error::from_reason)
 }
 
+/// N-API: `TaskIndexRepo.queryGroupedTaskViewStructure` (read-only). `scopes_json` = the array of
+/// `{workspacePath, workspaceIdentity?}` scopes controlling bootstrapped-group visibility. Returns
+/// the `{groups, members, topLevelOrders}` structure JSON.
+#[napi]
+pub fn grouping_query_view_structure_json(db_path: String, scopes_json: String) -> Result<String> {
+    let scopes: Vec<WorkspaceScope> =
+        serde_json::from_str(&scopes_json).map_err(|e| Error::from_reason(e.to_string()))?;
+    let conn = open_readonly(&db_path)?;
+    let structure = grouping::query_grouped_task_view_structure(&conn, &scopes)
+        .map_err(Error::from_reason)?;
+    serde_json::to_string(&structure).map_err(|e| Error::from_reason(e.to_string()))
+}
+
 /// N-API: return the raw `meta_json` string for one task (parse it in Rust via `row_to_meta`).
 #[napi]
 pub fn read_task_meta_json(

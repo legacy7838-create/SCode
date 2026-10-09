@@ -624,6 +624,181 @@ pub fn initialize_grouped_task_at_top(
     Ok(true)
 }
 
+// ---- Grouped-view structure read (no task join, no bootstrap/normalize side effects) ----
+
+/// A member row projected for [`query_grouped_task_view_structure`] — mirror of
+/// `ZCodeGroupedTaskViewStructureMember` (camelCase, `workspaceIdentity` omitted when absent).
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StructureMember {
+    pub group_id: String,
+    pub workspace_key: String,
+    pub workspace_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_identity: Option<String>,
+    pub task_id: String,
+    pub sort_order: Option<i64>,
+    pub added_at: i64,
+}
+
+/// A top-level ordering node — mirror of the `ZCodeGroupedTaskViewStructureTopOrder` discriminated
+/// union (`{ type: "group" } | { type: "task" }`). Serialized with `type` as the tag.
+///
+/// Note: the enum container's `rename_all` renames only the variant NAMES; the struct-variant FIELDS
+/// need their own `rename_all = "camelCase"` per variant (else they serialize snake_case and diverge
+/// from the TS camelCase payload — caught by the read parity harness).
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(tag = "type")]
+pub enum StructureTopOrder {
+    #[serde(rename = "group", rename_all = "camelCase")]
+    Group { group_id: String, sort_order: i64 },
+    #[serde(rename = "task", rename_all = "camelCase")]
+    Task {
+        workspace_key: String,
+        task_id: String,
+        sort_order: i64,
+    },
+}
+
+/// The full structure payload — mirror of `ZCodeGroupedTaskViewStructure`.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GroupedTaskViewStructure {
+    pub groups: Vec<TaskGroup>,
+    pub members: Vec<StructureMember>,
+    pub top_level_orders: Vec<StructureTopOrder>,
+}
+
+/// Port of `queryGroupedTaskViewStructure`: read the three grouping tables and project them, WITHOUT
+/// touching `tasks` and WITHOUT the bootstrap/normalize write-back that `queryGroupedTaskView` does.
+/// Group visibility follows the same rule — a bootstrapped workspace group is shown only when its
+/// workspace is in `scopes`. Task `node_key`s are parsed from their JSON `[workspaceKey, taskId]`
+/// form; a dirty/non-conforming key is skipped (the client re-sorts by createdAt in memory).
+///
+/// Iteration order is the raw table order (no `ORDER BY`), matching the TS `.all()` calls; two DBs
+/// seeded identically yield identical ordering.
+pub fn query_grouped_task_view_structure(
+    conn: &Connection,
+    scopes: &[crate::WorkspaceScope],
+) -> Result<GroupedTaskViewStructure, String> {
+    let visible = normalize_workspace_keys(scopes);
+
+    // group_id → bootstrap workspace_key (only rows with a non-null group id).
+    let mut bootstrap_map = std::collections::HashMap::<String, String>::new();
+    {
+        let mut stmt = conn
+            .prepare("SELECT workspace_key, group_id FROM task_group_workspace_bootstraps WHERE group_id IS NOT NULL")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            })
+            .map_err(|e| e.to_string())?;
+        for row in rows {
+            let (ws, gid) = row.map_err(|e| e.to_string())?;
+            bootstrap_map.insert(gid, ws);
+        }
+    }
+
+    let mut groups = Vec::new();
+    {
+        let mut stmt = conn
+            .prepare("SELECT group_id, title, color, created_at, updated_at FROM task_groups")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, i64>(3)?,
+                    r.get::<_, i64>(4)?,
+                ))
+            })
+            .map_err(|e| e.to_string())?;
+        for row in rows {
+            let (group_id, title, color, created_at, updated_at) = row.map_err(|e| e.to_string())?;
+            // A bootstrapped group is visible only when its workspace is in scope.
+            if let Some(ws) = bootstrap_map.get(&group_id) {
+                if !visible.contains(ws) {
+                    continue;
+                }
+            }
+            groups.push(row_to_task_group(group_id, title, color, created_at, updated_at));
+        }
+    }
+
+    let mut members = Vec::new();
+    {
+        let mut stmt = conn
+            .prepare(
+                "SELECT group_id, workspace_key, workspace_path, workspace_identity, task_id, \
+                 sort_order, added_at FROM task_group_members",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok(StructureMember {
+                    group_id: r.get(0)?,
+                    workspace_key: r.get(1)?,
+                    workspace_path: r.get(2)?,
+                    workspace_identity: r.get(3)?,
+                    task_id: r.get(4)?,
+                    sort_order: r.get(5)?,
+                    added_at: r.get(6)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        for row in rows {
+            members.push(row.map_err(|e| e.to_string())?);
+        }
+    }
+
+    let mut top_level_orders = Vec::new();
+    {
+        let mut stmt = conn
+            .prepare("SELECT node_type, node_key, sort_order FROM task_group_view_node_orders")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, i64>(2)?,
+                ))
+            })
+            .map_err(|e| e.to_string())?;
+        for row in rows {
+            let (node_type, node_key, sort_order) = row.map_err(|e| e.to_string())?;
+            if node_type == "group" {
+                top_level_orders.push(StructureTopOrder::Group {
+                    group_id: node_key,
+                    sort_order,
+                });
+                continue;
+            }
+            // task node_key is the JSON of [workspaceKey, taskId]; skip any dirty/non-conforming key.
+            if let Ok(serde_json::Value::Array(arr)) = serde_json::from_str::<serde_json::Value>(&node_key) {
+                if arr.len() == 2 {
+                    if let (Some(ws), Some(tid)) = (arr[0].as_str(), arr[1].as_str()) {
+                        top_level_orders.push(StructureTopOrder::Task {
+                            workspace_key: ws.to_string(),
+                            task_id: tid.to_string(),
+                            sort_order,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(GroupedTaskViewStructure {
+        groups,
+        members,
+        top_level_orders,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
