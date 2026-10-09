@@ -294,7 +294,7 @@ function createFullFeedbackLogArchiveViaMain(
     // 收集范围和“导出日志”不一致，缺少 zcode-cli 日志、rollout/debug 以及导出链路脱敏。
     // 这里把完整日志打包委托给 main process 的导出日志同源逻辑，host 只拿 zip 路径继续上传。
     try {
-      parentPort.postMessage({
+      parentPort?.postMessage({
         type: HostResponseTypes.FeedbackLogArchiveRequest,
         requestId,
         sourceDir,
@@ -1639,7 +1639,7 @@ async function createWindowRemoteConnectionHandle(params: {
     clientConfigService,
     connectionServices: backendConnection.services,
     sourceServices: activeServices ?? undefined,
-    parentPort,
+    parentPort: parentPort ?? null,
     createRemotePromptAttachmentSessionService: (service) =>
       createRemotePromptAttachmentSessionService(service, {
         materializePromptAttachments,
@@ -2244,7 +2244,7 @@ process.on(
   }),
 );
 
-parentPort.on("message", async (e: HostParentMessageEvent) => {
+parentPort?.on("message", async (e: HostParentMessageEvent) => {
   const result = parseHostIncomingMessageEvent(e);
   if (!result.success) {
     logger.error("invalid parentPort message:", formatZodError(result.error));

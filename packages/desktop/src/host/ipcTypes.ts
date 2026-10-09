@@ -38,11 +38,11 @@ declare global {
   namespace NodeJS {
     interface Process {
       /**
-       * Utility-process IPC port. Typed as required to mirror Electron's `process.parentPort`
-       * declaration so existing call sites keep compiling; at runtime it is absent when the Host runs
-       * as a plain Node sidecar, which the surrounding `parentPort?.` / `if (!parentPort)` guards handle.
+       * Utility-process IPC port. Absent when the Host runs as a plain Node sidecar (the Tauri
+       * target) — every consumer already guards with `parentPort?.` or an `if (!parentPort)` early
+       * return, so the port-less sidecar path degrades to local-only behavior.
        */
-      parentPort: HostParentPort;
+      parentPort?: HostParentPort;
     }
   }
 }
