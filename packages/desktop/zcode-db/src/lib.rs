@@ -168,6 +168,9 @@ pub struct TaskMeta {
     pub trace_id: String,
     #[serde(default)]
     pub title: String,
+    // Optional in the zod schema (`titleOverridden?.optional()`); default so an input meta that
+    // omits it still parses. Always serialized on output.
+    #[serde(default)]
     pub title_overridden: bool,
     #[serde(default)]
     pub workspace_path: String,
@@ -1991,6 +1994,15 @@ mod tests {
         // '{}' parses but lacks required fields → TS safeParse fails → fallback.
         let m = row_to_meta(&row("{}"));
         assert_eq!(m.title, "col-title");
+    }
+
+    #[test]
+    fn task_meta_deserializes_without_optional_title_overridden() {
+        // A caller-supplied input meta may omit the optional `titleOverridden` (zod `.optional()`).
+        let m: TaskMeta =
+            serde_json::from_str(r#"{"taskId":"t","traceId":"tr","title":"x","workspacePath":"/p","createdAt":1,"updatedAt":2,"mode":"build"}"#)
+                .expect("titleOverridden is optional on input");
+        assert!(!m.title_overridden);
     }
 
     #[test]
