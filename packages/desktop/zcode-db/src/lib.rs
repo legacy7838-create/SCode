@@ -9,6 +9,7 @@ pub mod cron_engine;
 pub mod grouping;
 pub mod grouped_view;
 pub mod migrations;
+pub mod session_migrations;
 pub mod offpeak;
 pub mod offpeak_write;
 
