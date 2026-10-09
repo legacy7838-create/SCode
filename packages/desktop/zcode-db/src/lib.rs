@@ -1693,6 +1693,23 @@ pub fn query_task_list_json(db_path: String, query_json: String) -> Result<Strin
     serde_json::to_string(&result).map_err(|e| Error::from_reason(e.to_string()))
 }
 
+/// N-API: read a single task's projected meta (`getTaskMeta`) — `null` when the row is absent.
+/// Uses `getTaskRow` semantics (includes tombstones), matching the TS single-read path.
+#[napi]
+pub fn get_task_meta_json(
+    db_path: String,
+    workspace_key: String,
+    task_id: String,
+) -> Result<Option<String>> {
+    let conn = open_readonly(&db_path)?;
+    let row = get_task_index_row(&conn, &workspace_key, &task_id)
+        .map_err(|e| Error::from_reason(e.to_string()))?;
+    Ok(row
+        .as_ref()
+        .map(row_to_meta)
+        .map(|m| serde_json::to_string(&m).unwrap_or_default()))
+}
+
 /// N-API: return the raw `meta_json` string for one task (parse it in Rust via `row_to_meta`).
 #[napi]
 pub fn read_task_meta_json(
