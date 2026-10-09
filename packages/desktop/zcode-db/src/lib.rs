@@ -144,6 +144,11 @@ const VALID_MIGRATION: [&str; 1] = ["claudeCode"];
 const TASK_SEARCH_TEXT_MAX_CHARS: usize = 200_000;
 /// Grouped-view ordering step — mirrors TS `GROUPED_TASK_ORDER_STEP`.
 const GROUPED_TASK_ORDER_STEP: i64 = 1000;
+/// Search-snippet window params — mirror the TS `TASK_SEARCH_SNIPPET_*` constants.
+const SNIPPET_PREFIX_RADIUS: usize = 20;
+const SNIPPET_SUFFIX_RADIUS: usize = 72;
+const SNIPPET_MAX_CHARS: usize = 140;
+const SNIPPET_LIMIT: usize = 4;
 
 /// Rust mirror of TS `ZCodeTaskMeta`. `skip_serializing_if = Option::is_none` reproduces
 /// `JSON.stringify` dropping `undefined` keys, and serde ignoring unknown keys reproduces zod's
@@ -270,6 +275,7 @@ pub struct TaskIndexRow {
     pub archived: i64,
     pub deleted: i64,
     pub last_unread_at: i64,
+    pub searchable_text: String,
 }
 
 /// Port of TS `isRemoteWorkspaceIdentity`: true when `identity` is a well-formed `remote:` key.
@@ -493,6 +499,7 @@ fn map_task_index_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<TaskIndexRow> {
         archived: r.get::<_, Option<i64>>(19)?.unwrap_or(0),
         deleted: r.get::<_, Option<i64>>(20)?.unwrap_or(0),
         last_unread_at: r.get::<_, Option<i64>>(21)?.unwrap_or(0),
+        searchable_text: r.get::<_, Option<String>>(22)?.unwrap_or_default(),
     })
 }
 
@@ -500,7 +507,7 @@ const TASK_INDEX_ROW_COLUMNS: &str =
     "workspace_key, workspace_path, workspace_identity, task_id, title, task_status, provider, \
      mode, model, migration_source, forked_from_task_id, cron_automation_id, off_peak_task_id, \
      created_at, updated_at, unread_at, title_overridden, meta_json, pinned, archived, deleted, \
-     last_unread_at";
+     last_unread_at, searchable_text";
 
 /// Select the full `TaskIndexRow` column set for one workspace, matching the TS `listTaskMetas`
 /// query (`deleted = 0`, `ORDER BY updated_at DESC, created_at DESC, task_id DESC`).
@@ -1415,6 +1422,81 @@ pub fn bootstrap_tasks_index(db_path: String, deadline_ms: i64) -> Result<String
         .map_err(Error::from_reason)
 }
 
+/// Port of `normalizeSearchSnippetText`: collapse whitespace runs to a single space, trim, cap at
+/// `SNIPPET_MAX_CHARS`. `split_whitespace` + join matches JS `.replace(/\s+/g, " ").trim()`.
+fn normalize_search_snippet_text(text: &str) -> String {
+    text.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(SNIPPET_MAX_CHARS)
+        .collect()
+}
+
+/// Position of `needle` within `haystack` (char slices), or `None`. JS `indexOf` analogue.
+fn find_char_subslice(haystack: &[char], needle: &[char]) -> Option<usize> {
+    if needle.is_empty() {
+        return Some(0);
+    }
+    haystack.windows(needle.len()).position(|w| w == needle)
+}
+
+/// Port of `buildSearchSnippets`: case-insensitive windows around each match (max 4, de-overlapped);
+/// falls back to one whole-text snippet when the body has no match (title-only hits). Indices are
+/// computed on the lowercased text and applied to the original, exactly as TS does.
+///
+/// PARITY GAPS (declared, not silent): matching uses `char` units (JS uses UTF-16 units) and
+/// `to_lowercase` (JS `toLocaleLowerCase`); these differ only for astral-plane boundary splits and
+/// locale-specific casing, which don't arise for typical indexed text.
+pub fn build_search_snippets(searchable_text: &str, search: Option<&str>) -> Vec<String> {
+    let Some(search) = search.filter(|s| !s.is_empty()) else {
+        return Vec::new();
+    };
+    if searchable_text.trim().is_empty() {
+        return Vec::new();
+    }
+    let normalized_search: Vec<char> = search.to_lowercase().chars().collect();
+    let normalized_text: Vec<char> = searchable_text.to_lowercase().chars().collect();
+    let source: Vec<char> = searchable_text.chars().collect();
+    let needle_len = normalized_search.len();
+    let mut snippets: Vec<String> = Vec::new();
+    let mut ranges: Vec<(usize, usize)> = Vec::new();
+    let mut search_start = 0usize;
+
+    while snippets.len() < SNIPPET_LIMIT && search_start < normalized_text.len() {
+        let Some(rel) = find_char_subslice(&normalized_text[search_start..], &normalized_search)
+        else {
+            break;
+        };
+        let match_index = search_start + rel;
+        let start = match_index.saturating_sub(SNIPPET_PREFIX_RADIUS);
+        let end = source
+            .len()
+            .min(match_index + needle_len + SNIPPET_SUFFIX_RADIUS);
+        let prefix = if start > 0 { "..." } else { "" };
+        let suffix = if end < source.len() { "..." } else { "" };
+        let window: String = source[start..end].iter().collect();
+        let snippet = normalize_search_snippet_text(&format!("{prefix}{window}{suffix}"));
+        let overlaps = ranges
+            .iter()
+            .any(|(rs, re)| (*re).min(end).saturating_sub((*rs).max(start)) > 0);
+        if !snippet.is_empty() && !overlaps {
+            snippets.push(snippet);
+            ranges.push((start, end));
+        }
+        search_start = match_index + needle_len;
+    }
+
+    if snippets.is_empty() {
+        let fallback = normalize_search_snippet_text(searchable_text);
+        if fallback.is_empty() {
+            return Vec::new();
+        }
+        return vec![fallback];
+    }
+    snippets
+}
+
 /// N-API: return the raw `meta_json` string for one task (parse it in Rust via `row_to_meta`).
 #[napi]
 pub fn read_task_meta_json(
@@ -1559,6 +1641,7 @@ mod tests {
             archived: 0,
             deleted: 0,
             last_unread_at: 0,
+            searchable_text: String::new(),
         }
     }
 
@@ -2536,6 +2619,50 @@ mod tests {
         )
         .unwrap();
         assert_eq!(pinned_false.len(), 4);
+    }
+
+    #[test]
+    fn normalize_snippet_collapses_and_caps() {
+        assert_eq!(normalize_search_snippet_text("a   b\n\tc"), "a b c");
+        let long = "x".repeat(200);
+        assert_eq!(
+            normalize_search_snippet_text(&long).chars().count(),
+            SNIPPET_MAX_CHARS
+        );
+    }
+
+    #[test]
+    fn snippets_window_and_dedupe() {
+        // Whole short body fits inside the window → single snippet, no ellipses.
+        let s = build_search_snippets("The quick brown fox", Some("brown"));
+        assert_eq!(s, vec!["The quick brown fox".to_string()]);
+
+        // Match deep in a long body → leading ellipsis, and the matched word is present.
+        let body = "a".repeat(30) + "needle" + &"b".repeat(30);
+        let s2 = build_search_snippets(&body, Some("needle"));
+        assert_eq!(s2.len(), 1);
+        assert!(s2[0].starts_with("..."), "truncated leading context");
+        assert!(s2[0].contains("needle"));
+
+        // Case-insensitive: uppercase body, lowercase query still matches.
+        let s3 = build_search_snippets("HELLO World", Some("hello"));
+        assert_eq!(s3, vec!["HELLO World".to_string()]);
+    }
+
+    #[test]
+    fn snippets_fallback_when_body_has_no_match() {
+        // Title-matched rows call this with a query absent from the body → one whole-text snippet.
+        assert_eq!(
+            build_search_snippets("hello world", Some("zzz")),
+            vec!["hello world".to_string()]
+        );
+    }
+
+    #[test]
+    fn snippets_empty_cases() {
+        assert!(build_search_snippets("x", None).is_empty());
+        assert!(build_search_snippets("x", Some("")).is_empty());
+        assert!(build_search_snippets("   ", Some("a")).is_empty());
     }
 
     #[test]
