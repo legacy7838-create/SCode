@@ -16,6 +16,7 @@ pub mod session_messages;
 pub mod session_migrations;
 pub mod session_sessions;
 pub mod session_store;
+pub mod session_usage;
 pub mod session_workflow;
 pub mod offpeak;
 pub mod offpeak_write;
@@ -1954,6 +1955,14 @@ pub fn list_script_workflow_events_json(
     let lim = limit.filter(|l| *l > 0.0).map(|l| l as i64);
     let value = session_workflow::list_script_workflow_events(&conn, &run_id, lim)
         .map_err(Error::from_reason)?;
+    serde_json::to_string(&value).map_err(|e| Error::from_reason(e.to_string()))
+}
+
+/// N-API: `queryTaskUsage` port. Returns the `TaskUsageQueryResult` JSON.
+#[napi]
+pub fn query_task_usage_json(db_path: String, session_id: String) -> Result<String> {
+    let conn = open_readonly(&db_path)?;
+    let value = session_usage::query_task_usage(&conn, &session_id).map_err(Error::from_reason)?;
     serde_json::to_string(&value).map_err(|e| Error::from_reason(e.to_string()))
 }
 

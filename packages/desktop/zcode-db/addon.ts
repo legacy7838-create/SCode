@@ -45,6 +45,7 @@ export interface DbAddon {
   listScriptWorkflowRunsJson(dbPath: string, filterJson: string): string;
   listScriptWorkflowActivitiesJson(dbPath: string, runId: string): string;
   listScriptWorkflowEventsJson(dbPath: string, runId: string, limit: number | null): string;
+  queryTaskUsageJson(dbPath: string, sessionId: string): string;
 
   // ---- task index: reads ----
   tasksCount(dbPath: string): number;
