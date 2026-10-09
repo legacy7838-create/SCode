@@ -1207,11 +1207,13 @@ fn update_task_state_inner(
     next.status = patch.status.clone().or_else(|| current.status.clone());
     next.unread_at = unread_at;
     next.last_error = match &patch.last_error {
-        PatchField::Set(v) => v.clone(),
+        PatchField::Set(v) => Some(v.clone().unwrap_or(serde_json::Value::Null)),
         PatchField::Unset => current.last_error.clone(),
     };
     next.target = match &patch.target {
-        PatchField::Set(v) => v.clone(),
+        // A present-but-null `lastError`/`target` writes an explicit JSON null (TS "x in patch" →
+        // uses the value even when null); only an absent key keeps the current value.
+        PatchField::Set(v) => Some(v.clone().unwrap_or(serde_json::Value::Null)),
         PatchField::Unset => current.target.clone(),
     };
 
@@ -1767,6 +1769,71 @@ pub fn get_off_peak_json(db_path: String, off_peak_task_id: String) -> Result<Op
     let conn = open_readonly(&db_path)?;
     let row = offpeak::get_off_peak(&conn, &off_peak_task_id).map_err(Error::from_reason)?;
     Ok(row.map(|t| serde_json::to_string(&t).unwrap_or_default()))
+}
+
+/// Parse a JSON object into a `StatePatch`, reproducing TS `updateTaskState`'s two field
+/// semantics: `??`-fields (`pinned/archived/deleted/title/titleOverridden/model/status/updatedAt`)
+/// treat a present-`null` the same as absent (keep current), while `"x" in patch`-fields
+/// (`unreadAt/lastError/target`) distinguish present from absent and apply even when `null`.
+fn parse_state_patch(obj: &serde_json::Map<String, serde_json::Value>) -> StatePatch {
+    let opt_bool = |k: &str| obj.get(k).and_then(serde_json::Value::as_bool);
+    let opt_str = |k: &str| {
+        obj.get(k)
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string)
+    };
+    let opt_i64 = |k: &str| obj.get(k).and_then(serde_json::Value::as_i64);
+    // `"x" in patch` nullable-value field: absent → Unset; present → Set(Some(value)) unless null.
+    let in_field = |k: &str| -> PatchField<Option<serde_json::Value>> {
+        match obj.get(k) {
+            None => PatchField::Unset,
+            Some(v) if v.is_null() => PatchField::Set(None),
+            Some(v) => PatchField::Set(Some(v.clone())),
+        }
+    };
+    let unread_at = match obj.get("unreadAt") {
+        None => PatchField::Unset,
+        Some(v) => match v.as_i64() {
+            Some(n) => PatchField::Set(UnreadOp::Allocate(n)),
+            None => PatchField::Set(UnreadOp::Clear),
+        },
+    };
+    StatePatch {
+        pinned: opt_bool("pinned"),
+        archived: opt_bool("archived"),
+        deleted: opt_bool("deleted"),
+        title: opt_str("title"),
+        title_overridden: opt_bool("titleOverridden"),
+        model: opt_str("model"),
+        status: opt_str("status"),
+        updated_at: opt_i64("updatedAt"),
+        unread_at,
+        last_error: in_field("lastError"),
+        target: in_field("target"),
+    }
+}
+
+/// N-API: apply `updateTaskState` (read-write DB). Returns the persisted meta JSON, or `null` when
+/// the row is missing/already-deleted (the TS throws there; the adapter can surface the `null`).
+#[napi]
+pub fn update_task_state_json(
+    db_path: String,
+    workspace_key: String,
+    task_id: String,
+    patch_json: String,
+) -> Result<Option<String>> {
+    let value: serde_json::Value =
+        serde_json::from_str(&patch_json).map_err(|e| Error::from_reason(e.to_string()))?;
+    let obj = value
+        .as_object()
+        .ok_or_else(|| Error::from_reason("patch must be a JSON object"))?;
+    let patch = parse_state_patch(obj);
+    let conn = open_readwrite(&db_path)?;
+    match update_task_state(&conn, &workspace_key, &task_id, &patch) {
+        Ok(meta) => Ok(Some(serde_json::to_string(&meta).unwrap_or_default())),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(Error::from_reason(e.to_string())),
+    }
 }
 
 /// N-API: list off-peak tasks (read-only), optionally scoped to one workspace key, as JSON.
@@ -3069,6 +3136,35 @@ mod tests {
         assert!(r.items.is_empty());
         assert_eq!(r.total, 0);
         assert!(!r.has_more);
+    }
+
+    #[test]
+    fn parse_state_patch_distinguishes_in_fields_from_nullish_coalesce() {
+        let v: serde_json::Value = serde_json::json!({
+            "pinned": null,          // ?? field: null → keep (None)
+            "archived": false,       // ?? field: present false → Some(false)
+            "lastError": null,       // in field: present → Set(None) (clear)
+            "target": { "goal": "g" }, // in field: present → Set(Some(..))
+            "unreadAt": 42,          // in field: number → Set(Allocate(42))
+        });
+        let p = parse_state_patch(v.as_object().unwrap());
+        assert_eq!(p.pinned, None, "?? field: null treated as absent");
+        assert_eq!(p.archived, Some(false));
+        assert_eq!(
+            p.last_error,
+            PatchField::Set(None),
+            "in field: null → clear"
+        );
+        assert!(matches!(p.target, PatchField::Set(Some(_))));
+        assert_eq!(p.unread_at, PatchField::Set(UnreadOp::Allocate(42)));
+        // absent `title`/`status`/`lastError`-less object → Unset / None.
+        let empty = parse_state_patch(serde_json::json!({}).as_object().unwrap());
+        assert_eq!(empty.title, None);
+        assert_eq!(empty.last_error, PatchField::Unset);
+        assert_eq!(empty.unread_at, PatchField::Unset);
+        // clear marker: unreadAt present but null → Clear.
+        let clear = parse_state_patch(serde_json::json!({ "unreadAt": null }).as_object().unwrap());
+        assert_eq!(clear.unread_at, PatchField::Set(UnreadOp::Clear));
     }
 
     #[test]

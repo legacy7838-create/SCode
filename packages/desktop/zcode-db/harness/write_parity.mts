@@ -56,18 +56,30 @@ function dumpTasks(path: string): unknown[] {
   return rows.map((r) => canonicalize({ ...r, meta_json: r.meta_json == null ? null : JSON.parse(String(r.meta_json)) }));
 }
 
+// Deterministic updateTaskState patch (in-fields lastError/target + ??-fields + unread marker).
+const updPatch = {
+  title: "manual rename",
+  status: "running",
+  unreadAt: 5,
+  lastError: { message: "boom" },
+  target: null,
+  model: "glm-4.6",
+};
+
 let diffs = 0;
 try {
   // TS side
   const ti = new TaskIndexRepo(DB_TS);
   await ti.ensureReady();
   for (const m of seq) await ti.syncTaskMeta({ meta: m as never, ...(m.titleOverridden ? { titleOverridden: true } : {}) });
+  await ti.updateTaskState({ workspacePath: WS, taskId: TASK, patch: updPatch as never });
   ti.close();
 
   // Rust side (bootstrap an empty file, then the same sync sequence; fixed `now` for grouping)
   const kind = addon.bootstrapTasksIndex(DB_RS, 25);
   if (kind !== "initialize") { console.log(`rust bootstrap kind=${kind} (expected initialize)`); }
   for (const m of seq) addon.syncTaskMetaJson(DB_RS, WS, JSON.stringify(m), JSON.stringify({ titleOverridden: m.titleOverridden ? true : undefined }), 5000);
+  addon.updateTaskStateJson(DB_RS, WS, TASK, JSON.stringify(updPatch));
 
   const ts = dumpTasks(DB_TS);
   const rs = dumpTasks(DB_RS);
