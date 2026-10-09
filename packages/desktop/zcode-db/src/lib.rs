@@ -1966,6 +1966,20 @@ pub fn query_task_usage_json(db_path: String, session_id: String) -> Result<Stri
     serde_json::to_string(&value).map_err(|e| Error::from_reason(e.to_string()))
 }
 
+/// N-API: `queryAppUsage` port. Returns the `AppUsageQueryResult` JSON.
+#[napi]
+pub fn query_app_usage_json(
+    db_path: String,
+    since: f64,
+    until: f64,
+    tz_offset_ms: f64,
+) -> Result<String> {
+    let conn = open_readonly(&db_path)?;
+    let value = session_usage::query_app_usage(&conn, since as i64, until as i64, tz_offset_ms as i64)
+        .map_err(Error::from_reason)?;
+    serde_json::to_string(&value).map_err(|e| Error::from_reason(e.to_string()))
+}
+
 /// Port of `normalizeSearchSnippetText`: collapse whitespace runs to a single space, trim, cap at
 /// `SNIPPET_MAX_CHARS`. `split_whitespace` + join matches JS `.replace(/\s+/g, " ").trim()`.
 fn normalize_search_snippet_text(text: &str) -> String {
