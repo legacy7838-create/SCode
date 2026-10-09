@@ -21,6 +21,12 @@ pub mod session_workflow;
 pub mod offpeak;
 pub mod offpeak_write;
 
+// >>> SESSION-WRITE OPS MODULES <<<
+// Parallel write-port agents: add EXACTLY ONE `pub mod session_write_<group>;` line directly below
+// this marker, keep it in your own new module file `src/session_write_<group>.rs`, and put your
+// `#[napi]` wrappers in that same module (do NOT edit any other part of lib.rs). This keeps the only
+// shared-file touch to one line, so the integrator can merge independent branches without conflict.
+
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use rusqlite::{Connection, OpenFlags};
