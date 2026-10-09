@@ -14,6 +14,7 @@
  * local logs here and are tracked as Phase 3 surfaces. See `tauri-port/PORTING.md`.
  */
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
@@ -22,10 +23,12 @@ import {
   createServiceLogger,
   createSettingServiceWithMigrations,
 } from "@zcode/services/node";
+import { IWindowControllerService, IZCodeAgentService, IZCodeTaskService } from "@zcode/services";
 import { WebSocketServer } from "ws";
 import type { AddressInfo } from "node:net";
 import { createHostDatabaseStartup } from "./hostDatabaseStartup.js";
 import { initializeHostApiNetworkTransportOwner } from "./hostInitialization.js";
+import { createWindowHostControllerRuntime } from "./windowHostControllerService.js";
 import { createWsChannelServer } from "./wsServe.js";
 
 type LocalServices = ReturnType<typeof createLocalServices>;
@@ -147,7 +150,35 @@ export async function startStandaloneHost(init: StandaloneHostInit): Promise<num
   if (failure) throw failure;
   if (!services) throw new Error("standalone host services were not initialized");
 
-  const port = await serveServicesOverWebSocket(services, init.wsPort, logger);
+  // Window-controller runtime: the renderer's `window-controller` channel needs it registered on the
+  // service collection + a per-connection attachment override (mirrors the Electron expose path).
+  // Local-only resolveSource: the standalone sidecar serves a single local workspace set.
+  const resolvedServices = services;
+  const windowHostControllerRuntime = createWindowHostControllerRuntime({
+    createId: randomUUID,
+    resolveSource: (scope) => {
+      const taskService = resolvedServices.getOptional(IZCodeTaskService);
+      if (!taskService) return null;
+      return {
+        scope: {
+          kind: "local" as const,
+          workspacePath: scope.workspacePath,
+          ...(scope.workspaceIdentity ? { workspaceIdentity: scope.workspaceIdentity } : {}),
+        },
+        taskService,
+        agentService: resolvedServices.getOptional(IZCodeAgentService),
+        sourceAvailability: "online" as const,
+      };
+    },
+  });
+  resolvedServices.register(IWindowControllerService, windowHostControllerRuntime.service);
+
+  const port = await serveServicesOverWebSocket(
+    resolvedServices,
+    windowHostControllerRuntime,
+    init.wsPort,
+    logger,
+  );
   // Rust discovers the bound port by reading this exact stdout line.
   process.stdout.write(`ZCODE_WS_READY ${port}\n`);
   return port;
@@ -156,6 +187,7 @@ export async function startStandaloneHost(init: StandaloneHostInit): Promise<num
 /** Start a loopback WebSocket server and expose every service channel to each accepted connection. */
 function serveServicesOverWebSocket(
   services: LocalServices,
+  windowHostControllerRuntime: ReturnType<typeof createWindowHostControllerRuntime>,
   requestedPort: number,
   logger: ReturnType<typeof createServiceLogger>,
 ): Promise<number> {
@@ -170,9 +202,16 @@ function serveServicesOverWebSocket(
         name: "host",
         log: (message, ...args) => logger.info(message, ...args),
       });
-      // Core channels only for now; per-connection agent controller scope + media/task routing
-      // overrides are added alongside the Phase 3 re-homing of the Electron-main surfaces.
-      services.exposeOnChannelServer(handle.server);
+      // Per-connection window-controller attachment override (mirrors the Electron expose path) so the
+      // renderer's `window-controller` channel resolves. Agent-scope / media / task routing overrides
+      // remain Phase 3 surfaces.
+      const overrides = new Map<string, unknown>([
+        [
+          IWindowControllerService.channelName,
+          windowHostControllerRuntime.createAttachmentService(),
+        ],
+      ]);
+      services.exposeOnChannelServer(handle.server, overrides);
     });
   });
 }
