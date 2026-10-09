@@ -259,6 +259,7 @@ pub struct TaskIndexRow {
     pub pinned: i64,
     pub archived: i64,
     pub deleted: i64,
+    pub last_unread_at: i64,
 }
 
 /// Port of TS `isRemoteWorkspaceIdentity`: true when `identity` is a well-formed `remote:` key.
@@ -481,13 +482,15 @@ fn map_task_index_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<TaskIndexRow> {
         pinned: r.get::<_, Option<i64>>(18)?.unwrap_or(0),
         archived: r.get::<_, Option<i64>>(19)?.unwrap_or(0),
         deleted: r.get::<_, Option<i64>>(20)?.unwrap_or(0),
+        last_unread_at: r.get::<_, Option<i64>>(21)?.unwrap_or(0),
     })
 }
 
 const TASK_INDEX_ROW_COLUMNS: &str =
     "workspace_key, workspace_path, workspace_identity, task_id, title, task_status, provider, \
      mode, model, migration_source, forked_from_task_id, cron_automation_id, off_peak_task_id, \
-     created_at, updated_at, unread_at, title_overridden, meta_json, pinned, archived, deleted";
+     created_at, updated_at, unread_at, title_overridden, meta_json, pinned, archived, deleted, \
+     last_unread_at";
 
 /// Select the full `TaskIndexRow` column set for one workspace, matching the TS `listTaskMetas`
 /// query (`deleted = 0`, `ORDER BY updated_at DESC, created_at DESC, task_id DESC`).
@@ -1007,6 +1010,157 @@ fn clear_task_unread_inner(
     Ok((persisted, true))
 }
 
+// ---- updateTaskState + grouping-reference cleanup ----
+
+/// A patch field that distinguishes "absent (keep current)" from "present (use, even if null)".
+/// Mirrors the `"x" in patch` checks in TS `updateTaskState`.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum PatchField<T> {
+    #[default]
+    Unset,
+    Set(T),
+}
+
+/// `unreadAt` patch operation: `Clear` (key present, value undefined → mark read) or `Allocate`
+/// (key present with a requested number). Absence keeps the current value.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum UnreadOp {
+    Clear,
+    Allocate(i64),
+}
+
+/// Port of `TaskIndexStatePatch`. Options use `??` fallbacks; `unreadAt` / `lastError` / `target`
+/// need the present-vs-absent distinction, so they use `PatchField`.
+#[derive(Debug, Clone, Default)]
+pub struct StatePatch {
+    pub pinned: Option<bool>,
+    pub archived: Option<bool>,
+    pub deleted: Option<bool>,
+    pub title: Option<String>,
+    pub title_overridden: Option<bool>,
+    pub model: Option<String>,
+    pub status: Option<String>,
+    pub updated_at: Option<i64>,
+    pub unread_at: PatchField<UnreadOp>,
+    pub last_error: PatchField<Option<serde_json::Value>>,
+    pub target: PatchField<Option<serde_json::Value>>,
+}
+
+/// Port of `deleteTaskGroupingReferencesReady`: remove a task from its group membership and drop
+/// its `task`-node ordering rows. Runs inside the caller's transaction so a tombstone and the group
+/// edit commit atomically.
+fn delete_task_grouping_references(
+    conn: &Connection,
+    workspace_key: &str,
+    task_id: &str,
+) -> std::result::Result<(), rusqlite::Error> {
+    conn.execute(
+        "DELETE FROM task_group_members WHERE workspace_key = ?1 AND task_id = ?2",
+        rusqlite::params![workspace_key, task_id],
+    )?;
+    // node_key for a task node is the JSON of [workspace_key, task_id]; the extra OR matches the
+    // legacy bare-workspace key form. Serializing two strings cannot fail, so build it directly.
+    let json_key = format!(
+        "[{},{}]",
+        serde_json::Value::String(workspace_key.to_string()),
+        serde_json::Value::String(task_id.to_string())
+    );
+    conn.execute(
+        "DELETE FROM task_group_view_node_orders WHERE node_type = 'task' AND (node_key = ?1 OR node_key = ?2)",
+        rusqlite::params![json_key, workspace_key],
+    )?;
+    Ok(())
+}
+
+fn update_task_state_inner(
+    conn: &Connection,
+    workspace_key: &str,
+    task_id: &str,
+    patch: &StatePatch,
+) -> std::result::Result<TaskMeta, rusqlite::Error> {
+    let row = get_task_index_row(conn, workspace_key, task_id)?
+        .filter(|r| r.deleted != 1)
+        .ok_or(rusqlite::Error::QueryReturnedNoRows)?;
+    let current = row_to_meta(&row);
+
+    // Strictly-increasing unread marker: allocate above a watermark drawn from the persisted
+    // `last_unread_at` (which never resets on clear) so two same-ms marks and a clear→re-unread
+    // cycle cannot collide — exactly why TS reads it inside the write lock.
+    let mutating_unread = matches!(patch.unread_at, PatchField::Set(_));
+    let watermark = row
+        .last_unread_at
+        .max(row.unread_at.unwrap_or(0))
+        .max(current.unread_at.unwrap_or(0));
+    let unread_at = match patch.unread_at {
+        PatchField::Set(UnreadOp::Allocate(req)) => Some(req.max(watermark + 1)),
+        PatchField::Set(UnreadOp::Clear) => None,
+        PatchField::Unset => current.unread_at,
+    };
+
+    let mut next = current.clone();
+    next.title = patch.title.clone().unwrap_or_else(|| current.title.clone());
+    next.title_overridden = patch.title_overridden.unwrap_or(current.title_overridden);
+    next.model = patch.model.clone().or_else(|| current.model.clone());
+    next.updated_at = patch.updated_at.unwrap_or(current.updated_at);
+    next.status = patch.status.clone().or_else(|| current.status.clone());
+    next.unread_at = unread_at;
+    next.last_error = match &patch.last_error {
+        PatchField::Set(v) => v.clone(),
+        PatchField::Unset => current.last_error.clone(),
+    };
+    next.target = match &patch.target {
+        PatchField::Set(v) => v.clone(),
+        PatchField::Unset => current.target.clone(),
+    };
+
+    let deleting = patch.deleted == Some(true);
+    let record = record_from_meta(
+        workspace_key,
+        &next,
+        RowFlags {
+            pinned: patch.pinned.unwrap_or(row.pinned == 1),
+            archived: patch.archived.unwrap_or(row.archived == 1),
+            deleted: patch.deleted.unwrap_or(row.deleted == 1),
+            title_overridden: patch.title_overridden.unwrap_or(row.title_overridden == 1),
+            write_unread_at: mutating_unread,
+        },
+        None,
+    );
+    let persisted = write_record(conn, &record)?;
+    if deleting {
+        delete_task_grouping_references(conn, workspace_key, task_id)?;
+    }
+    Ok(persisted)
+}
+
+/// Port of `updateTaskState`: apply a state patch to an existing (non-deleted) row. The delete or
+/// unread-mutation paths run under one `BEGIN IMMEDIATE` so the tombstone + grouping cleanup and
+/// the monotonic unread marker commit atomically; other patches are single-upsert writes. Errors
+/// (`QueryReturnedNoRows`) if the row is missing or already deleted.
+pub fn update_task_state(
+    conn: &Connection,
+    workspace_key: &str,
+    task_id: &str,
+    patch: &StatePatch,
+) -> std::result::Result<TaskMeta, rusqlite::Error> {
+    let transactional =
+        patch.deleted == Some(true) || matches!(patch.unread_at, PatchField::Set(_));
+    if !transactional {
+        return update_task_state_inner(conn, workspace_key, task_id, patch);
+    }
+    conn.execute("BEGIN IMMEDIATE", [])?;
+    match update_task_state_inner(conn, workspace_key, task_id, patch) {
+        Ok(v) => {
+            conn.execute("COMMIT", [])?;
+            Ok(v)
+        }
+        Err(e) => {
+            let _ = conn.execute("ROLLBACK", []);
+            Err(e)
+        }
+    }
+}
+
 /// N-API: return the raw `meta_json` string for one task (parse it in Rust via `row_to_meta`).
 #[napi]
 pub fn read_task_meta_json(
@@ -1042,7 +1196,8 @@ mod tests {
                provider TEXT, mode TEXT NOT NULL DEFAULT 'build', model TEXT,
                migration_source TEXT, forked_from_task_id TEXT, cron_automation_id TEXT,
                off_peak_task_id TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
-               unread_at INTEGER, pinned INTEGER DEFAULT 0, archived INTEGER DEFAULT 0,
+               unread_at INTEGER, last_unread_at INTEGER NOT NULL DEFAULT 0,
+               pinned INTEGER DEFAULT 0, archived INTEGER DEFAULT 0,
                deleted INTEGER DEFAULT 0, title_overridden INTEGER DEFAULT 0,
                searchable_text TEXT, meta_json TEXT DEFAULT '{}',
                PRIMARY KEY (workspace_key, task_id));",
@@ -1149,6 +1304,7 @@ mod tests {
             pinned: 0,
             archived: 0,
             deleted: 0,
+            last_unread_at: 0,
         }
     }
 
@@ -1314,7 +1470,16 @@ mod tests {
                pinned INTEGER NOT NULL DEFAULT 0, archived INTEGER NOT NULL DEFAULT 0,
                deleted INTEGER NOT NULL DEFAULT 0, title_overridden INTEGER NOT NULL DEFAULT 0,
                searchable_text TEXT NOT NULL DEFAULT '', meta_json TEXT NOT NULL DEFAULT '{}',
-               PRIMARY KEY (workspace_key, task_id));",
+               PRIMARY KEY (workspace_key, task_id));
+             CREATE TABLE task_group_members (
+               group_id TEXT NOT NULL, workspace_key TEXT NOT NULL, workspace_path TEXT,
+               workspace_identity TEXT, task_id TEXT NOT NULL, sort_order INTEGER,
+               added_at INTEGER, created_at INTEGER, updated_at INTEGER,
+               PRIMARY KEY (group_id, workspace_key, task_id));
+             CREATE TABLE task_group_view_node_orders (
+               node_type TEXT NOT NULL, node_key TEXT NOT NULL, sort_order INTEGER,
+               created_at INTEGER, updated_at INTEGER,
+               PRIMARY KEY (node_type, node_key));",
         )
         .unwrap();
         conn
@@ -1760,6 +1925,184 @@ mod tests {
         assert!(
             clear_task_unread_if_matches(&conn, "/ws", "t1", 7).is_err(),
             "deleted row throws"
+        );
+    }
+
+    #[test]
+    fn update_state_allocates_strictly_increasing_unread_marker() {
+        let conn = full_schema_db();
+        let mut seed = tm(100, Some("running"));
+        seed.unread_at = Some(5);
+        let rec = record_from_meta(
+            "/ws",
+            &seed,
+            RowFlags {
+                write_unread_at: true,
+                ..Default::default()
+            },
+            None,
+        );
+        write_record(&conn, &rec).unwrap();
+
+        // A requested mark SMALLER than the watermark still moves strictly forward (watermark+1).
+        let p = StatePatch {
+            unread_at: PatchField::Set(UnreadOp::Allocate(3)),
+            ..Default::default()
+        };
+        let m = update_task_state(&conn, "/ws", "t1", &p).unwrap();
+        assert_eq!(
+            m.unread_at,
+            Some(6),
+            "unread marker forced above watermark 5"
+        );
+
+        // A large requested mark wins; monotonic never regresses.
+        let p2 = StatePatch {
+            unread_at: PatchField::Set(UnreadOp::Allocate(100)),
+            ..Default::default()
+        };
+        let m2 = update_task_state(&conn, "/ws", "t1", &p2).unwrap();
+        assert_eq!(m2.unread_at, Some(100));
+    }
+
+    #[test]
+    fn update_state_clear_unread_keeps_watermark_then_re_allocates_above_it() {
+        let conn = full_schema_db();
+        let mut seed = tm(100, Some("running"));
+        seed.unread_at = Some(9);
+        let rec = record_from_meta(
+            "/ws",
+            &seed,
+            RowFlags {
+                write_unread_at: true,
+                ..Default::default()
+            },
+            None,
+        );
+        write_record(&conn, &rec).unwrap();
+        // Clear (key present, value undefined).
+        let clear = StatePatch {
+            unread_at: PatchField::Set(UnreadOp::Clear),
+            ..Default::default()
+        };
+        let after_clear = update_task_state(&conn, "/ws", "t1", &clear).unwrap();
+        assert_eq!(after_clear.unread_at, None);
+        assert_eq!(
+            col_i64(&conn, "t1", "last_unread_at"),
+            Some(9),
+            "watermark persists"
+        );
+
+        // Re-mark read again: must exceed the persisted watermark (not reuse a cleared value).
+        let re = StatePatch {
+            unread_at: PatchField::Set(UnreadOp::Allocate(1)),
+            ..Default::default()
+        };
+        let after_re = update_task_state(&conn, "/ws", "t1", &re).unwrap();
+        assert_eq!(
+            after_re.unread_at,
+            Some(10),
+            "strictly above cleared watermark 9"
+        );
+    }
+
+    #[test]
+    fn update_state_applies_field_patches() {
+        let conn = full_schema_db();
+        write_record(
+            &conn,
+            &record_from_meta("/ws", &tm(100, Some("running")), RowFlags::default(), None),
+        )
+        .unwrap();
+        let p = StatePatch {
+            title: Some("renamed".into()),
+            status: Some("error".into()),
+            last_error: PatchField::Set(Some(serde_json::json!({"message": "boom"}))),
+            ..Default::default()
+        };
+        let m = update_task_state(&conn, "/ws", "t1", &p).unwrap();
+        assert_eq!(m.title, "renamed");
+        assert_eq!(m.status.as_deref(), Some("error"));
+        assert!(
+            m.last_error.is_some(),
+            "lastError present in patch is applied"
+        );
+    }
+
+    #[test]
+    fn update_state_delete_tombstones_and_removes_grouping() {
+        let conn = full_schema_db();
+        write_record(
+            &conn,
+            &record_from_meta(
+                "/ws",
+                &tm(100, Some("completed")),
+                RowFlags::default(),
+                None,
+            ),
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO task_group_members (group_id, workspace_key, task_id) VALUES ('g1','/ws','t1')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO task_group_view_node_orders (node_type, node_key, sort_order) VALUES ('task','[\"/ws\",\"t1\"]',50)",
+            [],
+        )
+        .unwrap();
+
+        let p = StatePatch {
+            deleted: Some(true),
+            ..Default::default()
+        };
+        update_task_state(&conn, "/ws", "t1", &p).unwrap();
+
+        let row = get_task_index_row(&conn, "/ws", "t1").unwrap().unwrap();
+        assert_eq!(row.deleted, 1, "tombstoned");
+        let members: i64 = conn
+            .query_row("SELECT count(*) FROM task_group_members", [], |r| r.get(0))
+            .unwrap();
+        let orders: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM task_group_view_node_orders",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(members, 0, "group membership removed");
+        assert_eq!(orders, 0, "task node ordering removed");
+    }
+
+    #[test]
+    fn update_state_errors_on_missing_or_already_deleted() {
+        let conn = full_schema_db();
+        let p = StatePatch {
+            title: Some("x".into()),
+            ..Default::default()
+        };
+        assert!(
+            update_task_state(&conn, "/ws", "ghost", &p).is_err(),
+            "missing row throws"
+        );
+
+        write_record(
+            &conn,
+            &record_from_meta(
+                "/ws",
+                &tm(100, Some("completed")),
+                RowFlags {
+                    deleted: true,
+                    ..Default::default()
+                },
+                None,
+            ),
+        )
+        .unwrap();
+        assert!(
+            update_task_state(&conn, "/ws", "t1", &p).is_err(),
+            "already-deleted row throws"
         );
     }
 
