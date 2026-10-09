@@ -12,7 +12,6 @@
     },
     "packages/desktop": {
       "entry": [
-        "electron-builder.config.js",
         "scripts/sign-windows-hook.cjs",
         "src/renderer/*.html",
         "src/renderer/src/resource-manager.tsx"
