@@ -1367,7 +1367,113 @@ pub fn update_task_state(
     }
 }
 
-/// Port of `getNextGroupedTopSortOrder`: one step ABOVE the current minimum so a newly-prepended
+/// Subset of the TS `TaskIndexStatePatch` that `applyAgentPatch` consumes: only the agent-owned
+/// fields. `lastError`/`target` keep the tri-state `PatchField` so a present-`null` (clear) is
+/// distinguished from an absent key (keep), exactly as the TS `"x" in patch` check does.
+pub struct AgentPatch {
+    pub title: Option<String>,
+    pub status: Option<String>,
+    pub updated_at: Option<i64>,
+    pub last_error: PatchField<Option<serde_json::Value>>,
+    pub target: PatchField<Option<serde_json::Value>>,
+}
+
+/// Port of `applyAgentPatch`: merge an agent-supplied patch onto a live (non-deleted) row. The agent
+/// `title` is only accepted while the row is NOT user-title-overridden; the row-level flags
+/// (`pinned`/`archived`/`deleted`) and the unread marker are never touched. Like the TS normal
+/// single-upsert path it opens no explicit transaction (serialization is the caller's write queue).
+/// Returns `Ok(None)` when the row is missing or already deleted (TS returns `null`).
+pub fn apply_agent_patch(
+    conn: &Connection,
+    workspace_key: &str,
+    task_id: &str,
+    patch: &AgentPatch,
+) -> std::result::Result<Option<TaskMeta>, rusqlite::Error> {
+    let row = match get_task_index_row(conn, workspace_key, task_id)? {
+        Some(r) if r.deleted != 1 => r,
+        _ => return Ok(None),
+    };
+    let current = row_to_meta(&row);
+    let title_overridden = row.title_overridden == 1;
+
+    let mut next = current.clone();
+    // `canAcceptAgentTitle && params.patch.title` — falsy (absent OR empty) keeps the current title.
+    next.title = match (title_overridden, patch.title.as_deref()) {
+        (false, Some(t)) if !t.is_empty() => t.to_string(),
+        _ => current.title.clone(),
+    };
+    next.title_overridden = title_overridden;
+    next.updated_at = patch.updated_at.unwrap_or(current.updated_at);
+    next.status = patch.status.clone().or_else(|| current.status.clone());
+    next.last_error = match &patch.last_error {
+        PatchField::Set(v) => Some(v.clone().unwrap_or(serde_json::Value::Null)),
+        PatchField::Unset => current.last_error.clone(),
+    };
+    next.target = match &patch.target {
+        PatchField::Set(v) => Some(v.clone().unwrap_or(serde_json::Value::Null)),
+        PatchField::Unset => current.target.clone(),
+    };
+
+    let record = record_from_meta(
+        workspace_key,
+        &next,
+        RowFlags {
+            pinned: row.pinned == 1,
+            archived: row.archived == 1,
+            // The row is guaranteed non-deleted above; the tombstone path is `deleteArchivedTask`.
+            deleted: false,
+            title_overridden,
+            write_unread_at: false,
+        },
+        None,
+    );
+    Ok(Some(write_record(conn, &record)?))
+}
+
+/// Port of `deleteArchivedTask`: inside one `BEGIN IMMEDIATE`, re-check the row is archived and
+/// still live (the confirm dialog may have been overtaken by another end restoring it), then
+/// tombstone it (`write_record` with `archived`/`deleted` set) and drop its grouping references
+/// atomically. Returns `Ok(None)` — COMMITting the transaction — when the row is missing, already
+/// deleted, or not archived, matching the TS guard.
+pub fn delete_archived_task(
+    conn: &Connection,
+    workspace_key: &str,
+    task_id: &str,
+) -> std::result::Result<Option<TaskMeta>, rusqlite::Error> {
+    conn.execute("BEGIN IMMEDIATE", [])?;
+    let outcome: std::result::Result<Option<TaskMeta>, rusqlite::Error> = (|| {
+        let row = match get_task_index_row(conn, workspace_key, task_id)? {
+            Some(r) if r.deleted != 1 && r.archived == 1 => r,
+            _ => return Ok(None),
+        };
+        let meta = row_to_meta(&row);
+        let record = record_from_meta(
+            workspace_key,
+            &meta,
+            RowFlags {
+                pinned: row.pinned == 1,
+                archived: true,
+                deleted: true,
+                title_overridden: row.title_overridden == 1,
+                write_unread_at: false,
+            },
+            None,
+        );
+        let persisted = write_record(conn, &record)?;
+        delete_task_grouping_references(conn, workspace_key, task_id)?;
+        Ok(Some(persisted))
+    })();
+    match outcome {
+        Ok(v) => {
+            conn.execute("COMMIT", [])?;
+            Ok(v)
+        }
+        Err(e) => {
+            let _ = conn.execute("ROLLBACK", []);
+            Err(e)
+        }
+    }
+}
 /// group lands at the top. Empty table → `step*2 - step` (i.e. `1000`).
 pub fn get_next_grouped_top_sort_order(
     conn: &Connection,
@@ -2781,6 +2887,55 @@ pub fn read_task_meta_json(
         Some(r) => r.map_err(|e| Error::from_reason(e.to_string())),
         None => Ok(None),
     }
+}
+
+/// N-API: `TaskIndexRepo.applyAgentPatch` (read-write). `patch_json` is an object with the
+/// agent-owned subset (`title`/`status`/`updatedAt` via `??`, `lastError`/`target` via `"x" in`).
+/// Returns the persisted meta JSON, or `null` when the row is missing/deleted.
+#[napi]
+pub fn apply_agent_patch_json(
+    db_path: String,
+    workspace_key: String,
+    task_id: String,
+    patch_json: String,
+) -> Result<Option<String>> {
+    let value: serde_json::Value =
+        serde_json::from_str(&patch_json).map_err(|e| Error::from_reason(e.to_string()))?;
+    let obj = value
+        .as_object()
+        .ok_or_else(|| Error::from_reason("patch must be a JSON object"))?;
+    let in_field = |k: &str| -> PatchField<Option<serde_json::Value>> {
+        match obj.get(k) {
+            None => PatchField::Unset,
+            Some(v) if v.is_null() => PatchField::Set(None),
+            Some(v) => PatchField::Set(Some(v.clone())),
+        }
+    };
+    let patch = AgentPatch {
+        title: obj.get("title").and_then(serde_json::Value::as_str).map(str::to_string),
+        status: obj.get("status").and_then(serde_json::Value::as_str).map(str::to_string),
+        updated_at: obj.get("updatedAt").and_then(serde_json::Value::as_i64),
+        last_error: in_field("lastError"),
+        target: in_field("target"),
+    };
+    let conn = open_readwrite(&db_path)?;
+    let meta = apply_agent_patch(&conn, &workspace_key, &task_id, &patch)
+        .map_err(|e| Error::from_reason(e.to_string()))?;
+    Ok(meta.map(|m| serde_json::to_string(&m).unwrap_or_default()))
+}
+
+/// N-API: `TaskIndexRepo.deleteArchivedTask` (read-write). Returns the tombstoned meta JSON, or
+/// `null` when the row is missing / already deleted / not archived.
+#[napi]
+pub fn delete_archived_task_json(
+    db_path: String,
+    workspace_key: String,
+    task_id: String,
+) -> Result<Option<String>> {
+    let conn = open_readwrite(&db_path)?;
+    let meta = delete_archived_task(&conn, &workspace_key, &task_id)
+        .map_err(|e| Error::from_reason(e.to_string()))?;
+    Ok(meta.map(|m| serde_json::to_string(&m).unwrap_or_default()))
 }
 
 /// N-API: `TaskIndexRepo.hasGroupedWorkspaceBootstrapRun` (read-only).
