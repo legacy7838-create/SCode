@@ -1619,6 +1619,73 @@ pub fn sync_task_meta_with_grouping(
     Ok(persisted)
 }
 
+/// Port of `syncTaskMetaAtGroupedTop`: the SAME merge + cron/off-peak grouping as
+/// [`sync_task_meta_with_grouping`], but wrapped in one `BEGIN IMMEDIATE` so the task row and its
+/// first grouped top-order are committed atomically (a root draft published between two separate
+/// writes would let the Renderer append it to the tail). Returns the persisted meta and whether a
+/// new top-order row was initialized (false when the task was ineligible or already ordered).
+pub fn sync_task_meta_at_grouped_top(
+    conn: &Connection,
+    workspace_key: &str,
+    incoming: &TaskMeta,
+    params: &SyncParams,
+    searchable_text: Option<String>,
+    now: i64,
+) -> std::result::Result<(TaskMeta, bool), String> {
+    conn.execute("BEGIN IMMEDIATE", []).map_err(|e| e.to_string())?;
+    let outcome: std::result::Result<(TaskMeta, bool), String> = (|| {
+        let persisted = sync_task_meta_with_grouping(conn, workspace_key, incoming, params, searchable_text, now)
+            .map_err(|e| e.to_string())?;
+        let task = grouping::GroupedTaskRef {
+            workspace_path: persisted.workspace_path.clone(),
+            workspace_identity: persisted.workspace_identity.clone(),
+            task_id: persisted.task_id.clone(),
+        };
+        let initialized = grouping::initialize_grouped_task_at_top(conn, &task, now)?;
+        Ok((persisted, initialized))
+    })();
+    match outcome {
+        Ok(v) => {
+            conn.execute("COMMIT", []).map_err(|e| e.to_string())?;
+            Ok(v)
+        }
+        Err(e) => {
+            let _ = conn.execute("ROLLBACK", []);
+            Err(e)
+        }
+    }
+}
+
+/// N-API: `TaskIndexRepo.syncTaskMetaAtGroupedTop` (read-write). Returns
+/// `{ meta, initializedGroupedOrder }` JSON. Same inputs as [`sync_task_meta_json`] plus the atomic
+/// grouped-top init.
+#[napi]
+pub fn sync_task_meta_at_grouped_top_json(
+    db_path: String,
+    workspace_key: String,
+    incoming_json: String,
+    params_json: String,
+    searchable_text: Option<String>,
+    now: f64,
+) -> Result<String> {
+    let incoming: TaskMeta =
+        serde_json::from_str(&incoming_json).map_err(|e| Error::from_reason(e.to_string()))?;
+    let params: SyncParams =
+        serde_json::from_str(&params_json).map_err(|e| Error::from_reason(e.to_string()))?;
+    let conn = open_readwrite(&db_path)?;
+    let (meta, initialized) = sync_task_meta_at_grouped_top(
+        &conn,
+        &workspace_key,
+        &incoming,
+        &params,
+        searchable_text,
+        now as i64,
+    )
+    .map_err(|e| Error::from_reason(e.to_string()))?;
+    serde_json::to_string(&serde_json::json!({ "meta": meta, "initializedGroupedOrder": initialized }))
+        .map_err(|e| Error::from_reason(e.to_string()))
+}
+
 /// N-API write boundary: run the full `syncTaskMeta` write path against a read-write DB, taking the
 /// incoming meta + sync params as JSON and returning the persisted projection as JSON. This is the
 /// callable surface a TS adapter replaces `node:sqlite` with. `now` is a JS number (epoch ms).
