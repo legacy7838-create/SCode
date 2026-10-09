@@ -256,6 +256,9 @@ pub struct TaskIndexRow {
     pub unread_at: Option<i64>,
     pub title_overridden: i64,
     pub meta_json: String,
+    pub pinned: i64,
+    pub archived: i64,
+    pub deleted: i64,
 }
 
 /// Port of TS `isRemoteWorkspaceIdentity`: true when `identity` is a well-formed `remote:` key.
@@ -475,13 +478,16 @@ fn map_task_index_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<TaskIndexRow> {
         meta_json: r
             .get::<_, Option<String>>(17)?
             .unwrap_or_else(|| "{}".to_string()),
+        pinned: r.get::<_, Option<i64>>(18)?.unwrap_or(0),
+        archived: r.get::<_, Option<i64>>(19)?.unwrap_or(0),
+        deleted: r.get::<_, Option<i64>>(20)?.unwrap_or(0),
     })
 }
 
 const TASK_INDEX_ROW_COLUMNS: &str =
     "workspace_key, workspace_path, workspace_identity, task_id, title, task_status, provider, \
      mode, model, migration_source, forked_from_task_id, cron_automation_id, off_peak_task_id, \
-     created_at, updated_at, unread_at, title_overridden, meta_json";
+     created_at, updated_at, unread_at, title_overridden, meta_json, pinned, archived, deleted";
 
 /// Select the full `TaskIndexRow` column set for one workspace, matching the TS `listTaskMetas`
 /// query (`deleted = 0`, `ORDER BY updated_at DESC, created_at DESC, task_id DESC`).
@@ -823,6 +829,74 @@ pub fn merge_sync_task_meta(
     }
 }
 
+/// Build the `writeRecord` payload from a merge decision + the resolved `workspace_key` + the
+/// caller-supplied searchable body. `write_unread_at` is false, matching TS `syncTaskMeta` (which
+/// does not flag the `unread_at` column on conflict; the merged value still lands in `meta_json`).
+fn decision_to_write_record(
+    workspace_key: &str,
+    decision: &SyncDecision,
+    searchable_text: Option<String>,
+) -> WriteRecord {
+    let m = &decision.meta;
+    WriteRecord {
+        workspace_key: workspace_key.to_string(),
+        workspace_path: m.workspace_path.clone(),
+        workspace_identity: m.workspace_identity.clone(),
+        task_id: m.task_id.clone(),
+        title: m.title.clone(),
+        task_status: m.status.clone(),
+        provider: m.provider.clone(),
+        mode: m.mode.clone(),
+        model: m.model.clone(),
+        migration_source: m.migration_source.clone(),
+        forked_from_task_id: m.forked_from_task_id.clone(),
+        cron_automation_id: m.cron_automation_id.clone(),
+        off_peak_task_id: m.off_peak_task_id.clone(),
+        created_at: m.created_at,
+        updated_at: m.updated_at,
+        unread_at: m.unread_at,
+        write_unread_at: false,
+        pinned: decision.pinned,
+        archived: decision.archived,
+        deleted: decision.deleted,
+        title_overridden: decision.title_overridden,
+        searchable_text,
+        meta_json: serde_json::to_string(m).unwrap_or_else(|_| "{}".to_string()),
+    }
+}
+
+/// Port of the `syncTaskMeta` core for the normal (non-grouped-top) path: read the existing row,
+/// project it (`rowToMeta`), merge with the incoming meta, persist via `write_record`, and return
+/// the persisted projection + the merge decision. The TS normal path issues NO explicit `BEGIN`
+/// (a single atomic upsert, serialized by the in-process write queue), so none is taken here.
+/// Group-membership for a first `cron`/`offPeak` id is driven by the caller from
+/// `decision.newly_cron` / `decision.newly_off_peak` (a separate slice over the `task_groups`
+/// subsystem) — this returns, rather than silently skips, those triggers so nothing is faked.
+pub fn sync_task_meta(
+    conn: &Connection,
+    workspace_key: &str,
+    incoming: &TaskMeta,
+    params: &SyncParams,
+    searchable_text: Option<String>,
+) -> std::result::Result<(TaskMeta, SyncDecision), rusqlite::Error> {
+    let existing_row = get_task_index_row(conn, workspace_key, &incoming.task_id)?;
+    let existing_meta = existing_row.as_ref().map(row_to_meta);
+    let existing_flags = existing_row
+        .as_ref()
+        .map(|r| ExistingRowFlags {
+            title_overridden: r.title_overridden == 1,
+            pinned: r.pinned == 1,
+            archived: r.archived == 1,
+            deleted: r.deleted == 1,
+        })
+        .unwrap_or_default();
+
+    let decision = merge_sync_task_meta(incoming, existing_meta.as_ref(), existing_flags, params);
+    let record = decision_to_write_record(workspace_key, &decision, searchable_text);
+    let persisted = write_record(conn, &record)?;
+    Ok((persisted, decision))
+}
+
 /// N-API: return the raw `meta_json` string for one task (parse it in Rust via `row_to_meta`).
 #[napi]
 pub fn read_task_meta_json(
@@ -962,6 +1036,9 @@ mod tests {
             unread_at: None,
             title_overridden: 0,
             meta_json: meta_json.into(),
+            pinned: 0,
+            archived: 0,
+            deleted: 0,
         }
     }
 
@@ -1435,6 +1512,68 @@ mod tests {
             Some(&existing),
             &incoming2
         ));
+    }
+
+    #[test]
+    fn sync_task_meta_stale_snapshot_does_not_regress_terminal_status() {
+        let conn = full_schema_db();
+        // Seed a completed task at updatedAt 500.
+        let first = tm(500, Some("completed"));
+        sync_task_meta(&conn, "/ws", &first, &SyncParams::default(), None).unwrap();
+
+        // A late, older running snapshot (300) must NOT downgrade the stored completed status
+        // nor rewind updatedAt — the exact phone-replay bug the TS guard prevents.
+        let stale = tm(300, Some("running"));
+        let (persisted, decision) =
+            sync_task_meta(&conn, "/ws", &stale, &SyncParams::default(), None).unwrap();
+        assert_eq!(
+            persisted.status.as_deref(),
+            Some("completed"),
+            "terminal kept"
+        );
+        assert_eq!(persisted.updated_at, 500, "monotonic updatedAt");
+        assert!(!decision.newly_cron && !decision.newly_off_peak);
+    }
+
+    #[test]
+    fn sync_task_meta_preserves_user_overridden_title_across_refresh() {
+        let conn = full_schema_db();
+        let mut rename = tm(100, Some("running"));
+        rename.title = "user title".into();
+        let p = SyncParams {
+            title_overridden: Some(true),
+            ..Default::default()
+        };
+        sync_task_meta(&conn, "/ws", &rename, &p, None).unwrap();
+
+        // A later agent snapshot with a fresh auto title and NO titleOverridden param must not
+        // clobber the user's title (existing row flag drives the keep).
+        let mut agent = tm(200, Some("running"));
+        agent.title = "auto title".into();
+        let (persisted, _) =
+            sync_task_meta(&conn, "/ws", &agent, &SyncParams::default(), None).unwrap();
+        assert_eq!(persisted.title, "user title");
+        assert!(persisted.title_overridden);
+    }
+
+    #[test]
+    fn sync_task_meta_first_cron_triggers_membership_once() {
+        let conn = full_schema_db();
+        let mut with_cron = tm(100, Some("completed"));
+        with_cron.cron_automation_id = Some("cron-1".into());
+        let (_, d1) =
+            sync_task_meta(&conn, "/ws", &with_cron, &SyncParams::default(), None).unwrap();
+        assert!(
+            d1.newly_cron,
+            "first cron id appearance → group membership trigger"
+        );
+
+        // Re-sync (snapshot without cron, but existing has it) → preserved, not "new".
+        let again = tm(200, Some("completed"));
+        let (persisted, d2) =
+            sync_task_meta(&conn, "/ws", &again, &SyncParams::default(), None).unwrap();
+        assert_eq!(persisted.cron_automation_id.as_deref(), Some("cron-1"));
+        assert!(!d2.newly_cron, "already grouped → no re-trigger");
     }
 
     #[test]
