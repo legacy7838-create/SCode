@@ -73,6 +73,7 @@ try {
   await ti.ensureReady();
   for (const m of seq) await ti.syncTaskMeta({ meta: m as never, ...(m.titleOverridden ? { titleOverridden: true } : {}) });
   await ti.updateTaskState({ workspacePath: WS, taskId: TASK, patch: updPatch as never });
+  await ti.clearTaskUnreadIfMatches({ workspacePath: WS, taskId: TASK, expectedUnreadAt: 5 });
   ti.close();
 
   // Rust side (bootstrap an empty file, then the same sync sequence; fixed `now` for grouping)
@@ -80,6 +81,7 @@ try {
   if (kind !== "initialize") { console.log(`rust bootstrap kind=${kind} (expected initialize)`); }
   for (const m of seq) addon.syncTaskMetaJson(DB_RS, WS, JSON.stringify(m), JSON.stringify({ titleOverridden: m.titleOverridden ? true : undefined }), 5000);
   addon.updateTaskStateJson(DB_RS, WS, TASK, JSON.stringify(updPatch));
+  addon.clearTaskUnreadJson(DB_RS, WS, TASK, 5);
 
   const ts = dumpTasks(DB_TS);
   const rs = dumpTasks(DB_RS);

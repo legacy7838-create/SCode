@@ -1836,6 +1836,23 @@ pub fn update_task_state_json(
     }
 }
 
+/// N-API: apply `clearTaskUnreadIfMatches` (read-write DB) → JSON `{ meta, cleared }`. The compare
+/// + write is one `BEGIN IMMEDIATE`; a stale `expectedUnreadAt` returns `cleared:false` unchanged.
+#[napi]
+pub fn clear_task_unread_json(
+    db_path: String,
+    workspace_key: String,
+    task_id: String,
+    expected_unread_at: f64,
+) -> Result<String> {
+    let conn = open_readwrite(&db_path)?;
+    let (meta, cleared) =
+        clear_task_unread_if_matches(&conn, &workspace_key, &task_id, expected_unread_at as i64)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+    serde_json::to_string(&serde_json::json!({ "meta": meta, "cleared": cleared }))
+        .map_err(|e| Error::from_reason(e.to_string()))
+}
+
 /// N-API: list off-peak tasks (read-only), optionally scoped to one workspace key, as JSON.
 #[napi]
 pub fn list_off_peak_json(db_path: String, workspace_key: Option<String>) -> Result<String> {
