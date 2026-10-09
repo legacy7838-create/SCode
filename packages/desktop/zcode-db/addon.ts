@@ -34,6 +34,8 @@ export interface DbAddon {
   getSessionInputByIdJson(dbPath: string, id: string): string;
   getProjectPermissionJson(dbPath: string, projectId: string): string;
   getProjectPermissionModeJson(dbPath: string, projectId: string): string;
+  getSessionJson(dbPath: string, sessionId: string): string;
+  listSessionsJson(dbPath: string, filterJson: string): string;
 
   // ---- task index: reads ----
   tasksCount(dbPath: string): number;

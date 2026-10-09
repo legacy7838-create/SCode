@@ -11,6 +11,7 @@ pub mod grouped_view;
 pub mod migrations;
 pub mod session_bootstrap;
 pub mod session_migrations;
+pub mod session_sessions;
 pub mod session_store;
 pub mod offpeak;
 pub mod offpeak_write;
@@ -1841,6 +1842,24 @@ pub fn get_project_permission_mode_json(db_path: String, project_id: String) -> 
     let conn = open_readonly(&db_path)?;
     let value = session_store::get_project_permission_mode(&conn, &project_id)
         .map_err(Error::from_reason)?;
+    serde_json::to_string(&value).map_err(|e| Error::from_reason(e.to_string()))
+}
+
+/// N-API: `getSession` port. Returns the `SessionInfo` JSON or `"null"`.
+#[napi]
+pub fn get_session_json(db_path: String, session_id: String) -> Result<String> {
+    let conn = open_readonly(&db_path)?;
+    let value = session_sessions::get_session(&conn, &session_id).map_err(Error::from_reason)?;
+    serde_json::to_string(&value).map_err(|e| Error::from_reason(e.to_string()))
+}
+
+/// N-API: `listSessions` port. `filter_json` is a `ListSessionsInput` JSON (`"null"`/`"{}"` = none).
+#[napi]
+pub fn list_sessions_json(db_path: String, filter_json: String) -> Result<String> {
+    let conn = open_readonly(&db_path)?;
+    let filter: serde_json::Value = serde_json::from_str(&filter_json)
+        .map_err(|e| Error::from_reason(format!("invalid filter json: {e}")))?;
+    let value = session_sessions::list_sessions(&conn, &filter).map_err(Error::from_reason)?;
     serde_json::to_string(&value).map_err(|e| Error::from_reason(e.to_string()))
 }
 
