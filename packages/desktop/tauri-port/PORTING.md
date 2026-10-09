@@ -138,3 +138,35 @@ backend Host WS-sidecar port and `main`-responsibility re-homing remain.
 
 **Next:** Phase 1 (Host → standalone WS sidecar), then Phase 2 (Rust spawns real Host; renderer boots
 connected; `connectTauriHost()` wired), then Phase 3 (`main` re-homing to `IPlatformService` parity).
+
+## Phase 1 — DONE + runtime-verified (2026-10-09)
+
+`src/host/standaloneHost.ts` boots the Local Host as a plain Node process (env-driven
+`createLocalServices` under `createHostDatabaseStartup`) and serves it over a loopback WS
+`ChannelServer` (`createWsChannelServer`), printing `ZCODE_WS_READY <port>` — the exact line Rust's
+`spawn_sidecar_*_discover_port` parses. Layer-A **A8** proves it end-to-end: it spawns the BUILT
+`out/host/standalone.js` as a real process, reads the ready port, and a production
+`connectViaWebSocket` client receives a live `IServiceAccessor` (with `fileService`). Kept SEPARATE
+from the Electron `InitLocal` path → zero regression. Build wiring: `dev:tauri` runs `tsup --watch`,
+desktop `build` = `tsup && vite build`.
+
+## Phase 2 — BLOCKED on two prerequisites (not faked)
+
+Pointing `connectTauriHost` (currently at the echo command) at a real host spawn requires:
+1. **`zcode-host` externalBin binary** — the ESM host (with native `node-pty`/`ssh2`, external `ws`)
+   must be packaged as a standalone Node binary/SEA per-OS (`SIDECAR-PACKAGING.md`). This is the
+   Phase 4 packaging step and must be validated by a real `tauri build`.
+2. **Provider-config path + per-window env** — the deleted Electron `main` supplied
+   `zcodeBuiltinProviderConfigFilePath` + workspace/device identity to `InitLocal`. Under Tauri the Rust
+   shell must own and pass these (`ZCODE_BUILTIN_PROVIDER_CONFIG_FILE_PATH`, `ZCODE_WORKSPACE_PATH`,
+   `ZCODE_DEVICE_MID`); that sourcing is a Phase 3 re-home.
+
+A Rust `spawn_host_discover_port` mirroring `spawn_sidecar_echo_discover_port` is ready to write once
+(1) exists, but writing it now would compile-only and provably fail to launch → deliberately not
+shipped as "done."
+
+## Phase 3 / 4 — remaining
+
+`IPlatformService` surfaces (browser/CDP per D1, updater per D2, print, saveFile SSRF downloader,
+tray/menu/deep-links, notifications-click, all telemetry channels) + node-pty Node-ABI + `pnpm install`
+to prune `electron*` from the lockfile. Each needs a real desktop/build environment to verify.
