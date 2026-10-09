@@ -1497,6 +1497,202 @@ pub fn build_search_snippets(searchable_text: &str, search: Option<&str>) -> Vec
     snippets
 }
 
+// ---- queryTaskList (multi-workspace, kind, search, pagination) ----
+
+/// TS `resolveWorkspaceKey`: trimmed identity, else the raw path.
+fn workspace_key(path: &str, identity: Option<&str>) -> String {
+    identity
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| path.to_string())
+}
+
+/// A workspace scope input for the list query.
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct WorkspaceScope {
+    pub workspace_path: String,
+    pub workspace_identity: Option<String>,
+    pub workspace_purpose: Option<String>,
+}
+
+/// Query options mirroring `ZCodeTaskListQuery`. `kind`: "pinned" | "archived" | anything-else
+/// (default = unpinned+unarchived). `sort_by`: "created" | anything-else (updated).
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct TaskListQuery {
+    pub workspace_scopes: Vec<WorkspaceScope>,
+    pub provider: Option<String>,
+    pub kind: Option<String>,
+    pub search: Option<String>,
+    pub sort_by: Option<String>,
+    pub limit: Option<i64>,
+}
+
+/// A list item: the projected meta, plus search snippets when present (matches `rowToTaskListItem`,
+/// which only attaches the snippet fields on a non-empty result).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct TaskListItem {
+    #[serde(flatten)]
+    pub meta: TaskMeta,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search_snippet: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search_snippets: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct TaskListResult {
+    pub items: Vec<TaskListItem>,
+    pub total: i64,
+    pub has_more: bool,
+}
+
+/// Port of `queryTaskList`: de-dup + sort workspace keys, build the dynamic WHERE (deleted, key IN,
+/// provider, kind, case-insensitive title/body LIKE), COUNT for `total`, ordered (+LIMIT) SELECT,
+/// then attach snippets + workspacePurpose. Empty scope set short-circuits to an empty result.
+pub fn query_task_list(
+    conn: &Connection,
+    q: &TaskListQuery,
+) -> std::result::Result<TaskListResult, String> {
+    // normalizeWorkspaceKeys: unique, non-blank, localeCompare-sorted (Rust ordinal sort is a close
+    // stand-in for the ASCII/absolute-path keys here).
+    let mut keys: Vec<String> = Vec::new();
+    for scope in &q.workspace_scopes {
+        let key = workspace_key(&scope.workspace_path, scope.workspace_identity.as_deref());
+        if !key.trim().is_empty() && !keys.contains(&key) {
+            keys.push(key);
+        }
+    }
+    keys.sort();
+    if keys.is_empty() {
+        return Ok(TaskListResult {
+            items: vec![],
+            total: 0,
+            has_more: false,
+        });
+    }
+
+    let purpose_by_key: std::collections::HashMap<String, String> = q
+        .workspace_scopes
+        .iter()
+        .filter(|s| s.workspace_purpose.is_some())
+        .map(|s| {
+            (
+                workspace_key(&s.workspace_path, s.workspace_identity.as_deref()),
+                s.workspace_purpose.clone().unwrap(),
+            )
+        })
+        .collect();
+
+    let placeholders = vec!["?"; keys.len()].join(", ");
+    let mut where_parts = vec![
+        "deleted = 0".to_string(),
+        format!("workspace_key IN ({placeholders})"),
+    ];
+    let mut args: Vec<rusqlite::types::Value> = keys
+        .iter()
+        .map(|k| rusqlite::types::Value::Text(k.clone()))
+        .collect();
+
+    if let Some(provider) = &q.provider {
+        where_parts.push("provider = ?".to_string());
+        args.push(rusqlite::types::Value::Text(provider.clone()));
+    }
+    match q.kind.as_deref() {
+        Some("pinned") => {
+            where_parts.extend(["pinned = 1".to_string(), "archived = 0".to_string()])
+        }
+        Some("archived") => where_parts.push("archived = 1".to_string()),
+        _ => where_parts.extend(["pinned = 0".to_string(), "archived = 0".to_string()]),
+    }
+
+    let trimmed_search = q
+        .search
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    if let Some(search) = &trimmed_search {
+        where_parts.push("(LOWER(title) LIKE ? OR LOWER(searchable_text) LIKE ?)".to_string());
+        let like = rusqlite::types::Value::Text(format!("%{}%", search.to_lowercase()));
+        args.push(like.clone());
+        args.push(like);
+    }
+    let where_clause = where_parts.join(" AND ");
+
+    let total: i64 = conn
+        .query_row(
+            &format!("SELECT COUNT(1) FROM tasks WHERE {where_clause}"),
+            rusqlite::params_from_iter(args.clone()),
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+
+    let order_by = if q.sort_by.as_deref() == Some("created") {
+        "created_at DESC, updated_at DESC, task_id DESC"
+    } else {
+        "updated_at DESC, created_at DESC, task_id DESC"
+    };
+    let mut list_args = args.clone();
+    let limit_clause = match q.limit.filter(|l| *l > 0) {
+        Some(l) => {
+            list_args.push(rusqlite::types::Value::Integer(l));
+            " LIMIT ?"
+        }
+        None => "",
+    };
+    let list_sql = format!(
+        "SELECT {TASK_INDEX_ROW_COLUMNS} FROM tasks WHERE {where_clause} ORDER BY {order_by}{limit_clause}"
+    );
+    let mut stmt = conn.prepare(&list_sql).map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(rusqlite::params_from_iter(list_args), map_task_index_row)
+        .map_err(|e| e.to_string())?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    let count = rows.len() as i64;
+    let items = rows
+        .iter()
+        .map(|row| {
+            let mut meta = row_to_meta(row);
+            if let Some(purpose) = purpose_by_key.get(&row.workspace_key) {
+                meta.workspace_purpose = Some(purpose.clone());
+            }
+            let snippets = build_search_snippets(&row.searchable_text, trimmed_search.as_deref());
+            let (snippet, all) = if snippets.is_empty() {
+                (None, None)
+            } else {
+                (Some(snippets[0].clone()), Some(snippets))
+            };
+            TaskListItem {
+                meta,
+                search_snippet: snippet,
+                search_snippets: all,
+            }
+        })
+        .collect();
+
+    Ok(TaskListResult {
+        items,
+        total,
+        has_more: total > count,
+    })
+}
+
+/// N-API: run `queryTaskList` (read-only) and return `{items,total,hasMore}` JSON. `query_json`
+/// maps to `TaskListQuery`.
+#[napi]
+pub fn query_task_list_json(db_path: String, query_json: String) -> Result<String> {
+    let q: TaskListQuery =
+        serde_json::from_str(&query_json).map_err(|e| Error::from_reason(e.to_string()))?;
+    let conn = open_readonly(&db_path)?;
+    let result = query_task_list(&conn, &q).map_err(Error::from_reason)?;
+    serde_json::to_string(&result).map_err(|e| Error::from_reason(e.to_string()))
+}
+
 /// N-API: return the raw `meta_json` string for one task (parse it in Rust via `row_to_meta`).
 #[napi]
 pub fn read_task_meta_json(
@@ -2663,6 +2859,103 @@ mod tests {
         assert!(build_search_snippets("x", None).is_empty());
         assert!(build_search_snippets("x", Some("")).is_empty());
         assert!(build_search_snippets("   ", Some("a")).is_empty());
+    }
+
+    fn scope(ws: &str, purpose: Option<&str>) -> WorkspaceScope {
+        WorkspaceScope {
+            workspace_path: ws.into(),
+            workspace_identity: None,
+            workspace_purpose: purpose.map(|s| s.to_string()),
+        }
+    }
+
+    #[test]
+    fn query_task_list_orders_totals_and_pagination() {
+        let conn = fixture_db();
+        let q = TaskListQuery {
+            workspace_scopes: vec![scope("ws-A", None), scope("ws-B", None)],
+            ..Default::default()
+        };
+        let r = query_task_list(&conn, &q).unwrap();
+        let ids: Vec<&str> = r.items.iter().map(|i| i.meta.task_id.as_str()).collect();
+        assert_eq!(ids, vec!["other", "t-new", "t-mid", "t-old"]);
+        assert_eq!(r.total, 4);
+        assert!(!r.has_more);
+
+        let limited = query_task_list(
+            &conn,
+            &TaskListQuery {
+                workspace_scopes: vec![scope("ws-A", None), scope("ws-B", None)],
+                limit: Some(2),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(limited.items.len(), 2);
+        assert!(limited.has_more, "total 4 > 2 returned");
+    }
+
+    #[test]
+    fn query_task_list_kind_and_provider_filters() {
+        let conn = fixture_db();
+        // No row is pinned → kind "pinned" yields none; default yields the unpinned 4.
+        let pinned = query_task_list(
+            &conn,
+            &TaskListQuery {
+                workspace_scopes: vec![scope("ws-A", None), scope("ws-B", None)],
+                kind: Some("pinned".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(pinned.items.is_empty());
+        // provider filter: fixture rows have provider NULL → filtering on "glm" yields none.
+        let prov = query_task_list(
+            &conn,
+            &TaskListQuery {
+                workspace_scopes: vec![scope("ws-A", None), scope("ws-B", None)],
+                provider: Some("glm".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(prov.items.is_empty());
+    }
+
+    #[test]
+    fn query_task_list_search_and_workspace_purpose() {
+        let conn = fixture_db();
+        // searchable_text is empty in the fixture, but title "new" matches the LIKE on LOWER(title).
+        let r = query_task_list(
+            &conn,
+            &TaskListQuery {
+                workspace_scopes: vec![scope("ws-A", Some("project")), scope("ws-B", None)],
+                search: Some("new".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(r.items.len(), 1);
+        assert_eq!(r.items[0].meta.task_id, "t-new");
+        assert_eq!(
+            r.items[0].meta.workspace_purpose.as_deref(),
+            Some("project")
+        );
+        // Empty body → no snippet fields attached (rowToTaskListItem keeps meta-only).
+        assert!(r.items[0].search_snippet.is_none());
+        // Serialized item must omit the snippet keys entirely.
+        assert!(!serde_json::to_string(&r.items[0])
+            .unwrap()
+            .contains("searchSnippet"));
+    }
+
+    #[test]
+    fn query_task_list_empty_scopes_short_circuits() {
+        let conn = fixture_db();
+        let r = query_task_list(&conn, &TaskListQuery::default()).unwrap();
+        assert!(r.items.is_empty());
+        assert_eq!(r.total, 0);
+        assert!(!r.has_more);
     }
 
     #[test]
