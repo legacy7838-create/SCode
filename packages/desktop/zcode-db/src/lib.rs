@@ -11,6 +11,7 @@ pub mod grouped_view;
 pub mod migrations;
 pub mod model_selection;
 pub mod session_bootstrap;
+pub mod session_debug;
 pub mod session_entries;
 pub mod session_journal;
 pub mod session_journal_read;

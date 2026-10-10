@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { readObservationRows, type RawRow } from "./native-db.js";
 import type {
   DbMessageRecord,
   DbObservation,
@@ -22,6 +22,12 @@ export function defaultLogDir(): string {
 export function defaultDbPath(): string {
   return join(homedir(), ".zcode", "cli", "db", "db.sqlite");
 }
+
+// 观测面板的显示预算（不是存储规则）：切换前写死在三条 SELECT 的 limit 里，
+// 现在作为参数交给 addon，常量留在唯一使用它们的地方。
+const OBSERVATION_SESSIONS_LIMIT = 200;
+const OBSERVATION_MESSAGES_LIMIT = 1000;
+const OBSERVATION_PARTS_LIMIT = 2000;
 
 export async function loadLogs(options: ObservationOptions): Promise<SourceLoadResult<LogRecord>> {
   const logDir = resolve(options.logDir ?? defaultLogDir());
@@ -70,13 +76,17 @@ export function loadSqlite(options: ObservationOptions): SourceLoadResult<DbObse
     };
   }
 
-  let db: DatabaseSync | undefined;
   try {
-    db = new DatabaseSync(dbPath, { readOnly: true });
+    // 一次只读投影取回三张表的窗口；JS 不再持有数据库句柄，也就不需要在 finally 里关闭。
+    const rows = readObservationRows(dbPath, {
+      sessions: OBSERVATION_SESSIONS_LIMIT,
+      messages: OBSERVATION_MESSAGES_LIMIT,
+      parts: OBSERVATION_PARTS_LIMIT,
+    });
     const observation: DbObservation = {
-      sessions: readSessions(db),
-      messages: readMessages(db),
-      parts: readParts(db),
+      sessions: readSessions(rows.sessions),
+      messages: readMessages(rows.messages),
+      parts: readParts(rows.parts),
     };
     return {
       kind: "sqlite",
@@ -92,8 +102,6 @@ export function loadSqlite(options: ObservationOptions): SourceLoadResult<DbObse
       records: [],
       warning: error instanceof Error ? error.message : String(error),
     };
-  } finally {
-    db?.close();
   }
 }
 
@@ -192,18 +200,7 @@ function toEventRecord(record: JsonRecord): EventRecord | null {
   };
 }
 
-function readSessions(db: DatabaseSync): DbSessionRecord[] {
-  const rows = db
-    .prepare(
-      `
-      select id, project_id, title, directory, time_created, time_updated
-      from session
-      order by time_updated desc
-      limit 200
-      `,
-    )
-    .all() as Record<string, unknown>[];
-
+function readSessions(rows: RawRow[]): DbSessionRecord[] {
   return rows.map((row) => ({
     id: String(row.id),
     projectId: String(row.project_id),
@@ -214,18 +211,7 @@ function readSessions(db: DatabaseSync): DbSessionRecord[] {
   }));
 }
 
-function readMessages(db: DatabaseSync): DbMessageRecord[] {
-  const rows = db
-    .prepare(
-      `
-      select id, session_id, time_created, time_updated, data
-      from message
-      order by time_created asc, rowid asc
-      limit 1000
-      `,
-    )
-    .all() as Record<string, unknown>[];
-
+function readMessages(rows: RawRow[]): DbMessageRecord[] {
   return rows.map((row) => {
     const data = parseData(row.data);
     return {
@@ -239,18 +225,7 @@ function readMessages(db: DatabaseSync): DbMessageRecord[] {
   });
 }
 
-function readParts(db: DatabaseSync): DbPartRecord[] {
-  const rows = db
-    .prepare(
-      `
-      select id, message_id, session_id, time_created, time_updated, data
-      from part
-      order by time_created asc, id asc
-      limit 2000
-      `,
-    )
-    .all() as Record<string, unknown>[];
-
+function readParts(rows: RawRow[]): DbPartRecord[] {
   return rows.map((row) => {
     const data = parseData(row.data);
     return {

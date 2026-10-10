@@ -644,6 +644,29 @@ pub fn commit_fork_bundle_json(
     run_in_tx(&db_path, |conn| commit_fork_bundle(conn, &bundle, now_ms))
 }
 
+/// N-API: standalone `cloneTargetForFork` boundary (the port of
+/// `session-target.ts:cloneSessionTargetForFork`, also used INSIDE [`commit_fork_bundle_json`]).
+/// `source_json` is the parent `SessionGoal` projection; the child keeps its `targetID`, objective,
+/// summary, budget and usage while the three `active_*` run columns are reset. Runs inside ONE
+/// `BEGIN IMMEDIATE` because the row write and the `touchSessionForTarget` bump must live or die
+/// together — the TS relied on the caller's implicit single-connection ordering; the stateless addon
+/// cannot, so the wrapper owns the transaction exactly like the sibling bundle ops above.
+#[napi]
+pub fn clone_session_target_for_fork_json(
+    db_path: String,
+    source_json: String,
+    session_id: String,
+    status: String,
+    now: f64,
+) -> napi::Result<String> {
+    let source: Value =
+        serde_json::from_str(&source_json).map_err(|e| Error::from_reason(e.to_string()))?;
+    let now_ms = now as i64;
+    run_in_tx(&db_path, |conn| {
+        clone_session_target_for_fork(conn, &source, &session_id, &status, now_ms)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
