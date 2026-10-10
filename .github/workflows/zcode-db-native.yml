@@ -31,7 +31,7 @@ jobs:
       matrix:
         include:
           - label: linux-x64
-            os: ubuntu-latest
+            os: ubuntu-24.04
             ZCODE_TARGET_OS: linux
             ZCODE_TARGET_ARCH: x64
             artifact: zcode_db-linux-x64.node
@@ -54,9 +54,9 @@ jobs:
             artifact: zcode_db-win32-x64.node
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
       - name: Show Rust toolchain
@@ -73,7 +73,7 @@ jobs:
           ZCODE_TARGET_OS: ${{ matrix.ZCODE_TARGET_OS }}
           ZCODE_TARGET_ARCH: ${{ matrix.ZCODE_TARGET_ARCH }}
         run: node packages/desktop/scripts/prepare-zcode-db-native.mjs --check
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: ${{ matrix.artifact }}
           path: packages/desktop/zcode-db/zcode_db.node
@@ -87,17 +87,17 @@ jobs:
   desktop-build:
     name: desktop build (addon external + staged into glm)
     needs: addon-prep
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
       - name: pnpm install
         run: pnpm install --frozen-lockfile
       - name: Download linux-x64 addon
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: zcode_db-linux-x64.node
           path: dl-addon
@@ -141,11 +141,11 @@ jobs:
   # ---------------------------------------------------------------------------
   db-gate:
     name: db parity + node:sqlite regression gate
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
       - name: pnpm install
