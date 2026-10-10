@@ -1,0 +1,246 @@
+name: platform-build-and-test
+
+# Cross-platform verification for the Tauri desktop app on Linux + Windows.
+#
+# GOAL: reveal EXACTLY which platform and which step fails. To that end:
+#   - `test` job runs on BOTH OSes with `fail-fast: false` (one OS failing never cancels the other)
+#     and AGGREGATES every check into one pass/fail table, so a single run reports ALL failures for
+#     that platform, not just the first (hard gates fail the job; advisory checks are reported only).
+#   - `build` job builds the real app bundle per OS; on Linux it additionally produces an AppImage
+#     (`--config '{"bundle":{"active":true}}' --bundles appimage`) because the dev tauri.conf.json
+#     ships with `bundle.active:false`. It also builds the gitignored `zcode-echo` sidecar first,
+#     otherwise the bundler aborts on the missing externalBin file.
+#
+# NOTE: the Tauri shell is an explicit WIP port ("NOT yet feature-complete"); a failing build/bundle
+# step here is a FEATURE of the workflow — it names the precise platform + stage that is not ready.
+#
+# TRIGGER: manual (workflow_dispatch) — always; `push` — tests + build; `pull_request` — tests only
+# (the heavy per-OS app bundle is skipped on PRs; force it with run_build on a dispatch).
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_build:
+        description: "Also run the Linux/Windows app bundle (+ Linux AppImage) build"
+        type: boolean
+        required: false
+        default: true
+      cargo_verbose:
+        description: "Pass -vv to cargo and --nocapture to test runners"
+        type: boolean
+        required: false
+        default: false
+  push:
+    branches:
+      - main
+      - remove-electron-tauri-default
+  pull_request:
+    branches:
+      - main
+      - remove-electron-tauri-default
+
+concurrency:
+  group: platform-build-and-test-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+  # Tauri v2 + WebKitGTK/AppImage compile-time deps for the ubuntu-24.04 runner.
+  # Source: packages/desktop/tauri-port/CI-PACKAGING.md §2.1 (Tauri v2 Linux docs) + patchelf
+  # (AppImage tooling) + pkg-config/libglib2.0-dev (glib build).
+  LINUX_TAURI_DEPS: >-
+    libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev
+    libayatana-appindicator3-dev librsvg2-dev patchelf libglib2.0-dev pkg-config
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. All checks + all tests, per OS, aggregated into one report per platform.
+  # ---------------------------------------------------------------------------
+  test:
+    name: test (${{ matrix.label }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: linux-x64
+            os: ubuntu-24.04
+          - label: windows-x64
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    # bash on every OS (Windows runners ship Git Bash) so identical commands behave the same.
+    defaults:
+      run:
+        shell: bash
+    env:
+      VERBOSE_FLAG: ${{ github.event.inputs.cargo_verbose == true && '--nocapture' || '' }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: "[linux] install Tauri/WebKitGTK + AppImage build deps"
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends $LINUX_TAURI_DEPS
+
+      - name: "[diag] toolchain"
+        run: |
+          echo "uname: $(uname -a)"
+          echo "node:  $(node -v)"
+          echo "pnpm:  $(pnpm -v)"
+          echo "rustc: $(rustc -vV | tr '\n' ' ')"
+          echo "cargo: $(cargo -V)"
+
+      - name: "[install] pnpm install (root workspace, frozen)"
+        run: pnpm install --frozen-lockfile
+
+      # Build the Rust DB addon natively for THIS OS and stage zcode_db.node into
+      # bundled-agents/<host>/glm. Two jobs in one: (a) it satisfies src-tauri/build.rs's
+      # bundle.resources glob (otherwise `test:tauri:rust` build.rs aborts, exit 101), and
+      # (b) it produces the .node the addon --check + services tests load. cargo builds rusqlite
+      # (bundled) with MSVC on Windows / gcc on Linux.
+      - name: "[db] build + stage native addon for this host (satisfies build.rs glob)"
+        run: node packages/desktop/scripts/dev-tauri-prepare.mjs
+
+      - name: "[test] run every check + test, aggregate ALL failures into one report"
+        run: |
+          set +e
+          RESULTS="${RUNNER_TEMP}/results.md"
+          : > "$RESULTS"
+          HARD_FAILED=0
+
+          run() {
+            local gate="$1" label="$2"; shift 2
+            echo; echo "########## [$label] ($gate) ##########"
+            if bash -c "$*"; then
+              status="PASS"
+            else
+              rc=$?; status="FAIL(exit=$rc)"
+              [ "$gate" = "hard" ] && HARD_FAILED=1
+            fi
+            echo "----- [$label] -> $status"
+            echo "| $label | $gate | $status |" >> "$RESULTS"
+          }
+
+          echo "| check | gate | result |" >> "$RESULTS"
+          echo "|---|---|---|" >> "$RESULTS"
+
+          # ---- HARD gates (must pass; a failure fails the job) ----
+          run hard "typecheck"                 "pnpm typecheck"
+          run hard "tauri layer-a"             "pnpm test:tauri:layer-a"
+          run hard "tauri layer-b"             "pnpm test:tauri:layer-b"
+          run hard "tauri rust (src-tauri)"    "pnpm test:tauri:rust"
+          run hard "db cargo test --lib"       "cd packages/desktop/zcode-db && cargo test --lib ${VERBOSE_FLAG}"
+          run hard "db addon --check"          "node packages/desktop/scripts/prepare-zcode-db-native.mjs --check"
+          # Services / UI unit tests are not wired to a repo script (CI module resolution can
+          # differ from a dev box), so they are ADVISORY here: reported in the table, not gating.
+          run soft "services tests (tsx)"      "pnpm exec tsx --test packages/services/test/*.test.ts"
+          run soft "ui tests (tsx)"            "pnpm exec tsx --test packages/ui/test/*.test.ts"
+
+          # ---- ADVISORY checks (reported, do not fail the job) ----
+          run soft "lint (oxlint)"             "pnpm lint"
+          run soft "fmt:check (oxfmt)"         "pnpm fmt:check"
+          run soft "architecture:check"        "pnpm architecture:check"
+          run soft "knip (unused deps/exports)" "pnpm knip"
+          run soft "db clippy -D warnings"     "cd packages/desktop/zcode-db && cargo clippy --all-targets -- -D warnings"
+
+          echo
+          echo "==================== ${{ matrix.label }} SUMMARY ===================="
+          cat "$RESULTS"
+          echo "=============================================================="
+          # Publish the table to the run's Job Summary.
+          { echo "## ${{ matrix.label }} — check/test results"; echo; cat "$RESULTS"; } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$HARD_FAILED" -ne 0 ]; then
+            echo "::error::One or more HARD checks failed on ${{ matrix.label }} (see table above)"
+            exit 1
+          fi
+          echo "All HARD checks passed on ${{ matrix.label }} (advisory failures, if any, are in the table)."
+
+  # ---------------------------------------------------------------------------
+  # 2. Real per-OS app bundle. Linux also emits an AppImage. Independent of `test`
+  #    so build failures surface even when a test failed (and vice-versa).
+  # ---------------------------------------------------------------------------
+  build:
+    name: build + bundle (${{ matrix.label }})
+    # Skip the heavy per-OS bundle on pull_request; run it on `push` always, and on a manual
+    # dispatch only when run_build is ticked (boolean input → compare to true, not 'true').
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.run_build == true)
+    needs: []
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: linux-x64
+            os: ubuntu-24.04
+            bundles: appimage
+            bundle_glob: packages/desktop/src-tauri/target/release/bundle/appimage/*.AppImage
+            artifact_name: zcode-appimage-linux-x64
+          - label: windows-x64
+            os: windows-latest
+            bundles: msi
+            bundle_glob: packages/desktop/src-tauri/target/release/bundle/msi/*.msi
+            artifact_name: zcode-msi-windows-x64
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: "[linux] install Tauri/WebKitGTK + AppImage build deps"
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends $LINUX_TAURI_DEPS
+
+      - name: "[install] pnpm install (root workspace, frozen)"
+        run: pnpm install --frozen-lockfile
+
+      # addon + bundled-agents/<host>/glm/zcode_db.node (build.rs resources glob).
+      - name: "[db] build + stage native addon for this host"
+        run: node packages/desktop/scripts/dev-tauri-prepare.mjs
+
+      # src-tauri/binaries/ is gitignored; the bundler aborts on a missing externalBin
+      # (bundle.externalBin = ["binaries/zcode-echo"]) unless we build it. Emits
+      # zcode-echo-<rust-target-triple> with the exec bit + a commonjs package.json pin.
+      - name: "[sidecar] build zcode-echo externalBin (gitignored, bundler needs it)"
+        run: bash packages/desktop/tauri-port/sidecar/build.sh
+
+      - name: "[frontend] build host/scheduler (tsup) + renderer (vite -> out/renderer)"
+        run: pnpm --filter @zcode/desktop build
+
+      # bundle.active:false in the dev tauri.conf.json would otherwise make `tauri build`
+      # skip bundling entirely; override it to true and pin the per-OS target format.
+      - name: "[bundle] tauri build (${{ matrix.bundles }})"
+        working-directory: packages/desktop
+        run: pnpm exec tauri build --config '{"bundle":{"active":true}}' --bundles ${{ matrix.bundles }}
+
+      - name: "[bundle] list produced artifacts"
+        if: always()
+        working-directory: packages/desktop
+        run: find src-tauri/target/release/bundle -type f \( -name '*.AppImage' -o -name '*.msi' -o -name '*.deb' \) 2>/dev/null || echo "no bundle files found"
+
+      - name: "[upload] ${{ matrix.artifact_name }}"
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.bundle_glob }}
+          if-no-files-found: warn
