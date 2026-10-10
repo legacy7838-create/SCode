@@ -35,6 +35,7 @@ pub mod session_write_session_update;
 pub mod session_write_target;
 pub mod session_write_todos;
 pub mod session_write_workflow_def;
+pub mod session_write_workflow_run;
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
