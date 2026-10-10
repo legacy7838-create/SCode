@@ -79,13 +79,10 @@ jobs:
       - name: "[deps] pnpm install (root workspace, frozen)"
         run: pnpm install --frozen-lockfile
 
-      # apps/zcode-cli is its OWN nested pnpm workspace (own lockfile + turbo) and is NOT covered
-      # by the root `pnpm typecheck`. Install it so the [type] step below can run its turbo.
-      # NOTE: --no-frozen-lockfile because apps/zcode-cli/pnpm-lock.yaml currently drifts from its
-      # package.json (pre-existing: @withfig/autocomplete added, vitest removed) → frozen fails.
-      - name: "[deps] pnpm install (apps/zcode-cli nested workspace)"
-        working-directory: apps/zcode-cli
-        run: pnpm install --no-frozen-lockfile
+      # apps/zcode-cli is a member of the ROOT pnpm workspace (root pnpm-workspace.yaml lists
+      # apps/zcode-cli/packages/*), so the root install above already installs its deps + turbo.
+      # Do NOT run a second `pnpm install` inside apps/zcode-cli — it has its own lockfile and
+      # would collide with the root-managed install ("installed by a different package manager").
 
       - name: "[rust] cargo build --release (crate compiles+links on THIS OS)"
         working-directory: packages/desktop/zcode-db
