@@ -35,6 +35,7 @@ pub mod session_write_promotion;
 pub mod session_write_session_update;
 pub mod session_write_target;
 pub mod session_write_todos;
+pub mod session_write_usage;
 pub mod session_write_workflow_def;
 pub mod session_write_workflow_run;
 

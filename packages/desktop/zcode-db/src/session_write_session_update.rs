@@ -415,7 +415,7 @@ mod tests {
     fn col_str(conn: &Connection, id: &str, column: &str) -> Option<String> {
         let sql = format!("select {column} from session where id = ?1");
         conn.query_row(&sql, [id], |r| r.get::<_, Option<String>>(0))
-            .unwrap_or_else(|_| None)
+            .unwrap_or(None)
     }
 
     fn run(conn: &Connection, input: Value, now: i64) -> Value {
