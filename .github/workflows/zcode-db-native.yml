@@ -4,31 +4,10 @@ name: zcode-db-native
 # tests + the TS-vs-Rust parity harnesses, and enforce the end-state that the CLI adapters
 # no longer fall back to `node:sqlite`. This workflow is the ENFORCEMENT of the Rust-native
 # DB cutover (#21/#27/#28); it MUST keep the linux staging path the desktop dev flow relies on.
+#
+# TRIGGER: manual only (Actions → "Run workflow"). Nothing auto-fires; you start it by hand.
 
 on:
-  push:
-    branches: ["**"]
-    paths:
-      - "packages/desktop/zcode-db/**"
-      - "packages/desktop/scripts/prepare-zcode-db-native.mjs"
-      - "packages/desktop/scripts/prepare-agent-node-bundle.mjs"
-      - "packages/desktop/src-tauri/tauri.conf.json"
-      - "packages/services/src/**"
-      - "apps/zcode-cli/packages/adapters/src/**"
-      - "apps/zcode-cli/packages/cli/scripts/build.mjs"
-      - "packages/desktop/tsup.config.ts"
-      - ".github/workflows/zcode-db-native.yml"
-  pull_request:
-    paths:
-      - "packages/desktop/zcode-db/**"
-      - "packages/desktop/scripts/prepare-zcode-db-native.mjs"
-      - "packages/desktop/scripts/prepare-agent-node-bundle.mjs"
-      - "packages/desktop/src-tauri/tauri.conf.json"
-      - "packages/services/src/**"
-      - "apps/zcode-cli/packages/adapters/src/**"
-      - "apps/zcode-cli/packages/cli/scripts/build.mjs"
-      - "packages/desktop/tsup.config.ts"
-      - ".github/workflows/zcode-db-native.yml"
   workflow_dispatch:
 
 env:
@@ -81,7 +60,7 @@ jobs:
           version: 10
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
       - name: Show Rust toolchain
         run: rustc -vV
       - name: pnpm install
@@ -118,7 +97,7 @@ jobs:
           version: 10
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
       - name: pnpm install
         run: pnpm install --frozen-lockfile
       - name: Download linux-x64 addon
@@ -160,12 +139,9 @@ jobs:
   #    - every TS-vs-Rust parity harness under zcode-db/harness (run via workspace tsx)
   #    - 0 JS DB fallback guard: adapters/src MUST contain no `node:sqlite`
   #
-  #    NOTE (expected failure until #27 merges): the `node:sqlite` grep below is the
-  #    ENFORCEMENT of the end-state. While the session-store facade cutover (#27) is
-  #    still landing, apps/zcode-cli/packages/adapters/src legitimately still imports
-  #    node:sqlite, so this job is SUPPOSED to fail. It becomes the permanent CI guard
-  #    the moment #27 merges — do NOT soften the grep or add allow-lists to make it green
-  #    before then; a green run before #27 would mean the guard silently broke.
+  #    The session-store facade cutover (#27) has MERGED, so `node:sqlite` is gone from the
+  #    adapters. This grep is now the PERMANENT regression guard: it must stay green; any
+  #    future reintroduction of node:sqlite into adapters/src fails the build. Do not soften it.
   # ---------------------------------------------------------------------------
   db-gate:
     name: db parity + node:sqlite regression gate
@@ -177,7 +153,7 @@ jobs:
           version: 10
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
       - name: pnpm install
         run: pnpm install --frozen-lockfile
       - name: Stage zcode_db.node (linux-x64) for crate tests + harnesses
@@ -205,8 +181,7 @@ jobs:
         run: |
           set -uo pipefail
           if grep -rn "node:sqlite" apps/zcode-cli/packages/adapters/src; then
-            echo "FAIL: node:sqlite still present in adapters/src (the '0 JS DB fallback' end-state is not met)" >&2
-            echo "This is EXPECTED until the facade cutover (#27) merges; see the job comment." >&2
+            echo "FAIL: node:sqlite reintroduced into adapters/src — the '0 JS DB fallback' end-state regressed." >&2
             exit 1
           fi
           echo "OK: adapters/src contains no node:sqlite"

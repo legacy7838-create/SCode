@@ -1,0 +1,143 @@
+name: db-platform-test
+
+# Detailed per-platform verification of the Rust-native DB layer. Runs on FOUR independent
+# native runners (linux / macos arm64 / macos x64 / windows) — NOT a fail-fast matrix — so the
+# GitHub Actions view shows each OS as its own pass/fail and a failure names the exact step
+# (rust build / clippy / cargo test / addon --check / parity harnesses / adapters typecheck /
+# node:sqlite guard). This is how you see "on which platform, what issue".
+#
+# Each runner builds the N-API addon NATIVELY (same arch), which is the point: it proves the
+# crate compiles + the addon loads + the ops run on that OS, instead of trusting a Linux-only
+# cross build. `pnpm exec tsx` is used (cross-platform, no .cmd shim issues). Node 24 + pnpm 10
+# per mise.toml. TRIGGER: manual only.
+
+on:
+  workflow_dispatch:
+    inputs:
+      verbose:
+        description: "Pass cargo -vv / more logging"
+        type: boolean
+        required: false
+        default: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  platform-test:
+    name: ${{ matrix.label }}
+    # fail-fast: false is what lets you SEE every platform's result independently — one OS
+    # failing must not cancel the others.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: linux-x64
+            os: ubuntu-latest
+            target_os: linux
+            target_arch: x64
+          - label: macos-arm64
+            os: macos-14
+            target_os: darwin
+            target_arch: arm64
+          - label: macos-x64
+            os: macos-13
+            target_os: darwin
+            target_arch: x64
+          - label: windows-x64
+            os: windows-latest
+            target_os: win32
+            target_arch: x64
+    runs-on: ${{ matrix.os }}
+    # Every step uses bash so the SAME commands behave identically on all four OSes
+    # (Windows runners ship Git Bash).
+    defaults:
+      run:
+        shell: bash
+    env:
+      ZCODE_TARGET_OS: ${{ matrix.target_os }}
+      ZCODE_TARGET_ARCH: ${{ matrix.target_arch }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: "[diag] toolchain for this platform"
+        run: |
+          echo "== uname ==";  uname -a || true
+          echo "== node ==";   node -v
+          echo "== pnpm ==";   pnpm -v
+          echo "== rustc ==";  rustc -vV
+          echo "== cargo ==";  cargo -V
+          echo "== target_os=$ZCODE_TARGET_OS target_arch=$ZCODE_TARGET_ARCH =="
+
+      - name: "[deps] pnpm install (root workspace, frozen)"
+        run: pnpm install --frozen-lockfile
+
+      # apps/zcode-cli is its OWN nested pnpm workspace (own lockfile + turbo) and is NOT covered
+      # by the root `pnpm typecheck`. Install it so the [type] step below can run its turbo.
+      - name: "[deps] pnpm install (apps/zcode-cli nested workspace, frozen)"
+        working-directory: apps/zcode-cli
+        run: pnpm install --frozen-lockfile
+
+      - name: "[rust] cargo build --release (crate compiles+links on THIS OS)"
+        working-directory: packages/desktop/zcode-db
+        run: cargo build --release ${{ inputs.verbose && '-vv' || '' }}
+
+      - name: "[rust] cargo clippy --all-targets -D warnings"
+        working-directory: packages/desktop/zcode-db
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: "[rust] cargo test --lib (Rust-side unit + write-path tests)"
+        working-directory: packages/desktop/zcode-db
+        run: cargo test --lib ${{ inputs.verbose && '--nocapture' || '' }}
+
+      - name: "[addon] build + stage zcode_db.node (native for this OS)"
+        run: node packages/desktop/scripts/prepare-zcode-db-native.mjs
+
+      - name: "[addon] --check: require the addon + assert bootstrapTasksIndex (right arch/ABI)"
+        run: node packages/desktop/scripts/prepare-zcode-db-native.mjs --check
+
+      - name: "[harness] run active TS parity harnesses via tsx"
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          harnesses=(packages/desktop/zcode-db/harness/*.mts)
+          echo "found ${#harnesses[@]} active harnesses (pre-cutover oracle harnesses are archived under harness/pre-cutover-oracle/ and intentionally not run)"
+          if [ "${#harnesses[@]}" -eq 0 ]; then
+            echo "FAIL: no harnesses found" >&2; exit 1
+          fi
+          for f in "${harnesses[@]}"; do
+            echo "=== $f ==="
+            pnpm exec tsx "$f"
+          done
+
+      - name: "[type] whole-workspace typecheck (packages/* incl services/desktop)"
+        run: pnpm typecheck
+
+      - name: "[type] apps/zcode-cli workspace typecheck (rewired facade + adapters + journal)"
+        run: pnpm --dir apps/zcode-cli typecheck
+
+      - name: "[guard] 0 JS DB fallback: adapters/src must contain no node:sqlite"
+        run: |
+          set -uo pipefail
+          if grep -rn "node:sqlite" apps/zcode-cli/packages/adapters/src; then
+            echo "FAIL: node:sqlite present in adapters/src on ${{ matrix.label }}" >&2
+            exit 1
+          fi
+          echo "OK: no node:sqlite in adapters/src on ${{ matrix.label }}"
+
+      - name: "[summary] platform result"
+        if: always()
+        run: echo "${{ matrix.label }} finished (see per-step status above for exactly which stage failed, if any)"
