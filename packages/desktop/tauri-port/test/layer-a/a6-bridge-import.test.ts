@@ -14,9 +14,10 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-const tauriBridgeTs = fileURLToPath(
-  new URL("../../../src/renderer/src/tauriBridge.ts", import.meta.url),
-);
+// Keep this as a file:// URL (not fileURLToPath): a bare Windows path like `D:\...\tauriBridge.ts` is
+// an invalid ESM specifier (ERR_UNSUPPORTED_ESM_URL_SCHEME, protocol 'd:'), so the dynamic import must
+// receive a file:// URL to work on both POSIX and Windows.
+const tauriBridgeUrl = new URL("../../../src/renderer/src/tauriBridge.ts", import.meta.url);
 
 test("A6: importing tauriBridge under a Tauri-less window throws nothing and probes false", async () => {
   // Simulate an Electron/Chromium renderer: a `window` exists but has NO Tauri
@@ -28,7 +29,7 @@ test("A6: importing tauriBridge under a Tauri-less window throws nothing and pro
   try {
     // A top-level `invoke()` or a hard Tauri-global read would make this import
     // reject — that is exactly the regression this test catches.
-    const mod = (await import(/* @vite-ignore */ tauriBridgeTs)) as {
+    const mod = (await import(/* @vite-ignore */ tauriBridgeUrl.href)) as {
       isTauriRuntime?: () => boolean;
     };
 

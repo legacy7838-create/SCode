@@ -34,33 +34,37 @@ const CONNECT_RETRY_MS = 50;
 /** How long to wait for a clean process exit after `kill()` before escalating to `SIGKILL`. */
 const KILL_GRACE_MS = 2_000;
 
-/** Resolve the `tsx` launcher and the `echo.mts` entry point as absolute paths.
+/** Resolve the `tsx` CLI module and the `echo.mts` entry point as absolute paths.
  *
  * Paths are derived from this test file's own URL (not `process.cwd()`), so the fixture is robust to
  * being invoked from the repo root (`pnpm test:tauri:layer-a`) or any subdirectory.
  *
- * @returns Absolute paths for the `tsx` binary and the sidecar source, plus the resolved repo root.
- * @throws If `tsx` or `echo.mts` cannot be located.
+ * The tsx CLI is launched through `process.execPath` (i.e. `node cli.mjs`), NOT by spawning
+ * `node_modules/.bin/tsx`: that shim is a POSIX symlink whose Windows sibling (`tsx.cmd`) cannot be
+ * `spawn`ed directly (ENOENT). Running the CLI module under the current Node binary is cross-platform.
+ *
+ * @returns Absolute paths for the tsx CLI module and the sidecar source.
+ * @throws If tsx or `echo.mts` cannot be located.
  */
-function resolveArtifacts(): { tsxBin: string; echoEntry: string } {
+function resolveArtifacts(): { tsxCli: string; echoEntry: string } {
   const testDir = dirname(fileURLToPath(import.meta.url));
   const echoEntry = resolve(testDir, "../../sidecar/echo.mts");
   if (!existsSync(echoEntry)) {
     throw new Error(`Sidecar source not found at ${echoEntry}`);
   }
 
-  // Walk up from the test directory looking for a hoisted `node_modules/.bin/tsx`.
+  // Walk up from the test directory looking for the hoisted `node_modules/tsx/dist/cli.mjs`.
   let dir = testDir;
   for (let depth = 0; depth < 8; depth += 1) {
-    const candidate = join(dir, "node_modules", ".bin", "tsx");
+    const candidate = join(dir, "node_modules", "tsx", "dist", "cli.mjs");
     if (existsSync(candidate)) {
-      return { tsxBin: candidate, echoEntry };
+      return { tsxCli: candidate, echoEntry };
     }
     const parent = resolve(dir, "..");
     if (parent === dir) break;
     dir = parent;
   }
-  throw new Error("Could not locate a `node_modules/.bin/tsx` launcher while walking up from the test dir");
+  throw new Error("Could not locate a `node_modules/tsx/dist/cli.mjs` launcher while walking up from the test dir");
 }
 
 /** Ask the OS for an ephemeral loopback port, then release it immediately.
@@ -180,12 +184,12 @@ async function connectWithRetry(port: number): Promise<WebSocket> {
 }
 
 test("A4: sidecar spawn + env handoff + loopback WS round-trip + clean kill", async () => {
-  const { tsxBin, echoEntry } = resolveArtifacts();
+  const { tsxCli, echoEntry } = resolveArtifacts();
   const port = await getFreePort();
 
   // stdio piped so we can parse the ready line and observe stderr on failure. NOT detached, so the
   // child stays in our process group and `kill()` reaches it (orphan prevention, §5).
-  const child = spawn(tsxBin, [echoEntry], {
+  const child = spawn(process.execPath, [tsxCli, echoEntry], {
     env: { ...process.env, ZCODE_WS_PORT: String(port) },
     stdio: ["ignore", "pipe", "pipe"],
   });

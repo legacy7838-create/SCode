@@ -14,7 +14,11 @@ OUT_DIR="$DESKTOP_DIR/src-tauri/binaries"
 
 # Rust target triple (e.g. x86_64-unknown-linux-gnu) — Tauri matches externalBin files by this suffix.
 TRIPLE="$(rustc -vV | sed -n 's/^host: //p')"
-OUT="$OUT_DIR/zcode-echo-$TRIPLE"
+# Tauri expects the sidecar as `<name>-<triple>` on Unix and `<name>-<triple>.exe` on Windows
+# (bundle.externalBin existence check in build.rs looks for the `.exe` on *-windows-* triples).
+EXT=""
+case "$TRIPLE" in *-windows-*) EXT=".exe" ;; esac
+OUT="$OUT_DIR/zcode-echo-$TRIPLE$EXT"
 
 mkdir -p "$OUT_DIR"
 

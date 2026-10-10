@@ -111,6 +111,12 @@ jobs:
       - name: "[db] build + stage native addon for this host (satisfies build.rs glob)"
         run: node packages/desktop/scripts/dev-tauri-prepare.mjs
 
+      # src-tauri's build.rs (tauri_build) hard-requires the externalBin sidecar file to exist even
+      # for `cargo test`, and binaries/ is gitignored. Build it here so `test:tauri:rust` compiles.
+      # build.sh emits zcode-echo-<triple> (+ .exe on Windows), satisfying the per-OS check.
+      - name: "[sidecar] build zcode-echo (build.rs externalBin existence check)"
+        run: bash packages/desktop/tauri-port/sidecar/build.sh
+
       - name: "[test] run every check + test, aggregate ALL failures into one report"
         run: |
           set +e
@@ -141,10 +147,12 @@ jobs:
           run hard "tauri rust (src-tauri)"    "pnpm test:tauri:rust"
           run hard "db cargo test --lib"       "cd packages/desktop/zcode-db && cargo test --lib ${VERBOSE_FLAG}"
           run hard "db addon --check"          "node packages/desktop/scripts/prepare-zcode-db-native.mjs --check"
-          # Services / UI unit tests are not wired to a repo script (CI module resolution can
-          # differ from a dev box), so they are ADVISORY here: reported in the table, not gating.
+          # Services unit tests are not wired to a repo script; run via tsx. They pass (module
+          # resolution + addon available via the dev-tauri-prepare staging above). Reported as
+          # advisory so a future env quirk never blocks the platform signal. The packages/ui tests
+          # are intentionally NOT run: they need the `@/` tsconfig path alias + a DOM env and cannot
+          # execute under bare `tsx --test` (ERR_MODULE_NOT_FOUND '@/lib').
           run soft "services tests (tsx)"      "pnpm exec tsx --test packages/services/test/*.test.ts"
-          run soft "ui tests (tsx)"            "pnpm exec tsx --test packages/ui/test/*.test.ts"
 
           # ---- ADVISORY checks (reported, do not fail the job) ----
           run soft "lint (oxlint)"             "pnpm lint"
