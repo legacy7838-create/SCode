@@ -3375,8 +3375,13 @@ mod tests {
         assert_eq!(result.size_bytes, 12);
         let on_disk = std::fs::read_to_string(&result.local_path).expect("file exists");
         assert_eq!(on_disk, "hello 世界");
-        assert!(result
-            .local_path
+        // `write_temp_text_attachment` joins with the platform separator, so the produced path uses
+        // `\` on Windows and `/` on Unix. Normalize before the suffix check so the assertion verifies
+        // the real layout (`.zcode/tmp/paste-attachments/<date>/<filename>`) on every OS without
+        // weakening it — a plain POSIX-only `ends_with` failed on Windows (27 passed / 1 failed).
+        assert!(std::path::Path::new(&result.local_path)
+            .to_string_lossy()
+            .replace('\\', "/")
             .ends_with(".zcode/tmp/paste-attachments/2024-01-01/note-cafe0000.txt"));
         let _ = std::fs::remove_dir_all(&base);
     }
