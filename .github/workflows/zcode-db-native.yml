@@ -1,0 +1,212 @@
+name: zcode-db-native
+
+# Build/stage the Rust `zcode_db.node` addon for every shipped target, run the crate's own
+# tests + the TS-vs-Rust parity harnesses, and enforce the end-state that the CLI adapters
+# no longer fall back to `node:sqlite`. This workflow is the ENFORCEMENT of the Rust-native
+# DB cutover (#21/#27/#28); it MUST keep the linux staging path the desktop dev flow relies on.
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "packages/desktop/zcode-db/**"
+      - "packages/desktop/scripts/prepare-zcode-db-native.mjs"
+      - "packages/desktop/scripts/prepare-agent-node-bundle.mjs"
+      - "packages/desktop/src-tauri/tauri.conf.json"
+      - "packages/services/src/**"
+      - "apps/zcode-cli/packages/adapters/src/**"
+      - "apps/zcode-cli/packages/cli/scripts/build.mjs"
+      - "packages/desktop/tsup.config.ts"
+      - ".github/workflows/zcode-db-native.yml"
+  pull_request:
+    paths:
+      - "packages/desktop/zcode-db/**"
+      - "packages/desktop/scripts/prepare-zcode-db-native.mjs"
+      - "packages/desktop/scripts/prepare-agent-node-bundle.mjs"
+      - "packages/desktop/src-tauri/tauri.conf.json"
+      - "packages/services/src/**"
+      - "apps/zcode-cli/packages/adapters/src/**"
+      - "apps/zcode-cli/packages/cli/scripts/build.mjs"
+      - "packages/desktop/tsup.config.ts"
+      - ".github/workflows/zcode-db-native.yml"
+  workflow_dispatch:
+
+env:
+  # 交叉构建钩子：prepare 脚本按 ZCODE_TARGET_OS/ARCH 选 Rust target triple；每个 job 用自己的原生 runner，
+  # 所以这里显式设成该 runner 的原生目标（等价于不设，但让「本机=该 target」这一约束显式可读）。
+  RUST_LOG: warn
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Cross-OS native addon build + smoke `--check`, one artifact per target.
+  #    Each OS is built on its own native runner: a N-API addon cannot be safely
+  #    cross-compiled+verified from Linux alone (macOS needs osxcross+Apple SDK,
+  #    Windows needs MSVC), so a wrong-arch .node staged here would crash the
+  #    installed app instead of the dev box. `--check` actually require()s the
+  #    addon and asserts bootstrapTasksIndex, catching wrong-arch/stale-ABI.
+  # ---------------------------------------------------------------------------
+  addon-prep:
+    name: addon ${{ matrix.label }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: linux-x64
+            os: ubuntu-latest
+            ZCODE_TARGET_OS: linux
+            ZCODE_TARGET_ARCH: x64
+            artifact: zcode_db-linux-x64.node
+          # Linux-on-Arm can be built natively on an arm64 runner; --check valid there.
+          # (Kept off the default matrix to avoid double Linux coverage; extend if shipped.)
+          - label: darwin-arm64
+            os: macos-14
+            ZCODE_TARGET_OS: darwin
+            ZCODE_TARGET_ARCH: arm64
+            artifact: zcode_db-darwin-arm64.node
+          - label: darwin-x64
+            os: macos-13
+            ZCODE_TARGET_OS: darwin
+            ZCODE_TARGET_ARCH: x64
+            artifact: zcode_db-darwin-x64.node
+          - label: win32-x64
+            os: windows-latest
+            ZCODE_TARGET_OS: win32
+            ZCODE_TARGET_ARCH: x64
+            artifact: zcode_db-win32-x64.node
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Show Rust toolchain
+        run: rustc -vV
+      - name: pnpm install
+        run: pnpm install --frozen-lockfile
+      - name: Build + stage zcode_db.node
+        env:
+          ZCODE_TARGET_OS: ${{ matrix.ZCODE_TARGET_OS }}
+          ZCODE_TARGET_ARCH: ${{ matrix.ZCODE_TARGET_ARCH }}
+        run: node packages/desktop/scripts/prepare-zcode-db-native.mjs
+      - name: Smoke-check addon loads (require + bootstrapTasksIndex)
+        env:
+          ZCODE_TARGET_OS: ${{ matrix.ZCODE_TARGET_OS }}
+          ZCODE_TARGET_ARCH: ${{ matrix.ZCODE_TARGET_ARCH }}
+        run: node packages/desktop/scripts/prepare-zcode-db-native.mjs --check
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: packages/desktop/zcode-db/zcode_db.node
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # 2. Desktop build / package consumes the linux addon: the addon MUST exist and
+  #    stay EXTERNAL (never inlined into the JS host bundle). `needs: addon-prep`
+  #    enforces "native-addon prep runs BEFORE the desktop build/package job".
+  # ---------------------------------------------------------------------------
+  desktop-build:
+    name: desktop build (addon external + staged into glm)
+    needs: addon-prep
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: pnpm install
+        run: pnpm install --frozen-lockfile
+      - name: Download linux-x64 addon
+        uses: actions/download-artifact@v4
+        with:
+          name: zcode_db-linux-x64.node
+          path: dl-addon
+      # upload-artifact stored the file at repo-relative path packages/desktop/zcode-db/...,
+      # so download-artifact recreates that tree under dl-addon; flatten it back to the exact
+      # staged filename the loader and prepare:agent-bundle step expect, then smoke-check it.
+      - name: Restore addon to staged path
+        run: |
+          set -euo pipefail
+          src="$(find dl-addon -type f -name 'zcode_db.node' | head -n1)"
+          test -n "$src"
+          cp "$src" packages/desktop/zcode-db/zcode_db.node
+          node packages/desktop/scripts/prepare-zcode-db-native.mjs --check
+      - name: Build host/scheduler bundle (tsup)
+        run: pnpm --filter @zcode/desktop exec tsup
+      - name: Assert zcode_db.node is NOT inlined/copied into the JS host bundle
+        run: |
+          set -euo pipefail
+          # A N-API addon is loaded by absolute path at runtime; it must never be bundled as
+          # JS bytes nor shipped inside the transpiled host output. esbuild has no `.node`
+          # loader, so an accidental inline would have failed the tsup step above — but assert
+          # independently so a future bundler change cannot silently regress the external rule.
+          if find packages/desktop/out -type f -name '*.node' | grep -q .; then
+            echo "FAIL: a .node native module was emitted inside the JS bundle output" >&2
+            exit 1
+          fi
+          if grep -rIl "bootstrapTasksIndex" packages/desktop/out/host 2>/dev/null >/dev/null; then
+            echo "note: host references addon op name (expected; the addon itself is external)"
+          fi
+          echo "OK: no native module inlined into packages/desktop/out"
+
+  # ---------------------------------------------------------------------------
+  # 3. The DB cutover regression gate.
+  #    - crate unit tests + clippy (-D warnings)
+  #    - every TS-vs-Rust parity harness under zcode-db/harness (run via workspace tsx)
+  #    - 0 JS DB fallback guard: adapters/src MUST contain no `node:sqlite`
+  #
+  #    NOTE (expected failure until #27 merges): the `node:sqlite` grep below is the
+  #    ENFORCEMENT of the end-state. While the session-store facade cutover (#27) is
+  #    still landing, apps/zcode-cli/packages/adapters/src legitimately still imports
+  #    node:sqlite, so this job is SUPPOSED to fail. It becomes the permanent CI guard
+  #    the moment #27 merges — do NOT soften the grep or add allow-lists to make it green
+  #    before then; a green run before #27 would mean the guard silently broke.
+  # ---------------------------------------------------------------------------
+  db-gate:
+    name: db parity + node:sqlite regression gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: pnpm install
+        run: pnpm install --frozen-lockfile
+      - name: Stage zcode_db.node (linux-x64) for crate tests + harnesses
+        run: node packages/desktop/scripts/prepare-zcode-db-native.mjs
+      - name: Crate unit tests
+        run: cargo test --lib
+        working-directory: packages/desktop/zcode-db
+      - name: Crate clippy (deny warnings)
+        run: cargo clippy --all-targets -- -D warnings
+        working-directory: packages/desktop/zcode-db
+      - name: Run every parity harness via workspace tsx
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          harnesses=(packages/desktop/zcode-db/harness/*.mts)
+          if [ "${#harnesses[@]}" -eq 0 ]; then
+            echo "FAIL: no parity harnesses found" >&2
+            exit 1
+          fi
+          for f in "${harnesses[@]}"; do
+            echo "=== parity harness: $f ==="
+            node_modules/.bin/tsx "$f"
+          done
+      - name: 0 JS DB fallback guard (no node:sqlite in CLI adapters)
+        run: |
+          set -uo pipefail
+          if grep -rn "node:sqlite" apps/zcode-cli/packages/adapters/src; then
+            echo "FAIL: node:sqlite still present in adapters/src (the '0 JS DB fallback' end-state is not met)" >&2
+            echo "This is EXPECTED until the facade cutover (#27) merges; see the job comment." >&2
+            exit 1
+          fi
+          echo "OK: adapters/src contains no node:sqlite"

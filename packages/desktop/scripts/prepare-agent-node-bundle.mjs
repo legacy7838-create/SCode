@@ -192,8 +192,24 @@ function stageBundle() {
   stageAgentBundle({ repoRoot, platformKey });
 }
 
-function stageOfficialPlugins() {
-  for (const plugin of officialPluginPackages) {
+// node:sqlite 彻底移除后，打包态 app-server 子进程只能靠随包携带的 Rust addon 打开 session DB。
+// prepare:zcode-db-native 已在 tauri:build 前把产物暂存到 packages/desktop/zcode-db/zcode_db.node；
+// 这里把它复制进 glm 资源目录（与 zcode.cjs 同级），让 electron-builder/Tauri 的 glm→resources/glm
+// 拷贝逻辑把 .node 一并打进安装包。缺失即硬失败——打包出没有 addon 的包会在首启直接崩，
+// 必须比运行时暴露更早在构建期报错。
+function stageZcodeDbNative() {
+  const addonSource = resolve(desktopRoot, "zcode-db", "zcode_db.node");
+  if (!existsSync(addonSource)) {
+    throw new Error(
+      `[prepare:agent-bundle] zcode-db addon missing: ${addonSource}. 先运行 pnpm prepare:zcode-db-native`,
+    );
+  }
+  mkdirSync(glmDir, { recursive: true });
+  cpSync(addonSource, resolve(glmDir, "zcode_db.node"));
+  console.log(`[prepare:agent-bundle] staged zcode_db.node into ${glmDir}`);
+}
+
+function stageOfficialPlugins() {  for (const plugin of officialPluginPackages) {
     const sourceRoot = resolve(repoRoot, plugin.relativePath);
     const manifestPath = resolve(sourceRoot, ".zcode-plugin", "plugin.json");
     if (!existsSync(manifestPath)) {
@@ -249,5 +265,6 @@ async function stageBundledSkillPack() {
 buildCliBundle();
 buildOfficialPluginRuntimes();
 stageBundle();
+stageZcodeDbNative();
 stageOfficialPlugins();
 await stageBundledSkillPack();

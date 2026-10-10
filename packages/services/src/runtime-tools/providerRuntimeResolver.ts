@@ -95,3 +95,36 @@ export function findZCodeAgentRuntimeNodeBundle(): string | null {
   ];
   return resolveExistingPath(candidates);
 }
+
+/**
+ * 定位 Rust `zcode_db.node` N-API addon，供 host 在 spawn app-server 子进程时注入 `ZCODE_DB_NATIVE`。
+ *
+ * 候选目录与 `findZCodeAgentRuntimeNodeBundle` 平行（addon 与 zcode.cjs 同打进 glm 资源目录），
+ * 额外补齐 dev 场景：`prepare:zcode-db-native` 把产物暂存在 `packages/desktop/zcode-db/`，
+ * 源码运行的子进程也需能找到同一份。找不到时返回 null —— 交给子进程内 loader 的
+ * `zcode_db.node` beside-package fallback，host 不强行注入一个不存在的路径。
+ */
+export function findZcodeDbNativeAddon(): string | null {
+  const runtime = ZCODE_AGENT_RUNTIME;
+  const addonFile = "zcode_db.node";
+  const resourceSegments = [runtime.bundledResourceDir, addonFile];
+
+  const moduleDir: string | undefined = import.meta.dirname;
+  const platformScopedRoots = resolvePlatformScopedBundledAgentRoots(moduleDir);
+  const legacyRoots = resolveLegacyBundledResourceRoots(moduleDir);
+
+  const candidates = [
+    // 显式覆盖优先（CI / 自定义打包布局）。
+    process.env.ZCODE_DB_NATIVE,
+    packagedResourcesPath ? resolvePath(packagedResourcesPath, ...resourceSegments) : null,
+    resolvePath(homedir(), ".zcode", "server", "agents", ...resourceSegments),
+    ...platformScopedRoots.map((root) =>
+      root ? resolvePath(root, runtime.bundledResourceDir, addonFile) : null,
+    ),
+    ...legacyRoots.map((root) => (root ? resolvePath(root, ...resourceSegments) : null)),
+    // dev：workspace 里 prepare 脚本暂存的产物（moduleDir 位于 packages/services/…，回退到桌面包）。
+    moduleDir ? resolvePath(moduleDir, "..", "..", "desktop", "zcode-db", addonFile) : null,
+  ];
+  const found = resolveExistingPath(candidates);
+  return found ? resolvePath(found) : null;
+}

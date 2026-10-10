@@ -11,7 +11,10 @@ const executableFileMode = 0o755;
 const packageJsonFile = "package.json";
 const rootPackageVersionError = "Root package.json must define a non-empty string version.";
 const desktopAgentBuildFlag = "--desktop-agent";
-export const resolveBuildExternal = () => ["@zcode/tui", "koffi"];
+// "*.node"：Rust DB addon（zcode_db.node）等原生 N-API 模块必须保持外部，运行时从随包资源目录
+// 按绝对路径动态 require 加载。内联会让 esbuild 遍历 .node 产物并报 "No loader is configured"，
+// 且会把平台专属的二进制错误地固化进跨平台 JS bundle（与 koffi 同款约束）。
+export const resolveBuildExternal = () => ["@zcode/tui", "koffi", "*.node"];
 
 export const readZodBuildVersion = async () => {
   const sharedPackage = JSON.parse(

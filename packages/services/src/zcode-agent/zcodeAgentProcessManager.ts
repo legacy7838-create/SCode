@@ -25,6 +25,7 @@ import {
 import {
   findZCodeAgentRuntimeBinary,
   findZCodeAgentRuntimeNodeBundle,
+  findZcodeDbNativeAddon,
 } from "../runtime-tools/providerRuntimeResolver.js";
 import { isEffectiveDevelopmentNodeEnv } from "#src/runtime-tools/nodeEnv.js";
 import { createServiceLogger } from "#src/logger/serviceLogger.js";
@@ -293,6 +294,21 @@ function createAgentStderrTail(): {
   };
 }
 
+/**
+ * app-server 子进程通过 `ZCODE_DB_NATIVE`（绝对路径）定位 Rust `zcode_db.node` addon，
+ * 彻底移除 node:sqlite 后这是子进程唯一的原生 DB 入口。打包态 addon 与 zcode.cjs 同打进
+ * glm 资源目录（bundlePath 同级）；dev 态由 findZcodeDbNativeAddon 回退到 prepare 暂存产物。
+ * 解析不到时不注入坏路径，交给子进程内 loader 的 beside-package fallback。
+ */
+function withZcodeDbNativeEnv(
+  baseEnv: Record<string, string>,
+  bundlePath?: string,
+): Record<string, string> {
+  const sibling = bundlePath ? join(dirname(bundlePath), "zcode_db.node") : null;
+  const addonPath = sibling && existsSync(sibling) ? sibling : findZcodeDbNativeAddon();
+  return addonPath ? { ...baseEnv, ZCODE_DB_NATIVE: addonPath } : baseEnv;
+}
+
 function parseArgsJson(raw: string | undefined): string[] | undefined {
   const trimmed = raw?.trim();
   if (!trimmed) {
@@ -372,7 +388,7 @@ function resolveBundledWorkspaceZCodeAgentCommand(
       cwd: context.workspacePath,
       // 桌面端 host 运行在 Electron utility process 中，process.execPath 指向 Electron Helper。
       // 这里显式启用 Node 运行模式，避免内置 zcode-agent 被当成 Electron/Chromium 子进程启动并卡在 GPU 初始化。
-      env: { ELECTRON_RUN_AS_NODE: "1" },
+      env: withZcodeDbNativeEnv({ ELECTRON_RUN_AS_NODE: "1" }),
     };
   }
 
@@ -385,6 +401,7 @@ function resolveBundledWorkspaceZCodeAgentCommand(
     command: tsxEntrypoint,
     args: [sourceEntrypoint, "app-server", "--stdio"],
     cwd: context.workspacePath,
+    env: withZcodeDbNativeEnv({}),
   };
 }
 
@@ -431,7 +448,7 @@ function resolveElectronRuntimeZCodeAgentCommand(
     storagePreparationEntry: bundlePath,
     cwd: context.workspacePath,
     // 关键：必须以纯 Node 模式启动，否则子进程会被当成 Electron/Chromium 子进程卡在 GPU 初始化。
-    env: { ELECTRON_RUN_AS_NODE: "1" },
+    env: withZcodeDbNativeEnv({ ELECTRON_RUN_AS_NODE: "1" }, bundlePath),
   };
 }
 

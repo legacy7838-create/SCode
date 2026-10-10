@@ -120,6 +120,9 @@ const desktopNodeRuntimeExternals = [
   "node-forge",
   // ZIP 解包器内部依赖 CommonJS require("fs")，不能内联到 ESM main/host 产物。
   "yauzl",
+  // Rust DB addon（zcode_db.node）等原生 N-API 模块保持外部：运行时按绝对路径动态 require，
+  // 绝不能内联进 ESM host/scheduler 产物（esbuild 无 .node loader，且会固化平台专属二进制）。
+  "*.node",
 ];
 
 function createDevReadyMarkerHook(target: "main" | "host" | "preload"): string {
