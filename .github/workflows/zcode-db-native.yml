@@ -1,9 +1,11 @@
 name: zcode-db-native
 
-# Build/stage the Rust `zcode_db.node` addon for every shipped target, run the crate's own
-# tests + the TS-vs-Rust parity harnesses, and enforce the end-state that the CLI adapters
-# no longer fall back to `node:sqlite`. This workflow is the ENFORCEMENT of the Rust-native
-# DB cutover (#21/#27/#28); it MUST keep the linux staging path the desktop dev flow relies on.
+# Build/stage the Rust `zcode_db.node` addon for every shipped target, run the crate's own tests
+# + the remaining read-parity harness, and enforce the end-state that nothing falls back to
+# `node:sqlite`. This workflow is the ENFORCEMENT of the Rust-native DB cutover (#21/#27/#28); it
+# MUST keep the linux staging path the desktop dev flow relies on. The `node:sqlite`-based
+# TS-vs-Rust parity oracle harnesses were retired once the cutover merged; Rust correctness is now
+# guarded by the crate's own cargo tests, the read-parity harness, and the adapters guard below.
 #
 # TRIGGER: manual only (Actions → "Run workflow"). Nothing auto-fires; you start it by hand.
 
@@ -131,13 +133,14 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # 3. The DB cutover regression gate.
-  #    - crate unit tests + clippy (-D warnings)
-  #    - every TS-vs-Rust parity harness under zcode-db/harness (run via workspace tsx)
+  #    - crate unit tests + clippy (-D warnings)  [the authoritative Rust-behavior signal]
+  #    - the remaining read-parity harness under zcode-db/harness (run via workspace tsx)
   #    - 0 JS DB fallback guard: adapters/src MUST contain no `node:sqlite`
   #
   #    The session-store facade cutover (#27) has MERGED, so `node:sqlite` is gone from the
-  #    adapters. This grep is now the PERMANENT regression guard: it must stay green; any
-  #    future reintroduction of node:sqlite into adapters/src fails the build. Do not soften it.
+  #    adapters and the `node:sqlite` TS-vs-Rust oracle harnesses have been retired. This grep is
+  #    now the PERMANENT regression guard: it must stay green; any future reintroduction of
+  #    node:sqlite into adapters/src fails the build. Do not soften it.
   # ---------------------------------------------------------------------------
   db-gate:
     name: db parity + node:sqlite regression gate
@@ -158,7 +161,7 @@ jobs:
       - name: Crate clippy (deny warnings)
         run: cargo clippy --all-targets -- -D warnings
         working-directory: packages/desktop/zcode-db
-      - name: Run every parity harness via workspace tsx
+      - name: Run the read-parity harness via workspace tsx
         run: |
           set -euo pipefail
           shopt -s nullglob

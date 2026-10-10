@@ -113,7 +113,7 @@ jobs:
           set -uo pipefail
           shopt -s nullglob
           harnesses=(packages/desktop/zcode-db/harness/*.mts)
-          echo "found ${#harnesses[@]} active harnesses (pre-cutover oracle harnesses archived under harness/pre-cutover-oracle/)"
+          echo "found ${#harnesses[@]} active harnesses (node:sqlite TS-vs-Rust oracle harnesses retired with the Rust-only cutover)"
           for f in "${harnesses[@]}"; do
             echo "=== $f ==="
             pnpm exec tsx "$f" || echo "NOTE: $f needs a local ~/.zcode fixture (not present in CI) — non-fatal"

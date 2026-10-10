@@ -889,4 +889,61 @@ mod tests {
             .unwrap();
         assert_eq!(sel, "null", "empty model → default JSON null (not NULL)");
     }
+
+    // Mirrors the retired JS `nonCliAcpRetirement.test.ts` (removed with `node:sqlite`): reopening
+    // the tasks index must NOT drop a column the Rust bootstrap does not own, nor clobber the row
+    // that holds it. The bootstrap is non-destructive by construction (CREATE IF NOT EXISTS + ADD
+    // COLUMN guarded by `column_exists`); this locks that end-state in so the guarantee survives
+    // without a JS `node:sqlite` reference.
+    #[test]
+    fn bootstrap_preserves_foreign_column_and_row_on_reopen() {
+        let path = std::env::temp_dir().join("zcode-db-acp-retire-test-1.sqlite");
+        let _ = std::fs::remove_file(&path);
+        let path_str = path.to_str().unwrap();
+
+        bootstrap_tasks_index(path_str, 25).unwrap();
+
+        // Seed a task row the Rust code owns, then add a foreign column the bootstrap knows nothing
+        // about (mirrors the JS test injecting `acp_session_id`) and write a value into it.
+        let conn = Connection::open(path_str).unwrap();
+        conn.execute(
+            "INSERT INTO tasks (workspace_key, workspace_path, task_id, created_at, updated_at) \
+             VALUES ('wk', '/w', 'wrapper-example', 1, 2)",
+            [],
+        )
+        .unwrap();
+        conn.execute("ALTER TABLE tasks ADD COLUMN acp_session_id TEXT", [])
+            .unwrap();
+        conn.execute(
+            "UPDATE tasks SET acp_session_id = ?1 WHERE task_id = ?2",
+            rusqlite::params!["session-example", "wrapper-example"],
+        )
+        .unwrap();
+        drop(conn);
+
+        // Re-run the bootstrap (the reopen path `TaskIndexRepo.ensureReady()` takes).
+        assert_eq!(
+            bootstrap_tasks_index(path_str, 25).unwrap(),
+            "none",
+            "fully-applied DB re-bootstraps as a no-op"
+        );
+
+        let conn = Connection::open(path_str).unwrap();
+        assert!(
+            column_exists(&conn, "tasks", "acp_session_id").unwrap(),
+            "reopening must not drop a column the Rust bootstrap does not own"
+        );
+        let (task_id, acp): (String, String) = conn
+            .query_row(
+                "SELECT task_id, acp_session_id FROM tasks",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(task_id, "wrapper-example");
+        assert_eq!(acp, "session-example", "foreign column value survives the reopen");
+        drop(conn);
+
+        let _ = std::fs::remove_file(&path);
+    }
 }

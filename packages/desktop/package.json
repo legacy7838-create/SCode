@@ -5,7 +5,7 @@
   "author": "ZCode",
   "type": "module",
   "scripts": {
-    "dev:tauri": "concurrently -k -n tsup,vite,tauri,host \"tsup --watch\" \"vite dev\" \"tauri dev\" \"node scripts/dev-host.mjs\"",
+    "dev:tauri": "node scripts/dev-tauri-prepare.mjs && concurrently -k -n tsup,vite,tauri,host \"tsup --watch\" \"vite dev\" \"tauri dev\" \"node scripts/dev-host.mjs\"",
     "tauri:build": "pnpm prepare:zcode-db-native && pnpm build && tauri build",
     "build": "tsup && vite build",
     "prepare:build-meta": "node scripts/build-metadata.mjs",

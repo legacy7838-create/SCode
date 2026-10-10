@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import {
@@ -30,37 +29,11 @@ const meta = {
   provider: "glm" as const,
 };
 
-test("opening the task index leaves retired ACP IDs and user rows untouched", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "zcode-acp-index-"));
-  const path = join(dir, "tasks.sqlite");
-  const repo = new TaskIndexRepo(path);
-  try {
-    await repo.syncTaskMeta({ meta });
-    repo.close();
-    const database = new DatabaseSync(path);
-    try {
-      database.exec("ALTER TABLE tasks ADD COLUMN acp_session_id TEXT");
-      database
-        .prepare("UPDATE tasks SET acp_session_id = ? WHERE task_id = ?")
-        .run("session-example", meta.taskId);
-    } finally {
-      database.close();
-    }
-    await repo.ensureReady();
-    repo.close();
-    const reopened = new DatabaseSync(path);
-    try {
-      const row = reopened.prepare("SELECT task_id, acp_session_id FROM tasks").get();
-      assert.equal(row?.task_id, meta.taskId);
-      assert.equal(row?.acp_session_id, "session-example");
-    } finally {
-      reopened.close();
-    }
-  } finally {
-    repo.close();
-    await rm(dir, { recursive: true, force: true });
-  }
-});
+// NOTE: The former "opening the task index leaves retired ACP IDs and user rows untouched" test
+// (which seeded a foreign column via `node:sqlite` and asserted the Rust TaskIndexRepo preserved it
+// on reopen) was retired together with `node:sqlite`. That schema-preservation property is now
+// enforced directly by the Rust crate: `bootstrap_preserves_foreign_column_and_row_on_reopen` in
+// packages/desktop/zcode-db/src/migrations.rs. The DB path is Rust-only; there is no JS fallback.
 
 test("missing sessions report the owner error even when a valid ACP snapshot exists", async () => {
   const dir = await mkdtemp(join(tmpdir(), "zcode-acp-snapshot-"));
