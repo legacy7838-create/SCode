@@ -30,6 +30,9 @@ pub mod session_write_entry;
 pub mod session_write_history;
 pub mod session_write_inputs;
 pub mod session_write_local_settings;
+pub mod session_write_messages;
+pub mod session_write_session_update;
+pub mod session_write_target;
 pub mod session_write_todos;
 pub mod session_write_workflow_def;
 
