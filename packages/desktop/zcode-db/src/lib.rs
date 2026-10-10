@@ -26,9 +26,12 @@ pub mod offpeak_write;
 // this marker, keep it in your own new module file `src/session_write_<group>.rs`, and put your
 // `#[napi]` wrappers in that same module (do NOT edit any other part of lib.rs). This keeps the only
 // shared-file touch to one line, so the integrator can merge independent branches without conflict.
+pub mod session_write_entry;
+pub mod session_write_history;
 pub mod session_write_inputs;
 pub mod session_write_local_settings;
 pub mod session_write_todos;
+pub mod session_write_workflow_def;
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
