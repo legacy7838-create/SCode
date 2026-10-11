@@ -132,10 +132,7 @@ function readElfNeeded(elfPath) {
  * @returns {Set<string>} 闭包内出现的所有 SONAME。
  */
 function collectNeededClosure(appDir) {
-  const libRoots = [
-    join(appDir, "usr", "lib"),
-    join(appDir, "usr", "lib", "x86_64-linux-gnu"),
-  ];
+  const libRoots = [join(appDir, "usr", "lib"), join(appDir, "usr", "lib", "x86_64-linux-gnu")];
   const closure = new Set();
   const queue = readElfNeeded(join(appDir, "usr", "bin", "zcode-desktop-tauri"));
 
@@ -180,10 +177,7 @@ function selectSafeToStrip(closure) {
  */
 function stripLibsFromAppDir(appDir, libs) {
   const removed = [];
-  const candidates = [
-    join(appDir, "usr", "lib"),
-    join(appDir, "usr", "lib", "x86_64-linux-gnu"),
-  ];
+  const candidates = [join(appDir, "usr", "lib"), join(appDir, "usr", "lib", "x86_64-linux-gnu")];
   for (const dir of candidates) {
     if (!existsSync(dir)) continue;
     for (const lib of libs) {
@@ -290,7 +284,10 @@ function inspectAppImage(appImage) {
     });
     const appDir = join(workDir, "squashfs-root");
     const strippedFound = [];
-    for (const dir of [join(appDir, "usr", "lib"), join(appDir, "usr", "lib", "x86_64-linux-gnu")]) {
+    for (const dir of [
+      join(appDir, "usr", "lib"),
+      join(appDir, "usr", "lib", "x86_64-linux-gnu"),
+    ]) {
       if (!existsSync(dir)) continue;
       for (const lib of SHADOWING_LIBS) {
         if (existsSync(join(dir, lib))) strippedFound.push(join(dir, lib));
