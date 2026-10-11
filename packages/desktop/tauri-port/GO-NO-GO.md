@@ -1,8 +1,10 @@
 # GO / NO-GO — Electron→Tauri port decision memo
 
 Synthesis of the Phase-0/1 artifacts and all five hard-blocker spikes into a single
-recommendation + the explicit product decisions required. **Electron is the shipped product today;
-this is a parallel-shell feasibility call, not a cutover yet.**
+recommendation + the explicit product decisions required. **Written as a pre-cutover feasibility call;
+the cutover has since been executed — Tauri is the sole desktop runtime and the Electron surface is
+removed.** D1–D4 below therefore no longer gate _whether_ to cut over; they gate the residual
+`IPlatformService` surface that the cutover deliberately left unported.
 
 ## What is PROVEN feasible (verified, not assumed)
 
@@ -14,14 +16,16 @@ this is a parallel-shell feasibility call, not a cutover yet.**
   `a2` binary framing byte-equal; `a3` stdio round-trip; `a4` spawns the echo sidecar + WS round-trip +
   clean kill. `spawn_sidecar_echo_discover_port` (slice 31) returns the OS-ephemeral port by reading the
   sidecar's `ZCODE_WS_READY` stdout. Seam = `IMessagePassingProtocol` (`packages/rpc/src/protocol.ts`).
-- **Command seam**: **79 real `#[tauri::command]`s** landed across slices 1–31 (window ops, dirs, dialogs
+- **Command seam**: **85 real `#[tauri::command]`s** landed in `src-tauri/src/commands.rs` across
+  slices 1–41 (window ops, dirs, dialogs
   - file/dir pickers, clipboard, notifications, shell/open, monitors, cursor, theme, zoom set+get,
     sidecar spawn/discover/kill, app lifecycle), each cargo build/test/clippy/fmt + renderer-tsc green.
     `a5-contract.test.ts` statically enforces command⇄wrapper ⇄ `generate_handler` 1:1 parity + camelCase
-    args; `a6-bridge-import.test.ts` proves the bridge imports with zero side effects (Electron intact).
-- **Adapter**: `tauriPlatform.ts` `createTauriPlatformSubset()` backs **9** `IPlatformService` methods via
+    args; `a6-bridge-import.test.ts` proves the bridge imports with zero side effects and that Tauri
+    is the sole desktop entry (no Electron entry graph remains to leak into).
+- **Adapter**: `tauriPlatform.ts` `createTauriPlatformSubset()` backs **16** `IPlatformService` methods via
   `Pick<>` (type-checked against the real interface, no stubs), Layer-B-conformance-tested (`b1`, 14/14).
-  Additive — NOT yet wired into the Electron factory.
+  Wired unconditionally — `renderer/src/main.tsx` installs `createTauriPlatform()` as the platform.
 - **Sidecar packaging**: runbook exists; `externalBin` naming resolved (`<name>-<rust-target-triple>`).
 - **Gate**: canonical `pnpm typecheck` green AND `tsconfig.renderer.json` clean for bridge/adapter (the
   two are disjoint projects — see `TEST-HARNESS.md §4.5`). Full `pnpm test:tauri` (layer-a/b/rust) green.
@@ -49,25 +53,26 @@ this is a parallel-shell feasibility call, not a cutover yet.**
 
 ## Recommended posture
 
-**Continue the parallel port for the CORE app, and treat the embedded browser as a scoped product
-decision — do not let it block the rest.** Concretely:
+**Recommended posture (post-cutover): Tauri ships as the core app; the embedded browser is a scoped
+product decision that no longer blocks the runtime.** Concretely:
 
-1. Ship a Tauri core that covers everything except the in-app browser (which is already partly
+1. The Tauri core covers everything except the in-app browser (which is already partly
    de-scoped: CUA + browser plugins were removed; only the manual IAB + Chrome-data import remain).
-2. Adopt the reduced browser plan (separate `WebviewWindow` + headless-Chrome import helper) OR keep
-   the IAB Electron-only behind a feature flag.
-3. Do NOT commit to cutover until the Phase-1 harness (`TEST-HARNESS.md` → Layer A/B) is GREEN on both
-   runtimes across the OS matrix.
+2. Adopt the reduced browser plan (separate `WebviewWindow` + headless-Chrome import helper). Until then
+   the IAB methods stay unported rather than shipped behind a feature flag.
+3. The Phase-1 harness Layer A/B is GREEN and was the cutover gate; it is now the regression gate for
+   the residual surface. CI additionally bundles the app per OS (Linux/Windows today).
 
 ## Decisions needed from the product owner (blocking full parity)
 
 1. **Embedded browser**: is in-DOM `<webview>` browser + CDP automation a hard requirement? If yes →
-   Tauri cannot match it without a Chromium sidecar (size/complexity cost) → likely stay Electron. If
-   "separate window, no automation" is acceptable → proceed.
-2. **Updater**: invest in the minisign + static-manifest release pipeline, or keep auto-update
-   Electron-only / fall back to "download update" deep link?
+   Tauri cannot match it without a Chromium sidecar (size/complexity cost). If
+   "separate window, no automation" is acceptable → proceed. _Electron-era answer: the cutover shipped
+   without it, so this now scopes future work rather than the runtime._
+2. **Updater**: invest in the minisign + static-manifest release pipeline, or fall back to a
+   "download update" deep link? _(There is no Electron auto-update path left to keep.)_
 3. **Target OS priority**: Windows is the most Tauri-viable (WebView2 = Chromium + CDP). Linux is the
-   hardest (WebKitGTK: no CDP, no printToPDF, MP4 seek risk). Confirm the OS the port is FOR.
+   hardest (WebKitGTK: no CDP, no printToPDF, MP4 seek risk). CI currently bundles Linux + Windows only.
 4. **Bundle-size / security motivation**: if the driver is size/attack-surface, the sidecar approach
    (bundling Node for Host/Agent) erodes much of the size win — confirm the goal still holds.
 
@@ -77,8 +82,8 @@ Each remaining interface family is blocked on a specific decision, NOT on more s
 
 - **D1 browser** → `browserView*` (~12 methods), `onOpenBrowserUrl`, `onBrowserView*` events,
   `clearEmbeddedBrowserData`, `importChromeBrowserData`. If "separate window, no CDP automation" is
-  acceptable, these become a scoped `WebviewWindow` port; if full CDP automation is required, stay
-  Electron for that surface.
+  acceptable, these become a scoped `WebviewWindow` port; if full CDP automation is required, this
+  surface stays **unported** (Electron-era answer: keep it Electron-only).
 - **D2 updater** → `getUpdateState`, `checkForUpdates`(`CheckForUpdates` id), `downloadUpdate`,
   `cancelUpdateDownload`, `quitAndInstallUpdate`, `setAutoDownloadAndInstallUpdates`,
   `skipUpdateVersion`, `onUpdate*` events (~10 methods).
@@ -110,7 +115,7 @@ grounded in already-landed seams:
    imported by Electron's shipped entry (`a6` isolation guard enforces this). It calls `isTauriRuntime()`
    then installs the platform.
 2. **Platform selector** assembling `createTauriPlatformSubset()` behind `isTauriRuntime()`; it returns
-   the 13-method subset now and grows as methods land (the `Pick` prevents half-wiring).
+   the 16-method subset now and grows as methods land (the `Pick` prevents half-wiring).
 3. **Host connection at boot**: compose the landed `spawnTauriSidecarDiscoverPort` (slice 31) +
    `connectTauriHost` (slice 32) to reach `IServiceAccessor` BEFORE the UI mounts — the same
    await-init-before-use ordering the sync-getter prefetch (blocker #7, `SYNC-GETTER-SPIKE.md`) relies on.
@@ -136,7 +141,7 @@ grounded in already-landed seams:
 
 ## Honest status
 
-Foundation + 82 verified commands + a 13-method adapter subset (`createTauriPlatformSubset`, b1-locked) +
+Foundation + 85 verified commands + a 16-method adapter subset (`createTauriPlatformSubset`, b1-locked) +
 transport proof + full blocker analysis (now 7 blockers incl. `saveFile` SSRF #6 and sync-getters #7, plus
 documented desktop capability gaps: notification-click, native-fullscreen-event) are DONE and verified —
 all gates green (`cargo test` 27, clippy/fmt clean, layer-a/b green, renderer tsc clean on changed files).
@@ -145,4 +150,4 @@ all gates green (`cargo test` 27, clippy/fmt clean, layer-a/b green, renderer ts
 ordering (blocker #7, recipe in `SYNC-GETTER-SPIKE.md`), or a confirmed capability gap (see table), and
 forcing one now would ship a stub or a partial substitute, which AGENTS.md + the port playbook forbid.
 This is a multi-week effort gated on those decisions, **not** closeable by continuing to add slices
-blindly. Electron remains the shipped product, fully intact.
+blindly. **Tauri is the shipped product**; the Electron surface is removed, not merely bypassed.

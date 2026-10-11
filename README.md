@@ -47,17 +47,14 @@ Agent CLI 与运行时源码位于 [apps/zcode-cli/](apps/zcode-cli/)，作为�
 
 ```bash
 pnpm dev:desktop
-
-# 使用测试环境
-pnpm dev:desktop:test
 ```
 
-`pnpm dev:desktop` 默认等同于 `pnpm dev:desktop:prod`，使用生产服务配置。启动脚本会准备本地运行资源、构建桌面 Agent，再启动 Electron 和源码监听。
+`pnpm dev:desktop` 启动 Tauri 开发环境：先准备本地运行资源（`scripts/dev-tauri-prepare.mjs`），再并行拉起 host/scheduler 构建（`tsup --watch`）、renderer 开发服务器（Vite :5174）、Tauri 应用窗口（`tauri dev`）与本地 Host 进程。
 
 需要独立开发数据目录时，可设置 `ZCODE_DATA_BASE_DIR`。例如在 macOS / Linux 中：
 
 ```bash
-ZCODE_DATA_BASE_DIR="$HOME/.zcode-dev-home" pnpm dev:desktop:test
+ZCODE_DATA_BASE_DIR="$HOME/.zcode-dev-home" pnpm dev:desktop
 ```
 
 ### 远程功能（SSH/WSL）
@@ -138,16 +135,13 @@ node apps/zcode-cli/packages/cli/dist/zcode.cjs --help
 
 ### 桌面版
 
+桌面安装包由 Tauri CLI 打包：
+
 ```bash
-pnpm bundle:desktop
-
-# 指定目标平台与 CPU 架构
-pnpm bundle:desktop -- --os win --arch x64
-
-pnpm bundle:desktop -- --help
+pnpm --filter @zcode/desktop tauri:build
 ```
 
-默认目标为 macOS arm64，默认输出目录为 `packages/desktop/dist/`。`--os` 支持 `mac`、`win`、`linux`，`--arch` 支持 `x64`、`arm64`；实际打包与签名需要目标平台对应的工具和配置。
+该命令会先构建并暂存原生数据库插件（`zcode_db.node`），再构建 host/scheduler 与 renderer，最后执行 `tauri build`。实际打包与签名需要目标平台对应的工具和配置（macOS 还需签名与公证）；CI 目前覆盖 Linux（AppImage）与 Windows（MSI）。
 
 安装：双击打开产物 DMG，将 ZCode 拖入"应用程序"。本地构建未签名，首次打开若被 macOS 拦截，执行：
 
@@ -203,18 +197,18 @@ node dist/zcode/debug/zcode/bin/zcode.mjs --web \
 
 ## 仓库结构
 
-| 目录                                                 | 职责                                       |
-| ---------------------------------------------------- | ------------------------------------------ |
-| `packages/desktop`                                   | Electron Main、Host、Renderer 与桌面打包   |
-| `packages/web`                                       | Web 客户端                                 |
-| `packages/server`                                    | HTTP / WebSocket 服务与远程连接            |
-| `packages/zcode-server-cli`                          | 独立 Server 启动与进程管理                 |
-| `packages/ui`                                        | 共享 React 组件、hooks 与 Zustand 状态     |
-| `packages/services`                                  | 业务服务与持久化                           |
-| `packages/shared`、`packages/rpc`、`packages/client` | 共享协议和类型、RPC 框架、Agent 客户端 SDK |
-| `packages/provider`、`packages/provider-node`        | Provider 公共能力与 Node 实现              |
-| `apps/zcode-cli`                                     | Agent CLI、TUI、运行时与工具               |
-| `scripts`、`config`、`third-party`                   | 构建维护脚本、内置配置与第三方声明材料     |
+| 目录                                                 | 职责                                              |
+| ---------------------------------------------------- | ------------------------------------------------- |
+| `packages/desktop`                                   | Tauri 壳（Rust）、Local Host、Renderer 与桌面打包 |
+| `packages/web`                                       | Web 客户端                                        |
+| `packages/server`                                    | HTTP / WebSocket 服务与远程连接                   |
+| `packages/zcode-server-cli`                          | 独立 Server 启动与进程管理                        |
+| `packages/ui`                                        | 共享 React 组件、hooks 与 Zustand 状态            |
+| `packages/services`                                  | 业务服务与持久化                                  |
+| `packages/shared`、`packages/rpc`、`packages/client` | 共享协议和类型、RPC 框架、Agent 客户端 SDK        |
+| `packages/provider`、`packages/provider-node`        | Provider 公共能力与 Node 实现                     |
+| `apps/zcode-cli`                                     | Agent CLI、TUI、运行时与工具                      |
+| `scripts`、`config`、`third-party`                   | 构建维护脚本、内置配置与第三方声明材料            |
 
 ## 项目声明
 

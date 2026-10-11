@@ -6,7 +6,11 @@
  * - Boundary B（driver port）：引擎核心（确定性状态机）向下驱动 {@link WorkflowDriver}，
  *   driver 通过 {@link WorkflowReportSink} 向上回报进度。
  * - Journal：{@link JournalStorePort} 以仓储式方法暴露 run/actor/node/event 记录，
- *   内存实现与未来 SQLite 实现都能自然落位（同步方法契合 node:sqlite 的 DatabaseSync，且让核心保持确定性）。
+ *   内存实现与未来 SQLite 实现都能自然落位（同步方法契合 zcode_db.node 这个 Node-API 同步 DB 端口，且让核心保持确定性）。
+ *
+ * 修正记录：原注释拿 node:sqlite 的 DatabaseSync 当作“同步 DB 端口”的例子，但 node:sqlite 已随
+ * Rust-only DB 切换退役。现改为指向实际在用的 zcode_db.node（Rust 插件，经 Node-API 同步加载），
+ * 端口的同步契约不变，因此这里只改注释、不动类型定义。
  */
 
 import type {

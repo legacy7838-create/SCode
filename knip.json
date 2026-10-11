@@ -12,17 +12,38 @@
     },
     "packages/desktop": {
       "entry": [
-        "scripts/sign-windows-hook.cjs",
         "src/renderer/*.html",
-        "src/renderer/src/resource-manager.tsx"
+        "src/renderer/src/resource-manager.tsx",
+        // a1..a8 / b1..b3 由根 package.json 的 `tsx --test <glob>` 直接调用（`pnpm test:tauri:layer-a|b`，
+        // CI 里是 hard gate）。knip 6 已移除 `scripts` 键，测试文件也不会被自动发现——它们只能靠
+        // 显式 entry 声明可达，否则每次都会整片报 "Unused files"。
+        "tauri-port/test/**/*.test.ts",
+        // 运维脚本（打包、bundle 审计、sourcemap 清理、PTY 资源等）由 package.json scripts 或 CI
+        // 手动调用，不是模块图的边；不声明就会整目录落进 "Unused files"。
+        "scripts/*.mjs",
+        "scripts/*.cjs",
+        "scripts/*.mts"
       ]
+    },
+    "apps/zcode-cli": {
+      "entry": ["scripts/*.mjs", "src/index.ts"]
+    },
+    "packages/services": {
+      "entry": ["src/index.ts", "src/storage/module.ts", "test/*.test.ts"]
+    },
+    "packages/ui": {
+      "entry": ["test/*.test.ts"]
     },
     "packages/server": {
       "entry": ["src/index.ts", "src/entry-stdio.ts", "build-remote.ts"]
-    },
-    "packages/services": {
-      "entry": ["src/index.ts", "src/storage/module.ts"]
     }
   },
-  "ignore": [".agents/**", "docs/**", "packages/ui/src/components/**", ".qoder/**"]
+  // `src-tauri/resources/**` 是打包态 sidecar 资源（prepare-zcode-host-sidecar.mjs 生成并打进 Tauri
+  // bundle 的 host chunk），属于构建产物而非源码；它只在本机跑过 build 后才出现，不进版本库，
+  // 因此必须对 knip 隐藏，否则每次 build 后 "Unused files" 都会凭空多出几十条。
+  "ignore": [
+    ".agents/**",
+    "packages/ui/src/components/**",
+    "packages/desktop/src-tauri/resources/**"
+  ]
 }

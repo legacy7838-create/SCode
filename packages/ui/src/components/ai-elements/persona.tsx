@@ -52,36 +52,51 @@ interface PersonaProps {
 // The state machine name is always 'default' for Elements AI visuals
 const stateMachine = "default";
 
+/**
+ * Base URL for the `.riv` persona/avatar animations.
+ *
+ * RISK — please read before moving this: this is a personal Vercel Blob store
+ * bucket, not an org-owned CDN. There is no fallback host and no local copy, so
+ * if that bucket is deleted, renamed, or the account is suspended, every avatar
+ * in the app fails to load (the `onLoadError` path renders nothing).
+ *
+ * It is extracted into one constant so a future migration is a single-line edit
+ * rather than a six-site find-and-replace. If you replace it, ship the new host
+ * FIRST and verify the files are reachable unauthenticated — do not point this at
+ * a private/authenticated endpoint, since the renderer fetches it directly.
+ */
+const RIVE_ASSET_BASE_URL = "https://ejiidnob33g9ap1r.public.blob.vercel-storage.com";
+
 const sources = {
   command: {
     dynamicColor: true,
     hasModel: true,
-    source: "https://ejiidnob33g9ap1r.public.blob.vercel-storage.com/command-2.0.riv",
+    source: `${RIVE_ASSET_BASE_URL}/command-2.0.riv`,
   },
   glint: {
     dynamicColor: true,
     hasModel: true,
-    source: "https://ejiidnob33g9ap1r.public.blob.vercel-storage.com/glint-2.0.riv",
+    source: `${RIVE_ASSET_BASE_URL}/glint-2.0.riv`,
   },
   halo: {
     dynamicColor: true,
     hasModel: true,
-    source: "https://ejiidnob33g9ap1r.public.blob.vercel-storage.com/halo-2.0.riv",
+    source: `${RIVE_ASSET_BASE_URL}/halo-2.0.riv`,
   },
   mana: {
     dynamicColor: false,
     hasModel: true,
-    source: "https://ejiidnob33g9ap1r.public.blob.vercel-storage.com/mana-2.0.riv",
+    source: `${RIVE_ASSET_BASE_URL}/mana-2.0.riv`,
   },
   obsidian: {
     dynamicColor: true,
     hasModel: true,
-    source: "https://ejiidnob33g9ap1r.public.blob.vercel-storage.com/obsidian-2.0.riv",
+    source: `${RIVE_ASSET_BASE_URL}/obsidian-2.0.riv`,
   },
   opal: {
     dynamicColor: false,
     hasModel: false,
-    source: "https://ejiidnob33g9ap1r.public.blob.vercel-storage.com/orb-1.2.riv",
+    source: `${RIVE_ASSET_BASE_URL}/orb-1.2.riv`,
   },
 };
 

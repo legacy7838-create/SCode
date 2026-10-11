@@ -29,6 +29,23 @@
       "rules": {
         "max-lines": "off"
       }
+    },
+    {
+      // apps/zcode-cli（Agent CLI 运行时，1217 个 TS 文件）此前被 ignorePatterns 整目录排除在
+      // lint 之外，等于本仓库最大的代码面（264K 行）从未被 lint 覆盖。现已改为纳入检查，
+      // 只对其关闭 max-lines，**其余所有规则照常生效**。
+      //
+      // 为什么单独关 max-lines：该目录确实存在 74 个超长文件的历史债务（contracts/core/adapters/
+      // bootstrap 下的 gateway、runner、transcript-hydration 等）。一次性拆分这些文件属于独立的
+      // 重构工作，与本次「修正门禁配置」不是同一件事，硬塞进来会让本次变更无法审阅。
+      //
+      // 这里用 scoped override 而不是恢复整目录 ignore，是刻意的：ignore 会连同 no-unused-vars
+      // 等规则一起关掉（当前该目录有 63 条 no-unused-vars 警告本应被看到）；override 只放宽行数，
+      // 让债务显式可见，同时保留其余 lint 信号。拆分完成后删掉本条 override 即可恢复 400 行约束。
+      "files": ["apps/zcode-cli/**/*.ts", "apps/zcode-cli/**/*.tsx"],
+      "rules": {
+        "max-lines": "off"
+      }
     }
   ],
   "settings": {
@@ -69,9 +86,7 @@
     "packages/ui/src/components/ui",
     "packages/ui/src/components/ai-elements",
     ".agents/skills",
-    ".qoder",
-    "packages/formal-proof",
-    "apps/zcode-cli",
-    "docs/electron"
+    ".qoder/**",
+    "packages/formal-proof"
   ]
 }

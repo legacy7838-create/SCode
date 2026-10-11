@@ -1,8 +1,13 @@
 /**
  * 内存版 {@link JournalStorePort}：阶段一用于 fake-driver 测试与 replay/resume。
  * 纯内存、同步；深拷贝进出以杜绝调用方持有的引用被后续写入意外改动（模拟存储边界）。
- * 生产实现落在 zcode session store 的 node:sqlite（DatabaseSync，同步）之上，共用 JournalStorePort；
+ * 生产实现落在 zcode session store 的 Rust 原生插件 zcode_db.node（Node-API，同步调用）之上，共用 JournalStorePort；
  * 事务性不在端口面上，由 driver 组合 journal+session 写入。
+ *
+ * 修正记录：原注释写的是「node:sqlite（DatabaseSync，同步）」，但 node:sqlite 已随 Rust-only DB
+ * 切换整体退役，仓库运行时不再依赖它（仅剩历史说明文字里提到过）。这里只替换了实现来源的描述：
+ * “同步”这一前提没有变——zcode_db.node 暴露的 DbAddon 方法全是同步的（对照
+ * packages/services/src/session/zcodeDb.ts 里的 DbAddon 接口），因此本文件的同步端口语义保持不变。
  */
 
 import type {

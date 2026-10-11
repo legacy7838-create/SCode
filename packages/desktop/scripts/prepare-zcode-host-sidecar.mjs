@@ -50,10 +50,7 @@ const RUNTIME_EXTERNALS = [
 ];
 
 // Candidate node_modules roots (pnpm hoists to the workspace root; some deps live per-package).
-const MODULE_ROOTS = [
-  join(desktopRoot, "node_modules"),
-  join(repoRoot, "node_modules"),
-];
+const MODULE_ROOTS = [join(desktopRoot, "node_modules"), join(repoRoot, "node_modules")];
 
 function findPackageDir(name) {
   for (const root of MODULE_ROOTS) {
@@ -87,7 +84,10 @@ function vendorExternals() {
     const dest = join(nmDest, name);
     copyDirRecursive(src, dest);
     const pkg = JSON.parse(readFileSync(join(src, "package.json"), "utf8"));
-    for (const dep of [...Object.keys(pkg.dependencies ?? {}), ...Object.keys(pkg.optionalDependencies ?? {})]) {
+    for (const dep of [
+      ...Object.keys(pkg.dependencies ?? {}),
+      ...Object.keys(pkg.optionalDependencies ?? {}),
+    ]) {
       queue.push(dep);
     }
   }
@@ -121,7 +121,8 @@ function main() {
 
   // 2. ESM host bundle (standalone.js + index.js + tasksStorageWorker.js + chunk-*.js).
   for (const f of readdirSync(hostBundleDir)) {
-    if (f.endsWith(".js") || f.endsWith(".mjs")) copyFileSync(join(hostBundleDir, f), join(outDir, f));
+    if (f.endsWith(".js") || f.endsWith(".mjs"))
+      copyFileSync(join(hostBundleDir, f), join(outDir, f));
   }
 
   // 3. The Rust DB addon — the ONLY database engine. Loaded by the host via ZCODE_DB_NATIVE.
@@ -140,7 +141,11 @@ function main() {
 
   // 4. Force ESM interpretation for the copied bundle (the repo's "type":"module" isn't inherited
   //    by the packaged resources tree).
-  writeFileSync(join(outDir, "package.json"), `${JSON.stringify({ type: "module" }, null, 2)}\n`, "utf8");
+  writeFileSync(
+    join(outDir, "package.json"),
+    `${JSON.stringify({ type: "module" }, null, 2)}\n`,
+    "utf8",
+  );
 
   // 5. Vendored runtime externals + transitive deps.
   const vendored = vendorExternals();

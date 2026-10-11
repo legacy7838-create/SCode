@@ -69,3 +69,21 @@ packages/desktop/.e2e-artifacts/
 packages/desktop/.e2e-cache/
 packages/desktop/.e2e-network-capture/
 .zcode-runtime/
+
+# Qoder agent 的本地 scratch worktree（含整棵 checkout + 自己的 node_modules，约 23GB）。
+# 必须靠 .gitignore 生效：oxlint/oxfmt 的 ignorePatterns 对它无效（嵌套 node_modules 的
+# symlink 解析后 realpath 落到 .qoder 之外，配置里的 .qoder/** 匹配不到），
+# 不忽略的话 oxlint 会扫 5.4 万个文件、耗时 275s 且被无关代码刷出一堆 error。
+.qoder/
+
+# tsc 就地 emit 产物：schedulerProtocol.ts 与它的 .js/.d.ts/.*.map 并排落在 src/ 下。
+# 只忽略 emit 出来的同目录兄弟文件，schedulerProtocol.ts 本体照常入库。
+packages/desktop/src/scheduler/*.js
+packages/desktop/src/scheduler/*.js.map
+packages/desktop/src/scheduler/*.d.ts
+packages/desktop/src/scheduler/*.d.ts.map
+
+# 仓库根的 shell 重定向事故产物（`pnpm list > pnpm` 之类会留下 0 字节同名文件）。
+/concurrently
+/pnpm
+/zcode@*

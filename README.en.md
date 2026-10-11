@@ -47,18 +47,19 @@ The default `bootstrap` skips remote asset preparation and is suitable for local
 
 ```bash
 pnpm dev:desktop
-
-# Use the test environment
-pnpm dev:desktop:test
 ```
 
-`pnpm dev:desktop` defaults to `pnpm dev:desktop:prod` and uses production service configuration. The startup script prepares local runtime assets, builds the desktop Agent, then starts Electron and source watchers.
+`pnpm dev:desktop` starts the Tauri development environment: it first prepares local runtime assets (`scripts/dev-tauri-prepare.mjs`), then runs the host/scheduler build (`tsup --watch`), the renderer dev server (Vite :5174), the Tauri app window (`tauri dev`), and the local Host process in parallel.
 
 Set `ZCODE_DATA_BASE_DIR` to use a separate development data directory. For example, on macOS / Linux:
 
 ```bash
-ZCODE_DATA_BASE_DIR="$HOME/.zcode-dev-home" pnpm dev:desktop:test
+ZCODE_DATA_BASE_DIR="$HOME/.zcode-dev-home" pnpm dev:desktop
 ```
+
+### Remote Features (SSH/WSL)
+
+Run `pnpm bootstrap:with-remote` first to prepare the remote assets (mock-cdn), then `pnpm dev:desktop`; when connecting to a remote project, choose "download locally then upload" for resource transfer. In development the assets come from the local `packages/desktop/mock-cdn` and local build output, uploaded over SFTP to the remote host — the CDN is never contacted.
 
 ### Web Development
 
@@ -134,16 +135,13 @@ See [third-party/README.md](third-party/README.md) for notice generation, distri
 
 ### Desktop
 
+Desktop installers are packaged by the Tauri CLI:
+
 ```bash
-pnpm bundle:desktop
-
-# Set the target platform and CPU architecture
-pnpm bundle:desktop -- --os win --arch x64
-
-pnpm bundle:desktop -- --help
+pnpm --filter @zcode/desktop tauri:build
 ```
 
-The default target is macOS arm64, and the default output directory is `packages/desktop/dist/`. `--os` accepts `mac`, `win`, or `linux`; `--arch` accepts `x64` or `arm64`. Packaging and signing require the tools and configuration for the target platform.
+This command first builds and stages the native database addon (`zcode_db.node`), then builds the host/scheduler and renderer, and finally runs `tauri build`. Packaging and signing require the tools and configuration for the target platform (macOS additionally needs signing and notarization); CI currently covers Linux (AppImage) and Windows (MSI).
 
 ### ZCode CLI distribution
 

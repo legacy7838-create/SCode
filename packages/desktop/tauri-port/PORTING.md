@@ -1,16 +1,20 @@
 # Electron → Tauri v2 Port — PORTING.md
 
 Companion to `INVENTORY.md`. This maps source (Electron/TypeScript shell) patterns to target
-(Tauri v2 / Rust + system webview) patterns, and defines a **phased, parallel-run** plan where
-Electron is never removed until Tauri reaches verified parity.
+(Tauri v2 / Rust + system webview) patterns, and records the **phased, parallel-run** plan that was
+originally gated on verified parity before any Electron removal.
+
+> **Status: the cutover executed.** The gate was lifted and the Electron UI process layer removed
+> (see `Current status` below). Tauri v2 is now the sole desktop runtime. This document is kept as the
+> porting record: the Electron references are the _source_ side of each mapping, not a live runtime.
 
 ## Non-negotiables (from the port playbook + user instruction)
 
 1. **Behavior parity over elegance.** Same inputs → same outputs/errors/envelope.
 2. **Cutover is authorized.** The owner directed full Electron removal + Tauri parity (2026-10-09).
-   Work happens on branch `remove-electron-tauri-default`; `main` stays intact until merge approval.
-   The Electron UI process layer (`src/main`, `src/preload`) is already removed; the backend Host port
-   (below) is the remaining hard part. Each subsystem lands one commit, reviewed by a non-author.
+   Work happened on branch `remove-electron-tauri-default`. The Electron UI process layer
+   (`src/main`, `src/preload`) has been removed; the backend Host port (below) is the remaining hard
+   part. Each subsystem lands one commit, reviewed by a non-author.
 3. **Tests are the contract.** The Tauri harness (`test/layer-a` + `layer-b`) is the green gate per
    slice; a slice is not "done" until `pnpm test:tauri` + `pnpm typecheck` + `pnpm lint` are green.
 4. **No stubs/`TODO`/silenced warnings as "done."** Inert platform fallbacks are permitted ONLY as an
@@ -115,13 +119,13 @@ both proven by `test/layer-a/a2-framing.test.ts`:
 
 ## Success criteria for declaring parity (per subsystem)
 
-P1 harness green on BOTH Electron and Tauri for that subsystem's flows, on Linux/macOS/Windows where
+P1 harness green for that subsystem's flows on Linux/macOS/Windows where
 applicable, plus a manual side-by-side read of tricky paths. No "works on my machine" claims.
 
 ## Current status (living checkpoint)
 
-**Cutover in progress on `remove-electron-tauri-default`.** The Electron UI layer is removed; the
-backend Host WS-sidecar port and `main`-responsibility re-homing remain.
+**Cutover DONE on `remove-electron-tauri-default`.** The Electron UI layer is removed and Tauri is the
+sole runtime; the backend Host WS-sidecar port and `main`-responsibility re-homing remain.
 
 - **Cutover-A (done, this session):** removed `src/main` (114 files) + `src/preload`; `main.tsx` installs
   `createTauriPlatform()` unconditionally; deleted `desktopPlatform.ts`/`desktopBrowserPlatformBridge.ts`,
@@ -131,7 +135,7 @@ backend Host WS-sidecar port and `main`-responsibility re-homing remain.
 - **Phase 0 (done, this session):** promoted `@zcode/rpc` `wrapWebSocket` (`wsServer.ts`) + regression-
   locked it via layer-a A1/A2 against a real `ws` server. `pnpm typecheck`/`lint`/layer-a/layer-b green.
 - **P0 foundation — DONE.** Inventory, this plan, a compiling `src-tauri` scaffold, `pnpm dev:tauri`.
-- **P2 platform adapter + IPC — IN PROGRESS.** ~82 commands landed + a 16-method Tauri platform subset;
+- **P2 platform adapter + IPC — IN PROGRESS.** ~85 commands landed + a 16-method Tauri platform subset;
   blueprint in `PLATFORM-ADAPTER-PLAN.md`. Runtime selection now fixed (cutover-A).
 - **P4 hard-blocker spikes — DONE (verdicts in `GO-NO-GO.md`).** Browser/CDP, printToPDF, updater,
   webview-injection/media-protocol, saveFile SSRF, sync-getters — each with a scoped plan + residual.
@@ -169,5 +173,7 @@ shipped as "done."
 ## Phase 3 / 4 — remaining
 
 `IPlatformService` surfaces (browser/CDP per D1, updater per D2, print, saveFile SSRF downloader,
-tray/menu/deep-links, notifications-click, all telemetry channels) + node-pty Node-ABI + `pnpm install`
-to prune `electron*` from the lockfile. Each needs a real desktop/build environment to verify.
+tray/menu/deep-links, notifications-click, all telemetry channels) + node-pty Node-ABI. Each needs a
+real desktop/build environment to verify. (The `electron` dep is already gone from the manifest; the
+lockfile is clean too — the only `electron*` hit left is `electron-to-chromium`, an unrelated
+browserslist transitive.)

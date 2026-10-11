@@ -964,6 +964,11 @@ export function setWindowTheme(label: string, theme: string | null): Promise<voi
  * 启动内置的 `zcode-echo` sidecar 子进程（sidecar-runtime PoC）。对应 Rust 命令
  * `spawn_sidecar_echo`（`tauri-plugin-shell` 的 externalBin）。
  *
+ * 渲染端当前没有调用点：真正使用的只有 `spawnTauriHostDiscoverPort()`。但 A5 契约测试
+ * （`test/layer-a/a5-contract.test.ts`）强制 `#[tauri::command]` 与 tauriBridge 封装 **双向 1:1**
+ * 对齐，Rust 侧命令仍在 `generate_handler` 中注册，因此这里必须保留封装；把它删掉会让契约测试
+ * 报 “commands with no TS wrapper”。保留 ≠ 推荐调用。
+ *
  * @param port - 通过 `ZCODE_WS_PORT` 传给 sidecar 的回环 WebSocket 端口。
  * @returns 被拉起子进程的 OS pid（Rust 端 `Result<u32, String>`，失败时为 rejected Promise）。
  */
@@ -973,8 +978,8 @@ export function spawnTauriSidecarEcho(port: number): Promise<number> {
 
 /**
  * 终止指定 pid 的 sidecar 子进程（Phase 2 第二十切片）。对应 Rust 命令 `kill_sidecar`：从受管的
- * `SidecarRegistry` 按 pid 取出并消耗 `CommandChild`，调用其 `kill()`。sidecar 不会随主进程自动回收
- * （不同于 Electron 的 utilityProcess），必须显式终止以避免孤儿进程。pid 未注册（已杀或从未启动）时
+ * `SidecarRegistry` 按 pid 取出并消耗 `CommandChild`，调用其 `kill()`。sidecar 不会随主进程自动回收，
+ * 必须显式终止以避免孤儿进程。pid 未注册（已杀或从未启动）时
  * Rust 端返回 `Err("no such sidecar")`，以 rejected Promise 形式抛出（沿用第三切片错误传播接缝）。
  *
  * @param pid - `spawnTauriSidecarEcho` 返回的 OS 进程号。
@@ -990,6 +995,11 @@ export function killTauriSidecar(pid: number): Promise<void> {
  * 是并行多实例 agent 所需的传输基础（固定端口无法支持并发实例）。子进程仍登记到 `SidecarRegistry`，可用
  * `killTauriSidecar(pid)` 终止。sidecar 崩溃或提前关闭 stdout 时 Rust 端返回 `Err`（不会悬挂）。运行时需
  * 已构建的 externalBin + 活动窗口，真实效果在 `pnpm dev:tauri` 下验证。
+ *
+ * 命名易混提醒（真实发生过的缺陷）：本函数是 **echo 测试 fixture**，不是打包态 Host。
+ * 打包态真实路径是 `spawnTauriHostDiscoverPort()` → `spawn_host_discover_port`。
+ * 曾经把本函数名写进 `tauriHostConnection.ts` 的 `typeof` 类型位置，而那里并未 import 它，
+ * 导致 TS2552 + 端口退化为 `any`；渲染端连接 Host 必须用 `spawnTauriHostDiscoverPort`。
  *
  * @returns sidecar 绑定的端口号（Rust 端 `Result<u32, String>`，失败为 rejected Promise）。
  */

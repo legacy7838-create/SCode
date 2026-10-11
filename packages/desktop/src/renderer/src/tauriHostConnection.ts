@@ -7,8 +7,9 @@ import { spawnTauriHostDiscoverPort } from "./tauriBridge.js";
  * `../tauri-port/SIDECAR-TRANSPORT.md §6` step 4.
  *
  * The Tauri shell runs the Local Host as a Node sidecar bound to an OS-ephemeral loopback port
- * (`spawn_sidecar_echo_discover_port`, slice 31, proves the discovery path). This module turns that
- * discovered port into a `connectViaWebSocket` call — the exact `@zcode/client` factory already
+ * (`spawn_host_discover_port`). The discovery mechanism itself was proven earlier by slice 31 with
+ * the echo sidecar (`spawn_sidecar_echo_discover_port`), but the shipped path spawns the real
+ * Local Host. This module turns that discovered port into a `connectViaWebSocket` call — the exact `@zcode/client` factory already
  * production-tested on the web/phone path and driven end-to-end by `test/layer-a/a1-ws-rpc.test.ts`.
  * So this is NOT a new transport; it is the ~5 lines of glue joining the verified port-discovery
  * command to the verified WS-RPC client.
@@ -28,7 +29,7 @@ import { spawnTauriHostDiscoverPort } from "./tauriBridge.js";
 /** Injectable dependencies so the sequencing is unit-testable without a live sidecar/websocket. */
 export interface TauriHostConnectionDeps {
   /** Resolves the ephemeral port the Host sidecar bound (defaults to the discover-port command). */
-  discoverPort: typeof spawnTauriSidecarDiscoverPort;
+  discoverPort: typeof spawnTauriHostDiscoverPort;
   /** Opens the RPC connection over WS (defaults to the production `@zcode/client` factory). */
   connect: typeof connectViaWebSocket;
 }
