@@ -148,6 +148,7 @@ fn main() {
             commands::show_task_notification,
             commands::spawn_sidecar_echo,
             commands::spawn_sidecar_echo_discover_port,
+            commands::spawn_host_discover_port,
             commands::kill_sidecar,
             commands::read_clipboard_text,
             commands::write_clipboard_text,

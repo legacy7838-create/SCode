@@ -1,6 +1,6 @@
 import { connectViaWebSocket } from "@zcode/client";
 
-import { spawnTauriSidecarDiscoverPort } from "./tauriBridge.js";
+import { spawnTauriHostDiscoverPort } from "./tauriBridge.js";
 
 /**
  * Renderer ⇄ Local-Host sidecar connection bridge — the transport glue from
@@ -14,10 +14,10 @@ import { spawnTauriSidecarDiscoverPort } from "./tauriBridge.js";
  * command to the verified WS-RPC client.
  *
  * Wired into `main.tsx`'s Tauri boot (Electron is removed, so this is the sole desktop path).
- * `discoverPort` currently invokes the echo discovery command as a proven stand-in; it flips to the
- * real `zcode-host` sidecar spawn once the Host externalBin is packaged (Phase 4 SEA) and Rust sources
- * the provider-config/workspace env for it (Phase 3). The standalone Host boot + WS serve themselves are
- * already verified end-to-end (`src/host/standaloneHost.ts`, layer-a A8). See `tauri-port/PORTING.md`.
+ * `discoverPort` invokes `spawn_host_discover_port`, which launches the packaged Local Host sidecar
+ * (bundled Node runtime + ESM host + the Rust `zcode_db.node` addon, staged by
+ * `scripts/prepare-zcode-host-sidecar.mjs`) and returns its ephemeral port. The DB is opened by the
+ * Rust addon — never a JS sqlite. See `tauri-port/PORTING.md`.
  *
  * Auth: `connectViaWebSocket` opens a plain browser `WebSocket`; the loopback shared-secret gate
  * (SIDECAR-TRANSPORT §4) attaches the token to the URL at the server handshake. Browser WebSockets
@@ -34,7 +34,7 @@ export interface TauriHostConnectionDeps {
 }
 
 const realDeps: TauriHostConnectionDeps = {
-  discoverPort: spawnTauriSidecarDiscoverPort,
+  discoverPort: spawnTauriHostDiscoverPort,
   connect: connectViaWebSocket,
 };
 

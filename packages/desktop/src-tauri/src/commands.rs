@@ -2674,6 +2674,62 @@ pub async fn spawn_sidecar_echo_discover_port(app: AppHandle) -> Result<u32, Str
     Err("sidecar stdout closed before reporting ready".to_string())
 }
 
+/// Spawn the PACKAGED Local Host sidecar and return the ephemeral WS port it reports on stdout.
+///
+/// Phase 2/4: lets a packaged build (AppImage/MSI) boot its real backend instead of the
+/// `zcode-echo` PoC. The sidecar is staged by `scripts/prepare-zcode-host-sidecar.mjs` into the
+/// bundle `host` resource dir: a bundled Node runtime + the ESM host bundle + the **Rust**
+/// `zcode_db.node` addon. The database is opened by that Rust addon via `ZCODE_DB_NATIVE` — there
+/// is no JS sqlite anywhere. Uses `std::process` (not the shell plugin) because the host ships as
+/// a bundle *resource*, not an `externalBin`.
+///
+/// The child is left running for the app lifetime (the Host owns the window-scoped services);
+/// explicit reaping is a Phase-3 lifecycle surface. Dropping `std::process::Child` detaches without
+/// killing, so returning simply keeps the Host alive.
+#[tauri::command]
+pub fn spawn_host_discover_port(app: AppHandle) -> Result<u32, String> {
+    use std::io::{BufRead, BufReader};
+    use std::process::{Command, Stdio};
+
+    let host_dir = app
+        .path()
+        .resolve("host", tauri::path::BaseDirectory::Resource)
+        .map_err(|e| format!("resolve host resource dir: {e}"))?;
+    let node = host_dir.join(if cfg!(windows) { "node.exe" } else { "node" });
+    let entry = host_dir.join("standalone.js");
+    let addon = host_dir.join("zcode_db.node");
+    for path in [&node, &entry, &addon] {
+        if !path.exists() {
+            return Err(format!("host sidecar file missing: {}", path.display()));
+        }
+    }
+
+    let mut child = Command::new(&node)
+        .arg(&entry)
+        .current_dir(&host_dir)
+        .env("ZCODE_HOST_WS", "1")
+        .env("ZCODE_WS_PORT", "0")
+        .env("ZCODE_DB_NATIVE", &addon)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("spawn packaged host sidecar: {e}"))?;
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "host sidecar stdout unavailable".to_string())?;
+    for line in BufReader::new(stdout).lines() {
+        let line = line.map_err(|e| format!("read host stdout: {e}"))?;
+        if let Some(port) = parse_ready_port(&line) {
+            return Ok(port);
+        }
+    }
+    let _ = child.kill();
+    Err("host sidecar closed stdout before reporting ZCODE_WS_READY".to_string())
+}
+
 /// Terminate a previously-spawned sidecar by its OS pid.
 ///
 /// Phase 2 slice 20 (sidecar lifecycle). Removes the `CommandChild` from the [`SidecarRegistry`]

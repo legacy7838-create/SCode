@@ -240,11 +240,40 @@ jobs:
       - name: "[frontend] build host/scheduler (tsup) + renderer (vite -> out/renderer)"
         run: pnpm --filter @zcode/desktop build
 
-      # bundle.active:false in the dev tauri.conf.json would otherwise make `tauri build`
-      # skip bundling entirely; override it to true and pin the per-OS target format.
+      # Package the Local Host as a self-contained sidecar (bundled node + ESM host + the RUST
+      # zcode_db.node addon) into src-tauri/resources/host, so the packaged app can boot its real
+      # backend instead of the echo PoC. DB stays Rust (loaded via ZCODE_DB_NATIVE).
+      - name: "[host-sidecar] stage packaged Local Host (bundled node + Rust DB addon)"
+        working-directory: packages/desktop
+        run: node scripts/prepare-zcode-host-sidecar.mjs
+
+      # Headless proof the staged sidecar boots + opens the DB via the Rust addon (no GUI needed):
+      # it must print ZCODE_WS_READY <port>. continue-on-error so a runner quirk can't turn a
+      # green build red; the value is surfacing whether the packaged backend contract holds per OS.
+      - name: "[host-sidecar] headless boot proof (bundled node + Rust addon -> ZCODE_WS_READY)"
+        continue-on-error: true
+        working-directory: packages/desktop/src-tauri/resources/host
+        run: |
+          set -uo pipefail
+          OUT=/tmp/hostboot.out
+          ZCODE_HOST_WS=1 ZCODE_WS_PORT=0 ZCODE_DB_NATIVE="$PWD/zcode_db.node" \
+            ./node standalone.js >"$OUT" 2>/tmp/hostboot.err &
+          PID=$!
+          for _ in $(seq 1 30); do grep -q ZCODE_WS_READY "$OUT" && break; sleep 1; done
+          kill "$PID" 2>/dev/null || true
+          if grep -q ZCODE_WS_READY "$OUT"; then
+            echo "OK: packaged host sidecar booted headlessly with the Rust DB addon"; exit 0
+          fi
+          echo "FAIL: no ZCODE_WS_READY"; tail -20 /tmp/hostboot.err; exit 1
+
+      # bundle.active:false in the dev config would skip bundling, and the host resource dir is
+      # only shipped here (not the base config) so dev/`test:tauri:rust` never require it.
       - name: "[bundle] tauri build (${{ matrix.bundles }})"
         working-directory: packages/desktop
-        run: pnpm exec tauri build --config '{"bundle":{"active":true}}' --bundles ${{ matrix.bundles }}
+        run: |
+          pnpm exec tauri build \
+            --config '{"bundle":{"active":true,"resources":{"../bundled-agents/*/glm/zcode_db.node":"glm/zcode_db.node","resources/host":"host"}}}' \
+            --bundles ${{ matrix.bundles }}
 
       - name: "[bundle] list produced artifacts"
         if: always()

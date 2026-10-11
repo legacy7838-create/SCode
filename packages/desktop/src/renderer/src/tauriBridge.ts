@@ -998,6 +998,19 @@ export function spawnTauriSidecarDiscoverPort(): Promise<number> {
 }
 
 /**
+ * 启动打包态内置的 Local Host sidecar，返回它绑定的临时端口。对应 Rust 命令
+ * `spawn_host_discover_port`：sidecar 由 `scripts/prepare-zcode-host-sidecar.mjs` 打进 bundle 的
+ * `host` 资源目录（bundled node + ESM host 产物 + **Rust** `zcode_db.node` addon），DB 由 Rust
+ * addon 通过 `ZCODE_DB_NATIVE` 打开，绝不使用 JS sqlite。打包态渲染端连真实后端走此路径；
+ * dev 态由 `VITE_ZCODE_HOST_WS_URL` 直连 dev-host，不经过这里。
+ *
+ * @returns Host sidecar 绑定的回环端口号（Rust 端 `Result<u32, String>`，失败为 rejected Promise）。
+ */
+export function spawnTauriHostDiscoverPort(): Promise<number> {
+  return invoke<number>("spawn_host_discover_port");
+}
+
+/**
  * Phase 2 第三十三切片：桌面缩放变更事件（推送通道）的 TypeScript 接缝。
  *
  * 这是首个 Rust→渲染端「事件推送」通道，验证 Tauri 原生事件机制（`app.emit` ⇄

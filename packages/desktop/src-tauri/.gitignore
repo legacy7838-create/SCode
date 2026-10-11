@@ -3,3 +3,6 @@
 /gen/schemas/
 # Generated sidecar binaries (rebuilt by ../tauri-port/sidecar/build.sh per target-triple)
 /binaries/
+# Generated packaged Local Host sidecar (rebuilt by scripts/prepare-zcode-host-sidecar.mjs:
+# bundled node + ESM host + the Rust zcode_db.node addon). Never commit the bundled runtime.
+/resources/host/
