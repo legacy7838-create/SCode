@@ -104,9 +104,9 @@ const enUS: Record<string, string> = {
   "startup.global.error.sql_failed":
     "Preparation did not finish. Copy the diagnostics and check the logs. Resolve the issue, then retry manually. The app will not retry automatically.",
   "startup.global.error.startup_status_timeout":
-    "No startup status was received. Exit and reopen ZCode. If it fails again, provide the diagnostics to support.",
+    "ZCode could not connect to its local Host within the startup window. Exit and reopen ZCode. If it fails again, copy the diagnostics above — they now include the Host's own error output.",
   "startup.global.error.transport_closed":
-    "The preparation process exited or disconnected. Exit and reopen ZCode to check the migration records again.",
+    "ZCode could not start or reach its local Host. Copy the diagnostics above — they include the Host's own error output — then retry.",
   "startup.global.error.unsupported_runtime":
     "The configured Agent does not support storage preparation. Restore the bundled Agent, then reopen ZCode.",
 

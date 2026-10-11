@@ -67,7 +67,11 @@ use tauri_plugin_shell::process::CommandEvent;
 // struct is `Send + Sync` (the Tauri managed-state bound), since `CommandChild` is `Send` but not
 // `Sync` (it owns a stdin pipe handle).
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::io::{BufRead, BufReader};
+use std::process::{Command, Stdio};
+use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 /// BCP-47 fallback locale used when the host OS locale cannot be resolved.
 const FALLBACK_LOCALE: &str = "en-US";
@@ -2686,11 +2690,24 @@ pub async fn spawn_sidecar_echo_discover_port(app: AppHandle) -> Result<u32, Str
 /// The child is left running for the app lifetime (the Host owns the window-scoped services);
 /// explicit reaping is a Phase-3 lifecycle surface. Dropping `std::process::Child` detaches without
 /// killing, so returning simply keeps the Host alive.
+///
+/// # Why this has a deadline and captures stderr
+///
+/// This used to block on `BufReader::lines()` until stdout closed, with `stderr(Stdio::null())`.
+/// Two consequences, both of which are exactly the failure the renderer used to report as a
+/// meaningless `startup_status_timeout` sentinel:
+///
+/// 1. A Host that boots but never prints `ZCODE_WS_READY` and never exits blocked **forever**.
+/// 2. A Host that *crashed* on boot wrote the reason to stderr, which was discarded, so the caller
+///    got only "closed stdout" — the actual cause was gone before it could be reported.
+///
+/// Now stderr is drained into a bounded tail that is attached to every error, and the wait is
+/// bounded by [`HOST_READY_TIMEOUT`]. That deadline is deliberately **shorter** than the renderer's
+/// 30s boot watchdog (`firstStartupStateTimer` in `renderer/src/main.tsx`), so the specific error
+/// wins the race and reaches the user instead of the generic sentinel. Also checks the bundled
+/// agent entry, which previously could be missing and would crash the Host after this point.
 #[tauri::command]
 pub fn spawn_host_discover_port(app: AppHandle) -> Result<u32, String> {
-    use std::io::{BufRead, BufReader};
-    use std::process::{Command, Stdio};
-
     let host_dir = app
         .path()
         .resolve("host", tauri::path::BaseDirectory::Resource)
@@ -2699,7 +2716,9 @@ pub fn spawn_host_discover_port(app: AppHandle) -> Result<u32, String> {
     let entry = host_dir.join("standalone.js");
     let addon = host_dir.join("zcode_db.node");
     let agent_entry = host_dir.join("agent").join("zcode.cjs");
-    for path in [&node, &entry, &addon] {
+    // The agent entry is passed to the Host as ZCODE_BUNDLED_AGENT_ENTRY; it was missing from this
+    // check, so a broken bundle surfaced as a boot hang instead of an explicit "file missing".
+    for path in [&node, &entry, &addon, &agent_entry] {
         if !path.exists() {
             return Err(format!("host sidecar file missing: {}", path.display()));
         }
@@ -2715,7 +2734,7 @@ pub fn spawn_host_discover_port(app: AppHandle) -> Result<u32, String> {
         .env("ZCODE_BUNDLED_AGENT_ENTRY", &agent_entry)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("spawn packaged host sidecar: {e}"))?;
 
@@ -2723,14 +2742,90 @@ pub fn spawn_host_discover_port(app: AppHandle) -> Result<u32, String> {
         .stdout
         .take()
         .ok_or_else(|| "host sidecar stdout unavailable".to_string())?;
-    for line in BufReader::new(stdout).lines() {
-        let line = line.map_err(|e| format!("read host stdout: {e}"))?;
-        if let Some(port) = parse_ready_port(&line) {
-            return Ok(port);
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "host sidecar stderr unavailable".to_string())?;
+
+    // Drain stderr on its own thread so a chatty Host can never fill the pipe buffer and deadlock
+    // the stdout reader. Keep only the last HOST_STDERR_TAIL_LINES lines: enough to explain a
+    // crash, bounded so a runaway loop cannot grow this without limit.
+    let stderr_tail = Arc::new(Mutex::new(Vec::<String>::new()));
+    {
+        let stderr_tail = Arc::clone(&stderr_tail);
+        std::thread::spawn(move || {
+            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                let mut tail = stderr_tail.lock().unwrap_or_else(|e| e.into_inner());
+                if tail.len() >= HOST_STDERR_TAIL_LINES {
+                    tail.remove(0);
+                }
+                tail.push(line);
+            }
+        });
+    }
+
+    let (tx, rx) = mpsc::channel();
+    {
+        // Clone for the reader thread so the timeout branch below can still read the tail.
+        let stderr_tail = Arc::clone(&stderr_tail);
+        std::thread::spawn(move || {
+            for line in BufReader::new(stdout).lines() {
+                let Ok(line) = line else { break };
+                if let Some(port) = parse_ready_port(&line) {
+                    let _ = tx.send(Ok(port));
+                    return;
+                }
+            }
+            let tail = stderr_tail
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .join("\n");
+            let _ = tx.send(Err(tail));
+        });
+    }
+
+    match rx.recv_timeout(HOST_READY_TIMEOUT) {
+        Ok(Ok(port)) => Ok(port),
+        Ok(Err(tail)) => {
+            let _ = child.kill();
+            Err(format!(
+                "host sidecar closed stdout before reporting ZCODE_WS_READY{}",
+                with_stderr_tail(&tail)
+            ))
+        }
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            // The Host is wedged or too slow: reap it so it cannot linger as an orphan, and report
+            // the deadline rather than letting the caller hang.
+            let _ = child.kill();
+            let tail = stderr_tail
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .join("\n");
+            Err(format!(
+                "host sidecar did not report ZCODE_WS_READY within {}s{}",
+                HOST_READY_TIMEOUT.as_secs(),
+                with_stderr_tail(&tail)
+            ))
+        }
+        Err(mpsc::RecvTimeoutError::Disconnected) => {
+            let _ = child.kill();
+            Err(
+                "host sidecar reader thread disconnected before reporting ZCODE_WS_READY"
+                    .to_string(),
+            )
         }
     }
-    let _ = child.kill();
-    Err("host sidecar closed stdout before reporting ZCODE_WS_READY".to_string())
+}
+
+/// Render a captured stderr tail for embedding in an error message, or `""` when the Host said
+/// nothing on stderr (in which case there is nothing useful to append).
+fn with_stderr_tail(tail: &str) -> String {
+    let trimmed = tail.trim();
+    if trimmed.is_empty() {
+        String::new()
+    } else {
+        format!("; host stderr:\n{trimmed}")
+    }
 }
 
 /// Terminate a previously-spawned sidecar by its OS pid.
@@ -2813,6 +2908,20 @@ pub fn write_clipboard_text(app: AppHandle, text: String) -> Result<(), String> 
 /// writer creates under, mirroring `tempTextAttachment.ts:10` `TEMP_TEXT_ATTACHMENT_DIR` and the
 /// `join(getZCodeDataRootDir(), "tmp", ...)` structure (`paths.ts:22,44`).
 const TEMP_TEXT_ATTACHMENT_SUBDIR: &str = ".zcode/tmp/paste-attachments";
+
+/// Bound on how long [`spawn_host_discover_port`] waits for the packaged Local Host to print
+/// `ZCODE_WS_READY <port>` before killing it and failing.
+///
+/// Deliberately shorter than the renderer's 30s boot watchdog (`firstStartupStateTimer` in
+/// `renderer/src/main.tsx`). If the Host is slow or wedged, this deadline must fire FIRST so the
+/// renderer receives a specific, actionable error (including the Host's stderr tail) instead of
+/// synthesising the generic `startup_status_timeout` sentinel, which names no cause at all.
+/// Raising this above ~25s would re-introduce that masking.
+const HOST_READY_TIMEOUT: Duration = Duration::from_secs(20);
+
+/// Number of trailing stderr lines retained from the packaged Host for error reporting. Bounded so
+/// a Host stuck in a logging loop cannot grow this without limit.
+const HOST_STDERR_TAIL_LINES: usize = 40;
 
 /// Convert days-since-UNIX-epoch to a proleptic-Gregorian `(year, month, day)`.
 ///

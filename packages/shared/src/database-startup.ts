@@ -144,6 +144,16 @@ export const databaseStartupStateSchema = z
     errorCode: databaseStartupErrorCodeSchema.optional(),
     ...databaseStartupErrorDetailsSchema.shape,
     disk: z.array(startupDiskSummarySchema).max(8),
+    /**
+     * 人类可读的失败原因，仅用于本地诊断展示（会被“复制诊断信息”带进 JSON）。
+     *
+     * 新增原因：Tauri 启动失败时，渲染端过去只能写一个 `startupId: "unavailable"` 的哨兵，
+     * 用户看到的诊断 ID 恒为字面量 `startup-channel-unavailable`，真实原因在到达界面之前
+     * 就已经丢失。有了这个字段，渲染端才能把 Host/传输层的真实错误带出来。
+     *
+     * 有界长度：可能承载 sidecar 的 stderr 尾部，只保留可读的截断内容。
+     */
+    detail: z.string().max(2048).optional(),
   })
   .strict();
 export type DatabaseStartupState = z.infer<typeof databaseStartupStateSchema>;

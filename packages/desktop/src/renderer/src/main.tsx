@@ -176,6 +176,43 @@ function renderDatabaseStartup(): void {
     </AppErrorBoundary>,
   );
 }
+/**
+ * 启动失败的对外记录时长。必须大于 Rust 侧 [`HOST_READY_TIMEOUT`]（20s），
+ * 否则 Host 的真实错误还没到达，哨兵就会先抢跑、把原因再次遮住。
+ */
+const FIRST_STARTUP_TIMEOUT_MS = 30_000;
+
+/**
+ * 把一次真实的启动失败写进 admission state，供失败界面与“复制诊断信息”使用。
+ *
+ * 修复依据：以前 Tauri 下的启动失败只会写一个哨兵 —— `startupId: "unavailable"` /
+ * `attemptId: "startup-channel-unavailable"`。失败界面把 `attemptId` 当作“Diagnostic ID” 展示
+ * （GlobalDatabaseStartupLoading.tsx:100），所以用户拿到的永远是同一个字面量，真实原因
+ * （例如 Host 侧文件缺失、addon 加载失败、WS 握手失败）在到达界面前就丢了。
+ *
+ * 现在 ID 取自错误本身，真实原因进 `detail`；`errorCode` 用 `transport_closed` 而不再用
+ * `startup_status_timeout`，因为后者描述的是“未收到状态帧”，而 Tauri 下根本不存在这条通道。
+ */
+function reportStartupFailure(error: unknown): void {
+  if (appInitialized || databaseStartupAdmission.state) return;
+  const message = error instanceof Error ? error.message : String(error);
+  const now = Date.now();
+  databaseStartupAdmission.state = {
+    schemaVersion: 1,
+    startupId: "tauri-backend-connect",
+    attemptId: `tauri-backend-connect-${now}`,
+    sequence: 0,
+    startedAt: rendererStartedAt,
+    updatedAt: now,
+    phase: "failed",
+    errorCode: "transport_closed",
+    disk: [],
+    detail: message.slice(0, 2048),
+  };
+  if (firstStartupStateTimer) clearTimeout(firstStartupStateTimer);
+  renderDatabaseStartup();
+}
+
 const firstStartupStateTimer =
   windowKind === "update-status"
     ? undefined
@@ -184,21 +221,28 @@ const firstStartupStateTimer =
         // connectTauriBackendAndEnter), NOT the Electron preload DatabaseStartupState postMessage. Once
         // the app has entered (appInitialized), this timer must not clobber the running UI with a fake
         // "channel unavailable" failure — that was a regression from the Electron→Tauri cutover.
+        //
+        // 本计时器现在只是兼底：正常失败路径（reportStartupFailure）由 Host 侧的
+        // HOST_READY_TIMEOUT(20s) 或连接错误提前触发，并会写入真实原因。只有在连接
+        // 彻底卡死、既不成功也不报错时，才会走到这里。
         if (appInitialized || databaseStartupAdmission.state) return;
         const now = Date.now();
         databaseStartupAdmission.state = {
           schemaVersion: 1,
-          startupId: "unavailable",
-          attemptId: "startup-channel-unavailable",
+          startupId: "tauri-backend-connect",
+          attemptId: "tauri-backend-connect-never-settled",
           sequence: 0,
           startedAt: rendererStartedAt,
           updatedAt: now,
           phase: "failed",
+          // 这里仍然是超时（连接既没成功也没报错），所以 startup_status_timeout 是
+          // 准确的；上一条路径才改用 transport_closed。
           errorCode: "startup_status_timeout",
           disk: [],
+          detail: `Local Host connection did not settle within ${FIRST_STARTUP_TIMEOUT_MS}ms`,
         };
         renderDatabaseStartup();
-      }, 30_000);
+      }, FIRST_STARTUP_TIMEOUT_MS);
 
 function registerRemoteWorkspaceServicePort(params: RemoteWorkspaceServicePortRegistration) {
   if (!baseServicesForRemoteSessions) {
@@ -331,7 +375,10 @@ async function connectTauriBackendAndEnter(): Promise<void> {
     const services = await connectTauriHost();
     initializeBusinessRootWithServices(services);
   } catch (error) {
-    // Surface a backend-connect failure to the webview console / global error handler.
+    // 把真实原因写进启动记录，不再只抛给全局错误处理：失败界面与“复制诊断信息”靠它
+    // 才能给出可行动的信息，而不再是一个恒为字面量的 “unavailable” 哨兵。
+    reportStartupFailure(error);
+    // 同时保留全局抛出，让 webview 控制台 / 全局错误处理仍能看到原始错误。
     setTimeout(() => {
       throw error;
     }, 0);

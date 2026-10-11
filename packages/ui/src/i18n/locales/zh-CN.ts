@@ -99,9 +99,9 @@ const zhCN: Record<string, string> = {
   "startup.global.error.sql_failed":
     "准备过程未完成。请复制诊断信息查看日志，排除问题后手动重试。应用不会自动重试。",
   "startup.global.error.startup_status_timeout":
-    "未能收到启动状态。请退出并重新打开 ZCode；如果仍失败，请提供诊断信息。",
+    "ZCode 未能在启动窗口内连上本地 Host。请退出并重新打开；若仍然失败，请复制上方诊断信息——现在其中已包含 Host 自身的错误输出。",
   "startup.global.error.transport_closed":
-    "数据准备进程意外退出或连接中断。请退出并重新打开 ZCode，应用会重新检查迁移记录。",
+    "ZCode 未能启动或连上本地 Host。请复制上方诊断信息（其中包含 Host 自身的错误输出）后重试。",
   "startup.global.error.unsupported_runtime":
     "当前配置的 Agent 不支持独立存储准备。请恢复配套的 Agent 后重新打开 ZCode。",
 
