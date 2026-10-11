@@ -67,7 +67,9 @@ use tauri_plugin_shell::process::CommandEvent;
 // struct is `Send + Sync` (the Tauri managed-state bound), since `CommandChild` is `Send` but not
 // `Sync` (it owns a stdin pipe handle).
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader};
+use std::fs::{self, OpenOptions};
+use std::io::{BufRead, BufReader, Write};
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
@@ -2751,10 +2753,26 @@ pub fn spawn_host_discover_port(app: AppHandle) -> Result<u32, String> {
     // the stdout reader. Keep only the last HOST_STDERR_TAIL_LINES lines: enough to explain a
     // crash, bounded so a runaway loop cannot grow this without limit.
     let stderr_tail = Arc::new(Mutex::new(Vec::<String>::new()));
+    // Mirror both streams to the log file. Shared handle behind a Mutex so stdout and stderr lines
+    // cannot interleave mid-line.
+    let host_log_path = host_sidecar_log_path();
+    let host_log: Arc<Mutex<Option<fs::File>>> =
+        Arc::new(Mutex::new(host_log_path.as_ref().and_then(|path| {
+            OpenOptions::new().create(true).append(true).open(path).ok()
+        })));
+    {
+        let host_log = Arc::clone(&host_log);
+        let pid = child.id();
+        std::thread::spawn(move || {
+            mirror_host_line(&host_log, "spawn", &format!("host sidecar pid={pid}"));
+        });
+    }
     {
         let stderr_tail = Arc::clone(&stderr_tail);
+        let host_log = Arc::clone(&host_log);
         std::thread::spawn(move || {
             for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                mirror_host_line(&host_log, "stderr", &line);
                 let mut tail = stderr_tail.lock().unwrap_or_else(|e| e.into_inner());
                 if tail.len() >= HOST_STDERR_TAIL_LINES {
                     tail.remove(0);
@@ -2768,9 +2786,12 @@ pub fn spawn_host_discover_port(app: AppHandle) -> Result<u32, String> {
     {
         // Clone for the reader thread so the timeout branch below can still read the tail.
         let stderr_tail = Arc::clone(&stderr_tail);
+        let host_log = Arc::clone(&host_log);
         std::thread::spawn(move || {
             for line in BufReader::new(stdout).lines() {
                 let Ok(line) = line else { break };
+                // 关键：ready 行之后的输出以前是直接扔掉的，现在逐行落盘。
+                mirror_host_line(&host_log, "stdout", &line);
                 if let Some(port) = parse_ready_port(&line) {
                     let _ = tx.send(Ok(port));
                     return;
@@ -2789,8 +2810,9 @@ pub fn spawn_host_discover_port(app: AppHandle) -> Result<u32, String> {
         Ok(Err(tail)) => {
             let _ = child.kill();
             Err(format!(
-                "host sidecar closed stdout before reporting ZCODE_WS_READY{}",
-                with_stderr_tail(&tail)
+                "host sidecar closed stdout before reporting ZCODE_WS_READY{}{}",
+                with_stderr_tail(&tail),
+                host_log_hint(host_log_path.as_ref())
             ))
         }
         Err(mpsc::RecvTimeoutError::Timeout) => {
@@ -2802,18 +2824,28 @@ pub fn spawn_host_discover_port(app: AppHandle) -> Result<u32, String> {
                 .unwrap_or_else(|e| e.into_inner())
                 .join("\n");
             Err(format!(
-                "host sidecar did not report ZCODE_WS_READY within {}s{}",
+                "host sidecar did not report ZCODE_WS_READY within {}s{}{}",
                 HOST_READY_TIMEOUT.as_secs(),
-                with_stderr_tail(&tail)
+                with_stderr_tail(&tail),
+                host_log_hint(host_log_path.as_ref())
             ))
         }
         Err(mpsc::RecvTimeoutError::Disconnected) => {
             let _ = child.kill();
-            Err(
-                "host sidecar reader thread disconnected before reporting ZCODE_WS_READY"
-                    .to_string(),
-            )
+            Err(format!(
+                "host sidecar reader thread disconnected before reporting ZCODE_WS_READY{}",
+                host_log_hint(host_log_path.as_ref())
+            ))
         }
+    }
+}
+
+/// Append a pointer to the mirrored Host log so a boot failure names where to read the full crash
+/// output, instead of only the in-memory stderr tail.
+fn host_log_hint(path: Option<&PathBuf>) -> String {
+    match path {
+        Some(p) => format!("; full host output: {}", p.display()),
+        None => String::new(),
     }
 }
 
@@ -2922,6 +2954,35 @@ const HOST_READY_TIMEOUT: Duration = Duration::from_secs(20);
 /// Number of trailing stderr lines retained from the packaged Host for error reporting. Bounded so
 /// a Host stuck in a logging loop cannot grow this without limit.
 const HOST_STDERR_TAIL_LINES: usize = 40;
+
+/// Path of the packaged Host sidecar's mirrored output, or `None` when it cannot be created.
+///
+/// 为什么需要它：Host 在报完 `ZCODE_WS_READY` 之后崩溃时，stdout/stderr 管道里剩下的内容此前
+/// 全部丢弃（stdout 只用来等 ready 行，stderr 只在 ready 行未到达时才上报）。结果是渲染端拿到
+/// “Connection reset by peer”、界面永远停在 RootStartupLoading，而日志里一行痕迹都没有——无法定位。
+///
+/// 现在把两路输出逐行追加到与桌面日志同一个目录，崩溃堆栈就能事后取到。路径语义与
+/// `packages/services/src/paths.ts` 一致：`ZCODE_DATA_BASE_DIR` 优先，其次 HOME。
+/// 建目录/开文件失败时返回 `None`，绝不因为日志问题阻止启动。
+fn host_sidecar_log_path() -> Option<PathBuf> {
+    let base = std::env::var("ZCODE_DATA_BASE_DIR")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| std::env::var("HOME").ok().map(PathBuf::from))?;
+    let dir = base.join(".zcode").join("v2").join("logs");
+    fs::create_dir_all(&dir).ok()?;
+    Some(dir.join("host-sidecar.log"))
+}
+
+/// Append one mirrored line and flush immediately, so a hard crash still leaves its output behind.
+fn mirror_host_line(log: &Arc<Mutex<Option<fs::File>>>, tag: &str, line: &str) {
+    let Ok(mut guard) = log.lock() else { return };
+    let Some(file) = guard.as_mut() else { return };
+    let _ = writeln!(file, "[{tag}] {line}");
+    let _ = file.flush();
+}
 
 /// Convert days-since-UNIX-epoch to a proleptic-Gregorian `(year, month, day)`.
 ///
