@@ -293,7 +293,14 @@ jobs:
       # it must print ZCODE_WS_READY <port>. continue-on-error so a runner quirk can't turn a
       # green build red; the value is surfacing whether the packaged backend contract holds per OS.
       - name: "[host-sidecar] headless boot proof (bundled node + Rust addon -> ZCODE_WS_READY)"
-        continue-on-error: true
+        # HARD gate, deliberately. This used to be `continue-on-error: true`, which is how an AppImage
+        # whose Host died on boot shipped TWICE while the job reported success:
+        #   FAIL: no ZCODE_WS_READY
+        #   standalone host failed to start: Error: Storage preparation failed: open_failed
+        #   ##[error]Process completed with exit code 1.        <- printed, then ignored
+        # This is the ONLY step that proves the packaged Host actually boots. Without it, every other
+        # step (bundle, import-vendoring, version guard) passes happily on an app that cannot start.
+        # Do NOT re-add continue-on-error without also fixing whatever it is hiding.
         working-directory: packages/desktop/src-tauri/resources/host
         run: |
           set -uo pipefail

@@ -12,6 +12,44 @@ import {
   type DatabaseStartupState,
 } from "@zcode/shared";
 import { resolveDefaultZCodeAgentCommand } from "@zcode/services/storage-startup";
+import { createServiceLogger } from "@zcode/services/node";
+
+const storagePreparationLogger = createServiceLogger("desktop-host-storage-prep");
+
+/** 保留的子进程 stderr 行数上限。够解释一次崩溃，又不会无限增长。 */
+const STDERR_TAIL_LINES = 40;
+/** 单行最大字符数，避免一条超长堆栈把日志撑爆。 */
+const STDERR_LINE_MAX_CHARS = 2000;
+
+/**
+ * 有界 stderr tail。
+ *
+ * 存在的唯一理由：`child.stderr.resume()` 会把子进程崩溃的真实原因丢掉。没有它，
+ * 一次存储准备失败在 Host 侧只表现为一个 `open_failed` 符号，定位不到具体原因 ——
+ * 与 Rust 侧 `Stdio::null()` 是同一类缺陷。
+ *
+ * 仍然**不**把这些文本写进 startupState 或 IPC（可能包含本地路径），只进本地 debug 日志。
+ *
+ * @returns Appender that keeps only the most recent {@link STDERR_TAIL_LINES} truncated lines.
+ */
+function createBoundedStderrTail(): { push: (chunk: string) => void; snapshot: () => string[] } {
+  const lines: string[] = [];
+  return {
+    push(chunk) {
+      for (const raw of chunk.split("\n")) {
+        const line = raw.trim();
+        if (!line) continue;
+        const bounded =
+          line.length > STDERR_LINE_MAX_CHARS
+            ? `${line.slice(0, STDERR_LINE_MAX_CHARS)}…[truncated]`
+            : line;
+        lines.push(bounded);
+        if (lines.length > STDERR_TAIL_LINES) lines.shift();
+      }
+    },
+    snapshot: () => [...lines],
+  };
+}
 
 type Phase = NonNullable<DatabaseStartupState["databasePhase"]>;
 const workerMessageSchema = z.discriminatedUnion("type", [
@@ -153,8 +191,15 @@ export async function prepareSessionStorage(options: {
       terminate();
     }, 30_000);
     options.signal.addEventListener("abort", abort, { once: true });
-    // stdout 只有有界控制帧，stderr 排空但不把可能含本地路径的原始文本上报。
-    child.stderr.resume();
+    // stdout 只有有界控制帧。stderr 仍然不把可能含本地路径的原始文本**上报**（不进入
+    // startupState / IPC），但必须留在本地：之前这里是 `child.stderr.resume()`，把子进程
+    // 崩溃时的真实原因直接扔掉了，于是所有存储准备失败都只表现为一个 `open_failed` /
+    // `transport_closed` 符号，与 Rust 侧 `Stdio::null()` 是同一类问题。
+    // 现在保留一个有界 tail 并在失败时打进本地日志，路径仍不上报。
+    const stderrTail = createBoundedStderrTail();
+    child.stderr.on("data", (chunk: Buffer | string) => {
+      stderrTail.push(chunk.toString());
+    });
     input.on("error", (error) => {
       failure ??= error;
       terminate();
@@ -214,7 +259,17 @@ export async function prepareSessionStorage(options: {
       if (code === 0 && prepared && !failure) {
         if (preparedPath) options.preparedPaths?.add(preparedPath);
         resolve();
-      } else reject(failure ?? statusError("transport_closed"));
+      } else {
+        // 失败时把子进程 stderr tail 打进本地 debug 日志。这是定位存储准备失败原因的唯一
+        // 途径：IPC 帧只携带枚举化的 errorCode，不携带原始文本（可能含本地路径）。
+        const tail = stderrTail.snapshot();
+        if (tail.length > 0) {
+          storagePreparationLogger.debug(
+            `storage preparation child failed (code=${code}); stderr tail:\n${tail.join("\n")}`,
+          );
+        }
+        reject(failure ?? statusError("transport_closed"));
+      }
     });
     if (options.signal.aborted) abort();
   });
