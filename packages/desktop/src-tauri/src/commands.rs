@@ -2718,9 +2718,14 @@ pub fn spawn_host_discover_port(app: AppHandle) -> Result<u32, String> {
     let entry = host_dir.join("standalone.js");
     let addon = host_dir.join("zcode_db.node");
     let agent_entry = host_dir.join("agent").join("zcode.cjs");
+    // 内置 Provider Release。由 `scripts/prepare-zcode-host-sidecar.mjs` 随 host 资源一起带进来；
+    // 之前 Rust spawner 从不传 `ZCODE_BUILTIN_PROVIDER_CONFIG_FILE_PATH`，Host 就退到一个手写的
+    // 非 Release 文件，解码失败后 Provider 启动状态永不 settled，窗口永远卡在启动 logo。
+    // 这里不传一个不存在的路径（否则只是把错误往后推）：和 node/entry/addon 一样要求存在。
+    let provider_release = host_dir.join("provider").join("zcode-builtin.json");
     // The agent entry is passed to the Host as ZCODE_BUNDLED_AGENT_ENTRY; it was missing from this
     // check, so a broken bundle surfaced as a boot hang instead of an explicit "file missing".
-    for path in [&node, &entry, &addon, &agent_entry] {
+    for path in [&node, &entry, &addon, &agent_entry, &provider_release] {
         if !path.exists() {
             return Err(format!("host sidecar file missing: {}", path.display()));
         }
@@ -2734,6 +2739,8 @@ pub fn spawn_host_discover_port(app: AppHandle) -> Result<u32, String> {
         .env("ZCODE_DB_NATIVE", &addon)
         // Bundled Agent the packaged Host runs for storage-prep + sessions (resolver reads this).
         .env("ZCODE_BUNDLED_AGENT_ENTRY", &agent_entry)
+        // Point the Host at the staged builtin provider release (see above).
+        .env("ZCODE_BUILTIN_PROVIDER_CONFIG_FILE_PATH", &provider_release)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

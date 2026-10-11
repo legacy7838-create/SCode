@@ -13,7 +13,7 @@
  * resource telemetry, network-policy, feedback-via-main) are not yet re-homed; they degrade to no-ops /
  * local logs here and are tracked as Phase 3 surfaces. See `tauri-port/PORTING.md`.
  */
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -61,7 +61,7 @@ export function readStandaloneHostInitFromEnv(
     databaseStartupId: env["ZCODE_DB_STARTUP_ID"]?.trim() || undefined,
     workspacePath: env["ZCODE_WORKSPACE_PATH"]?.trim() || undefined,
     deviceMid: env["ZCODE_DEVICE_MID"]?.trim() || undefined,
-    providerConfigFilePath: ensureProviderConfigFile(
+    providerConfigFilePath: resolveProviderConfigFile(
       env["ZCODE_BUILTIN_PROVIDER_CONFIG_FILE_PATH"],
     ),
     agentSpawnFallbackCwd: env["ZCODE_AGENT_SPAWN_FALLBACK_CWD"]?.trim() || undefined,
@@ -71,17 +71,35 @@ export function readStandaloneHostInitFromEnv(
 }
 
 /**
- * Resolve the built-in provider config path, defaulting to a writable dev location and creating an
- * empty config if absent. Real provider-config management is a Phase-3 surface; this keeps the
- * standalone dev sidecar bootable without the (deleted) Electron main supplying the path.
+ * Resolve the built-in provider config path.
+ *
+ * Bug 修复依据：这里原来是 `configured ?? /tmp/zcode-host-dev/providers.json`，并且在文件不存在时
+ * 直接写出 `{"providers":{}}`。那个内容**不是**合法的 `ZCodeBuiltinRelease` envelope
+ * （缺少 `schemaVersion` / `revision` / `config{providerConfigRules,modelConfigRules}`，而且顶层
+ * `providers` 会被 strict schema 拒绝），所以每次启动都会报
+ * `Unrecognized key: "providers"` + `expected number, received undefined`；Provider 启动状态因此
+ * 永不 settled，`shouldBlockRootRender()` 恒为 true，窗口永远卡在启动 logo。打包态之所以命中它，
+ * 是因为 Rust spawner 从不传 `ZCODE_BUILTIN_PROVIDER_CONFIG_FILE_PATH`。
+ *
+ * 现在：调用方给了路径就用它（不再写任何兼容文件）；未给则从当前目录向上找仓库内的
+ * `config/provider/zcode-builtin.json`（dev 态的正解）；仍找不到就返回一个不存在的默认路径。
+ * `readReleaseCandidate()` 对 ENOENT 是当“没有候选”处理的，比起每启动一次就写一刑非法文件，
+ * 缺席是可诚实降级的状态。
  */
-function ensureProviderConfigFile(configured: string | undefined): string {
-  const path = configured?.trim() || join(tmpdir(), "zcode-host-dev", "providers.json");
-  if (!existsSync(path)) {
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, JSON.stringify({ providers: {} }), "utf8");
+function resolveProviderConfigFile(configured: string | undefined): string {
+  const requested = configured?.trim();
+  if (requested) return requested;
+
+  const relative = join("config", "provider", "zcode-builtin.json");
+  let current = process.cwd();
+  for (let depth = 0; depth < 8; depth += 1) {
+    const candidate = join(current, relative);
+    if (existsSync(candidate)) return candidate;
+    const parent = dirname(current);
+    if (parent === current) break;
+    current = parent;
   }
-  return path;
+  return join(tmpdir(), "zcode-host-dev", "zcode-builtin.json");
 }
 
 /**

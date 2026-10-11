@@ -119,7 +119,7 @@ function vendorExternals() {
  * @param {{ bundleDir: string }} options
  * @returns {string[]} The bare specifiers found in the bundle that are not vendored.
  */
-function findUnvendoredBundleImports(bundleDir) {
+function findUnvendoredBundleImports(bundleDir, reachableFiles) {
   // Node 内建模块（含 node: 前缀与 subpath），不是需要拷贝的第三方包。
   const builtins = new Set(builtinModules.flatMap((m) => [m, `node:${m}`]));
   const specifiers = new Set();
@@ -132,7 +132,7 @@ function findUnvendoredBundleImports(bundleDir) {
   // 因此真正负责过滤的是下面的形状校验。两者缺一不可。
   const importPattern =
     /\bfrom\s*["']([^"']+)["']|\bimport\s*["']([^"']+)["']|\brequire\s*\(\s*["']([^"']+)["']\s*\)/g;
-  for (const file of readdirSync(bundleDir)) {
+  for (const file of reachableFiles) {
     if (!file.endsWith(".js")) continue;
     const source = readFileSync(join(bundleDir, file), "utf8");
     for (const match of source.matchAll(importPattern)) {
@@ -153,6 +153,43 @@ function findUnvendoredBundleImports(bundleDir) {
   return [...specifiers].filter((name) => !vendored.has(name)).sort();
 }
 
+/**
+ * The bundle graph actually reachable from the shipped entry points.
+ *
+ * 为什么需要这个：`tsconfig.host.json` 的 `outDir` 和 tsup 的输出目录是同一个 `out/host`，所以
+ * `pnpm typecheck`/`tsc -b` 会把**逐模块的 ESM 产物**（standaloneHost.js、storagePreparationProcesses.js 等）
+ * 一起写到这里。它们不是 tsup bundle 的一部分、不会被任何入口引用，但含有 `@zcode/services`、
+ * `@zcode/shared`、`zod` 这些裸导入（这些包本来就会被内联，不会 vendor）。
+ * 之前的做法是把 `out/host` 下所有 .js 全部 copy 进 bundle，既臃肿又会让 `--check` 报出三个
+ * 假阳性——而一个会错报的检查很快就会被人忽略，那正是我们想要避免的。
+ *
+ * 因此从真正的入口（standalone.js / index.js / tasksStorageWorker.js，最后一个由 `new Worker(路径)`
+ * 加载）沿相对导入做 BFS，只把可达的 chunk 当作打包产物。
+ *
+ * @param {string} bundleDir Directory holding the tsup output.
+ * @param {string[]} entries Entry file names that are loaded directly at runtime.
+ * @returns {string[]} Basenames of every reachable bundle file.
+ */
+function collectReachableBundleFiles(bundleDir, entries) {
+  const seen = new Set();
+  const queue = entries.filter((name) => existsSync(join(bundleDir, name)));
+  const relativeImport = /(?:from|import)\s*["']\.\/([^"']+)["']/g;
+  while (queue.length > 0) {
+    const name = queue.shift();
+    if (seen.has(name)) continue;
+    seen.add(name);
+    const source = readFileSync(join(bundleDir, name), "utf8");
+    for (const match of source.matchAll(relativeImport)) {
+      const dep = match[1];
+      if (dep && existsSync(join(bundleDir, dep))) queue.push(dep);
+    }
+  }
+  return [...seen];
+}
+
+/** Entry points loaded directly by the Rust spawner or by `new Worker(...)` at runtime. */
+const BUNDLE_ENTRIES = ["standalone.js", "index.js", "tasksStorageWorker.js"];
+
 function main() {
   const checkOnly = process.argv.includes("--check");
 
@@ -162,7 +199,10 @@ function main() {
         `[host-sidecar] host bundle missing at ${hostBundleDir}. Run \`pnpm --filter @zcode/desktop build\` first.`,
       );
     }
-    const missing = findUnvendoredBundleImports(hostBundleDir);
+    const missing = findUnvendoredBundleImports(
+      hostBundleDir,
+      collectReachableBundleFiles(hostBundleDir, BUNDLE_ENTRIES),
+    );
     if (missing.length > 0) {
       throw new Error(
         `[host-sidecar] host bundle imports packages that RUNTIME_EXTERNALS does not vendor: ` +
@@ -200,9 +240,10 @@ function main() {
   }
 
   // 2. ESM host bundle (standalone.js + index.js + tasksStorageWorker.js + chunk-*.js).
-  for (const f of readdirSync(hostBundleDir)) {
-    if (f.endsWith(".js") || f.endsWith(".mjs"))
-      copyFileSync(join(hostBundleDir, f), join(outDir, f));
+  // Bundle 产物只拿可达图：避开 tsc 写进同一 outDir 的逐模块残留产物（它们带裸导入，
+  // 但根本不会被入口引用，带进 bundle 只是死重量）。
+  for (const f of collectReachableBundleFiles(hostBundleDir, BUNDLE_ENTRIES)) {
+    copyFileSync(join(hostBundleDir, f), join(outDir, f));
   }
 
   // 3. The Rust DB addon — the ONLY database engine. Loaded by the host via ZCODE_DB_NATIVE.
@@ -218,6 +259,20 @@ function main() {
   }
   mkdirSync(join(outDir, "agent"), { recursive: true });
   copyFileSync(agentSource, join(outDir, "agent", "zcode.cjs"));
+
+  // 内置 Provider Release（`schemaVersion/revision/config{providerConfigRules,modelConfigRules}`）。
+  // 打包态之前从未把它带进 bundle：Rust spawner 不设置 `ZCODE_BUILTIN_PROVIDER_CONFIG_FILE_PATH`，
+  // `ensureProviderConfigFile()` 就退到 `/tmp/zcode-host-dev/providers.json` 并写出 `{"providers":{}}`。
+  // 那份手写内容不是合法的 Release envelope，`decodeZCodeBuiltinRelease` 每次都报
+  // `Unrecognized key: "providers"` / `expected number, received undefined`，于是 Provider 启动状态
+  // 永远不能 settled，`shouldBlockRootRender()` 恒为 true —— 表现就是 AppImage 一直卡在黑底 logo。
+  // 这里把仓库里真正的那份带进去，Rust 侧再把路径传给 Host。
+  const providerReleaseSource = join(repoRoot, "config", "provider", "zcode-builtin.json");
+  if (!existsSync(providerReleaseSource)) {
+    throw new Error(`[host-sidecar] builtin provider release missing: ${providerReleaseSource}`);
+  }
+  mkdirSync(join(outDir, "provider"), { recursive: true });
+  copyFileSync(providerReleaseSource, join(outDir, "provider", "zcode-builtin.json"));
 
   // 4. Force ESM interpretation for the copied bundle (the repo's "type":"module" isn't inherited
   //    by the packaged resources tree).
