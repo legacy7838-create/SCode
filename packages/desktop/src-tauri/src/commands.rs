@@ -2795,20 +2795,32 @@ pub fn spawn_host_discover_port(app: AppHandle) -> Result<u32, String> {
         let stderr_tail = Arc::clone(&stderr_tail);
         let host_log = Arc::clone(&host_log);
         std::thread::spawn(move || {
+            // 关键修复：解析到 ready 行后**不能** return —— 那会丢弃 stdout 的读取端，
+            // 而 Host 进程在其后仍会持续向 stdout 打印日志。读取端一旦关闭，Host 的下一次
+            // console.log 就会在管道上抛出未处理的 EPIPE，Node 进程随即崩溃，渲染端永远
+            // 等不到已就绪的后端（表现为一直卡在启动 logo）。
+            // 因此这里只把端口上报一次，然后继续消费到 EOF，与下面的 stderr 线程一致。
+            let mut reported = false;
             for line in BufReader::new(stdout).lines() {
                 let Ok(line) = line else { break };
                 // 关键：ready 行之后的输出以前是直接扔掉的，现在逐行落盘。
                 mirror_host_line(&host_log, "stdout", &line);
-                if let Some(port) = parse_ready_port(&line) {
-                    let _ = tx.send(Ok(port));
-                    return;
+                if !reported {
+                    if let Some(port) = parse_ready_port(&line) {
+                        let _ = tx.send(Ok(port));
+                        reported = true;
+                    }
                 }
             }
-            let tail = stderr_tail
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .join("\n");
-            let _ = tx.send(Err(tail));
+            // 只有在从未上报过 ready 时才把 stderr 尾部当作失败原因上报；否则那只是
+            // Host 正常退出/被回收时的 EOF，不应覆盖已成功的端口结果。
+            if !reported {
+                let tail = stderr_tail
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .join("\n");
+                let _ = tx.send(Err(tail));
+            }
         });
     }
 
