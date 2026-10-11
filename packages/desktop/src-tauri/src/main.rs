@@ -1,9 +1,16 @@
-// ZCode Tauri v2 shell — P0 foundation scaffold.
+// ZCode Tauri v2 shell — the sole desktop runtime.
 //
-// This is a PARALLEL desktop shell to Electron (see ../PORTING.md). It intentionally does only the
-// minimum: open one window that loads the existing Vite renderer (http://localhost:5174).
-// No Electron code is affected. Platform capabilities (IPlatformService) are NOT yet implemented
-// here, so the UI will render but native calls are no-op until Phase 2.
+// 修正记录：这段文件头还停在 Electron→Tauri 并行移植阶段的说法，已与现实不符：
+//   - “PARALLEL desktop shell to Electron”：Electron 已在 e668ec1d 中整体移除，
+//     `packages/desktop/src/main` 与 `src/preload` 不存在，本 shell 就是产品本身。
+//   - “loads the existing Vite renderer (http://localhost:5174)”：`localhost:5174` 只是
+//     tauri.conf.json 里 `build.devUrl` 的开发入口（也因此会随配置被嵌入二进制，不代表运行时在用）。
+//     release 构建用 `build.frontendDist`（out/renderer），且 `app.windows` 没有 `url`，
+//     所以窗口加载的是内置打包产物，不是开发服务器。
+//   - “IPlatformService NOT yet implemented / native calls no-op until Phase 2”：现在已有
+//     85 个 `#[tauri::command]`，渲染端由 `createTauriPlatform()` 接入（其中 16 个方法由真实
+//     command 支撑，其余为显式惰性实现，见 tauriPlatformFactory.ts 的类型约束）。
+// 未移植的能力仍然存在，以 ../tauri-port/GO-NO-GO.md 的 D1–D4 为准。
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 // Phase 2 real (non-stub) commands: version, locale, device id, platform info, app name, the OS

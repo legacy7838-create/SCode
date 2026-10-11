@@ -12,7 +12,11 @@ rust-version = "1.77"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+# `devtools` 在本阶段是**调试必需**：打包态 release 构建如果没有这个 feature，WebView 的
+# console / 错误完全看不到（open_devtools 不编译），而 `G_MESSAGES_DEBUG=all` 只能给出
+# GTK/libsoup 的噪音，定位不到渲染端卡死的原因。
+# 正式发布前应去掉（DevTools 会对已安装应用开放 renderer 检查能力）。
+tauri = { version = "2", features = ["devtools"] }
 # Direct dependency (also pulled transitively by tauri) so the `get_platform_info` command can
 # derive `serde::Serialize` on its return struct.
 serde = { version = "1", features = ["derive"] }
