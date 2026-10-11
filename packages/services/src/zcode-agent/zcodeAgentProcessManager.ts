@@ -452,6 +452,28 @@ function resolveElectronRuntimeZCodeAgentCommand(
   };
 }
 
+function resolveTauriBundledZCodeAgentCommand(
+  context: ZCodeAgentCommandResolverContext,
+): ZCodeAgentCommand | null {
+  // Tauri 打包态：Local Host 作为独立 Node sidecar 运行（没有 process.versions.electron，所以
+  // resolveElectronRuntimeZCodeAgentCommand 会跳过）。配套的 Agent bundle 由
+  // scripts/prepare-zcode-host-sidecar.mjs 打进 host 资源目录，Rust spawner 通过
+  // ZCODE_BUNDLED_AGENT_ENTRY 传入其绝对路径。用同一个 bundled node 执行 zcode.cjs，并声明
+  // storagePreparationEntry（supportsStorageStartup 由调用方统一置位），否则存储准备会误判
+  // unsupported_runtime。
+  const entry = process.env.ZCODE_BUNDLED_AGENT_ENTRY?.trim();
+  if (!entry || !existsSync(entry)) {
+    return null;
+  }
+  return {
+    command: process.execPath,
+    args: [entry, ...ZCODE_AGENT_RUNTIME.spawnArgs],
+    storagePreparationEntry: entry,
+    cwd: context.workspacePath,
+    env: withZcodeDbNativeEnv({}, entry),
+  };
+}
+
 export function resolveDefaultZCodeAgentCommand(
   context: ZCodeAgentCommandResolverContext,
 ): ZCodeAgentCommand | null {
@@ -467,9 +489,10 @@ export function resolveDefaultZCodeAgentCommand(
     );
   }
 
-  // 顺序：env 显式覆盖 → monorepo dev 源码/dist（dev 改源码立刻生效，不会被远端历史装的 native binary
-  // 抢先匹配）→ 桌面打包态 Electron Node runtime 跑 zcode.cjs → 已部署 native binary（远端 SSH 兜底）。
+  // 顺序：env 显式覆盖 → Tauri 打包态 bundled agent（ZCODE_BUNDLED_AGENT_ENTRY）→ monorepo dev
+  // 源码/dist → 桌面 Electron Node runtime 跑 zcode.cjs → 已部署 native binary（远端 SSH 兜底）。
   const bundled =
+    resolveTauriBundledZCodeAgentCommand(context) ??
     resolveBundledWorkspaceZCodeAgentCommand(context) ??
     resolveElectronRuntimeZCodeAgentCommand(context);
   return applyPresentationSurfaceToCommand(

@@ -2698,6 +2698,7 @@ pub fn spawn_host_discover_port(app: AppHandle) -> Result<u32, String> {
     let node = host_dir.join(if cfg!(windows) { "node.exe" } else { "node" });
     let entry = host_dir.join("standalone.js");
     let addon = host_dir.join("zcode_db.node");
+    let agent_entry = host_dir.join("agent").join("zcode.cjs");
     for path in [&node, &entry, &addon] {
         if !path.exists() {
             return Err(format!("host sidecar file missing: {}", path.display()));
@@ -2710,6 +2711,8 @@ pub fn spawn_host_discover_port(app: AppHandle) -> Result<u32, String> {
         .env("ZCODE_HOST_WS", "1")
         .env("ZCODE_WS_PORT", "0")
         .env("ZCODE_DB_NATIVE", &addon)
+        // Bundled Agent the packaged Host runs for storage-prep + sessions (resolver reads this).
+        .env("ZCODE_BUNDLED_AGENT_ENTRY", &agent_entry)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())

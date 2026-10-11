@@ -127,6 +127,17 @@ function main() {
   // 3. The Rust DB addon — the ONLY database engine. Loaded by the host via ZCODE_DB_NATIVE.
   copyFileSync(dbAddonSource, join(outDir, "zcode_db.node"));
 
+  // 3b. The bundled Agent (zcode.cjs) the packaged Host runs for storage-prep + sessions.
+  //     Resolved by the host via ZCODE_BUNDLED_AGENT_ENTRY (set by the Rust spawner).
+  const agentSource = join(repoRoot, "apps", "zcode-cli", "packages", "cli", "dist", "zcode.cjs");
+  if (!existsSync(agentSource)) {
+    throw new Error(
+      `[host-sidecar] agent bundle missing: ${agentSource}. Build it first: node scripts/build-desktop-agent-cli.mjs`,
+    );
+  }
+  mkdirSync(join(outDir, "agent"), { recursive: true });
+  copyFileSync(agentSource, join(outDir, "agent", "zcode.cjs"));
+
   // 4. Force ESM interpretation for the copied bundle (the repo's "type":"module" isn't inherited
   //    by the packaged resources tree).
   writeFileSync(join(outDir, "package.json"), `${JSON.stringify({ type: "module" }, null, 2)}\n`, "utf8");
