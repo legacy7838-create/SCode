@@ -249,6 +249,35 @@ export interface DbAddon {
   ): string;
 }
 
+/**
+ * 当前模块所在目录的稳健解析。
+ *
+ * Bug 原因：打包态的 Agent 是 **CJS** bundle（`host/agent/zcode.cjs`）。CJS 里没有 `import.meta`，
+ * 打包器把它替换成一个空对象，于是 `import.meta.url` 为 `undefined`：
+ *  - `createRequire(undefined)` 抛 `ERR_INVALID_ARG_VALUE`
+ *  - `fileURLToPath(undefined)` 同样报错
+ * 两者都被 `sqlite-session-store.ts` 的 try/catch 收敛成一个 `open_failed`，结果是打包态 Local
+ * Host 启动即失败；而 dev 态跑的是 ESM/tsx，`import.meta.url` 正常，所以本地开发完全复现不出来。
+ *
+ * addon 路径本身始终是绝对路径，`createRequire` 只需要一个绝对文件名当锚点，因此这里按
+ * ESM（import.meta.url）→ CJS（__dirname）→ process.cwd() 三级回退，不再依赖单一运行时形态。
+ *
+ * @returns An existing absolute directory to anchor addon path resolution and `createRequire`.
+ */
+function moduleDir(): string {
+  // 不用 `import.meta.url` 直接取值：CJS 打包产物里它不存在，见上方说明。
+  const metaUrl = (import.meta as unknown as { url?: string }).url;
+  if (typeof metaUrl === "string" && metaUrl.startsWith("file:")) {
+    return dirname(fileURLToPath(metaUrl));
+  }
+  // CJS：`__dirname` 由模块系统提供。
+  if (typeof __dirname === "string" && __dirname.length > 0) {
+    return __dirname;
+  }
+  // 最后的兜底：仍然给出一个绝对路径，避免 createRequire 收到 undefined。
+  return process.cwd();
+}
+
 /** Resolve the compiled addon path: `ZCODE_DB_NATIVE` wins, else the staged cargo artifact. */
 function resolveNativePath(): string {
   const fromEnv = process.env.ZCODE_DB_NATIVE;
@@ -259,7 +288,7 @@ function resolveNativePath(): string {
     return fromEnv;
   }
   // .../apps/zcode-cli/packages/adapters/src/storage/session-store → repo root.
-  const here = dirname(fileURLToPath(import.meta.url));
+  const here = moduleDir();
   const candidate = join(here, "../../../../../../../packages/desktop/zcode-db/zcode_db.node");
   if (!existsSync(candidate)) {
     throw new Error(
@@ -275,7 +304,8 @@ let cached: DbAddon | null = null;
 /** Load (once, cached) the Rust DB addon behind its typed interface. */
 export function loadSessionAddon(): DbAddon {
   if (!cached) {
-    const requireFrom = createRequire(import.meta.url);
+    // 锚点用绝对路径文件名：见 moduleDir() 的说明，不能用 import.meta.url（CJS 打包态下为 undefined）。
+    const requireFrom = createRequire(join(moduleDir(), "native-addon.cjs"));
     cached = requireFrom(resolveNativePath()) as DbAddon;
   }
   return cached;

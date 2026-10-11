@@ -34,6 +34,24 @@ export interface DebugObservationRows {
   sessions: RawRow[];
 }
 
+/**
+ * 当前模块目录的稳健解析（与 adapters/session-store/native-addon.ts 同一修复）。
+ *
+ * Bug 原因：打包态 CLI 是 CJS bundle，`import.meta` 不存在（被打包器替换成空对象），
+ * `import.meta.url` 为 undefined，导致 `createRequire(undefined)` 抛 ERR_INVALID_ARG_VALUE。
+ * dev（ESM/tsx）下无法复现，所以只在打包产物里暴露。
+ */
+function moduleDir(): string {
+  const metaUrl = (import.meta as unknown as { url?: string }).url;
+  if (typeof metaUrl === "string" && metaUrl.startsWith("file:")) {
+    return dirname(fileURLToPath(metaUrl));
+  }
+  if (typeof __dirname === "string" && __dirname.length > 0) {
+    return __dirname;
+  }
+  return process.cwd();
+}
+
 function resolveNativePath(): string {
   const fromEnv = process.env.ZCODE_DB_NATIVE;
   if (fromEnv) {
@@ -43,7 +61,7 @@ function resolveNativePath(): string {
     return fromEnv;
   }
   // .../apps/zcode-cli/packages/debug/server → 仓库根，再进桌面侧的暂存产物。
-  const here = dirname(fileURLToPath(import.meta.url));
+  const here = moduleDir();
   const candidate = join(here, "../../../../../packages/desktop/zcode-db/zcode_db.node");
   if (!existsSync(candidate)) {
     throw new Error(
@@ -58,7 +76,7 @@ let cached: DebugDbAddon | null = null;
 
 function loadAddon(): DebugDbAddon {
   if (!cached) {
-    cached = createRequire(import.meta.url)(resolveNativePath()) as DebugDbAddon;
+    cached = createRequire(join(moduleDir(), "native-db.cjs"))(resolveNativePath()) as DebugDbAddon;
   }
   return cached;
 }
