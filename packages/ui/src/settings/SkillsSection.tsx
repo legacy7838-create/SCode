@@ -212,7 +212,9 @@ export function SkillsSection({
             })
           );
         case "plugin":
-          return skill.pluginName?.trim() || intl.formatMessage({ id: "settings.skills.scope.plugin" });
+          return (
+            skill.pluginName?.trim() || intl.formatMessage({ id: "settings.skills.scope.plugin" })
+          );
         case "user":
         default:
           return intl.formatMessage({ id: "settings.skills.scope.personal" });

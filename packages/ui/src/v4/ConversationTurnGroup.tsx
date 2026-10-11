@@ -70,9 +70,7 @@ import type {
   AssistantFeedbackHandler,
   EditWorkspaceRewindAvailability,
 } from "@/v4/ConversationRowView.js";
-import {
-  type ConversationRowRenderContext,
-} from "@/v4/conversationRowContext.js";
+import { type ConversationRowRenderContext } from "@/v4/conversationRowContext.js";
 import type {
   AssistantWorkRow,
   ConversationTurnRenderUnit,
@@ -195,10 +193,7 @@ function ConversationToolGroupRow({
   item,
   context,
 }: {
-  item: Extract<
-    ConversationAssistantWorkRenderItem,
-    { kind: "executeGroup" | "changesGroup" }
-  >;
+  item: Extract<ConversationAssistantWorkRenderItem, { kind: "executeGroup" | "changesGroup" }>;
   context: ConversationRowRenderContext;
 }) {
   return (

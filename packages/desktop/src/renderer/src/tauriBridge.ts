@@ -225,9 +225,7 @@ export interface TauriOpenDialogOptions {
  *
  * @param options - 多选与过滤条件；缺省为单选、无过滤。
  */
-export function showOpenDialog(
-  options: TauriOpenDialogOptions = {},
-): Promise<string[] | null> {
+export function showOpenDialog(options: TauriOpenDialogOptions = {}): Promise<string[] | null> {
   return invoke<string[] | null>("show_open_dialog", {
     multiple: options.multiple ?? false,
     filters: options.filters ?? [],
@@ -246,9 +244,7 @@ export interface TauriSaveDialogOptions {
  *
  * @param options - 默认路径建议。
  */
-export function showSaveDialog(
-  options: TauriSaveDialogOptions = {},
-): Promise<string | null> {
+export function showSaveDialog(options: TauriSaveDialogOptions = {}): Promise<string | null> {
   return invoke<string | null>("show_save_dialog", {
     defaultPath: options.defaultPath ?? null,
   });
@@ -270,9 +266,7 @@ export interface TauriMessageDialogOptions {
  *
  * @param options - 严重级别、标题与消息文本。
  */
-export function showMessageDialog(
-  options: TauriMessageDialogOptions,
-): Promise<boolean> {
+export function showMessageDialog(options: TauriMessageDialogOptions): Promise<boolean> {
   return invoke<boolean>("show_message_dialog", {
     kind: options.kind ?? "info",
     title: options.title,
@@ -490,9 +484,7 @@ export function getWindowSize(label?: string): Promise<TauriWindowSize> {
  *
  * @param label - 目标窗口 label，缺省为主窗口 `"main"`。
  */
-export function getWindowPosition(
-  label?: string,
-): Promise<TauriWindowPosition> {
+export function getWindowPosition(label?: string): Promise<TauriWindowPosition> {
   return invoke<TauriWindowPosition>("get_window_position", {
     label: label ?? DEFAULT_WINDOW_LABEL,
   });
@@ -565,11 +557,7 @@ export function getWindowTitle(label?: string): Promise<string> {
  * @param height - 新的内部高度（物理像素）。
  * @param label - 目标窗口 label，缺省为主窗口 `"main"`。
  */
-export function setWindowSize(
-  width: number,
-  height: number,
-  label?: string,
-): Promise<void> {
+export function setWindowSize(width: number, height: number, label?: string): Promise<void> {
   return invoke<void>("set_window_size", {
     label: label ?? DEFAULT_WINDOW_LABEL,
     width,
@@ -585,11 +573,7 @@ export function setWindowSize(
  * @param y - 新的左上角 Y 坐标（物理像素，可为负值）。
  * @param label - 目标窗口 label，缺省为主窗口 `"main"`。
  */
-export function setWindowPosition(
-  x: number,
-  y: number,
-  label?: string,
-): Promise<void> {
+export function setWindowPosition(x: number, y: number, label?: string): Promise<void> {
   return invoke<void>("set_window_position", {
     label: label ?? DEFAULT_WINDOW_LABEL,
     x,
@@ -615,10 +599,7 @@ export function centerWindow(label?: string): Promise<void> {
  * @param fullscreen - `true` 进入全屏，`false` 退出全屏。
  * @param label - 目标窗口 label，缺省为主窗口 `"main"`。
  */
-export function setFullscreen(
-  fullscreen: boolean,
-  label?: string,
-): Promise<void> {
+export function setFullscreen(fullscreen: boolean, label?: string): Promise<void> {
   return invoke<void>("set_fullscreen", {
     label: label ?? DEFAULT_WINDOW_LABEL,
     fullscreen,
@@ -699,10 +680,7 @@ export function getExePath(): Promise<string> {
  * @param label - 目标窗口 label。
  * @param level - 目标缩放等级（Electron 对数单位，`0` 表示 100%）。
  */
-export function setTauriDesktopZoomLevel(
-  label: string,
-  level: number,
-): Promise<void> {
+export function setTauriDesktopZoomLevel(label: string, level: number): Promise<void> {
   return invoke<void>("set_desktop_zoom_level", { label, level });
 }
 
@@ -761,10 +739,7 @@ export function isWindowAlwaysOnTop(label: string): Promise<boolean> {
  * @param label - 目标窗口 label。
  * @param alwaysOnTop - `true` 置顶，`false` 取消置顶。
  */
-export function setWindowAlwaysOnTop(
-  label: string,
-  alwaysOnTop: boolean,
-): Promise<void> {
+export function setWindowAlwaysOnTop(label: string, alwaysOnTop: boolean): Promise<void> {
   return invoke<void>("set_window_always_on_top", { label, alwaysOnTop });
 }
 
@@ -785,10 +760,7 @@ export function isWindowResizable(label: string): Promise<boolean> {
  * @param label - 目标窗口 label。
  * @param resizable - `true` 允许调整大小，`false` 锁定当前尺寸。
  */
-export function setWindowResizable(
-  label: string,
-  resizable: boolean,
-): Promise<void> {
+export function setWindowResizable(label: string, resizable: boolean): Promise<void> {
   return invoke<void>("set_window_resizable", { label, resizable });
 }
 
@@ -832,10 +804,7 @@ export function hideWindow(label: string): Promise<void> {
  * @param label - 目标窗口 label。
  * @param skip - `true` 从任务栏隐藏，`false` 显示。
  */
-export function setWindowSkipTaskbar(
-  label: string,
-  skip: boolean,
-): Promise<void> {
+export function setWindowSkipTaskbar(label: string, skip: boolean): Promise<void> {
   return invoke<void>("set_window_skip_taskbar", { label, skip });
 }
 
@@ -846,10 +815,7 @@ export function setWindowSkipTaskbar(
  * @param label - 目标窗口 label。
  * @param focusable - `true` 允许聚焦，`false` 禁止聚焦。
  */
-export function setWindowFocusable(
-  label: string,
-  focusable: boolean,
-): Promise<void> {
+export function setWindowFocusable(label: string, focusable: boolean): Promise<void> {
   return invoke<void>("set_window_focusable", { label, focusable });
 }
 
@@ -862,10 +828,7 @@ export function setWindowFocusable(
  * @param label - 目标窗口 label。
  * @param isProtected - `true` 排除截屏/录屏，`false` 允许。
  */
-export function setWindowContentProtected(
-  label: string,
-  isProtected: boolean,
-): Promise<void> {
+export function setWindowContentProtected(label: string, isProtected: boolean): Promise<void> {
   return invoke<void>("set_window_content_protected", { label, isProtected });
 }
 
@@ -907,9 +870,7 @@ export function isWindowMinimized(label: string): Promise<boolean> {
  *
  * @param label - 目标窗口 label。
  */
-export function getWindowInnerPosition(
-  label: string,
-): Promise<{ x: number; y: number }> {
+export function getWindowInnerPosition(label: string): Promise<{ x: number; y: number }> {
   return invoke<{ x: number; y: number }>("get_window_inner_position", {
     label,
   });
@@ -932,10 +893,7 @@ export function isWindowEnabled(label: string): Promise<boolean> {
  * @param label - 目标窗口 label。
  * @param enabled - `true` 允许交互，`false` 屏蔽交互。
  */
-export function setWindowEnabled(
-  label: string,
-  enabled: boolean,
-): Promise<void> {
+export function setWindowEnabled(label: string, enabled: boolean): Promise<void> {
   return invoke<void>("set_window_enabled", { label, enabled });
 }
 
@@ -967,9 +925,7 @@ export function getWindowOuterSize(label: string): Promise<TauriWindowSize> {
  *
  * @param label - 目标窗口 label（用于触达窗口的光标 API，返回值为桌面全局光标）。
  */
-export function getCursorPosition(
-  label: string,
-): Promise<{ x: number; y: number }> {
+export function getCursorPosition(label: string): Promise<{ x: number; y: number }> {
   return invoke<{ x: number; y: number }>("get_cursor_position", { label });
 }
 
@@ -1000,10 +956,7 @@ export function getWindowTheme(label: string): Promise<string> {
  * @param theme - `"light"` / `"dark"`；传 `null` 清除显式覆盖（跟随系统）。Rust 形参 `theme:
  *   Option<String>`，`null`/缺省即映射为 `None`。未知字符串在 Rust 侧返回 `Err("invalid theme")`。
  */
-export function setWindowTheme(
-  label: string,
-  theme: string | null,
-): Promise<void> {
+export function setWindowTheme(label: string, theme: string | null): Promise<void> {
   return invoke<void>("set_window_theme", { label, theme });
 }
 
@@ -1070,9 +1023,7 @@ export interface TauriDesktopZoomState {
 export function listenTauriDesktopZoomChanged(
   handler: (state: TauriDesktopZoomState) => void,
 ): Promise<UnlistenFn> {
-  return listen<TauriDesktopZoomState>(ZOOM_CHANGED_EVENT, (event) =>
-    handler(event.payload),
-  );
+  return listen<TauriDesktopZoomState>(ZOOM_CHANGED_EVENT, (event) => handler(event.payload));
 }
 
 /**
@@ -1086,8 +1037,7 @@ export function listenTauriDesktopZoomChanged(
  * 无全屏变体，无法挂原生窗口事件，故仅在「本 shell 命令驱动的」切换处推送；系统窗口管理器发起的外部
  * 全屏切换不可见。字面量须与 `commands.rs` 逐字一致，由 a5 守卫防漂移；真实推送在 `pnpm dev:tauri` 验证。
  */
-export const WINDOW_FULLSCREEN_CHANGED_EVENT =
-  "zcode:window-fullscreen-changed";
+export const WINDOW_FULLSCREEN_CHANGED_EVENT = "zcode:window-fullscreen-changed";
 
 /**
  * 订阅窗口全屏状态变更事件。对应 Rust 广播 `WINDOW_FULLSCREEN_CHANGED_EVENT`。
@@ -1098,9 +1048,7 @@ export const WINDOW_FULLSCREEN_CHANGED_EVENT =
 export function listenTauriWindowFullscreenChanged(
   handler: (isFullscreen: boolean) => void,
 ): Promise<UnlistenFn> {
-  return listen<boolean>(WINDOW_FULLSCREEN_CHANGED_EVENT, (event) =>
-    handler(event.payload),
-  );
+  return listen<boolean>(WINDOW_FULLSCREEN_CHANGED_EVENT, (event) => handler(event.payload));
 }
 
 /**
@@ -1120,10 +1068,7 @@ export function listenTauriWindowFullscreenChanged(
  * @param label - 目标窗口 label。
  * @param decorations - `true` 显示原生边框，`false` 无边框。
  */
-export function setWindowDecorations(
-  label: string,
-  decorations: boolean,
-): Promise<void> {
+export function setWindowDecorations(label: string, decorations: boolean): Promise<void> {
   return invoke<void>("set_window_decorations", { label, decorations });
 }
 
@@ -1134,10 +1079,7 @@ export function setWindowDecorations(
  * @param label - 目标窗口 label。
  * @param ignore - `true` 忽略（穿透）鼠标事件，`false` 捕获。
  */
-export function setWindowIgnoreCursorEvents(
-  label: string,
-  ignore: boolean,
-): Promise<void> {
+export function setWindowIgnoreCursorEvents(label: string, ignore: boolean): Promise<void> {
   return invoke<void>("set_window_ignore_cursor_events", { label, ignore });
 }
 
@@ -1149,11 +1091,7 @@ export function setWindowIgnoreCursorEvents(
  * @param width - 最小内部宽度（物理像素）。
  * @param height - 最小内部高度（物理像素）。
  */
-export function setWindowMinSize(
-  label: string,
-  width: number,
-  height: number,
-): Promise<void> {
+export function setWindowMinSize(label: string, width: number, height: number): Promise<void> {
   return invoke<void>("set_window_min_size", { label, width, height });
 }
 
@@ -1165,11 +1103,7 @@ export function setWindowMinSize(
  * @param width - 最大内部宽度（物理像素）。
  * @param height - 最大内部高度（物理像素）。
  */
-export function setWindowMaxSize(
-  label: string,
-  width: number,
-  height: number,
-): Promise<void> {
+export function setWindowMaxSize(label: string, width: number, height: number): Promise<void> {
   return invoke<void>("set_window_max_size", { label, width, height });
 }
 
@@ -1272,10 +1206,7 @@ export function setWindowVisibleOnAllWorkspaces(
  * @param label - 目标窗口 label。
  * @param grab - `true` 将光标约束在窗口内，`false` 释放。
  */
-export function setWindowCursorGrab(
-  label: string,
-  grab: boolean,
-): Promise<void> {
+export function setWindowCursorGrab(label: string, grab: boolean): Promise<void> {
   return invoke<void>("set_window_cursor_grab", { label, grab });
 }
 
@@ -1286,10 +1217,7 @@ export function setWindowCursorGrab(
  * @param label - 目标窗口 label。
  * @param visible - `true` 显示光标，`false` 隐藏。
  */
-export function setWindowCursorVisible(
-  label: string,
-  visible: boolean,
-): Promise<void> {
+export function setWindowCursorVisible(label: string, visible: boolean): Promise<void> {
   return invoke<void>("set_window_cursor_visible", { label, visible });
 }
 
@@ -1369,9 +1297,7 @@ export interface TauriMonitor {
  *
  * @param label - 目标窗口 label。
  */
-export function getTauriCurrentMonitor(
-  label: string,
-): Promise<TauriMonitor | null> {
+export function getTauriCurrentMonitor(label: string): Promise<TauriMonitor | null> {
   return invoke<TauriMonitor | null>("get_window_current_monitor", { label });
 }
 
@@ -1380,9 +1306,7 @@ export function getTauriCurrentMonitor(
  *
  * @param label - 目标窗口 label（用于触达窗口的显示器查询）。
  */
-export function getTauriPrimaryMonitor(
-  label: string,
-): Promise<TauriMonitor | null> {
+export function getTauriPrimaryMonitor(label: string): Promise<TauriMonitor | null> {
   return invoke<TauriMonitor | null>("get_primary_monitor", { label });
 }
 
@@ -1392,8 +1316,6 @@ export function getTauriPrimaryMonitor(
  *
  * @param label - 目标窗口 label。
  */
-export function getTauriAvailableMonitors(
-  label: string,
-): Promise<TauriMonitor[]> {
+export function getTauriAvailableMonitors(label: string): Promise<TauriMonitor[]> {
   return invoke<TauriMonitor[]>("get_available_monitors", { label });
 }

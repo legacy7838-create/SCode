@@ -99,10 +99,7 @@ async function main(): Promise<void> {
   const arr = result as Array<{ kind?: string; received?: { probe?: string }; ok?: boolean }>;
   const row = Array.isArray(result) ? arr[0] : undefined;
   const passed =
-    row !== undefined &&
-    row.kind === "echo" &&
-    row.ok === true &&
-    row.received?.probe === "hello";
+    row !== undefined && row.kind === "echo" && row.ok === true && row.received?.probe === "hello";
 
   wss.close();
 

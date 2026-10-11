@@ -1,10 +1,7 @@
 import { useEffect, useState, type MouseEvent } from "react";
 import { ChevronDown, UploadCloud } from "lucide-react";
 import type { RemoteTarget } from "@zcode/shared";
-import type {
-  IMcpSyncService,
-  ISkillSyncService,
-} from "@zcode/services";
+import type { IMcpSyncService, ISkillSyncService } from "@zcode/services";
 import { Button } from "@/components/ui/button.js";
 import {
   DropdownMenu,
@@ -94,9 +91,7 @@ export function useRemoteSkillSyncAvailable(
     }
 
     void withTimeout(
-      Promise.all([
-        remoteSkillSyncService.checkRemoteUserSkillWriteAccess(),
-      ]),
+      Promise.all([remoteSkillSyncService.checkRemoteUserSkillWriteAccess()]),
       REMOTE_SYNC_PREFLIGHT_TIMEOUT_MS,
     )
       .then(([remote]) => {
@@ -136,9 +131,7 @@ export function useRemoteMcpSyncAvailable(
     }
 
     void withTimeout(
-      Promise.all([
-        remoteMcpSyncService.checkRemoteUserMcpWriteAccess(),
-      ]),
+      Promise.all([remoteMcpSyncService.checkRemoteUserMcpWriteAccess()]),
       REMOTE_SYNC_PREFLIGHT_TIMEOUT_MS,
     )
       .then(([remote]) => {

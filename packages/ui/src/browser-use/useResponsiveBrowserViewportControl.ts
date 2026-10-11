@@ -126,7 +126,14 @@ export function useResponsiveBrowserViewportControl({
       }
       applyResponsiveMode(false);
     });
-  }, [applyResponsiveMode, browserKey, desktopZoomFactor, platform, sessionId, updateControlledViewport]);
+  }, [
+    applyResponsiveMode,
+    browserKey,
+    desktopZoomFactor,
+    platform,
+    sessionId,
+    updateControlledViewport,
+  ]);
 
   const toggleResponsiveMode = useCallback(() => {
     const nextMode = !isResponsiveModeRef.current;

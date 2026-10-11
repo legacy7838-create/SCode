@@ -14,11 +14,11 @@ this. Keep it small: 3 low-risk, self-contained capabilities that prove the
 
 ## Command contract (names are snake_case; all return `String`)
 
-| Command | Arg(s) | Returns | Rust source of truth | TS wrapper |
-| --- | --- | --- | --- | --- |
-| `get_app_version` | none | app package version, e.g. `"0.0.0"` | `app.package_info().version.to_string()` via `tauri::Manager` / `AppHandle` | `getTauriAppVersion()` |
-| `get_system_locale` | none | BCP-47-ish locale, e.g. `"en-US"` | `sys_locale::get_locale()` (crate `sys-locale`), fallback `"en-US"` | `getTauriSystemLocale()` |
-| `get_device_id` | none | stable device id string (may be `""` if unavailable) | `std::env::var("ZCODE_DEVICE_ID").unwrap_or_default()` (real env read; full machine-id parity is P2) | `getTauriDeviceId()` |
+| Command             | Arg(s) | Returns                                              | Rust source of truth                                                                                 | TS wrapper               |
+| ------------------- | ------ | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------ |
+| `get_app_version`   | none   | app package version, e.g. `"0.0.0"`                  | `app.package_info().version.to_string()` via `tauri::Manager` / `AppHandle`                          | `getTauriAppVersion()`   |
+| `get_system_locale` | none   | BCP-47-ish locale, e.g. `"en-US"`                    | `sys_locale::get_locale()` (crate `sys-locale`), fallback `"en-US"`                                  | `getTauriSystemLocale()` |
+| `get_device_id`     | none   | stable device id string (may be `""` if unavailable) | `std::env::var("ZCODE_DEVICE_ID").unwrap_or_default()` (real env read; full machine-id parity is P2) | `getTauriDeviceId()`     |
 
 `shell_kind() -> "tauri"` already exists as the smoke marker.
 
@@ -48,11 +48,11 @@ Real `IPlatformService` capabilities (`openExternal`, `showItemInFolder`, `openP
 `.map_err`). Register plugin in `main.rs` + add `opener:default` (or `allow-open-url`/`allow-reveal-item-in-dir`/
 `allow-open-path`) to `capabilities/default.json`.
 
-| Command | Args | Returns | Behavior |
-| --- | --- | --- | --- |
-| `open_url` | `url: String` | `Result<(),String>` | open in system default browser |
-| `reveal_in_folder` | `path: String` | `Result<(),String>` | reveal file in OS file manager |
-| `open_path` | `path: String` | `Result<(),String>` | open a file/dir with its default app |
+| Command            | Args           | Returns             | Behavior                             |
+| ------------------ | -------------- | ------------------- | ------------------------------------ |
+| `open_url`         | `url: String`  | `Result<(),String>` | open in system default browser       |
+| `reveal_in_folder` | `path: String` | `Result<(),String>` | reveal file in OS file manager       |
+| `open_path`        | `path: String` | `Result<(),String>` | open a file/dir with its default app |
 
 TS bridge: `openExternal(url)`, `showItemInFolder(path)`, `openPath(path)` → `invoke(cmd, {…})`;
 reject on Rust `Err`. URL/path validation (scheme allow-list for `open_url`) noted as a P2 hardening
@@ -66,13 +66,13 @@ Real `IPlatformService` capabilities: the menu command ids `ZoomIn`/`ZoomOut`/`R
 `WebviewWindow::set_zoom(scale_factor: f64)` (`tauri-2.12.1/src/webview/webview_window.rs:2688`,
 inside a `#[cfg(desktop)]`/`wry` impl — enabled by default on desktop), but has **no zoom getter**.
 
-Chromium (Electron) zoom is *level*-based; Tauri is *factor*-based. Electron documents
+Chromium (Electron) zoom is _level_-based; Tauri is _factor_-based. Electron documents
 `zoomLevel = log(zoomFactor) / log(1.2)`, i.e. `zoomFactor = 1.2^zoomLevel` (level `0` == 100% ==
 factor `1.0`). This slice ports that mapping as a pure, unit-tested helper — the PORTING.md Phase-6
 "float/unit-conversion" semantic trap — and wires the setter command through it.
 
-| Command | Args | Returns | Behavior |
-| --- | --- | --- | --- |
+| Command                  | Args                          | Returns             | Behavior                                        |
+| ------------------------ | ----------------------------- | ------------------- | ----------------------------------------------- |
 | `set_desktop_zoom_level` | `label: String`, `level: f64` | `Result<(),String>` | factor = `1.2^level`; `window.set_zoom(factor)` |
 
 Pure helpers (unit-tested, no live window): `zoom_level_to_factor(level) -> f64` and
@@ -95,13 +95,13 @@ and ungated for the default desktop build in `tauri-2.12.1/src/webview/webview_w
 `set_resizable` :2319). Each returns a scalar through the existing fallible seam
 (`Result<_, String>` via `.map_err`), resolved through the shared `require_window` helper.
 
-| Command | Args | Returns | Behavior |
-| --- | --- | --- | --- |
-| `get_window_scale_factor` | `label` | `Result<f64,String>` | device-pixel-ratio via `scale_factor()` (HiDPI layout) |
-| `is_window_always_on_top` | `label` | `Result<bool,String>` | read `is_always_on_top()` |
-| `set_window_always_on_top` | `label`, `always_on_top: bool` | `Result<(),String>` | apply `set_always_on_top(..)` |
-| `is_window_resizable` | `label` | `Result<bool,String>` | read `is_resizable()` |
-| `set_window_resizable` | `label`, `resizable: bool` | `Result<(),String>` | apply `set_resizable(..)` |
+| Command                    | Args                           | Returns               | Behavior                                               |
+| -------------------------- | ------------------------------ | --------------------- | ------------------------------------------------------ |
+| `get_window_scale_factor`  | `label`                        | `Result<f64,String>`  | device-pixel-ratio via `scale_factor()` (HiDPI layout) |
+| `is_window_always_on_top`  | `label`                        | `Result<bool,String>` | read `is_always_on_top()`                              |
+| `set_window_always_on_top` | `label`, `always_on_top: bool` | `Result<(),String>`   | apply `set_always_on_top(..)`                          |
+| `is_window_resizable`      | `label`                        | `Result<bool,String>` | read `is_resizable()`                                  |
+| `set_window_resizable`     | `label`, `resizable: bool`     | `Result<(),String>`   | apply `set_resizable(..)`                              |
 
 TS bridge: one typed `invoke` wrapper per command, mirroring the existing wrappers. No new plugin or
 capability entry (these are custom commands called from Rust, not JS-facing core APIs). Min/max-size
@@ -117,12 +117,12 @@ and the anti-screen-capture `setContentProtection` that mirrors `captureWindowSc
 `set_focusable` :2397, `set_content_protected` :2354). Each resolves the live window through the
 shared `require_window` helper and uses the existing `Result<_, String>` `.map_err` seam.
 
-| Command | Args | Returns | Behavior |
-| --- | --- | --- | --- |
-| `show_window` | `label` | `Result<(),String>` | `window.show()` |
-| `hide_window` | `label` | `Result<(),String>` | `window.hide()` |
-| `set_window_skip_taskbar` | `label`, `skip: bool` | `Result<(),String>` | `set_skip_taskbar(skip)` |
-| `set_window_focusable` | `label`, `focusable: bool` | `Result<(),String>` | `set_focusable(focusable)` |
+| Command                        | Args                       | Returns             | Behavior                           |
+| ------------------------------ | -------------------------- | ------------------- | ---------------------------------- |
+| `show_window`                  | `label`                    | `Result<(),String>` | `window.show()`                    |
+| `hide_window`                  | `label`                    | `Result<(),String>` | `window.hide()`                    |
+| `set_window_skip_taskbar`      | `label`, `skip: bool`      | `Result<(),String>` | `set_skip_taskbar(skip)`           |
+| `set_window_focusable`         | `label`, `focusable: bool` | `Result<(),String>` | `set_focusable(focusable)`         |
 | `set_window_content_protected` | `label`, `protected: bool` | `Result<(),String>` | `set_content_protected(protected)` |
 
 TS bridge: one typed `invoke` wrapper per command; Rust snake_case args map to JS camelCase
@@ -139,13 +139,13 @@ and `crate::Result`-returning in `tauri-2.12.1/src/webview/webview_window.rs` (`
 `inner_position` command reuses the existing `WindowPosition { x: i32, y: i32 }` struct from slice 9
 (both `outer_position` and `inner_position` report a signed physical origin).
 
-| Command | Args | Returns | Behavior |
-| --- | --- | --- | --- |
-| `window_unminimize` | `label` | `Result<(),String>` | `window.unminimize()` (Electron `restore`-from-minimized) |
-| `is_window_minimized` | `label` | `Result<bool,String>` | `window.is_minimized()` |
-| `get_window_inner_position` | `label` | `Result<WindowPosition,String>` | `window.inner_position()` → `{x,y}` |
-| `is_window_enabled` | `label` | `Result<bool,String>` | `window.is_enabled()` (user-interaction enabled) |
-| `set_window_enabled` | `label`, `enabled: bool` | `Result<(),String>` | `window.set_enabled(enabled)` |
+| Command                     | Args                     | Returns                         | Behavior                                                  |
+| --------------------------- | ------------------------ | ------------------------------- | --------------------------------------------------------- |
+| `window_unminimize`         | `label`                  | `Result<(),String>`             | `window.unminimize()` (Electron `restore`-from-minimized) |
+| `is_window_minimized`       | `label`                  | `Result<bool,String>`           | `window.is_minimized()`                                   |
+| `get_window_inner_position` | `label`                  | `Result<WindowPosition,String>` | `window.inner_position()` → `{x,y}`                       |
+| `is_window_enabled`         | `label`                  | `Result<bool,String>`           | `window.is_enabled()` (user-interaction enabled)          |
+| `set_window_enabled`        | `label`, `enabled: bool` | `Result<(),String>`             | `window.set_enabled(enabled)`                             |
 
 TS bridge: one typed `invoke` wrapper per command; `get_window_inner_position` returns the same
 `{ x, y }` object shape as the slice-9 `get_window_position`. No new plugin/capability. `inner_size`
@@ -163,10 +163,10 @@ exposes the OS-wide mouse location for drag/overlay geometry, mapping `WebviewWi
 (f64, not i32, because a global cursor is a sub-pixel float and may be negative off the primary
 monitor).
 
-| Command | Args | Returns | Behavior |
-| --- | --- | --- | --- |
-| `get_window_outer_size` | `label` | `Result<WindowSize,String>` | `window.outer_size()` → `{ width, height }` |
-| `get_cursor_position` | `label` | `Result<CursorPosition,String>` | `window.cursor_position()` → `{ x, y }` (f64, global) |
+| Command                 | Args    | Returns                         | Behavior                                              |
+| ----------------------- | ------- | ------------------------------- | ----------------------------------------------------- |
+| `get_window_outer_size` | `label` | `Result<WindowSize,String>`     | `window.outer_size()` → `{ width, height }`           |
+| `get_cursor_position`   | `label` | `Result<CursorPosition,String>` | `window.cursor_position()` → `{ x, y }` (f64, global) |
 
 `get_cursor_position` takes `label` to reach the window's cursor API (Tauri exposes `cursor_position`
 on the window; it returns the desktop-wide cursor, per the crate doc at `:2018`). TS bridge: two typed
@@ -177,8 +177,7 @@ new plugin/capability. Both require a live GUI window (compile-verified; exercis
 ## Slice 18 contract — seam-drift closure + 1:1 contract guard
 
 A static audit (`comm` over the two files) found three Rust commands that shipped WITHOUT a TS
-`invoke` wrapper — the renderer could not reach them: `get_window_theme` / `set_window_theme` (slice
-12) and `spawn_sidecar_echo` (sidecar PoC). This slice closes that drift and locks the invariant so
+`invoke` wrapper — the renderer could not reach them: `get_window_theme` / `set_window_theme` (slice 12) and `spawn_sidecar_echo` (sidecar PoC). This slice closes that drift and locks the invariant so
 it cannot silently recur.
 
 TS bridge (new wrappers): `getWindowTheme(label)` → `invoke<string>("get_window_theme", { label })`;
@@ -227,11 +226,11 @@ but NOT returned struct fields (serde controls those), so without the rename the
 `scale_factor`. Renaming keeps every bridge identifier camelCase, which the A5 guard (d) enforces
 bridge-wide — a returned snake_case field would (correctly) fail that guard.
 
-| Command | Args | Returns | Behavior |
-| --- | --- | --- | --- |
-| `get_window_current_monitor` | `label` | `Result<Option<MonitorInfo>,String>` | `window.current_monitor()` |
-| `get_primary_monitor` | `label` | `Result<Option<MonitorInfo>,String>` | `window.primary_monitor()` |
-| `get_available_monitors` | `label` | `Result<Vec<MonitorInfo>,String>` | `window.available_monitors()` |
+| Command                      | Args    | Returns                              | Behavior                      |
+| ---------------------------- | ------- | ------------------------------------ | ----------------------------- |
+| `get_window_current_monitor` | `label` | `Result<Option<MonitorInfo>,String>` | `window.current_monitor()`    |
+| `get_primary_monitor`        | `label` | `Result<Option<MonitorInfo>,String>` | `window.primary_monitor()`    |
+| `get_available_monitors`     | `label` | `Result<Vec<MonitorInfo>,String>`    | `window.available_monitors()` |
 
 TS bridge: `TauriMonitor { name: string | null; size: TauriWindowSize; position: {x,y}; scaleFactor:
 number }` interface + three wrappers (`getTauriCurrentMonitor`, `getTauriPrimaryMonitor` →
@@ -255,6 +254,7 @@ Owned API facts (verified in `tauri-plugin-shell-2.4.1/src/process/mod.rs`): `Co
 stdout-free sidecar.
 
 Managed state + commands (`commands.rs`):
+
 - `#[derive(Default)] pub struct SidecarRegistry(Mutex<HashMap<u32, CommandChild>>)` — keyed by pid;
   `Mutex<HashMap<_, CommandChild>>` is `Send + Sync` (Tauri managed-state requirement).
 - `spawn_sidecar_echo(app, port: u16) -> Result<u32,String>` — now locks the registry (`.map_err` on
@@ -279,14 +279,14 @@ ungated in `tauri-2.12.1/src/webview/webview_window.rs` (`set_decorations` :2110
 `set_max_size` take `Option<S: Into<Size>>`, so a concrete size is `Some(PhysicalSize<u32>)` and a
 clear is `None::<PhysicalSize<u32>>` (the deferred Option semantics from slice 14).
 
-| Command | Args | Returns | Behavior |
-| --- | --- | --- | --- |
-| `set_window_decorations` | `label`, `decorations: bool` | `Result<(),String>` | native title bar/frame on/off (Electron `setFrame`) |
-| `set_window_ignore_cursor_events` | `label`, `ignore: bool` | `Result<(),String>` | click-through window (overlays/tooltips) |
-| `set_window_min_size` | `label`, `width: u32`, `height: u32` | `Result<(),String>` | `set_min_size(Some(PhysicalSize))` |
-| `set_window_max_size` | `label`, `width: u32`, `height: u32` | `Result<(),String>` | `set_max_size(Some(PhysicalSize))` |
-| `clear_window_min_size` | `label` | `Result<(),String>` | `set_min_size(None::<PhysicalSize<u32>>)` |
-| `clear_window_max_size` | `label` | `Result<(),String>` | `set_max_size(None::<PhysicalSize<u32>>)` |
+| Command                           | Args                                 | Returns             | Behavior                                            |
+| --------------------------------- | ------------------------------------ | ------------------- | --------------------------------------------------- |
+| `set_window_decorations`          | `label`, `decorations: bool`         | `Result<(),String>` | native title bar/frame on/off (Electron `setFrame`) |
+| `set_window_ignore_cursor_events` | `label`, `ignore: bool`              | `Result<(),String>` | click-through window (overlays/tooltips)            |
+| `set_window_min_size`             | `label`, `width: u32`, `height: u32` | `Result<(),String>` | `set_min_size(Some(PhysicalSize))`                  |
+| `set_window_max_size`             | `label`, `width: u32`, `height: u32` | `Result<(),String>` | `set_max_size(Some(PhysicalSize))`                  |
+| `clear_window_min_size`           | `label`                              | `Result<(),String>` | `set_min_size(None::<PhysicalSize<u32>>)`           |
+| `clear_window_max_size`           | `label`                              | `Result<(),String>` | `set_max_size(None::<PhysicalSize<u32>>)`           |
 
 TS bridge: one typed `invoke` wrapper per command; every Rust arg is single-word (`decorations`,
 `ignore`, `width`, `height`, `label`) so the A5 camelCase guard is trivially satisfied. No new
@@ -302,10 +302,10 @@ matters during load and behind any transparent region. `Color` is the tuple stru
 `tauri-utils` config, `webview/mod.rs:35`). Passing `None` restores the default (OS/webview) background
 — the clear path.
 
-| Command | Args | Returns | Behavior |
-| --- | --- | --- | --- |
-| `set_window_background_color` | `label`, `red: u8`, `green: u8`, `blue: u8`, `alpha: u8` | `Result<(),String>` | `set_background_color(Some(Color(r,g,b,a)))` |
-| `clear_window_background_color` | `label` | `Result<(),String>` | `set_background_color(None)` |
+| Command                         | Args                                                     | Returns             | Behavior                                     |
+| ------------------------------- | -------------------------------------------------------- | ------------------- | -------------------------------------------- |
+| `set_window_background_color`   | `label`, `red: u8`, `green: u8`, `blue: u8`, `alpha: u8` | `Result<(),String>` | `set_background_color(Some(Color(r,g,b,a)))` |
+| `clear_window_background_color` | `label`                                                  | `Result<(),String>` | `set_background_color(None)`                 |
 
 The four channel args are separate single-word `u8` params (JS passes numbers 0..=255; Tauri
 deserializes each to `u8`), so the A5 camelCase guard is satisfied and no nested color object is
@@ -320,11 +320,11 @@ Three confirmed, stable boolean `WebviewWindow` mutators mapping to real Electro
 (`:2232`, pointer-lock), `set_cursor_visible` (`:2245`, hide/show the system cursor over the window).
 All take a single `bool` and return `crate::Result<()>`.
 
-| Command | Args | Returns | Behavior |
-| --- | --- | --- | --- |
+| Command                                | Args                                       | Returns             | Behavior                     |
+| -------------------------------------- | ------------------------------------------ | ------------------- | ---------------------------- |
 | `set_window_visible_on_all_workspaces` | `label`, `visible_on_all_workspaces: bool` | `Result<(),String>` | show across all macOS Spaces |
-| `set_window_cursor_grab` | `label`, `grab: bool` | `Result<(),String>` | confine cursor to the window |
-| `set_window_cursor_visible` | `label`, `visible: bool` | `Result<(),String>` | show/hide the system cursor |
+| `set_window_cursor_grab`               | `label`, `grab: bool`                      | `Result<(),String>` | confine cursor to the window |
+| `set_window_cursor_visible`            | `label`, `visible: bool`                   | `Result<(),String>` | show/hide the system cursor  |
 
 TS bridge: three typed `invoke` wrappers; the multi-word Rust arg `visible_on_all_workspaces` maps to
 the JS key `visibleOnAllWorkspaces` (A5 camelCase guard), `grab`/`visible`/`label` unchanged. No new
@@ -341,10 +341,10 @@ terminates and relaunches) and `AppHandle::exit(&self, code: i32)` (`:581`, trig
 `RunEvent::ExitRequested`/`Exit`). Because they are called from Rust inside our commands (not the
 JS-facing core API), no capability entry is needed — same as every other command in this bridge.
 
-| Command | Args | Returns | Behavior |
-| --- | --- | --- | --- |
+| Command        | Args                    | Returns             | Behavior                                                                           |
+| -------------- | ----------------------- | ------------------- | ---------------------------------------------------------------------------------- |
 | `relaunch_app` | none (uses `AppHandle`) | `Result<(),String>` | `app.restart()` — the `!` return coerces to `Ok`'s type, so the call never returns |
-| `exit_app` | `code: i32` | `Result<(),String>` | `app.exit(code)`; returns `()` then `Ok(())` |
+| `exit_app`     | `code: i32`             | `Result<(),String>` | `app.exit(code)`; returns `()` then `Ok(())`                                       |
 
 TS bridge: `relaunchTauriApp()` → `invoke<void>("relaunch_app")` (no args); `exitTauriApp(code)` →
 `invoke<void>("exit_app", { code })` (`code` single-word, camelCase trivially satisfied). `relaunch_app`
@@ -362,8 +362,8 @@ already-installed `tauri-plugin-dialog` (no new dependency): `FileDialogBuilder:
 and the slice-5 async-worker bridging pattern (async command so the blocking native picker never
 freezes the event loop).
 
-| Command | Args | Returns | Behavior |
-| --- | --- | --- | --- |
+| Command            | Args             | Returns                              | Behavior                                                           |
+| ------------------ | ---------------- | ------------------------------------ | ------------------------------------------------------------------ |
 | `select_directory` | `multiple: bool` | `Result<Option<Vec<String>>,String>` | folder picker; `None` on cancel; `Vec<String>` of chosen dir paths |
 
 No file-type filters (directory selection has none). Normalized to `Vec<String>` for both single and
@@ -382,6 +382,7 @@ stored factor back to a level through the already-tested `zoom_factor_to_level` 
 slice activates, removing its `#[allow(dead_code)]`.
 
 Managed state + commands (`commands.rs`):
+
 - `#[derive(Default)] pub struct ZoomRegistry(Mutex<HashMap<String /*label*/, f64 /*factor*/>>)` —
   `Send + Sync` (the `Mutex<HashMap<_, f64>>` is).
 - `set_desktop_zoom_level(app, label, level)` — now **also records** the applied `factor` under `label`
@@ -406,8 +407,8 @@ this slice READS that line. Confirmed in `tauri-plugin-shell-2.4.1/src/process/m
 `(Receiver<CommandEvent>, CommandChild)` (:305); `CommandEvent::Stdout(Vec<u8>)` is line-delimited (:49)
 and the enum is `#[non_exhaustive]` (:43) so the match needs a `_` arm.
 
-| Command | Args | Returns | Behavior |
-| --- | --- | --- | --- |
+| Command                            | Args | Returns              | Behavior                                                                                                                     |
+| ---------------------------------- | ---- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `spawn_sidecar_echo_discover_port` | none | `Result<u32,String>` | spawn with `ZCODE_WS_PORT=0`, retain child in `SidecarRegistry`, await stdout until `parse_ready_port` yields the bound port |
 
 Pure `parse_ready_port(line) -> Option<u32}` (unit-tested) extracts the port from the handshake,
@@ -461,10 +462,10 @@ the mechanism generalizes across the `on*` subscription family. Chosen because i
 lives in landed commands** (`set_fullscreen` / `window_toggle_fullscreen`), so the emit is wired and
 runs at runtime — not speculative dead code.
 
-| Rust | Args | Behavior |
-| --- | --- | --- |
-| `set_fullscreen` | `app,label,fullscreen` | apply, then best-effort `emit(WINDOW_FULLSCREEN_CHANGED_EVENT, fullscreen)` |
-| `window_toggle_fullscreen` | `app,label` | read `is_fullscreen`, invert, apply, then best-effort `emit(..., target)` |
+| Rust                       | Args                   | Behavior                                                                    |
+| -------------------------- | ---------------------- | --------------------------------------------------------------------------- |
+| `set_fullscreen`           | `app,label,fullscreen` | apply, then best-effort `emit(WINDOW_FULLSCREEN_CHANGED_EVENT, fullscreen)` |
+| `window_toggle_fullscreen` | `app,label`            | read `is_fullscreen`, invert, apply, then best-effort `emit(..., target)`   |
 
 - Event: `WINDOW_FULLSCREEN_CHANGED_EVENT = "zcode:window-fullscreen-changed"`; payload is a **bare JSON
   boolean** (matches the interface's `(isFullscreen: boolean)`, NOT a `{...}` object). Pure
@@ -476,7 +477,7 @@ runs at runtime — not speculative dead code.
 
 **Parity residual (grounded, not a stub):** Tauri 2.12.1 `WindowEvent` (`tauri-2.12.1/src/app.rs:111`)
 has NO fullscreen variant (only `Resized/Moved/CloseRequested/Destroyed/Focused/ScaleFactorChanged/
-DragDrop/ThemeChanged`), so a *native* fullscreen transition cannot be observed; this emits at the
+DragDrop/ThemeChanged`), so a _native_ fullscreen transition cannot be observed; this emits at the
 command boundary instead. App-driven transitions are reported faithfully; an OS-window-manager-driven
 fullscreen shortcut is invisible to the shell (no event to hook). That external-transition gap is a
 GO-NO-GO de-scope item, not a hidden stub — `is_fullscreen` stays the authoritative synchronous read.
@@ -491,8 +492,8 @@ The landed [`show_notification`] dispatched unconditionally; Electron's `dispatc
 Tauri command over-notified. This slice ports that **policy** faithfully; the notification still
 displays via `tauri-plugin-notification`, now gated by the same rules.
 
-| Command | Args | Behavior |
-| --- | --- | --- |
+| Command                  | Args                                    | Behavior                                                                                                      |
+| ------------------------ | --------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | `show_task_notification` | `task_id,status,title,body,request_id?` | reject empty title/body → suppress if ANY window focused → 3s dedupe → else `notification().builder().show()` |
 
 - Pure, unit-tested helpers mirror `desktopNotifications.ts`: `notification_dedupe_target` (blocking
@@ -537,8 +538,8 @@ Faithful port of `packages/desktop/src/main/tempTextAttachment.ts` — writes re
 host temp file so large pastes never ride the prompt payload. Un-gated: a plain fs write, no product
 decision or Host/browser subsystem dependency.
 
-| Command | Args | Returns |
-| --- | --- | --- |
+| Command                       | Args              | Returns                                                                                                                                        |
+| ----------------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | `create_temp_text_attachment` | `text, filename?` | `Result<TempTextAttachmentResult,String>` → `{ filename, localPath, mimeType:"text/plain", sizeBytes }` (camelCase via `#[serde(rename_all)]`) |
 
 - Path mirrors `paths.ts:getDataBaseDir`: env `ZCODE_DATA_BASE_DIR` else home, then

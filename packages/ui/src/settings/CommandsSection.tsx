@@ -117,8 +117,6 @@ export function CommandsSection({
     setFormScopeKey("user");
   }, [editingCommand, formScopeKey, workspaceTabs]);
 
-
-
   const handleSave = useCallback(
     async (config: CommandConfig, scopeKey: string) => {
       setSaving(true);
@@ -273,13 +271,17 @@ export function CommandsSection({
     return commands.filter(
       (c) =>
         isUserCommand(c) &&
-        (scopeFilter === "user" ? (c.scope as string) === "user" || (c.scope as string) === "global" : (c.scope as string) === "workspace" || (c.scope as string) === "project"),
+        (scopeFilter === "user"
+          ? (c.scope as string) === "user" || (c.scope as string) === "global"
+          : (c.scope as string) === "workspace" || (c.scope as string) === "project"),
     );
   }, [commands, scopeFilter]);
   const filteredCommands = useMemo(() => {
     if (!searchQuery.trim()) return scopedCommands;
     const lower = searchQuery.trim().toLowerCase();
-    return scopedCommands.filter((c) => c.name.toLowerCase().includes(lower) || c.description?.toLowerCase().includes(lower));
+    return scopedCommands.filter(
+      (c) => c.name.toLowerCase().includes(lower) || c.description?.toLowerCase().includes(lower),
+    );
   }, [scopedCommands, searchQuery]);
   const filteredCommandCount = filteredCommands.length;
   useEffect(() => {

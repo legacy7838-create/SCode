@@ -1,7 +1,7 @@
 # TEST-HARNESS.md — Language-neutral parity harness for the Electron→Tauri port
 
 > Scope: design only. This file defines how the port (Electron kept alongside Tauri)
-> is *verified*. No parity claim may be made without harness output, per
+> is _verified_. No parity claim may be made without harness output, per
 > `PLATFORM-ADAPTER-PLAN.md` §5 ("No parity claim without harness output on
 > Linux/macOS/Windows where applicable") and AGENTS.md Phase 1 ("tests are the
 > contract"). Read-only relative to source: implementing this harness is follow-up work.
@@ -49,8 +49,8 @@ suite is expected to exist (possibly external to this checkout — **ASSUMPTION:
 Chromedriver/WebDriver E2E suite these env vars target is not present in the repo**):
 
 - `packages/desktop/src/main/index.ts:176` appends `--remote-debugging-port=9229` in dev;
-  the comment above it (lines 172-175) references *Chromedriver* taking over the port and
-  a *WebDriver `deleteSession`* on teardown.
+  the comment above it (lines 172-175) references _Chromedriver_ taking over the port and
+  a _WebDriver `deleteSession`_ on teardown.
 - Env surface: `ZCODE_E2E_COVERAGE`, `ZCODE_E2E_ARTIFACT_DIR`, `ZCODE_E2E_RUN_ID`,
   `ZCODE_E2E_RUNTIME_LOG_DIR`, `NODE_V8_COVERAGE`.
 - Renderer store bridge: `packages/desktop/src/renderer/src/main.tsx:59-67` lazily imports
@@ -59,7 +59,7 @@ Chromedriver/WebDriver E2E suite these env vars target is not present in the rep
 - Coverage flush: `packages/desktop/src/main/e2eCoverage.ts` and
   `packages/desktop/src/host/e2eCoverage.ts`.
 
-**Gap summary:** the *runtime seams* for a UI harness are wired (CDP port, store bridge,
+**Gap summary:** the _runtime seams_ for a UI harness are wired (CDP port, store bridge,
 artifacts, coverage), but there is no runner, no CI, no driver suite, and no Tauri-side
 equivalent. A Tauri renderer has no `--remote-debugging-port`, so the existing E2E hooks
 do not transfer to the target runtime as-is (see §3 Layer C).
@@ -68,11 +68,11 @@ do not transfer to the target runtime as-is (see §3 Layer C).
 
 ## 2. Three testable layers (grounded)
 
-| # | Layer | Seam / files | Runs headless? | Parity relevance |
-|---|-------|--------------|----------------|------------------|
-| 1 | **Agent stdio JSON-RPC** | Protocol schemas `packages/shared/src/zcode-protocol/index.ts` (`zcodeProtocolRequestSchema/Response/Notification/Message`, `ZCODE_PROTOCOL_NAME="ZCode Protocol"`, `ZCODE_PROTOCOL_VERSION=1`, wire v3); client `packages/services/src/zcode-agent/zcodeProtocolClient.ts` + `zcodeProtocolTransport.ts` | Yes | Runtime-agnostic: identical over Electron utilityProcess and Tauri sidecar. |
-| 2 | **Localhost WS RPC (Local Host)** | `packages/rpc` (`SocketProtocol`, `ChannelServer`, `ProxyChannel`, binary `serialization.ts`); `packages/client` (`connectViaWebSocket`, `connectViaMessagePort`, `connectViaProtocol`); PoC `packages/desktop/tauri-port/poc/ws-rpc-roundtrip.ts` | Yes | `SIDECAR-TRANSPORT.md` §6 step 5 names `subagents.list` round-trip as the smallest end-to-end proof. |
-| 3 | **Renderer UI / platform adapter** | Contract `IPlatformService` `packages/shared/src/platform.ts:504-919` (~60+ members incl. optional); impls `desktopPlatform.ts` (`createDesktopPlatform`) and Tauri `tauriBridge.ts`/`tauriPlatform.ts` (owned by another agent) | Partly (Layer B headless; Layer C needs a webview) | The port's parity contract is "same `IPlatformService` method → same observable behavior". |
+| #   | Layer                              | Seam / files                                                                                                                                                                                                                                                                                              | Runs headless?                                     | Parity relevance                                                                                     |
+| --- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| 1   | **Agent stdio JSON-RPC**           | Protocol schemas `packages/shared/src/zcode-protocol/index.ts` (`zcodeProtocolRequestSchema/Response/Notification/Message`, `ZCODE_PROTOCOL_NAME="ZCode Protocol"`, `ZCODE_PROTOCOL_VERSION=1`, wire v3); client `packages/services/src/zcode-agent/zcodeProtocolClient.ts` + `zcodeProtocolTransport.ts` | Yes                                                | Runtime-agnostic: identical over Electron utilityProcess and Tauri sidecar.                          |
+| 2   | **Localhost WS RPC (Local Host)**  | `packages/rpc` (`SocketProtocol`, `ChannelServer`, `ProxyChannel`, binary `serialization.ts`); `packages/client` (`connectViaWebSocket`, `connectViaMessagePort`, `connectViaProtocol`); PoC `packages/desktop/tauri-port/poc/ws-rpc-roundtrip.ts`                                                        | Yes                                                | `SIDECAR-TRANSPORT.md` §6 step 5 names `subagents.list` round-trip as the smallest end-to-end proof. |
+| 3   | **Renderer UI / platform adapter** | Contract `IPlatformService` `packages/shared/src/platform.ts:504-919` (~60+ members incl. optional); impls `desktopPlatform.ts` (`createDesktopPlatform`) and Tauri `tauriBridge.ts`/`tauriPlatform.ts` (owned by another agent)                                                                          | Partly (Layer B headless; Layer C needs a webview) | The port's parity contract is "same `IPlatformService` method → same observable behavior".           |
 
 ---
 
@@ -97,7 +97,7 @@ Black-box tests that drive layer 1 and 2 without any webview:
   (`packages/desktop/tauri-port/poc/ws-rpc-roundtrip.ts`) into a real test. It already
   wires `wrapWebSocket → SocketProtocol → ChannelServer → registerChannel` server-side and
   uses the real `connectViaWebSocket` client with `ISubagentsService.channelName`, asserting
-  `subagents.list({probe:"hello"})` echoes back. This *is* the `SIDECAR-TRANSPORT.md` §6.5
+  `subagents.list({probe:"hello"})` echoes back. This _is_ the `SIDECAR-TRANSPORT.md` §6.5
   smallest-proof assertion; make it the seed for Layer A3.
 
 Layer A must run identically whether the host transport is MessagePort (Electron) or
@@ -146,12 +146,12 @@ Only after A+B are green. Runs the SAME user-facing scenario assertions against 
 runtime's webview. The driver differs by OS **and by runtime engine** — this is the
 harness's hardest constraint:
 
-| Runtime | Engine | Driver mechanism | CDP available? |
-|---------|--------|------------------|----------------|
-| Electron | Chromium | Chrome DevTools Protocol via the already-wired `--remote-debugging-port` (Playwright `chromium.connectOverCDP` or `_electron`; store bridge via `VITE_ZCODE_E2E_STORE_BRIDGE=1`) | Yes |
-| Tauri / Windows | WebView2 (Chromium) | W3C WebDriver + WebView2's `--remote-debugging` for Edge (msedgedriver), or Appium/WinAppDriver; Playwright-over-CDP is possible only when WebView2 debugging is enabled | Yes (Chromium) |
-| Tauri / macOS | WKWebView | Appium + macOS driver / `safaridriver`-style WebKit automation | **No — WKWebView exposes no CDP** |
-| Tauri / Linux | WebKitGTK | WebKitGTK's built-in WebDriver (`WebKitWebDriver` / wpe web-driver), W3C WebDriver protocol | **No — no CDP** |
+| Runtime         | Engine              | Driver mechanism                                                                                                                                                                 | CDP available?                    |
+| --------------- | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| Electron        | Chromium            | Chrome DevTools Protocol via the already-wired `--remote-debugging-port` (Playwright `chromium.connectOverCDP` or `_electron`; store bridge via `VITE_ZCODE_E2E_STORE_BRIDGE=1`) | Yes                               |
+| Tauri / Windows | WebView2 (Chromium) | W3C WebDriver + WebView2's `--remote-debugging` for Edge (msedgedriver), or Appium/WinAppDriver; Playwright-over-CDP is possible only when WebView2 debugging is enabled         | Yes (Chromium)                    |
+| Tauri / macOS   | WKWebView           | Appium + macOS driver / `safaridriver`-style WebKit automation                                                                                                                   | **No — WKWebView exposes no CDP** |
+| Tauri / Linux   | WebKitGTK           | WebKitGTK's built-in WebDriver (`WebKitWebDriver` / wpe web-driver), W3C WebDriver protocol                                                                                      | **No — no CDP**                   |
 
 Consequences for the design:
 
@@ -302,7 +302,7 @@ import { forRuntimes } from "../harness.config.ts"; // [{name:"electron",build},
 
 for (const rt of forRuntimes()) {
   test(`subagents.list round-trips over the host transport (${rt.name})`, async () => {
-    const { client, dispose } = await rt.buildHost();   // MessagePort vs WS is rt-local detail
+    const { client, dispose } = await rt.buildHost(); // MessagePort vs WS is rt-local detail
     try {
       const res = await client.subagentsService.list({ probe: "hello" });
       assert.equal(Array.isArray(res), true);
@@ -320,7 +320,7 @@ Layer B P0 (platform contract equivalence — the actual parity check):
 ```ts
 for (const rt of forRuntimes()) {
   test(`${rt.name}: getDeviceId is a stable non-empty string`, async () => {
-    const p = rt.buildPlatform();               // createDesktopPlatform vs tauriPlatform
+    const p = rt.buildPlatform(); // createDesktopPlatform vs tauriPlatform
     const id = await p.getDeviceId();
     assert.equal(typeof id, "string");
     assert.ok(id.trim().length > 0);
@@ -330,7 +330,7 @@ for (const rt of forRuntimes()) {
 // Cross-runtime diff, asserted once:
 test("electron and tauri expose the same P0 member set", () => {
   assert.deepEqual(
-    supportedMembers("electron"),               // from helpers/capabilities.ts
+    supportedMembers("electron"), // from helpers/capabilities.ts
     supportedMembers("tauri"),
   );
 });
@@ -352,16 +352,16 @@ Tauri sidecar path will pass a truthiness-only check.
 
 ## 7. How the existing slices map onto this harness
 
-| Existing slice | Harness coverage |
-|----------------|------------------|
-| The ~12 `executeDesktopCommand` menu commands (`desktopCommandHandlers.ts:476`, `DesktopCommandIds` in `desktopApplicationMenu.ts`) and the Tauri window commands in `tauriBridge.ts` (`window_minimize/maximize/unmaximize/toggle_fullscreen/close/set_focus/is_maximized`) | **Layer B / `p1-window-commands.test.ts`** — same window-state transition + menu-event emission asserted on both `IPlatformService` impls. |
-| `tauriBridge.ts` identity/meta commands (`get_app_version`, `get_system_locale`, `get_device_id`, `get_platform_info`, `get_app_name`, `get_download/documents_directory`) | **Layer B / P0 tier** — the immediate, already-round-trip-green seed; assert equal observable values across `desktopPlatform` and `tauriPlatform`. |
-| `tauriBridge.ts` dialog commands (`show_open_dialog`, `show_save_dialog`, `show_message_dialog`) | **Layer B / P2** — result-shape + binary equality vs Electron (`selectFile`/`saveFile`). |
-| WS PoC (`poc/ws-rpc-roundtrip.ts`) | **Layer A / `a3-ws-subagents.test.ts`** — promoted from a `console.log`+`process.exit` script into a `node:test` assertion that runs against both MessagePort and WS fixtures. |
-| Agent stdio protocol (plan P0 `getZCodeStdioTapDevState`; `zcodeProtocolClient.ts`) | **Layer A / `a2-stdio-roundtrip.test.ts`** — headless Agent CLI framing/schema conformance. |
-| invoke()⇄command seam integrity (as of slices 1–43) | **Layer A / `a5-contract.test.ts`** — static, headless, cross-language: **9 invariants** (command↔wrapper 1:1 both ways, ≥40-command false-green tripwire, camelCase invoke arg keys, command↔`generate_handler` registration both ways, auto-extracted `zcode:` push-event names present in BOTH languages, every `Serialize` return struct with snake_case fields declares `rename_all="camelCase"`, and no `.unwrap()` in `commands.rs` production code [AGENTS.md]). Catches the slice-18 drift class + the defined-but-unregistered twin + the return-casing and unwrap-rule violations automatically. |
-| "Electron stays intact" import-safety invariant | **Layer A / `a6-bridge-import.test.ts`** — imports `tauriBridge.ts` under a Tauri-less `window` and asserts it throws nothing + `isTauriRuntime()` probes `false` (then `true` once `__TAURI_INTERNALS__` is present): proves zero import side effects so the bridge is safe to load in an Electron renderer. |
-| Renderer UI (Electron store bridge, CDP port) | **Layer C** — deferred until the Tauri store bridge exists; W3C-WebDriver-subset-only so the same scenario runs on CDP (Electron/Windows-WebView2) and WebKit (macOS/Linux Tauri). |
+| Existing slice                                                                                                                                                                                                                                                               | Harness coverage                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The ~12 `executeDesktopCommand` menu commands (`desktopCommandHandlers.ts:476`, `DesktopCommandIds` in `desktopApplicationMenu.ts`) and the Tauri window commands in `tauriBridge.ts` (`window_minimize/maximize/unmaximize/toggle_fullscreen/close/set_focus/is_maximized`) | **Layer B / `p1-window-commands.test.ts`** — same window-state transition + menu-event emission asserted on both `IPlatformService` impls.                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `tauriBridge.ts` identity/meta commands (`get_app_version`, `get_system_locale`, `get_device_id`, `get_platform_info`, `get_app_name`, `get_download/documents_directory`)                                                                                                   | **Layer B / P0 tier** — the immediate, already-round-trip-green seed; assert equal observable values across `desktopPlatform` and `tauriPlatform`.                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `tauriBridge.ts` dialog commands (`show_open_dialog`, `show_save_dialog`, `show_message_dialog`)                                                                                                                                                                             | **Layer B / P2** — result-shape + binary equality vs Electron (`selectFile`/`saveFile`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| WS PoC (`poc/ws-rpc-roundtrip.ts`)                                                                                                                                                                                                                                           | **Layer A / `a3-ws-subagents.test.ts`** — promoted from a `console.log`+`process.exit` script into a `node:test` assertion that runs against both MessagePort and WS fixtures.                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Agent stdio protocol (plan P0 `getZCodeStdioTapDevState`; `zcodeProtocolClient.ts`)                                                                                                                                                                                          | **Layer A / `a2-stdio-roundtrip.test.ts`** — headless Agent CLI framing/schema conformance.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| invoke()⇄command seam integrity (as of slices 1–43)                                                                                                                                                                                                                          | **Layer A / `a5-contract.test.ts`** — static, headless, cross-language: **9 invariants** (command↔wrapper 1:1 both ways, ≥40-command false-green tripwire, camelCase invoke arg keys, command↔`generate_handler` registration both ways, auto-extracted `zcode:` push-event names present in BOTH languages, every `Serialize` return struct with snake_case fields declares `rename_all="camelCase"`, and no `.unwrap()` in `commands.rs` production code [AGENTS.md]). Catches the slice-18 drift class + the defined-but-unregistered twin + the return-casing and unwrap-rule violations automatically. |
+| "Electron stays intact" import-safety invariant                                                                                                                                                                                                                              | **Layer A / `a6-bridge-import.test.ts`** — imports `tauriBridge.ts` under a Tauri-less `window` and asserts it throws nothing + `isTauriRuntime()` probes `false` (then `true` once `__TAURI_INTERNALS__` is present): proves zero import side effects so the bridge is safe to load in an Electron renderer.                                                                                                                                                                                                                                                                                               |
+| Renderer UI (Electron store bridge, CDP port)                                                                                                                                                                                                                                | **Layer C** — deferred until the Tauri store bridge exists; W3C-WebDriver-subset-only so the same scenario runs on CDP (Electron/Windows-WebView2) and WebKit (macOS/Linux Tauri).                                                                                                                                                                                                                                                                                                                                                                                                                          |
 
 ---
 

@@ -12,10 +12,14 @@
  */
 import test from "node:test";
 
-test("A3: agent stdio JSON-RPC initialize round-trip", {
-  skip:
-    "requires a bootstrapped Agent stdio host; bare `zcode.cjs --stdio` needs auth/config/workspace " +
-    "runtime and drops into the interactive TUI instead of speaking protocol headlessly",
-}, async () => {
-  // Body intentionally unreachable while skipped.
-});
+test(
+  "A3: agent stdio JSON-RPC initialize round-trip",
+  {
+    skip:
+      "requires a bootstrapped Agent stdio host; bare `zcode.cjs --stdio` needs auth/config/workspace " +
+      "runtime and drops into the interactive TUI instead of speaking protocol headlessly",
+  },
+  async () => {
+    // Body intentionally unreachable while skipped.
+  },
+);

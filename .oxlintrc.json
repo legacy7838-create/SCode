@@ -19,6 +19,16 @@
       "rules": {
         "max-lines": "off"
       }
+    },
+    {
+      // tauriBridge.ts 是 renderer 侧对每个 #[tauri::command] 的一一映射封装（~104 个 invoke 包装），
+      // 属于机械转发而非复杂业务逻辑；且 layer-a 的 a5-contract 测试会按“单文件”解析本文件的 invoke()
+      // 名单来和 commands.rs 做 1:1 校验，拆分文件会破坏该契约扫描。因此对本文件单独关闭 max-lines，
+      // 不影响其它业务代码的 400 行约束。
+      "files": ["**/tauriBridge.ts"],
+      "rules": {
+        "max-lines": "off"
+      }
     }
   ],
   "settings": {
@@ -59,6 +69,7 @@
     "packages/ui/src/components/ui",
     "packages/ui/src/components/ai-elements",
     ".agents/skills",
+    ".qoder",
     "packages/formal-proof",
     "apps/zcode-cli",
     "docs/electron"

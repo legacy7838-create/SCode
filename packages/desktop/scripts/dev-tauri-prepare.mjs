@@ -15,10 +15,7 @@ import { existsSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
-import {
-  resolveAgentBundlePaths,
-  stageZcodeDbNative,
-} from "./stage-agent-bundle.mjs";
+import { resolveAgentBundlePaths, stageZcodeDbNative } from "./stage-agent-bundle.mjs";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const desktopRoot = resolve(scriptDir, "..");

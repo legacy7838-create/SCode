@@ -19,6 +19,7 @@ preserved so a future slice does not ship a degraded-but-shipping implementation
 **Variant A — in-memory bytes (`{data, suggestedName}`)** — `desktopSaveFile.ts:196-201, 216`:
 validate non-empty + ≤ `MAX_SAVE_FILE_BYTES` (50 MiB, :12), open the native Save dialog
 (`dialog.showSaveDialog({ defaultPath: suggestedName })` :204-207), then `writeFile(filePath, bytes)`.
+
 - Tauri primitive ALREADY LANDED: the `show_save_dialog` command (slice 5, see `BRIDGE.md`) → the dialog
   seam exists. Remaining work is the byte write, which mirrors the slice-40 `createTempTextAttachment`
   write (`std::fs` / `OpenOptions`). This variant is **LOW effort / LOW risk**, fully unit-testable (a
@@ -115,6 +116,7 @@ is not ported, the method stays unported (out of the `Pick`) exactly like every 
 - `packages/desktop/tauri-port/BRIDGE.md`, `PLATFORM-ADAPTER-PLAN.md`, `INVENTORY.md`, `CI-PACKAGING.md`
 
 Sources (Rust capability grounding — verify versions at implementation time, marked ASSUMPTION here):
+
 - `reqwest` `ClientBuilder::resolve` / `resolve_to_addrs` (per-host IP pinning for invariant #3).
 - `reqwest` `redirect::Policy::custom` (per-hop re-validation, invariant #4).
 - `ip_network` crate (private/link-local range checks mirroring the `BlockList`).

@@ -20,7 +20,7 @@ Every claim below is tied to a real file I read.
   `out/scheduler/index.js`. Same build run as the host.
 - **Agent CLI** — `apps/zcode-cli/packages/cli/dist/zcode.cjs` (CJS, self-contained
   bundle), built by `scripts/build-desktop-agent-cli.mjs` (default `pnpm --filter
-  @zcode/cli build:desktop-agent`, `build-desktop-agent-cli.mjs:148`) which calls
+@zcode/cli build:desktop-agent`, `build-desktop-agent-cli.mjs:148`) which calls
   `apps/zcode-cli/packages/cli/scripts/build.mjs`. Then staged to
   `packages/desktop/bundled-agents/<platformKey>/glm/zcode.cjs` by
   `stage-agent-bundle.mjs` (`resolveAgentBundlePaths`,
@@ -28,11 +28,11 @@ Every claim below is tied to a real file I read.
 
 **Critical asymmetry (drives the whole recommendation):**
 
-- The **Agent** is *already a standalone-executable-shaped artifact*:
+- The **Agent** is _already a standalone-executable-shaped artifact_:
   `build.mjs:226-228` writes an esbuild banner `#!/usr/bin/env node` (shebang) and
   `build.mjs:266` runs `chmod(outfile, 0o755)`. It is a fully `--bundle`d CJS file
   (workspace deps inlined via `noExternal`/alias, `build.mjs:241-259`).
-- The **Host / Scheduler** are *not* self-contained. `tsup.config.ts:110-122` marks
+- The **Host / Scheduler** are _not_ self-contained. `tsup.config.ts:110-122` marks
   `node-pty`, `ssh2`, `undici`, `@larksuiteoapi/node-sdk`, `yaml`, `node-forge`,
   `yauzl` as **runtime `external`** — they are resolved from `node_modules` at run time
   and deliberately NOT inlined (comments explain the Electron dynamic-require crash they
@@ -43,11 +43,11 @@ So "make it a single file" is nearly free for the Agent but expensive for the Ho
 
 ## 1. Artifact inventory → sidecar mapping
 
-| Sidecar name      | Current built artifact                                            | Build command (repo root)                                                                 | Native/deps at runtime? |
-| ----------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ----------------------- |
-| `zcode-host`      | `packages/desktop/out/host/index.js` (+ `tasksStorageWorker.js`)   | `pnpm --dir packages/desktop build:no-runtime-assets` (tsup `host` target)                | YES — node-pty, ssh2, undici, yaml, node-forge, yauzl + `.node` files |
-| `zcode-scheduler` | `packages/desktop/out/scheduler/index.js`                        | same tsup run (`scheduler` target)                                                         | YES — same externals set |
-| `zcode-agent`     | `apps/zcode-cli/.../cli/dist/zcode.cjs` → staged `bundled-agents/<platformKey>/glm/zcode.cjs` | `node scripts/build-desktop-agent-cli.mjs` (= `prepare:agent-bundle`) | Bundled CJS; only Node builtin + WASM ripgrep, no NAPI (`prepare-agent-node-bundle.mjs:6-9`) |
+| Sidecar name      | Current built artifact                                                                        | Build command (repo root)                                                  | Native/deps at runtime?                                                                      |
+| ----------------- | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `zcode-host`      | `packages/desktop/out/host/index.js` (+ `tasksStorageWorker.js`)                              | `pnpm --dir packages/desktop build:no-runtime-assets` (tsup `host` target) | YES — node-pty, ssh2, undici, yaml, node-forge, yauzl + `.node` files                        |
+| `zcode-scheduler` | `packages/desktop/out/scheduler/index.js`                                                     | same tsup run (`scheduler` target)                                         | YES — same externals set                                                                     |
+| `zcode-agent`     | `apps/zcode-cli/.../cli/dist/zcode.cjs` → staged `bundled-agents/<platformKey>/glm/zcode.cjs` | `node scripts/build-desktop-agent-cli.mjs` (= `prepare:agent-bundle`)      | Bundled CJS; only Node builtin + WASM ripgrep, no NAPI (`prepare-agent-node-bundle.mjs:6-9`) |
 
 `platformKey` is `<platform>-<arch>` (`prepare-agent-node-bundle.mjs:70`, e.g.
 `linux-x64`, `darwin-arm64`, `win32-x64`), overridable with
@@ -58,6 +58,7 @@ So "make it a single file" is nearly free for the Agent but expensive for the Ho
 Three options as tasked:
 
 ### (a) esbuild `--bundle` + `#!/usr/bin/env node` shebang + chmod +x — **RECOMMENDED**
+
 Wrap the entry in an executable JS file that a **bundled `node` binary** runs. For the
 Agent this is already done (see §0). For the Host/Scheduler add a thin esbuild pass that
 keeps the native/dynamic externals as **external** (`node-pty`, `ssh2`, `undici`, …) and
@@ -65,6 +66,7 @@ ships them beside the binary in the Tauri `resources` dir — do NOT try to inli
 (the `tsup.config.ts:110-122` comments exist because inlining crashes the ESM runtime).
 
 Lowest-friction rationale for THIS repo:
+
 - The Agent needs **zero new tooling** — it already is a shebang'd, chmod'd, bundled CJS
   file. Just copy it to the externalBin path with a target-triple suffix (§3).
 - The Host/Scheduler reuse the exact same Node execution model the Electron path already
@@ -76,6 +78,7 @@ Lowest-friction rationale for THIS repo:
   i.e. SEA needs its own asset pipeline for the `.node`/WASM files).
 
 ### (b) `pkg` / `node --experimental-sea-config` (single executable) — DEFER
+
 Attractive only for the Agent (it has no NAPI deps). The `build.mjs:226-236` banner
 already probes `require("node:sea")` and reads a `zcode-node-license` SEA asset, so SEA
 is a known future path for the Agent. **Not** suitable for Host/Scheduler yet because of
@@ -83,18 +86,22 @@ their native `.node` externals. Mark as a P3 size/startup optimization to evalua
 the WS transport lands.
 
 ### (c) system/node runtime invoked by a shell wrapper script — fallback only
+
 Cheapest to prototype (a `#!/bin/sh` that `exec node "$DIR/index.js" "$@"`), but Windows
 `.sh` is unreliable and AGENTS.md forbids shell-string command assembly / POSIX-only
 assumptions. Acceptable for the §7 PoC only.
 
 ### Node runtime availability — the open question
+
 The sidecar needs a Node runtime. Two sub-options:
+
 1. **Ship a `node` binary per platform** next to the sidecar (recommended for determinism
    — the Agent targets `node22` and remote SSH already reuses a standalone Node v22.16,
    `build.mjs:255-257`). Cost: +~80MB per platform.
 2. **Reuse a runtime** — there is no Electron runtime in a Tauri build, and Tauri's own
    process is Rust, so this only means "the user has node on PATH", which violates the
    self-contained install requirement. **Rejected.**
+
 - **ASSUMPTION**: whether `tauri.conf.json` externalBin supports shipping a supporting
   `node` binary + `node_modules` as `resources` vs embedding node via SEA. Verify by
   building one sidecar and inspecting the produced bundle layout (`tauri build`, §8).
@@ -108,7 +115,7 @@ behavior):
   triple suffix. Tauri then copies the executable whose on-disk name is
   `<listed-path-with-trailing-segment-and-triple>`, i.e. the actual file must be named
   `<name>-<RUST_TARGET_TRIPLE>` (and `<name>-<triple>.exe` on Windows). The listed config
-  entry is the *stem*.
+  entry is the _stem_.
 - The target triple is Rust's target triple. Real values:
   - Linux x64: `x86_64-unknown-linux-gnu`
   - Linux arm64: `aarch64-unknown-linux-gnu`
@@ -171,11 +178,13 @@ names the expected file.
 ## 4. tauri-plugin-shell wiring
 
 ### Cargo dependency (`src-tauri/Cargo.toml:14-23`, add alongside `tauri-plugin-dialog`)
+
 ```toml
 tauri-plugin-shell = "2"
 ```
 
 ### Init (`src-tauri/src/main.rs:22`, chain before `.run`)
+
 ```rust
 tauri::Builder::default()
     .plugin(tauri_plugin_shell::init())
@@ -184,8 +193,10 @@ tauri::Builder::default()
 ```
 
 ### Capability (`src-tauri/capabilities/default.json`, currently only `core:default:6`)
+
 Add the sidecar-scoped shell permission. The sidecar identifier in the capability MUST
 match the externalBin **stem** (`binaries/zcode-host` → identifier `zcode-host`):
+
 ```jsonc
 "permissions": [
   "core:default",
@@ -200,11 +211,13 @@ match the externalBin **stem** (`binaries/zcode-host` → identifier `zcode-host
   }
 ]
 ```
+
 (`shell:allow-kill` / `shell:allow-stdin-write` may be added if the renderer drives the
 child directly; in this design Rust owns the child, so execute+kill on the Rust side is
 enough — see §5.)
 
 ### Rust spawn snippet — env passes port + secret, stdout/stderr captured for logs
+
 ```rust
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_shell::process::CommandChild;
@@ -229,6 +242,7 @@ tauri::async_runtime::spawn(async move {
     }
 });
 ```
+
 Args/argv for the Host itself: today the Host receives **no argv** — it is `fork`'d with an
 empty argv and gets everything via the `InitLocal` MessagePort message
 (`desktopHostProcess.ts:219, 578-595`). Under Tauri there is no MessagePort, so the
@@ -300,7 +314,7 @@ coding task:
 
 1. Add `tauri-plugin-shell` dep + init + the `shell:allow-execute` sidecar capability (§4).
 2. Create ONE trivial sidecar: `src-tauri/poc-echo-host.mjs` — a Node file with
-   `#!/usr/bin/env node` that (a) reads `POC_PORT` env, (b) starts the *exact* PoC server
+   `#!/usr/bin/env node` that (a) reads `POC_PORT` env, (b) starts the _exact_ PoC server
    from `poc/ws-rpc-roundtrip.ts:75-90` (`WebSocketServer` on `127.0.0.1`,
    `wrapWebSocket`→`SocketProtocol`→`ChannelServer`→
    `registerChannel(ISubagentsService.channelName, ProxyChannel.fromService(echo))`), and
@@ -322,24 +336,26 @@ coding task:
 ## 8. Ordered checklist + risks
 
 **Checklist**
+
 1. [ ] Run `node scripts/check-workspace-freshness.mjs` (AGENTS.md baseline).
 2. [ ] Update `SIDECAR-TRANSPORT.md` spec (§3) to record the resolved triple rule — this
-   runbook is the spec; implementation follows AGENTS.md "spec before code".
+       runbook is the spec; implementation follows AGENTS.md "spec before code".
 3. [ ] Add `tauri-plugin-shell` to `Cargo.toml`, init in `main.rs`, extend
-   `capabilities/default.json` (§4).
+       `capabilities/default.json` (§4).
 4. [ ] Add `externalBin` + `resources` + flip `bundle.active` in `tauri.conf.json` (§3).
 5. [ ] Write `prepare:tauri-sidecars.mjs`: copy/rename/chmod + esbuild launcher bundle for
-   Host & Scheduler, keeping the `tsup.config.ts:110-122` externals as external (§3).
+       Host & Scheduler, keeping the `tsup.config.ts:110-122` externals as external (§3).
 6. [ ] Do §7 PoC first (trivial echo sidecar) to confirm naming + spawn + WS on the real
-   machine before packaging the full Host.
+       machine before packaging the full Host.
 7. [ ] Implement env/argv `InitLocal` replacement (flagged §4) — cross-task, transport scope.
 8. [ ] Wire lifecycle: spawn on create, graceful-shutdown-then-kill on destroy/exit with
-   the ≥3.5s reap order (§5); crash-restart with backoff.
+       the ≥3.5s reap order (§5); crash-restart with backoff.
 9. [ ] Renderer `connectViaWebSocket(wsUrl?token=)` through `tauriPlatform.ts` (§6).
 10. [ ] Verify per platform (Linux here; macOS/Windows need CI): bundle layout, exec bits,
-   port allocation, orphan check (`pgrep`/Task Manager after close).
+        port allocation, orphan check (`pgrep`/Task Manager after close).
 
 **Risks**
+
 - **Size/startup cost**: shipping `node` + `node_modules` externals per platform (Host) is
   the big cost; the Agent's "同一份 JS 跨平台通用" is the exception. Measure vs Electron
   utilityProcess (`SIDECAR-TRANSPORT.md:123`). Mitigation: SEA for the Agent later (§2b).

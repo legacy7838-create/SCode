@@ -51,7 +51,9 @@ interface ClaimedManualAutomationRun {
   run: ZCodeAutomationRun;
 }
 
-function readSerializedModelSelection(value: string | null | undefined): ModelSelection | undefined {
+function readSerializedModelSelection(
+  value: string | null | undefined,
+): ModelSelection | undefined {
   if (!value) return undefined;
   try {
     const parsed = modelSelectionSchema.safeParse(JSON.parse(value));
@@ -92,7 +94,10 @@ export class AutomationRepo {
   // 构造期固定 dbPath，测试注入临时库，生产不传则回退 getTasksIndexDatabasePath。
   private readonly resolvedDbPath: string | null;
 
-  constructor(dbPath?: string, private readonly startupBusyTimeoutMs = 5000) {
+  constructor(
+    dbPath?: string,
+    private readonly startupBusyTimeoutMs = 5000,
+  ) {
     this.resolvedDbPath = dbPath?.trim() || null;
   }
 
@@ -192,7 +197,11 @@ export class AutomationRepo {
     workspaceKey?: string,
   ): Promise<ZCodeAutomationBotDeliveryTarget | undefined> {
     await this.ensureReady();
-    const raw = loadDb().automationGetBotDeliveryTargetJson(this.path(), automationId, workspaceKey ?? null);
+    const raw = loadDb().automationGetBotDeliveryTargetJson(
+      this.path(),
+      automationId,
+      workspaceKey ?? null,
+    );
     if (!raw) return undefined;
     try {
       const parsed = zcodeAutomationBotDeliveryTargetSchema.safeParse(JSON.parse(raw));
@@ -224,7 +233,11 @@ export class AutomationRepo {
   /** maxRuns 的生命周期口径只统计定时派发；manual run 仅属于 Card 累计展示。 */
   async getScheduledRunCount(automationId: string, workspaceKey?: string): Promise<number | null> {
     await this.ensureReady();
-    return loadDb().automationScheduledRunCountJson(this.path(), automationId, workspaceKey ?? null);
+    return loadDb().automationScheduledRunCountJson(
+      this.path(),
+      automationId,
+      workspaceKey ?? null,
+    );
   }
 
   /** 编辑定义字段。调用方按需传入重算后的 nextRunAt / 新的 lifecycleStatus；addon 内做全字段合并。 */
@@ -260,7 +273,13 @@ export class AutomationRepo {
   /** 暂停 / 恢复。paused ↔ active，保留 next_run_at / run_count。 */
   async setEnabled(automationId: string, enabled: boolean, workspaceKey?: string): Promise<void> {
     await this.ensureReady();
-    loadDb().automationSetEnabledJson(this.path(), automationId, enabled, workspaceKey ?? null, Date.now());
+    loadDb().automationSetEnabledJson(
+      this.path(),
+      automationId,
+      enabled,
+      workspaceKey ?? null,
+      Date.now(),
+    );
   }
 
   /** 终态任务手动重跑：回 active、清计数与重试态，nextRunAt 由调用方重算传入。 */
@@ -270,7 +289,13 @@ export class AutomationRepo {
     workspaceKey?: string,
   ): Promise<void> {
     await this.ensureReady();
-    loadDb().automationRestartJson(this.path(), automationId, options.nextRunAt, workspaceKey ?? null, Date.now());
+    loadDb().automationRestartJson(
+      this.path(),
+      automationId,
+      options.nextRunAt,
+      workspaceKey ?? null,
+      Date.now(),
+    );
   }
 
   /**
@@ -283,7 +308,12 @@ export class AutomationRepo {
     workspaceKey?: string,
   ): Promise<ClaimedManualAutomationRun | null> {
     await this.ensureReady();
-    const json = loadDb().automationRunNowJson(this.path(), automationId, workspaceKey ?? null, options.now);
+    const json = loadDb().automationRunNowJson(
+      this.path(),
+      automationId,
+      workspaceKey ?? null,
+      options.now,
+    );
     return json ? (JSON.parse(json) as ClaimedManualAutomationRun) : null;
   }
 
@@ -298,7 +328,9 @@ export class AutomationRepo {
   /** 认领 UI「立即运行」产生的 manual run。 */
   async claimManualRuns(now: number): Promise<ClaimedManualAutomationRun[]> {
     await this.ensureReady();
-    return JSON.parse(loadDb().automationClaimManualRunsJson(this.path(), now)) as ClaimedManualAutomationRun[];
+    return JSON.parse(
+      loadDb().automationClaimManualRunsJson(this.path(), now),
+    ) as ClaimedManualAutomationRun[];
   }
 
   /** 派发成功结算：计数 +1、清重试、复位 running；循环回 active，有限次达 max 转 completed。 */
@@ -307,7 +339,12 @@ export class AutomationRepo {
     options: { dispatchedAt: number; nextRunAt: number | null },
   ): Promise<void> {
     await this.ensureReady();
-    loadDb().automationMarkDispatchedJson(this.path(), automationId, options.dispatchedAt, options.nextRunAt);
+    loadDb().automationMarkDispatchedJson(
+      this.path(),
+      automationId,
+      options.dispatchedAt,
+      options.nextRunAt,
+    );
   }
 
   /** 派发失败：transient 累加 attempts + 退避 retry_at；permanent 直接 failed 终态。 */
@@ -398,7 +435,12 @@ export class AutomationRepo {
   /** Select 首次形成 Submission 时原子固定 run Selection；之后只读回原值。 */
   async fixRunModelSelection(runId: string, selection: ModelSelection): Promise<ModelSelection> {
     await this.ensureReady();
-    const json = loadDb().automationFixRunModelSelectionJson(this.path(), runId, JSON.stringify(selection), Date.now());
+    const json = loadDb().automationFixRunModelSelectionJson(
+      this.path(),
+      runId,
+      JSON.stringify(selection),
+      Date.now(),
+    );
     return JSON.parse(json) as ModelSelection;
   }
 
@@ -436,7 +478,11 @@ export class AutomationRepo {
   }
 
   /** session runtime 回写运行结果（running / succeeded / failed / stopped）。 */
-  async markRunOutcome(runId: string, outcome: ZCodeAutomationRunOutcome, error?: string): Promise<void> {
+  async markRunOutcome(
+    runId: string,
+    outcome: ZCodeAutomationRunOutcome,
+    error?: string,
+  ): Promise<void> {
     await this.ensureReady();
     loadDb().automationMarkRunOutcomeJson(this.path(), runId, outcome, error ?? null, Date.now());
   }
@@ -451,7 +497,12 @@ export class AutomationRepo {
     reason: string;
   }): Promise<void> {
     await this.ensureReady();
-    loadDb().automationRecordSkippedRunJson(this.path(), JSON.stringify(params), params.reason, Date.now());
+    loadDb().automationRecordSkippedRunJson(
+      this.path(),
+      JSON.stringify(params),
+      params.reason,
+      Date.now(),
+    );
   }
 
   async listRuns(automationId: string, workspaceKey?: string): Promise<ZCodeAutomationRun[]> {

@@ -5741,10 +5741,7 @@ function timelineStatusValue(value: unknown): ZCodeTimelineStatus | undefined {
 }
 
 function timelineTriggerValue(value: unknown): ZCodeTimelineTrigger | undefined {
-  return value === "manual" ||
-    value === "auto" ||
-    value === "reactive" ||
-    value === "partial"
+  return value === "manual" || value === "auto" || value === "reactive" || value === "partial"
     ? value
     : undefined;
 }

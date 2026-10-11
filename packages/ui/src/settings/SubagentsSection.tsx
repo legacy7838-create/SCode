@@ -67,7 +67,6 @@ import {
 import { useTabStore } from "@/store/TabStoreProvider.js";
 import { isWorkspaceTab, type WorkspaceTabState } from "@/store/tabStore.js";
 
-
 const AGENT_COLORS: AgentColor[] = [...SUBAGENT_COLORS];
 const COLOR_DOT_CLASS: Record<AgentColor, string> = SUBAGENT_COLOR_CLASS;
 const MODEL_ITEM_NEVER_LOCKED = () => false;
@@ -1338,8 +1337,6 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
   useEffect(() => {
     void loadAgents(true);
   }, [loadAgents]);
-
-
 
   const refresh = useCallback(async () => {
     await loadAgents(false);

@@ -47,8 +47,7 @@ function fakeDeps(opts: FakeOptions = {}): {
   const calls: string[] = [];
   // Explicit `null` (cancelled) must survive, so distinguish it from an omitted option (`undefined`)
   // rather than using `??`, which would collapse `null` back to the default.
-  const dialogResult =
-    opts.openDialogResult === undefined ? ["picked"] : opts.openDialogResult;
+  const dialogResult = opts.openDialogResult === undefined ? ["picked"] : opts.openDialogResult;
   const deps: TauriPlatformDeps = {
     activateOrSetWorkspace: async (path) => {
       calls.push(`activateOrSetWorkspace:${path}`);
@@ -75,9 +74,7 @@ function fakeDeps(opts: FakeOptions = {}): {
       return dialogResult;
     },
     showTaskNotification: async (taskId, status, title, body, requestId) => {
-      calls.push(
-        `showTaskNotification:${taskId}|${status}|${title}|${body}|${String(requestId)}`,
-      );
+      calls.push(`showTaskNotification:${taskId}|${status}|${title}|${body}|${String(requestId)}`);
       if (opts.showTaskNotificationThrows) {
         throw new Error("permission denied");
       }
@@ -178,10 +175,7 @@ test("B1: setTitleBarTheme maps light/dark directly and system to a null overrid
   const platform = createTauriPlatformSubset(deps);
   await platform.setTitleBarTheme("dark");
   await platform.setTitleBarTheme("system");
-  assert.deepEqual(calls, [
-    "setWindowTheme:main:dark",
-    "setWindowTheme:main:null",
-  ]);
+  assert.deepEqual(calls, ["setWindowTheme:main:dark", "setWindowTheme:main:null"]);
 });
 
 test("B1: openInFileManager delegates to openPath and returns {success:true}", async () => {
@@ -219,15 +213,9 @@ test("B1: openExternalFile maps a rejected open to {success:false,error}", async
 });
 
 test("B1: getSystemLocale narrows a zh* locale to zh-CN and anything else to en-US", async () => {
-  const zh = createTauriPlatformSubset(
-    fakeDeps({ systemLocale: "zh-TW" }).deps,
-  );
-  const de = createTauriPlatformSubset(
-    fakeDeps({ systemLocale: "de-DE" }).deps,
-  );
-  const en = createTauriPlatformSubset(
-    fakeDeps({ systemLocale: "en-US" }).deps,
-  );
+  const zh = createTauriPlatformSubset(fakeDeps({ systemLocale: "zh-TW" }).deps);
+  const de = createTauriPlatformSubset(fakeDeps({ systemLocale: "de-DE" }).deps);
+  const en = createTauriPlatformSubset(fakeDeps({ systemLocale: "en-US" }).deps);
   assert.equal(await zh.getSystemLocale!(), "zh-CN");
   assert.equal(await de.getSystemLocale!(), "en-US");
   assert.equal(await en.getSystemLocale!(), "en-US");
@@ -246,11 +234,7 @@ test("B1: getDeviceId serves the bootstrap prefetch (blocker #7 sync-getter)", a
   );
   // The await-init-before-expose contract populates the cache; the sync getter now serves the real value.
   await bootstrapTauriPlatform(deps);
-  assert.deepEqual(
-    calls,
-    ["getDeviceId"],
-    "bootstrap must read device id via the bridge wrapper",
-  );
+  assert.deepEqual(calls, ["getDeviceId"], "bootstrap must read device id via the bridge wrapper");
   assert.equal(platform.getDeviceId!(), "dev-xyz");
   resetTauriPlatformBootstrapForTesting();
 });
@@ -264,8 +248,7 @@ test("B1: toSupportedLocale matches the Electron resolveSystemApplicationLocale 
 });
 
 /** Flush pending microtasks (the async-listen → sync-disposer bridge). */
-const flush = (): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, 0));
+const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
 test("B1: createTauriPlatformSubset exposes EXACTLY the ported method set (public-surface lock)", () => {
   // With DEFAULT deps this only builds the object (no invoke is called at construction, and the
@@ -307,10 +290,7 @@ test("B1: onDesktopZoomLevelChanged wires the handler and its disposer unlistens
   assert.deepEqual(seen, [{ zoomLevel: 2.5 }]);
 
   dispose();
-  assert.ok(
-    calls.includes("unlisten"),
-    "disposer must invoke the unlisten the fake returned",
-  );
+  assert.ok(calls.includes("unlisten"), "disposer must invoke the unlisten the fake returned");
 });
 
 test("B1: onDesktopZoomLevelChanged unlistens even if disposed before listen resolves (no leak)", async () => {

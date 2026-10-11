@@ -816,21 +816,23 @@ function TextContentPlugin({ onChange }: { onChange?: (text: string) => void }) 
       return;
     }
 
-    return editor.registerUpdateListener(({ dirtyElements, dirtyLeaves, editorState, prevEditorState }) => {
-      if (dirtyElements.size === 0 && dirtyLeaves.size === 0) {
-        return;
-      }
+    return editor.registerUpdateListener(
+      ({ dirtyElements, dirtyLeaves, editorState, prevEditorState }) => {
+        if (dirtyElements.size === 0 && dirtyLeaves.size === 0) {
+          return;
+        }
 
-      // ARMS 输入卡顿遥测（recordInputLag）及其配套的 IME 组合态计时已整体下线，
-      // 这里只保留真实的文本同步职责：序列化 markdown，变化时回传父组件。
-      const nextText = getEditorMarkdown(editorState);
-      const previousText = getEditorMarkdown(prevEditorState);
-      if (nextText === previousText) {
-        return;
-      }
+        // ARMS 输入卡顿遥测（recordInputLag）及其配套的 IME 组合态计时已整体下线，
+        // 这里只保留真实的文本同步职责：序列化 markdown，变化时回传父组件。
+        const nextText = getEditorMarkdown(editorState);
+        const previousText = getEditorMarkdown(prevEditorState);
+        if (nextText === previousText) {
+          return;
+        }
 
-      onChange(nextText);
-    });
+        onChange(nextText);
+      },
+    );
   }, [editor, onChange]);
 
   return null;

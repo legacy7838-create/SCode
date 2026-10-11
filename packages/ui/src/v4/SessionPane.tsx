@@ -4324,7 +4324,8 @@ export function SessionPane({
           proactive={isOfficeMode}
           onOpenAutomations={
             onOpenAutomationsMain
-              ? (automationTab?: AutomationsNavigationTab) => onOpenAutomationsMain(undefined, automationTab)
+              ? (automationTab?: AutomationsNavigationTab) =>
+                  onOpenAutomationsMain(undefined, automationTab)
               : undefined
           }
           workspacePath={workspacePath}

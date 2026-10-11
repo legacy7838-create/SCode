@@ -206,10 +206,7 @@ export function WorkspaceHeaderTitleSection({
     remoteSessionId,
     remoteTarget,
     clientMode: "desktop-continuous" as const,
-    hasLocalSourceService: Boolean(
-      baseServices.skillSyncService &&
-      baseServices.mcpSyncService,
-    ),
+    hasLocalSourceService: Boolean(baseServices.skillSyncService && baseServices.mcpSyncService),
   });
   const workspaceActionLoading = reloadSessionPending;
   const workspaceActionLoadingTitle = intl.formatMessage({

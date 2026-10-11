@@ -1135,13 +1135,7 @@ export function AutomationsSection({
         toast(intl.formatMessage({ id: getAutomationRunNowToastId(result) }));
       }
     },
-    [
-      intl,
-      loadRuns,
-      onOpenSession,
-      runAutomationNow,
-      zcodeAgentService,
-    ],
+    [intl, loadRuns, onOpenSession, runAutomationNow, zcodeAgentService],
   );
 
   const handleDelete = useCallback(

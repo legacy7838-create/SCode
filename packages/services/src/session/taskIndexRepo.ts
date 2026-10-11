@@ -6,11 +6,7 @@
    内实现，并逐条做过 TS-vs-Rust parity 校验；本文件不再有 JS SQLite 驱动，无 JS 回退。 */
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
-import {
-  resolveWorkspaceKey,
-  type ZCodeProvider,
-  type ZCodeTaskMeta,
-} from "@zcode/shared";
+import { resolveWorkspaceKey, type ZCodeProvider, type ZCodeTaskMeta } from "@zcode/shared";
 import type {
   ZCodeTaskListQuery,
   ZCodeTaskListResult,
@@ -72,7 +68,10 @@ export class TaskIndexRepo {
   // 改为构造期固定 dbPath，测试注入临时库，生产不传则回退 getTasksIndexDatabasePath。
   private readonly resolvedDbPath: string | null;
 
-  constructor(dbPath?: string, private readonly startupBusyTimeoutMs = 5000) {
+  constructor(
+    dbPath?: string,
+    private readonly startupBusyTimeoutMs = 5000,
+  ) {
     this.resolvedDbPath = dbPath?.trim() || null;
   }
 
@@ -152,7 +151,9 @@ export class TaskIndexRepo {
     params: ZCodeTaskListQuery & { provider?: ZCodeProvider },
   ): Promise<ZCodeTaskListResult> {
     await this.ensureReady();
-    return JSON.parse(loadDb().queryTaskListJson(this.path(), JSON.stringify(params))) as ZCodeTaskListResult;
+    return JSON.parse(
+      loadDb().queryTaskListJson(this.path(), JSON.stringify(params)),
+    ) as ZCodeTaskListResult;
   }
 
   async listDeletedTaskIds(params: {
@@ -261,7 +262,12 @@ export class TaskIndexRepo {
   }): Promise<{ meta: ZCodeTaskMeta; cleared: boolean }> {
     await this.ensureReady();
     return JSON.parse(
-      loadDb().clearTaskUnreadJson(this.path(), wsKey(params), params.taskId, params.expectedUnreadAt),
+      loadDb().clearTaskUnreadJson(
+        this.path(),
+        wsKey(params),
+        params.taskId,
+        params.expectedUnreadAt,
+      ),
     ) as { meta: ZCodeTaskMeta; cleared: boolean };
   }
 
@@ -291,7 +297,12 @@ export class TaskIndexRepo {
   }): Promise<ZCodeTaskMeta | null> {
     await this.ensureReady();
     return meta(
-      loadDb().applyAgentPatchJson(this.path(), wsKey(params), params.taskId, JSON.stringify(params.patch)),
+      loadDb().applyAgentPatchJson(
+        this.path(),
+        wsKey(params),
+        params.taskId,
+        JSON.stringify(params.patch),
+      ),
     );
   }
 
@@ -313,7 +324,9 @@ export class TaskIndexRepo {
     await this.ensureReady();
     const normalizedDays = Math.max(1, Math.floor(params.olderThanDays));
     const cutoff = Date.now() - normalizedDays * DAY_MS;
-    return metas(loadDb().archiveStaleTasksJson(this.path(), wsKey(params), cutoff, params.provider ?? null));
+    return metas(
+      loadDb().archiveStaleTasksJson(this.path(), wsKey(params), cutoff, params.provider ?? null),
+    );
   }
 
   // ---- 写入：任务分组 ----
@@ -324,13 +337,20 @@ export class TaskIndexRepo {
   }): Promise<ZCodeTaskGroup> {
     await this.ensureReady();
     return group(
-      loadDb().groupingCreateTaskGroupJson(this.path(), params?.title ?? null, params?.color ?? null, Date.now()),
+      loadDb().groupingCreateTaskGroupJson(
+        this.path(),
+        params?.title ?? null,
+        params?.color ?? null,
+        Date.now(),
+      ),
     );
   }
 
   async renameTaskGroup(params: { groupId: string; title: string }): Promise<ZCodeTaskGroup> {
     await this.ensureReady();
-    return group(loadDb().groupingRenameTaskGroupJson(this.path(), params.groupId, params.title, Date.now()));
+    return group(
+      loadDb().groupingRenameTaskGroupJson(this.path(), params.groupId, params.title, Date.now()),
+    );
   }
 
   async updateTaskGroupColor(params: {
@@ -339,7 +359,12 @@ export class TaskIndexRepo {
   }): Promise<ZCodeTaskGroup> {
     await this.ensureReady();
     return group(
-      loadDb().groupingUpdateTaskGroupColorJson(this.path(), params.groupId, params.color, Date.now()),
+      loadDb().groupingUpdateTaskGroupColorJson(
+        this.path(),
+        params.groupId,
+        params.color,
+        Date.now(),
+      ),
     );
   }
 

@@ -11,15 +11,15 @@ correct rather than timing-fragile.
 
 `packages/shared/src/platform.ts`, interface `IPlatformService` (:504+):
 
-| Method | Line | Returns | Backing today | Real blocker |
-| --- | --- | --- | --- | --- |
-| `getDeviceId()` | :918 | `string` (sync) | **landed** `get_device_id` command (reads env `ZCODE_DEVICE_ID`, `commands.rs:137`) + `getTauriDeviceId(): Promise<string>` wrapper (`tauriBridge.ts:46`) | **this spike only** — pure async→sync delivery |
-| `getWindowControlsOverlayMetrics?()` | (WCO) | `WindowControlsOverlayMetrics \| null` (sync) | — | possibly **local** `navigator.windowControlsOverlay` (see below), maybe no IPC |
-| `createLocalMediaPreviewUrl?()` | :533 | `string` (sync) | — | **separate** capability gap (asset/media protocol) — see [`WEBVIEW-PROTOCOL-SPIKE.md`](./WEBVIEW-PROTOCOL-SPIKE.md) #5 |
-| `getPathForFile?()` | :530 | `string \| null` (sync) | — | **separate** capability gap (DOM `File`→absolute path unavailable in Tauri without drag-drop) |
+| Method                               | Line  | Returns                                       | Backing today                                                                                                                                             | Real blocker                                                                                                           |
+| ------------------------------------ | ----- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `getDeviceId()`                      | :918  | `string` (sync)                               | **landed** `get_device_id` command (reads env `ZCODE_DEVICE_ID`, `commands.rs:137`) + `getTauriDeviceId(): Promise<string>` wrapper (`tauriBridge.ts:46`) | **this spike only** — pure async→sync delivery                                                                         |
+| `getWindowControlsOverlayMetrics?()` | (WCO) | `WindowControlsOverlayMetrics \| null` (sync) | —                                                                                                                                                         | possibly **local** `navigator.windowControlsOverlay` (see below), maybe no IPC                                         |
+| `createLocalMediaPreviewUrl?()`      | :533  | `string` (sync)                               | —                                                                                                                                                         | **separate** capability gap (asset/media protocol) — see [`WEBVIEW-PROTOCOL-SPIKE.md`](./WEBVIEW-PROTOCOL-SPIKE.md) #5 |
+| `getPathForFile?()`                  | :530  | `string \| null` (sync)                       | —                                                                                                                                                         | **separate** capability gap (DOM `File`→absolute path unavailable in Tauri without drag-drop)                          |
 
 So this spike owns **`getDeviceId`** (the only one whose command is already landed and whose ONLY gap is
-sync delivery) and clarifies that the other three are gated by *other*, unrelated blockers.
+sync delivery) and clarifies that the other three are gated by _other_, unrelated blockers.
 
 ## Why the naive mapping fails
 
@@ -31,7 +31,7 @@ and `await`ing inside a non-async sync getter is impossible. `createTauriPlatfor
 ## Recommended pattern: prefetch-at-init + synchronous cache
 
 Populate the value once during renderer bootstrap (async), then serve it synchronously from a module-level
-cache. Faithful because Electron's own sync getters are backed by a value that is *already known* at
+cache. Faithful because Electron's own sync getters are backed by a value that is _already known_ at
 startup (env in main); the Tauri equivalent reads it once at init and freezes it.
 
 ```ts
@@ -71,7 +71,7 @@ connect-then-use ordering — reuse that "await init before exposing the seam" p
   `WEBVIEW-PROTOCOL-SPIKE.md` §4.2). True sync, present from first paint. BUT: (a) the main window is
   currently declared in `tauri.conf.json`, so this needs a programmatic-window or conf change to the shell
   bootstrap; (b) it cannot be verified headlessly (whether the injected script actually runs in the live
-  webview needs `pnpm dev:tauri`). Chosen as the fallback if a value must exist at *first paint* before any
+  webview needs `pnpm dev:tauri`). Chosen as the fallback if a value must exist at _first paint_ before any
   await; for device-id (read after init) the prefetch cache is simpler and testable.
 - **Cache with a lazy "not ready yet" default**: returns `""` before first resolve — an acceptable
   degradation ONLY if the factory honors the ordering contract above; otherwise a fidelity gap. Rejected

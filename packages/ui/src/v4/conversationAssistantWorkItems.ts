@@ -265,12 +265,10 @@ export function buildAssistantWorkRenderItems(
   reasoningVisibility: ConversationReasoningVisibility,
   options?: ConversationAssistantWorkRenderOptions,
 ): ConversationAssistantWorkRenderItem[] {
-  const enableExploreGrouping =
-    options?.enableExploreGrouping ?? ENABLE_EXPLORE_TOOL_CALL_GROUPING;
+  const enableExploreGrouping = options?.enableExploreGrouping ?? ENABLE_EXPLORE_TOOL_CALL_GROUPING;
   const enableTerminalGrouping =
     options?.enableTerminalGrouping ?? ENABLE_TERMINAL_TOOL_CALL_GROUPING;
-  const enableChangesGrouping =
-    options?.enableChangesGrouping ?? ENABLE_CHANGES_TOOL_CALL_GROUPING;
+  const enableChangesGrouping = options?.enableChangesGrouping ?? ENABLE_CHANGES_TOOL_CALL_GROUPING;
 
   const visibleRows = rows.filter((row) => {
     if (

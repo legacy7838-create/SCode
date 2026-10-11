@@ -860,10 +860,7 @@ function CodingPlanPurchaseChoiceBanners({
   teamVisible?: boolean;
   soldOutVisible?: boolean;
   accountDisconnected?: boolean;
-  onSelect: (
-    audience: PurchaseAudience,
-    options?: { initialTeamPlanKey?: string },
-  ) => void;
+  onSelect: (audience: PurchaseAudience, options?: { initialTeamPlanKey?: string }) => void;
   onSelectStartPlan?: () => void;
 }) {
   const entryGate = useCodingPlanEntryGate();

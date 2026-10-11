@@ -193,7 +193,8 @@ function stageBundle() {
   stageAgentBundle({ repoRoot, platformKey });
 }
 
-function stageOfficialPlugins() {  for (const plugin of officialPluginPackages) {
+function stageOfficialPlugins() {
+  for (const plugin of officialPluginPackages) {
     const sourceRoot = resolve(repoRoot, plugin.relativePath);
     const manifestPath = resolve(sourceRoot, ".zcode-plugin", "plugin.json");
     if (!existsSync(manifestPath)) {

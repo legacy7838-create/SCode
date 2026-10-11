@@ -16,12 +16,7 @@ interface CommandCardProps {
   isOperating?: boolean;
 }
 
-export function CommandCard({
-  command,
-  onEdit,
-  onToggle,
-  isOperating,
-}: CommandCardProps) {
+export function CommandCard({ command, onEdit, onToggle, isOperating }: CommandCardProps) {
   const { intl } = useZCodeIntl();
   const canEdit = isEditableUserCommand(command);
   const editable = canEdit && Boolean(onEdit) && !isOperating;

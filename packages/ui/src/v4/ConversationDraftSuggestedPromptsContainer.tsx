@@ -9,14 +9,7 @@ import {
   subscribeRecommendedPrompts,
   unregisterRecommendedPromptPane,
 } from "@/v4/featureSuggestedPromptRotation.js";
-import {
-  useCallback,
-  useEffect,
-  useId,
-  useMemo,
-  useState,
-  useSyncExternalStore,
-} from "react";
+import { useCallback, useEffect, useId, useMemo, useState, useSyncExternalStore } from "react";
 import { cn } from "@/components/lib/utils.js";
 import { toast } from "@/components/ui/toast.js";
 import { useWorkspaceServicesResolution } from "@/hooks/useWorkspaceServices.js";

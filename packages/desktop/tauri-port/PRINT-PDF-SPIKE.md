@@ -1,9 +1,9 @@
 # PRINT-PDF-SPIKE.md — Electron→Tauri: `webContents.printToPDF` re-architecture decision
 
 READ-ONLY spike. Grounded in the current Electron print/PDF path. `INVENTORY.md` rates
-`webContents.printToPDF` a **HIGH** port-blocker (INVENTORY.md:36, :162, :186): *"Chromium-only;
-presentation PDF export must be re-implemented"* → *"none built-in; headless-Chromium/Cairo
-re-arch"*. Tauri's system webview (WebKitGTK / WKWebView / WebView2) exposes no portable
+`webContents.printToPDF` a **HIGH** port-blocker (INVENTORY.md:36, :162, :186): _"Chromium-only;
+presentation PDF export must be re-implemented"_ → _"none built-in; headless-Chromium/Cairo
+re-arch"_. Tauri's system webview (WebKitGTK / WKWebView / WebView2) exposes no portable
 print-to-PDF, so this file decides how to reproduce the feature.
 
 Scope of the feature: **PPTX/presentation → PDF export only**. The generic embedded-browser and
@@ -40,7 +40,7 @@ UI (packages/ui, platform-agnostic)
 **Key facts that constrain every option:**
 
 - What is printed is a **live, JS/CSS-rendered DOM subtree** — web fonts, decoded raster images,
-  and **canvas-drawn charts** — after a deliberate *font-materialization* pass (the entire
+  and **canvas-drawn charts** — after a deliberate _font-materialization_ pass (the entire
   `presentationPdfPrintExport.ts` module exists to work around Chromium/Skia dropping glyphs that
   only the implicit fallback covers at screen time). The output is **vector text** (platform.ts:521).
 - Page geometry is **fully data-driven by injected `@page` CSS** (`preferCSSPageSize:true`,
@@ -51,7 +51,7 @@ UI (packages/ui, platform-agnostic)
 - Delivery is **save-dialog → file write of raw bytes** (`saveFile`), already independent of the
   rendering engine and directly portable to `tauri-plugin-dialog` + `tauri-plugin-fs`.
 
-The hard part is *not* the byte transport — it is **reproducing Chromium's print of that exact
+The hard part is _not_ the byte transport — it is **reproducing Chromium's print of that exact
 live DOM with the same fidelity**.
 
 ## 2. Options evaluated
@@ -63,7 +63,7 @@ data + rasterized `<img>`/`<canvas>` as data-URLs + computed CSS) to a headless 
 from the Node Host sidecar that SIDECAR-TRANSPORT already plans (`tauri-plugin-shell`
 `Command::sidecar`, externalBin Node bin).
 
-- **Fidelity: HIGHEST** — same engine as today; identical Skia print output *if* the DOM is
+- **Fidelity: HIGHEST** — same engine as today; identical Skia print output _if_ the DOM is
   faithfully transferred. Font-materialization pass runs unchanged (it lives in the renderer).
 - **Pros:** cross-platform (Win/mac/Linux uniformly) — directly closes the Linux gap; closest
   behavior parity to Electron; reuses the planned sidecar process model.
@@ -76,24 +76,24 @@ from the Node Host sidecar that SIDECAR-TRANSPORT already plans (`tauri-plugin-s
 
 ### (b) Rust HTML→PDF crates (`printpdf`, `typst`, `weasyprint` via subprocess, `comrak`+headless for MD)
 
-- **Fidelity: LOW for this app.** These render from *markup/source*, not from the app's live,
+- **Fidelity: LOW for this app.** These render from _markup/source_, not from the app's live,
   laid-out, JS-rendered slide DOM. Canvas charts, embedded web fonts, and the entire
   font-materialization workaround would be **lost** — the exact glyphs/pixels the current code
   fights to preserve. `typst`/`printpdf` don't run the app's CSS/`@page` layout or execute the
   renderer. WeasyPrint (Python subprocess) has partial CSS but ≠ Chromium and adds a Python runtime.
-- **Pros:** (b1) `typst`/`printpdf` are native Rust, small, fast — good for *Markdown→PDF* or
+- **Pros:** (b1) `typst`/`printpdf` are native Rust, small, fast — good for _Markdown→PDF_ or
   simple templated docs, NOT for pixel-faithful slide export.
 - **Cons:** fails the core requirement (reproduce current visual output); extra runtimes; large
   CSS-support divergence to re-qualify every slide theme.
 - **Size:** smallest (Rust crates, few MB). **Complexity:** HIGH to reach parity, LOW to ship a
-  *degraded* export.
+  _degraded_ export.
 
 ### (c) Per-OS native webview print-to-PDF (WKWebView / WebView2)
 
 - **macOS** WKWebView: `printPDF(configuration:)` (WKPDFConfiguration, macOS 11+). **Windows**
   WebView2: `CoreWebView2.PrintToPdfAsync` / `PrintToPdfResult`. Tauri's `wry` wraps these native
   views, so the handle is reachable in a Rust command.
-- **Fidelity: HIGHEST-but-native** — it prints the *same* webview the print host lives in, exactly
+- **Fidelity: HIGHEST-but-native** — it prints the _same_ webview the print host lives in, exactly
   like Electron does today, so DOM snapshotting (a's cost) is avoided; `@media print` CSS +
   injected `@page` already scope what prints.
 - **Gap: WebKitGTK on Linux has NO print-to-PDF API** (INVENTORY.md:36, :201 note the Linux
@@ -119,7 +119,7 @@ from the Node Host sidecar that SIDECAR-TRANSPORT already plans (`tauri-plugin-s
 **Two-tier, fidelity-first:**
 
 1. **Primary = (c) native webview print-to-PDF on Windows (WebView2) and macOS (WKWebView).**
-   Rationale: it prints the *identical live DOM* the current code already prepares (the
+   Rationale: it prints the _identical live DOM_ the current code already prepares (the
    font-materialization + full-page print host stays 100% reusable — it is engine-agnostic,
    renderer-side CSS/JS). Lowest size, closest behavior parity, no DOM serialization, and no new
    bundled runtime. The existing `@page`/`@media print` scoping (presentationPdfPrintExport.ts) maps
@@ -130,9 +130,9 @@ from the Node Host sidecar that SIDECAR-TRANSPORT already plans (`tauri-plugin-s
    This is the only option that closes the WebKitGTK gap with acceptable fidelity; the
    canvas-chart / web-font fidelity risk means pure-Rust crates (b) are unacceptable for slides.
 
-**Rejected:** (b) as a *slide*-export engine — fidelity risk too high (loses canvas charts, the
+**Rejected:** (b) as a _slide_-export engine — fidelity risk too high (loses canvas charts, the
 whole font-materialization workaround, and app CSS). (`typst`/`printpdf` remain valid later for a
-separate *Markdown→PDF* feature, which does not exist today.)
+separate _Markdown→PDF_ feature, which does not exist today.)
 
 **Why not (a)-everywhere:** bundling Chromium on Win/mac trades ~150 MB and a second browser
 runtime for fidelity already provided by the resident webview. Use the free native path where it
@@ -140,13 +140,14 @@ exists; pay the Chromium cost only on Linux where there is no alternative.
 
 **Fidelity risk (explicit):** the hard part is JS/CSS-rendered slides — canvas-drawn charts, web
 fonts, and the print-unsafe-font substitution (presentationPdfPrintExport.ts:41-42, :199-313).
-Any engine other than a Chromium/WK/WebView2 print of the *live* DOM will regress this. The
+Any engine other than a Chromium/WK/WebView2 print of the _live_ DOM will regress this. The
 Linux (a) path MUST transfer the post-materialization DOM (canvas→dataURL, inlined `@font-face`,
 serialized computed style), not the slide source, or output will diverge from the current baseline.
 
 ## 4. Minimal PoC sketch (measure before committing)
 
 **Native (c):**
+
 - Windows (Rust command, `wry`→WebView2): call `CoreWebView2.PrintToPdfAsync(path, options)` with
   `PreferCSSPageSize = true`, `Margin = 0`, `PrintBackground = true`; return file path.
 - macOS (Rust command, `wry`→WKWebView): `webView.printPDF(configuration:)` (WKPDFConfiguration:
@@ -154,6 +155,7 @@ serialized computed style), not the slide source, or output will diverge from th
 - UI: swap `platform.printPageToPdf()` internals only; renderer print host + `saveFile` unchanged.
 
 **Linux (a):**
+
 ```
 # From Node Host sidecar, given serialized print-host HTML (self-contained: inlined fonts, img/canvas dataURLs, CSS):
 # write it to a temp file, then:
@@ -162,6 +164,7 @@ chrome --headless=new --no-pdf-header-footer --print-to-pdf=<out.pdf> file://<tm
 ```
 
 **What to measure (side-by-side vs current Electron baseline):**
+
 - **Bundle size delta** per platform (native path vs bundled Chromium).
 - **Output fidelity** vs today: pixel-diff exported PDFs for a slide deck containing (1) canvas
   charts, (2) CJK + Latin web fonts, (3) an image-heavy deck, (4) a deck using a print-unsafe font
@@ -170,12 +173,12 @@ chrome --headless=new --no-pdf-header-footer --print-to-pdf=<out.pdf> file://<tm
 
 ## 5. Effort + risk + fallback
 
-| Path | Effort | Risk | Notes |
-|---|---|---|---|
-| (c) native Win/mac | M (2 FFI commands) | MED | depends on `wry` exposing the native view; print-media flag parity |
-| (a) headless Chromium (Linux) | M-H | MED-HIGH | DOM-serialization fidelity is the risk; sidecar lifecycle |
-| (b) Rust crates | H for parity / L for degraded | HIGH | regresses charts/fonts; only viable for MD→PDF later |
-| (d) De-scope | XS | LOW | graceful-hide already wired via optional `printPageToPdf?` |
+| Path                          | Effort                        | Risk     | Notes                                                              |
+| ----------------------------- | ----------------------------- | -------- | ------------------------------------------------------------------ |
+| (c) native Win/mac            | M (2 FFI commands)            | MED      | depends on `wry` exposing the native view; print-media flag parity |
+| (a) headless Chromium (Linux) | M-H                           | MED-HIGH | DOM-serialization fidelity is the risk; sidecar lifecycle          |
+| (b) Rust crates               | H for parity / L for degraded | HIGH     | regresses charts/fonts; only viable for MD→PDF later               |
+| (d) De-scope                  | XS                            | LOW      | graceful-hide already wired via optional `printPageToPdf?`         |
 
 **Overall:** MEDIUM effort, MEDIUM risk. The renderer-side print-host machinery is fully portable
 (it's engine-agnostic CSS/JS); only the final `printToPDF` byte-producing call is platform-specific.

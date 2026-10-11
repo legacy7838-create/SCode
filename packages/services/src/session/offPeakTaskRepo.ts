@@ -27,7 +27,8 @@ export function isOffPeakBoundSessionConflict(error: unknown): boolean {
   );
 }
 
-const task = (json: string | null): ZCodeOffPeakTask | null => (json ? (JSON.parse(json) as ZCodeOffPeakTask) : null);
+const task = (json: string | null): ZCodeOffPeakTask | null =>
+  json ? (JSON.parse(json) as ZCodeOffPeakTask) : null;
 const tasks = (json: string): ZCodeOffPeakTask[] => JSON.parse(json) as ZCodeOffPeakTask[];
 
 /**
@@ -41,7 +42,10 @@ export class OffPeakTaskRepo {
   // 改为构造期固定 dbPath，测试注入临时库路径，生产不传则回退默认。
   private readonly resolvedDbPath: string | null;
 
-  constructor(dbPath?: string, private readonly startupBusyTimeoutMs = 5000) {
+  constructor(
+    dbPath?: string,
+    private readonly startupBusyTimeoutMs = 5000,
+  ) {
     this.resolvedDbPath = dbPath?.trim() || null;
   }
 

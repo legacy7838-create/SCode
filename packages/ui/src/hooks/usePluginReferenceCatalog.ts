@@ -39,8 +39,6 @@ interface PluginReferenceCatalogOptions {
   suppressErrorLog?: boolean;
 }
 
-
-
 /**
  * Plugin 对话引用 catalog。
  * authority 由 sessionId 决定：null（新建草稿）→ workspace 当前 catalog；

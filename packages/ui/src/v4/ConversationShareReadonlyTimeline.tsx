@@ -811,9 +811,7 @@ function ReadonlySegment({
   useEffect(() => {
     setHistoryOpen(segment.assistantHistoryDefaultOpen);
   }, [segment.assistantHistoryDefaultOpen, segment.key]);
-  const hasHistory = segment.flowItems.some(
-    (item) => item.kind === "assistantHistory",
-  );
+  const hasHistory = segment.flowItems.some((item) => item.kind === "assistantHistory");
   const open = segment.assistantHistoryDefaultOpen || historyOpen;
   const firstAssistantFlowItemIndex = segment.flowItems.findIndex(
     (flowItem) => flowItem.kind !== "userInput",

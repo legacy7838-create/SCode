@@ -7,7 +7,7 @@
 ## Headline finding (de-risks the whole phase)
 
 The localhost-WebSocket RPC transport **already exists and is production-tested**. The web/phone
-remote-control path drives the *same* `ServiceCollection` over WS RPC today:
+remote-control path drives the _same_ `ServiceCollection` over WS RPC today:
 
 - Server side: `packages/server/src/http.ts:44-81` wraps a Node `ws` socket into an `ISocket`;
   `:86-125` `setupChannelServer` builds `SocketProtocol` → `ChannelServer` →
@@ -44,11 +44,17 @@ Tauri picks `SocketProtocol`-over-WebSocket (already shipped for web).
 ## 2. The transport seam (drop-in, zero framing change)
 
 `IMessagePassingProtocol` — `packages/rpc/src/protocol.ts:24-28`:
+
 ```ts
-interface IMessagePassingProtocol { send(buffer: VSBuffer): void; readonly onMessage: Event<VSBuffer>; }
+interface IMessagePassingProtocol {
+  send(buffer: VSBuffer): void;
+  readonly onMessage: Event<VSBuffer>;
+}
 ```
+
 `ChannelServer` consumes only this (`packages/rpc/src/channelServer.ts:22-31`); it never sees the
 pipe type. Two implementations coexist:
+
 - `MessagePortProtocol` (`protocol.ts:361-397`) — MessagePort is message-delimited, no framing.
 - `SocketProtocol` (`protocol.ts:236-307`) — adds a 13-byte frame header
   (`HEADER_SIZE=13`, `protocol.ts:207`; `writeProtocolMessage` `:222-230`) over a byte stream
@@ -76,7 +82,7 @@ swap `connectViaMessagePort` (`packages/client/src/messageport.ts:57`) for `conn
   or esbuild bundle + a Node runtime). Electron's `process.execPath`+`ELECTRON_RUN_AS_NODE:"1"`
   trick (`zcodeAgentProcessManager.ts:367-376`) is Electron-only and **must** be replaced by the
   sidecar being a real Node executable. Host→Agent `child_process.spawn(cmd, [entry,"app-server",
-  "--stdio"])` stdio JSON-RPC contract is language-agnostic and stays verbatim.
+"--stdio"])` stdio JSON-RPC contract is language-agnostic and stays verbatim.
 - Spawn/lifecycle: Rust launches the Host sidecar on window-create via `tauri-plugin-shell`
   (`Command::sidecar`), passing **WS port + auth token via env/argv**; the Host binds 127.0.0.1 and
   prints its ready port so the renderer can connect. On window-close / app-exit, Rust explicitly
@@ -108,7 +114,7 @@ their binary semantics over WS; no JSON-only limitation.
 
 ## 6. Phased implementation checklist
 
-1. Stand up a loopback WS host *inside* `out/host/index.js`: `wrapWebSocket`→`SocketProtocol`→
+1. Stand up a loopback WS host _inside_ `out/host/index.js`: `wrapWebSocket`→`SocketProtocol`→
    `ChannelServer` (copy `http.ts:44-125`), bind 127.0.0.1, gate on token. Keep MessagePort path
    behind a flag for Electron rollback.
 2. Package Host + Agent as externalBin sidecars (Node SEA/pkg); confirm they run standalone.
@@ -138,7 +144,7 @@ MessagePort is a config flip, not a rewrite.
 - **Unix domain socket / named pipe**: no port-collision and no TCP; but Windows named-pipe paths
   and webview client support are awkward, and there is no `WebSocket` browser object to reuse —
   loses the already-shipped web code path.
-- **localhost WebSocket (recommended)**: reuses the *existing, web- and phone-verified*
+- **localhost WebSocket (recommended)**: reuses the _existing, web- and phone-verified_
   `SocketProtocol`/`ChannelServer`/`ChannelClient` stack verbatim; browser-native `WebSocket` in the
   webview; binary frames supported; the only real cost is loopback port + token hygiene. This is the
   lowest-risk parity-preserving move.

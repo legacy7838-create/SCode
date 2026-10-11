@@ -2226,8 +2226,6 @@ export function createZCodeAgentService(
           return;
         }
 
-
-
         if (request.method === zcodeProtocolMethods.automationCreate) {
           const parsed = zcodeAutomationCreateParamsSchema.safeParse(request.params);
           if (!parsed.success) {
@@ -3532,8 +3530,6 @@ export function createZCodeAgentService(
         throw error;
       }
     },
-
-
 
     async listMcpServerStatuses(params: ZCodeAgentListMcpServerStatusesParams) {
       const requestMcpList = async (options?: { omitMcpServers?: boolean; omitMode?: boolean }) => {

@@ -26,7 +26,8 @@ export const REMOTE_AGENT_OFFICIAL_PLUGIN_INCLUDED_TOP_LEVEL_PATHS = [
 // 修复依据：官方插件包名列表清空后，此处由空数组 .map 派生的结果不再是字面量，
 // 不能再施加 `as const`（TS1355：const 断言只允许用于枚举成员或字面量）。空源列表映射结果恒为空数组，
 // 消费方（for...of / map / 展开）只按普通字符串数组使用，去掉断言不改变运行期行为。
-export const REMOTE_AGENT_OFFICIAL_PLUGIN_REQUIRED_RELATIVE_PATHS = REMOTE_AGENT_OFFICIAL_PLUGIN_PACKAGE_NAMES.map(
+export const REMOTE_AGENT_OFFICIAL_PLUGIN_REQUIRED_RELATIVE_PATHS =
+  REMOTE_AGENT_OFFICIAL_PLUGIN_PACKAGE_NAMES.map(
     (packageName) => `${packageName}/.zcode-plugin/plugin.json`,
   );
 

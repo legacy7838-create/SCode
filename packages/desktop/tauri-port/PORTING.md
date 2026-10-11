@@ -18,14 +18,14 @@ Electron is never removed until Tauri reaches verified parity.
 
 ## Architecture mapping
 
-| Layer | Electron today | Tauri target | Notes |
-| --- | --- | --- | --- |
-| UI | React (`packages/ui` + `desktop/src/renderer`) over Vite:5174 | **UNCHANGED** — same Vite app loaded by Tauri `WebviewWindow` | Only seam is `IPlatformService` |
-| Platform abstraction | `IPlatformService` (104 methods) implemented by `renderer/src/desktopPlatform.ts` over `window.zcode` | New `tauriPlatform.ts` implementing the SAME `IPlatformService`, backed by `invoke()`/events | **This is the pivot** — UI never sees Tauri |
-| Bridge | `preload/index.ts` `contextBridge` → `window.zcode` (~100 methods) + `ipcMain` (~119 channels) | `#[tauri::command]` fns + Tauri events; capability allowlist | ~70 request/response, ~40 event streams |
-| Business services | window-scoped **Local Host** Node process (`utilityProcess.fork`) + `ServiceCollection` (`services/src/node.ts`) | **Node sidecar** (`externalBin`) — keep as-is | RPC *framing* reusable; **transport** must change |
-| Agent runtime | Agent CLI spawned in Host over **JSON-RPC/stdio** | **Sidecar**, unchanged transport | language-agnostic ✅ |
-| Scheduler / workers | `utilityProcess` + `node:worker_threads` | Node sidecar (keep) or Rust `tokio` | low risk |
+| Layer                | Electron today                                                                                                   | Tauri target                                                                                 | Notes                                             |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| UI                   | React (`packages/ui` + `desktop/src/renderer`) over Vite:5174                                                    | **UNCHANGED** — same Vite app loaded by Tauri `WebviewWindow`                                | Only seam is `IPlatformService`                   |
+| Platform abstraction | `IPlatformService` (104 methods) implemented by `renderer/src/desktopPlatform.ts` over `window.zcode`            | New `tauriPlatform.ts` implementing the SAME `IPlatformService`, backed by `invoke()`/events | **This is the pivot** — UI never sees Tauri       |
+| Bridge               | `preload/index.ts` `contextBridge` → `window.zcode` (~100 methods) + `ipcMain` (~119 channels)                   | `#[tauri::command]` fns + Tauri events; capability allowlist                                 | ~70 request/response, ~40 event streams           |
+| Business services    | window-scoped **Local Host** Node process (`utilityProcess.fork`) + `ServiceCollection` (`services/src/node.ts`) | **Node sidecar** (`externalBin`) — keep as-is                                                | RPC _framing_ reusable; **transport** must change |
+| Agent runtime        | Agent CLI spawned in Host over **JSON-RPC/stdio**                                                                | **Sidecar**, unchanged transport                                                             | language-agnostic ✅                              |
+| Scheduler / workers  | `utilityProcess` + `node:worker_threads`                                                                         | Node sidecar (keep) or Rust `tokio`                                                          | low risk                                          |
 
 ## Key decisions
 
@@ -90,15 +90,15 @@ Host inside an `InitLocal` parentPort message; the Host then runs
 (`src/host/index.ts:1937-1954`). `parentPort` itself is only a side-channel to MAIN (~40 telemetry /
 control flows). Mapping:
 
-| Electron (source) | Tauri sidecar (target) | Notes |
-| --- | --- | --- |
-| `wrapElectronPort(MessagePortMain) → MessagePortLike` | **`@zcode/rpc` `wrapWebSocket(WebSocketLike) → ISocket`** (`packages/rpc/src/wsServer.ts`) | Shared server-side WS adapter; promoted from 3 hand-rolled copies (server, server-cli, layer-a `_host.ts`) |
-| `MessagePortProtocol(wrappedPort)` | `SocketProtocol(socket)` | Same framing/serialization; `ChannelServer`/middleware stack unchanged |
-| `InitLocal` parentPort message carrying `port2` + `{hostId, deviceMid, workspacePath, …}` | Host self-boots from **env/argv** (`ZCODE_HOST_ID`, `ZCODE_WORKSPACE_PATH`, `ZCODE_DEVICE_MID`, `ZCODE_DB_STARTUP_ID`, `ZCODE_WS_PORT`, shared secret), then `WebSocketServer.listen(127.0.0.1, port)` | Rust spawner provides the env; port 0 = ephemeral |
-| renderer `webContents.postMessage(ServicePort, [port1])` | renderer `connectTauriHost()` → `connectViaWebSocket(ws://127.0.0.1:port)` | Client stack already production-proven |
-| `AttachServicePort`/scoped attachments | per-WS-connection capability/attachment token | Preserve owner/lease + stale-run guards (AGENTS.md) |
-| inbound MAIN→Host commands (`CronRun`, `OffPeakRun`, `SessionMessageDeliver`, `ProviderProvisioningExecute`, `ConnectRemoteWorkspace`, `Dispose`, `DatabaseStartupControl`, `ResourceUsageSnapshot`) | register as Host **channels** callable over WS by the renderer/Rust | Convert the `parentPort.on("message")` handler |
-| ~40 outbound telemetry/report flows to MAIN | `IHostReportSink` → Tauri event / RPC stream; non-critical degrade to local log | Nearly all helpers already no-op when `parentPort` is null |
+| Electron (source)                                                                                                                                                                                    | Tauri sidecar (target)                                                                                                                                                                                 | Notes                                                                                                      |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| `wrapElectronPort(MessagePortMain) → MessagePortLike`                                                                                                                                                | **`@zcode/rpc` `wrapWebSocket(WebSocketLike) → ISocket`** (`packages/rpc/src/wsServer.ts`)                                                                                                             | Shared server-side WS adapter; promoted from 3 hand-rolled copies (server, server-cli, layer-a `_host.ts`) |
+| `MessagePortProtocol(wrappedPort)`                                                                                                                                                                   | `SocketProtocol(socket)`                                                                                                                                                                               | Same framing/serialization; `ChannelServer`/middleware stack unchanged                                     |
+| `InitLocal` parentPort message carrying `port2` + `{hostId, deviceMid, workspacePath, …}`                                                                                                            | Host self-boots from **env/argv** (`ZCODE_HOST_ID`, `ZCODE_WORKSPACE_PATH`, `ZCODE_DEVICE_MID`, `ZCODE_DB_STARTUP_ID`, `ZCODE_WS_PORT`, shared secret), then `WebSocketServer.listen(127.0.0.1, port)` | Rust spawner provides the env; port 0 = ephemeral                                                          |
+| renderer `webContents.postMessage(ServicePort, [port1])`                                                                                                                                             | renderer `connectTauriHost()` → `connectViaWebSocket(ws://127.0.0.1:port)`                                                                                                                             | Client stack already production-proven                                                                     |
+| `AttachServicePort`/scoped attachments                                                                                                                                                               | per-WS-connection capability/attachment token                                                                                                                                                          | Preserve owner/lease + stale-run guards (AGENTS.md)                                                        |
+| inbound MAIN→Host commands (`CronRun`, `OffPeakRun`, `SessionMessageDeliver`, `ProviderProvisioningExecute`, `ConnectRemoteWorkspace`, `Dispose`, `DatabaseStartupControl`, `ResourceUsageSnapshot`) | register as Host **channels** callable over WS by the renderer/Rust                                                                                                                                    | Convert the `parentPort.on("message")` handler                                                             |
+| ~40 outbound telemetry/report flows to MAIN                                                                                                                                                          | `IHostReportSink` → Tauri event / RPC stream; non-critical degrade to local log                                                                                                                        | Nearly all helpers already no-op when `parentPort` is null                                                 |
 
 ### Owned-buffer semantic trap (hit during Phase 0)
 
@@ -153,6 +153,7 @@ desktop `build` = `tsup && vite build`.
 ## Phase 2 — BLOCKED on two prerequisites (not faked)
 
 Pointing `connectTauriHost` (currently at the echo command) at a real host spawn requires:
+
 1. **`zcode-host` externalBin binary** — the ESM host (with native `node-pty`/`ssh2`, external `ws`)
    must be packaged as a standalone Node binary/SEA per-OS (`SIDECAR-PACKAGING.md`). This is the
    Phase 4 packaging step and must be validated by a real `tauri build`.

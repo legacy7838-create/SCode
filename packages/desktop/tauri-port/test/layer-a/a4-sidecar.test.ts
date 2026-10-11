@@ -64,7 +64,9 @@ function resolveArtifacts(): { tsxCli: string; echoEntry: string } {
     if (parent === dir) break;
     dir = parent;
   }
-  throw new Error("Could not locate a `node_modules/tsx/dist/cli.mjs` launcher while walking up from the test dir");
+  throw new Error(
+    "Could not locate a `node_modules/tsx/dist/cli.mjs` launcher while walking up from the test dir",
+  );
 }
 
 /** Ask the OS for an ephemeral loopback port, then release it immediately.
@@ -95,7 +97,10 @@ function getFreePort(): Promise<number> {
  * @returns The port the sidecar reports as bound.
  * @throws If the process exits early or the line never arrives within the budget.
  */
-async function readReadyPort(child: ChildProcessWithoutNullStreams, expectedPort: number): Promise<number> {
+async function readReadyPort(
+  child: ChildProcessWithoutNullStreams,
+  expectedPort: number,
+): Promise<number> {
   const deadline = Date.now() + BOOT_BUDGET_MS;
   let buffer = "";
   let exited = false;

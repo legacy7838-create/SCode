@@ -156,7 +156,6 @@ export interface ZCodeAgentRuntimeLifecycleEvent extends ZCodeAgentWorkspaceTarg
   state: "available" | "unavailable";
 }
 
-
 export interface ZCodeAgentCreateSessionParams extends ZCodeAgentWorkspaceTarget {
   sessionId?: string;
   sessionTraceId?: TraceId;

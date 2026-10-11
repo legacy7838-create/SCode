@@ -11,10 +11,7 @@ import {
 } from "@zcode/shared";
 import { TaskIndexRepo } from "../src/session/taskIndexRepo.js";
 import { createZCodeTaskServiceAdapter } from "../src/zcode-agent/zcodeTaskServiceAdapter.js";
-import {
-  getLegacyTaskSessionSnapshotPath,
-  setDataBaseDir,
-} from "../src/paths.js";
+import { getLegacyTaskSessionSnapshotPath, setDataBaseDir } from "../src/paths.js";
 import { parseLegacyTaskSessionFile } from "../src/session/legacyTaskSessionFile.js";
 import { createProviderConfigRuntime } from "../src/model-provider/providerConfigRuntime.js";
 

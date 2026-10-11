@@ -514,10 +514,7 @@ export function shouldMountSidePaneContent(
   isVisible: boolean,
   tabs: readonly WorkspaceSidePaneTab[],
 ): boolean {
-  return (
-    isVisible ||
-    tabs.some((tab) => tab.type === "browser" || tab.type === "bash-output")
-  );
+  return isVisible || tabs.some((tab) => tab.type === "browser" || tab.type === "bash-output");
 }
 
 export function shouldMountBrowserTabGuest(tab: BrowserSidePaneTab): boolean {

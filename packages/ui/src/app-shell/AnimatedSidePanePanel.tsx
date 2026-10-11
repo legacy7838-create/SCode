@@ -915,12 +915,7 @@ export function AnimatedSidePanePanel({
                 任务的 session-scoped tab。此时 registry 非空但 visibleTabs 为空，渲染
                 value="" 的空 Tabs 会白屏。这里隐藏但保留 TabsContent 挂载，切回父任务时
                 辅助对话草稿和引用不会丢失。 */}
-            <div
-              className={cn(
-                "h-full min-h-0",
-                visibleTabs.length === 0 && "hidden",
-              )}
-            >
+            <div className={cn("h-full min-h-0", visibleTabs.length === 0 && "hidden")}>
               <Tabs
                 value={visibleActiveTabId}
                 onValueChange={onActivateTab}

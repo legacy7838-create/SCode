@@ -16,15 +16,11 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 // Paths resolved relative to this file: .../tauri-port/test/layer-a/ -> .../desktop/
-const commandsRs = fileURLToPath(
-  new URL("../../../src-tauri/src/commands.rs", import.meta.url),
-);
+const commandsRs = fileURLToPath(new URL("../../../src-tauri/src/commands.rs", import.meta.url));
 const tauriBridgeTs = fileURLToPath(
   new URL("../../../src/renderer/src/tauriBridge.ts", import.meta.url),
 );
-const mainRs = fileURLToPath(
-  new URL("../../../src-tauri/src/main.rs", import.meta.url),
-);
+const mainRs = fileURLToPath(new URL("../../../src-tauri/src/main.rs", import.meta.url));
 
 /**
  * Extract the declared command function name that follows each `#[tauri::command]`
@@ -77,9 +73,7 @@ function stripComments(src: string): string {
  * literals are quoted and followed by `,`/`)`, so they never match `name:`.
  */
 function snakeCaseArgKeys(src: string): string[] {
-  return [...stripComments(src).matchAll(/\b([a-z]+(?:_[a-z0-9]+)+)\s*:/g)]
-    .map((m) => m[1])
-    .sort();
+  return [...stripComments(src).matchAll(/\b([a-z]+(?:_[a-z0-9]+)+)\s*:/g)].map((m) => m[1]).sort();
 }
 
 function symmetricDifference(a: Set<string>, b: Set<string>): string[] {
@@ -95,23 +89,20 @@ function symmetricDifference(a: Set<string>, b: Set<string>): string[] {
  * NO `rename_all`. An empty result means the invariant holds; a parse that finds too few structs means
  * the regex broke against the file layout (guarded separately by the tripwire below).
  */
-function serializeStructsWithSnakeFieldsMissingCamelRename(
-  src: string,
-): string[] {
+function serializeStructsWithSnakeFieldsMissingCamelRename(src: string): string[] {
   const code = stripComments(src);
   const offenders: string[] = [];
   // Each block runs from a Serialize derive attribute up to the struct's closing brace (line-initial }).
   const blockRe = /#\[derive\([^)]*\bSerialize\b[^)]*\)\]([\s\S]*?)\n\}/g;
   for (const match of code.matchAll(blockRe)) {
     const block = match[1];
-    const structName =
-      (block.match(/struct\s+([A-Za-z0-9_]+)/) ?? [])[1] ?? "<anonymous>";
+    const structName = (block.match(/struct\s+([A-Za-z0-9_]+)/) ?? [])[1] ?? "<anonymous>";
     const hasRenameAll = /rename_all\s*=/.test(block);
     // Field names are the identifiers left of `:` inside the body (handles `pub x:` and private `x:`).
     const body = block.slice(block.indexOf("{") + 1);
-    const fieldNames = [
-      ...body.matchAll(/^\s*(?:pub\s+)?([a-z][a-z0-9_]*)\s*:/gm),
-    ].map((m) => m[1]);
+    const fieldNames = [...body.matchAll(/^\s*(?:pub\s+)?([a-z][a-z0-9_]*)\s*:/gm)].map(
+      (m) => m[1],
+    );
     const hasSnakeField = fieldNames.some((f) => f.includes("_"));
     if (hasSnakeField && !hasRenameAll) {
       offenders.push(structName);
@@ -122,21 +113,15 @@ function serializeStructsWithSnakeFieldsMissingCamelRename(
 
 /** Count the `#[derive(...Serialize...)]` brace-structs the block regex recognizes (vacuity guard). */
 function serializeStructCount(src: string): number {
-  return [
-    ...stripComments(src).matchAll(
-      /#\[derive\([^)]*\bSerialize\b[^)]*\)\][\s\S]*?\n\}/g,
-    ),
-  ].length;
+  return [...stripComments(src).matchAll(/#\[derive\([^)]*\bSerialize\b[^)]*\)\][\s\S]*?\n\}/g)]
+    .length;
 }
 
 test("A5: the parser finds a non-trivial number of Rust commands (guards a false-green)", () => {
   const names = rustCommandNames(readFileSync(commandsRs, "utf8"));
   // The seam is well past a handful of commands; a near-zero count here means the
   // parse broke against the file layout, which would make the drift checks vacuous.
-  assert.ok(
-    names.size >= 40,
-    `expected >=40 Rust commands, parsed ${names.size}`,
-  );
+  assert.ok(names.size >= 40, `expected >=40 Rust commands, parsed ${names.size}`);
 });
 
 test("A5: every #[tauri::command] has a tauriBridge invoke wrapper", () => {
@@ -216,9 +201,7 @@ test("A5: every commands::NAME registered in main.rs is a real #[tauri::command]
 test("A5: shared push-event names appear in BOTH commands.rs and tauriBridge.ts", () => {
   const commands = stripComments(readFileSync(commandsRs, "utf8"));
   const bridge = readFileSync(tauriBridgeTs, "utf8");
-  const names = [
-    ...new Set([...commands.matchAll(/"(zcode:[^"]+)"/g).map((m) => m[1])]),
-  ].sort();
+  const names = [...new Set([...commands.matchAll(/"(zcode:[^"]+)"/g).map((m) => m[1])])].sort();
   // Tripwire: at least the two landed events are discovered (guards a vacuous match against a parse break).
   assert.ok(
     names.length >= 2,
@@ -265,10 +248,7 @@ test("A5: every Serialize return struct with snake_case fields declares camelCas
 test("A5: commands.rs production code contains no .unwrap() (AGENTS.md)", () => {
   const stripped = stripComments(readFileSync(commandsRs, "utf8"));
   const marker = stripped.indexOf("#[cfg(test)]");
-  assert.ok(
-    marker >= 0,
-    "a5 expected a #[cfg(test)] module boundary in commands.rs",
-  );
+  assert.ok(marker >= 0, "a5 expected a #[cfg(test)] module boundary in commands.rs");
   const production = stripped.slice(0, marker);
   const unwraps = [...production.matchAll(/\.unwrap\(\)/g)];
   assert.equal(

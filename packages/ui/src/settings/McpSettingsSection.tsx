@@ -6,10 +6,7 @@
  * Supports the unified ZCode Agent MCP source backed by settings directories.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  convertToZCodeAgentMcpServer,
-  testId,
-} from "@zcode/shared";
+import { convertToZCodeAgentMcpServer, testId } from "@zcode/shared";
 import type {
   RemoteTarget,
   ZCodeAgentMcpServer,
@@ -34,9 +31,7 @@ import {
 } from "@/settings/mcpSettingsShared.js";
 import { SettingsBreadcrumbReporter } from "@/settings/SettingsHeaderBreadcrumb.js";
 import { SettingsResourceHeaderActions } from "@/settings/SettingsResourceHeaderActions.js";
-import {
-  SettingsResourceGroupHeader,
-} from "@/settings/SettingsResourceGroup.js";
+import { SettingsResourceGroupHeader } from "@/settings/SettingsResourceGroup.js";
 import { McpServersImportDialog } from "@/settings/ExternalAgentImportDialog.js";
 import { RemoteSyncDialogs, shouldShowRemoteSyncActions } from "@/settings/RemoteSyncActions.js";
 import { useMcpStore } from "@/store/mcpStore.js";
@@ -453,10 +448,7 @@ export function McpSettingsSection({
     },
     [onEditorOpenChange],
   );
-  const serverStatusListKey = useMemo(
-    () => buildMcpServerStatusListKey(servers),
-    [servers],
-  );
+  const serverStatusListKey = useMemo(() => buildMcpServerStatusListKey(servers), [servers]);
   const statusListRefreshQueueRef = useRef<McpStatusListRefreshQueue | null>(null);
   if (!statusListRefreshQueueRef.current) {
     statusListRefreshQueueRef.current = createMcpStatusListRefreshQueue();
@@ -727,9 +719,6 @@ export function McpSettingsSection({
     services.mcpSyncService,
   ]);
 
-
-
-
   useEffect(() => {
     const transition = transitionMcpAutoStatusListRefreshKey(
       lastAutoStatusListRefreshKeyRef.current,
@@ -961,9 +950,14 @@ export function McpSettingsSection({
     () =>
       filteredServers
         .map((server: ZCodeMcpServer, index: number) => ({ index, server }))
-        .toSorted((left: { index: number; server: ZCodeMcpServer }, right: { index: number; server: ZCodeMcpServer }) => {
-          return left.index - right.index;
-        })
+        .toSorted(
+          (
+            left: { index: number; server: ZCodeMcpServer },
+            right: { index: number; server: ZCodeMcpServer },
+          ) => {
+            return left.index - right.index;
+          },
+        )
         .map(({ server }: { server: ZCodeMcpServer }) => server),
     [filteredServers],
   );
@@ -1086,8 +1080,6 @@ export function McpSettingsSection({
     }
     platform.openExternal(authorizationUrl);
   }
-
-
 
   if (isFormView) {
     const closeFormView = () => {

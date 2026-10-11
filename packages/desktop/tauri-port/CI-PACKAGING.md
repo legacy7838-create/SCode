@@ -20,17 +20,17 @@ external (**ASSUMPTION**: a GitLab CI pipeline exists per references such as
 
 Ordered pipeline (from `packages/desktop/package.json:16-24`):
 
-| Step | Script | Source | Produces |
-| ---- | ------ | ------ | -------- |
-| `prepare:build-meta` | `scripts/build-metadata.mjs` | — | build metadata (version/hash) consumed by builder |
-| `prepare:runtime-assets` | `scripts/prepare-runtime-assets.mjs` | orchestrator | fans out to the four `prepare:*` steps below |
-| `prepare:remote-assets` | root `scripts/prepare-prebuilds.mjs` | invoked by orchestrator | `packages/desktop/mock-cdn/releases/<ver>/…` — remote (SSH/WSL) deploy bundle |
-| `prepare:agent-bundle` | `scripts/prepare-agent-node-bundle.mjs` | invoked by orchestrator | `bundled-agents/<platformKey>/glm/zcode.cjs` (+ bundled-skills) |
-| `prepare:native-search` | root `scripts/prepare-native-search-tools.mjs` | invoked by orchestrator | `bundled-tools/<platformKey>/{ripgrep,bfs,ugrep}` |
-| `prepare:browser-import-helper` | `scripts/build-windows-browser-import-helper.mjs` | invoked only when `ZCODE_ENABLE_WINDOWS_BROWSER_IMPORT=1` + win32 | `bundled-tools/win32-<arch>/browser-import/zcode-browser-import-helper.exe` |
-| `build:no-runtime-assets` | `prepare:build-meta` + `scripts/run-production-build.mjs` | — | `out/{main,host,preload,scheduler,renderer}` (tsup + vite, `run-production-build.mjs:46-65`) |
-| `bundle` | `scripts/bundle.mjs` | — | runs `electron-builder -c electron-builder.config.js` with `--mac`/`--win`/`--linux` (`bundle.mjs:68-70,708-738`), mirrors + retries, then verifies asar runtime closure |
-| `postinstall` | `scripts/node-pty-rebuild.mjs` | npm lifecycle | electron-rebuild `node-pty` for the host Electron ABI (skips on Windows when an N-API prebuild already exists, `node-pty-rebuild.mjs:100-113`) |
+| Step                            | Script                                                    | Source                                                            | Produces                                                                                                                                                                 |
+| ------------------------------- | --------------------------------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `prepare:build-meta`            | `scripts/build-metadata.mjs`                              | —                                                                 | build metadata (version/hash) consumed by builder                                                                                                                        |
+| `prepare:runtime-assets`        | `scripts/prepare-runtime-assets.mjs`                      | orchestrator                                                      | fans out to the four `prepare:*` steps below                                                                                                                             |
+| `prepare:remote-assets`         | root `scripts/prepare-prebuilds.mjs`                      | invoked by orchestrator                                           | `packages/desktop/mock-cdn/releases/<ver>/…` — remote (SSH/WSL) deploy bundle                                                                                            |
+| `prepare:agent-bundle`          | `scripts/prepare-agent-node-bundle.mjs`                   | invoked by orchestrator                                           | `bundled-agents/<platformKey>/glm/zcode.cjs` (+ bundled-skills)                                                                                                          |
+| `prepare:native-search`         | root `scripts/prepare-native-search-tools.mjs`            | invoked by orchestrator                                           | `bundled-tools/<platformKey>/{ripgrep,bfs,ugrep}`                                                                                                                        |
+| `prepare:browser-import-helper` | `scripts/build-windows-browser-import-helper.mjs`         | invoked only when `ZCODE_ENABLE_WINDOWS_BROWSER_IMPORT=1` + win32 | `bundled-tools/win32-<arch>/browser-import/zcode-browser-import-helper.exe`                                                                                              |
+| `build:no-runtime-assets`       | `prepare:build-meta` + `scripts/run-production-build.mjs` | —                                                                 | `out/{main,host,preload,scheduler,renderer}` (tsup + vite, `run-production-build.mjs:46-65`)                                                                             |
+| `bundle`                        | `scripts/bundle.mjs`                                      | —                                                                 | runs `electron-builder -c electron-builder.config.js` with `--mac`/`--win`/`--linux` (`bundle.mjs:68-70,708-738`), mirrors + retries, then verifies asar runtime closure |
+| `postinstall`                   | `scripts/node-pty-rebuild.mjs`                            | npm lifecycle                                                     | electron-rebuild `node-pty` for the host Electron ABI (skips on Windows when an N-API prebuild already exists, `node-pty-rebuild.mjs:100-113`)                           |
 
 `prepare-runtime-assets.mjs:26-60` is the fan-out point and already exposes the two CI
 knobs that matter for any port: `ZCODE_SKIP_REMOTE_ASSETS=1` (skip the remote mock-cdn
@@ -49,16 +49,16 @@ The key distinction for a Tauri cutover: **`prepare:*` asset producers are langu
 step and the electron-builder `files`/`asar`/`extraResources` mechanics are replaced** by
 Tauri's bundler + `externalBin`/`resources`.
 
-| Current step | Verdict | Reasoning |
-| ------------ | ------- | --------- |
-| `prepare:agent-bundle` (`bundled-agents/<key>/glm/zcode.cjs`) | **REUSED, then re-staged** | The artifact is a shebang'd, `chmod 755`, self-contained CJS bundle (no NAPI; ripgrep is WASM) — `prepare-agent-node-bundle.mjs:1-12`, SIDECAR-PACKAGING.md §0. In Tauri it becomes the `zcode-agent` **externalBin**, copied to `src-tauri/binaries/zcode-agent-<TRIPLE>` (SIDECAR-PACKAGING.md §3). Same build command, different final placement + triple suffix. |
-| `prepare:native-search` (`bundled-tools/<key>/{ripgrep,bfs,ugrep}`) | **REUSED unchanged** | Platform-specific prebuilt binaries extracted from repo archives with sha256 verify (`prepare-native-search-tools.mjs:40-85`). In Tauri they ship as `resources` under `tools/<tool>` (today's electron-builder `extraResources` `to: "tools/ripgrep"` etc., `electron-builder.config.js:622-634`). No change to how they are built — only how they are placed. |
-| `prepare:browser-import-helper` | **REUSED unchanged** | Independent `.exe` built by Roslyn `csc.exe` on Windows only (`build-windows-browser-import-helper.mjs:34-88`); already gated off by default (`ZCODE_ENABLE_WINDOWS_BROWSER_IMPORT`). Ships as an extraResource regardless of runtime. |
-| `prepare:remote-assets` / `prepare-prebuilds.mjs` (mock-cdn) | **REUSED unchanged — orthogonal** | Produces the **remote SSH/WSL deploy** bundle (`node`, `zcode-server.cjs`, `node-pty` prebuilds, `glm/zcode.cjs`, native-search tools + component manifests). This is not embedded into the desktop installer at all; the desktop build already runs it behind `ZCODE_SKIP_REMOTE_ASSETS`. Tauri does not change this — remote agents are Node-native and runtime-independent. |
-| `out/{main,host,scheduler}` via `run-production-build.mjs` (tsup) | **SPLIT: renderer kept, main/host/scheduler re-targeted** | Renderer (`vite build` → `out/renderer`) is reused verbatim as Tauri `frontendDist` (`src-tauri/tauri.conf.json:10` → `../dist/renderer`). The Electron **main** process is replaced by the Rust shell (`src-tauri`, owned by another agent). The **host/scheduler** tsup outputs become sidecar launcher bundles — `SIDECAR-PACKAGING.md` §2(a)/§3 — because they keep `node-pty`/`ssh2`/`undici`/`yaml`/`node-forge`/`yauzl` as runtime `external` (SIDECAR-PACKAGING.md §0 asymmetry, `tsup.config.ts:110-122`). |
-| `postinstall` `node-pty-rebuild.mjs` (electron-rebuild) | **REPLACED** | Tauri has no Electron ABI to rebuild against. `node-pty` is instead loaded by the Node **sidecar** (which ships its own Node runtime) or rebuilt for the sidecar's Node version. `@lydell/node-pty-{linux,darwin,win}-x64/arm64` prebuilds (`package.json:35-36`, `prepare-prebuilds.mjs:320-370`) become arch-specific sidecar `resources`. |
-| `bundle.mjs` → electron-builder (`electron-builder.config.js`) | **REPLACED by `tauri build`** | Every electron-builder-specific mechanism (app.asar, `files`/`asarUnpack`, afterPack asar-rewrite/sourcemap-strip/native-policy asserts, NSIS `installSection.nsh` patch, `extraMetadata`, `publish` generic placeholder) is either dropped or re-implemented in Tauri terms (see §2/§3/§4). |
-| `electronLanguages`, `electronDownload` mirror, `npmRebuild:false` | **N/A — dropped** | These are Electron-runtime-specific (`electron-builder.config.js:467-480,638`); Tauri links against the OS webview and has no Electron download. |
+| Current step                                                        | Verdict                                                   | Reasoning                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ------------------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `prepare:agent-bundle` (`bundled-agents/<key>/glm/zcode.cjs`)       | **REUSED, then re-staged**                                | The artifact is a shebang'd, `chmod 755`, self-contained CJS bundle (no NAPI; ripgrep is WASM) — `prepare-agent-node-bundle.mjs:1-12`, SIDECAR-PACKAGING.md §0. In Tauri it becomes the `zcode-agent` **externalBin**, copied to `src-tauri/binaries/zcode-agent-<TRIPLE>` (SIDECAR-PACKAGING.md §3). Same build command, different final placement + triple suffix.                                                                                                                                                |
+| `prepare:native-search` (`bundled-tools/<key>/{ripgrep,bfs,ugrep}`) | **REUSED unchanged**                                      | Platform-specific prebuilt binaries extracted from repo archives with sha256 verify (`prepare-native-search-tools.mjs:40-85`). In Tauri they ship as `resources` under `tools/<tool>` (today's electron-builder `extraResources` `to: "tools/ripgrep"` etc., `electron-builder.config.js:622-634`). No change to how they are built — only how they are placed.                                                                                                                                                     |
+| `prepare:browser-import-helper`                                     | **REUSED unchanged**                                      | Independent `.exe` built by Roslyn `csc.exe` on Windows only (`build-windows-browser-import-helper.mjs:34-88`); already gated off by default (`ZCODE_ENABLE_WINDOWS_BROWSER_IMPORT`). Ships as an extraResource regardless of runtime.                                                                                                                                                                                                                                                                              |
+| `prepare:remote-assets` / `prepare-prebuilds.mjs` (mock-cdn)        | **REUSED unchanged — orthogonal**                         | Produces the **remote SSH/WSL deploy** bundle (`node`, `zcode-server.cjs`, `node-pty` prebuilds, `glm/zcode.cjs`, native-search tools + component manifests). This is not embedded into the desktop installer at all; the desktop build already runs it behind `ZCODE_SKIP_REMOTE_ASSETS`. Tauri does not change this — remote agents are Node-native and runtime-independent.                                                                                                                                      |
+| `out/{main,host,scheduler}` via `run-production-build.mjs` (tsup)   | **SPLIT: renderer kept, main/host/scheduler re-targeted** | Renderer (`vite build` → `out/renderer`) is reused verbatim as Tauri `frontendDist` (`src-tauri/tauri.conf.json:10` → `../dist/renderer`). The Electron **main** process is replaced by the Rust shell (`src-tauri`, owned by another agent). The **host/scheduler** tsup outputs become sidecar launcher bundles — `SIDECAR-PACKAGING.md` §2(a)/§3 — because they keep `node-pty`/`ssh2`/`undici`/`yaml`/`node-forge`/`yauzl` as runtime `external` (SIDECAR-PACKAGING.md §0 asymmetry, `tsup.config.ts:110-122`). |
+| `postinstall` `node-pty-rebuild.mjs` (electron-rebuild)             | **REPLACED**                                              | Tauri has no Electron ABI to rebuild against. `node-pty` is instead loaded by the Node **sidecar** (which ships its own Node runtime) or rebuilt for the sidecar's Node version. `@lydell/node-pty-{linux,darwin,win}-x64/arm64` prebuilds (`package.json:35-36`, `prepare-prebuilds.mjs:320-370`) become arch-specific sidecar `resources`.                                                                                                                                                                        |
+| `bundle.mjs` → electron-builder (`electron-builder.config.js`)      | **REPLACED by `tauri build`**                             | Every electron-builder-specific mechanism (app.asar, `files`/`asarUnpack`, afterPack asar-rewrite/sourcemap-strip/native-policy asserts, NSIS `installSection.nsh` patch, `extraMetadata`, `publish` generic placeholder) is either dropped or re-implemented in Tauri terms (see §2/§3/§4).                                                                                                                                                                                                                        |
+| `electronLanguages`, `electronDownload` mirror, `npmRebuild:false`  | **N/A — dropped**                                         | These are Electron-runtime-specific (`electron-builder.config.js:467-480,638`); Tauri links against the OS webview and has no Electron download.                                                                                                                                                                                                                                                                                                                                                                    |
 
 ---
 
@@ -77,10 +77,11 @@ product identity (`desktop-product-identity.mjs:8-23`: `zcode`/`zcode-preview`),
 `alsa-lib` (711-718).
 
 Tauri equivalent (`tauri.conf.json > bundle.linux`):
+
 - Formats: `deb`, `rpm`, `appimage` (and optionally `pacman`-style is not a native Tauri
   target — **ASSUMPTION**: emit `.pkg.tar.zst` via a post-build `cargo`/`makepkg` step or
   drop pacman parity; Tauri v2 core targets are deb/rpm/AppImage).
-- **Build deps** differ fundamentally: Electron *bundles* Chromium and declares runtime
+- **Build deps** differ fundamentally: Electron _bundles_ Chromium and declares runtime
   `gtk3/nss/libxss/libxtst/libnotify/alsa-lib/mesa` as package `depends`; Tauri does **not**
   ship a browser engine — it links the OS **WebKitGTK**. The install-time `depends` therefore
   change from Electron's set to the Tauri/WebKitGTK runtime closure.
@@ -99,6 +100,7 @@ Tauri equivalent (`tauri.conf.json > bundle.linux`):
 ### 2.2 macOS — `electron-builder.config.js:648-680` + entitlements plists
 
 Current model (grounded):
+
 - Targets `["dmg","zip"]`; `category: public.app-category.developer-tools`.
 - Two-stage pipeline: **build-phase signing + separate notarize job** —
   `notarize: false` explicitly disables the in-build notarize so it does not force
@@ -116,6 +118,7 @@ Current model (grounded):
   pre-signed in separate jobs (CUA Helper staple note, `:670-679`).
 
 Tauri equivalent (`tauri.conf.json > bundle.mac` + `tauri build`):
+
 - Targets: `dmg` + `app` (`.app.tar.gz` for the updater artifact — UPDATER-SPIKE.md §4).
 - Tauri invokes `codesign` itself; you supply the signing identity and let Tauri apply
   hardened runtime + entitlements. The **entitlements must be ported forward**: the JIT +
@@ -145,6 +148,7 @@ custom installer/uninstaller/header icons; the `beforePack` hook patches
 (`:171-191`).
 
 Tauri equivalent (`tauri.conf.json > bundle.windows`):
+
 - Formats: `nsis` (default) and/or `msi`. UPDATER-SPIKE.md §4/§7 already flags the parity
   question of whether `createUpdaterArtifacts` NSIS can reproduce the patched
   `installSection.nsh` — **ASSUMPTION: needs a Windows build to confirm**; Tauri's NSIS
@@ -199,19 +203,19 @@ Grounded in SIDECAR-PACKAGING.md §1-§3; CI specifics only, no duplication of t
 **Arch × target matrix** (Rust triples from SIDECAR-PACKAGING.md §3, x86_64/aarch64 only —
 mirrors the current `@lydell/node-pty-{linux,darwin}-x64/arm64` split, `package.json:35-36`):
 
-| os | arch | Rust triple (`<TRIPLE>`) | sidecar file suffix | native `node-pty` package |
-| -- | ---- | ------------------------ | ------------------- | ------------------------- |
-| linux | x86_64 | `x86_64-unknown-linux-gnu` | `…-x86_64-unknown-linux-gnu` | `@lydell/node-pty-linux-x64` |
-| linux | aarch64 | `aarch64-unknown-linux-gnu` | `…-aarch64-unknown-linux-gnu` | `@lydell/node-pty-linux-arm64` |
-| darwin | x86_64 | `x86_64-apple-darwin` | `…-x86_64-apple-darwin` | darwin-x64 prebuild + `spawn-helper` |
-| darwin | aarch64 | `aarch64-apple-darwin` | `…-aarch64-apple-darwin` | darwin-arm64 prebuild + `spawn-helper` |
-| win32 | x86_64 | `x86_64-pc-windows-msvc` | `…-x86_64-pc-windows-msvc.exe` | win-x64 prebuild (+ winpty) |
-| win32 | aarch64 | `aarch64-pc-windows-msvc` | `…-aarch64-pc-windows-msvc.exe` | win-arm64 prebuild |
+| os     | arch    | Rust triple (`<TRIPLE>`)    | sidecar file suffix             | native `node-pty` package              |
+| ------ | ------- | --------------------------- | ------------------------------- | -------------------------------------- |
+| linux  | x86_64  | `x86_64-unknown-linux-gnu`  | `…-x86_64-unknown-linux-gnu`    | `@lydell/node-pty-linux-x64`           |
+| linux  | aarch64 | `aarch64-unknown-linux-gnu` | `…-aarch64-unknown-linux-gnu`   | `@lydell/node-pty-linux-arm64`         |
+| darwin | x86_64  | `x86_64-apple-darwin`       | `…-x86_64-apple-darwin`         | darwin-x64 prebuild + `spawn-helper`   |
+| darwin | aarch64 | `aarch64-apple-darwin`      | `…-aarch64-apple-darwin`        | darwin-arm64 prebuild + `spawn-helper` |
+| win32  | x86_64  | `x86_64-pc-windows-msvc`    | `…-x86_64-pc-windows-msvc.exe`  | win-x64 prebuild (+ winpty)            |
+| win32  | aarch64 | `aarch64-pc-windows-msvc`   | `…-aarch64-pc-windows-msvc.exe` | win-arm64 prebuild                     |
 
 - `ZCODE_TARGET_OS`/`ZCODE_TARGET_ARCH` (already the cross-build hook) must be mapped to the
   Rust triple table in `prepare:tauri-sidecars.mjs` (SIDECAR-PACKAGING.md §3 cross-build note).
 - **JS is platform-independent, native externals are not**: `zcode.cjs` is one file across
-  platforms (`prepare-agent-node-bundle.mjs:9`), so per-arch CI only needs to *rename* it and
+  platforms (`prepare-agent-node-bundle.mjs:9`), so per-arch CI only needs to _rename_ it and
   re-stage the arch-specific `node-pty` `.node` prebuild + matching `node` binary.
 - **ASSUMPTION** (SIDECAR-PACKAGING.md §3 remaining): producing all triples needs per-arch CI
   jobs; validate by running `tauri build` once with a trivial sidecar and reading the emitted
@@ -253,19 +257,19 @@ Grounded in UPDATER-SPIKE.md §2/§4/§5; this section adds only the CI custody 
 Read from the signing/notarize/update code paths above. The Electron pipeline already uses
 the first five; the Tauri port adds the minisign + updater-endpoint names.
 
-| Name | Used by | Purpose | Notes |
-| ---- | ------- | ------- | ----- |
-| `APPLE_SIGNING_IDENTITY` (alt `CSC_NAME`) | `electron-builder.config.js:81`, Tauri mac build | Developer ID Application code-signing identity string | Already in use; `ZCODE_ENABLE_MAC_SIGN=1` toggles signing. |
-| `ZCODE_ENABLE_MAC_SIGN` | `electron-builder.config.js:84-85,211-221` | Build flag enabling macOS hardened-runtime signing | Env switch, not a secret value; listed for completeness. |
-| `APPLE_ID` | macOS notarize job (`notarytool`) | Apple ID for notarization | **ASSUMPTION**: name per Apple's `notarytool` convention (not in-tree). |
-| `APPLE_APP_SPECIFIC_PASSWORD` | macOS notarize job | App-specific password for `notarytool` | UPDATER-SPIKE/autoUpdater comment (`electron-builder.config.js:663`) confirms this is required only at the *notarize* phase, not build. |
-| `APPLE_TEAM_ID` | macOS notarize + staple | Developer team ID | **ASSUMPTION** name. |
-| macOS keychain / `.p12` cert + password | Developer ID cert install on mac runner | Provides the signing identity | electron-builder uses `CSC_LINK`/`CSC_KEY_PASSWORD`; **ASSUMPTION** exact names (not in-tree). |
-| Windows code-signing cert + password (`CSC_LINK`/`CSC_KEY_PASSWORD`, or `WIN_CSC_*`) | Windows sign (signtool/Tauri windows config) | Authenticode signing of `.exe`/installer/sidecars | Not referenced in-repo → **ASSUMPTION**: org holds a code-signing cert; Tauri uses `bundle.windows.certificateFile`/`certificateThumbprint`. |
-| `TAURI_SIGNING_PRIVATE_KEY` | `tauri build` (updater `.sig`) | minisign **private** key for updater artifact signing | UPDATER-SPIKE.md §2/§4. NEVER commit/print. |
-| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | `tauri build` | passphrase protecting the minisign private key | UPDATER-SPIKE.md §2. NEVER commit/print. |
-| Updater endpoint / manifest base URL (and any CDN auth token) | release publish + `plugins.updater.endpoints` | Where the signed JSON manifest + artifacts are hosted | External service config (UPDATER-SPIKE.md §7); if token-authed, its value is a secret, name only here. |
-| `ZCODE_NODE_DIST_MIRROR` / intranet deps base | `prepare-prebuilds.mjs:72-75,509-516`, `bundle.mjs:165` | Download mirror URLs (not credentials, but CI config) | May embed an internal host; keep out of logs per AGENTS.md 日志边界. |
+| Name                                                                                 | Used by                                                 | Purpose                                               | Notes                                                                                                                                        |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------- | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `APPLE_SIGNING_IDENTITY` (alt `CSC_NAME`)                                            | `electron-builder.config.js:81`, Tauri mac build        | Developer ID Application code-signing identity string | Already in use; `ZCODE_ENABLE_MAC_SIGN=1` toggles signing.                                                                                   |
+| `ZCODE_ENABLE_MAC_SIGN`                                                              | `electron-builder.config.js:84-85,211-221`              | Build flag enabling macOS hardened-runtime signing    | Env switch, not a secret value; listed for completeness.                                                                                     |
+| `APPLE_ID`                                                                           | macOS notarize job (`notarytool`)                       | Apple ID for notarization                             | **ASSUMPTION**: name per Apple's `notarytool` convention (not in-tree).                                                                      |
+| `APPLE_APP_SPECIFIC_PASSWORD`                                                        | macOS notarize job                                      | App-specific password for `notarytool`                | UPDATER-SPIKE/autoUpdater comment (`electron-builder.config.js:663`) confirms this is required only at the _notarize_ phase, not build.      |
+| `APPLE_TEAM_ID`                                                                      | macOS notarize + staple                                 | Developer team ID                                     | **ASSUMPTION** name.                                                                                                                         |
+| macOS keychain / `.p12` cert + password                                              | Developer ID cert install on mac runner                 | Provides the signing identity                         | electron-builder uses `CSC_LINK`/`CSC_KEY_PASSWORD`; **ASSUMPTION** exact names (not in-tree).                                               |
+| Windows code-signing cert + password (`CSC_LINK`/`CSC_KEY_PASSWORD`, or `WIN_CSC_*`) | Windows sign (signtool/Tauri windows config)            | Authenticode signing of `.exe`/installer/sidecars     | Not referenced in-repo → **ASSUMPTION**: org holds a code-signing cert; Tauri uses `bundle.windows.certificateFile`/`certificateThumbprint`. |
+| `TAURI_SIGNING_PRIVATE_KEY`                                                          | `tauri build` (updater `.sig`)                          | minisign **private** key for updater artifact signing | UPDATER-SPIKE.md §2/§4. NEVER commit/print.                                                                                                  |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`                                                 | `tauri build`                                           | passphrase protecting the minisign private key        | UPDATER-SPIKE.md §2. NEVER commit/print.                                                                                                     |
+| Updater endpoint / manifest base URL (and any CDN auth token)                        | release publish + `plugins.updater.endpoints`           | Where the signed JSON manifest + artifacts are hosted | External service config (UPDATER-SPIKE.md §7); if token-authed, its value is a secret, name only here.                                       |
+| `ZCODE_NODE_DIST_MIRROR` / intranet deps base                                        | `prepare-prebuilds.mjs:72-75,509-516`, `bundle.mjs:165` | Download mirror URLs (not credentials, but CI config) | May embed an internal host; keep out of logs per AGENTS.md 日志边界.                                                                         |
 
 Per AGENTS.md Security: none of the above values may appear in code, logs, or committed
 `tauri.conf.json`; only the **public** updater key is committed. `.env` (gitignored) or the
@@ -277,8 +281,9 @@ CI secret store only.
 
 Grounded in `TEST-HARNESS.md` §4 and the real layer-A tests now on disk
 (`packages/desktop/tauri-port/test/layer-a/{a1-ws-rpc,a2-framing,a3-stdio-roundtrip}.test.ts`
-+ `_host.ts`) plus root scripts (`package.json`: `typecheck` = `tsc -b …`, `lint` = `oxlint`,
-`architecture:check`).
+
+- `_host.ts`) plus root scripts (`package.json`: `typecheck` = `tsc -b …`, `lint` = `oxlint`,
+  `architecture:check`).
 
 Matrix (TEST-HARNESS.md §4.3): `os: [ubuntu-latest, macos-latest, windows-latest] ×
 runtime: [electron, tauri]`. Phase-1 job runs the GUI-free tiers only (Layer A + Layer B P0);
@@ -303,6 +308,7 @@ jobs:
 ```
 
 Rules for the CI job, from the harness doc:
+
 - The pass-count gate blocks the parity claim if the Tauri target has fewer passes or a new
   skip without a phase-deferral reason (TEST-HARNESS.md §4.4, AGENTS.md Phase 1).
 - Layer A must not branch on `electron`/`tauri` in assertions — only the fixture factory does
@@ -318,6 +324,7 @@ Rules for the CI job, from the harness doc:
 ## 7. Effort, risk, and open questions
 
 **Effort (rough, port-scoped):**
+
 - Reuse of `prepare:*` asset producers is near-free (unchanged scripts; just re-stage outputs
   into `externalBin`/`resources`). The genuinely new work is: `prepare:tauri-sidecars.mjs`
   (copy/rename/chmod + esbuild launcher, SIDECAR-PACKAGING.md §5 step 5), the
@@ -325,6 +332,7 @@ Rules for the CI job, from the harness doc:
   re-derivation per distro, and the minisign release pipeline (§4).
 
 **Risks (ranked):**
+
 1. **macOS sidecar Gatekeeper** (HIGH): shipping an unsigned/un-stapled `node` +
    `*-<TRIPLE>` Mach-O sidecars gets them killed at launch. Mitigation: keep
    `disable-library-validation` + `allow-unsigned-executable-memory`
@@ -343,6 +351,7 @@ Rules for the CI job, from the harness doc:
    sidecar stage that must fit the same budget or split jobs.
 
 **Open questions for the org:**
+
 - Does the org hold an **Apple Developer ID** (notarization-capable) account usable for the
   Tauri `.dmg`/`.app.tar.gz` targets, or is it only the Electron cert today? (§5 names.)
 - Is a **Windows code-signing cert** available to sign Tauri NSIS/MSI + sidecar `.exe`, or is

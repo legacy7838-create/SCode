@@ -22,23 +22,24 @@ Mount point is live: `packages/ui/src/app-shell/AnimatedSidePanePanel.tsx:1220`
 renders `<HumanBrowserView>`, which is a thin wrapper over `UnifiedBrowserView`
 (`packages/ui/src/browser-use/HumanBrowserView.tsx:6`).
 
-| Capability | Status | Where | CDP-dependent? |
-| --- | --- | --- | --- |
-| Tabs / guest registry, per-scope ownership | LIVE | `browserView/browserGuestManager.ts` (2356 lines) | No (registry) |
-| In-DOM page rendering (`<webview>` guest pixels) | LIVE | `browser-use/UnifiedBrowserView.tsx` (renders `<webview>` in DOM, lines 33-37, 117-118) | No (plain webview) |
-| Navigation / history / reload / stop / zoom | LIVE | `UnifiedBrowserView.tsx`, guest `navigationHistory`, `setZoomFactor` | No |
-| Free-resize **viewport emulation** (responsive preview) | LIVE | `browserGuestManager.ts` `setTabViewport`/`reset` → `Emulation.*` | **YES (CDP)** |
-| Residency suspend/restore + tab recovery persistence | LIVE | `browserTabResidencyCoordinator.ts`, `browserTabRecoveryStore.ts`, `restoreSuspendedGuest` | No (uses CDP `Page.enable` on re-attach) |
-| Synthetic mouse/wheel **input** (agent-driven) | PARTIALLY DEAD | `browserGuestManager.ts:1431` still scales `Input.dispatchMouseEvent`; no live agent caller found | **YES (CDP)** |
-| **Chrome localStorage import** | LIVE | `chromeLocalStorageManager.ts` `importChromeLocalStorage` ← `browserDataManager.ts:152` | **YES (CDP)** |
-| **Chrome cookie import** | LIVE | `chromeLocalStorageManager.ts` `readChromeCookiesWithHelper` | **YES (CDP)** |
-| Agent **page screenshot** | DEAD | `browserGuestManager.ts:1822` "agent CDP 截图已移除"; `hasRunningRequestForTab` stubbed `false` (1817-1819) | (was CDP) |
-| Window screenshot (error-feedback) | LIVE but unrelated | `desktopMainIpcHelpers.ts:78` `webContents.capturePage()` — full-window PNG, not guest | No |
-| **Video recording** | DEAD | only `preload/browserVideoRecorder.ts` stub exists; no main handler / no `RECORDER_PORT_CHANNEL` consumer found in `main`/`renderer` | — |
+| Capability                                              | Status             | Where                                                                                                                                | CDP-dependent?                           |
+| ------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------- |
+| Tabs / guest registry, per-scope ownership              | LIVE               | `browserView/browserGuestManager.ts` (2356 lines)                                                                                    | No (registry)                            |
+| In-DOM page rendering (`<webview>` guest pixels)        | LIVE               | `browser-use/UnifiedBrowserView.tsx` (renders `<webview>` in DOM, lines 33-37, 117-118)                                              | No (plain webview)                       |
+| Navigation / history / reload / stop / zoom             | LIVE               | `UnifiedBrowserView.tsx`, guest `navigationHistory`, `setZoomFactor`                                                                 | No                                       |
+| Free-resize **viewport emulation** (responsive preview) | LIVE               | `browserGuestManager.ts` `setTabViewport`/`reset` → `Emulation.*`                                                                    | **YES (CDP)**                            |
+| Residency suspend/restore + tab recovery persistence    | LIVE               | `browserTabResidencyCoordinator.ts`, `browserTabRecoveryStore.ts`, `restoreSuspendedGuest`                                           | No (uses CDP `Page.enable` on re-attach) |
+| Synthetic mouse/wheel **input** (agent-driven)          | PARTIALLY DEAD     | `browserGuestManager.ts:1431` still scales `Input.dispatchMouseEvent`; no live agent caller found                                    | **YES (CDP)**                            |
+| **Chrome localStorage import**                          | LIVE               | `chromeLocalStorageManager.ts` `importChromeLocalStorage` ← `browserDataManager.ts:152`                                              | **YES (CDP)**                            |
+| **Chrome cookie import**                                | LIVE               | `chromeLocalStorageManager.ts` `readChromeCookiesWithHelper`                                                                         | **YES (CDP)**                            |
+| Agent **page screenshot**                               | DEAD               | `browserGuestManager.ts:1822` "agent CDP 截图已移除"; `hasRunningRequestForTab` stubbed `false` (1817-1819)                          | (was CDP)                                |
+| Window screenshot (error-feedback)                      | LIVE but unrelated | `desktopMainIpcHelpers.ts:78` `webContents.capturePage()` — full-window PNG, not guest                                               | No                                       |
+| **Video recording**                                     | DEAD               | only `preload/browserVideoRecorder.ts` stub exists; no main handler / no `RECORDER_PORT_CHANNEL` consumer found in `main`/`renderer` | —                                        |
 
 ### Exact CDP commands used (from the code)
 
 `browserGuestManager.ts` — via `guest.debugger.attach("1.3")` + `debugger.sendCommand`:
+
 - `Emulation.setDeviceMetricsOverride` (lines 1098, 1140, 1193, 1349) — viewport emulation; params include `width/height/deviceScaleFactor/mobile/dontSetVisibleSize/scale` (`buildViewportMetricsOverride`, 236-255)
 - `Emulation.clearDeviceMetricsOverride` (1113, 1177)
 - `Page.enable` (1335) — session-state replay on re-attach
@@ -47,6 +48,7 @@ renders `<HumanBrowserView>`, which is a thin wrapper over `UnifiedBrowserView`
 `chromeLocalStorageManager.ts` — two CDP transports: a WebSocket transport to a
 spawned headless Chrome (`--remote-debugging-port=0`, `--headless=new`, 399-428)
 and an Electron `webContents.debugger` transport (`createElectronCdpTransport`, 255-277). Commands:
+
 - `Page.enable`, `Runtime.enable`, `Fetch.enable` + `Fetch.fulfillRequest`/`Fetch.failRequest` (blank-document interception, 279-304)
 - `Page.navigate` + `Runtime.evaluate` (`location.origin`, `Object.entries(localStorage)`, localStorage write) (306-329, 456, 611)
 - `Network.enable` + `Storage.getCookies` (559-565)
@@ -62,7 +64,7 @@ sandbox/context-isolation on every guest.
 Two architectural truths that dominate everything:
 
 1. **No in-page `<webview>`.** Tauri/wry webviews are native OS views/windows, not
-   DOM children. The current model — guest pixels composited *inside* the renderer
+   DOM children. The current model — guest pixels composited _inside_ the renderer
    DOM and overlaid by DOM float layers (toolbar, resize handles, JS dialogs,
    `UnifiedBrowserView.tsx:35`) — is not reproducible with any Tauri system webview.
    (This is the same conclusion as `INVENTORY.md:38` "No multi-webview in main webview".)
@@ -71,21 +73,22 @@ Two architectural truths that dominate everything:
 
 Legend: ✅ feasible · ⚠️ partial/hacky · ❌ not available · **A** = ASSUMPTION (ecosystem knowledge, not repo-verified).
 
-| Capability | Option A: wry/Tauri v2 multi-webview | Option B: OS CDP/inspector | Option C: dedicated Chromium/CEF sidecar | Option D: de-scope (external browser) |
-| --- | --- | --- | --- | --- |
-| In-DOM embedded render | ❌ all OS — webview is a native view, not DOM child. Win/Mac `Webview` can share a window; **Linux WebKitGTK = one webview per window (Tier-2)** **A** | n/a | ✅ Win/Mac/Linux — offscreen-render Chromium into a DOM `<canvas>/<img>` stream (OS-independent pixels) | ❌ (loses embedding) |
-| Separate OS-window browser | ✅ all OS via `WebviewWindowBuilder` (not embedded; changes UX) | n/a | ✅ | ✅ |
-| Viewport emulation (`Emulation.setDeviceMetricsOverride`) | ❌ no equivalent API on WKWebView/WebKitGTK **A** | Win ✅ via WebView2 CDP (`--remote-debugging-port` / `ICoreWebView2EnvironmentOptions`); Mac ❌ (WKWebView has no device-metrics CDP); Linux ❌ (WebKitGTK no CDP) **A** | ✅ full CDP `Emulation.*` | ❌ |
-| Synthetic input (`Input.dispatch*`) | ⚠️ native send-event only, not CDP **A** | Win ✅ WebView2 CDP; Mac ⚠️ WebKit remote-inspector (not CDP, limited input); Linux ❌ **A** | ✅ full CDP `Input.*` | ❌ (hand off to real browser) |
-| Chrome localStorage import | n/a | Already uses a **spawned headless Chrome over CDP** (portable) — independent of the app's own webview; only the *target write* uses Electron `webContents.debugger` (`chromeLocalStorageManager.ts:599`). On Tauri, write target must move to the sidecar's own session **A** | ✅ read+write both in Chromium sidecar over CDP | ⚠️ user does it in their browser |
-| Chrome cookie import (`Storage.getCookies`) | n/a | Same: read path is headless-Chrome CDP (portable); write-to-partition must be reimplemented | ✅ | ⚠️ |
-| Page screenshot (agent) | DEAD already — drop | Win ✅; others hard | ✅ (already removed, no parity needed) | n/a |
-| Video recorder | DEAD — no wiring; drop | — | — | n/a |
+| Capability                                                | Option A: wry/Tauri v2 multi-webview                                                                                                                   | Option B: OS CDP/inspector                                                                                                                                                                                                                                                    | Option C: dedicated Chromium/CEF sidecar                                                                | Option D: de-scope (external browser) |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| In-DOM embedded render                                    | ❌ all OS — webview is a native view, not DOM child. Win/Mac `Webview` can share a window; **Linux WebKitGTK = one webview per window (Tier-2)** **A** | n/a                                                                                                                                                                                                                                                                           | ✅ Win/Mac/Linux — offscreen-render Chromium into a DOM `<canvas>/<img>` stream (OS-independent pixels) | ❌ (loses embedding)                  |
+| Separate OS-window browser                                | ✅ all OS via `WebviewWindowBuilder` (not embedded; changes UX)                                                                                        | n/a                                                                                                                                                                                                                                                                           | ✅                                                                                                      | ✅                                    |
+| Viewport emulation (`Emulation.setDeviceMetricsOverride`) | ❌ no equivalent API on WKWebView/WebKitGTK **A**                                                                                                      | Win ✅ via WebView2 CDP (`--remote-debugging-port` / `ICoreWebView2EnvironmentOptions`); Mac ❌ (WKWebView has no device-metrics CDP); Linux ❌ (WebKitGTK no CDP) **A**                                                                                                      | ✅ full CDP `Emulation.*`                                                                               | ❌                                    |
+| Synthetic input (`Input.dispatch*`)                       | ⚠️ native send-event only, not CDP **A**                                                                                                               | Win ✅ WebView2 CDP; Mac ⚠️ WebKit remote-inspector (not CDP, limited input); Linux ❌ **A**                                                                                                                                                                                  | ✅ full CDP `Input.*`                                                                                   | ❌ (hand off to real browser)         |
+| Chrome localStorage import                                | n/a                                                                                                                                                    | Already uses a **spawned headless Chrome over CDP** (portable) — independent of the app's own webview; only the _target write_ uses Electron `webContents.debugger` (`chromeLocalStorageManager.ts:599`). On Tauri, write target must move to the sidecar's own session **A** | ✅ read+write both in Chromium sidecar over CDP                                                         | ⚠️ user does it in their browser      |
+| Chrome cookie import (`Storage.getCookies`)               | n/a                                                                                                                                                    | Same: read path is headless-Chrome CDP (portable); write-to-partition must be reimplemented                                                                                                                                                                                   | ✅                                                                                                      | ⚠️                                    |
+| Page screenshot (agent)                                   | DEAD already — drop                                                                                                                                    | Win ✅; others hard                                                                                                                                                                                                                                                           | ✅ (already removed, no parity needed)                                                                  | n/a                                   |
+| Video recorder                                            | DEAD — no wiring; drop                                                                                                                                 | —                                                                                                                                                                                                                                                                             | —                                                                                                       | n/a                                   |
 
 Notes:
+
 - **Windows is the only OS where CDP-on-the-app-webview is plausibly viable**
   (WebView2 exposes CDP via remote-debugging port / `CallDevToolsProtocolMethod`)
-  — but even then it is a *separate native webview*, not in-DOM.
+  — but even then it is a _separate native webview_, not in-DOM.
 - The Chrome-data import read path is effectively **port-agnostic already**: it
   spawns the user's installed Chrome headless and speaks raw CDP over WebSocket
   (`chromeLocalStorageManager.ts:174-253, 393-428`). Only the Electron-target write
@@ -99,15 +102,16 @@ Notes:
 ## 3. Recommendation
 
 **Byte-parity is NOT feasible.** The current IAB is defined by two things Tauri
-system webviews cannot both provide: (a) guest pixels composited *inside* the DOM
+system webviews cannot both provide: (a) guest pixels composited _inside_ the DOM
 and overlaid by app UI, and (b) a uniform CDP surface for viewport emulation +
 input + storage. No single Tauri approach restores both across Win/Mac/Linux.
 
 Honest reduced-scope plan:
 
 **Tauri v1 ships:**
+
 - Embedded browser as a **`WebviewWindow`** (separate OS window) for plain browsing
-  (nav / history / zoom / residency) — the majority of the *human* IAB value,
+  (nav / history / zoom / residency) — the majority of the _human_ IAB value,
   feasible on all three OS. Loses in-DOM embedding and DOM float overlay.
 - **Chrome localStorage/cookie import** via the existing headless-Chrome CDP helper
   (already portable); re-point the write target to a Tauri-managed Chromium/partition
@@ -116,19 +120,21 @@ Honest reduced-scope plan:
   the responsive-preview feature is **dropped** (WebKit has no device-metrics CDP).
 
 **Deferred / de-scoped:**
+
 - Agent synthetic input automation — already partly dead post-CUA; do not rebuild.
 - Agent page screenshot + video recorder — dead, delete with the port.
 - In-DOM embedded webview + DOM overlay — architecturally incompatible; if product
-  insists, the *only* path is a **Chromium/CEF offscreen sidecar** streaming frames
+  insists, the _only_ path is a **Chromium/CEF offscreen sidecar** streaming frames
   into a DOM surface (Option C) — large binary cost, own maintenance.
 
 **Per-OS reality:**
+
 - **Windows:** most feasible; WebView2 CDP can carry viewport + (if needed) input for
   a `WebviewWindow` browser.
 - **macOS:** hardest for emulation/automation (WKWebView, no CDP).
 - **Linux:** hardest overall — WebKitGTK, no CDP, Tier-2 multi-webview (one per window).
 
-If the product requires the *current* embedded, in-DOM, viewport-emulated browser with
+If the product requires the _current_ embedded, in-DOM, viewport-emulated browser with
 automation parity on all three OS, the realistic answer is **a dedicated Chromium/CEF
 sidecar** — i.e. you would be shipping Chromium anyway, which negates a primary Tauri
 motivation (binary size / system-webview reuse).
@@ -160,7 +166,7 @@ Two cheap de-risking experiments; run before committing to any port path.
 
 1. **Linux — second webview load + JS eval (wry/Tauri).** Create a `WebviewWindow`
    pointing at a local page; confirm (a) navigation loads, (b) `evaluate_script`
-   (equivalent of `executeJavaScript`) returns a value, (c) whether opening a *second*
+   (equivalent of `executeJavaScript`) returns a value, (c) whether opening a _second_
    `Webview` inside the same window works or is rejected by WebKitGTK (expect Tier-2
    failure — this validates the "one webview per window" constraint). Record which of
    `UnifiedBrowserView`'s guest methods survive.
@@ -175,7 +181,7 @@ green on Windows. Failure of PoC-2 collapses viewport to de-scope across all OS.
 
 ---
 
-*Files read:* `packages/desktop/src/main/browserView/browserGuestManager.ts`,
+_Files read:_ `packages/desktop/src/main/browserView/browserGuestManager.ts`,
 `packages/desktop/src/main/chromeLocalStorageManager.ts`,
 `packages/desktop/src/main/desktopWindowChrome.ts`,
 `packages/desktop/src/main/desktopBrowserViewIpc.ts`,
