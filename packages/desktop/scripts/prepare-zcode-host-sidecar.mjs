@@ -24,7 +24,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { builtinModules } from "node:module";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { getTargetPlatform } from "./target-platform.mjs";
@@ -116,10 +116,17 @@ function vendorExternals() {
  * 只做单向包含检查（bundle ⊆ RUNTIME_EXTERNALS）：白名单里多列几个包是无害的（多拷贝一份而已），
  * 而漏列是致命的，因此只对漏列报错。
  *
- * @param {{ bundleDir: string }} options
- * @returns {string[]} The bare specifiers found in the bundle that are not vendored.
+ * 只扫可达图，是为了避开假阳性：`tsconfig.host.json` 和 tsup 共用 `outDir: out/host`，所以 tsc -b
+ * 会把逐模块产物（standaloneHost.js / storagePreparationProcesses.js）写在这里；它们带
+ * `@zcode/services` / `@zcode/shared` / `zod` 这些本来就会被内联的裸导入，扫全部文件就会每次
+ * 报三个假错——而一个会错报的检查很快就会被人忽略。
+ * 注意这只收窄**检查范围**；上面的拷贝仍是全量，宁多勿缺。
+ *
+ * @param {string} bundleDir Directory holding the tsup output.
+ * @returns {string[]} Bare specifiers imported by the reachable bundle graph but not vendored.
  */
-function findUnvendoredBundleImports(bundleDir, reachableFiles) {
+function findUnvendoredBundleImports(bundleDir) {
+  const reachable = collectReachableBundleFiles(bundleDir, BUNDLE_ENTRIES);
   // Node 内建模块（含 node: 前缀与 subpath），不是需要拷贝的第三方包。
   const builtins = new Set(builtinModules.flatMap((m) => [m, `node:${m}`]));
   const specifiers = new Set();
@@ -132,7 +139,7 @@ function findUnvendoredBundleImports(bundleDir, reachableFiles) {
   // 因此真正负责过滤的是下面的形状校验。两者缺一不可。
   const importPattern =
     /\bfrom\s*["']([^"']+)["']|\bimport\s*["']([^"']+)["']|\brequire\s*\(\s*["']([^"']+)["']\s*\)/g;
-  for (const file of reachableFiles) {
+  for (const file of reachable) {
     if (!file.endsWith(".js")) continue;
     const source = readFileSync(join(bundleDir, file), "utf8");
     for (const match of source.matchAll(importPattern)) {
@@ -173,7 +180,15 @@ function findUnvendoredBundleImports(bundleDir, reachableFiles) {
 function collectReachableBundleFiles(bundleDir, entries) {
   const seen = new Set();
   const queue = entries.filter((name) => existsSync(join(bundleDir, name)));
-  const relativeImport = /(?:from|import)\s*["']\.\/([^"']+)["']/g;
+  // 必须同时兼容三种形式（实测 tsup 产物里都有）：
+  //   import { x } from "./chunk.js"      静态命名导入
+  //   export * from "./chunk.js"          再导出
+  //   await import("./chunk.js")          动态导入 —— 括号形式！
+  // 之前只写了 `(?:from|import)\s*["']\./` ，漏掉 `import("...")`：那个 `(` 使整条不匹配，
+  // 于是只有懒加载入口引用的 chunk 会被当成“不可达”而不再拷进 bundle ——CI 的 boot proof
+  // 只启动 standalone.js，根本不会触发那条路径，所以会漏检。
+  // 另外不要求引号前一定有空白（压缩后是 `from"./x"`），也不假设只有 `./`（兼容 `../`）。
+  const relativeImport = /(?:\bfrom|\bimport|\brequire)\s*\(?\s*["'](\.[^"']+)["']/g;
   while (queue.length > 0) {
     const name = queue.shift();
     if (seen.has(name)) continue;
@@ -181,7 +196,12 @@ function collectReachableBundleFiles(bundleDir, entries) {
     const source = readFileSync(join(bundleDir, name), "utf8");
     for (const match of source.matchAll(relativeImport)) {
       const dep = match[1];
-      if (dep && existsSync(join(bundleDir, dep))) queue.push(dep);
+      if (!dep) continue;
+      const resolved = join(bundleDir, dep);
+      // 只纳入 bundleDir 内部的文件：`../` 或跳出目录的引用不是 bundle 产物。
+      // `seen` / `queue` 统一存 basename，避免下面 join 时重复拼接。
+      if (dirname(resolved) !== bundleDir || !/\.m?js$/.test(resolved)) continue;
+      if (existsSync(resolved)) queue.push(basename(resolved));
     }
   }
   return [...seen];
@@ -199,10 +219,7 @@ function main() {
         `[host-sidecar] host bundle missing at ${hostBundleDir}. Run \`pnpm --filter @zcode/desktop build\` first.`,
       );
     }
-    const missing = findUnvendoredBundleImports(
-      hostBundleDir,
-      collectReachableBundleFiles(hostBundleDir, BUNDLE_ENTRIES),
-    );
+    const missing = findUnvendoredBundleImports(hostBundleDir);
     if (missing.length > 0) {
       throw new Error(
         `[host-sidecar] host bundle imports packages that RUNTIME_EXTERNALS does not vendor: ` +
@@ -240,10 +257,13 @@ function main() {
   }
 
   // 2. ESM host bundle (standalone.js + index.js + tasksStorageWorker.js + chunk-*.js).
-  // Bundle 产物只拿可达图：避开 tsc 写进同一 outDir 的逐模块残留产物（它们带裸导入，
-  // 但根本不会被入口引用，带进 bundle 只是死重量）。
-  for (const f of collectReachableBundleFiles(hostBundleDir, BUNDLE_ENTRIES)) {
-    copyFileSync(join(hostBundleDir, f), join(outDir, f));
+  // 拷贝全部 .js/.mjs（原行为）：只拷“可达集”看似能去掉 tsc 残留产物，但风险不可接受——
+  // chunk 可以由动态 import、计算出的路径或其他入口引用，任何遗漏都会把“只在特定操作时
+  // 报错”的缺陷发进产品（CI 的 boot proof 只启动 standalone.js，测不到那条路径）。
+  // 多拷是死重量，少拷是运行时 ERR_MODULE_NOT_FOUND：两边不对等，所以这里宁可冗余。
+  for (const f of readdirSync(hostBundleDir)) {
+    if (f.endsWith(".js") || f.endsWith(".mjs"))
+      copyFileSync(join(hostBundleDir, f), join(outDir, f));
   }
 
   // 3. The Rust DB addon — the ONLY database engine. Loaded by the host via ZCODE_DB_NATIVE.
