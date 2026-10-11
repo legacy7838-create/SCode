@@ -1,8 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
 
-  "//": "Production overlay for `tauri build`, applied via `--config src-tauri/tauri.prod.json`. Deep-merged over tauri.conf.json, which stays dev-branded on purpose so a developer's window title / app-data dir are visibly distinct from a real install. Previously the production identity was never overridden anywhere, so a release bundle shipped as 'ZCode (Tauri dev)_0.0.0_amd64.AppImage' with a .dev bundle identifier.",
-
   "productName": "ZCode",
   "version": "3.14.3",
   "identifier": "app.zcode.desktop",
