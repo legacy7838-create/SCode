@@ -303,11 +303,33 @@ jobs:
 
       # bundle.active:false in the dev config would skip bundling, and the host resource dir is
       # only shipped here (not the base config) so dev/`test:tauri:rust` never require it.
+      - name: "[bundle] verify tauri.prod.json version tracks the root package.json"
+        working-directory: packages/desktop
+        # No version-sync script exists in this repo and release-it does not touch the Tauri
+        # config, so a hardcoded bundle version drifts silently on the next release. Fail loudly
+        # instead: if this trips, bump tauri.prod.json to match package.json (or teach a script to
+        # do it) — do NOT delete the check.
+        run: |
+          set -euo pipefail
+          root_version="$(node -p "require('../../package.json').version")"
+          tauri_version="$(node -p "require('./src-tauri/tauri.prod.json').version")"
+          if [ "$root_version" != "$tauri_version" ]; then
+            echo "::error::version drift: package.json=$root_version tauri.prod.json=$tauri_version"
+            exit 1
+          fi
+          echo "version in sync: $root_version"
+
       - name: "[bundle] tauri build (${{ matrix.bundles }})"
         working-directory: packages/desktop
+        # `bundle.active:false` in the dev config would skip bundling, and the host resource dir is
+        # only shipped here (not the base config) so dev/`test:tauri:rust` never require it. The
+        # overlay also supplies the PRODUCTION identity — without it the bundle was named
+        # "ZCode (Tauri dev)_0.0.0_amd64.AppImage" and carried a `.dev` bundle identifier.
+        # `tauri.prod.json` is the single source of that overlay; `pnpm tauri:build` uses the same
+        # file so a local release build is byte-comparable in identity to CI.
         run: |
           pnpm exec tauri build \
-            --config '{"bundle":{"active":true,"resources":{"../bundled-agents/*/glm/zcode_db.node":"glm/zcode_db.node","resources/host":"host"}}}' \
+            --config src-tauri/tauri.prod.json \
             --bundles ${{ matrix.bundles }}
 
       - name: "[bundle] list produced artifacts"

@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev:tauri": "node scripts/dev-tauri-prepare.mjs && concurrently -k -n tsup,vite,tauri,host \"tsup --watch\" \"vite dev\" \"tauri dev\" \"node scripts/dev-host.mjs\"",
-    "tauri:build": "pnpm prepare:zcode-db-native && pnpm build && tauri build",
+    "tauri:build": "pnpm prepare:zcode-db-native && pnpm build && tauri build --config src-tauri/tauri.prod.json",
     "build": "tsup && vite build",
     "prepare:build-meta": "node scripts/build-metadata.mjs",
     "prepare:runtime-assets": "node scripts/prepare-runtime-assets.mjs",
