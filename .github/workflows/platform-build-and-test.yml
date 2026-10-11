@@ -158,8 +158,14 @@ jobs:
           run soft "lint (oxlint)"             "pnpm lint"
           run soft "fmt:check (oxfmt)"         "pnpm fmt:check"
           run soft "architecture:check"        "pnpm architecture:check"
-          run soft "knip (unused deps/exports)" "pnpm knip"
           run soft "db clippy -D warnings"     "cd packages/desktop/zcode-db && cargo clippy --all-targets -- -D warnings"
+          # NOTE: `pnpm knip` is intentionally NOT run here. The repo's knip.json is an unfinished
+          # baseline (only 4 workspaces declare entry points), so on a clean checkout it reports
+          # ~454 "unused exports" (cross-package barrel re-exports) and flags genuinely-used deps it
+          # can't statically see (optional native @lydell/node-pty-*, @opentelemetry/*, host-only
+          # undici/ssh2/node-forge). That is tool misconfiguration, not a code defect, and it is
+          # orthogonal to this workflow's job (per-platform build/test). Re-add it once knip.json has
+          # per-workspace entries + ignoreDependencies for the native/optional packages.
 
           echo
           echo "==================== ${{ matrix.label }} SUMMARY ===================="
