@@ -10,29 +10,29 @@ newer than `HEAD` (361 lines) and adds the `verifyHostSatisfiesDependents` gate,
 
 ## Function map
 
-| JS function | Rust |
-| --- | --- |
-| `findAppImage` | `appdir::find_app_image` |
-| `readElfNeeded` | `elf::read_needed` |
-| `readElfVersionNeeds` | `elf::read_version_needs` (+ pure `parse_version_needs_text`) |
-| `readElfVersionDefines` | `elf::read_version_defines` |
-| `hostLibPath` | `gate::host_lib_path` (+ pure `parse_ldconfig_for`) |
-| `collectDependentsNeeding` | `gate::collect_dependents_needing` |
+| JS function                     | Rust                                                               |
+| ------------------------------- | ------------------------------------------------------------------ |
+| `findAppImage`                  | `appdir::find_app_image`                                           |
+| `readElfNeeded`                 | `elf::read_needed`                                                 |
+| `readElfVersionNeeds`           | `elf::read_version_needs` (+ pure `parse_version_needs_text`)      |
+| `readElfVersionDefines`         | `elf::read_version_defines`                                        |
+| `hostLibPath`                   | `gate::host_lib_path` (+ pure `parse_ldconfig_for`)                |
+| `collectDependentsNeeding`      | `gate::collect_dependents_needing`                                 |
 | `verifyHostSatisfiesDependents` | `gate::verify_host_satisfies_dependents` (+ pure `host_satisfies`) |
-| `selectSafeToStrip` | `gate::select_safe_to_strip` |
-| `stripLibsFromAppDir` | `appdir::strip_libs_from_app_dir` |
-| `extractAppImage` | `appdir::extract_app_image` |
-| `resolveAppimagetool` | `appdir::resolve_appimagetool` (+ `find_on_path` replaces `which`) |
-| `repackAppImage` | `appdir::repack_app_image` |
-| `inspectAppImage` | `appdir::inspect_app_image` |
-| `main` (`--check`) | `src/main.rs::run` |
+| `selectSafeToStrip`             | `gate::select_safe_to_strip`                                       |
+| `stripLibsFromAppDir`           | `appdir::strip_libs_from_app_dir`                                  |
+| `extractAppImage`               | `appdir::extract_app_image`                                        |
+| `resolveAppimagetool`           | `appdir::resolve_appimagetool` (+ `find_on_path` replaces `which`) |
+| `repackAppImage`                | `appdir::repack_app_image`                                         |
+| `inspectAppImage`               | `appdir::inspect_app_image`                                        |
+| `main` (`--check`)              | `src/main.rs::run`                                                 |
 
 ## Design decisions
 
 - **Shell out to `readelf`/`ldconfig`, do not parse ELF directly.** The gate's semantics are defined
   by `readelf` text output, including its quirks (`Not an ELF file` → empty dependency list;
   `.gnu.version_d` includes the `BASE` entry; only `Name: ... Flags:` lines count as version
-  *needs*). An ELF crate would be a second, divergent implementation of those rules for no runtime
+  _needs_). An ELF crate would be a second, divergent implementation of those rules for no runtime
   win on a one-shot scan. Using the same external tools keeps parity and the same failure modes.
 - **`tempfile::TempDir` replaces `mkdtempSync` + `finally { rmSync }`.** Cleanup is RAII, so an early
   `?` return still removes the extract directory.
