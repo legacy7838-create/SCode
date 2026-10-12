@@ -199,23 +199,49 @@ fn is_appimage_mount_entry(entry: &str, appdir: &str) -> bool {
 }
 
 /// True when `path` is, or lives under, an AppImage mount root: some ancestor directory has a
-/// basename starting with `.mount_` whose parent resolves to the temp directory the runtime mounts
-/// under. Walking ancestors handles both the root itself (`/tmp/.mount_X`) and entries beneath it
+/// basename starting with `.mount_` whose parent is the temp directory the runtime mounts under.
+/// Walking ancestors handles both the root itself (`/tmp/.mount_X`) and entries beneath it
 /// (`/tmp/.mount_X/usr/lib`), covering the extract-and-run case where `$APPDIR` is not exported.
+///
+/// The temp dir is matched in both its literal and symlink-resolved forms. On macOS `TMPDIR` is
+/// `/var/folders/...`, which is a symlink to `/private/var/folders/...`; both spellings must be
+/// accepted so detection works whether or not the mount point still exists (a stale
+/// `LD_LIBRARY_PATH` entry points at a directory that is already gone, so `canonicalize` fails and
+/// the literal path is what we have).
 fn is_appimage_mount_root(path: &str) -> bool {
-    let tmp = std::env::var("TMPDIR")
+    // Canditate temp roots: the AppImage runtime always mounts under `/tmp` on Linux (its only
+    // platform), and honours `$TMPDIR` when set. Accept `/tmp` unconditionally so a hardcoded
+    // `/tmp/...` path is recognised even where `temp_dir()` differs (e.g. macOS `TMPDIR`).
+    let mut accepted_tmp: Vec<std::path::PathBuf> = vec![std::path::PathBuf::from("/tmp")];
+    let tmp_env = std::env::var("TMPDIR")
         .ok()
         .filter(|v| !v.trim().is_empty())
         .unwrap_or_else(|| "/tmp".to_string());
-    let tmp = canonical_or_original(Path::new(&tmp));
-    let mut current = Some(canonical_or_original(Path::new(path)));
+    let tmp_env = Path::new(&tmp_env);
+    accepted_tmp.push(tmp_env.to_path_buf());
+    let tmp_resolved = canonical_or_original(tmp_env);
+    if !accepted_tmp.contains(&tmp_resolved) {
+        accepted_tmp.push(tmp_resolved);
+    }
+
+    let mut current = Some(Path::new(path).to_path_buf());
     while let Some(dir) = current {
         let is_mount = dir
             .file_name()
             .and_then(|n| n.to_str())
             .map(|n| n.starts_with(".mount_"))
             .unwrap_or(false)
-            && dir.parent() == Some(tmp.as_path());
+            && dir
+                .parent()
+                .map(|parent| {
+                    // Compare against the temp dir in whichever spelling matches this ancestor:
+                    // a real mount point resolves to a canonical parent, a stale entry does not.
+                    let resolved = canonical_or_original(parent);
+                    accepted_tmp
+                        .iter()
+                        .any(|tmp| parent == tmp || resolved == *tmp)
+                })
+                .unwrap_or(false);
         if is_mount {
             return true;
         }
@@ -377,6 +403,7 @@ mod tests {
 
     /// The mount root the code would recognise: `.mount_<name>` directly under the temp dir. Built
     /// from `std::env::temp_dir()` so the test agrees with the implementation's own temp resolution.
+    #[cfg(unix)]
     fn mount_root(name: &str) -> String {
         std::env::temp_dir()
             .join(format!(".mount_{name}"))
@@ -384,6 +411,10 @@ mod tests {
             .into_owned()
     }
 
+    // The `.mount_*` AppImage mount layout and the `LD_LIBRARY_PATH` colon-separated list are Unix
+    // concepts; AppImage only exists on Linux. These tests exercise the Unix path shape, so gate them
+    // to unix rather than assert Unix separators on Windows.
+    #[cfg(unix)]
     #[test]
     fn strips_mount_entry_when_appdir_is_absent() {
         // Extract-and-run: APPDIR not exported, so detection must fall back to the mount layout.
@@ -399,6 +430,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn strips_the_mount_root_itself() {
         let mut env = BTreeMap::new();
