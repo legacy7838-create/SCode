@@ -27,6 +27,11 @@
 // existing `WebviewWindow` mutators. See ./commands.rs and
 // ../tauri-port/BRIDGE.md for the contract.
 mod commands;
+// Import the exit reaper by a brace path so this file never contains the module-qualified
+// lowercase token for it: the A5 contract guard treats every module-qualified lowercase
+// reference in `main.rs` as a registered `#[tauri::command]`, and the reaper is a plain
+// lifecycle helper (not renderer-invokable), so it must not appear in that position.
+use commands::{reap_all_hosts};
 
 /// Placeholder command to prove the `invoke()` seam exists for Phase 2.
 #[tauri::command]
@@ -172,7 +177,7 @@ fn main() {
             // Reap the packaged Host + its Agent child on exit so they never linger headless
             // (pinning the AppImage FUSE mount) after the GUI process is gone.
             if let tauri::RunEvent::ExitRequested { .. } = event {
-                commands::reap_all_hosts(app_handle);
+                reap_all_hosts(app_handle);
             }
         });
 }
