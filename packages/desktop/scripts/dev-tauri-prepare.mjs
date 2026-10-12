@@ -23,11 +23,15 @@ const repoRoot = resolve(desktopRoot, "..", "..");
 const platformKey = `${process.platform}-${process.arch}`;
 
 const { dbAddonSource, stagedDbNodePath } = resolveAgentBundlePaths({ repoRoot, platformKey });
+const ptyAddonSource = resolve(desktopRoot, "zcode-pty", "zcode_pty.node");
 
-// 快速路径：glm 里已有 addon 且不比构建产物旧，直接跳过（含 cargo），不拖慢每次 dev 启动。
+// 快速路径：glm 里已有 addon 且不比构建产物旧，且 PTY addon 也已就绪时，才直接跳过（含 cargo），
+// 不拖慢每次 dev 启动。PTY 也纳入判断：否则 DB 命中缓存时会跳过下面的 cargo 构建，
+// 干净但 DB 已暂存的工作树里 zcode_pty.node 永远建不出来，dev-host / host-sidecar 随后必崩。
 if (
   existsSync(stagedDbNodePath) &&
   existsSync(dbAddonSource) &&
+  existsSync(ptyAddonSource) &&
   statSync(stagedDbNodePath).mtimeMs >= statSync(dbAddonSource).mtimeMs
 ) {
   console.log(`[dev:tauri:prepare] zcode_db.node 已就绪：${stagedDbNodePath}`);
@@ -52,7 +56,6 @@ stageZcodeDbNative({ repoRoot, platformKey });
 
 // PTY = Rust: dev-host.mjs requires packages/desktop/zcode-pty/zcode_pty.node to open terminals.
 // Build it with cargo when missing so a clean tree's `pnpm dev:tauri` works; never fall back to JS.
-const ptyAddonSource = resolve(desktopRoot, "zcode-pty", "zcode_pty.node");
 if (!existsSync(ptyAddonSource)) {
   console.log("[dev:tauri:prepare] Rust PTY addon 源缺失，运行 cargo 构建 ...");
   const result = spawnSync(
