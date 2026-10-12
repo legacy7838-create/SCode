@@ -174,6 +174,40 @@ fn resolve_fallback_utf8_locale(env: &BTreeMap<String, String>) -> String {
     }
 }
 
+/// True when an `LD_LIBRARY_PATH`/`LD_PRELOAD` entry points into the running AppImage's mounted
+/// squashfs — either under `$APPDIR` or the `/tmp/.mount_*` signature — and so shadows a system lib.
+fn is_appimage_mount_entry(entry: &str, appdir: &str) -> bool {
+    let trimmed = entry.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    if !appdir.is_empty() && (trimmed == appdir || trimmed.starts_with(&format!("{appdir}/"))) {
+        return true;
+    }
+    trimmed.contains("/.mount_")
+}
+
+/// Strip AppImage-mount entries from the child shell's `LD_LIBRARY_PATH` so host binaries launched
+/// from the integrated terminal resolve system libraries (not the AppImage's unversioned bundled
+/// copies). Removes the variable entirely if nothing remains. No-op when the path is clean.
+fn sanitize_appimage_library_path(env: &mut BTreeMap<String, String>) {
+    let appdir = env.get("APPDIR").cloned().unwrap_or_default();
+    if let Some(value) = env.get("LD_LIBRARY_PATH").cloned() {
+        let total = value.split(':').count();
+        let kept: Vec<&str> = value
+            .split(':')
+            .filter(|entry| !is_appimage_mount_entry(entry, &appdir))
+            .collect();
+        if kept.len() != total {
+            if kept.is_empty() {
+                env.remove("LD_LIBRARY_PATH");
+            } else {
+                env.insert("LD_LIBRARY_PATH".to_string(), kept.join(":"));
+            }
+        }
+    }
+}
+
 /// Build the environment passed to the shell: inherited env plus the interactive-terminal
 /// fixes (macOS PATH backfill, `TERM=xterm-256color`, `COLORTERM`, `CI` removal, UTF-8 locale).
 pub fn resolve_env() -> BTreeMap<String, String> {
@@ -201,6 +235,14 @@ pub fn resolve_env() -> BTreeMap<String, String> {
     if env.get("CI").map(String::as_str) == Some("1") && inherited_term.as_deref() == Some("dumb") {
         env.remove("CI");
     }
+
+    // AppImage self-containment leaks into the shell: AppRun prepends the mounted `$APPDIR/usr/lib`
+    // to LD_LIBRARY_PATH, and that env is inherited by the shell we spawn. Host tools launched from
+    // the terminal (e.g. eza → libgit2 → libpcre2-8.so.0) then resolve the AppImage's *unversioned*
+    // bundled copy and emit `no version information available`. The bundled lib must stay in the
+    // package (the app's own libglib depends on it), but it must NOT shadow the shell's system libs,
+    // so drop AppImage-mount entries from the child shell's LD_LIBRARY_PATH.
+    sanitize_appimage_library_path(&mut env);
 
     if is_missing_or_c_locale(env.get("LANG").map(String::as_str)) {
         env.insert("LANG".to_string(), fallback_locale.clone());
@@ -251,5 +293,42 @@ mod tests {
         // A bogus requested cwd must not error; it falls back to HOME/root.
         let cwd = resolve_cwd(Some("/no/such/dir/xyz-123")).unwrap();
         assert!(Path::new(&cwd).is_dir());
+    }
+
+    #[test]
+    fn strips_appimage_mount_from_ld_library_path() {
+        let mut env = BTreeMap::new();
+        env.insert(
+            "LD_LIBRARY_PATH".to_string(),
+            "/tmp/.mount_ZCode_abc/usr/lib:/usr/lib:/usr/local/lib".to_string(),
+        );
+        env.insert("APPDIR".to_string(), "/tmp/.mount_ZCode_abc".to_string());
+        sanitize_appimage_library_path(&mut env);
+        assert_eq!(
+            env.get("LD_LIBRARY_PATH").map(String::as_str),
+            Some("/usr/lib:/usr/local/lib")
+        );
+    }
+
+    #[test]
+    fn removes_ld_library_path_when_only_appdir_entries() {
+        let mut env = BTreeMap::new();
+        env.insert(
+            "LD_LIBRARY_PATH".to_string(),
+            "/tmp/.mount_ZCode_abc/usr/lib".to_string(),
+        );
+        sanitize_appimage_library_path(&mut env);
+        assert!(!env.contains_key("LD_LIBRARY_PATH"));
+    }
+
+    #[test]
+    fn leaves_a_normal_ld_library_path_untouched() {
+        let mut env = BTreeMap::new();
+        env.insert("LD_LIBRARY_PATH".to_string(), "/usr/lib:/opt/lib".to_string());
+        sanitize_appimage_library_path(&mut env);
+        assert_eq!(
+            env.get("LD_LIBRARY_PATH").map(String::as_str),
+            Some("/usr/lib:/opt/lib")
+        );
     }
 }
