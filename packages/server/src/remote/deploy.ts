@@ -11,7 +11,7 @@ import {
 import type { IRemoteBackend, RemoteEnvironment } from "./backend.js";
 import { deployZCodeAgentRuntime } from "./zcodeAgentDeploy.js";
 import {
-  deployNodePtyPrebuilds,
+  deployZcodePtyAddon,
   deployNodeRuntime,
   createRemoteComponentVersionResolver,
   logDeployRequired,
@@ -88,7 +88,7 @@ export interface DeployOptions {
 
 /**
  * Deploy the zcode server to the remote machine.
- * Uploads Node.js binary, server bundle, and node-pty prebuild.
+ * Uploads Node.js binary, server bundle, and the Rust zcode-pty terminal addon.
  *
  * Returns true if a deploy was performed, false if skipped (version matches).
  */
@@ -276,8 +276,8 @@ export async function deployServer(
       log("skipped — remote version matches");
       // 主 server 版本相同只证明 node/zcode-server.cjs 可启动，不代表随包工具仍存在。
       // glm 内容跟随 app/server 版本刷新；但 wrapper/bundle 被清理或开发态 bundle 变化时仍要按实体检查修复。
-      if (shouldDeployResourcePackage("node-pty")) {
-        await deployNodePtyPrebuilds(
+      if (shouldDeployResourcePackage("zcode-pty")) {
+        await deployZcodePtyAddon(
           backend,
           env,
           {
@@ -352,8 +352,8 @@ export async function deployServer(
     }
     log("server install done");
 
-    if (shouldDeployResourcePackage("node-pty")) {
-      await deployNodePtyPrebuilds(
+    if (shouldDeployResourcePackage("zcode-pty")) {
+      await deployZcodePtyAddon(
         backend,
         env,
         {
@@ -362,7 +362,7 @@ export async function deployServer(
           force: Boolean(options?.force),
           onlyIfMissing: false,
           installer,
-          expectedVersion: await getExpectedComponentVersion("node-pty"),
+          expectedVersion: await getExpectedComponentVersion("zcode-pty"),
         },
         { log, logWarn },
       );
@@ -722,11 +722,8 @@ function resolveRequiredMockReleasePaths(
       case "node-runtime":
         requiredPaths.add(`node/${platformArch}/node`);
         break;
-      case "node-pty":
-        requiredPaths.add(`node-pty/${platformArch}/pty.node`);
-        if (platformArch.startsWith("darwin-")) {
-          requiredPaths.add(`node-pty/${platformArch}/spawn-helper`);
-        }
+      case "zcode-pty":
+        requiredPaths.add(`zcode-pty/${platformArch}/zcode_pty.node`);
         break;
       case "glm":
         requiredPaths.add(`glm/${platformArch}/zcode.cjs`);

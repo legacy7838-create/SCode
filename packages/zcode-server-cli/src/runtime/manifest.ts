@@ -82,7 +82,9 @@ export function createRuntimeManifest(
       core: "runtime/server-core.js",
       agent: "runtime/zcode.cjs",
     },
-    native: ["node-pty"],
+    // No native node_modules packages remain: the terminal is the staged Rust addon
+    // (runtime/zcode-pty/zcode_pty.node), not a JS PTY package resolved from node_modules.
+    native: [],
     ...extras,
   };
 }

@@ -35,10 +35,12 @@ const repoRoot = resolve(desktopRoot, "..", "..");
 const outDir = join(desktopRoot, "src-tauri", "resources", "host");
 const hostBundleDir = join(desktopRoot, "out", "host");
 const dbAddonSource = join(desktopRoot, "zcode-db", "zcode_db.node");
+const ptyAddonSource = join(desktopRoot, "zcode-pty", "zcode_pty.node");
 const isWindows = getTargetPlatform().os === "win32";
 
 // tsup keeps these external in the host ESM bundle (tsup.config.ts desktopNodeRuntimeExternals);
-// they must be present at runtime. *.node is the DB addon (handled separately as zcode_db.node).
+// they must be present at runtime. *.node addons (zcode_db.node, zcode_pty.node) are handled
+// separately and copied above, not vendored from node_modules.
 //
 // This list must stay a SUPERSET of the bare third-party imports actually present in the built
 // host bundle. tsup additionally externalizes anything declared in @zcode/desktop's `dependencies`,
@@ -48,7 +50,6 @@ const isWindows = getTargetPlatform().os === "win32";
 // Missing it shipped a broken AppImage whose Host died on boot with ERR_MODULE_NOT_FOUND.
 // `checkRuntimeExternalsCoverBundle` below fails CI if this list ever drifts from the bundle again.
 const RUNTIME_EXTERNALS = [
-  "node-pty",
   "ssh2",
   "undici",
   "ws",
@@ -242,6 +243,11 @@ function main() {
       `[host-sidecar] Rust DB addon missing: ${dbAddonSource}. Run pnpm prepare:zcode-db-native first.`,
     );
   }
+  if (!existsSync(ptyAddonSource)) {
+    throw new Error(
+      `[host-sidecar] Rust PTY addon missing: ${ptyAddonSource}. Run pnpm prepare:zcode-pty-native first.`,
+    );
+  }
 
   rmSync(outDir, { recursive: true, force: true });
   mkdirSync(outDir, { recursive: true });
@@ -268,6 +274,10 @@ function main() {
 
   // 3. The Rust DB addon — the ONLY database engine. Loaded by the host via ZCODE_DB_NATIVE.
   copyFileSync(dbAddonSource, join(outDir, "zcode_db.node"));
+
+  // 3a. The Rust PTY addon — the ONLY terminal engine. Loaded by the host via ZCODE_PTY_NATIVE.
+  //     There is no JS node-pty path: the host opens every terminal through this addon.
+  copyFileSync(ptyAddonSource, join(outDir, "zcode_pty.node"));
 
   // 3b. The bundled Agent (zcode.cjs) the packaged Host runs for storage-prep + sessions.
   //     Resolved by the host via ZCODE_BUNDLED_AGENT_ENTRY (set by the Rust spawner).
@@ -307,7 +317,7 @@ function main() {
 
   console.log(
     `[host-sidecar] staged ${isWindows ? "win32" : "unix"} host sidecar at ${outDir} ` +
-      `(node=${existsSync(nodeDest)}, addon=${existsSync(join(outDir, "zcode_db.node"))}, vendored pkgs=${vendored})`,
+      `(node=${existsSync(nodeDest)}, db=${existsSync(join(outDir, "zcode_db.node"))}, pty=${existsSync(join(outDir, "zcode_pty.node"))}, vendored pkgs=${vendored})`,
   );
 }
 

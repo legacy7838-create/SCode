@@ -226,18 +226,20 @@ function resolveDedicatedPackageRoot(packageName, fromDir) {
   );
 }
 
-function resolveNodePtyPackageName(platformKey) {
-  return `@lydell/node-pty-${platformKey}`;
-}
-
-function resolveNodePtyPackageVersion(platformKey) {
-  const packageName = resolveNodePtyPackageName(platformKey);
-  const packageRoot = resolveDedicatedPackageRoot(packageName, join(rootDir, "packages/server"));
-  const packageJson = require(join(packageRoot, "package.json"));
-  if (typeof packageJson?.version !== "string" || !packageJson.version.trim()) {
-    throw new Error(`Unable to resolve version for ${packageName}`);
+// The Rust terminal addon is a single cargo-built zcode_pty.node per platform. Unlike node-pty
+// it is NOT obtainable as a cross-platform npm tarball, so each platform artifact must be built
+// on its native runner; `ZCODE_PTY_PREBUILD_DIR/<platform>/zcode_pty.node` lets CI stage them.
+// Host-platform builds fall back to the workspace cargo output. Cache identity tracks the app
+// version so an app update invalidates stale remote terminal components.
+function resolveZcodePtyAddonSourcePath(platformKey) {
+  const overrideDir = process.env.ZCODE_PTY_PREBUILD_DIR?.trim();
+  const hostKey = `${process.platform}-${process.arch}`;
+  const candidates = [];
+  if (overrideDir) candidates.push(join(overrideDir, platformKey, "zcode_pty.node"));
+  if (platformKey === hostKey) {
+    candidates.push(join(rootDir, "packages/desktop/zcode-pty/zcode_pty.node"));
   }
-  return packageJson.version.trim();
+  return candidates.find((candidate) => existsSync(candidate)) ?? null;
 }
 
 async function prepareNodeBinaries() {
@@ -317,55 +319,31 @@ function copyServerBundle() {
   console.log("  [ok] mock-cdn server/zcode-server.cjs");
 }
 
-function copyNodePtyPrebuilds() {
-  console.log("==> Copying node-pty prebuilds from @lydell/node-pty");
+function copyZcodePtyAddons() {
+  console.log("==> Staging Rust zcode-pty terminal addon per remote platform");
 
   for (const platformKey of remotePlatforms) {
-    const ptyDir = join(releaseDir, "node-pty", platformKey);
-    const targetBinaryPath = join(ptyDir, "pty.node");
-    const targetSpawnHelperPath = join(ptyDir, "spawn-helper");
-    const requiresSpawnHelper = platformKey.startsWith("darwin-");
+    const ptyDir = join(releaseDir, "zcode-pty", platformKey);
+    const targetBinaryPath = join(ptyDir, "zcode_pty.node");
 
-    if (
-      existsSync(targetBinaryPath) &&
-      (!requiresSpawnHelper || existsSync(targetSpawnHelperPath))
-    ) {
-      console.log(`  [skip] mock-cdn node-pty/${platformKey} already exists`);
+    if (existsSync(targetBinaryPath)) {
+      console.log(`  [skip] mock-cdn zcode-pty/${platformKey} already exists`);
+      continue;
+    }
+
+    const sourcePath = resolveZcodePtyAddonSourcePath(platformKey);
+    if (!sourcePath) {
+      console.log(
+        `  [warn] no zcode-pty addon for ${platformKey}; build it on a ${platformKey} runner ` +
+          `(pnpm prepare:zcode-pty-native) or set ZCODE_PTY_PREBUILD_DIR`,
+      );
       continue;
     }
 
     mkdirSync(ptyDir, { recursive: true });
-
-    const packageName = resolveNodePtyPackageName(platformKey);
-    let packageRoot;
-    try {
-      packageRoot = resolveDedicatedPackageRoot(packageName, join(rootDir, "packages/server"));
-    } catch {
-      console.log(`  [warn] ${packageName} not found, run: pnpm install`);
-      continue;
-    }
-
-    const sourcePrebuildDir = join(packageRoot, "prebuilds", platformKey);
-    const sourceBinaryPath = join(sourcePrebuildDir, "pty.node");
-    if (!existsSync(sourceBinaryPath)) {
-      console.log(`  [warn] binary not found at ${sourceBinaryPath}`);
-      continue;
-    }
-
-    // Darwin 平台 node-pty 除了 pty.node 还依赖 spawn-helper。
-    // 之前 mock-cdn 只复制了 pty.node，远端部署后会在 terminal.create 阶段报 posix_spawn ENOENT。
-    // 这里把 spawn-helper 一并拷贝进 remote 资产目录，避免远端终端启动时缺关键二进制。
-    copyFileSync(sourceBinaryPath, targetBinaryPath);
-    if (requiresSpawnHelper) {
-      const sourceSpawnHelperPath = join(sourcePrebuildDir, "spawn-helper");
-      if (!existsSync(sourceSpawnHelperPath)) {
-        console.log(`  [warn] spawn-helper not found at ${sourceSpawnHelperPath}`);
-        continue;
-      }
-      copyFileSync(sourceSpawnHelperPath, targetSpawnHelperPath);
-      chmodSync(targetSpawnHelperPath, 0o755);
-    }
-    console.log(`  [ok] mock-cdn node-pty/${platformKey} (copied from ${packageName})`);
+    // Single self-contained binary: the Rust addon needs no spawn-helper follow-up.
+    copyFileSync(sourcePath, targetBinaryPath);
+    console.log(`  [ok] mock-cdn zcode-pty/${platformKey} (from ${sourcePath})`);
   }
 }
 
@@ -753,8 +731,8 @@ function buildReusableComponentRequiredPaths(componentId, platformKey) {
   switch (componentId) {
     case "node-runtime":
       return ["node"];
-    case "node-pty":
-      return platformKey.startsWith("darwin-") ? ["pty.node", "spawn-helper"] : ["pty.node"];
+    case "zcode-pty":
+      return ["zcode_pty.node"];
     case "glm":
       // GLM 现在是编译产物 zcode.cjs（跨平台同一份），远端用已部署的 node 执行它。
       // 复用时还要确认官方插件 seed 资源完整，否则旧 release 会继续产出 0 builtin plugin 的远端资源包。
@@ -785,12 +763,12 @@ export function buildRemoteComponentDefinitions(platformKey) {
       sourcePath: join(releaseDir, "node", platformKey),
     },
     {
-      id: "node-pty",
-      // node-pty 组件之前固定成 v1，平台包升级后客户端仍会命中旧 cache。
-      // 这里使用实际复制来源包的版本，让 @lydell/node-pty-<platform> 升级时组件 cache 自动失效。
-      semanticPrefix: resolveNodePtyPackageVersion(platformKey),
-      mount: joinPosix("node-pty", platformKey),
-      sourcePath: join(releaseDir, "node-pty", platformKey),
+      id: "zcode-pty",
+      // The Rust terminal addon ships per platform and is rebuilt with the app; track the app
+      // version so an update invalidates any stale remote terminal component cache.
+      semanticPrefix: version,
+      mount: joinPosix("zcode-pty", platformKey),
+      sourcePath: join(releaseDir, "zcode-pty", platformKey),
     },
     {
       id: "glm",
@@ -1000,13 +978,13 @@ async function main() {
   await prepareNodeBinaries();
   buildServerBundle();
   copyServerBundle();
-  copyNodePtyPrebuilds();
+  copyZcodePtyAddons();
   await stageRemoteAgentBundles();
   await prepareRemoteNativeSearchTools();
   // 修复：server、pty、agent 均可独立下载，需在组件哈希计算前补齐各自的声明。
   await stageThirdPartyNotices(join(releaseDir, "server"), rootDir);
   for (const platformKey of remotePlatforms) {
-    await stageThirdPartyNotices(join(releaseDir, "node-pty", platformKey), rootDir);
+    await stageThirdPartyNotices(join(releaseDir, "zcode-pty", platformKey), rootDir);
     await stageThirdPartyNotices(join(releaseDir, "glm", platformKey), rootDir);
   }
   prepareRemoteComponentArtifacts();

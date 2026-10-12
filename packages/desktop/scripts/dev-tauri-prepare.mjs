@@ -49,3 +49,19 @@ if (!existsSync(dbAddonSource)) {
 }
 
 stageZcodeDbNative({ repoRoot, platformKey });
+
+// PTY = Rust: dev-host.mjs requires packages/desktop/zcode-pty/zcode_pty.node to open terminals.
+// Build it with cargo when missing so a clean tree's `pnpm dev:tauri` works; never fall back to JS.
+const ptyAddonSource = resolve(desktopRoot, "zcode-pty", "zcode_pty.node");
+if (!existsSync(ptyAddonSource)) {
+  console.log("[dev:tauri:prepare] Rust PTY addon 源缺失，运行 cargo 构建 ...");
+  const result = spawnSync(
+    process.execPath,
+    [resolve(desktopRoot, "scripts", "prepare-zcode-pty-native.mjs")],
+    { cwd: desktopRoot, stdio: "inherit" },
+  );
+  if (result.status !== 0) {
+    console.error("[dev:tauri:prepare] cargo 构建 zcode-pty 失败，无法继续 dev:tauri");
+    process.exit(result.status ?? 1);
+  }
+}

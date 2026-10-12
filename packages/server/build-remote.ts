@@ -8,13 +8,13 @@ const { version } = JSON.parse(readFileSync("../../package.json", "utf-8"));
 const { content: zcodeBuiltinProviderConfigJson } = await loadBuiltinProviderConfig();
 
 /**
- * Let esbuild bundle node-pty's JS code normally, but keep .node native
- * addon files as external requires. node-pty's loadNativeModule() searches
- * for `./build/Release/pty.node` relative to itself, which matches our
- * deploy layout on the remote.
+ * Keep .node native addon files (the Rust `zcode_pty.node` / `zcode_db.node`) external so
+ * esbuild never tries to inline a platform binary. The terminal adapter loads `zcode_pty.node`
+ * by absolute path via ZCODE_PTY_NATIVE, which matches the `~/.zcode/server/zcode-pty` deploy
+ * layout on the remote — there is no JS node-pty path.
  *
- * CJS 格式而非 ESM：node-pty 内部大量使用 __dirname，ESM 里没有这个变量，
- * 用 CJS 输出可以直接原生支持，不需要任何 polyfill。
+ * CJS 格式而非 ESM：native addon 的绝对路径 require 与运行时目录解析在 CJS 下最稳妥，
+ * 可直接原生支持，不需要任何 polyfill。
  */
 const nativeAddonPlugin: Plugin = {
   name: "native-addon",

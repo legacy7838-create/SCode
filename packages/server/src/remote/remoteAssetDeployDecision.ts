@@ -21,8 +21,9 @@ import {
 } from "@zcode/server/remote/remoteAssetInstaller.js";
 import type { RemoteAssetNetworkPort } from "@zcode/server/remote/remoteAssetNetwork.js";
 
-const REMOTE_NODE_PTY_PATH = `${REMOTE_BASE}/build/Release/pty.node`;
-const REMOTE_NODE_PTY_SPAWN_HELPER_PATH = `${REMOTE_BASE}/build/Release/spawn-helper`;
+// The Rust PTY addon is a single self-contained zcode_pty.node (no separate spawn-helper binary),
+// so the remote terminal component ships exactly one file and needs no exec-bit fixup.
+const REMOTE_ZCODE_PTY_PATH = `${REMOTE_BASE}/zcode-pty/zcode_pty.node`;
 
 export interface RemoteAssetVersionResolverOptions {
   mockCdnDir?: string;
@@ -33,7 +34,7 @@ export interface RemoteAssetVersionResolverOptions {
   remoteAssetNetwork?: RemoteAssetNetworkPort;
 }
 
-interface DeployNodePtyPrebuildOptions extends RemoteAssetDeployOptions {
+interface DeployZcodePtyOptions extends RemoteAssetDeployOptions {
   platformArch: string;
   force?: boolean;
   onlyIfMissing: boolean;
@@ -117,96 +118,56 @@ function normalizeDeployExpectedVersion(version: string | null | undefined): str
   return version ? resolveRemoteAssetComponentCacheVersion(version) : null;
 }
 
-export async function deployNodePtyPrebuilds(
+export async function deployZcodePtyAddon(
   backend: IRemoteBackend,
-  env: RemoteEnvironment,
-  options: DeployNodePtyPrebuildOptions,
+  _env: RemoteEnvironment,
+  options: DeployZcodePtyOptions,
   loggers: DeployLoggers,
 ): Promise<void> {
   const { platformArch, onlyIfMissing, installer } = options;
   const expectedVersion = normalizeDeployExpectedVersion(options.expectedVersion);
   const decision = await shouldDeployVersionedComponent(backend, {
-    componentId: "node-pty",
+    componentId: "zcode-pty",
     platformArch,
-    remotePath: REMOTE_NODE_PTY_PATH,
+    remotePath: REMOTE_ZCODE_PTY_PATH,
     expectedVersion,
     force: options.force,
     fallbackDeployWhenVersionUnknown: !onlyIfMissing,
   });
-  if (decision.shouldDeploy) {
-    const sourceRelativePath = `node-pty/${platformArch}/pty.node`;
-    if (
-      installer instanceof LocalUploadAssetInstaller &&
-      !(await installer.tryResolveLocalPath(["node-pty"], sourceRelativePath))
-    ) {
-      loggers.logWarn(`WARNING: no node-pty prebuild for ${platformArch}. Terminal will not work.`);
-      loggers.logWarn(
-        `Run: node scripts/prepare-prebuilds.mjs to prepare mock-cdn release assets.`,
-      );
-    } else {
-      logDeployRequired({
-        loggers,
-        installer,
-        componentId: "node-pty",
-        reason: decision.reason,
-      });
-      loggers.log("installing node-pty prebuild...");
-      await installer.installFile({
-        componentId: "node-pty",
-        sourceRelativePath,
-        remotePath: REMOTE_NODE_PTY_PATH,
-      });
-      await writeRemoteAssetComponentMeta(backend, {
-        id: "node-pty",
-        version: expectedVersion ?? "unknown",
-        platformArch,
-      });
-      loggers.log("node-pty install done");
-    }
-  } else {
-    loggers.log("node-pty prebuild already exists, skip");
-  }
-
-  if (env.platform !== "darwin") {
+  if (!decision.shouldDeploy) {
+    loggers.log("zcode-pty addon already exists, skip");
     return;
   }
 
-  const shouldUploadSpawnHelper =
-    decision.shouldDeploy || !(await backend.exists(REMOTE_NODE_PTY_SPAWN_HELPER_PATH));
-  if (shouldUploadSpawnHelper) {
-    const sourceRelativePath = `node-pty/${platformArch}/spawn-helper`;
-    if (
-      installer instanceof LocalUploadAssetInstaller &&
-      !(await installer.tryResolveLocalPath(["node-pty"], sourceRelativePath))
-    ) {
-      loggers.logWarn(
-        `WARNING: no node-pty spawn-helper for ${platformArch}. Terminal may fail to start.`,
-      );
-      loggers.logWarn(
-        `Run: node scripts/prepare-prebuilds.mjs to prepare mock-cdn release assets.`,
-      );
-      return;
-    }
-
-    loggers.log("installing node-pty spawn-helper...");
-    if (!decision.shouldDeploy) {
-      logDeployRequired({
-        loggers,
-        installer,
-        componentId: "node-pty",
-        reason: `remote file missing path=${REMOTE_NODE_PTY_SPAWN_HELPER_PATH}`,
-      });
-    }
-    await installer.installFile({
-      componentId: "node-pty",
-      sourceRelativePath,
-      remotePath: REMOTE_NODE_PTY_SPAWN_HELPER_PATH,
-      executable: true,
-    });
-    loggers.log("node-pty spawn-helper install done");
-  } else {
-    loggers.log("node-pty spawn-helper already exists, skip");
+  const sourceRelativePath = `zcode-pty/${platformArch}/zcode_pty.node`;
+  if (
+    installer instanceof LocalUploadAssetInstaller &&
+    !(await installer.tryResolveLocalPath(["zcode-pty"], sourceRelativePath))
+  ) {
+    loggers.logWarn(`WARNING: no zcode-pty addon for ${platformArch}. Terminal will not work.`);
+    loggers.logWarn(`Run: node scripts/prepare-prebuilds.mjs to prepare mock-cdn release assets.`);
+    return;
   }
+
+  logDeployRequired({
+    loggers,
+    installer,
+    componentId: "zcode-pty",
+    reason: decision.reason,
+  });
+  loggers.log("installing zcode-pty addon...");
+  // A single self-contained addon: no platform-specific spawn-helper follow-up (Rust has none).
+  await installer.installFile({
+    componentId: "zcode-pty",
+    sourceRelativePath,
+    remotePath: REMOTE_ZCODE_PTY_PATH,
+  });
+  await writeRemoteAssetComponentMeta(backend, {
+    id: "zcode-pty",
+    version: expectedVersion ?? "unknown",
+    platformArch,
+  });
+  loggers.log("zcode-pty install done");
 }
 
 async function shouldDeployVersionedComponent(

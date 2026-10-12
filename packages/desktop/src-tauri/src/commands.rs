@@ -2717,6 +2717,9 @@ pub fn spawn_host_discover_port(app: AppHandle) -> Result<u32, String> {
     let node = host_dir.join(if cfg!(windows) { "node.exe" } else { "node" });
     let entry = host_dir.join("standalone.js");
     let addon = host_dir.join("zcode_db.node");
+    // The Rust PTY addon — the ONLY terminal engine. The Host opens every integrated terminal
+    // through it via ZCODE_PTY_NATIVE; there is no JS node-pty path in the packaged bundle.
+    let pty_addon = host_dir.join("zcode_pty.node");
     let agent_entry = host_dir.join("agent").join("zcode.cjs");
     // 内置 Provider Release。由 `scripts/prepare-zcode-host-sidecar.mjs` 随 host 资源一起带进来；
     // 之前 Rust spawner 从不传 `ZCODE_BUILTIN_PROVIDER_CONFIG_FILE_PATH`，Host 就退到一个手写的
@@ -2725,7 +2728,7 @@ pub fn spawn_host_discover_port(app: AppHandle) -> Result<u32, String> {
     let provider_release = host_dir.join("provider").join("zcode-builtin.json");
     // The agent entry is passed to the Host as ZCODE_BUNDLED_AGENT_ENTRY; it was missing from this
     // check, so a broken bundle surfaced as a boot hang instead of an explicit "file missing".
-    for path in [&node, &entry, &addon, &agent_entry, &provider_release] {
+    for path in [&node, &entry, &addon, &pty_addon, &agent_entry, &provider_release] {
         if !path.exists() {
             return Err(format!("host sidecar file missing: {}", path.display()));
         }
@@ -2737,6 +2740,8 @@ pub fn spawn_host_discover_port(app: AppHandle) -> Result<u32, String> {
         .env("ZCODE_HOST_WS", "1")
         .env("ZCODE_WS_PORT", "0")
         .env("ZCODE_DB_NATIVE", &addon)
+        // The Rust terminal (PTY) addon the Host uses for every integrated terminal.
+        .env("ZCODE_PTY_NATIVE", &pty_addon)
         // Bundled Agent the packaged Host runs for storage-prep + sessions (resolver reads this).
         .env("ZCODE_BUNDLED_AGENT_ENTRY", &agent_entry)
         // Point the Host at the staged builtin provider release (see above).

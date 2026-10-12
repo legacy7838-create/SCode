@@ -30,7 +30,6 @@ export default defineConfig({
   noExternal: ["@zcode/shared", "@zcode/rpc", "@zcode/services"],
   define: SERVER_CLI_DEFINES,
   external: [
-    "node-pty",
     "ssh2",
     "yaml",
     "node-forge",
@@ -40,9 +39,8 @@ export default defineConfig({
     "combined-stream",
     "proxy-from-env",
     "follow-redirects",
-    "@lydell/node-pty-darwin-arm64",
-    "@lydell/node-pty-darwin-x64",
-    "@lydell/node-pty-linux-arm64",
-    "@lydell/node-pty-linux-x64",
+    // Rust native addons (zcode_db.node / zcode_pty.node) load by absolute path at runtime;
+    // esbuild has no .node loader and must not inline a platform-specific binary.
+    "*.node",
   ],
 });

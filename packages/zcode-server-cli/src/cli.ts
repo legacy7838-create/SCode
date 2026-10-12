@@ -265,7 +265,15 @@ async function runServe(
           env: {
             ...inheritedEnv,
             ...releaseWiring,
-            ...(runtimeRoot ? { ZCODE_SERVER_RUNTIME_ROOT: runtimeRoot } : {}),
+            // The release runtime stages the Rust terminal addon at `runtime/zcode-pty`; point the
+            // forked server-core (which runs the terminal adapter) at it. Dev/bundled runs resolve
+            // it via the adapter's workspace fallback, so only set this for a staged release root.
+            ...(runtimeRoot
+              ? {
+                  ZCODE_SERVER_RUNTIME_ROOT: runtimeRoot,
+                  ZCODE_PTY_NATIVE: join(runtimeRoot, "zcode-pty", "zcode_pty.node"),
+                }
+              : {}),
           },
           stdio: ["ignore", "ignore", "ignore", "ipc"],
         });

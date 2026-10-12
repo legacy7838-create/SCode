@@ -13,6 +13,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const desktopRoot = join(here, "..");
 const standalone = join(desktopRoot, "out/host/standalone.js");
 const dbAddon = join(desktopRoot, "zcode-db/zcode_db.node");
+const ptyAddon = join(desktopRoot, "zcode-pty/zcode_pty.node");
 const port = process.env.ZCODE_WS_PORT ?? "5199";
 
 function sleep(ms) {
@@ -24,6 +25,14 @@ function sleep(ms) {
 if (!existsSync(dbAddon)) {
   console.error(
     `[dev-host] zcode-db addon missing: ${dbAddon}\n  run: pnpm prepare:zcode-db-native`,
+  );
+  process.exit(1);
+}
+
+// Same fail-fast for the Rust terminal (PTY) addon: the host opens terminals via ZCODE_PTY_NATIVE.
+if (!existsSync(ptyAddon)) {
+  console.error(
+    `[dev-host] zcode-pty addon missing: ${ptyAddon}\n  run: pnpm prepare:zcode-pty-native`,
   );
   process.exit(1);
 }
@@ -44,7 +53,12 @@ await waitForBuild();
 const child = spawn(process.execPath, [standalone], {
   cwd: desktopRoot,
   stdio: "inherit",
-  env: { ...process.env, ZCODE_HOST_WS: "1", ZCODE_WS_PORT: port },
+  env: {
+    ...process.env,
+    ZCODE_HOST_WS: "1",
+    ZCODE_WS_PORT: port,
+    ZCODE_PTY_NATIVE: ptyAddon,
+  },
 });
 
 for (const signal of ["SIGINT", "SIGTERM"]) {

@@ -185,6 +185,8 @@ async function serve(options) {
       ZCODE_SERVER_HOST: options.host,
       ZCODE_SERVER_WORKSPACE: options.workspace,
       ZCODE_WEB_STATIC_ROOT: webRoot,
+      // Rust terminal addon staged next to the runtime root; the server adapter loads it from here.
+      ZCODE_PTY_NATIVE: join(root, "zcode-pty", "zcode_pty.node"),
       // 显式关闭 token 时必须清空继承值，否则 --no-token 仍会开启后端鉴权。
       ZCODE_SERVER_AUTH_TOKEN: token,
     },

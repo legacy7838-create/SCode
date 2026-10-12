@@ -96,9 +96,9 @@ const REMOTE_COMPONENT_MOUNT_RULES: Record<string, ComponentMountRule> = {
     platformScoped: true,
     resolveExpectedMount: (platformArch) => `node/${platformArch}`,
   },
-  "node-pty": {
+  "zcode-pty": {
     platformScoped: true,
-    resolveExpectedMount: (platformArch) => `node-pty/${platformArch}`,
+    resolveExpectedMount: (platformArch) => `zcode-pty/${platformArch}`,
   },
   glm: {
     platformScoped: true,

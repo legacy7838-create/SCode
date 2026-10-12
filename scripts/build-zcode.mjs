@@ -7,7 +7,7 @@ import { resolve } from "node:path";
 
 import {
   copyRuntimeNodeModules,
-  patchNodePtyPrebuilds,
+  stageZcodePtyAddon,
   stageTuiRuntime,
 } from "./zcode-distribution/assets.mjs";
 import { installScriptSource } from "./zcode-distribution/installer.mjs";
@@ -194,7 +194,7 @@ async function stageZCodePackage({ packageRoot, version }) {
 
   await stageTuiRuntime(packageRoot);
   await copyRuntimeNodeModules(packageRoot);
-  await patchNodePtyPrebuilds(packageRoot);
+  await stageZcodePtyAddon(packageRoot);
 
   await mkdir(resolve(packageRoot, "bin"), {
     recursive: true,

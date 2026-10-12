@@ -101,7 +101,7 @@ function throwIfRemoteConnectAborted(signal: AbortSignal | undefined): void {
  *
  * Steps:
  * 1. detect() → { platform, arch }
- * 2. Deploy if needed (upload node + server bundle + node-pty)
+ * 2. Deploy if needed (upload node + server bundle + zcode-pty)
  * 3. exec server command
  * 4. Handshake (read hello, send ack)
  * 5. Wrap stdio → ISocket → SocketProtocol → ChannelClient → RemoteServiceAccess
@@ -363,6 +363,9 @@ function buildRemoteServerCommand(
   const envParts = [
     `${SERVICE_AUTHORITY_MODE_ENV}="desktop-attached-remote"`,
     'ZCODE_SERVER_RUNTIME_ROOT="$HOME/.zcode/server"',
+    // Point the remote host's Rust terminal adapter at the deployed zcode_pty.node addon
+    // (same `~/.zcode/server` root the deploy stage uploads it to). No JS PTY path exists.
+    'ZCODE_PTY_NATIVE="$HOME/.zcode/server/zcode-pty/zcode_pty.node"',
   ];
   for (const [key, value] of Object.entries(
     pickRemoteRuntimeEnv(options?.remoteRuntimeEnv ?? {}),

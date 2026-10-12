@@ -29,7 +29,9 @@ function createSharedDefines() {
 
 export const SERVER_HTTP_EXTERNAL_DEPENDENCIES = [
   "ssh2",
-  "node-pty",
+  // Rust native addons (zcode_db.node / zcode_pty.node) load by absolute path at runtime;
+  // esbuild has no .node loader and must not inline a platform-specific binary.
+  "*.node",
   "undici",
   "axios",
   "form-data",
@@ -65,7 +67,7 @@ export default defineConfig({
     "@zcode/services/node",
     "@zcode/client",
   ],
-  // ssh2 / node-pty 含 .node native addon，不能被 esbuild 处理。
+  // ssh2 与 Rust native addon（zcode_pty.node 等）含 .node，不能被 esbuild 处理。
   // undici / axios 这类 CJS 依赖被内联进 ESM bundle 后，运行时会走到
   // require("assert") / require("util") / require("url") 等动态 require，Node 的 ESM wrapper 下会直接报 Dynamic require not supported。
   // HTTP server 场景保留为外部依赖，交给 Node 原生加载；remote 单文件 bundle 仍由 build-remote.ts 负责内联。

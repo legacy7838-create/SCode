@@ -1,7 +1,7 @@
 export const REMOTE_RESOURCE_PACKAGE_IDS = [
   "server-bundle",
   "node-runtime",
-  "node-pty",
+  "zcode-pty",
   "glm",
   "bfs",
   "ripgrep",
@@ -13,7 +13,7 @@ export type RemoteResourcePackageId = (typeof REMOTE_RESOURCE_PACKAGE_IDS)[numbe
 export const ACTIVE_REMOTE_RESOURCE_PACKAGE_IDS = [
   "server-bundle",
   "node-runtime",
-  "node-pty",
+  "zcode-pty",
   "glm",
   "bfs",
   "ripgrep",

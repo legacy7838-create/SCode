@@ -1,0 +1,158 @@
+name: zcode-pty-native
+
+# Build/stage the Rust `zcode_pty.node` terminal addon for every shipped target, run the crate's
+# own cargo tests, and enforce the end-state that nothing falls back to JS `node-pty` in the
+# product. This mirrors zcode-db-native.yml: it is the ENFORCEMENT of the Rust-native terminal
+# cutover. The integrated terminal is 100% Rust (portable-pty); there is no JS PTY path shipped.
+#
+# TRIGGER: manual only (Actions → "Run workflow"). The per-PR build/test enforcement lives in
+# platform-build-and-test.yml; this is the full multi-target addon matrix.
+
+on:
+  workflow_dispatch:
+
+env:
+  RUST_LOG: warn
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Cross-OS native addon build + smoke `--check`, one artifact per target.
+  #    Each OS builds on its own native runner: a N-API addon cannot be safely
+  #    cross-compiled+verified from Linux alone (macOS needs osxcross+Apple SDK,
+  #    Windows needs MSVC), so a wrong-arch .node staged here would crash the
+  #    installed app. `--check` actually require()s the addon and asserts the
+  #    createTerminal export, catching wrong-arch/stale-ABI.
+  # ---------------------------------------------------------------------------
+  addon-prep:
+    name: addon ${{ matrix.label }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: linux-x64
+            os: ubuntu-24.04
+            ZCODE_TARGET_OS: linux
+            ZCODE_TARGET_ARCH: x64
+            artifact: zcode_pty-linux-x64.node
+          - label: darwin-arm64
+            os: macos-14
+            ZCODE_TARGET_OS: darwin
+            ZCODE_TARGET_ARCH: arm64
+            artifact: zcode_pty-darwin-arm64.node
+          - label: darwin-x64
+            os: macos-13
+            ZCODE_TARGET_OS: darwin
+            ZCODE_TARGET_ARCH: x64
+            artifact: zcode_pty-darwin-x64.node
+          - label: win32-x64
+            os: windows-latest
+            ZCODE_TARGET_OS: win32
+            ZCODE_TARGET_ARCH: x64
+            artifact: zcode_pty-win32-x64.node
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - name: Show Rust toolchain
+        run: rustc -vV
+      - name: pnpm install
+        run: pnpm install --frozen-lockfile
+      - name: Build + stage zcode_pty.node
+        env:
+          ZCODE_TARGET_OS: ${{ matrix.ZCODE_TARGET_OS }}
+          ZCODE_TARGET_ARCH: ${{ matrix.ZCODE_TARGET_ARCH }}
+        run: node packages/desktop/scripts/prepare-zcode-pty-native.mjs
+      - name: Smoke-check addon loads (require + createTerminal)
+        env:
+          ZCODE_TARGET_OS: ${{ matrix.ZCODE_TARGET_OS }}
+          ZCODE_TARGET_ARCH: ${{ matrix.ZCODE_TARGET_ARCH }}
+        run: node packages/desktop/scripts/prepare-zcode-pty-native.mjs --check
+      - uses: actions/upload-artifact@v5
+        with:
+          name: ${{ matrix.artifact }}
+          path: packages/desktop/zcode-pty/zcode_pty.node
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # 2. Desktop build / package consumes the linux addon: the addon MUST exist and
+  #    stay EXTERNAL (never inlined into the JS host bundle). `needs: addon-prep`
+  #    enforces "native-addon prep runs BEFORE the desktop build/package job".
+  # ---------------------------------------------------------------------------
+  desktop-build:
+    name: desktop build (addon external)
+    needs: addon-prep
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - name: pnpm install
+        run: pnpm install --frozen-lockfile
+      - name: Download linux-x64 addon
+        uses: actions/download-artifact@v5
+        with:
+          name: zcode_pty-linux-x64.node
+          path: dl-addon
+      - name: Restore addon to staged path
+        run: |
+          set -euo pipefail
+          src="$(find dl-addon -type f -name 'zcode_pty.node' | head -n1)"
+          test -n "$src"
+          cp "$src" packages/desktop/zcode-pty/zcode_pty.node
+          node packages/desktop/scripts/prepare-zcode-pty-native.mjs --check
+      - name: Build host/scheduler bundle (tsup)
+        run: pnpm --filter @zcode/desktop exec tsup
+      - name: Assert zcode_pty.node is NOT inlined into the JS host bundle
+        run: |
+          set -euo pipefail
+          if find packages/desktop/out -type f -name '*.node' | grep -q .; then
+            echo "FAIL: a .node native module was emitted inside the JS bundle output" >&2
+            exit 1
+          fi
+          echo "OK: no native module inlined into packages/desktop/out"
+
+  # ---------------------------------------------------------------------------
+  # 3. The terminal cutover regression gate.
+  #    - crate unit tests + clippy (-D warnings)   [authoritative Rust-behavior signal]
+  #    - 0 node-pty fallback guard: the PRODUCT src trees MUST contain no node-pty.
+  #      This is the PERMANENT guard for the "0 JS fallback" requirement: any future
+  #      reintroduction of node-pty into services/server/server-cli/shared src fails CI.
+  #      (node-pty remains a root devDependency ONLY so scripts/zcode-distribution-smoke
+  #      can drive the packaged CLI under a real TTY; that test harness is out of scope.)
+  # ---------------------------------------------------------------------------
+  pty-gate:
+    name: pty crate tests + node-pty regression gate
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - name: pnpm install
+        run: pnpm install --frozen-lockfile
+      - name: Stage zcode_pty.node (linux-x64) for crate tests
+        run: node packages/desktop/scripts/prepare-zcode-pty-native.mjs
+      - name: Crate unit tests
+        run: cargo test --lib
+        working-directory: packages/desktop/zcode-pty
+      - name: Crate clippy (deny warnings)
+        run: cargo clippy --all-targets -- -D warnings
+        working-directory: packages/desktop/zcode-pty
+      - name: 0 node-pty fallback guard (product src must be node-pty-free)
+        run: |
+          set -euo pipefail
+          if grep -rnE 'node-pty' \
+            packages/services/src \
+            packages/server/src \
+            packages/zcode-server-cli/src \
+            packages/shared/src; then
+            echo "FAIL: node-pty reintroduced into product src — the '0 JS fallback' terminal cutover regressed." >&2
+            exit 1
+          fi
+          echo "OK: no node-pty in product src (terminal is 100% Rust)"

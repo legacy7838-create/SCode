@@ -157,6 +157,12 @@ jobs:
           run hard "tauri rust (src-tauri)"    "pnpm test:tauri:rust"
           run hard "db cargo test --lib"       "cd packages/desktop/zcode-db && cargo test --lib ${VERBOSE_FLAG}"
           run hard "db addon --check"          "node packages/desktop/scripts/prepare-zcode-db-native.mjs --check"
+          # Rust terminal addon: crate tests + loadable --check, and the permanent "0 JS fallback"
+          # guard. The terminal backend is 100% Rust (portable-pty); node-pty must never reappear
+          # in product src (it survives only as a root devDependency for the packaged-CLI TTY smoke test).
+          run hard "pty cargo test --lib"      "cd packages/desktop/zcode-pty && cargo test --lib ${VERBOSE_FLAG}"
+          run hard "pty addon --check"         "node packages/desktop/scripts/prepare-zcode-pty-native.mjs --check"
+          run hard "0 node-pty fallback guard" "! grep -rnE 'node-pty' packages/services/src packages/server/src packages/zcode-server-cli/src packages/shared/src"
           # Services unit tests are not wired to a repo script; run via tsx. They pass (module
           # resolution + addon available via the dev-tauri-prepare staging above). Reported as
           # advisory so a future env quirk never blocks the platform signal. The packages/ui tests
@@ -192,6 +198,7 @@ jobs:
           # clippy stays advisory: it needs the full cargo dep graph and is slow, so an env-only
           # failure should not mask the platform build signal.
           run soft "db clippy -D warnings"     "cd packages/desktop/zcode-db && cargo clippy --all-targets -- -D warnings"
+          run soft "pty clippy -D warnings"    "cd packages/desktop/zcode-pty && cargo clippy --all-targets -- -D warnings"
           # NOTE: `pnpm knip` is intentionally NOT run here. The repo's knip.json is an unfinished
           # baseline (only 4 workspaces declare entry points), so on a clean checkout it reports
           # ~454 "unused exports" (cross-package barrel re-exports) and flags genuinely-used deps it
@@ -283,9 +290,10 @@ jobs:
         run: node scripts/build-desktop-agent-cli.mjs
 
       # Package the Local Host as a self-contained sidecar (bundled node + ESM host + the RUST
-      # zcode_db.node addon) into src-tauri/resources/host, so the packaged app can boot its real
-      # backend instead of the echo PoC. DB stays Rust (loaded via ZCODE_DB_NATIVE).
-      - name: "[host-sidecar] stage packaged Local Host (bundled node + Rust DB addon)"
+      # zcode_db.node DB addon and zcode_pty.node terminal addon) into src-tauri/resources/host, so
+      # the packaged app can boot its real backend instead of the echo PoC. DB + terminal both stay
+      # Rust (loaded via ZCODE_DB_NATIVE / ZCODE_PTY_NATIVE; no JS node-pty path).
+      - name: "[host-sidecar] stage packaged Local Host (bundled node + Rust DB + PTY addons)"
         working-directory: packages/desktop
         run: node scripts/prepare-zcode-host-sidecar.mjs
 
@@ -307,6 +315,7 @@ jobs:
           OUT=/tmp/hostboot.out
           ZCODE_HOST_WS=1 ZCODE_WS_PORT=0 \
             ZCODE_DB_NATIVE="$PWD/zcode_db.node" \
+            ZCODE_PTY_NATIVE="$PWD/zcode_pty.node" \
             ZCODE_BUNDLED_AGENT_ENTRY="$PWD/agent/zcode.cjs" \
             ./node standalone.js >"$OUT" 2>/tmp/hostboot.err &
           PID=$!

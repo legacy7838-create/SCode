@@ -266,12 +266,13 @@ async function main() {
   assert(replayed.status === 401, `replayed ticket must be 401, got ${replayed.status}`);
   log("ws contracts ok (replayable upgrade, host gate, one-time ticket)");
 
-  // linux 的 pty.node 走 @lydell 补齐路径（打包时特殊处理），必须在真实目标平台验证可加载。
-  log("verify node-pty spawns a real pty on remote");
+  // The Rust terminal addon (zcode_pty.node) is platform-specific; verify it loads and spawns a
+  // real PTY on the actual target host. No node-pty path remains to check.
+  log("verify zcode-pty spawns a real pty on remote");
   await ssh(
-    "cd /root/zcode-server/runtime && ./node -e \"const pty=require('node-pty');const p=pty.spawn('/bin/echo',['pty-ok'],{cols:80,rows:24});let o='';p.onData(d=>o+=d);p.onExit(()=>{process.exit(o.includes('pty-ok')?0:1)})\"",
+    `cd /root/zcode-server/runtime && ./node -e "const a=require('./zcode-pty/zcode_pty.node');let o='';a.createTerminal({id:'0',cols:80,rows:24},(d)=>{o+=d;},()=>{process.exit(o.includes('pty-ok')?0:1);});setTimeout(()=>a.writeTerminal('0','echo pty-ok\\\\n'),200);setTimeout(()=>a.writeTerminal('0','exit\\\\n'),500);setTimeout(()=>process.exit(2),3000);"`,
   );
-  log("node-pty ok");
+  log("zcode-pty ok");
 
   log("verify remote lifecycle status/stop");
   const { stdout: statusOutput } = await ssh("/root/zcode-server/bin/zcode status --json");

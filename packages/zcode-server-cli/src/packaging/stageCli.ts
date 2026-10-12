@@ -155,6 +155,31 @@ async function ensureAgentBundle(repoRoot: string, skipBuild: boolean): Promise<
   return bundlePath;
 }
 
+/**
+ * Resolve the target-platform Rust terminal addon (zcode_pty.node). CI builds each target on a
+ * native runner, so a matching-host build can invoke the cargo prepare step on demand; a cross
+ * target must already be staged by that runner's prepare step. Never fall back to a JS PTY.
+ */
+async function ensureZcodePtyAddon(repoRoot: string, target: ServerTarget): Promise<string> {
+  const addonPath = join(repoRoot, "packages/desktop/zcode-pty/zcode_pty.node");
+  if (await pathExists(addonPath)) return addonPath;
+  if (target !== currentServerTarget()) {
+    throw new Error(
+      `Rust terminal addon missing for ${target}: ${addonPath}. Build it on a ${target} runner via pnpm prepare:zcode-pty-native (cross-arch N-API builds are not supported from this host).`,
+    );
+  }
+  log("zcode-pty addon missing on matching host, building via cargo ...");
+  await runCommand(
+    process.execPath,
+    [join(repoRoot, "packages/desktop/scripts/prepare-zcode-pty-native.mjs")],
+    join(repoRoot, "packages/desktop"),
+  );
+  if (!(await pathExists(addonPath))) {
+    throw new Error(`Rust terminal addon still missing after build: ${addonPath}`);
+  }
+  return addonPath;
+}
+
 export async function resolveNativeToolsDir(
   repoRoot: string,
   target: ServerTarget,
@@ -236,9 +261,10 @@ async function main(): Promise<void> {
   const appVersion = (
     JSON.parse(await readFile(join(repoRoot, "package.json"), "utf8")) as { version: string }
   ).version;
-  const [agentBundlePath, nodeBinaryPath] = await Promise.all([
+  const [agentBundlePath, nodeBinaryPath, ptyAddonPath] = await Promise.all([
     ensureAgentBundle(repoRoot, argv.includes("--skip-agent-build")),
     ensureNodeBinary(repoRoot, target),
+    ensureZcodePtyAddon(repoRoot, target),
   ]);
   const [nativeToolsDir, officialPluginsDir, workspacePackageDirs] = await Promise.all([
     resolveNativeToolsDir(repoRoot, target),
@@ -252,6 +278,7 @@ async function main(): Promise<void> {
     distDir,
     agentBundlePath,
     nodeBinaryPath,
+    ptyAddonPath,
     notices: {
       thirdParty: thirdParty.toString("utf8"),
       node: nodeNotice.bytes.toString("utf8"),
