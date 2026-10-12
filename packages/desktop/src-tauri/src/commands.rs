@@ -71,6 +71,10 @@ use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+// `process_group(0)` puts the spawned Host in its own process group so the Agent child it spawns
+// (`zcode-cli`) lands in the same group; app-exit then reaps both with a single `kill(-pgid, ..)`.
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -2550,6 +2554,48 @@ pub fn show_task_notification(
 #[derive(Default)]
 pub struct SidecarRegistry(Mutex<HashMap<u32, CommandChild>>);
 
+/// Registry of live packaged-Host child pids (each is also its own process-group id, because the
+/// Host is spawned with `process_group(0)`).
+///
+/// The Host is launched with `std::process::Command` (not the shell-plugin `CommandChild`), and on
+/// the success path the `Child` handle is dropped — which DETACHES the process rather than killing
+/// it. Without explicit reaping, closing the app leaves the Host (`node standalone.js`) and its
+/// Agent (`zcode-cli`) reparented to init as headless orphans that also pin the AppImage FUSE mount.
+/// Recording the pid here lets [`reap_all_hosts`] terminate the whole group on app exit.
+#[derive(Default)]
+pub struct HostRegistry(Mutex<Vec<u32>>);
+
+/// Terminate every tracked Host process group. Called from the Tauri `RunEvent::ExitRequested`
+/// handler so no Host/Agent survives the GUI. Best-effort and idempotent: an already-exited pid
+/// yields `ESRCH`, which is ignored.
+pub fn reap_all_hosts(app: &AppHandle) {
+    let pids = match app.state::<HostRegistry>().0.lock() {
+        Ok(mut guard) => std::mem::take(&mut *guard),
+        // A poisoned lock still holds valid pids; recover them so we never leak children on exit.
+        Err(poisoned) => std::mem::take(&mut *poisoned.into_inner()),
+    };
+    for pid in pids {
+        #[cfg(unix)]
+        {
+            // Negative pid == the whole process group (Host + its Agent children), since the Host
+            // was spawned with `process_group(0)` (pgid == child pid).
+            unsafe {
+                libc::kill(-(pid as i32), libc::SIGTERM);
+            }
+        }
+        #[cfg(windows)]
+        {
+            // `/T` kills the process tree (Host + Agent); `/F` forces it. Fire-and-forget: the app
+            // is exiting, so we do not block on taskkill's exit status.
+            let _ = Command::new("taskkill")
+                .args(["/PID", &pid.to_string(), "/T", "/F"])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn();
+        }
+    }
+}
+
 /// Spawn the trivial `zcode-echo` sidecar so the renderer can drive a loopback WebSocket round-trip.
 ///
 /// Part of the sidecar-runtime PoC (see `../tauri-port/SIDECAR-PACKAGING.md` §4 and §7). Resolves the
@@ -2734,7 +2780,8 @@ pub fn spawn_host_discover_port(app: AppHandle) -> Result<u32, String> {
         }
     }
 
-    let mut child = Command::new(&node)
+    let mut command = Command::new(&node);
+    command
         .arg(&entry)
         .current_dir(&host_dir)
         .env("ZCODE_HOST_WS", "1")
@@ -2748,7 +2795,12 @@ pub fn spawn_host_discover_port(app: AppHandle) -> Result<u32, String> {
         .env("ZCODE_BUILTIN_PROVIDER_CONFIG_FILE_PATH", &provider_release)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    // Give the Host its own process group so [`reap_all_hosts`] can kill the Host + its Agent child
+    // (`zcode-cli`) with one signal on app exit; otherwise both orphan under init when the GUI quits.
+    #[cfg(unix)]
+    command.process_group(0);
+    let mut child = command
         .spawn()
         .map_err(|e| format!("spawn packaged host sidecar: {e}"))?;
 
@@ -2830,7 +2882,14 @@ pub fn spawn_host_discover_port(app: AppHandle) -> Result<u32, String> {
     }
 
     match rx.recv_timeout(HOST_READY_TIMEOUT) {
-        Ok(Ok(port)) => Ok(port),
+        Ok(Ok(port)) => {
+            // Track the Host pid (== its process-group id) so app-exit reaps it + its Agent child
+            // instead of leaving them orphaned under init after the `Child` handle is dropped here.
+            if let Ok(mut guard) = app.state::<HostRegistry>().0.lock() {
+                guard.push(child.id());
+            }
+            Ok(port)
+        }
         Ok(Err(tail)) => {
             let _ = child.kill();
             Err(format!(

@@ -37,6 +37,11 @@ tauri-plugin-clipboard-manager = "2"
 # Spawn the Local-Host / echo sidecar as an external executable for the sidecar-runtime PoC via
 # `tauri_plugin_shell::ShellExt` (`app.shell().sidecar(..)`). See ../tauri-port/SIDECAR-PACKAGING.md §4.
 tauri-plugin-shell = "2"
+# Process-group signalling (kill(-pgid, SIGTERM)) so app-exit reaps the Host sidecar AND its
+# Agent child (`zcode-cli`), which otherwise reparent to init and orphan headless after the GUI
+# exits. Unix-only use; Windows reaps via `taskkill /T` and does not need this.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [profile.release]
 codegen-units = 1

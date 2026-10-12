@@ -66,6 +66,9 @@ fn main() {
         // Sidecar child registry for the slice-20 lifecycle commands (spawn retains a child by pid,
         // kill reaps it). Managed exactly once — a second `.manage` of the same type would panic.
         .manage(commands::SidecarRegistry::default())
+        // Packaged-Host child pids (each its own process group) so `RunEvent::ExitRequested` reaps
+        // the Host + its Agent child instead of orphaning them under init when the GUI exits.
+        .manage(commands::HostRegistry::default())
         // Last-set zoom factor per window, so slice 26 can read the zoom level back (Tauri has no
         // zoom getter). Distinct managed type from SidecarRegistry, so a second `.manage` is fine.
         .manage(commands::ZoomRegistry::default())
@@ -163,6 +166,13 @@ fn main() {
             commands::sync_window_tabs,
             commands::activate_or_set_workspace
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running the ZCode Tauri shell");
+        .build(tauri::generate_context!())
+        .expect("error while building the ZCode Tauri shell")
+        .run(|app_handle, event| {
+            // Reap the packaged Host + its Agent child on exit so they never linger headless
+            // (pinning the AppImage FUSE mount) after the GUI process is gone.
+            if let tauri::RunEvent::ExitRequested { .. } = event {
+                commands::reap_all_hosts(app_handle);
+            }
+        });
 }

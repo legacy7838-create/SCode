@@ -5368,6 +5368,7 @@ dependencies = [
 name = "zcode-desktop-tauri"
 version = "0.0.0"
 dependencies = [
+ "libc",
  "serde",
  "serde_json",
  "sys-locale",
