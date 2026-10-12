@@ -18,6 +18,8 @@
     "check:zcode-db-native": "node scripts/prepare-zcode-db-native.mjs --check",
     "prepare:zcode-pty-native": "node scripts/prepare-zcode-pty-native.mjs",
     "check:zcode-pty-native": "node scripts/prepare-zcode-pty-native.mjs --check",
+    "strip:appimage-libs": "cargo build --release --manifest-path zcode-appimage-strip/Cargo.toml && zcode-appimage-strip/target/release/zcode-appimage-strip",
+    "check:appimage-libs": "cargo build --release --manifest-path zcode-appimage-strip/Cargo.toml && zcode-appimage-strip/target/release/zcode-appimage-strip --check",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix"
   },

@@ -175,7 +175,18 @@ fn resolve_fallback_utf8_locale(env: &BTreeMap<String, String>) -> String {
 }
 
 /// True when an `LD_LIBRARY_PATH`/`LD_PRELOAD` entry points into the running AppImage's mounted
-/// squashfs — either under `$APPDIR` or the `/tmp/.mount_*` signature — and so shadows a system lib.
+/// squashfs and so shadows a system lib. Two independent signals, in order:
+///
+/// 1. The entry is `$APPDIR` itself or lives under it. This is the primary signal and the only one
+///    needed when the AppImage runtime exports `APPDIR` (the normal case).
+/// 2. Fallback for extract-and-run setups where `APPDIR` is absent from the child env: the AppImage
+///    runtime always mounts the AppDir at a directory named `.mount_<name><random>` **directly under
+///    the temp dir** (`$TMPDIR`, default `/tmp`). Match on that layout — a `.mount_*` basename whose
+///    parent is the temp dir — instead of a loose substring, so a legitimate host path that merely
+///    contains `.mount_` (e.g. `/opt/.mount_backup/lib`) is never stripped.
+///
+/// Both sides are canonicalized when possible so `/tmp` ↔ `/var/tmp`-style symlink indirection does
+/// not defeat the parent comparison; on failure the literal path is used.
 fn is_appimage_mount_entry(entry: &str, appdir: &str) -> bool {
     let trimmed = entry.trim();
     if trimmed.is_empty() {
@@ -184,7 +195,39 @@ fn is_appimage_mount_entry(entry: &str, appdir: &str) -> bool {
     if !appdir.is_empty() && (trimmed == appdir || trimmed.starts_with(&format!("{appdir}/"))) {
         return true;
     }
-    trimmed.contains("/.mount_")
+    is_appimage_mount_root(trimmed)
+}
+
+/// True when `path` is, or lives under, an AppImage mount root: some ancestor directory has a
+/// basename starting with `.mount_` whose parent resolves to the temp directory the runtime mounts
+/// under. Walking ancestors handles both the root itself (`/tmp/.mount_X`) and entries beneath it
+/// (`/tmp/.mount_X/usr/lib`), covering the extract-and-run case where `$APPDIR` is not exported.
+fn is_appimage_mount_root(path: &str) -> bool {
+    let tmp = std::env::var("TMPDIR")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or_else(|| "/tmp".to_string());
+    let tmp = canonical_or_original(Path::new(&tmp));
+    let mut current = Some(canonical_or_original(Path::new(path)));
+    while let Some(dir) = current {
+        let is_mount = dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(|n| n.starts_with(".mount_"))
+            .unwrap_or(false)
+            && dir.parent() == Some(tmp.as_path());
+        if is_mount {
+            return true;
+        }
+        current = dir.parent().map(Path::to_path_buf);
+    }
+    false
+}
+
+/// Canonicalize `path` (resolving symlinks) or return it unchanged when that fails (e.g. the path
+/// does not exist, as is typical for an `LD_LIBRARY_PATH` entry that was already removed).
+fn canonical_or_original(path: &Path) -> std::path::PathBuf {
+    std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
 /// Strip AppImage-mount entries from the child shell's `LD_LIBRARY_PATH` so host binaries launched
@@ -329,6 +372,68 @@ mod tests {
         assert_eq!(
             env.get("LD_LIBRARY_PATH").map(String::as_str),
             Some("/usr/lib:/opt/lib")
+        );
+    }
+
+    /// The mount root the code would recognise: `.mount_<name>` directly under the temp dir. Built
+    /// from `std::env::temp_dir()` so the test agrees with the implementation's own temp resolution.
+    fn mount_root(name: &str) -> String {
+        std::env::temp_dir()
+            .join(format!(".mount_{name}"))
+            .to_string_lossy()
+            .into_owned()
+    }
+
+    #[test]
+    fn strips_mount_entry_when_appdir_is_absent() {
+        // Extract-and-run: APPDIR not exported, so detection must fall back to the mount layout.
+        let mut env = BTreeMap::new();
+        env.insert(
+            "LD_LIBRARY_PATH".to_string(),
+            format!("{}/usr/lib:/usr/lib", mount_root("ZCode_abc")),
+        );
+        sanitize_appimage_library_path(&mut env);
+        assert_eq!(
+            env.get("LD_LIBRARY_PATH").map(String::as_str),
+            Some("/usr/lib")
+        );
+    }
+
+    #[test]
+    fn strips_the_mount_root_itself() {
+        let mut env = BTreeMap::new();
+        env.insert("LD_LIBRARY_PATH".to_string(), mount_root("ZCode_abc"));
+        sanitize_appimage_library_path(&mut env);
+        assert!(!env.contains_key("LD_LIBRARY_PATH"));
+    }
+
+    #[test]
+    fn keeps_legit_paths_that_merely_contain_the_mount_token() {
+        // These are ordinary host directories; only a real temp-dir mount root must be dropped.
+        let mut env = BTreeMap::new();
+        env.insert(
+            "LD_LIBRARY_PATH".to_string(),
+            "/usr/lib:/opt/.mount_backup/lib:/home/user/.mount_notes/lib".to_string(),
+        );
+        sanitize_appimage_library_path(&mut env);
+        assert_eq!(
+            env.get("LD_LIBRARY_PATH").map(String::as_str),
+            Some("/usr/lib:/opt/.mount_backup/lib:/home/user/.mount_notes/lib")
+        );
+    }
+
+    #[test]
+    fn keeps_a_mount_named_dir_outside_the_temp_dir() {
+        // `.mount_*` basename but not under the temp dir: not an AppImage mount, must be kept.
+        let mut env = BTreeMap::new();
+        env.insert(
+            "LD_LIBRARY_PATH".to_string(),
+            "/var/lib/.mount_evil/lib".to_string(),
+        );
+        sanitize_appimage_library_path(&mut env);
+        assert_eq!(
+            env.get("LD_LIBRARY_PATH").map(String::as_str),
+            Some("/var/lib/.mount_evil/lib")
         );
     }
 }

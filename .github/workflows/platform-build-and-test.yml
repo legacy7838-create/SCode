@@ -359,9 +359,10 @@ jobs:
 
       # Tauri/linuxdeploy bundles libcrypto.so.3 (the build host's OpenSSL) into the AppImage and
       # force-prepends it to LD_LIBRARY_PATH, so anything the app spawns (git/eza/openssl) loads the
-      # older libcrypto and fails with `version 'OPENSSL_3.6.0' not found`. Strip that shadowing
-      # library and repack in place. `appimagetool` ships its own runtime+mksquashfs; extract-and-run
-      # avoids needing libfuse2 on the runner. See scripts/strip-appimage-system-libs.mjs.
+      # older libcrypto and fails with `version 'OPENSSL_3.6.0' not found`. The strip tool removes
+      # that shadowing library (behind a host-superset safety gate) and repacks in place.
+      # `appimagetool` ships its own runtime+mksquashfs; extract-and-run avoids needing libfuse2 on
+      # the runner. The tool is Rust (crate `zcode-appimage-strip`), not JS.
       - name: "[appimage] install appimagetool (pinned) + squashfs tools"
         if: matrix.bundles == 'appimage'
         run: |
@@ -375,15 +376,20 @@ jobs:
           chmod +x /usr/local/bin/appimagetool
           APPIMAGE_EXTRACT_AND_RUN=1 /usr/local/bin/appimagetool --version
 
+      - name: "[appimage] build the strip tool (Rust)"
+        if: matrix.bundles == 'appimage'
+        working-directory: packages/desktop
+        run: cargo build --release --manifest-path zcode-appimage-strip/Cargo.toml
+
       - name: "[appimage] strip shadowing system libs (repack in place)"
         if: matrix.bundles == 'appimage'
         working-directory: packages/desktop
-        run: node scripts/strip-appimage-system-libs.mjs
+        run: zcode-appimage-strip/target/release/zcode-appimage-strip
 
       - name: "[appimage] verify stripped AppImage (libs gone, host sidecar intact)"
         if: matrix.bundles == 'appimage'
         working-directory: packages/desktop
-        run: node scripts/strip-appimage-system-libs.mjs --check
+        run: zcode-appimage-strip/target/release/zcode-appimage-strip --check
 
       - name: "[bundle] list produced artifacts"
         if: always()
