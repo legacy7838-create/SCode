@@ -19,14 +19,14 @@ name: platform-build-and-test
 # TRIGGER: manual (workflow_dispatch) — always; `push` — tests + build; `pull_request` — tests only
 # (the heavy per-OS app bundle is skipped on PRs; force it with run_build on a dispatch).
 
-# TENTATIVE SCOPE — Linux-only for now.
-# The `build` job matrix is deliberately restricted to linux-x64/AppImage: it is the only bundle
-# currently wanted, and a Windows MSI needs an Authenticode certificate + a macOS DMG needs
-# Apple signing/notarisation secrets that this repo does not have configured. Shipping unsigned
-# artifacts would be worse than shipping none.
-# To re-enable a platform: re-add its matrix entry (os / bundles / bundle_glob / artifact_name)
-# AND supply the matching signing secrets; `runner.os == 'Linux'` guards on the WebKitGTK step
-# already keep the Linux-only apt dependency from leaking onto other runners.
+# CURRENT SCOPE — linux-x64 AppImage + windows-x64 **portable** (no installer).
+# Windows is built as a portable folder (ZCode.exe + host/) precisely because that needs no
+# Authenticode certificate. macOS is NOT built or tested anywhere in this repo's CI (all darwin
+# matrix entries were removed), even though the addons still ship for darwin — see the notes in
+# zcode-db-native.yml / zcode-pty-native.yml.
+# A Windows *installer* (MSI/NSIS) would still need the signing secrets this repo does not have;
+# to add one, re-add a matrix entry with `bundles: msi` and supply `TAURI_SIGNING_*`/cert secrets.
+# `runner.os == 'Linux'` guards on the WebKitGTK step keep the Linux-only apt deps off other runners.
 on:
   workflow_dispatch:
     inputs:
@@ -237,8 +237,20 @@ jobs:
           - label: linux-x64
             os: ubuntu-24.04
             bundles: appimage
+            portable: false
             bundle_glob: packages/desktop/src-tauri/target/release/bundle/appimage/*.AppImage
             artifact_name: zcode-appimage-linux-x64
+          # Portable Windows build: NO installer. `tauri build --no-bundle` leaves ZCode.exe in
+          # target/release, and tauri-utils resolves resource_dir() to THE EXE'S OWN DIRECTORY on
+          # Windows (tauri-utils/src/platform.rs: `if cfg!(target_os = "windows") { return exe_dir }`),
+          # so the folder the user double-clicks is ZCode.exe + host/ beside it. Needs no Authenticode
+          # certificate, which is the only reason Windows was previously excluded from this matrix.
+          - label: windows-x64-portable
+            os: windows-latest
+            bundles: ""
+            portable: true
+            bundle_glob: packages/desktop/zcode-portable-win-x64.zip
+            artifact_name: zcode-portable-win-x64
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -313,11 +325,17 @@ jobs:
         run: |
           set -uo pipefail
           OUT=/tmp/hostboot.out
+          # Git Bash on Windows has /tmp, but the staged runtime is node.exe there, so pick whichever
+          # name actually exists instead of hardcoding ./node (which only ever ran on Linux/macOS).
+          if [ -f ./node ]; then NODE_BIN=./node; else NODE_BIN=./node.exe; fi
+          if [ ! -f "$NODE_BIN" ]; then
+            echo "::error::neither ./node nor ./node.exe is staged in resources/host"; ls -la; exit 1
+          fi
           ZCODE_HOST_WS=1 ZCODE_WS_PORT=0 \
             ZCODE_DB_NATIVE="$PWD/zcode_db.node" \
             ZCODE_PTY_NATIVE="$PWD/zcode_pty.node" \
             ZCODE_BUNDLED_AGENT_ENTRY="$PWD/agent/zcode.cjs" \
-            ./node standalone.js >"$OUT" 2>/tmp/hostboot.err &
+            "$NODE_BIN" standalone.js >"$OUT" 2>/tmp/hostboot.err &
           PID=$!
           for _ in $(seq 1 30); do grep -q ZCODE_WS_READY "$OUT" && break; sleep 1; done
           kill "$PID" 2>/dev/null || true
@@ -353,9 +371,55 @@ jobs:
         # `tauri.prod.json` is the single source of that overlay; `pnpm tauri:build` uses the same
         # file so a local release build is byte-comparable in identity to CI.
         run: |
-          pnpm exec tauri build \
-            --config src-tauri/tauri.prod.json \
-            --bundles ${{ matrix.bundles }}
+          if [ "${{ matrix.portable }}" = "true" ]; then
+            # Portable build: produce the bare exe; the resources are assembled next to it by the
+            # "[portable] assemble…" step, which then asserts the exact layout the shell resolves.
+            pnpm exec tauri build --config src-tauri/tauri.prod.json --no-bundle
+          else
+            pnpm exec tauri build \
+              --config src-tauri/tauri.prod.json \
+              --bundles ${{ matrix.bundles }}
+          fi
+
+      # 这一步是整个 portable 交付的核心保障：它把 src-tauri/src/commands.rs 里
+      # spawn_host_discover_port 的运行时存在性检查（resolve("host", BaseDirectory::Resource)
+      # 之后逐个 path.exists()）在 CI 里原样复现一遍。命令式检查列表必须与那段 Rust 保持一致——
+      # 少了任何一项，用户双击时得到的就是启动失败，而不是 CI 报错。
+      # host/ 若没被 tauri 放到 exe 同级目录，就从 resources/host 复制一份（幂等）。
+      - name: "[portable] assemble the double-click folder + verify the runtime layout"
+        if: matrix.portable
+        working-directory: packages/desktop
+        run: |
+          set -euo pipefail
+          exe_dir="src-tauri/target/release"
+          if [ ! -f "$exe_dir/ZCode.exe" ]; then
+            echo "::error::ZCode.exe not produced by --no-bundle"
+            ls -la "$exe_dir" | head -40
+            exit 1
+          fi
+          if [ ! -d "$exe_dir/host" ]; then
+            echo "tauri did not stage resources beside the exe — copying resources/host -> host/"
+            cp -a resources/host "$exe_dir/host"
+          fi
+          # Mirror commands.rs:2763-2778 (node/entry/addon/pty_addon/agent_entry/provider_release).
+          missing=0
+          for f in node.exe standalone.js zcode_db.node zcode_pty.node agent/zcode.cjs provider/zcode-builtin.json; do
+            if [ -e "$exe_dir/host/$f" ]; then
+              echo "  OK   host/$f"
+            else
+              echo "  MISSING host/$f"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "::error::portable folder is incomplete — ZCode.exe would fail at spawn_host_discover_port"
+            find "$exe_dir/host" -maxdepth 2 | head -30
+            exit 1
+          fi
+          rm -f zcode-portable-win-x64.zip
+          powershell -NoProfile -Command "Compress-Archive -Path 'src-tauri/target/release/ZCode.exe','src-tauri/target/release/host' -DestinationPath 'zcode-portable-win-x64.zip'"
+          ls -la zcode-portable-win-x64.zip
+          echo "Portable Windows build verified: ZCode.exe + host/ (all 6 required files) -> zip"
 
       # Tauri/linuxdeploy bundles libcrypto.so.3 (the build host's OpenSSL) into the AppImage and
       # force-prepends it to LD_LIBRARY_PATH, so anything the app spawns (git/eza/openssl) loads the
