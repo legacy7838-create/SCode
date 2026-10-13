@@ -1,6 +1,8 @@
 name: platform-build-and-test
 
-# Cross-platform verification for the Tauri desktop app on Linux + Windows + macOS.
+# Cross-platform verification for the Tauri desktop app on Linux + Windows.
+# (macOS is intentionally not run: no macos runner is in any matrix in this repo's CI, so the
+#  darwin targets are neither built nor tested here. See the matrix comments in each workflow.)
 #
 # GOAL: reveal EXACTLY which platform and which step fails. To that end:
 #   - `test` job runs on BOTH OSes with `fail-fast: false` (one OS failing never cancels the other)
@@ -75,8 +77,6 @@ jobs:
             os: ubuntu-24.04
           - label: windows-x64
             os: windows-latest
-          - label: macos-arm64
-            os: macos-14
     runs-on: ${{ matrix.os }}
     # bash on every OS (Windows runners ship Git Bash) so identical commands behave the same.
     defaults:

@@ -34,16 +34,11 @@ jobs:
             ZCODE_TARGET_OS: linux
             ZCODE_TARGET_ARCH: x64
             artifact: zcode_pty-linux-x64.node
-          - label: darwin-arm64
-            os: macos-14
-            ZCODE_TARGET_OS: darwin
-            ZCODE_TARGET_ARCH: arm64
-            artifact: zcode_pty-darwin-arm64.node
-          - label: darwin-x64
-            os: macos-13
-            ZCODE_TARGET_OS: darwin
-            ZCODE_TARGET_ARCH: x64
-            artifact: zcode_pty-darwin-x64.node
+          # darwin is deliberately NOT built here: no macOS job runs in this repo's CI.
+          # Consequence to keep in mind — the PTY addon ships for darwin (portable-pty
+          # covers ConPTY + forkpty) but CI never compiles or smoke-checks that target,
+          # so a macOS-only arch/ABI regression ships undetected. Re-add a darwin-* entry
+          # on a macos runner to restore that coverage.
           - label: win32-x64
             os: windows-latest
             ZCODE_TARGET_OS: win32

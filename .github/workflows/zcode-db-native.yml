@@ -39,16 +39,10 @@ jobs:
             artifact: zcode_db-linux-x64.node
           # Linux-on-Arm can be built natively on an arm64 runner; --check valid there.
           # (Kept off the default matrix to avoid double Linux coverage; extend if shipped.)
-          - label: darwin-arm64
-            os: macos-14
-            ZCODE_TARGET_OS: darwin
-            ZCODE_TARGET_ARCH: arm64
-            artifact: zcode_db-darwin-arm64.node
-          - label: darwin-x64
-            os: macos-13
-            ZCODE_TARGET_OS: darwin
-            ZCODE_TARGET_ARCH: x64
-            artifact: zcode_db-darwin-x64.node
+          # darwin is deliberately NOT built here: no macOS job runs in this repo's CI.
+          # Consequence to keep in mind — the darwin addons are then never compiled or
+          # --check'd by CI, so a macOS-only arch/ABI regression ships undetected. Re-add
+          # a darwin-* matrix entry on a macos runner to restore that coverage.
           - label: win32-x64
             os: windows-latest
             ZCODE_TARGET_OS: win32

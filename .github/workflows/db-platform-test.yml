@@ -1,7 +1,7 @@
 name: db-platform-test
 
-# Detailed per-platform verification of the Rust-native DB layer. Runs on FOUR independent
-# native runners (linux / macos arm64 / macos x64 / windows) — NOT a fail-fast matrix — so the
+# Detailed per-platform verification of the Rust-native DB layer. Runs on TWO independent
+# native runners (linux / windows) — NOT a fail-fast matrix — so the
 # GitHub Actions view shows each OS as its own pass/fail and a failure names the exact step
 # (rust build / clippy / cargo test / addon --check / parity harnesses / adapters typecheck /
 # node:sqlite guard). This is how you see "on which platform, what issue".
@@ -46,7 +46,7 @@ jobs:
           #   - { label: macos-arm64, os: macos-14, target_os: darwin, target_arch: arm64 }
           #   - { label: macos-x64,   os: macos-13, target_os: darwin, target_arch: x64 }
     runs-on: ${{ matrix.os }}
-    # Every step uses bash so the SAME commands behave identically on all four OSes
+    # Every step uses bash so the SAME commands behave identically on both OSes
     # (Windows runners ship Git Bash).
     defaults:
       run:
