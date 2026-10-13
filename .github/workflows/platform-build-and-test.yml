@@ -391,20 +391,35 @@ jobs:
         working-directory: packages/desktop
         run: |
           set -euo pipefail
-          exe_dir="src-tauri/target/release"
-          if [ ! -f "$exe_dir/ZCode.exe" ]; then
-            echo "::error::ZCode.exe not produced by --no-bundle"
-            ls -la "$exe_dir" | head -40
+          # --no-bundle 产出的是 cargo 的裸 exe（名字取自 Cargo.toml 的 package name），
+          # productName 的 "ZCode" 只在 bundle 阶段才会重命名，所以这里不能硬编码 ZCode.exe。
+          pkg_name="$(sed -n '/^\[package\]/,/^\[/p' src-tauri/Cargo.toml | grep -m1 '^name' | cut -d'"' -f2)"
+          built_exe="src-tauri/target/release/${pkg_name}.exe"
+          if [ ! -f "$built_exe" ]; then
+            echo "::error::--no-bundle did not produce $built_exe"
+            ls -la src-tauri/target/release | head -30
             exit 1
           fi
-          if [ ! -d "$exe_dir/host" ]; then
-            echo "tauri did not stage resources beside the exe — copying resources/host -> host/"
-            cp -a resources/host "$exe_dir/host"
+          echo "built exe: $built_exe"
+          if [ ! -d src-tauri/target/release/host ]; then
+            echo "::error::tauri did not stage resources beside the exe (expected target/release/host)"
+            echo "on Windows resource_dir() == the exe directory, so host/ must sit next to the exe"
+            ls -la src-tauri/target/release | head -30
+            exit 1
           fi
+          out=zcode-portable-win-x64
+          rm -rf "$out" "$out.zip"
+          mkdir -p "$out"
+          # 面向用户改名成 productName，双击看到的就是 ZCode.exe。
+          # resource_dir 只依赖 exe 所在目录、不依赖 exe 文件名，所以改名是安全的。
+          cp "$built_exe" "$out/ZCode.exe"
+          cp -a src-tauri/target/release/host "$out/host"
+          # glm/ 是 build.rs 的 resources glob 产物，宿主启动不需要它；有就一起带上保持与 bundle 一致。
+          if [ -d src-tauri/target/release/glm ]; then cp -a src-tauri/target/release/glm "$out/glm"; fi
           # Mirror commands.rs:2763-2778 (node/entry/addon/pty_addon/agent_entry/provider_release).
           missing=0
           for f in node.exe standalone.js zcode_db.node zcode_pty.node agent/zcode.cjs provider/zcode-builtin.json; do
-            if [ -e "$exe_dir/host/$f" ]; then
+            if [ -e "$out/host/$f" ]; then
               echo "  OK   host/$f"
             else
               echo "  MISSING host/$f"
@@ -413,13 +428,12 @@ jobs:
           done
           if [ "$missing" -ne 0 ]; then
             echo "::error::portable folder is incomplete — ZCode.exe would fail at spawn_host_discover_port"
-            find "$exe_dir/host" -maxdepth 2 | head -30
+            find "$out/host" -maxdepth 2 | head -30
             exit 1
           fi
-          rm -f zcode-portable-win-x64.zip
-          powershell -NoProfile -Command "Compress-Archive -Path 'src-tauri/target/release/ZCode.exe','src-tauri/target/release/host' -DestinationPath 'zcode-portable-win-x64.zip'"
-          ls -la zcode-portable-win-x64.zip
-          echo "Portable Windows build verified: ZCode.exe + host/ (all 6 required files) -> zip"
+          powershell -NoProfile -Command "Compress-Archive -Path 'zcode-portable-win-x64\*' -DestinationPath 'zcode-portable-win-x64.zip'"
+          ls -la "$out.zip"
+          echo "Portable Windows build assembled + verified: ZCode.exe with host/ beside it (all 6 required files)"
 
       # Tauri/linuxdeploy bundles libcrypto.so.3 (the build host's OpenSSL) into the AppImage and
       # force-prepends it to LD_LIBRARY_PATH, so anything the app spawns (git/eza/openssl) loads the
