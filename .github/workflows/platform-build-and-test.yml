@@ -240,16 +240,17 @@ jobs:
             portable: false
             bundle_glob: packages/desktop/src-tauri/target/release/bundle/appimage/*.AppImage
             artifact_name: zcode-appimage-linux-x64
-          # Portable Windows build: NO installer. `tauri build --no-bundle` leaves ZCode.exe in
-          # target/release, and tauri-utils resolves resource_dir() to THE EXE'S OWN DIRECTORY on
-          # Windows (tauri-utils/src/platform.rs: `if cfg!(target_os = "windows") { return exe_dir }`),
+          # Portable Windows build: NO installer. `tauri build --no-bundle` leaves the bare cargo
+          # exe in target/release, and tauri-utils resolves resource_dir() to THE EXE'S OWN DIRECTORY
+          # on Windows (tauri-utils/src/platform.rs: `if cfg!(target_os = "windows") { return exe_dir }`),
           # so the folder the user double-clicks is ZCode.exe + host/ beside it. Needs no Authenticode
           # certificate, which is the only reason Windows was previously excluded from this matrix.
+          # bundle_glob is a DIRECTORY here; upload-artifact zips it with POSIX separators.
           - label: windows-x64-portable
             os: windows-latest
             bundles: ""
             portable: true
-            bundle_glob: packages/desktop/zcode-portable-win-x64.zip
+            bundle_glob: packages/desktop/zcode-portable-win-x64
             artifact_name: zcode-portable-win-x64
     runs-on: ${{ matrix.os }}
     defaults:
@@ -414,8 +415,9 @@ jobs:
           # resource_dir 只依赖 exe 所在目录、不依赖 exe 文件名，所以改名是安全的。
           cp "$built_exe" "$out/ZCode.exe"
           cp -a src-tauri/target/release/host "$out/host"
-          # glm/ 是 build.rs 的 resources glob 产物，宿主启动不需要它；有就一起带上保持与 bundle 一致。
-          if [ -d src-tauri/target/release/glm ]; then cp -a src-tauri/target/release/glm "$out/glm"; fi
+          # glm/ yahan jaan-boojh kar NAHI daala: wo build.rs ke resources glob ko satisfy karne ke
+          # liye maujood hai, runtime usse resolve nahi karta (src-tauri/src aur services mein koi
+          # "glm/zcode_db" reference nahi), aur headless boot proof bhi bin glm ke pass hua tha.
           # Mirror commands.rs:2763-2778 (node/entry/addon/pty_addon/agent_entry/provider_release).
           missing=0
           for f in node.exe standalone.js zcode_db.node zcode_pty.node agent/zcode.cjs provider/zcode-builtin.json; do
@@ -431,8 +433,13 @@ jobs:
             find "$out/host" -maxdepth 2 | head -30
             exit 1
           fi
-          powershell -NoProfile -Command "Compress-Archive -Path 'zcode-portable-win-x64\*' -DestinationPath 'zcode-portable-win-x64.zip'"
-          ls -la "$out.zip"
+          # Zip manually MATI karo: PowerShell ka Compress-Archive entry naam mein '\' daalta hai,
+          # jo ZIP spec (APPNOTE 4.4.17, path separator = '/') ke khilaf hai aur extract par toota
+          # hua tree deta hai. Foldar upload karte hain; actions/upload-artifact khud POSIX
+          # separators ke saath archive banata hai (Linux artifact isi raaste se aaya tha).
+          echo "portable folder contents:"
+          find "$out" -maxdepth 1 -printf '%y %p\n' 2>/dev/null | sort | head -10
+          du -sh "$out"
           echo "Portable Windows build assembled + verified: ZCode.exe with host/ beside it (all 6 required files)"
 
       # Tauri/linuxdeploy bundles libcrypto.so.3 (the build host's OpenSSL) into the AppImage and
@@ -480,4 +487,6 @@ jobs:
         with:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.bundle_glob }}
-          if-no-files-found: warn
+          # error, not warn: a green build with no downloadable artifact is exactly the
+          # silent-failure shape this repo has already been bitten by once.
+          if-no-files-found: error
