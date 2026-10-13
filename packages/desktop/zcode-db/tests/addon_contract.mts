@@ -210,6 +210,12 @@ const HEAVY_READS: readonly ShapeCase[] = [
     run: (p) => addon.messagesJson(p.sessionDb, "contract-missing-session"),
   },
   {
+    name: "messagesInfoJson",
+    shape: "string",
+    parsed: "array",
+    run: (p) => addon.messagesInfoJson(p.sessionDb, "contract-missing-session"),
+  },
+  {
     name: "listTaskMetasJson",
     shape: "string",
     parsed: "array",
@@ -320,9 +326,10 @@ try {
   console.log(`boundary shape: ${checked} exports pinned to their N-API return type`);
 
   // The export surface is frozen: a rename/removal must be a reviewed edit to this file.
+  // 178 = 177 previous exports + messagesInfoJson (the info-only projection).
   const exported = Object.keys(addonExports).length;
-  if (exported !== 177) fail(`export surface drift: ${exported} addon exports, expected 177`);
-  else console.log(`export surface: 177 exports, unchanged`);
+  if (exported !== 178) fail(`export surface drift: ${exported} addon exports, expected 178`);
+  else console.log("export surface: 178 exports, unchanged");
 } catch (e) {
   fail(`boundary shape section threw: ${(e as Error).message}`);
 } finally {
@@ -401,6 +408,18 @@ try {
       fail(`single-row read differs from messages() for ${id}`);
     }
   }
+  // info-only 投影必须与 messages() 的 info 逐项一致(同序、同内容、且不泄漏 parts)。
+  // 这是 messageInfos() 调用点改用它的唯一前提,必须在契约里成立。
+  const projected = JSON.parse(addon.messagesInfoJson(eqDb, "s1")) as unknown[];
+  if (projected.length !== listed.length)
+    fail(`messagesInfo row count ${projected.length} != messages ${listed.length}`);
+  for (let i = 0; i < Math.min(projected.length, listed.length); i++) {
+    if (JSON.stringify(projected[i]) !== JSON.stringify(listed[i]?.info))
+      fail(`messagesInfo row ${i} differs from messages().info`);
+  }
+  if (projected.some((entry) => "parts" in (entry as Record<string, unknown>)))
+    fail("messagesInfo leaked part bodies into the projection");
+
   // session 作用域:a1 属于 s1,用别的 session 必须读不到(否则是越权读取)。
   const leaked = transcript.messageWithPartsJson(eqDb, "other-session", "a1");
   if (leaked !== null && leaked !== "null" && leaked !== undefined)

@@ -159,6 +159,32 @@ pub fn messages(conn: &Connection, session_id: &str) -> Result<Value, String> {
     Ok(Value::Array(out))
 }
 
+/// `messagesInfo`: the session's message infos WITHOUT parts, in exactly the same order as
+/// [`messages`].
+///
+/// 原因：cold hydration 的若干守卫（fork/goalBoundary/turn 定位）只读 `info`
+/// （role、parentID、anchor、modelSelection），但 `messages` 会把每个 part 正文一起读出来。
+/// 实测 229 条消息的会话 payload 为 11.19MB，其中 10.80MB 是 part 正文、info 只有 177KB，
+/// 整读一次 92ms 且同步阻塞 Host 事件循环。这个投影让只关心结构体的调用点不必为正文买单。
+/// 需要 part 正文的调用点必须继续用 [`messages`] 或 [`message_with_parts`]，不要用这个。
+pub fn messages_info(conn: &Connection, session_id: &str) -> Result<Value, String> {
+    let mut out = Vec::new();
+    let mut stmt = conn
+        .prepare(
+            "select id, data from message where session_id = ?1
+             order by sequence is null, sequence, time_created, rowid",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([session_id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+        .map_err(|e| e.to_string())?;
+    for row in rows {
+        let (id, data) = row.map_err(|e| e.to_string())?;
+        out.push(decode_message_info(&data, id, session_id.to_string())?);
+    }
+    Ok(Value::Array(out))
+}
+
 /// `messageWithParts`: a single message with its parts, or `null`.
 pub fn message_with_parts(
     conn: &Connection,
@@ -202,4 +228,107 @@ pub fn message_with_parts(
     entry.insert("info".to_string(), info);
     entry.insert("parts".to_string(), Value::Array(parts));
     Ok(Value::Object(entry))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::session_write_messages::{save_message, save_part};
+
+    fn seeded() -> Connection {
+        let conn = Connection::open_in_memory().expect("invariant: open in-memory db");
+        conn.execute("PRAGMA foreign_keys = ON", [])
+            .expect("invariant: enable fk");
+        crate::session_bootstrap::run_session_migrations_in_tx(&conn, 1_000)
+            .expect("invariant: apply session schema");
+        conn.execute(
+            "insert into session (id, project_id, slug, directory, title, version, time_created, time_updated)
+             values ('s1','p','slug','/d','t','v',100,100)",
+            [],
+        )
+        .expect("invariant: seed session");
+        save_message(
+            &conn,
+            &json!({ "id": "m1", "sessionID": "s1", "role": "user", "time": { "created": 200 } }),
+            None,
+            600,
+        )
+        .expect("save m1");
+        save_message(
+            &conn,
+            &json!({
+                "id": "a1", "sessionID": "s1", "role": "assistant",
+                "time": { "created": 300, "completed": 500 }, "cost": 0, "parentID": "m1"
+            }),
+            None,
+            600,
+        )
+        .expect("save a1");
+        save_part(
+            &conn,
+            &json!({
+                "id": "p1", "messageID": "m1", "sessionID": "s1",
+                "type": "text", "text": "hello 世界"
+            }),
+            None,
+            600,
+        )
+        .expect("save p1");
+        save_part(
+            &conn,
+            &json!({
+                "id": "p2", "messageID": "a1", "sessionID": "s1",
+                "type": "text", "text": "reply"
+            }),
+            None,
+            600,
+        )
+        .expect("save p2");
+        conn
+    }
+
+    #[test]
+    fn messages_info_mirrors_messages_order_and_info_content() {
+        let conn = seeded();
+        let full = messages(&conn, "s1").expect("messages");
+        let infos = messages_info(&conn, "s1").expect("messages_info");
+        let full_arr = full.as_array().expect("messages yields an array");
+        let info_arr = infos.as_array().expect("messages_info yields an array");
+
+        assert_eq!(
+            info_arr.len(),
+            full_arr.len(),
+            "same rows must be visible to both reads"
+        );
+        for (i, entry) in full_arr.iter().enumerate() {
+            assert_eq!(
+                entry.get("info"),
+                info_arr.get(i),
+                "row {i} must carry the identical info projection"
+            );
+        }
+    }
+
+    #[test]
+    fn messages_info_carries_no_part_bodies() {
+        // The whole point of the projection: it must not smuggle parts back in.
+        let conn = seeded();
+        let infos = messages_info(&conn, "s1").expect("messages_info");
+        for value in infos.as_array().expect("array") {
+            assert!(
+                value.get("parts").is_none(),
+                "info-only rows must not expose parts: {value}"
+            );
+        }
+    }
+
+    #[test]
+    fn messages_info_of_unknown_session_is_empty_array() {
+        // Parity with `messages`: unknown session returns [], never an error.
+        let conn = seeded();
+        assert_eq!(
+            messages_info(&conn, "nope").expect("messages_info"),
+            Value::Array(Vec::new())
+        );
+    }
 }

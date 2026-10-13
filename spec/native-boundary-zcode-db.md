@@ -69,51 +69,92 @@ must preserve identical WAL / busy-wait behaviour.
 
 ## 3. Interface
 
-Additive only. For each heavy read a byte-returning twin is added, named `<base>_bytes`:
+### 3.0 The `Buffer` proposal was measured and rejected
+
+The first version of this spec proposed returning `napi::Result<bindgen_prelude::Buffer>` holding the
+same UTF-8 JSON bytes, to avoid napi's UTF-8→UTF-16 encode. **Measurement refuted it.** On the real
+11.19MB transcript: `JSON.parse(string)` = 38.4 ms, `JSON.parse(Buffer)` = **40.3 ms** — the Buffer form
+is _slower_, because Node coerces `Buffer`→string inside `JSON.parse`, so the same UTF-8→UTF-16 decode
+still happens, just later, plus an extra 11MB copy. Ceiling of that optimization: **−2%**. It is not
+implemented and must not be reintroduced as "the Rust fix".
+
+The cost breakdown that mattered:
+
+| Path (real 229-message session)           | Latency  | Payload      |
+| ----------------------------------------- | -------- | ------------ |
+| `messagesJson` + `JSON.parse`             | 117.7 ms | 11,186,241 B |
+| — of which part bodies                    |          | 10,796,617 B |
+| — of which message `info`                 |          | 177,504 B    |
+| `messageWithPartsJson` (single row by PK) | 0.65 ms  | 1,437 B      |
+| `messagesInfoJson` (all rows, no parts)   | 4.9 ms   | 205,026 B    |
+
+So the fix is **projection**, not encoding: stop shipping 10.8MB of part bodies to callers that read
+only `info`.
+
+### 3.1 Implemented: `messages_info_json`
+
+Additive — `messages_json` and all other 177 exports are untouched.
 
 ```rust
-/// UTF-8 JSON bytes for the full transcript of `session_id`.
-/// Same bytes as `messages_json`; returned as `Buffer` so napi does not re-encode
-/// UTF-8 into a V8 UTF-16 string that JS must then re-parse.
+/// `messagesInfo`: the session's message infos WITHOUT parts, in exactly the same order as
+/// `messages`. Callers needing part bodies must use `messages` / `message_with_parts`.
 #[napi]
-pub fn messages_bytes(db_path: String, session_id: String) -> Result<Buffer>
+pub fn messages_info_json(db_path: String, session_id: String) -> Result<String>
 ```
 
-Return type is `napi::Result<bindgen_prelude::Buffer>`; `serde_json::to_vec` replaces
-`serde_json::to_string` inside the twin only.
+Backed by `session_messages::messages_info`, which reuses `decode_message_info` and the identical
+`order by sequence is null, sequence, time_created, rowid` clause, so ordering cannot diverge.
 
-Targets for twins, ordered by payload size:
-
-| Existing fn                   | Location                      | Payload                    |
-| ----------------------------- | ----------------------------- | -------------------------- |
-| `messages_json`               | `lib.rs:1914`                 | whole transcript + parts   |
-| `list_task_metas_json`        | `lib.rs:743`                  | task index for a workspace |
-| `dwf_list_events_json`        | `session_journal_read.rs:680` | workflow run events        |
-| `dwf_list_runs_json`          | `session_journal_read.rs:714` | workflow runs              |
-| `dwf_list_artifact_rows_json` | `session_journal_read.rs:773` | artifact rows              |
-
-The TS facade type for a twin is the same as its `*_json` twin, but accepting `Buffer | string` so a
-caller can pass either during migration:
+TS surface (`SessionStorePort`, required — deliberately **not** optional, because an optional method
+would force every consumer into a fallback branch):
 
 ```ts
-messagesBytes(dbPath: string, sessionId: string): Buffer | string;
+messageInfos(input: { sessionID: SessionId }): Promise<MessageInfo[]>;
 ```
+
+Consumers converted (each reads only `info`; verified by grep over the whole function body):
+
+| Site                                         | Was                            | Now                                                                                                  |
+| -------------------------------------------- | ------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `v4-bridge.ts` `forkConversationBeforeInput` | `messages()` + positional scan | `messageInfos()` — keeps the scan, `indexOf` identity preserved within one array                     |
+| `v4-bridge.ts` `resolveUserMessageIdForRow`  | `messages()` + filter          | `messageInfos()`, predicate gets `{ info }` (`parts` is optional in `ConversationProjectionMessage`) |
+| `v4-bridge.ts` `forkStableConversation`      | `messages()` + `.find(id)`     | `messageWithParts()` single PK read                                                                  |
+| `v4-bridge.ts` `resolveTurnUserPrompt`       | `messages()` + two `.find(id)` | two `messageWithParts()` PK reads                                                                    |
+
+Known remaining full-transcript caller, intentionally **not** converted in this change:
+`resolveStableForkTarget` → `stable-fork-target.ts` takes `readonly MessageWithParts[]` and touches
+`message.info.*` in ~20 places across 189 lines. It never reads `parts`, so it _should_ move to
+`MessageInfo[]`, but that is a mechanical rewrite in a package with **no test suite in this checkout**
+(zero `.test.ts` files, no `test` script) — a missed `.info` there would be a silent `undefined`. It is
+left as a follow-up to be done with a test, not rushed.
+
+`list_task_metas_json` / `dwf_list_*_json` get no twin: measured at ≤24KB and ≤1ms, and `dwf_run` /
+`dwf_event` hold **0 rows** locally, so no payload evidence justifies them.
 
 ## 4. Acceptance scenarios
 
-- **A1 — byte-identical payload.** For a seeded DB, `JSON.parse(messages_bytes(...))` deep-equals
-  `JSON.parse(messages_json(...))`. Runs in `tests/addon_contract.mts`.
-- **A2 — no UTF-16 round trip.** `messages_bytes` must not appear in the String-family count; a
-  returned `Buffer` is a `Uint8Array` in JS (`instanceof Uint8Array`).
-- **A3 — existing surface frozen.** All 177 prior exports keep their exact names and return types.
-  `addon_contract.mts` pins this; reverting the twins cannot break a caller.
+All of these run in `packages/desktop/zcode-db/tests/addon_contract.mts` (the CLI package has no test
+suite in this checkout, so the boundary contract lives with the crate that owns it).
+
+- **A1 — single-row read equivalence.** For a seeded session, `messages(...).find(info.id === X)`
+  deep-equals `messageWithParts(X)` for a present row and for an absent row (both `null`), and a row is
+  never readable under a different `sessionID`. This is the precondition for the PK conversions in §3.1.
+- **A2 — projection equivalence.** `messages_info_json(...)` has the same row count and order as
+  `messages_json(...)`, each element deep-equals the corresponding `.info`, and no element carries a
+  `parts` key.
+- **A3 — export surface pinned by count and type.** The manifest pins each heavy/typed read's boundary
+  type and the total export count (178 = 177 prior + `messages_info_json`). Verified sensitive: flipping
+  a pin from `string` to `bytes` fails with `expected bytes at the boundary, got string`, and adding an
+  export without updating the file fails the count.
 - **A4 — concurrency preserved.** Two processes read and one writes the same DB file with
   `journal_mode=WAL` and `busy_timeout=5000` (`DB_BUSY_TIMEOUT_MS`, `lib.rs:56-58`) and no
-  `SQLITE_BUSY` escapes as an error under the existing retry budget.
-- **A5 — measurement is real.** `harness/read_parity.mts` records bytes and milliseconds per heavy call
-  before and after; the win is reported only with numbers, per the pre-handoff rule.
-- **A6 — no behavior change for a caller that does not opt in.** Any repo not switched to a twin is
-  byte-for-byte unaffected.
+  `SQLITE_BUSY` escapes as an error under the existing retry budget. Unaffected by this change because
+  the per-call connection model was not touched; it is the gate for §6's cached connection.
+- **A5 — measurement is real.** Payload bytes and ms are recorded before/after with the figures in §3.0;
+  the win is reported only with numbers, per the pre-handoff rule.
+- **A6 — no behavior change for a caller that does not opt in.** `messages_json` and the other 176
+  exports are byte-for-byte unchanged, so any repo not switched to `messageInfos()` behaves exactly as
+  before.
 
 ## 5. Retained fallbacks (explicitly NOT removed)
 
@@ -126,12 +167,15 @@ messagesBytes(dbPath: string, sessionId: string): Buffer | string;
 
 ## 6. Deferred, gated decisions
 
-- **`#[napi(async)]`**: currently impossible without re-enabling napi's async runtime (tokio) in
-  `Cargo.toml:18`, a dependency change across all 6 build triples. Only taken if the land-and-measure
-  gate leaves demonstrable event-loop blocking.
-- **Cached `Mutex<Connection>` keyed by `db_path`**: additive, read-heavy paths only, `open_readonly`
-  kept as fallback. Must not change WAL or busy-timeout semantics.
+- **Cached `Mutex<Connection>` keyed by `db_path`**: **demoted by measurement.** Per-call open + PRAGMAs
+  costs 0.34 ms (`tasksCount`) to 0.93 ms (`areSessionMigrationsApplied`), which is noise against the
+  92 ms it would shadow, and the per-call model is what makes Host+CLI concurrent access safe. Only
+  worth revisiting if a hot loop is proven to be dominated by connection opens.
+- **`#[napi(async)]`**: still gated. Not needed for the wins above, and the remaining event-loop exposure
+  is best closed by not loading 10.8MB at all rather than by loading it off-thread. Requires re-enabling
+  napi's async runtime (`Cargo.toml:18` has `default-features = false`, no tokio) across 6 triples.
 - **Collapsing the two `DbAddon` facades** into one re-export.
+- **`resolveStableForkTarget` → `MessageInfo[]`** (see §3.1), with a test.
 
 ## 7. Governance note
 

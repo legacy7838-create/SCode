@@ -1126,6 +1126,16 @@ export interface SessionStorePort {
     messageID: MessageId;
   }): Promise<MessageWithParts | null>;
   messages(input: { sessionID: SessionId }): Promise<MessageWithParts[]>;
+  /**
+   * 同一 session 的 message 结构体列表，**不读取 part 正文**，顺序与 `messages()` 完全一致。
+   *
+   * 为什么存在：cold hydration 的 fork/goalBoundary/turn 定位只需要 `info`
+   * （role、parentID、anchor、modelSelection），但 `messages()` 会连带读出全部 part 正文。
+   * 实测 229 条消息的会话：`messages()` 11.19MB / 117ms，本方法 0.20MB / 4.9ms。
+   * 需要 part 正文（例如把用户原文回灌给模型）必须调用 `messages()` 或 `messageWithParts()`，
+   * 不要用这个来"省"一次读取。
+   */
+  messageInfos(input: { sessionID: SessionId }): Promise<MessageInfo[]>;
   saveSessionEntry?(input: SessionEntryInfo): Promise<void>;
   sessionEntries?(input: {
     sessionID: SessionId;

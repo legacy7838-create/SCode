@@ -38,6 +38,7 @@ export interface DbAddon {
   listSessionsJson(dbPath: string, filterJson: string): string;
   sessionEntriesJson(dbPath: string, sessionId: string, type: string | null): string;
   messagesJson(dbPath: string, sessionId: string): string;
+  messagesInfoJson(dbPath: string, sessionId: string): string;
   messageWithPartsJson(dbPath: string, sessionId: string, messageId: string): string;
   readTargetJson(dbPath: string, sessionId: string): string;
   recallPreviousInputHistoryJson(dbPath: string, projectId: string, skip: number): string;

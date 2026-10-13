@@ -33,6 +33,7 @@ export interface DbAddon {
   listSessionsJson(dbPath: string, filterJson: string): string;
   sessionEntriesJson(dbPath: string, sessionId: string, entryType: string | null): string;
   messagesJson(dbPath: string, sessionId: string): string;
+  messagesInfoJson(dbPath: string, sessionId: string): string;
   messageWithPartsJson(dbPath: string, sessionId: string, messageId: string): string;
   readTodosJson(dbPath: string, sessionId: string): string;
   readTargetJson(dbPath: string, sessionId: string): string;
@@ -76,7 +77,12 @@ export interface DbAddon {
     payloadJson: string,
     now: number,
   ): string;
-  updateSessionInputsJson(dbPath: string, sessionId: string, updatesJson: string, now: number): string;
+  updateSessionInputsJson(
+    dbPath: string,
+    sessionId: string,
+    updatesJson: string,
+    now: number,
+  ): string;
   promoteSessionInputJson(
     dbPath: string,
     id: string,
@@ -117,7 +123,12 @@ export interface DbAddon {
     permissionJson: string,
     now: number,
   ): string;
-  saveProjectPermissionModeJson(dbPath: string, projectId: string, mode: string, now: number): string;
+  saveProjectPermissionModeJson(
+    dbPath: string,
+    projectId: string,
+    mode: string,
+    now: number,
+  ): string;
   updateTodosJson(dbPath: string, sessionId: string, todosJson: string, now: number): string;
 
   // ---- session target (goal) writes ----
@@ -138,7 +149,12 @@ export interface DbAddon {
     tokenBudget: number | null,
     now: number,
   ): string;
-  updateSessionTargetStatusJson(dbPath: string, sessionId: string, status: string, now: number): string;
+  updateSessionTargetStatusJson(
+    dbPath: string,
+    sessionId: string,
+    status: string,
+    now: number,
+  ): string;
   clearSessionTargetJson(dbPath: string, sessionId: string, now: number): string;
   updateTargetSummaryTitleJson(
     dbPath: string,

@@ -1917,6 +1917,16 @@ pub fn messages_json(db_path: String, session_id: String) -> Result<String> {
     serde_json::to_string(&value).map_err(|e| Error::from_reason(e.to_string()))
 }
 
+/// N-API: `messagesInfo` port. Message infos only — same rows and same order as
+/// [`messages_json`], with no `part` reads. Use this where a caller only inspects
+/// `info`; see `session_messages::messages_info` for the measured payload rationale.
+#[napi]
+pub fn messages_info_json(db_path: String, session_id: String) -> Result<String> {
+    let conn = open_readonly(&db_path)?;
+    let value = session_messages::messages_info(&conn, &session_id).map_err(Error::from_reason)?;
+    serde_json::to_string(&value).map_err(|e| Error::from_reason(e.to_string()))
+}
+
 /// N-API: `messageWithParts` port. Returns `{info, parts}` JSON or `"null"`.
 #[napi]
 pub fn message_with_parts_json(db_path: String, session_id: String, message_id: String) -> Result<String> {

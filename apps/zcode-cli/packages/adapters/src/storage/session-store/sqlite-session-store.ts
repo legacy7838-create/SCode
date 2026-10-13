@@ -104,10 +104,11 @@ function toStartupError(error: unknown, dbPath: string): SqliteSessionMigrationE
       { cause: error, dbPath, kind: "lock_timeout" },
     );
   }
-  return new SqliteSessionMigrationError(
-    `SQLite migration initialization failed for ${dbPath}`,
-    { cause: error, dbPath, kind: classifyDatabaseStartupError(error) },
-  );
+  return new SqliteSessionMigrationError(`SQLite migration initialization failed for ${dbPath}`, {
+    cause: error,
+    dbPath,
+    kind: classifyDatabaseStartupError(error),
+  });
 }
 
 /** goal 行主键：与切换前 `session-target.ts:createStorageTargetId` 逐字同形（前缀 + base36 时刻 + uuid）。 */
@@ -251,7 +252,9 @@ export class SqliteSessionStore
 
   async commitForkBundle(bundle: ForkCommitBundle): Promise<SessionInfo> {
     this.throwBeforeWrite();
-    return this.parse(this.addon.commitForkBundleJson(this.dbPath, JSON.stringify(bundle), Date.now()));
+    return this.parse(
+      this.addon.commitForkBundleJson(this.dbPath, JSON.stringify(bundle), Date.now()),
+    );
   }
 
   async commitSharedContextImportBundle(
@@ -259,7 +262,11 @@ export class SqliteSessionStore
   ): Promise<SessionInfo> {
     this.throwBeforeWrite();
     return this.parse(
-      this.addon.commitSharedContextImportBundleJson(this.dbPath, JSON.stringify(bundle), Date.now()),
+      this.addon.commitSharedContextImportBundleJson(
+        this.dbPath,
+        JSON.stringify(bundle),
+        Date.now(),
+      ),
     );
   }
 
@@ -285,7 +292,9 @@ export class SqliteSessionStore
 
   async claimLegacySessionWorkspace(input: ClaimLegacySessionWorkspaceInput): Promise<number> {
     this.throwBeforeWrite();
-    return this.parse(this.addon.claimLegacySessionWorkspaceJson(this.dbPath, JSON.stringify(input)));
+    return this.parse(
+      this.addon.claimLegacySessionWorkspaceJson(this.dbPath, JSON.stringify(input)),
+    );
   }
 
   async repairLegacyRemoteSessionWorkspace(
@@ -355,6 +364,17 @@ export class SqliteSessionStore
 
   async messages(input: { sessionID: SessionId }): Promise<MessageWithParts[]> {
     return this.parse(this.addon.messagesJson(this.dbPath, input.sessionID));
+  }
+
+  /**
+   * 原因：调用点只需要 message 结构体时，`messages()` 会连带读出全部 part 正文。
+   * 实测 229 条消息的会话为 11.19MB / 117ms，其中 10.80MB 是正文；本方法走 Rust 侧
+   * `messages_info_json`（同序、同 decode、不 join part），降到 0.20MB / 4.9ms。
+   * 契约由 `packages/desktop/zcode-db/tests/addon_contract.mts` 的第 5 节钉住：
+   * 投影必须逐项等于 `messages().info` 且不含 parts。
+   */
+  async messageInfos(input: { sessionID: SessionId }): Promise<MessageInfo[]> {
+    return this.parse(this.addon.messagesInfoJson(this.dbPath, input.sessionID));
   }
 
   // ── session_entry ──
@@ -478,7 +498,9 @@ export class SqliteSessionStore
     sessionID: SessionId;
     status?: SessionInputStatus;
   }): Promise<SessionInputRecord[]> {
-    return this.parse(this.addon.listSessionInputsJson(this.dbPath, input.sessionID, input.status ?? null));
+    return this.parse(
+      this.addon.listSessionInputsJson(this.dbPath, input.sessionID, input.status ?? null),
+    );
   }
 
   async getSessionInputById(id: string): Promise<SessionInputRecord | null> {
@@ -493,7 +515,12 @@ export class SqliteSessionStore
 
   async updateTodos(input: { sessionID: SessionId; todos: TodoItem[] }): Promise<void> {
     this.throwBeforeWrite();
-    this.addon.updateTodosJson(this.dbPath, input.sessionID, JSON.stringify(input.todos), Date.now());
+    this.addon.updateTodosJson(
+      this.dbPath,
+      input.sessionID,
+      JSON.stringify(input.todos),
+      Date.now(),
+    );
   }
 
   async readTarget(input: { sessionID: SessionId }): Promise<SessionGoal | null> {
@@ -561,7 +588,12 @@ export class SqliteSessionStore
     status: GoalStatus;
   }): Promise<SessionGoal | null> {
     return this.parseOrNull(
-      this.addon.updateSessionTargetStatusJson(this.dbPath, input.sessionID, input.status, Date.now()),
+      this.addon.updateSessionTargetStatusJson(
+        this.dbPath,
+        input.sessionID,
+        input.status,
+        Date.now(),
+      ),
     );
   }
 
@@ -744,9 +776,9 @@ export class SqliteSessionStore
   }
 
   getProjectPermissionMode(projectID: ProjectId): CollaborationMode | null {
-    return JSON.parse(this.addon.getProjectPermissionModeJson(this.dbPath, projectID)) as
-      | CollaborationMode
-      | null;
+    return JSON.parse(
+      this.addon.getProjectPermissionModeJson(this.dbPath, projectID),
+    ) as CollaborationMode | null;
   }
 
   saveProjectPermissionMode(input: {
@@ -755,7 +787,12 @@ export class SqliteSessionStore
   }): CollaborationMode {
     // addon 不回读，直接回写入的 mode，与切换前 `return input.mode` 同形。
     return JSON.parse(
-      this.addon.saveProjectPermissionModeJson(this.dbPath, input.projectID, input.mode, Date.now()),
+      this.addon.saveProjectPermissionModeJson(
+        this.dbPath,
+        input.projectID,
+        input.mode,
+        Date.now(),
+      ),
     ) as CollaborationMode;
   }
 
@@ -808,7 +845,9 @@ export class SqliteSessionStore
     limit?: number;
     statuses?: readonly ScriptWorkflowRunStatus[];
   }): Promise<ScriptWorkflowRunRecord[]> {
-    return this.parse(this.addon.listScriptWorkflowRunsJson(this.dbPath, JSON.stringify(input ?? {})));
+    return this.parse(
+      this.addon.listScriptWorkflowRunsJson(this.dbPath, JSON.stringify(input ?? {})),
+    );
   }
 
   async createScriptWorkflowActivity(
@@ -866,7 +905,9 @@ export class SqliteSessionStore
   }
 
   async createSessionTaskLink(input: CreateSessionTaskLinkInput): Promise<SessionTaskLinkRecord> {
-    return this.parse(this.addon.createSessionTaskLinkJson(this.dbPath, JSON.stringify(input), Date.now()));
+    return this.parse(
+      this.addon.createSessionTaskLinkJson(this.dbPath, JSON.stringify(input), Date.now()),
+    );
   }
 
   /**
