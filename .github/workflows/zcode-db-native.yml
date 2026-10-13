@@ -129,15 +129,15 @@ jobs:
   # 3. The DB cutover regression gate.
   #    - crate unit tests + clippy (-D warnings)  [the authoritative Rust-behavior signal]
   #    - the remaining read-parity harness under zcode-db/harness (run via workspace tsx)
-  #    - 0 JS DB fallback guard: adapters/src MUST contain no `node:sqlite`
+  #    - 0 JS DB fallback guard: NO tracked source may import `node:sqlite`
   #
   #    The session-store facade cutover (#27) has MERGED, so `node:sqlite` is gone from the
   #    adapters and the `node:sqlite` TS-vs-Rust oracle harnesses have been retired. This grep is
   #    now the PERMANENT regression guard: it must stay green; any future reintroduction of
-  #    node:sqlite into adapters/src fails the build. Do not soften it.
+  #    node:sqlite into tracked source fails the build. Do not soften it.
   # ---------------------------------------------------------------------------
   db-gate:
-    name: db parity + node:sqlite regression gate
+    name: db parity + 0 JS DB fallback regression gate
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
@@ -168,11 +168,19 @@ jobs:
             echo "=== parity harness: $f ==="
             node_modules/.bin/tsx "$f"
           done
-      - name: 0 JS DB fallback guard (no node:sqlite in CLI adapters)
+      - name: 0 JS DB fallback guard (no runtime source may import node:sqlite)
         run: |
           set -uo pipefail
-          if grep -rn "node:sqlite" apps/zcode-cli/packages/adapters/src; then
-            echo "FAIL: node:sqlite reintroduced into adapters/src — the '0 JS DB fallback' end-state regressed." >&2
+          # 原因：原 guard 有两个洞 —— (1) 只 grep apps/zcode-cli/packages/adapters/src，
+          # 所以在 packages/services/src 等处重新 import node:sqlite 也不会被发现;
+          # (2) 匹配裸字符串 "node:sqlite"，会命中「已不再使用 node:sqlite」这类注释，
+          #     导致扫描范围没法扩大。
+          # 现在用 git grep（只看受版本控制的文件，自动排除 node_modules/@types 与陈旧的
+          # out/、dist-server/ 构建产物）+ 只匹配真实 import/require/dynamic-import 形式。
+          # git grep 无命中返回 1，命中返回 0；用它还能避免 grep 路径不存在时
+          # 返回 2 被误判成「通过」的空洞。
+          if git grep -nE "(from|require\(|import\()\s*[\"']node:sqlite" -- '*.ts' '*.tsx' '*.mts' '*.mjs' '*.js'; then
+            echo "FAIL: node:sqlite is imported somewhere in tracked source — the '0 JS DB fallback' end-state regressed." >&2
             exit 1
           fi
-          echo "OK: adapters/src contains no node:sqlite"
+          echo "OK: no tracked source imports node:sqlite"

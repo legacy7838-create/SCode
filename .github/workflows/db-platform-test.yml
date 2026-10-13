@@ -132,14 +132,17 @@ jobs:
         continue-on-error: true
         run: pnpm --dir apps/zcode-cli typecheck
 
-      - name: "[guard] 0 JS DB fallback: adapters/src must contain no node:sqlite"
+      - name: "[guard] 0 JS DB fallback: no tracked source may import node:sqlite"
         run: |
           set -uo pipefail
-          if grep -rn "node:sqlite" apps/zcode-cli/packages/adapters/src; then
-            echo "FAIL: node:sqlite present in adapters/src on ${{ matrix.label }}" >&2
+          # 与 zcode-db-native 的同名 guard 保持一致：git grep 只查受版本控制的文件，
+          # 且只匹配真实 import/require/dynamic-import 形式（裸字符串会误命中注释，
+          # 原实现因此只能把范围限制在 adapters/src，留下其它运行时代码的漏洞）。
+          if git grep -nE "(from|require\(|import\()\s*[\"']node:sqlite" -- '*.ts' '*.tsx' '*.mts' '*.mjs' '*.js'; then
+            echo "FAIL: node:sqlite is imported in tracked source on ${{ matrix.label }}" >&2
             exit 1
           fi
-          echo "OK: no node:sqlite in adapters/src on ${{ matrix.label }}"
+          echo "OK: no tracked source imports node:sqlite on ${{ matrix.label }}"
 
       - name: "[summary] platform result"
         if: always()
