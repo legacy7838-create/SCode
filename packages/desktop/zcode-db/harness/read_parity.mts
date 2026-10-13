@@ -8,7 +8,7 @@
 // Run from the repo root:  node_modules/.bin/tsx packages/desktop/zcode-db/harness/read_parity.mts
 // Optional env: ZCODE_DB_SRC=/abs/path/to/tasks-index.sqlite
 import { createRequire } from "node:module";
-import { cpSync, rmSync, mkdtempSync } from "node:fs";
+import { cpSync, existsSync, rmSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -22,6 +22,16 @@ const { OffPeakTaskRepo } = await import("../../../services/src/session/offPeakT
 
 const src =
   process.env.ZCODE_DB_SRC ?? join(process.env.HOME ?? "", ".zcode/v2/tasks-index.sqlite");
+// 原因：这个 harness 比较的是 TS repo 与 Rust addon 在真实数据上的投影，必须有本地
+// ~/.zcode fixture 才有意义。CI runner 上该文件不存在，原来 cpSync 直接 ENOENT 崩掉,
+// 退出码和"真的 parity 失败"完全无法区分,还会把后面的 0 JS DB fallback guard 整步跳过。
+// fixture 缺失时明确 SKIP(exit 0);fixture 在而结果不一致才是 FAIL(exit 1)。
+if (!existsSync(src)) {
+  console.log(
+    `GOLDEN READ PARITY: SKIPPED — no local fixture at ${src} (set ZCODE_DB_SRC to a tasks-index.sqlite to run this gate)`,
+  );
+  process.exit(0);
+}
 const dir = mkdtempSync(join(tmpdir(), "zcode-golden-"));
 const copy = join(dir, "tasks-index.sqlite");
 cpSync(src, copy);
