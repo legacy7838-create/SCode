@@ -329,6 +329,89 @@ try {
   rmSync(shapeDir, { recursive: true, force: true });
 }
 
+// ---------------------------------------------------------------------------
+// 5. Single-row read equivalence
+// ---------------------------------------------------------------------------
+// v4-bridge 里若干调用点从 `messages().find(info.id === X)` 改成按主键单读
+// `messageWithParts({sessionID, messageID})`。这个改动的前提是两种读法返回同一投影,
+// 因此把它固定成契约:同一 decode 路径、同一 part 排序、同样的 session 作用域、
+// 缺失时同为 null。任一前提被破坏都必须在这里失败,而不是在生产路径静默取错数据。
+interface TranscriptWrites {
+  createSessionJson(dbPath: string, inputJson: string, now: number): string;
+  saveMessageJson(dbPath: string, messageJson: string, copyFromJson: null, now: number): string;
+  savePartJson(dbPath: string, partJson: string, copyFromJson: null, now: number): string;
+  messageWithPartsJson(
+    dbPath: string,
+    sessionID: string,
+    messageID: string,
+  ): string | null | undefined;
+}
+
+const transcript = addon as unknown as TranscriptWrites;
+const eqDir = mkdtempSync(join(tmpdir(), "zcode-eq-"));
+try {
+  const eqDb = join(eqDir, "db.sqlite");
+  // 必须先建库:createSessionJson 走 open_readwrite,用的是 SQLITE_OPEN_READ_WRITE(不含 CREATE),
+  // 文件不存在会直接失败。
+  addon.bootstrapSessionStoreJson(eqDb, 5000, 100);
+  transcript.createSessionJson(
+    eqDb,
+    JSON.stringify({
+      id: "s1",
+      projectID: "p1",
+      slug: "s1-slug",
+      directory: "/d",
+      title: "t",
+      version: "v",
+      time: { created: 100, updated: 100 },
+    }),
+    100,
+  );
+  for (const message of [
+    { id: "m1", sessionID: "s1", role: "user", time: { created: 200 }, agent: "main" },
+    {
+      id: "a1",
+      sessionID: "s1",
+      role: "assistant",
+      time: { created: 300, completed: 500 },
+      cost: 0,
+      parentID: "m1",
+    },
+  ]) {
+    transcript.saveMessageJson(eqDb, JSON.stringify(message), null, 600);
+  }
+  for (const part of [
+    { id: "p1", messageID: "m1", sessionID: "s1", type: "text", text: "hello 世界" },
+    { id: "p2", messageID: "a1", sessionID: "s1", type: "text", text: "reply" },
+    { id: "p3", messageID: "a1", sessionID: "s1", type: "step-start", snapshot: { x: 1 } },
+  ]) {
+    transcript.savePartJson(eqDb, JSON.stringify(part), null, 600);
+  }
+
+  const listed = JSON.parse(addon.messagesJson(eqDb, "s1")) as Array<{
+    info: { id: string };
+    parts: unknown[];
+  }>;
+  if (listed.length !== 2) fail(`equivalence fixture: expected 2 messages, got ${listed.length}`);
+  for (const id of ["m1", "a1", "absent"]) {
+    const fromList = listed.find((entry) => entry.info.id === id) ?? null;
+    const raw = transcript.messageWithPartsJson(eqDb, "s1", id);
+    const single = raw === null || raw === undefined || raw === "null" ? null : JSON.parse(raw);
+    if (JSON.stringify(fromList) !== JSON.stringify(single)) {
+      fail(`single-row read differs from messages() for ${id}`);
+    }
+  }
+  // session 作用域:a1 属于 s1,用别的 session 必须读不到(否则是越权读取)。
+  const leaked = transcript.messageWithPartsJson(eqDb, "other-session", "a1");
+  if (leaked !== null && leaked !== "null" && leaked !== undefined)
+    fail("messageWithParts leaked a row across sessions");
+  console.log("single-row read equivalence: OK (m1/a1/absent + session scoping)");
+} catch (e) {
+  fail(`equivalence section threw: ${(e as Error).message}`);
+} finally {
+  rmSync(eqDir, { recursive: true, force: true });
+}
+
 if (failures === 0) console.log("ADDON CONTRACT: OK");
 else console.log(`ADDON CONTRACT: ${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

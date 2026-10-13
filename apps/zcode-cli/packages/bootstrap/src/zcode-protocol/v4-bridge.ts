@@ -1024,14 +1024,20 @@ export function createConversationV4Gateway(
     resolveTurnUserPrompt: async (sessionId, assistantMessageId) => {
       const sessionStore = context.deps.sessionStore;
       if (!sessionStore) return null;
-      const messages = await sessionStore.messages({
+      // 原因：assistantMessageId 与它的 parentID 都是按主键定位的单条查询，原本却为两次
+      // .find() 读取整个 transcript（11.19MB / 92ms，同步阻塞 Host 事件循环）。
+      // 只有 user 消息确实需要 parts（取 text），assistant 只用 info.role/parentID。
+      const assistant = await sessionStore.messageWithParts({
         sessionID: sessionId as SessionId,
+        messageID: assistantMessageId as MessageId,
       });
-      const assistantInfo = messages.find(
-        (message) => message.info.id === assistantMessageId,
-      )?.info;
+      const assistantInfo = assistant?.info;
       if (assistantInfo?.role !== "assistant") return null;
-      const user = messages.find((message) => message.info.id === assistantInfo.parentID);
+      if (!assistantInfo.parentID) return null;
+      const user = await sessionStore.messageWithParts({
+        sessionID: sessionId as SessionId,
+        messageID: assistantInfo.parentID,
+      });
       if (!user || user.info.role !== "user") return null;
       const text = user.parts
         .filter(
@@ -1167,10 +1173,16 @@ export function createConversationV4Gateway(
       if (!record) throw new Error("proto.sessionNotFound");
       const store = context.deps.sessionStore;
       if (!store) throw new Error("fault.command.stableForkStoreUnavailable");
-      const messages = await store.messages({ sessionID: sessionId as SessionId });
-      const boundary = messages.find(
-        (message) => String(message.info.id) === target.boundaryMessageId,
-      );
+      // 原因：这里只需要 boundary 这一条消息的 info（role/providerId/modelId/mode），
+      // 但 store.messages() 会把整个 session 的 message+part 全部读出来再 .find()。
+      // 实测 229 条消息的会话 payload 为 11.19MB，其中 10.80MB 是 part 正文、info 仅 177KB，
+      // 单次调用耗时 92ms 且同步阻塞 Host 事件循环。改用按主键定位的 messageWithParts()
+      // (sqlite-session-store.ts:347 → session_messages.rs:163，同一 decode 路径、同一
+      // part 排序、同样按 session_id 限定)，语义不变、只读一行。
+      const boundary = await store.messageWithParts({
+        sessionID: sessionId as SessionId,
+        messageID: target.boundaryMessageId as MessageId,
+      });
       if (boundary?.info.role !== "assistant") {
         throw new Error("guard.forkTargetAmbiguous");
       }
@@ -1213,6 +1225,10 @@ export function createConversationV4Gateway(
       if (!record) throw new Error("proto.sessionNotFound");
       const store = context.deps.sessionStore;
       if (!store) throw new Error("fault.command.stableForkStoreUnavailable");
+      // 注意：这里必须保留整段 transcript。除了定位 editTarget 这条消息，下面还要用
+      // `messages.indexOf(targetMessage)` 找它之前最近的一条 assistant（goalBoundary 回退路径），
+      // 属于位置扫描而非主键查找；且 indexOf 依赖同一数组内的对象标识，
+      // 改用 messageWithParts() 单条读取会让 indexOf 返回 -1 从而静默取错切片。
       const messages = await store.messages({
         sessionID: sessionId as SessionId,
       });
