@@ -38,13 +38,13 @@ The data layer lives in the **Node Host** process. Two options to expose Rust to
 
 1. ✅ **Foundation** — `zcode-db` crate (rusqlite bundled) opens the real DB read-only + reads `tasks`.
    Verified: `cargo run` printed 55 rows from `~/.zcode/v2/tasks-index.sqlite`.
-2. ⬜ **Boundary** — add `napi-rs`, expose `tasks_count`/`list_tasks` to Node; load from a test.
-3. ⬜ **Read repos** — port `queryTaskList`, `listTaskMetas`, `getTaskMeta`, grouped-view queries;
+2. ✅ **Boundary** — add `napi-rs`, expose `tasks_count`/`list_tasks` to Node; load from a test.
+3. ✅ **Read repos** — port `queryTaskList`, `listTaskMetas`, `getTaskMeta`, grouped-view queries;
    cross-check Rust output == TS output on the same fixture DB (golden tests).
-4. ⬜ **Write repos** — `syncTaskMeta`, `updateTaskState`, `applyAgentPatch`, archive/delete, groups;
+4. ✅ **Write repos** — `syncTaskMeta`, `updateTaskState`, `applyAgentPatch`, archive/delete, groups;
    transaction + locking parity; test on a COPY of the DB, never the live file.
-5. ⬜ **Automations / off-peak** — `AutomationRepo`, `OffPeakTaskRepo`.
-6. ⬜ **Migrations + startup** — port `migrations.ts`/`startup.ts`; then the TS `node:sqlite` path is
+5. ✅ **Automations / off-peak** — `AutomationRepo`, `OffPeakTaskRepo`.
+6. ✅ **Migrations + startup** — port `migrations.ts`/`startup.ts`; then the TS `node:sqlite` path is
    fully removed (no JS fallback).
 7. ⬜ **Delete** the TS data layer once every consumer is on the Rust facade.
 
@@ -57,4 +57,18 @@ The data layer lives in the **Node Host** process. Two options to expose Rust to
 
 ## Current status
 
-Slice 1 done + verified. Slice 2 needs the boundary decision (A vs B) before coding.
+Slices 1–6 are done. Slice 7 is **not**: the TS data layer still exists and is still live.
+
+| Slice                      | State | Evidence                                                                                                                                                                                                                                                                                                                                                         |
+| -------------------------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 Foundation               | ✅    | `rusqlite` bundled, read-only open + `tasks`                                                                                                                                                                                                                                                                                                                     |
+| 2 Boundary                 | ✅    | `napi` + `napi-derive` in `Cargo.toml:18-19`, `cdylib`+`rlib`; 177 `#[napi]` exports loaded via `createRequire` from `packages/services/src/session/zcodeDb.ts` **and** `packages/desktop/zcode-db/addon.ts`                                                                                                                                                     |
+| 3 Read repos               | ✅    | `tasks_count` (`lib.rs:89`), `list_recent_tasks` (`:108`), `list_task_metas_json` (`:743`), `messages_json` (`:1914`), `session_journal_read.rs`                                                                                                                                                                                                                 |
+| 4 Write repos              | ✅    | 18 `session_write_*.rs` modules; `open_readwrite` applies `foreign_keys`/WAL/`synchronous` (`lib.rs:74-86`)                                                                                                                                                                                                                                                      |
+| 5 Automations / off-peak   | ✅    | `automation.rs`, `automation_write.rs`, `offpeak.rs`, `offpeak_write.rs`, consumed by `automationRepo.ts` / `offPeakTaskRepo.ts`                                                                                                                                                                                                                                 |
+| 6 Migrations + startup     | ✅    | `migrations.rs`, `session_bootstrap.rs`; no live `node:sqlite` import remains in any `src` tree (remaining mentions are comments recording the removal)                                                                                                                                                                                                          |
+| 7 Delete the TS data layer | ⬜    | `apps/zcode-cli/packages/adapters/src/storage/session-store/repositories/` (2,477 lines) is **live** — it loads the same `zcode_db.node` via `native-addon.ts` and is reachable from `adapters/src/storage/session-store.ts` and `bootstrap/src/zcode-protocol/server-operations.ts`. It is now a facade over the Rust addon rather than a second implementation |
+
+Open boundary work is tracked in `spec/native-boundary-zcode-db.md`: the 177 exports are all
+synchronous and 119 return UTF-16-encoded strings, which costs a transcode plus a re-parse per heavy
+read.
