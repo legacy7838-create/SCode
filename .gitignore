@@ -61,6 +61,7 @@ packages/desktop/zcode-db/target/
 packages/desktop/zcode-pty/target/
 packages/desktop/zcode-scan/target/
 packages/desktop/zcode-score-wasm/target/
+packages/desktop/zcode-diff-wasm/target/
 packages/desktop/zcode-appimage-strip/target/
 packages/desktop/src-tauri/target/
 # wasm-pack / prepare-zcode-score-wasm.mjs 暂存的胶水代码与 payload。
@@ -69,6 +70,10 @@ packages/desktop/src-tauri/target/
 packages/desktop/zcode-score-wasm/pkg/
 packages/desktop/zcode-score-wasm/zcode_score.wasm
 packages/desktop/zcode-score-wasm/zcode_score_web_bg.wasm
+# prepare-zcode-diff-wasm.mjs 暂存的胶水与 payload（同样文件名耦合，一起重建、一起忽略）。
+packages/desktop/zcode-diff-wasm/pkg/
+packages/desktop/zcode-diff-wasm/zcode_diff.wasm
+packages/desktop/zcode-diff-wasm/zcode_diff_web_bg.wasm
 # napi addon（stagedPath，由 prepare-*-native.mjs 从 cargo 产物拷贝而来）
 packages/desktop/zcode-db/zcode_db.node
 packages/desktop/zcode-pty/zcode_pty.node
