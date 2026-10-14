@@ -113,6 +113,21 @@ jobs:
       - name: "[install] pnpm install (root workspace, frozen)"
         run: pnpm install --frozen-lockfile
 
+      # `dev-tauri-prepare.mjs` (below) stages the NATIVE boundaries a clean checkout is missing:
+      # the zcode-db/PTY/scan napi addons, and the score/diff WASM kernels. The WASM kernels need the
+      # `wasm32-unknown-unknown` target and a `wasm-bindgen` CLI whose version matches the crate's
+      # pinned `=0.2.128` (see packages/desktop/scripts/prepare-zcode-*-wasm.mjs) — without both, the
+      # prepare fails with "缺少 rustup target: wasm32-unknown-unknown". Installed here so the dev
+      # chain works on a clean runner exactly like a developer machine.
+      - name: "[rust] wasm32 target + pinned wasm-bindgen CLI (score/diff WASM boundaries)"
+        run: |
+          set -euo pipefail
+          rustup target add wasm32-unknown-unknown
+          if ! command -v wasm-bindgen >/dev/null 2>&1; then
+            cargo install wasm-bindgen-cli --version 0.2.128 --locked
+          fi
+          wasm-bindgen --version
+
       # Build the Rust DB addon natively for THIS OS and stage zcode_db.node into
       # bundled-agents/<host>/glm. Two jobs in one: (a) it satisfies src-tauri/build.rs's
       # bundle.resources glob (otherwise `test:tauri:rust` build.rs aborts, exit 101), and
@@ -274,6 +289,17 @@ jobs:
 
       - name: "[install] pnpm install (root workspace, frozen)"
         run: pnpm install --frozen-lockfile
+
+      # See the identical step in the `test` job: `dev-tauri-prepare.mjs` stages the WASM kernels,
+      # which need the wasm32 target + a version-matched wasm-bindgen CLI.
+      - name: "[rust] wasm32 target + pinned wasm-bindgen CLI (score/diff WASM boundaries)"
+        run: |
+          set -euo pipefail
+          rustup target add wasm32-unknown-unknown
+          if ! command -v wasm-bindgen >/dev/null 2>&1; then
+            cargo install wasm-bindgen-cli --version 0.2.128 --locked
+          fi
+          wasm-bindgen --version
 
       # addon + bundled-agents/<host>/glm/zcode_db.node (build.rs resources glob).
       - name: "[db] build + stage native addon for this host"
