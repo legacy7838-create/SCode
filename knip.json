@@ -22,7 +22,10 @@
         // 手动调用，不是模块图的边；不声明就会整目录落进 "Unused files"。
         "scripts/*.mjs",
         "scripts/*.cjs",
-        "scripts/*.mts"
+        "scripts/*.mts",
+        // 各 Rust native-boundary crate 的差分验收 harness（spec/native-boundary-*.md）。
+        // 它们由 node_modules/.bin/tsx 或 CI 直接调用，同样是"手动入口"而非模块图的边。
+        "zcode-*/harness/*.mts"
       ]
     },
     "apps/zcode-cli": {
