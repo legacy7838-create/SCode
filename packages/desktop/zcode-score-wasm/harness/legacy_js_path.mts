@@ -1,13 +1,23 @@
+// The JavaScript scoring path this boundary REMOVED, preserved verbatim so the benchmark can
+// measure what production actually ran.
+//
+// It is deliberately kept as its own module rather than reconstructed inside `bench.mts`: the
+// number that matters is the one the shipped code produced, batching and all. `bench.mts` also
+// reports a column for the SAME scoring without the batching, because that is the honest floor for
+// "what JavaScript could have done" — quoting only the shipped number would overstate the win.
+//
+// Verbatim from the pre-change `packages/services/src/file/workspaceFileSearch.ts`
+// (spec/native-boundary-fuzzy-score.md §5).
+
 import { setImmediate } from "node:timers/promises";
-import type { WorkspaceFileEntry } from "@zcode/shared";
 import { unpackWorkspaceFileEntries } from "@zcode/shared/workspaceFileEntriesCodec";
 import {
   filterWorkspaceFileSearchCandidates,
   mapWorkspaceFileEntriesToSearchCandidates,
   type WorkspaceFileSearchCandidate,
 } from "@zcode/shared/workspaceFileSearch";
+import type { WorkspaceFileEntry } from "@zcode/shared";
 
-/** 分批解码已有 packed 索引，防止把 Renderer 的长任务简单搬到共享 Host。 */
 export async function buildHostFileSearchCandidates(packed: string, rootPath: string) {
   const candidates: WorkspaceFileSearchCandidate[] = [];
   for (let offset = 0; offset < packed.length; ) {
@@ -28,7 +38,6 @@ export async function searchHostFileCandidates(
   limit: number,
 ): Promise<WorkspaceFileEntry[]> {
   let best: WorkspaceFileSearchCandidate[] = [];
-  // top-K 的输入按原索引顺序分批；同分时原序稳定，分批合并与整表排序一致。
   for (let offset = 0; offset < candidates.length; offset += 2048) {
     best = filterWorkspaceFileSearchCandidates(
       [...best, ...candidates.slice(offset, offset + 2048)],

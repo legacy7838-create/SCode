@@ -1,0 +1,148 @@
+name: zcode-workspace-file-native
+
+# ENFORCEMENT of the two workspace-file native boundaries:
+#   - `zcode-scan`  addon: the walk / .zcodeignore pruning / ICU ordering / columnar pack
+#   - `zcode-score-wasm`: the fuzzy scoring kernel and top-K selection
+#
+# Both are Node/WASM artifacts with no JavaScript fallback (spec/native-boundary-workspace-scan.md
+# §1.1, spec/native-boundary-fuzzy-score.md §1.5), so a clean checkout that builds without staging
+# them produces a Host that THROWS at the first @-mention instead of degrading. This workflow is
+# what keeps that end-state true, and it carries the zero-JS-fallback regression guards.
+#
+# TRIGGER: manual only (Actions -> "Run workflow"). Nothing auto-fires; you start it by hand.
+
+on:
+  workflow_dispatch:
+
+env:
+  RUST_LOG: warn
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Build + stage every artifact, then smoke-check that each one LOADS.
+  # ---------------------------------------------------------------------------
+  artifacts:
+    name: stage scan addon + score wasm
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - name: Show Rust toolchain
+        run: rustc -vV
+      - name: Install wasm32 target
+        run: rustup target add wasm32-unknown-unknown
+      - name: pnpm install
+        run: pnpm install --frozen-lockfile
+      - name: Build + stage zcode_scan.node
+        run: node packages/desktop/scripts/prepare-zcode-scan-native.mjs
+      - name: Smoke-check the scan addon loads
+        run: node packages/desktop/scripts/prepare-zcode-scan-native.mjs --check
+      - name: Build + stage the score wasm (nodejs + web)
+        run: node packages/desktop/scripts/prepare-zcode-score-wasm.mjs
+      - name: Smoke-check the score wasm loads and exports its symbols
+        run: node packages/desktop/scripts/prepare-zcode-score-wasm.mjs --check
+
+  # ---------------------------------------------------------------------------
+  # 2. The regression gate for both boundaries.
+  #    - crate unit tests + clippy (-D warnings) for each crate
+  #    - zcode-scan's fixture/branch acceptance harness (A3/A4/A5/A6)
+  #    - zcode-score-wasm's differential parity harness (S1-S5)
+  #    - zero-JS-fallback guards (below), which are the end-state enforcements
+  # ---------------------------------------------------------------------------
+  parity-gate:
+    name: scan + score parity and zero-JS-fallback gates
+    needs: artifacts
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - name: Install wasm32 target
+        run: rustup target add wasm32-unknown-unknown
+      - name: pnpm install
+        run: pnpm install --frozen-lockfile
+      - name: Stage artifacts for tests and harnesses
+        run: |
+          node packages/desktop/scripts/prepare-zcode-scan-native.mjs
+          node packages/desktop/scripts/prepare-zcode-score-wasm.mjs
+
+      - name: zcode-scan crate tests
+        run: cargo test
+        working-directory: packages/desktop/zcode-scan
+      - name: zcode-scan clippy (deny warnings)
+        run: cargo clippy --all-targets -- -D warnings
+        working-directory: packages/desktop/zcode-scan
+      - name: zcode-scan rustfmt
+        run: cargo fmt --check
+        working-directory: packages/desktop/zcode-scan
+
+      - name: zcode-score-wasm crate tests (native, per Cargo.toml §3)
+        run: cargo test --target x86_64-unknown-linux-gnu
+        working-directory: packages/desktop/zcode-score-wasm
+      - name: zcode-score-wasm clippy (deny warnings)
+        run: cargo clippy --all-targets -- -D warnings
+        working-directory: packages/desktop/zcode-score-wasm
+      - name: zcode-score-wasm rustfmt
+        run: cargo fmt --check
+        working-directory: packages/desktop/zcode-score-wasm
+
+      - name: zcode-scan acceptance harnesses (A3/A4/A5/A6)
+        run: |
+          set -euo pipefail
+          node_modules/.bin/tsx packages/desktop/zcode-scan/harness/fixture_scan.mts
+          node_modules/.bin/tsx packages/desktop/zcode-scan/harness/read_parity.mts
+
+      - name: zcode-score-wasm differential parity harness (S1-S5)
+        run: node_modules/.bin/tsx packages/desktop/zcode-score-wasm/harness/parity.mts
+
+      - name: zero JS fallback guard (scan path must not walk in JS)
+        run: |
+          set -uo pipefail
+          # `workspaceScanNative` THROWS when the addon is missing by design; a JS re-implementation
+          # of the walk would silently undo that. Match only real import/require forms, and use git
+          # grep so node_modules/@types and stale build output are excluded. git grep exits 1 on no
+          # match, which is the PASS case here.
+          if git grep -nE "(from|require\(|import\()\s*[\"'][^\"']*(ignore|fast-glob|globby)[\"']" \
+              -- 'packages/services/src/**/*.ts' 'packages/desktop/src/**/*.ts'; then
+            echo "FAIL: a JS directory-walk matcher is imported again on the scan path — the 'addon is the only implementation' end-state regressed." >&2
+            exit 1
+          fi
+          echo "OK: no JS directory-walk matcher on the scan path"
+
+      - name: zero JS fallback guard (scoring path must not score in JS)
+        run: |
+          set -uo pipefail
+          # The Host scoring path is WASM-only: `workspaceScoreNative` throws when the artifact is
+          # missing. If `packages/services` ever imports the JS scorer again, the picker silently
+          # falls back to the ~90ms/keystroke path this boundary exists to remove, and nothing else
+          # in CI would notice.
+          #
+          # Scoped to packages/services on purpose. `packages/ui` is the renderer worker, which the
+          # spec (§1.6) explicitly defers to a separate slice, and
+          # `@zcode/shared/workspaceFileSearch` must keep exporting the scorer because it is the
+          # harness's oracle. Narrowing this guard to those exclusions keeps it meaningful; widening
+          # it to the whole repo would forbid the oracle itself.
+          if git grep -nE "(filterWorkspaceFileSearchCandidates|getWorkspaceFileSearchCandidateScore|mapWorkspaceFileEntriesToSearchCandidates|buildHostFileSearchCandidates|searchHostFileCandidates)" \
+              -- 'packages/services/src/**/*.ts'; then
+            echo "FAIL: the Host scoring path imports the JavaScript scorer again — the 'WASM is the only implementation' end-state regressed." >&2
+            exit 1
+          fi
+          echo "OK: no JavaScript scorer on the Host scoring path"
+
+      - name: zero JS fallback guard (scan + score artifacts must not be inlined into the bundle)
+        run: |
+          set -euo pipefail
+          # Both artifacts are loaded from disk at runtime and must never be bundled as bytes.
+          # esbuild has no loader for `.node` or wasm-bindgen glue, so this asserts independently
+          # of the bundler so a future bundler change cannot silently inline them.
+          pnpm --filter @zcode/desktop exec tsup
+          if find packages/desktop/out -type f \( -name '*.node' -o -name 'zcode_score*.wasm' \) | grep -q .; then
+            echo "FAIL: a native/wasm artifact was emitted inside the JS bundle output" >&2
+            exit 1
+          fi
+          echo "OK: no native/wasm artifact inlined into packages/desktop/out"

@@ -1,0 +1,31 @@
+[package]
+name = "zcode-score-wasm"
+version = "0.0.0"
+edition = "2021"
+description = "ZCode workspace file fuzzy scoring kernel (WASM)."
+
+[lib]
+# cdylib ONLY — do NOT add "rlib".
+#
+# The napi crates here (zcode-db, zcode-scan) use crate-type = ["cdylib", "rlib"] so Rust tests can
+# link the lib. That combination silently strips the `__wasm_bindgen` custom section, and the
+# wasm-bindgen CLI then fails post-processing with:
+#     error: failed to find intrinsics to enable `clone_ref` function
+# while `cargo build --target wasm32-unknown-unknown` still *succeeds* and emits a plausible .wasm.
+# See spec/native-boundary-fuzzy-score.md §3.
+#
+# Rust unit tests for this crate therefore live in `src/lib.rs` under `#[cfg(test)]` but are run via
+# `cargo test --target x86_64-unknown-linux-gnu` against a native build, not through wasm-bindgen.
+crate-type = ["cdylib"]
+
+[dependencies]
+# Pinned exactly: the installed wasm-bindgen CLI is 0.2.128. A caret range can resolve a newer crate
+# than the CLI understands and reproduces the same `clone_ref` failure.
+wasm-bindgen = "=0.2.128"
+
+[profile.release]
+# `lto` is safe here and helps the hot scoring loop; it does NOT cause the section-stripping above
+# (that is `rlib`, verified by spike).
+lto = true
+codegen-units = 1
+opt-level = 3

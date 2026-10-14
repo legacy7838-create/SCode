@@ -1,8 +1,7 @@
 /* eslint-disable max-lines */
-import type { Dirent } from "node:fs";
 import { mkdir, open, readFile, readdir, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { extname, join, relative, sep } from "node:path";
+import { extname, join } from "node:path";
 import type {
   FileBinaryPreview,
   FileEntry,
@@ -11,17 +10,12 @@ import type {
   WorkspaceFileEntry,
 } from "@zcode/shared";
 import { getMediaPreviewFormat } from "@zcode/shared";
-import { packWorkspaceFileEntries } from "@zcode/shared/workspaceFileEntriesCodec";
 import type { IFileService, WorkspaceFileSearchParams } from "./file.js";
 import { WORKSPACE_FILE_SEARCH_DISPLAY_CAP } from "@zcode/shared/workspaceFileSearch";
-import { buildHostFileSearchCandidates, searchHostFileCandidates } from "./workspaceFileSearch.js";
-import {
-  defaultWorkspaceFileSearchFilter,
-  type WorkspaceFileSearchFilter,
-} from "./workspaceFileMentionFilter.js";
+import { searchWorkspaceFilesByScore } from "./workspaceScoreNative.js";
+import { scanWorkspaceFilesPacked, resolveWorkspaceScanLocale } from "./workspaceScanNative.js";
 import {
   WORKSPACE_FILE_SEARCH_IGNORE_FILE_NAME,
-  isWorkspaceFileSearchPathIgnored,
   loadWorkspaceFileSearchIgnoreRules,
   readWorkspaceFileSearchIgnore,
   transformWorkspaceFileSearchIgnore,
@@ -112,13 +106,8 @@ function validateScratchWorkspaceName(name: string): string {
   }
   return trimmedName;
 }
-function normalizeRelativePath(rootPath: string, targetPath: string): string {
-  return relative(rootPath, targetPath).split(sep).join("/");
-}
-function isSkippableWorkspaceFileListError(error: unknown): boolean {
-  const code = (error as { code?: unknown } | null)?.code;
-  return code === "EACCES" || code === "EPERM" || code === "ENOENT";
-}
+// normalizeRelativePath / isSkippableWorkspaceFileListError were the retired JS scan's helpers;
+// both now live inside the Rust addon (see spec/native-boundary-workspace-scan.md §5).
 
 interface FileExistenceCacheEntry {
   exists: boolean;
@@ -194,9 +183,17 @@ async function resolveReaddirEntryType(
   }
 }
 
-export interface CreateFileServiceOptions {
-  workspaceFileSearchFilter?: WorkspaceFileSearchFilter;
-}
+/**
+ * Kept as an exported empty interface because `node.ts` re-exports it: removing the symbol would be
+ * a public-surface break for an option that no longer exists.
+ *
+ * The old `workspaceFileSearchFilter?: WorkspaceFileSearchFilter` injection point is **removed, not
+ * ported**. It had zero callers and zero tests (verified by grep across `packages/` and `apps/`),
+ * and `ignoreRulesActive` was hardcoded `true` at its single call site, so its directory blacklist
+ * was already dead code. Porting it would mean either a per-entry callback into JS — which would
+ * erase the whole point of the native scan — or two filter implementations free to drift.
+ */
+export interface CreateFileServiceOptions {}
 
 /**
  * listWorkspaceFiles 的 Host 侧短 TTL 缓存：
@@ -207,13 +204,11 @@ export interface CreateFileServiceOptions {
  * 保持"编辑规则后下次使用生效"的契约。
  */
 const WORKSPACE_FILE_LIST_CACHE_TTL_MS = 60_000;
-const WORKSPACE_FILE_LIST_SCAN_CONCURRENCY = 8;
 const WORKSPACE_FILE_LIST_CACHE_MAX_ENTRIES = 4;
 interface WorkspaceFileIndex {
   at: number;
   signature: string;
   packed: string;
-  candidates?: ReturnType<typeof buildHostFileSearchCandidates>;
 }
 
 async function statWorkspaceFileSearchIgnoreFingerprint(rootPath: string): Promise<string> {
@@ -225,9 +220,7 @@ async function statWorkspaceFileSearchIgnoreFingerprint(rootPath: string): Promi
   }
 }
 
-export function createFileService(options: CreateFileServiceOptions = {}): IFileService {
-  const workspaceFileSearchFilter =
-    options.workspaceFileSearchFilter ?? defaultWorkspaceFileSearchFilter;
+export function createFileService(_options: CreateFileServiceOptions = {}): IFileService {
   const workspaceIgnoreLogger = createServiceLogger("workspace-file-ignore");
   const fileExistenceCache = new FileExistenceCache();
   // 索引归服务实例；不同 Host/注入过滤器不能通过模块全局缓存复用同路径结果。
@@ -287,66 +280,27 @@ export function createFileService(options: CreateFileServiceOptions = {}): IFile
       workspaceFileListCache.set(workspaceKey, cached);
       return cached;
     }
-    const scanning = (async () => {
-      const entries: WorkspaceFileEntry[] = [];
-      const pendingDirectories: string[] = [rootPath];
-      // 单线程串行 DFS 一次只 await 一个 readdir，
-      // 37 万文件的 Windows workspace 实测 21.8s；改为共享目录队列的受限并发遍历，
-      // 结果仍按既有规则排序，遍历顺序不影响语义。
-      const traverseWorker = async (): Promise<void> => {
-        for (;;) {
-          const currentPath = pendingDirectories.pop();
-          if (!currentPath) {
-            return;
-          }
-          let children: Dirent[];
-          try {
-            children = await readdir(currentPath, { withFileTypes: true });
-          } catch (error) {
-            if (isSkippableWorkspaceFileListError(error)) {
-              continue;
-            }
-            throw error;
-          }
-          for (const entry of children) {
-            const entryPath = join(currentPath, entry.name);
-            const relativePath = normalizeRelativePath(rootPath, entryPath);
-            if (relativePath === WORKSPACE_FILE_SEARCH_IGNORE_FILE_NAME) {
-              continue;
-            }
-            const type = await resolveReaddirEntryType(
-              entryPath,
-              entry.isDirectory(),
-              entry.isSymbolicLink(),
-            );
-            if (isWorkspaceFileSearchPathIgnored(ignoreRules, relativePath, type)) {
-              continue;
-            }
-            const decision = workspaceFileSearchFilter.evaluate(
-              { name: entry.name, path: entryPath, relativePath, type },
-              { ignoreRulesActive: true },
-            );
-            if (decision.include) {
-              entries.push({ name: entry.name, path: entryPath, relativePath, type });
-            }
-            if (type === "directory" && !entry.isSymbolicLink() && decision.traverse) {
-              pendingDirectories.push(entryPath);
-            }
-          }
-        }
-      };
-      await Promise.all(
-        Array.from({ length: WORKSPACE_FILE_LIST_SCAN_CONCURRENCY }, () => traverseWorker()),
-      );
-      const sorted = entries.sort((left, right) => {
-        if (left.type !== right.type) {
-          return left.type === "directory" ? -1 : 1;
-        }
-        return left.relativePath.localeCompare(right.relativePath);
+    // 扫描已整体下沉到 Rust `zcode-scan` addon：递归遍历、.zcodeignore 剪枝、目录优先 + ICU 排序、
+    // 列式打包全部在 native 侧一次完成（spec/native-boundary-workspace-scan.md）。
+    //
+    // 为什么零 JS fallback：旧实现在这条路上对**每个**目录项都 await 一次
+    // （resolveReaddirEntryType 对非软链接是同步返回，await 仍是白付一次微任务），
+    // 37 万文件的 workspace 实测要 21.8s（串行）/ 2.3s（8 并发，本机 161859 行）。
+    // addon 是唯一实现：缺失时 workspaceScanNative 直接抛，不降级为慢速 JS 扫描，
+    // 否则「能用」会静默变成「慢十倍」而无人发现。
+    //
+    // 跨界传的是**规则文本**而非 ignore matcher：matcher 是编译产物无法序列化，
+    // 文本才是单一事实。addon 不读也不建 .zcodeignore（§1.3）。
+    // locale 必须是调用方解析出的 Intl.Collator locale：Node 裸 localeCompare 用的是运行时
+    // 默认 locale，而 Rust 侧只写死了 Strength::Tertiary，locale 不一致就会静默重排 @ 面板。
+    const scanning = Promise.resolve().then(() => {
+      const packed = scanWorkspaceFilesPacked({
+        rootPath,
+        ignoreRuleText: ignoreRules.content,
+        locale: resolveWorkspaceScanLocale(),
       });
-      const packed = packWorkspaceFileEntries(sorted);
       return { at: Date.now(), signature: cacheSignature, packed };
-    })();
+    });
     workspaceFileListScanning.set(workspaceKey, { signature: cacheSignature, promise: scanning });
     try {
       const index = await scanning;
@@ -601,8 +555,16 @@ export function createFileService(options: CreateFileServiceOptions = {}): IFile
         params.workspaceIdentity,
         params.refresh,
       );
-      index.candidates ??= buildHostFileSearchCandidates(index.packed, params.rootPath);
-      return searchHostFileCandidates(await index.candidates, params.query, limit);
+      // 打分与 top-K 整体在 Rust/WASM 侧（spec/native-boundary-fuzzy-score.md）：Host 不再把 37 万
+      // 条 packed 索引物化成 JS candidate 对象，每键只在 WASM 里排一次序再解回 ≤limit 条 entry。
+      // 零 JS fallback：artifact 缺失时 workspaceScoreNative 直接抛，不降级成逐候选的 JS 打分，
+      // 否则「能用」会静默变成「慢十倍」而无人发现。
+      return searchWorkspaceFilesByScore({
+        packed: index.packed,
+        rootPath: params.rootPath,
+        query: params.query,
+        limit,
+      });
     },
     async listWorkspaceFilesLength(params: { rootPath: string }): Promise<number> {
       const { packed } = await ensureWorkspaceFileIndex(params.rootPath);
