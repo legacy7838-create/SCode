@@ -1,4 +1,4 @@
-import { computeLineChangeStat } from "@zcode/shared";
+import { lineChangeStat } from "@/lib/diffWasm.js";
 import { resolveFileDisplayDescriptor } from "@/lib/fileDisplay.js";
 import { getPathLeaf } from "@/lib/path.js";
 import { buildUnifiedDiff } from "@/lib/toolDiffPreview.js";
@@ -288,11 +288,11 @@ export function buildFallbackRawToolCallFileSummary(
   const beforeAfter = readToolCallBeforeAfterCandidate(source);
   const changeStat =
     actionLabel === "Created" && content !== undefined
-      ? computeLineChangeStat(null, content)
+      ? lineChangeStat(null, content)
       : actionLabel === "Deleted" && content !== undefined
-        ? computeLineChangeStat(content, "")
+        ? lineChangeStat(content, "")
         : actionLabel === "Edited" && beforeAfter
-          ? computeLineChangeStat(beforeAfter.oldText, beforeAfter.newText)
+          ? lineChangeStat(beforeAfter.oldText, beforeAfter.newText)
           : undefined;
   const patch =
     actionLabel === "Created" && content !== undefined

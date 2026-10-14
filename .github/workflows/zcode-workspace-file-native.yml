@@ -1,13 +1,15 @@
 name: zcode-workspace-file-native
 
-# ENFORCEMENT of the two workspace-file native boundaries:
+# ENFORCEMENT of the native boundaries that replaced JavaScript hot paths:
 #   - `zcode-scan`  addon: the walk / .zcodeignore pruning / ICU ordering / columnar pack
 #   - `zcode-score-wasm`: the fuzzy scoring kernel and top-K selection
+#   - `zcode-diff-wasm`: the line LCS / unified-diff / line-change-stat kernel
 #
-# Both are Node/WASM artifacts with no JavaScript fallback (spec/native-boundary-workspace-scan.md
-# §1.1, spec/native-boundary-fuzzy-score.md §1.5), so a clean checkout that builds without staging
-# them produces a Host that THROWS at the first @-mention instead of degrading. This workflow is
-# what keeps that end-state true, and it carries the zero-JS-fallback regression guards.
+# All three are native/WASM artifacts with no JavaScript fallback (spec/native-boundary-workspace-scan.md
+# §1.1, spec/native-boundary-fuzzy-score.md §1.5, spec/native-boundary-line-diff.md §1), so a clean
+# checkout that builds without staging them produces a Host/renderer that THROWS at the first use
+# instead of degrading. This workflow is what keeps that end-state true, and it carries the
+# zero-JS-fallback regression guards.
 #
 # TRIGGER: manual only (Actions -> "Run workflow"). Nothing auto-fires; you start it by hand.
 
@@ -22,7 +24,7 @@ jobs:
   # 1. Build + stage every artifact, then smoke-check that each one LOADS.
   # ---------------------------------------------------------------------------
   artifacts:
-    name: stage scan addon + score wasm
+    name: stage scan addon + score/diff wasm
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
@@ -44,16 +46,21 @@ jobs:
         run: node packages/desktop/scripts/prepare-zcode-score-wasm.mjs
       - name: Smoke-check the score wasm loads and exports its symbols
         run: node packages/desktop/scripts/prepare-zcode-score-wasm.mjs --check
+      - name: Build + stage the diff wasm (nodejs + web)
+        run: node packages/desktop/scripts/prepare-zcode-diff-wasm.mjs
+      - name: Smoke-check the diff wasm loads and exports its symbols
+        run: node packages/desktop/scripts/prepare-zcode-diff-wasm.mjs --check
 
   # ---------------------------------------------------------------------------
-  # 2. The regression gate for both boundaries.
+  # 2. The regression gate for all boundaries.
   #    - crate unit tests + clippy (-D warnings) for each crate
   #    - zcode-scan's fixture/branch acceptance harness (A3/A4/A5/A6)
   #    - zcode-score-wasm's differential parity harness (S1-S5)
+  #    - zcode-diff-wasm's differential parity harness (S1-S6)
   #    - zero-JS-fallback guards (below), which are the end-state enforcements
   # ---------------------------------------------------------------------------
   parity-gate:
-    name: scan + score parity and zero-JS-fallback gates
+    name: scan + score + diff parity and zero-JS-fallback gates
     needs: artifacts
     runs-on: ubuntu-24.04
     steps:
@@ -70,6 +77,7 @@ jobs:
         run: |
           node packages/desktop/scripts/prepare-zcode-scan-native.mjs
           node packages/desktop/scripts/prepare-zcode-score-wasm.mjs
+          node packages/desktop/scripts/prepare-zcode-diff-wasm.mjs
 
       - name: zcode-scan crate tests
         run: cargo test
@@ -91,6 +99,16 @@ jobs:
         run: cargo fmt --check
         working-directory: packages/desktop/zcode-score-wasm
 
+      - name: zcode-diff-wasm crate tests (native, per Cargo.toml)
+        run: cargo test --target x86_64-unknown-linux-gnu
+        working-directory: packages/desktop/zcode-diff-wasm
+      - name: zcode-diff-wasm clippy (deny warnings)
+        run: cargo clippy --all-targets -- -D warnings
+        working-directory: packages/desktop/zcode-diff-wasm
+      - name: zcode-diff-wasm rustfmt
+        run: cargo fmt --check
+        working-directory: packages/desktop/zcode-diff-wasm
+
       - name: zcode-scan acceptance harnesses (A3/A4/A5/A6)
         run: |
           set -euo pipefail
@@ -99,6 +117,9 @@ jobs:
 
       - name: zcode-score-wasm differential parity harness (S1-S5)
         run: node_modules/.bin/tsx packages/desktop/zcode-score-wasm/harness/parity.mts
+
+      - name: zcode-diff-wasm differential parity harness (S1-S6)
+        run: node_modules/.bin/tsx packages/desktop/zcode-diff-wasm/harness/parity.mts
 
       - name: zero JS fallback guard (scan path must not walk in JS)
         run: |
@@ -134,14 +155,38 @@ jobs:
           fi
           echo "OK: no JavaScript scorer on the Host scoring path"
 
-      - name: zero JS fallback guard (scan + score artifacts must not be inlined into the bundle)
+      - name: zero JS fallback guard (diff path must not compute an LCS in JS)
+        run: |
+          set -uo pipefail
+          # Both diff consumers (Host `taskChangeSummary`, renderer `toolDiffPreview`) are kernel-only:
+          # the facades THROW when the artifact is missing (spec/native-boundary-line-diff.md §1). A
+          # re-introduced JS LCS would silently restore the two divergent implementations the single
+          # Rust kernel replaced, so forbid the tell-tale symbols repo-wide (the oracle lives in the
+          # harness file, which this pattern does not match because it renamed them *Oracle).
+          if git grep -nE "(appendDiffBodyWithLcs|appendDiffBodyWithLargeSegmentFallback|collectUniqueLineMatches|findIncreasingAnchorMatches|MAX_DIFF_LCS_CELLS|MAX_LCS_CELLS)" \
+              -- 'packages/ui/src/**/*.ts' 'packages/ui/src/**/*.tsx' 'packages/services/src/**/*.ts' 'packages/shared/src/**/*.ts'; then
+            echo "FAIL: a JavaScript LCS implementation is back on the diff path — the 'kernel is the only implementation' end-state regressed." >&2
+            exit 1
+          fi
+          echo "OK: no JavaScript LCS on the diff path"
+
+      - name: zero JS fallback guard (diff facades keep their throw, not a fallback)
+        run: |
+          set -euo pipefail
+          # Assert the throw-bearing facades exist rather than trusting a deleted-file grep. If a
+          # future change swaps the throw for a JS fallback, these markers disappear and this fails.
+          grep -q "There is no JavaScript" packages/ui/src/lib/diffWasm.ts
+          grep -q "no JavaScript fallback" packages/services/src/session/diffNative.ts
+          echo "OK: diff facades still fail loudly instead of falling back"
+
+      - name: zero JS fallback guard (scan + score + diff artifacts must not be inlined into the bundle)
         run: |
           set -euo pipefail
           # Both artifacts are loaded from disk at runtime and must never be bundled as bytes.
           # esbuild has no loader for `.node` or wasm-bindgen glue, so this asserts independently
           # of the bundler so a future bundler change cannot silently inline them.
           pnpm --filter @zcode/desktop exec tsup
-          if find packages/desktop/out -type f \( -name '*.node' -o -name 'zcode_score*.wasm' \) | grep -q .; then
+          if find packages/desktop/out -type f \( -name '*.node' -o -name 'zcode_score*.wasm' -o -name 'zcode_diff*.wasm' \) | grep -q .; then
             echo "FAIL: a native/wasm artifact was emitted inside the JS bundle output" >&2
             exit 1
           fi

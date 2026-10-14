@@ -13,6 +13,7 @@
 //   - zcode-pty（napi addon，dev-host 开终端用）
 //   - zcode-scan（napi addon，@-mention 的工作区遍历）
 //   - zcode-score-wasm（wasm 胶水 + payload，@-mention 的模糊评分）
+//   - zcode-diff-wasm（wasm 胶水 + payload，行级 LCS / unified diff / 变更行统计）
 // DB 始终是 Rust：addon 源缺失时用 cargo 构建（prepare-zcode-db-native.mjs），
 // 不引入任何 JS sqlite 兜底。落点解析复用 stage-agent-bundle.mjs，与打包链同一份，不漂移。
 import { spawnSync } from "node:child_process";
@@ -34,9 +35,13 @@ const ptyAddonSource = resolve(desktopRoot, "zcode-pty", "zcode_pty.node");
 // 缺一个就会在用户第一次按 `@` 时抛错，而不是降级。dev-host.mjs 也在启动时 fail-fast。
 const scanAddonSource = resolve(desktopRoot, "zcode-scan", "zcode_scan.node");
 const scoreGlueSource = resolve(desktopRoot, "zcode-score-wasm", "pkg", "nodejs", "zcode_score.js");
+// diff 同理：Host 的 taskChangeSummary 与 renderer 的 toolDiffPreview 都走 wasm 内核，无 JS 兜底。
+// Host 用 nodejs 胶水（packages/services/src/session/diffNative.ts），renderer 用 web 胶水
+// （packages/ui/src/lib/diffWasm.ts + vite alias）。nodejs 胶水存在即代表两个 target 都已 stage。
+const diffGlueSource = resolve(desktopRoot, "zcode-diff-wasm", "pkg", "nodejs", "zcode_diff.js");
 
-// 快速路径：glm 里已有 addon 且不比构建产物旧，且 PTY / scan / score 边界也都已就绪时，才直接跳过
-//（含 cargo），不拖慢每次 dev 启动。PTY、scan、score 也纳入判断：否则 DB 命中缓存时会跳过下面的
+// 快速路径：glm 里已有 addon 且不比构建产物旧，且 PTY / scan / score / diff 边界也都已就绪时，才直接跳过
+//（含 cargo），不拖慢每次 dev 启动。PTY、scan、score、diff 也纳入判断：否则 DB 命中缓存时会跳过下面的
 // cargo 构建，干净但 DB 已暂存的工作树里这些产物永远建不出来，dev-host / host-sidecar 随后必崩。
 if (
   existsSync(stagedDbNodePath) &&
@@ -44,6 +49,7 @@ if (
   existsSync(ptyAddonSource) &&
   existsSync(scanAddonSource) &&
   existsSync(scoreGlueSource) &&
+  existsSync(diffGlueSource) &&
   statSync(stagedDbNodePath).mtimeMs >= statSync(dbAddonSource).mtimeMs
 ) {
   console.log(`[dev:tauri:prepare] zcode_db.node 已就绪：${stagedDbNodePath}`);
@@ -105,6 +111,20 @@ if (!existsSync(scoreGlueSource)) {
   );
   if (result.status !== 0) {
     console.error("[dev:tauri:prepare] 构建 zcode-score-wasm 失败，无法继续 dev:tauri");
+    process.exit(result.status ?? 1);
+  }
+}
+
+// diff = WASM：行级 LCS / unified diff / 变更行统计走 wasm 内核，无 JS 兜底。缺失时构建。
+if (!existsSync(diffGlueSource)) {
+  console.log("[dev:tauri:prepare] Rust diff wasm 产物缺失，运行构建 ...");
+  const result = spawnSync(
+    process.execPath,
+    [resolve(desktopRoot, "scripts", "prepare-zcode-diff-wasm.mjs")],
+    { cwd: desktopRoot, stdio: "inherit" },
+  );
+  if (result.status !== 0) {
+    console.error("[dev:tauri:prepare] 构建 zcode-diff-wasm 失败，无法继续 dev:tauri");
     process.exit(result.status ?? 1);
   }
 }

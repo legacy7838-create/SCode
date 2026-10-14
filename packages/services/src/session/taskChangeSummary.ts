@@ -3,7 +3,7 @@ import type {
   ZCodeTaskChangeSummary,
   ZCodeTaskChangedFileSummary,
 } from "@zcode/shared";
-import { computeLineChangeStat } from "@zcode/shared";
+import { computeLineChangeStatNative } from "./diffNative.js";
 
 interface AggregatedFileChange {
   path: string;
@@ -54,7 +54,7 @@ export function buildPerTurnChangeSummaries(
     let removed = 0;
     const files: ZCodeTaskChangedFileSummary[] = Array.from(turnFileMap.entries())
       .map(([path, file]) => {
-        const fileStat = computeLineChangeStat(file.beforeContent, file.afterContent);
+        const fileStat = computeLineChangeStatNative(file.beforeContent, file.afterContent);
         added += fileStat.added;
         removed += fileStat.removed;
         return {
@@ -115,7 +115,7 @@ export function buildTaskChangeSummary(
   let removed = 0;
   const files: ZCodeTaskChangedFileSummary[] = Array.from(changedFileMap.values())
     .map((file) => {
-      const fileStat = computeLineChangeStat(file.originalContent, file.finalContent);
+      const fileStat = computeLineChangeStatNative(file.originalContent, file.finalContent);
       added += fileStat.added;
       removed += fileStat.removed;
       return {

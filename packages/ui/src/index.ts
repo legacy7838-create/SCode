@@ -1,4 +1,8 @@
 export { App } from "./App.js";
+// Line-diff WASM kernel bootstrap (spec/native-boundary-line-diff.md). The renderer must await
+// this once with the bundled `_bg.wasm` URL before any diff is computed; the diff helpers
+// themselves (`buildUnifiedDiff`, `lineChangeStat`) are internal to the UI.
+export { prepareDiffKernel } from "./lib/diffWasm.js";
 export { AppErrorBoundary, ScopedErrorBoundary } from "./ErrorBoundary.js";
 export type { ScopedErrorBoundaryVariant } from "./ErrorBoundary.js";
 export { Button, buttonVariants } from "./components/ui/button.js";

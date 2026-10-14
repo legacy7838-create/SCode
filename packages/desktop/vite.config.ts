@@ -178,6 +178,12 @@ export default defineConfig(({ mode }) => {
         // 导致 spinner、alert 等组件里的内部导入在构建时全部失效。
         // 这里在消费端补齐别名，比逐个改组件导入更稳，也能和 web 端保持一致。
         "@": resolve(__dirname, "../ui/src"),
+        // Line-diff WASM kernel (spec/native-boundary-line-diff.md). The glue + payload are a
+        // filename-coupled pair staged by prepare-zcode-diff-wasm.mjs into a build-artifact dir
+        // (gitignored), and packages/ui is a Vite library whose NodeNext resolution cannot reach
+        // outside its own rootDir, so the consumer resolves it through this alias. The facade
+        // declares the module shape in src/lib/diffWasm.ts.
+        "@zcode-diff-wasm-web": resolve(__dirname, "zcode-diff-wasm/pkg/web/zcode_diff_web.js"),
         ...desktopRendererDependencyAliases,
         // Recharts 通过 d3-shape 读取 d3-path 的 Path 导出；hoisted node_modules
         // 里可能残留 d3-shape/node_modules/d3-path@1.x，Vite 预构建会优先命中旧包并报 Missing export。

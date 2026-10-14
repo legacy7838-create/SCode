@@ -1,4 +1,4 @@
-import { computeLineChangeStat } from "@zcode/shared";
+import { lineChangeStat } from "@/lib/diffWasm.js";
 import { getPathLeaf } from "@/lib/path.js";
 import { resolveFileDisplayDescriptor } from "@/lib/fileDisplay.js";
 import { buildUnifiedDiff } from "@/lib/toolDiffPreview.js";
@@ -202,11 +202,11 @@ export function readRawToolCallFileSummaries(
     const descriptor = resolveFileDisplayDescriptor(path);
     let changeStat: { added: number; removed: number } | undefined;
     if (oldText !== undefined && newText !== undefined) {
-      changeStat = computeLineChangeStat(oldText, newText);
+      changeStat = lineChangeStat(oldText, newText);
     } else if (changeType === "add" && newText !== undefined) {
-      changeStat = computeLineChangeStat(null, newText);
+      changeStat = lineChangeStat(null, newText);
     } else if (changeType === "delete" && oldText !== undefined) {
-      changeStat = computeLineChangeStat(oldText, "");
+      changeStat = lineChangeStat(oldText, "");
     }
     const explicitPatch = normalizeSingleFilePatch(readUnifiedDiffField(change), getPathLeaf(path));
     const patch =

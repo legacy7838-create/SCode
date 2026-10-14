@@ -4,7 +4,7 @@ import type {
   ZCodeTaskChangedFileSummary,
   ZCodeTaskMeta,
 } from "@zcode/shared";
-import { computeLineChangeStat } from "@zcode/shared";
+import { lineChangeStat } from "@/lib/diffWasm.js";
 import { getPathLeaf } from "@/lib/path.js";
 
 interface TaskChangeSummaryIntl {
@@ -117,7 +117,7 @@ export function buildTaskChangeSummary(
   let removed = 0;
   const files: ZCodeTaskChangedFileSummary[] = Array.from(changedFileMap.values())
     .map((file) => {
-      const fileStat = computeLineChangeStat(file.originalContent, file.finalContent);
+      const fileStat = lineChangeStat(file.originalContent, file.finalContent);
       added += fileStat.added;
       removed += fileStat.removed;
       return {
@@ -176,7 +176,7 @@ export function buildTurnChangeSummary(
   let removed = 0;
   const files: ZCodeTaskChangedFileSummary[] = Array.from(filesByPath.entries())
     .map(([path, snapshot]) => {
-      const fileStat = computeLineChangeStat(snapshot.beforeContent, snapshot.afterContent);
+      const fileStat = lineChangeStat(snapshot.beforeContent, snapshot.afterContent);
       added += fileStat.added;
       removed += fileStat.removed;
       return {

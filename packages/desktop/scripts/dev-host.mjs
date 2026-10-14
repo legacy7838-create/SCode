@@ -19,6 +19,8 @@ const ptyAddon = join(desktopRoot, "zcode-pty/zcode_pty.node");
 // 之后，日志里只会看到一句孤立的异常，很难定位。这里与 DB/PTY 一样在启动期 fail-fast。
 const scanAddon = join(desktopRoot, "zcode-scan/zcode_scan.node");
 const scoreGlue = join(desktopRoot, "zcode-score-wasm/pkg/nodejs/zcode_score.js");
+// Host 侧的行级 diff 统计（packages/services/src/session/diffNative.ts）同样无 JS 兜底。
+const diffGlue = join(desktopRoot, "zcode-diff-wasm/pkg/nodejs/zcode_diff.js");
 const port = process.env.ZCODE_WS_PORT ?? "5199";
 
 function sleep(ms) {
@@ -55,6 +57,16 @@ if (!existsSync(scanAddon)) {
 if (!existsSync(scoreGlue)) {
   console.error(
     `[dev-host] zcode-score wasm glue missing: ${scoreGlue}\n  run: pnpm prepare:zcode-score-wasm`,
+  );
+  process.exit(1);
+}
+
+// Same fail-fast for the line-diff kernel the Host uses for per-turn / task change stats. It has no
+// JS fallback, so a missing artifact would only surface as a thrown error the first time a summary
+// is built. Check it here so a clean tree fails at boot.
+if (!existsSync(diffGlue)) {
+  console.error(
+    `[dev-host] zcode-diff wasm glue missing: ${diffGlue}\n  run: pnpm prepare:zcode-diff-wasm`,
   );
   process.exit(1);
 }

@@ -20,17 +20,17 @@ JavaScript fallback**: the kernel is the only diff implementation.
 
 ### Measured starting state (verified against the checkout)
 
-| Property                    | Value                                                              | Evidence                                            |
-| --------------------------- | ------------------------------------------------------------------ | --------------------------------------------------- |
-| Patch builder               | full 2-D LCS table, `(n+1)×(m+1)` numbers                          | `toolDiffPreview.ts:272-286`                        |
-| Patch builder cap           | `MAX_DIFF_LCS_CELLS = 60_000`, above which it degrades             | `toolDiffPreview.ts:3,267`                          |
-| Stat builder                | rolling 1-D LCS over the trimmed middle                            | `lineChangeStat.ts:68-80`                           |
-| Stat builder cap            | `MAX_LCS_CELLS = 400_000`, above which it degrades                 | `lineChangeStat.ts:1,64`                            |
-| Degrade behavior (patch)    | delete-all + add-all **unless** unique-anchor pre-split finds anchors | `toolDiffPreview.ts:215-250`                     |
-| Degrade behavior (stat)     | returns total line counts as if nothing matched                    | `lineChangeStat.ts:64-66`                           |
-| Call sites (render thread)  | `codeViewer.ts:477,510`, `fileSummaries.ts:215`, `fileSummaryHeuristics.ts:299,301` | `toolDisplay.ts:254` → `ToolCallBlocks.tsx:187` |
-| Stat call sites (both sides) | `packages/services/src/session/taskChangeSummary.ts:57,118` (Host) + `packages/ui/src/lib/taskChangeSummary.ts:120,179` (renderer) | grep `computeLineChangeStat`   |
-| Tests for either path       | **zero**                                                           | no `.test.ts` references either function            |
+| Property                     | Value                                                                                                                              | Evidence                                        |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| Patch builder                | full 2-D LCS table, `(n+1)×(m+1)` numbers                                                                                          | `toolDiffPreview.ts:272-286`                    |
+| Patch builder cap            | `MAX_DIFF_LCS_CELLS = 60_000`, above which it degrades                                                                             | `toolDiffPreview.ts:3,267`                      |
+| Stat builder                 | rolling 1-D LCS over the trimmed middle                                                                                            | `lineChangeStat.ts:68-80`                       |
+| Stat builder cap             | `MAX_LCS_CELLS = 400_000`, above which it degrades                                                                                 | `lineChangeStat.ts:1,64`                        |
+| Degrade behavior (patch)     | delete-all + add-all **unless** unique-anchor pre-split finds anchors                                                              | `toolDiffPreview.ts:215-250`                    |
+| Degrade behavior (stat)      | returns total line counts as if nothing matched                                                                                    | `lineChangeStat.ts:64-66`                       |
+| Call sites (render thread)   | `codeViewer.ts:477,510`, `fileSummaries.ts:215`, `fileSummaryHeuristics.ts:299,301`                                                | `toolDisplay.ts:254` → `ToolCallBlocks.tsx:187` |
+| Stat call sites (both sides) | `packages/services/src/session/taskChangeSummary.ts:57,118` (Host) + `packages/ui/src/lib/taskChangeSummary.ts:120,179` (renderer) | grep `computeLineChangeStat`                    |
+| Tests for either path        | **zero**                                                                                                                           | no `.test.ts` references either function        |
 
 The two "freeze" comments are the team's own record of the problem:
 
@@ -155,7 +155,12 @@ The TS facade (`packages/ui/src/lib/diffWasm.ts`) exposes:
 
 ```ts
 export function prepareDiffKernel(wasmUrl: string): Promise<void>; // called once at renderer boot
-export function diffUnified(before: string, after: string, fileLabel: string, contextLines: number): DiffResult; // synchronous; throws if not prepared
+export function diffUnified(
+  before: string,
+  after: string,
+  fileLabel: string,
+  contextLines: number,
+): DiffResult; // synchronous; throws if not prepared
 ```
 
 ---
@@ -169,7 +174,7 @@ export function diffUnified(before: string, after: string, fileLabel: string, co
   sides of the old `60_000` cap.
 - **S2 — stat parity.** For every case, `{added, removed}` equals the oracle's
   `computeLineChangeStat`, including the inputs that used to exceed the old `400_000` cap (where the
-  oracle is *wrong* and the kernel is *right* — S2 asserts the kernel against the true LCS, and
+  oracle is _wrong_ and the kernel is _right_ — S2 asserts the kernel against the true LCS, and
   documents the divergence where the oracle degraded).
 - **S3 — both views agree.** `added`/`removed` are derived from the same DP the patch used.
 - **S4 — no fallback.** With the artifact absent or `prepareDiffKernel` not called,
@@ -184,13 +189,13 @@ export function diffUnified(before: string, after: string, fileLabel: string, co
 
 ## 5. Removed in this change
 
-| Removed                                             | Location                                             |
-| --------------------------------------------------- | ---------------------------------------------------- |
-| `appendDiffBodyWithLcs` (2-D DP)                    | `packages/ui/src/lib/toolDiffPreview.ts:252-327`     |
-| `appendDiffBodyWithLargeSegmentFallback` (anchor)   | `toolDiffPreview.ts:215-250` (moved to Rust)         |
-| `collectUniqueLineMatches` / `findIncreasingAnchorMatches` | `toolDiffPreview.ts:133-213` (moved to Rust)  |
-| `appendDiffBody` / `MAX_DIFF_LCS_CELLS`             | `toolDiffPreview.ts:3,329-335`                       |
-| rolling 1-D LCS + `MAX_LCS_CELLS`                   | `packages/shared/src/lineChangeStat.ts:1,64-86`      |
+| Removed                                                    | Location                                         |
+| ---------------------------------------------------------- | ------------------------------------------------ |
+| `appendDiffBodyWithLcs` (2-D DP)                           | `packages/ui/src/lib/toolDiffPreview.ts:252-327` |
+| `appendDiffBodyWithLargeSegmentFallback` (anchor)          | `toolDiffPreview.ts:215-250` (moved to Rust)     |
+| `collectUniqueLineMatches` / `findIncreasingAnchorMatches` | `toolDiffPreview.ts:133-213` (moved to Rust)     |
+| `appendDiffBody` / `MAX_DIFF_LCS_CELLS`                    | `toolDiffPreview.ts:3,329-335`                   |
+| rolling 1-D LCS + `MAX_LCS_CELLS`                          | `packages/shared/src/lineChangeStat.ts:1,64-86`  |
 
 Both JS LCS bodies are preserved **verbatim** as the differential oracle in
 `packages/desktop/zcode-diff-wasm/harness/legacy_js_diff.mts`.

@@ -15,3 +15,16 @@
  * 交给 CSS 插件处理，TypeScript 只需要它不是一个错误即可。
  */
 declare module "*.css";
+
+/**
+ * 渲染端的 `?url` 资源导入类型声明（当前是行级 diff 的 WASM payload）。
+ *
+ * 与上面的 `*.css` 同理：`packages/ui/src/office-preview-assets.d.ts` 里已有 `*.wasm?url`
+ * 声明，但那是 ui 工程的 ambient declaration，project reference 不会把它带进 renderer 作用域。
+ * 这里在 renderer 工程内再声明一次。Vite 会把它解析成打包后的资源 URL 字符串，这个 URL 交给
+ * `prepareDiffKernel` 去 fetch + 同步编译。
+ */
+declare module "*.wasm?url" {
+  const url: string;
+  export default url;
+}

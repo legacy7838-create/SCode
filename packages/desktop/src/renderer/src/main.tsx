@@ -12,8 +12,12 @@ import {
   createRemoteWorkspaceDisconnectedError,
   playTaskNotificationSound,
   setStreamClientId,
+  prepareDiffKernel,
 } from "@zcode/ui";
 import "@zcode/ui/styles.css";
+// The line-diff kernel payload. `?url` hands back the bundled asset URL; the facade fetches and
+// compiles it synchronously so `buildUnifiedDiff` can stay a synchronous render-time call.
+import diffKernelWasmUrl from "../../../zcode-diff-wasm/zcode_diff_web_bg.wasm?url";
 import { createMessagePortServiceConnection } from "@zcode/client";
 import {
   InternalChannels,
@@ -372,6 +376,11 @@ function initializeBusinessRootWithServices(services: IServiceAccessor): void {
  */
 async function connectTauriBackendAndEnter(): Promise<void> {
   try {
+    // Prepare the line-diff WASM kernel BEFORE any tool-call block can render. `buildUnifiedDiff`
+    // and the change-stat helpers are synchronous (they run inside `useMemo`), and the kernel has
+    // no JavaScript fallback, so an unprepared kernel would throw on the first edit card. Failing
+    // here surfaces as a startup failure instead, where it is actionable.
+    await prepareDiffKernel(diffKernelWasmUrl);
     const services = await connectTauriHost();
     initializeBusinessRootWithServices(services);
   } catch (error) {
