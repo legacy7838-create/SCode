@@ -290,7 +290,9 @@ match.
 `packages/desktop/zcode-score-wasm` is outside every module root in `architecture-policy.yaml`
 (`desktop` covers only `packages/desktop/src`), exactly like `zcode-db`, `zcode-pty` and
 `zcode-scan`, so `pnpm architecture:check` cannot guard this boundary. This spec plus the S1–S7
-scenarios are the control, and `.github/workflows/zcode-score-wasm.yml` runs S1–S6 on demand.
+scenarios are the control, and `.github/workflows/zcode-workspace-file-native.yml` (manual
+`workflow_dispatch`, and it gates the scan boundary too) runs S1–S5 through `harness/parity.mts` and
+an S6 grep guard against the dead candidate symbols; S7 is the benchmark, measured by hand.
 
 ## 9. Rollback
 
