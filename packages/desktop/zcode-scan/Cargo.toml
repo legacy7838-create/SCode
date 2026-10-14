@@ -1,0 +1,28 @@
+[package]
+name = "zcode-scan"
+version = "0.0.0"
+edition = "2021"
+description = "ZCode workspace file index scanner (ignore crate walk + ICU ordering + columnar pack)."
+
+[lib]
+# cdylib => produces a loadable Node-API addon (.node), mirroring packages/desktop/zcode-db.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Same matcher ripgrep uses for gitignore semantics: compiled globset, no regex backtracking.
+ignore = "0.4"
+# Node's `String.prototype.localeCompare` is ICU collation. Reproducing it byte-for-byte requires
+# the same algorithm; Rust's `str::cmp` is byte order and diverges from Node on 96.5% of real paths
+# (see spec/native-boundary-workspace-scan.md, "The collation constraint").
+icu_collator = "2"
+icu_locale_core = "2"
+napi = { version = "2", default-features = false, features = ["napi4"] }
+napi-derive = "2"
+
+[build-dependencies]
+napi-build = "2"
+
+[profile.release]
+# The packed index is built and held in memory; the walk is I/O bound but the sort is not.
+lto = "thin"
+codegen-units = 1

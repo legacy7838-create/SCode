@@ -54,6 +54,26 @@ binding.Makefile
 **/build/Makefile
 **/build/Release/*.node
 
+# Rust native-boundary 产物（spec/native-boundary-*.md）：全部可由
+# packages/desktop/scripts/prepare-zcode-*.mjs 重建，源码入库、产物不入库。
+# 逐 crate 写死路径而不是通用 `target/`，是为了不误伤仓库里其它语言的构建目录。
+packages/desktop/zcode-db/target/
+packages/desktop/zcode-pty/target/
+packages/desktop/zcode-scan/target/
+packages/desktop/zcode-score-wasm/target/
+packages/desktop/zcode-appimage-strip/target/
+packages/desktop/src-tauri/target/
+# wasm-pack / prepare-zcode-score-wasm.mjs 暂存的胶水代码与 payload。
+# 胶水与 <out-name>_bg.wasm 是**文件名耦合**的一对（nodejs 胶水按 __dirname 相对读取），
+# 因此两者必须一起重建、一起忽略，绝不能只入库其中一个。
+packages/desktop/zcode-score-wasm/pkg/
+packages/desktop/zcode-score-wasm/zcode_score.wasm
+packages/desktop/zcode-score-wasm/zcode_score_web_bg.wasm
+# napi addon（stagedPath，由 prepare-*-native.mjs 从 cargo 产物拷贝而来）
+packages/desktop/zcode-db/zcode_db.node
+packages/desktop/zcode-pty/zcode_pty.node
+packages/desktop/zcode-scan/zcode_scan.node
+
 # CUA 权限浮窗吸附用的 Swift 辅助二进制（由 prepare:macos-window-bounds 从
 # packages/desktop/native/macos-window-bounds/main.swift 编出，源码入库、产物不入库）
 packages/desktop/resources/macos-window-bounds/
