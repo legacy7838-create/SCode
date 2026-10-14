@@ -30,12 +30,6 @@ export {
 export { createMediaPreviewService } from "./media-preview/mediaPreview.js";
 export type { CreateFileServiceOptions } from "./file/fileService.js";
 export {
-  defaultWorkspaceFileSearchFilter,
-  type WorkspaceFileSearchDecision,
-  type WorkspaceFileSearchEntry,
-  type WorkspaceFileSearchFilter,
-} from "./file/workspaceFileMentionFilter.js";
-export {
   createFsFaultInjector,
   getProcessFsFaultInjector,
   maybeThrowInjectedFsFault,
@@ -299,7 +293,6 @@ import { IFeedbackService } from "./feedback/feedback.js";
 import { IPromptAttachmentTransferService } from "./prompt-attachment-transfer/promptAttachmentTransfer.js";
 import { createFileService } from "./file/fileService.js";
 import { createMediaPreviewService } from "./media-preview/mediaPreview.js";
-import type { WorkspaceFileSearchFilter } from "./file/workspaceFileMentionFilter.js";
 import { createGitService } from "./git/gitService.js";
 import { GitCommitMessageGenerator } from "./git/gitCommitMessageGenerator.js";
 import { createGitCheckpointService } from "./git/gitCheckpointService.js";
@@ -543,8 +536,6 @@ export function createLocalServices(options: {
   >;
   processLifecycleReporter?: RuntimeProcessLifecycleReporter;
   taskRuntimeReporter?: RuntimeTaskReporter;
-  /** workspace 文件搜索默认使用内置过滤器；后续规则来源只需在 Host 装配时注入最终实现。 */
-  workspaceFileSearchFilter?: WorkspaceFileSearchFilter;
   forwardSessionMessageSendRequested?: (
     request: SessionMessageSendRequested,
   ) => Promise<void> | void;
@@ -1100,9 +1091,7 @@ export function createLocalServices(options: {
       credentials: await resolveOffPeakCredentials(offPeakCredentialResolverDeps),
       ticketId,
     });
-  const fileService = createFileService({
-    workspaceFileSearchFilter: options?.workspaceFileSearchFilter,
-  });
+  const fileService = createFileService();
   const mediaPreviewService = createMediaPreviewService({
     fileService,
     authorizeLocalMediaPreviewPath: options?.authorizeLocalMediaPreviewPath,

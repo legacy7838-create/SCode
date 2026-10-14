@@ -30,6 +30,15 @@ type WorkspaceFileSearchIgnoreRulesSource =
 
 interface WorkspaceFileSearchIgnoreRules {
   matcher: Ignore;
+  /**
+   * 本次实际生效的规则文本（即 `matcher` 的输入原文）。
+   *
+   * Rust `zcode-scan` addon 自己编译 gitignore matcher，所以跨界传的是**文本**而不是 JS matcher：
+   * matcher 是编译产物、无法序列化，文本才是单一事实。addon 不读也不建 .zcodeignore，
+   * 只消费这里给出的内容（见 spec/native-boundary-workspace-scan.md §1.3）。
+   * 四条降级分支都必须填：降级到 .gitignore 或内置模板时，文本就是降级后的那份。
+   */
+  content: string;
   source: WorkspaceFileSearchIgnoreRulesSource;
 }
 
@@ -308,6 +317,7 @@ export async function loadWorkspaceFileSearchIgnoreRules(
       );
       return {
         matcher: buildIgnoreMatcher(gitignoreContent),
+        content: gitignoreContent,
         source: "fallback-gitignore",
       };
     }
@@ -315,6 +325,7 @@ export async function loadWorkspaceFileSearchIgnoreRules(
     const template = buildWorkspaceFileSearchIgnoreTemplate(null);
     return {
       matcher: buildIgnoreMatcher(template),
+      content: template,
       source: "fallback-builtin",
     };
   };
@@ -326,7 +337,7 @@ export async function loadWorkspaceFileSearchIgnoreRules(
     return degradeToInMemory(`读取 ${WORKSPACE_FILE_SEARCH_IGNORE_FILE_NAME} 失败`, error);
   }
   if (existing !== null) {
-    return { matcher: buildIgnoreMatcher(existing), source: "file" };
+    return { matcher: buildIgnoreMatcher(existing), content: existing, source: "file" };
   }
 
   const gitignoreContent = await readOptionalFile(resolve(rootPath, GITIGNORE_FILE_NAME)).catch(
@@ -347,6 +358,7 @@ export async function loadWorkspaceFileSearchIgnoreRules(
     );
     return {
       matcher: buildIgnoreMatcher(initialContent),
+      content: initialContent,
       source: gitignoreContent !== null ? "fallback-gitignore" : "fallback-builtin",
     };
   }
@@ -358,6 +370,7 @@ export async function loadWorkspaceFileSearchIgnoreRules(
   );
   return {
     matcher: buildIgnoreMatcher(initialContent),
+    content: initialContent,
     source: gitignoreContent !== null ? "created-from-gitignore" : "created-from-template",
   };
 }

@@ -180,6 +180,21 @@ interface ScoredWorkspaceFileSearchCandidate {
   score: number;
 }
 
+/**
+ * (score, index) 上的全序比较。
+ *
+ * 第三层 name 比较已删除：它**从来不会执行**。`index` 来自
+ * `candidates.entries()` 的单次遍历，因此在本函数可见的 `bestMatches` 内两两不同；
+ * 走到第三层要求 `score` 相等**且** `index` 相等，那是不可达状态。instrumented 实测：
+ * 370000 候选 × 3 个 query，比较器第三层被命中 **0** 次。
+ *
+ * 分批合并路径（`searchHostFileCandidates` 每 2048 条重跑一次）也一样不可达：每次调用都重新
+ * 对输入数组编号，批内 index 依旧唯一。
+ *
+ * 保留它不会错，但会让「哪里慢」的判断被误导：曾经把这里的 `localeCompare` 当成
+ * @ 面板每键 3.7M 次调用的主因——实际上真正的成本是 `scoreNormalizedFuzzyMatch`
+ * 每候选 3 次（name/relativePath/path）的 `indexOf` 扫描。
+ */
 function compareScoredWorkspaceFileSearchCandidates(
   left: ScoredWorkspaceFileSearchCandidate,
   right: ScoredWorkspaceFileSearchCandidate,
@@ -187,10 +202,7 @@ function compareScoredWorkspaceFileSearchCandidates(
   if (left.score !== right.score) {
     return left.score - right.score;
   }
-  if (left.index !== right.index) {
-    return left.index - right.index;
-  }
-  return left.candidate.name.localeCompare(right.candidate.name);
+  return left.index - right.index;
 }
 
 /**

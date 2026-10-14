@@ -6,6 +6,7 @@
     "third-party/upstream/**",
     "third-party/native-search/licenses/**",
     "third-party/runtime/*.txt",
-    ".qoder/**"
+    ".qoder/**",
+    "packages/desktop/**/target/**"
   ]
 }
