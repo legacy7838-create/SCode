@@ -14,6 +14,11 @@ const desktopRoot = join(here, "..");
 const standalone = join(desktopRoot, "out/host/standalone.js");
 const dbAddon = join(desktopRoot, "zcode-db/zcode_db.node");
 const ptyAddon = join(desktopRoot, "zcode-pty/zcode_pty.node");
+// @-mention 工作区文件搜索的两条原生边界（spec/native-boundary-*.md）。两者都无 JS 兜底：
+// 缺 artifact 时 workspaceScanNative / workspaceScoreNative 会抛错，而抛错点在用户第一次按 `@`
+// 之后，日志里只会看到一句孤立的异常，很难定位。这里与 DB/PTY 一样在启动期 fail-fast。
+const scanAddon = join(desktopRoot, "zcode-scan/zcode_scan.node");
+const scoreGlue = join(desktopRoot, "zcode-score-wasm/pkg/nodejs/zcode_score.js");
 const port = process.env.ZCODE_WS_PORT ?? "5199";
 
 function sleep(ms) {
@@ -33,6 +38,23 @@ if (!existsSync(dbAddon)) {
 if (!existsSync(ptyAddon)) {
   console.error(
     `[dev-host] zcode-pty addon missing: ${ptyAddon}\n  run: pnpm prepare:zcode-pty-native`,
+  );
+  process.exit(1);
+}
+
+// Same fail-fast for the two workspace-file native boundaries the @-mention picker uses. They have
+// no JS fallback, so a missing artifact would only surface as a thrown error the first time the user
+// types `@` — far from the real cause. Check both here so a clean tree fails at boot.
+if (!existsSync(scanAddon)) {
+  console.error(
+    `[dev-host] zcode-scan addon missing: ${scanAddon}\n  run: pnpm prepare:zcode-scan-native`,
+  );
+  process.exit(1);
+}
+
+if (!existsSync(scoreGlue)) {
+  console.error(
+    `[dev-host] zcode-score wasm glue missing: ${scoreGlue}\n  run: pnpm prepare:zcode-score-wasm`,
   );
   process.exit(1);
 }
