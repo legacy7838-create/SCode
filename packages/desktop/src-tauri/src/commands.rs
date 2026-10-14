@@ -75,6 +75,29 @@ use std::process::{Command, Stdio};
 // (`zcode-cli`) lands in the same group; app-exit then reaps both with a single `kill(-pgid, ..)`.
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
+// `creation_flags(CREATE_NO_WINDOW)` is the Windows counterpart: it stops a spawned console binary
+// from getting a console window (see [`spawn_host_discover_port`]).
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+/// Windows creation flag: run the child with no console window.
+///
+/// The GUI (`ZCode.exe`, built with `windows_subsystem = "windows"`) has no console of its own.
+/// When such a process starts a **console-subsystem** binary — `host/node.exe`, staged verbatim
+/// from Node — Windows allocates a brand-new console window for the child unless this flag is set.
+/// That is the stray empty terminal users saw on the portable Windows build.
+///
+/// It is also a lifecycle bug, not just cosmetic: that console belongs to the Host, so **closing it
+/// delivers `CTRL_CLOSE_EVENT` to `node.exe`**, killing the backend the whole UI depends on. With
+/// `CREATE_NO_WINDOW` the Host has no console to be closed, and the app keeps working.
+///
+/// `CREATE_NO_WINDOW` (not `DETACHED_PROCESS`): the parent still needs the child's stdout/stderr
+/// pipes to parse the `ZCODE_WS_READY <port>` line, and `DETACHED_PROCESS` would drop the inherited
+/// stdio. This flag only suppresses the console window.
+///
+/// Defined unconditionally (not behind `#[cfg(windows)]`) so the unit test that pins the exact
+/// Win32 value also runs on the Linux CI job, where a regression would otherwise never be seen.
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -2587,10 +2610,15 @@ pub fn reap_all_hosts(app: &AppHandle) {
         {
             // `/T` kills the process tree (Host + Agent); `/F` forces it. Fire-and-forget: the app
             // is exiting, so we do not block on taskkill's exit status.
+            //
+            // `CREATE_NO_WINDOW` for the same reason as the Host spawn: `taskkill.exe` is a console
+            // binary and the GUI has no console, so a bare spawn would flash a console window on
+            // every exit. See [`CREATE_NO_WINDOW`].
             let _ = Command::new("taskkill")
                 .args(["/PID", &pid.to_string(), "/T", "/F"])
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
+                .creation_flags(CREATE_NO_WINDOW)
                 .spawn();
         }
     }
@@ -2800,6 +2828,11 @@ pub fn spawn_host_discover_port(app: AppHandle) -> Result<u32, String> {
     // (`zcode-cli`) with one signal on app exit; otherwise both orphan under init when the GUI quits.
     #[cfg(unix)]
     command.process_group(0);
+    // Windows counterpart: `host/node.exe` is a console binary and the GUI has no console, so
+    // without `CREATE_NO_WINDOW` Windows spawns a stray console window for the Host (the empty
+    // terminal users reported) and closing that window kills the backend. See [`CREATE_NO_WINDOW`].
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
     let mut child = command
         .spawn()
         .map_err(|e| format!("spawn packaged host sidecar: {e}"))?;
@@ -3710,5 +3743,44 @@ mod tests {
         assert_eq!(find_window_for_path(&tabs, "/repo/a"), Some("extra"));
         assert_eq!(find_window_for_path(&tabs, "/repo/b"), Some("extra"));
         assert_eq!(find_window_for_path(&tabs, "/repo/missing"), None);
+    }
+
+    #[test]
+    fn create_no_window_flag_matches_the_windows_constant() {
+        // The portable Windows build spawns `host/node.exe` (a console binary) from the GUI, which
+        // has `windows_subsystem = "windows"` and therefore NO console. Without this flag Windows
+        // allocates a console window for the Host — the stray empty terminal — and closing that
+        // window sends `CTRL_CLOSE_EVENT` to `node.exe`, killing the backend the UI depends on.
+        //
+        // A typo here fails SILENTLY: the build still compiles and the console still appears, so the
+        // only place the mistake is catchable without a Windows box is this assertion. Pin the exact
+        // documented Win32 value (winbase.h: `#define CREATE_NO_WINDOW 0x08000000`).
+        assert_eq!(
+            CREATE_NO_WINDOW, 0x0800_0000,
+            "CREATE_NO_WINDOW must be the documented Win32 value or the console still appears"
+        );
+        // It must NOT be DETACHED_PROCESS (0x00000008): that drops the inherited stdio, which
+        // `spawn_host_discover_port` needs to read the `ZCODE_WS_READY <port>` handshake.
+        assert_ne!(CREATE_NO_WINDOW, 0x0000_0008);
+    }
+
+    #[test]
+    fn host_and_taskkill_spawns_set_creation_flags_on_windows() {
+        // Guards the cfg split at both `std::process::Command` spawn sites: the Unix branch sets a
+        // process group, the Windows branch sets `CREATE_NO_WINDOW`. This cannot introspect the
+        // built `Command` (the flags are std-private), so instead it proves the Windows API used by
+        // those sites is actually reachable and behaves as a builder on this target. If a future
+        // edit drops the Windows arm, this stops compiling on Windows — which the CI Windows job
+        // catches — rather than silently reintroducing the stray console.
+        #[cfg(windows)]
+        {
+            let mut command = Command::new("cmd");
+            command.creation_flags(CREATE_NO_WINDOW);
+        }
+        #[cfg(unix)]
+        {
+            let mut command = Command::new("true");
+            command.process_group(0);
+        }
     }
 }
